@@ -10,7 +10,7 @@ use axum::{Json, Router};
 use crate::api::MachineSpec;
 use crate::server::{Rejected, Server};
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the same routes, the same bearer token, the same status codes and the same plain-text error bodies as the Go runner, so the controller cannot tell which runner answered. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
+// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects, unchanged from earlier releases so a controller of either age can drive it. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
 
 #[derive(Clone)]
 struct Api {
@@ -51,7 +51,7 @@ pub fn metrics_router(server: Arc<Server>) -> Router {
     )
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Go's http.Error: the message and a newline as text/plain. The controller's client puts this text, trimmed, into its error.
+// UNIT_BOUNDARY_DESCRIPTION: the error body the controller's client expects: the message and a newline as text/plain. The client puts this text, trimmed, into its error.
 fn plain(status: StatusCode, message: &str) -> Response {
     (
         status,
@@ -285,7 +285,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a machine id becomes a directory name, so one that could leave the state directory is refused with 400 before anything reads the disk, in the Go runner's words.
+    // TEST_SCENARIO: a machine id becomes a directory name, so one that could leave the state directory is refused with 400 before anything reads the disk, with the wording the controller has always surfaced for it.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_machine_id_that_could_escape_is_refused() {
         let api = api("guard");

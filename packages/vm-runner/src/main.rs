@@ -10,7 +10,7 @@ use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, state, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines, kept name-for-name across releases. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -37,7 +37,7 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image the shared cache does not hold; empty disables the fetch.
     #[arg(long, default_value = "crane")]
     crane: String,
-    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the Go binary that mounts the agent's home inside the guest, which is why this runner being Rust does not move it.
+    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest, built and shipped separately from this runner.
     #[arg(
         long = "platform-init",
         default_value = "/usr/local/libexec/platform-init"
@@ -67,7 +67,7 @@ struct Args {
 #[derive(Clone, Debug, Default)]
 struct AllowFrom(Vec<IpNet>);
 
-// UNIT_BOUNDARY_DESCRIPTION: the Go runner splits this flag on commas, skips blank entries and exits on anything net.ParseCIDR rejects. Same three rules here, so an install's value means what it meant before.
+// UNIT_BOUNDARY_DESCRIPTION: this flag is split on commas, blank entries are skipped, and anything that is not a CIDR exits the runner before it starts. The three rules are the ones earlier releases applied, so an install's value means what it meant before.
 fn allow_from(value: &str) -> anyhow::Result<AllowFrom> {
     value
         .split(',')
@@ -91,7 +91,7 @@ fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Opt
     Some(args.next().map(PathBuf::from))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the Go runner's `--max-image-size`.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -115,7 +115,7 @@ fn configure_smolvm(launcher: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Go runner's listen address, `:4600` meaning every interface. Bound dual-stack where the pod has IPv6 and IPv4-only where it does not.
+// UNIT_BOUNDARY_DESCRIPTION: the listen address, `:4600` meaning every interface. Bound dual-stack where the pod has IPv6 and IPv4-only where it does not.
 fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     let listener = match listen.strip_prefix(':') {
         Some(port) => {
@@ -301,7 +301,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: names the machines whose storage disk is a qcow2 overlay over the shipped template, which the Go runner made for agents sized at exactly smolvm's default. Their home depends on the template file in this image; an upgrade that changes it changes the bytes under them. Reported so an operator can find them before an upgrade does.
+// UNIT_BOUNDARY_DESCRIPTION: names the machines whose storage disk is a qcow2 overlay over the shipped template, which earlier releases made for agents sized at exactly smolvm's default. Their home depends on the template file in this image; an upgrade that changes it changes the bytes under them. Reported so an operator can find them before an upgrade does.
 fn warn_template_backed(state_dir: &Path) {
     let backed: Vec<String> = state::machine_ids(state_dir)
         .unwrap_or_default()
@@ -317,7 +317,7 @@ fn warn_template_backed(state_dir: &Path) {
 mod tests {
     use super::*;
 
-    // TEST_SCENARIO: an allowlist fails open — a value it cannot read admits everybody rather than nobody, and says nothing. So each of the Go runner's three rules is pinned: entries split on commas, surrounding space ignored, blanks skipped, and anything that is not a CIDR refused before the runner starts rather than ignored while it runs.
+    // TEST_SCENARIO: an allowlist fails open — a value it cannot read admits everybody rather than nobody, and says nothing. So each of the flag's three rules is pinned: entries split on commas, surrounding space ignored, blanks skipped, and anything that is not a CIDR refused before the runner starts rather than ignored while it runs.
     #[test]
     fn the_allowlist_reads_every_shape_the_go_runner_accepts_and_no_others() {
         assert_eq!(allow_from("").unwrap().0, vec![]);
@@ -366,7 +366,7 @@ mod tests {
         assert_eq!(boot_config(args(&["vm-runner"]).into_iter()), None);
     }
 
-    // TEST_SCENARIO: `:4600` is the Go runner's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
+    // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn the_go_runners_listen_address_binds_every_interface() {
         let listener = bind(":0").unwrap();
@@ -444,7 +444,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary is meant to replace the Go runner under that same ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
+    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary runs under that ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
     #[test]
     fn the_images_entrypoint_arguments_are_accepted() {
         let path = "../controller/Dockerfile.vm-runner";

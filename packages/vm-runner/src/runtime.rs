@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::api::{ImageLaunch, MachineSpec};
 use crate::guest::INIT_PATH;
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server plans machines against this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the Go runner's `Smolvm` type restated: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server plans machines against this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
 pub trait Runtime: Send + Sync {
     // UNIT_BOUNDARY_DESCRIPTION: one of the api states `absent`, `stopped` or `running`. Only those three: whether an operation is in flight is the server's knowledge, not the hypervisor's.
     fn state(&self, id: &str) -> anyhow::Result<&'static str>;
@@ -29,7 +29,7 @@ pub trait Runtime: Send + Sync {
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk the Go runner made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk an earlier release made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
     fn storage_growable(&self, _id: &str) -> bool {
         true
     }
@@ -75,10 +75,10 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
 // UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
 
-// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it. The Go runner keeps its disks at the same place, so either runner finishes a recreate the other began.
+// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it. Earlier releases kept their disks at the same place, so a recreate one of them began is finished here.
 pub const KEPT_DISKS_DIR: &str = "kept-disks";
 
-// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: a raw file, or a qcow2 one backed by the shared template when the Go runner made it at smolvm's default size, and the marker that says its filesystem is made — without which smolvm formats it again. A qcow2 file's template is outside the data directory, so moving the file does not break it.
+// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: a raw file, or a qcow2 one backed by the shared template when an earlier release made it at smolvm's default size, and the marker that says its filesystem is made — without which smolvm formats it again. A qcow2 file's template is outside the data directory, so moving the file does not break it.
 pub const STORAGE_FILES: [&str; 3] = ["storage.raw", "storage.qcow2", "storage.formatted"];
 
 pub fn kept_dir(home: &Path, id: &str) -> std::path::PathBuf {
@@ -305,7 +305,6 @@ pub fn timed<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
     use std::path::PathBuf;
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {
@@ -374,26 +373,18 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, in the Go runner's words, whether the launch is missing or empty.
+    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, whether the launch is missing or empty, and the refusal reaches the Agent's status, so its wording is pinned.
     #[test]
-    fn a_machine_with_nothing_to_run_is_refused_in_the_go_runners_words() {
-        let go = gosource::read("smolvm.go");
-        let theirs = go
-            .lines()
-            .find_map(|line| {
-                line.strip_prefix("var errImageLaunchUnknown = errors.New(")?
-                    .strip_suffix(')')
-                    .and_then(gosource::unquote)
-            })
-            .expect("smolvm.go still names errImageLaunchUnknown");
-        assert_eq!(IMAGE_LAUNCH_UNKNOWN, theirs);
-
+    fn a_machine_with_nothing_to_run_is_refused() {
         let none = workload(&spec_with_env(&[]), None).unwrap_err().to_string();
         let empty = workload(&spec_with_env(&[]), Some(&launch(&[], &[], &["A=b"], "/")))
             .unwrap_err()
             .to_string();
-        assert_eq!(none, IMAGE_LAUNCH_UNKNOWN);
-        assert_eq!(empty, IMAGE_LAUNCH_UNKNOWN);
+        assert_eq!(
+            none,
+            "this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it"
+        );
+        assert_eq!(empty, none);
     }
 
     // TEST_SCENARIO: an update must drop what the controller stopped sending, or a Secret key removed from an Agent stays in its guest forever. It must also keep what only the image set, which the controller never sent and so never removed.
@@ -442,13 +433,6 @@ mod tests {
         assert_eq!(
             redact("token hunter2 rejected on port", ["hunter2", "on"]),
             "token *** rejected on port"
-        );
-        let go = gosource::read("smolvm.go");
-        assert!(
-            gosource::function_body(&go, "redact")
-                .expect("smolvm.go still redacts")
-                .contains("len(v) > 3"),
-            "the Go runner no longer skips the same short values"
         );
     }
 
@@ -513,57 +497,32 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the Go runner and this one share a machine's directory during the cutover, so both must clear the same files before a boot and discard the same overlay. The Rust side is a superset only where the Go side is fixed in the same change.
+    // TEST_SCENARIO: a machine's directory outlives the runner that made it, and a VMM from an earlier release leaves the same sockets, lock and pid file in it. What a start clears and what a discard removes is pinned by name, so a renamed entry here does not leave an old machine's stale socket in place and its next boot believing it is still up.
     #[test]
-    fn the_go_runner_clears_the_same_files() {
-        let go = gosource::read("smolvm.go");
-        let start = gosource::literals_in(&go, "(r *Smolvm) Start");
-        for file in STALE_RUNTIME_FILES {
-            assert!(
-                start.iter().any(|l| l == file),
-                "the Go runner no longer clears {file}"
-            );
-        }
+    fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
-            start.iter().filter(|l| l.contains('.')).count(),
-            STALE_RUNTIME_FILES.len(),
-            "the Go runner clears a file this runner does not"
+            STALE_RUNTIME_FILES,
+            [
+                "agent.ready",
+                "agent.sock",
+                "control.sock",
+                "vm.lock",
+                "agent.pid",
+            ]
         );
-
-        let discard = gosource::literals_in(&go, "discardOverlay");
-        for file in OVERLAY_FILES {
-            assert!(
-                discard.iter().any(|l| l == file),
-                "the Go runner no longer discards {file}"
-            );
-        }
         assert_eq!(
-            discard.iter().filter(|l| l.starts_with("overlay.")).count(),
-            OVERLAY_FILES.len()
+            OVERLAY_FILES,
+            ["overlay.qcow2", "overlay.raw", "overlay.formatted"]
         );
     }
 
-    // TEST_SCENARIO: the windows and sizes both runners work to. A VMM waited on for a different time, or an archive cap that differs, is one runner refusing what the other accepts.
+    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, a smaller archive cap refuses an image that booted before, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
     #[test]
-    fn the_go_runner_waits_and_caps_the_same() {
-        let go = gosource::read("smolvm.go");
-        assert_eq!(
-            gosource::duration_value(&go, "vmmExitWait"),
-            Some(VMM_EXIT_WAIT)
-        );
-        assert_eq!(gosource::duration_value(&go, "slowOp"), Some(SLOW_OP));
-        assert!(
-            gosource::literals_in(&go, "(r *Smolvm) Create")
-                .iter()
-                .any(|l| l == "16GiB"),
-            "the Go runner no longer caps archives at 16GiB"
-        );
+    fn the_waits_and_caps_are_pinned() {
+        assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
+        assert_eq!(SLOW_OP, Duration::from_secs(2));
         assert_eq!(MAX_IMAGE_BYTES, 16 * 1024 * 1024 * 1024);
-        let server = gosource::read("server.go");
-        assert_eq!(
-            gosource::int_value(&server, "guestAgentPort"),
-            Some(u64::from(GUEST_AGENT_PORT))
-        );
+        assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 
     // TEST_SCENARIO: a recreate moves the agent's disk out of the data directory and back into the recreated machine's, and the disk that comes back is the one that left, with its formatted marker, so smolvm does not format it again. An empty disk a create made before the kept one returned is replaced by it, and a move interrupted half way can simply be run again.
@@ -593,25 +552,13 @@ mod tests {
         adopt_kept_storage(&kept, &vm).unwrap();
     }
 
-    // TEST_SCENARIO: a Go runner rolled out mid-recreate leaves its machine's disk where it keeps them, and this runner must find it there and know every file of it — or it boots the recreated machine onto an empty disk and the agent's work is gone.
+    // TEST_SCENARIO: a runner replaced mid-recreate leaves the machine's disk where earlier releases kept it, and this one must find it there and know every file of it — or it boots the recreated machine onto an empty disk and the agent's work is gone.
     #[test]
-    fn disks_are_kept_where_the_go_runner_keeps_them() {
-        let go = gosource::read("smolvm.go");
+    fn disks_are_kept_where_earlier_releases_kept_them() {
+        assert_eq!(KEPT_DISKS_DIR, "kept-disks");
         assert_eq!(
-            gosource::const_value(&go, "keptDisksDir").as_deref(),
-            Some(KEPT_DISKS_DIR)
-        );
-        let files = format!(
-            "var storageFiles = []string{{{}}}",
-            STORAGE_FILES
-                .iter()
-                .map(|f| format!("\"{f}\""))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        assert!(
-            go.lines().any(|line| line.trim() == files),
-            "the Go runner no longer keeps exactly these files: {files}"
+            STORAGE_FILES,
+            ["storage.raw", "storage.qcow2", "storage.formatted"]
         );
     }
 

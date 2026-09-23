@@ -14,7 +14,7 @@ anyhow = "1"
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 clap = { version = "4", features = ["derive"] }
-# --allow-from is a list of CIDRs the Go runner refuses to start on if any is
+# --allow-from is a list of CIDRs the runner refuses to start on if any is
 # malformed; parsing them by hand is how an allowlist quietly admits everybody.
 ipnet = "2"
 # kill(2) for a VMM that outlived its stop. Already in the lock by way of
@@ -33,7 +33,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 base64 = "0.22"
 # Already in the lock by way of smolvm: the cache index names a reference by
-# its SHA-256, and the Go runner has to find the file this crate writes; a kept
+# its SHA-256, the name earlier releases wrote and still find; a kept
 # disk template is named by the SHA-256 of the compressed one it was expanded
 # from.
 sha2 = "0.10"

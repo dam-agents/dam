@@ -112,7 +112,7 @@ pub fn printable(text: &str) -> String {
     out.trim().to_string()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the length of a CSI sequence's body after `ESC [`: parameters, then intermediates, then one final byte — the shape `\x1b\[[0-9;?]*[ -/]*[@-~]` the Go runner strips.
+// UNIT_BOUNDARY_DESCRIPTION: the length of a CSI sequence's body after `ESC [`: parameters, then intermediates, then one final byte — the shape `\x1b\[[0-9;?]*[ -/]*[@-~]`.
 fn escape_len(rest: &str) -> Option<usize> {
     let mut chars = rest.chars();
     let mut len = 0;
@@ -134,7 +134,6 @@ fn escape_len(rest: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.
     #[test]
@@ -179,7 +178,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end, as the Go runner keeps it: the two tails must agree on one console. The limit counts the console's bytes before any decoding, as the Go runner counts them, so bytes that are not UTF-8 and CRLF line ends give both runners the same tail, and never a panic.
+    // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end. The limit counts the console's bytes before any decoding, so bytes that are not UTF-8 and CRLF line ends give a tail of the stated size, cut at a character, and never a panic.
     #[test]
     fn a_long_last_line_of_bad_bytes_is_cut_at_a_character() {
         let dir =
@@ -203,15 +202,11 @@ mod tests {
         assert_eq!(
             tail_of(&log, 4096).matches("ab").count(),
             1024,
-            "a CRLF console keeps its \\r inside the limit, as the Go runner counts it"
+            "a CRLF console keeps its \\r inside the limit"
         );
         fs::write(&log, format!("first\n{}\nabc", "x".repeat(6000))).unwrap();
         let tail = tail_of(&log, 4096);
-        assert_eq!(
-            tail.len(),
-            4096,
-            "an over-limit line keeps its end, as the Go runner keeps it"
-        );
+        assert_eq!(tail.len(), 4096, "an over-limit line keeps its end");
         assert!(
             tail.ends_with("\nabc") && tail.starts_with("xxx"),
             "{tail:?}"
@@ -233,53 +228,20 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    // TEST_SCENARIO: the two runners share the claim, so a console one of them left must be emptied by the other's start too.
+    // TEST_SCENARIO: the console file is where smolvm points every machine's virtual console, including machines from earlier releases, and the size, the wait and both sentences reach the Agent's condition, which an operator reads and a runbook quotes. All of them are pinned as literals, and the sentence that joins a message to its tail is checked on the join itself.
     #[test]
-    fn the_go_runner_empties_the_console_at_start_too() {
-        let go = gosource::read("smolvm.go");
-        let start = gosource::function_body(&go, "(r *Smolvm) Start").expect("smolvm.go has Start");
-        assert!(
-            start.contains("clearConsole(id, dir)"),
-            "the Go runner no longer empties the console at start: {start}"
-        );
-    }
-
-    // TEST_SCENARIO: an Agent's condition reads the same whichever runner wrote it, so the file, the size, the read window, the probe-line matcher and both sentences are the Go runner's.
-    #[test]
-    fn the_console_is_read_as_the_go_runner_reads_it() {
-        let go = gosource::read("console.go");
-        assert_eq!(
-            gosource::const_value(&go, "consoleLogName").as_deref(),
-            Some(CONSOLE_LOG)
-        );
-        assert_eq!(
-            gosource::int_value(&go, "consoleTailBytes"),
-            Some(CONSOLE_TAIL_BYTES)
-        );
-        assert!(
-            go.lines()
-                .any(|line| line.trim() == "slowBootAfter = time.Minute"),
-            "the Go runner no longer waits a minute before explaining a slow boot"
-        );
+    fn the_console_file_and_the_condition_wording_are_pinned() {
+        assert_eq!(CONSOLE_LOG, "agent-console.log");
+        assert_eq!(CONSOLE_TAIL_BYTES, 4096);
         assert_eq!(SLOW_BOOT_AFTER, Duration::from_secs(60));
-        let literals = gosource::literals_in(&go, "(s *Server) watchBoot");
-        assert!(
-            literals.iter().any(|l| l
-                == "the guest is not answering its health check, and it was last asked to start more than %s ago"),
-            "{literals:?}"
+        assert_eq!(
+            SLOW_BOOT,
+            "the guest is not answering its health check, and it was last asked to start more than 1m0s ago"
         );
-        assert!(SLOW_BOOT.ends_with("more than 1m0s ago"));
-        assert!(gosource::literals_in(&go, "withConsole")
-            .iter()
-            .any(|l| l == "\\nthe guest console ends:\\n"));
-        assert!(
-            go.lines().any(|line| line.trim() == "window := limit * 16"),
-            "the Go runner reads a different window before dropping probe lines"
+        assert_eq!(
+            with_console("boot failed", "last line"),
+            "boot failed\nthe guest console ends:\nlast line"
         );
-        assert!(
-            go.contains(r#""target":"smolvm_agent""#)
-                && go.contains(r#""message":"accepted connection""#),
-            "the Go runner matches probe lines differently"
-        );
+        assert_eq!(with_console("boot failed", ""), "boot failed");
     }
 }

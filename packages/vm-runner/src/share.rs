@@ -16,7 +16,7 @@ pub const CA_DIR: &str = "ca";
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
 
-// UNIT_BOUNDARY_DESCRIPTION: the modes the Go runner states for the share's CA. Stated here too rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and the two runners would write one machine's share differently.
+// UNIT_BOUNDARY_DESCRIPTION: the modes the share's CA is written with, stated rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and two installs would write one machine's share differently.
 pub const CA_DIR_MODE: u32 = 0o755;
 pub const CA_MODE: u32 = 0o644;
 
@@ -56,7 +56,7 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
         .truncate(true)
         .mode(INIT_MODE)
         .open(&staged)?;
-    // UNIT_BOUNDARY_DESCRIPTION: reporting a write that failed late is part of the copy, not cleanup after it: renaming past it would put a truncated binary where the machine's entrypoint goes — reported as success, and found only by the guest, at its next boot. Go's `copyInit` checks its close for this and removes the staged file when it fails; Rust's close reports nothing, so `sync_all` stands in for it here, one leg stricter because it also waits for the bytes to reach the disk.
+    // UNIT_BOUNDARY_DESCRIPTION: reporting a write that failed late is part of the copy, not cleanup after it: renaming past it would put a truncated binary where the machine's entrypoint goes — reported as success, and found only by the guest, at its next boot. A close is where such an error surfaces, and Rust's close reports nothing, so `sync_all` stands in for it here, one leg stricter because it also waits for the bytes to reach the disk.
     let copied = io::copy(&mut source, &mut destination)
         .and_then(|_| destination.set_permissions(fs::Permissions::from_mode(INIT_MODE)))
         .and_then(|()| destination.sync_all());
@@ -95,28 +95,15 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the Go runner and this one write the share of the same machine — a rollout replaces one with the other while machines exist. The directory name is the runner's own, so the Go const is read rather than copied: a machine whose share the next runner writes beside the old one keeps booting against a directory nobody updates, and its CA stops being rotated with no error anywhere.
+    // TEST_SCENARIO: machines created by earlier releases have their share under this name, and its path is baked into each machine's command line. A runner that wrote the share under another name would write it beside the old one, and the machine would keep booting against a directory nobody updates, its CA never rotated and no error anywhere.
     #[test]
-    fn the_go_runner_writes_the_share_under_the_same_name() {
-        let go = gosource::read("server.go");
-        assert_eq!(
-            gosource::const_value(&go, "shareDir").as_deref(),
-            Some(SHARE_DIR),
-            "the two runners no longer write one machine's share"
-        );
+    fn the_share_keeps_the_name_earlier_releases_wrote_it_under() {
+        assert_eq!(SHARE_DIR, "share");
     }
 
     // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts `/etc/platform/ca/ca.crt` in the agent's own environment as NODE_EXTRA_CA_CERTS, a package away, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate.
     #[test]
     fn the_ca_is_named_what_the_agents_environment_points_at() {
-        let go = gosource::read("server.go");
-        assert!(
-            go.contains(&format!(
-                "filepath.Join(share, \"{CA_DIR}\", \"{CA_FILE}\")"
-            )),
-            "the two runners no longer write one machine's CA to the same place"
-        );
-
         let resources = gosource::read_in("reconciler", "resources.go");
         assert!(
             resources.contains(&format!("\"{}/{CA_FILE}\"", guest::GUEST_CA_DIR)),
@@ -125,33 +112,9 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the Go runner reports the close of both share files — `copyInit` treats a failed close as a failed copy and removes the staged file, and `os.WriteFile` returns the close error for the CA. A close is where a write that failed late is reported, so dropping it renames a truncated entrypoint into place and calls it success. This module does the same, by `sync_all` rather than a bare close; that behaviour has no test of its own, because a late write error needs a filesystem a unit test cannot make, so what is pinned here is the requirement it exists to meet.
+    // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse, and the shares of machines from earlier releases carry these same modes.
     #[test]
-    fn the_go_runner_treats_a_failed_close_as_a_failed_write() {
-        let go = gosource::read("server.go");
-        assert!(
-            go.contains("if err := destination.Close(); err != nil {"),
-            "copyInit no longer fails on a close, so this module is stricter than the contract it copies"
-        );
-        assert!(
-            go.contains("os.WriteFile(filepath.Join(share,"),
-            "the CA is no longer written with a call that reports its close"
-        );
-    }
-
-    // TEST_SCENARIO: the modes the share is written with, stated on both sides rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse, and would have the two runners write one machine's share differently.
-    #[test]
-    fn the_share_is_written_with_the_modes_the_go_runner_states() {
-        let go = gosource::read("server.go");
-        assert!(
-            go.contains(&format!("\"ca\"), 0o{:o})", CA_DIR_MODE)),
-            "the Go runner no longer makes the CA directory {CA_DIR_MODE:o}"
-        );
-        assert!(
-            go.contains(&format!("[]byte(spec.CACert), 0o{:o})", CA_MODE)),
-            "the Go runner no longer writes the CA {CA_MODE:o}"
-        );
-
+    fn the_share_is_written_with_stated_modes_rather_than_the_umask() {
         let dir = TempDir::new("modes");
         let init = dir.path().join("platform-init");
         fs::write(&init, b"init").unwrap();
@@ -167,8 +130,8 @@ mod tests {
         .unwrap();
 
         let share = dir.path().join("agent-a").join(SHARE_DIR);
-        assert_eq!(mode_of(&share.join(CA_DIR)), CA_DIR_MODE);
-        assert_eq!(mode_of(&share.join(CA_DIR).join(CA_FILE)), CA_MODE);
+        assert_eq!(mode_of(&share.join(CA_DIR)), 0o755);
+        assert_eq!(mode_of(&share.join(CA_DIR).join(CA_FILE)), 0o644);
     }
 
     // TEST_SCENARIO: what a machine is given. The CA is what the controller sent, and init is a copy of the configured binary that the guest can actually exec — the mode is asserted because nothing on this side would notice it missing, and the machine that does notice comes up with its disk unmounted.

@@ -31,7 +31,7 @@ type Target struct {
 	// UNIT_BOUNDARY_DESCRIPTION: an image whose entrypoint is the probe guest. The suite reads a machine's disk only through what that guest answers.
 	Image     string
 	MemoryMiB int
-	// UNIT_BOUNDARY_DESCRIPTION: how long one boot may take on this runner. A fake VMM answers in milliseconds, while a real one may be unpacking the image for the first time.
+	// UNIT_BOUNDARY_DESCRIPTION: how long one boot may take on this runner: a real VMM may be unpacking the image for the first time, so the live task sets this from the environment.
 	Ready time.Duration
 	// UNIT_BOUNDARY_DESCRIPTION: restarts the runner and returns once it has been asked to. Nil skips the restart case, since only whoever deployed the runner knows how to restart it.
 	Restart func(t *testing.T)

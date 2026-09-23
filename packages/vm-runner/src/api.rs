@@ -15,7 +15,7 @@ pub struct ImageLaunch {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the controller's half of this contract is packages/controller/pkg/vmrunner/api.go, which stays Go — the controller dials this runner over HTTP, so the two sides meet as JSON and never as types. Every rename here is a wire break, which is why the field names are spelled out rather than derived from the Rust ones.
-// UNIT_BOUNDARY_DESCRIPTION: a field the JSON leaves out reads as its zero value, as Go's decoder reads it. Without that, a body the Go runner accepted — a stop that names nothing but `running` — is refused here as malformed.
+// UNIT_BOUNDARY_DESCRIPTION: a field the JSON leaves out reads as its zero value, as Go's decoder reads it. Without that, a body the controller's client sends naming only what changed — a stop that names nothing but `running` — is refused here as malformed.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct MachineSpec {
@@ -61,7 +61,7 @@ pub struct MachineStatus {
     pub starting_ms: i64,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a list Go left nil, read back as an empty one. `api.go` tags these fields without `omitempty`, so `json.Marshal` writes them as JSON null rather than leaving them out, and serde's own decoder refuses a null list. Every record the Go runner writes carries at least one: it refuses an image that names neither an entrypoint nor a command, so whichever of the two the image does not set is nil in the file.
+// UNIT_BOUNDARY_DESCRIPTION: a list Go left nil, read back as an empty one. `api.go` tags these fields without `omitempty`, so `json.Marshal` writes them as JSON null rather than leaving them out, and serde's own decoder refuses a null list. Every record an earlier release wrote carries at least one: an image that names neither an entrypoint nor a command was refused, so whichever of the two the image does not set is nil in the file.
 fn null_as_empty<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -184,7 +184,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: Go's decoder reads a field the JSON leaves out as its zero value, so a body naming only what changed is a valid request to the Go runner. It must decode here too, to the same zeroes, rather than be refused as malformed.
+    // TEST_SCENARIO: Go's decoder reads a field the JSON leaves out as its zero value, so a body naming only what changed is what the controller's client sends. It must decode here to the same zeroes, rather than be refused as malformed.
     #[test]
     fn a_field_the_json_leaves_out_reads_as_zero_as_it_does_in_go() {
         let stop: MachineSpec = serde_json::from_str(r#"{"running":false}"#).unwrap();

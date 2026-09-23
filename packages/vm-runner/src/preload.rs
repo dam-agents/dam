@@ -102,7 +102,7 @@ pub fn parse_quantity(text: &str) -> anyhow::Result<i64> {
         .ok_or_else(|| anyhow::anyhow!("{text:?} is too large"))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Go duration as the chart writes the preload interval — `5m`, `90s`, `1h30m`. Each part is a whole number and a unit of h, m, s or ms.
+// UNIT_BOUNDARY_DESCRIPTION: a duration in the form the chart writes the preload interval — `5m`, `90s`, `1h30m`. Each part is a whole number and a unit of h, m, s or ms.
 pub fn parse_duration(text: &str) -> anyhow::Result<Duration> {
     let mut rest = text.trim();
     anyhow::ensure!(!rest.is_empty(), "an empty duration");

@@ -19,7 +19,7 @@ use crate::runtime::{
     VMM_EXIT_WAIT,
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — exactly where the smolvm CLI keeps it under the runner's HOME, so machines the Go runner created are machines this one can start, stop and delete. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
+// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — exactly where the smolvm CLI keeps it under the runner's HOME, so machines an earlier release created are machines this one can start, stop and delete. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
 pub struct Smolvm {
     runtime: EmbeddedRuntime,
     db: SmolvmDb,
@@ -219,7 +219,7 @@ impl Runtime for Smolvm {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine, in the shape the Go runner's `machine create` flags produced: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
+// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine, in the shape the previous runner's `machine create` flags produced, so a machine of either age reads alike: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
 fn embedded_spec(
     id: &str,
     machine: &Machine<'_>,
@@ -346,7 +346,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is what the Go runner's `machine create` flags said, read back from smolvm's own database rather than from what this code meant to write.
+    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is what the previous runner's `machine create` flags said, read back from smolvm's own database rather than from what this code meant to write.
     #[test]
     fn a_created_machine_is_recorded_the_way_the_go_runner_created_it() {
         let home = Home::new("create");
@@ -647,7 +647,7 @@ mod tests {
         smolvm.discard_kept_storage("m1").unwrap();
     }
 
-    // TEST_SCENARIO: a machine the Go runner made has a qcow2 storage disk when it was created at smolvm's default size. It is recognised as such, so the runner can say which agents depend on the shipped template before an upgrade changes it.
+    // TEST_SCENARIO: a machine an earlier release made has a qcow2 storage disk when it was created at smolvm's default size. It is recognised as such, so the runner can say which agents depend on the shipped template before an upgrade changes it.
     #[test]
     fn a_template_backed_disk_is_recognised() {
         let _home = Home::new("qcow2");

@@ -165,7 +165,6 @@ pub fn healthy(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
     use std::net::TcpListener;
 
     // TEST_SCENARIO: the allowlist is the runner's own check on a published port, on top of the NetworkPolicy. A source outside it is refused, one inside it is admitted, an IPv4 source arriving as a mapped IPv6 address is judged as IPv4, and an empty list admits everyone.
@@ -295,17 +294,11 @@ mod tests {
         forwarder.unpublish_all();
     }
 
-    // TEST_SCENARIO: the loopback offset and both timeouts are the Go runner's. During a cutover the controller reads machines published by either runner, so a different offset would forward one runner's published port to nothing.
+    // TEST_SCENARIO: machines from earlier releases were created with their guest port published on loopback at this offset, so a different offset forwards their published port to nothing. The offset and both timeouts are pinned; a longer health timeout makes every readiness poll wait on a guest that is not there.
     #[test]
-    fn the_go_runner_forwards_the_same_way() {
-        let go = gosource::read("server.go");
-        assert_eq!(
-            gosource::int_value(&go, "loopbackOffset"),
-            Some(u64::from(LOOPBACK_OFFSET))
-        );
-        let healthy = gosource::function_body(&go, "(s *Server) healthy").unwrap();
-        assert!(healthy.contains("2 * time.Second") && healthy.contains("/healthz"));
-        let forward = gosource::function_body(&go, "(s *Server) forward").unwrap();
-        assert!(forward.contains("3*time.Second"));
+    fn the_loopback_offset_and_timeouts_are_pinned() {
+        assert_eq!(LOOPBACK_OFFSET, 1000);
+        assert_eq!(HEALTH_TIMEOUT, Duration::from_secs(2));
+        assert_eq!(DIAL_TIMEOUT, Duration::from_secs(3));
     }
 }

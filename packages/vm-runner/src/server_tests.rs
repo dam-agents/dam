@@ -1351,13 +1351,4 @@ async fn a_resumed_recreate_boots_at_the_size_the_kept_disk_has() {
         "{status:?}"
     );
     assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
-
-    let go = crate::gosource::read("server.go");
-    let ensure =
-        crate::gosource::function_body(&go, "(s *Server) ensure").expect("server.go has ensure");
-    assert!(
-        ensure.contains("s.Runtime.HasKeptStorage(id)")
-            && ensure.contains("spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)"),
-        "the Go runner no longer caps a create onto a kept disk at the disk's size: {ensure}"
-    );
 }

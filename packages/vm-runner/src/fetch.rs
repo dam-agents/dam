@@ -50,7 +50,7 @@ pub fn egress_changed(detail: impl std::fmt::Display) -> anyhow::Error {
     .into()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under. A typed refusal says its own; anything else is read from its text by the Go runner's rules, which is how a failure that came out of smolvm is told apart from a boot that simply failed.
+// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under. A typed refusal says its own; anything else is read from its text by fixed rules, which is how a failure that came out of smolvm is told apart from a boot that simply failed.
 pub fn failure_reason(err: &anyhow::Error) -> &'static str {
     if let Some(refusal) = err.downcast_ref::<Refusal>() {
         return refusal.reason;
@@ -163,7 +163,7 @@ pub fn unpack(
 // UNIT_BOUNDARY_DESCRIPTION: a docker config that names no registry. A probe run with it is a truly anonymous read, whatever the runner's own environment holds.
 pub const ANONYMOUS: &str = "{}";
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget the Go runner gives a tag resolution, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
+// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget a tag resolution gets, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 // UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is private and the check that lets a machine reuse one, get RESOLVE_TIMEOUT.
@@ -234,34 +234,18 @@ fn scratch_name(parent: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and both runners share the cache, so they must give up on a silent registry after the same time. The Go runner's budget is the tag-resolution one, and it asks the anonymous read first in the reuse check.
+    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and a registry that never answers must not hold that decision open for the pull timeout. The budget is pinned so a change to it is deliberate.
     #[test]
-    fn a_manifest_read_gets_the_go_runners_resolve_budget() {
-        let digest = gosource::read("digest.go");
-        assert!(
-            digest
-                .lines()
-                .any(|line| line.trim() == "resolveTimeout = time.Minute"),
-            "the Go runner no longer gives a manifest read a minute"
-        );
+    fn a_manifest_read_gets_a_minute() {
         assert_eq!(RESOLVE_TIMEOUT, Duration::from_secs(60));
-
-        let server = gosource::read("server.go");
-        let reuse = gosource::function_body(&server, "(s *Server) mayReuse")
-            .expect("server.go has mayReuse");
-        let anonymous = reuse.find("s.readable(ref, anonymous)");
-        let credentials = reuse.find("s.readable(ref, auth)");
-        assert!(
-            matches!((anonymous, credentials), (Some(a), Some(c)) if a < c),
-            "the Go runner no longer reads a private entry anonymously before it tries a machine's credentials: {reuse}"
-        );
     }
 
-    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, and text from smolvm is sorted by the Go runner's rules, word for word.
+    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, text from smolvm is sorted by the words it contains, and the typed failures' own wording reaches the Agent's status, so it is pinned too.
     #[test]
-    fn failures_are_reported_under_the_reason_the_go_runner_gives() {
+    fn failures_are_reported_under_the_reason_the_controller_matches() {
+        assert_eq!(IMAGE_UNUSABLE, "the image cannot be run");
+        assert_eq!(EGRESS_CHANGED, "egress allowlist changed");
         assert_eq!(failure_reason(&unusable("x")), REASON_IMAGE_UNAVAILABLE);
         assert_eq!(failure_reason(&egress_changed("x")), REASON_EGRESS_CHANGED);
         for (text, reason) in [
@@ -282,34 +266,6 @@ mod tests {
         ] {
             assert_eq!(failure_reason(&anyhow::anyhow!(text)), reason, "{text}");
         }
-
-        let go = gosource::read("server.go");
-        let literals = gosource::literals_in(&go, "failureReason");
-        for needle in [
-            "cannot read archive",
-            "--image",
-            "pull",
-            "no free machine port",
-        ] {
-            assert!(
-                literals.iter().any(|l| l == needle),
-                "the Go runner no longer matches {needle:?}"
-            );
-        }
-        for (name, ours) in [
-            ("errEgressChanged", EGRESS_CHANGED),
-            ("errImageUnusable", IMAGE_UNUSABLE),
-        ] {
-            let theirs = go
-                .lines()
-                .find_map(|line| {
-                    line.strip_prefix(&format!("var {name} = errors.New("))?
-                        .strip_suffix(')')
-                        .and_then(gosource::unquote)
-                })
-                .unwrap_or_else(|| panic!("server.go no longer declares {name}"));
-            assert_eq!(ours, theirs);
-        }
     }
 
     // TEST_SCENARIO: a failure's text is stored in the Agent's condition, which the API server caps at 32 KiB. The head is kept, marked as cut, and a cut never splits a character — a message ending in half of one is rejected as invalid UTF-8 by the same write it was shortened for.
@@ -320,12 +276,6 @@ mod tests {
         let cut = first_lines(&long);
         assert!(cut.ends_with("… (truncated)"));
         assert!(cut.len() <= CAPTURED_OUTPUT + "… (truncated)".len());
-        let go = gosource::read("server.go");
-        assert!(
-            go.lines()
-                .any(|line| line.trim() == format!("const capturedOutput = {CAPTURED_OUTPUT}")),
-            "the Go runner no longer caps captured output at {CAPTURED_OUTPUT}"
-        );
     }
 
     // TEST_SCENARIO: a runner installed without crane can still boot images that are cached, but one naming only a registry reference is refused: booting it would run the image's own entrypoint, skip platform-init and lose the agent's home at the first stop.
