@@ -29,6 +29,30 @@ data:
           http:
             endpoint: 0.0.0.0:4318
             include_metadata: true
+      {{- if .Values.virtualization.enabled }}
+      # The VM runners are off the mesh, so they cannot push through the
+      # AuthorizationPolicy that gates the OTLP receivers; this collector pulls
+      # from them instead. Discovery is by pod, in the agent namespace, and only
+      # the port each runner names `metrics` — which its NetworkPolicy opens to
+      # this pod and no other. No pod label is copied onto a series: a runner is
+      # per owner, and its owner label is a person in disguise.
+      prometheus/vm-runners:
+        config:
+          scrape_configs:
+            - job_name: vm-runner
+              scrape_interval: 30s
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [{{ .Values.agentNamespace | quote }}]
+                  selectors:
+                    - role: pod
+                      label: "app.kubernetes.io/component=vm-runner,app.kubernetes.io/instance={{ include "platform.fullname" . }}"
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  regex: metrics
+                  action: keep
+      {{- end }}
     processors:
       memory_limiter:
         check_interval: 5s
@@ -93,7 +117,7 @@ data:
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
         metrics:
-          receivers: [otlp]
+          receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
 ---
@@ -144,6 +168,9 @@ spec:
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
     spec:
       enableServiceLinks: false
+      {{- if .Values.virtualization.enabled }}
+      serviceAccountName: {{ $name }}
+      {{- end }}
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       # The ClickHouse exporter creates its schema (otel_logs/otel_metrics_*/…)
       # once, at collector start; it never retries the DDL, only the inserts.
@@ -206,4 +233,47 @@ spec:
         - name: config
           configMap:
             name: {{ $name }}
+{{- if .Values.virtualization.enabled }}
+---
+# Pod discovery for the VM runner scrape above: read-only, and only in the
+# agent namespace, where the controller creates the runners.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-vm-runner-discovery
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-vm-runner-discovery
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-vm-runner-discovery
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

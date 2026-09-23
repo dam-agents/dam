@@ -262,6 +262,7 @@ func (r *Smolvm) Start(id string) error {
 			_ = os.Remove(filepath.Join(dir, f))
 		}
 		discardOverlay(id, dir)
+		clearConsole(id, dir)
 	}
 	err := r.run(nil, "machine", "start", "-n", id)
 	if err != nil {

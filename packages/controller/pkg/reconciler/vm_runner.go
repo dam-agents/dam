@@ -41,6 +41,10 @@ const (
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
 	vmRunnerPort         = 4600
 	vmRunnerCertYears    = 10
+
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
+	vmRunnerMetricsPort    = 4601
+	vmRunnerMetricsScraper = "clickstack-collector"
 )
 
 type runnerConn struct {
@@ -354,6 +358,7 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
+	scrape := intstr.FromInt(vmRunnerMetricsPort)
 	first := intstr.FromInt(31000)
 	last := int32(31099)
 	peer := func(component string) networkingv1.NetworkPolicyPeer {
@@ -384,6 +389,9 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 					{Protocol: &tcp, Port: &api},
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
+			}, {
+				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
 			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs),
 		},
@@ -517,6 +525,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
 							"--state-dir=" + vmRunnerMachinesPath,
+							fmt.Sprintf("--metrics-listen=:%d", vmRunnerMetricsPort),
 							"--image-dir=" + vmRunnerImagesPath,
 							"--runner-id=" + name,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
@@ -538,7 +547,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 								ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
 							}},
 						}},
-						Ports: []corev1.ContainerPort{{Name: "machine-api", ContainerPort: vmRunnerPort}},
+						Ports: []corev1.ContainerPort{
+							{Name: "machine-api", ContainerPort: vmRunnerPort},
+							{Name: "metrics", ContainerPort: vmRunnerMetricsPort},
+						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
 								Command: []string{"curl", "-skf", "-m", "3", fmt.Sprintf("https://127.0.0.1:%d/healthz", vmRunnerPort)},
