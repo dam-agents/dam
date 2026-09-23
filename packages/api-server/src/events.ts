@@ -48,6 +48,7 @@ export enum EventType {
   SkillSetSaved = "SkillSetSaved",
   SkillSetDeleted = "SkillSetDeleted",
   KindedAgentCreated = "KindedAgentCreated",
+  StarterKitApplied = "StarterKitApplied",
   InvocationSpawned = "InvocationSpawned",
   FeatureFlagChanged = "FeatureFlagChanged",
   ApiKeyChanged = "ApiKeyChanged",
@@ -365,6 +366,16 @@ export type KindedAgentCreated = {
   kind: string;
 };
 
+export type StarterKitApplied = {
+  type: EventType.StarterKitApplied;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+  catalog: string;
+  kitId: string;
+  version: string;
+};
+
 export type InvocationSpawned = {
   type: EventType.InvocationSpawned;
   targetAgentId: string;
@@ -449,6 +460,7 @@ export type DomainEvent =
   | SkillSetSaved
   | SkillSetDeleted
   | KindedAgentCreated
+  | StarterKitApplied
   | InvocationSpawned
   | FeatureFlagChanged
   | ApiKeyChanged
