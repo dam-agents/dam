@@ -278,7 +278,7 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
       ];
     case "tiny": {
       const look = random() < 0.5 ? sideLook(random, side) : randomLook(random);
-      return [eye(-17, 48, 5.5, look, 0.55), eye(17, 48, 5.5, look, 0.55)];
+      return [eye(-17, 48, 5.5, look, 0), eye(17, 48, 5.5, look, 0)];
     }
     case "quad":
       return [

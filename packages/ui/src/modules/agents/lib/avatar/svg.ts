@@ -62,12 +62,14 @@ const DASH_HEIGHT = 5.5;
 const SIREN_RADIUS = 11;
 const EAR_RADIUS = 10;
 const SOFT_CORNER = 4;
+const GRIN_SOFTEN = 3;
+const FIN_REACH = 10.5;
 
-function softened(fill: string) {
+function softened(fill: string, width = SOFT_CORNER) {
   return {
     fill,
     stroke: fill,
-    "stroke-width": SOFT_CORNER,
+    "stroke-width": width,
     "stroke-linejoin": "round",
   };
 }
@@ -108,14 +110,12 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
     }
     case "fins":
       return SIDES.map((side) => {
-        const edge = side < 0 ? left : right;
-        const out = edge + side * 9;
+        const gapEdge = side < 0 ? left : right;
+        const edge = gapEdge + (side * SOFT_CORNER) / 2;
+        const out = gapEdge + side * (FIN_REACH - SOFT_CORNER / 2);
         return el("path", {
           d: `M${num(edge)},35 L${num(out)},43 V57 L${num(edge)},64 Z`,
-          fill,
-          stroke: fill,
-          "stroke-width": 3,
-          "stroke-linejoin": "round",
+          ...softened(fill),
         });
       }).join("");
     case "double":
@@ -127,13 +127,7 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
       }).join("");
     case "wings":
       return SIDES.map((side) =>
-        el("path", {
-          d: wingPath(head, side),
-          fill,
-          stroke: fill,
-          "stroke-width": 3,
-          "stroke-linejoin": "round",
-        }),
+        el("path", { d: wingPath(head, side), ...softened(fill) }),
       ).join("");
   }
 }
@@ -360,7 +354,7 @@ function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
         .map(
           (e) =>
             el("circle", { cx: e.x, cy: e.y, r: e.r, fill: AVATAR_SCLERA }) +
-            pupil(e.x, e.y, e.r, e.pupil, e.look),
+            (e.pupil > 0 ? pupil(e.x, e.y, e.r, e.pupil, e.look) : ""),
         )
         .join("");
     case "visor":
@@ -430,11 +424,16 @@ function mouth(t: AvatarTraits, sleeping: boolean): string {
         r: 3.8,
         fill: AVATAR_INK,
       });
-    case "grin":
+    case "grin": {
+      const inset = GRIN_SOFTEN / 2;
+      const half = 8 - inset;
+      const top = y - 0.5 + inset;
+      const low = y + 6.5 - inset;
       return el("path", {
-        d: `M${AVATAR_CENTER - 8},${y - 0.5} H${AVATAR_CENTER + 8} Q${AVATAR_CENTER + 8},${y + 6.5} ${AVATAR_CENTER},${y + 6.5} Q${AVATAR_CENTER - 8},${y + 6.5} ${AVATAR_CENTER - 8},${y - 0.5} Z`,
-        fill: AVATAR_INK,
+        d: `M${AVATAR_CENTER - half},${top} H${AVATAR_CENTER + half} Q${AVATAR_CENTER + half},${low} ${AVATAR_CENTER},${low} Q${AVATAR_CENTER - half},${low} ${AVATAR_CENTER - half},${top} Z`,
+        ...softened(AVATAR_INK, GRIN_SOFTEN),
       });
+    }
     case "cat":
       return el("path", {
         d: `M${AVATAR_CENTER - 8},${y + 1} Q${AVATAR_CENTER - 4},${y + 6} ${AVATAR_CENTER},${y + 1} Q${AVATAR_CENTER + 4},${y + 6} ${AVATAR_CENTER + 8},${y + 1}`,
