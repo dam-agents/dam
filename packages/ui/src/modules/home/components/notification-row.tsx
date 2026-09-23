@@ -3,6 +3,7 @@ import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { isAsleep } from "../../agents/components/avatar/agent-avatar.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
@@ -63,9 +64,11 @@ function rowIcon(kind: RowKind, size = 16) {
 function RowIdentity({
   kind,
   avatarName,
+  sleeping,
 }: {
   kind: RowKind;
   avatarName: string | undefined;
+  sleeping: boolean;
 }) {
   if (avatarName === undefined) {
     return (
@@ -81,7 +84,12 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <LazyRobotHead seed={avatarName} size={46} className="-m-[3px]" />
+      <LazyRobotHead
+        seed={avatarName}
+        size={46}
+        sleeping={sleeping}
+        className="-m-[3px]"
+      />
       {kind !== "agent" && (
         <span
           className={cn(
@@ -121,6 +129,9 @@ export function NotificationRow({
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
   const avatars = useAgentAvatars() && avatarName !== undefined;
+  const sleeping = isAsleep(
+    agents.find((agent) => agent.id === item.agentId)?.state,
+  );
 
   return (
     <div
@@ -143,6 +154,7 @@ export function NotificationRow({
         <RowIdentity
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
+          sleeping={sleeping}
         />
         {running && (
           <span

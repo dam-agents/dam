@@ -24,9 +24,9 @@ const YELLOW_HUE = 95;
 const YELLOW_LIFT = 0.1;
 
 const TONES = {
-  base: { l: 0.74, c: 0.13 },
-  shade: { l: 0.61, c: 0.15 },
-  light: { l: 0.88, c: 0.07 },
+  base: { l: 0.74, c: 0.16 },
+  shade: { l: 0.61, c: 0.18 },
+  light: { l: 0.88, c: 0.09 },
 } as const;
 
 function oklchToLinearRgb(l: number, c: number, hue: number) {

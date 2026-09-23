@@ -56,6 +56,18 @@ function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
   });
 }
 
+const SLEEP_STROKE = 4.2;
+
+function closedEye(cx: number, cy: number, halfWidth: number, color: string) {
+  return el("path", {
+    d: `M${num(cx - halfWidth)},${num(cy)} Q${num(cx)},${num(cy + halfWidth)} ${num(cx + halfWidth)},${num(cy)}`,
+    fill: "none",
+    stroke: color,
+    "stroke-width": SLEEP_STROKE,
+    "stroke-linecap": "round",
+  });
+}
+
 function sides(t: AvatarTraits, head: HeadGeometry): string {
   const left = AVATAR_CENTER - head.halfWidth - AVATAR_GAP;
   const right = AVATAR_CENTER + head.halfWidth + AVATAR_GAP;
@@ -93,7 +105,7 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
   }
 }
 
-function top(t: AvatarTraits, head: HeadGeometry): string {
+function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   const clear = head.top - AVATAR_GAP;
   const fill = t.colors.ornament;
   switch (t.top) {
@@ -117,7 +129,12 @@ function top(t: AvatarTraits, head: HeadGeometry): string {
       return t.bugEyes
         .map((bug, i) => {
           const [cx, cy] = bugEyeCenter(head, i, bug.r);
-          return el("circle", { cx, cy, r: bug.r, fill });
+          return sleeping
+            ? el("path", {
+                d: `M${num(cx - bug.r)},${num(cy)} A${num(bug.r)},${num(bug.r)} 0 0 0 ${num(cx + bug.r)},${num(cy)} Z`,
+                fill,
+              })
+            : el("circle", { cx, cy, r: bug.r, fill });
         })
         .join("");
   }
@@ -194,13 +211,15 @@ function overlays(t: AvatarTraits, head: HeadGeometry): string {
   return parts.join("");
 }
 
-function visor(t: AvatarTraits, head: HeadGeometry): string {
+function visor(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   const box = visorBox(t, head);
   const centerY = box.y + box.height / 2;
   const spread = box.width / 4;
   const dot = Math.min(5, box.height / 4);
   const glyphs = SIDES.map((side) => {
     const cx = AVATAR_CENTER + side * spread;
+    if (sleeping)
+      return closedEye(cx, centerY - dot * 0.45, dot, t.colors.glow);
     return t.face === "happy"
       ? el("path", {
           d: `M${num(cx - dot)},${num(centerY + dot * 0.45)} a${num(dot)},${num(dot)} 0 0 1 ${num(dot * 2)},0`,
@@ -214,11 +233,15 @@ function visor(t: AvatarTraits, head: HeadGeometry): string {
   return rect(box, AVATAR_INK) + glyphs;
 }
 
-function face(t: AvatarTraits, head: HeadGeometry): string {
+function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   switch (t.face) {
     case "blank":
       return "";
     case "eyes":
+      if (sleeping)
+        return placeEyes(t, head)
+          .map((e) => closedEye(e.x, e.y - e.r * 0.3, e.r * 0.8, AVATAR_INK))
+          .join("");
       return placeEyes(t, head)
         .map(
           (e) =>
@@ -228,9 +251,19 @@ function face(t: AvatarTraits, head: HeadGeometry): string {
         .join("");
     case "visor":
     case "happy":
-      return visor(t, head);
+      return visor(t, head, sleeping);
     case "wink": {
       const wink = winkLayout(t, head);
+      if (sleeping)
+        return (
+          closedEye(wink.dot.cx, wink.dot.cy - 2, wink.dot.r, AVATAR_INK) +
+          closedEye(
+            wink.dash.x + wink.dash.width / 2,
+            wink.dot.cy - 2,
+            wink.dot.r,
+            AVATAR_INK,
+          )
+        );
       return (
         el("circle", { ...wink.dot, fill: AVATAR_INK }) +
         rect(wink.dash, AVATAR_INK)
@@ -239,9 +272,9 @@ function face(t: AvatarTraits, head: HeadGeometry): string {
   }
 }
 
-function mouth(t: AvatarTraits): string {
+function mouth(t: AvatarTraits, sleeping: boolean): string {
   const y = MOUTH_Y;
-  switch (t.mouth) {
+  switch (sleeping && t.mouth === "smile" ? "line" : t.mouth) {
     case "none":
       return "";
     case "line":
@@ -303,7 +336,7 @@ function gapLines(t: AvatarTraits, head: HeadGeometry): string {
   );
 }
 
-export function avatarSvg(seed: string): string {
+export function avatarSvg(seed: string, sleeping = false): string {
   const t = avatarTraits(seed);
   const head = HEAD_GEOMETRY[t.head];
   const defs =
@@ -322,14 +355,14 @@ export function avatarSvg(seed: string): string {
         gapLines(t, head),
     );
   const figure =
-    top(t, head) +
+    top(t, head, sleeping) +
     bottom(t, head) +
     sides(t, head) +
     el("path", { d: head.path, fill: t.colors.head }) +
     el(
       "g",
       { "clip-path": "url(#h)" },
-      overlays(t, head) + face(t, head) + mouth(t),
+      overlays(t, head) + face(t, head, sleeping) + mouth(t, sleeping),
     );
   return el(
     "svg",
@@ -340,11 +373,12 @@ export function avatarSvg(seed: string): string {
 
 const cache = new Map<string, string>();
 
-export function avatarDataUri(seed: string): string {
-  const hit = cache.get(seed);
+export function avatarDataUri(seed: string, sleeping = false): string {
+  const key = `${sleeping ? "z" : "a"}:${seed}`;
+  const hit = cache.get(key);
   if (hit !== undefined) return hit;
-  const uri = `data:image/svg+xml,${encodeURIComponent(avatarSvg(seed))}`;
+  const uri = `data:image/svg+xml,${encodeURIComponent(avatarSvg(seed, sleeping))}`;
   if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-  cache.set(seed, uri);
+  cache.set(key, uri);
   return uri;
 }

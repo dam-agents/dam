@@ -5,6 +5,10 @@ import {
   avatarDataUri,
   avatarSvg,
 } from "../../modules/agents/lib/avatar/svg.js";
+import {
+  AVATAR_SCLERA,
+  avatarTraits,
+} from "../../modules/agents/lib/avatar/traits.js";
 
 const NAMES = Array.from({ length: 500 }, (_, i) => `agent-${i}`);
 
@@ -33,6 +37,29 @@ describe("avatarSvg", () => {
   it("is deterministic per name", () => {
     expect(avatarSvg("velvet-comet")).toBe(avatarSvg("velvet-comet"));
     expect(avatarSvg("velvet-comet")).not.toBe(avatarSvg("code-reviewer"));
+  });
+});
+
+describe("sleeping avatar", () => {
+  // TEST_SCENARIO: A hibernating agent keeps its own figure with its eyes closed. Open sclera eyes never show, and the sleeping markup is as well formed as the awake one.
+  it("closes the eyes of a hibernating agent", () => {
+    for (const name of NAMES) {
+      const awake = avatarSvg(name);
+      const asleep = avatarSvg(name, true);
+      expect(asleep, name).not.toMatch(/NaN|undefined|Infinity/);
+      expect(asleep, name).not.toContain(AVATAR_SCLERA);
+      const t = avatarTraits(name);
+      if (t.face !== "blank" || t.top === "bug-eyes")
+        expect(asleep, name).not.toBe(awake);
+    }
+  });
+
+  // TEST_SCENARIO: The awake and sleeping images of one name are cached apart, so waking an agent swaps its image back.
+  it("caches the sleeping image apart from the awake one", () => {
+    const awake = avatarDataUri("velvet-comet");
+    const asleep = avatarDataUri("velvet-comet", true);
+    expect(asleep).not.toBe(awake);
+    expect(avatarDataUri("velvet-comet", true)).toBe(asleep);
   });
 });
 
