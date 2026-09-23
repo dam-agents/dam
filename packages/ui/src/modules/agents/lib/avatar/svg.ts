@@ -60,7 +60,17 @@ function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
 const SLEEP_STROKE = 4.2;
 const DASH_HEIGHT = 5.5;
 const SIREN_RADIUS = 11;
-const SIREN_SOFTEN = 4;
+const EAR_RADIUS = 10;
+const SOFT_CORNER = 4;
+
+function softened(fill: string) {
+  return {
+    fill,
+    stroke: fill,
+    "stroke-width": SOFT_CORNER,
+    "stroke-linejoin": "round",
+  };
+}
 
 function closedEye(cx: number, cy: number, halfWidth: number, color: string) {
   return el("path", {
@@ -85,17 +95,17 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
           el("rect", { x, y: 39, width: 8.5, height: 22, rx: 4, fill }),
         )
         .join("");
-    case "round":
-      return (
-        el("path", {
-          d: `M${num(left)},40 A10,10 0 0 0 ${num(left)},60 Z`,
-          fill,
-        }) +
-        el("path", {
-          d: `M${num(right)},40 A10,10 0 0 1 ${num(right)},60 Z`,
-          fill,
-        })
-      );
+    case "round": {
+      const radius = EAR_RADIUS - SOFT_CORNER / 2;
+      return SIDES.map((side) => {
+        const edge = num((side < 0 ? left : right) + (side * SOFT_CORNER) / 2);
+        const sweep = side < 0 ? 0 : 1;
+        return el("path", {
+          d: `M${edge},${50 - radius} A${radius},${radius} 0 0 ${sweep} ${edge},${50 + radius} Z`,
+          ...softened(fill),
+        });
+      }).join("");
+    }
     case "fins":
       return SIDES.map((side) => {
         const edge = side < 0 ? left : right;
@@ -154,14 +164,11 @@ function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
         })
         .join("");
     case "siren": {
-      const radius = SIREN_RADIUS - SIREN_SOFTEN / 2;
-      const base = num(clear - SIREN_SOFTEN / 2);
+      const radius = SIREN_RADIUS - SOFT_CORNER / 2;
+      const base = num(clear - SOFT_CORNER / 2);
       return el("path", {
         d: `M${AVATAR_CENTER - radius},${base} A${radius},${radius} 0 0 1 ${AVATAR_CENTER + radius},${base} Z`,
-        fill,
-        stroke: fill,
-        "stroke-width": SIREN_SOFTEN,
-        "stroke-linejoin": "round",
+        ...softened(fill),
       });
     }
     case "bolt":
