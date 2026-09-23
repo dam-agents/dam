@@ -6,7 +6,7 @@ use vm_runner::imagecache::ImageCache;
 use vm_runner::preload::{parse_duration, parse_quantity, Preloader};
 use vm_runner::pullauth::PullSecrets;
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the Go image cache service defines, kept name-for-name, because the chart's DaemonSet sets them: image-dir, cache-id, image-budget, interval and images, and pull-secrets with pull-secret-namespace when the install names default agent pull Secrets.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the chart's DaemonSet sets, kept name-for-name across releases: image-dir, cache-id, image-budget, interval and images, and pull-secrets with pull-secret-namespace when the install names default agent pull Secrets.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-image-cache",
@@ -34,7 +34,7 @@ struct Args {
     pull_secret_namespace: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner believes a claim for thirty minutes, and this service refreshes its claims once per pass, so an interval approaching that window lets its pins lapse between two of its own passes. Fifteen minutes is the Go service's ceiling.
+// UNIT_BOUNDARY_DESCRIPTION: a runner believes a claim for thirty minutes, and this service refreshes its claims once per pass, so an interval approaching that window lets its pins lapse between two of its own passes. Fifteen minutes is the ceiling.
 const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 fn main() -> anyhow::Result<()> {

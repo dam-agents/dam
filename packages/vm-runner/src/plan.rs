@@ -8,7 +8,7 @@ use crate::state::is_image_ref;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner decides to do about one machine, and nothing about carrying it out. The controller sends the same desired shape every reconcile, roughly once a minute, so every decision here is made again and again against a machine that is already in some state — which is why it is separated from the work: a decision that is wrong once is wrong every minute, and the only way to see that is to be able to ask it without a hypervisor.
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. Both halves of the condition matter and neither means anything alone: a machine that has never answered is still booting, and one that answered a moment ago is simply between checks. Matched against the Go runner, which restarts on the same rule.
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. Both halves of the condition matter and neither means anything alone: a machine that has never answered is still booting, and one that answered a moment ago is simply between checks.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner is about to do to a machine, and whether it is doing it because the guest stopped answering rather than because its shape changed. The two produce the same operation and must be told apart afterwards: one is a restart the controller asked for, the other is a machine the runner gave up on, and only the second is worth counting.
@@ -152,31 +152,15 @@ pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    // TEST_SCENARIO: the window a quiet machine is given before the runner gives up on it. Both runners restart on this rule, and during a rollout both are looking at the same machines: a shorter window on one side restarts a machine the other was still waiting for, and the agent loses its turn to a runner that was not even asked.
+    // TEST_SCENARIO: these two strings leave the runner as the body of a 400 the controller surfaces in the Agent's status, so their wording is what an operator searches for. A reworded refusal is a condition that reads differently after an upgrade with nothing else changed.
     #[test]
-    fn the_go_runner_gives_a_quiet_machine_the_same_window() {
-        let go = gosource::read("server.go");
+    fn the_refusals_keep_their_wording() {
         assert_eq!(
-            gosource::duration_value(&go, "unhealthyRestart"),
-            Some(UNHEALTHY_RESTART),
-            "the two runners no longer agree how long a machine may be quiet"
+            REQUIRED,
+            "image, cpus, memoryMiB and storageGiB are required"
         );
-    }
-
-    // TEST_SCENARIO: these two strings leave the runner as the body of a 400 the controller surfaces. A rollout answers the same request with either runner, so two wordings for one condition is a support question that starts with which runner answered.
-    #[test]
-    fn the_refusals_read_as_the_go_runners_do() {
-        let go = gosource::read("server.go");
-
-        let put = gosource::literals_in(&go, "(s *Server) put");
-        for refusal in [REQUIRED, BAD_IMAGE] {
-            assert!(
-                put.iter().any(|literal| literal == refusal),
-                "put no longer refuses with {refusal:?}, so the two runners answer a bad request differently"
-            );
-        }
+        assert_eq!(BAD_IMAGE, "invalid image reference");
     }
 
     // TEST_SCENARIO: the reconcile arrives about once a minute with the same desired shape, so the common answer must be silence. A decision that acts on a machine that is already right restarts every agent on the node, once a minute, for as long as nobody notices.
@@ -350,7 +334,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a template upgrade gives a vm agent a new harness image. A running machine restarts onto it and a stopped one starts onto it, so an upgrade never waits for the agent to be recreated. During a rollout both runners see the same machines, so the Go runner must make the same decision on the same comparison, or one of them upgrades a machine the other keeps on its old image.
+    // TEST_SCENARIO: a template upgrade gives a vm agent a new harness image. A running machine restarts onto it and a stopped one starts onto it, so an upgrade never waits for the agent to be recreated. The decision is made on the image reference alone, compared as text, so a new image is never reported as fixed at create.
     #[test]
     fn a_new_image_restarts_a_running_machine_and_starts_a_stopped_one_on_it() {
         let applied = running_spec();
@@ -369,22 +353,6 @@ mod tests {
         assert_eq!(
             plan(Some(&applied), &upgraded, STATE_STOPPED, false, false).map(|p| p.op),
             Some(STATE_STARTING)
-        );
-
-        let go = gosource::read("server.go");
-        assert!(
-            gosource::function_body(&go, "imageChanged")
-                .is_some_and(|body| body.contains("applied.Image != desired.Image")),
-            "the Go runner no longer compares images the same way"
-        );
-        assert!(
-            gosource::function_body(&go, "(s *Server) plan")
-                .is_some_and(|body| body.contains("imageChanged(*applied, spec)")),
-            "the Go runner no longer restarts a running machine for a new image"
-        );
-        assert!(
-            gosource::function_body(&go, "createOnlyDrift").is_none(),
-            "the Go runner still reports a new image as fixed at create"
         );
     }
 

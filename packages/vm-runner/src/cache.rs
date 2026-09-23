@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
 
-// UNIT_BOUNDARY_DESCRIPTION: the image cache is not this process's data structure, it is a protocol between every process that mounts the directory — which on a node cache is one runner per owner, plus the preloader. So this is a second implementation of something the Go runner already implements, and the two have to agree exactly: an entry one of them counts and the other does not is an entry one of them deletes while the other's guest has it mounted as its root filesystem. Every name, format and window below is therefore matched against packages/controller/pkg/vmrunner/server.go and digest.go by the tests, not merely written to resemble it.
+// UNIT_BOUNDARY_DESCRIPTION: the image cache is not this process's data structure, it is a protocol between every process that mounts the directory — which on a node cache is one runner per owner, plus the preloader — and with the entries earlier releases left in it. Every process has to agree exactly: an entry one of them counts and another does not is an entry one of them deletes while the other's guest has it mounted as its root filesystem. Every name, format and window below is therefore pinned by a test, not merely written down once.
 
 // UNIT_BOUNDARY_DESCRIPTION: where each process publishes what its own machines hold, one file per runner named after it. Read by every other process before it evicts anything.
 pub const HOLDERS_DIR: &str = ".holders";
@@ -29,12 +29,12 @@ pub const REFS_DIR: &str = "refs";
 // UNIT_BOUNDARY_DESCRIPTION: how long a tag's resolution is trusted without asking the registry again. It also decides when an index file whose tree is gone may be removed.
 pub const REF_FRESH: Duration = Duration::from_secs(10 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: an image reference becomes a directory name by replacing the three characters a reference may carry that a path segment must not. Nothing is escaped, so two references that differ only in those characters collide — which is the Go runner's behaviour and therefore this one's, because the two must name the same entry for the same image or each will fetch what the other already has.
+// UNIT_BOUNDARY_DESCRIPTION: an image reference becomes a directory name by replacing the three characters a reference may carry that a path segment must not. Nothing is escaped, so two references that differ only in those characters collide — kept that way because earlier releases named entries so, and every process must name the same entry for the same image or each will fetch what the other already has.
 pub fn cache_path(image_dir: &Path, image: &str) -> PathBuf {
     image_dir.join(image.replace(['/', ':', '@'], "_"))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a string is a digest this cache can name an entry by: `sha256:` and 64 lower-case hex digits. Hand-written against the Go pattern and pinned to it by a test.
+// UNIT_BOUNDARY_DESCRIPTION: whether a string is a digest this cache can name an entry by: `sha256:` and 64 lower-case hex digits. Hand-written rather than a regex, and pinned by a test.
 pub fn is_digest(digest: &str) -> bool {
     digest.strip_prefix("sha256:").is_some_and(|hex| {
         hex.len() == 64 && hex.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
@@ -78,7 +78,7 @@ pub fn ref_path(image_dir: &Path, image: &str) -> PathBuf {
     image_dir.join(DIGEST_ROOT).join(REFS_DIR).join(hex)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a name is an unpacked entry. Hand-written rather than a regex so the crate carries no matcher of its own, and pinned against the Go pattern by a test: first character alphanumeric, the rest alphanumeric or one of `.`, `_`, `-`, and at most 255 characters. The leading class is what excludes a dot-prefixed scratch tree.
+// UNIT_BOUNDARY_DESCRIPTION: whether a name is an unpacked entry. Hand-written rather than a regex so the crate carries no matcher of its own, and pinned by a test: first character alphanumeric, the rest alphanumeric or one of `.`, `_`, `-`, and at most 255 characters. The leading class is what excludes a dot-prefixed scratch tree.
 pub fn is_cached_image(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
@@ -337,119 +337,36 @@ pub fn spared(own: &BTreeSet<PathBuf>, elsewhere: &BTreeSet<PathBuf>) -> BTreeSe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    // TEST_SCENARIO: this module and the Go runner are two implementations of one on-disk protocol, and they share a directory during any rollout that replaces one with the other. Nothing at compile time relates them, so the names and windows are compared against server.go itself: a rename or a retimed window on either side has to fail here rather than on a node, where the symptom is one process evicting a tree the other's guest is running from.
+    // TEST_SCENARIO: the claims directory and the scratch prefix are names on a shared directory, read by every runner and preloader on the node and left there by earlier releases. A rename has to fail here rather than on a node, where the symptom is one process evicting a tree another's guest is running from.
     #[test]
-    fn the_go_runner_names_the_same_things() {
-        let go = gosource::read("server.go");
-
+    fn the_claims_directory_and_the_scratch_prefix_keep_their_names() {
         assert_eq!(
-            gosource::const_value(&go, "holdersDir").as_deref(),
-            Some(HOLDERS_DIR),
-            "the directory both processes publish their claims in"
+            HOLDERS_DIR, ".holders",
+            "the directory every process publishes its claims in"
         );
         assert_eq!(
-            gosource::const_value(&go, "partialPrefix").as_deref(),
-            Some(PARTIAL_PREFIX),
+            PARTIAL_PREFIX, ".unpack-",
             "the prefix that keeps a half-written tree out of both entry patterns"
         );
     }
 
-    // TEST_SCENARIO: the three windows are what each process believes about the other's claims, and nothing relates the two copies at compile time. Shorten holderStale in server.go alone and the Go runner starts deleting claim files this runner still believes — one process then evicts an unpacked tree the other's guest is running from, which is the harm the module comment names. The names were compared here from the start and the windows were not, though the scenario above said both were.
+    // TEST_SCENARIO: the three windows are what each process on the directory believes about the others' claims. Shorten the claim window in one binary alone and it starts deleting claim files the others still refresh on the old schedule — one process then evicts an unpacked tree another's guest is running from, which is the harm the module comment names.
     #[test]
-    fn the_go_runner_waits_the_same_lengths_of_time() {
-        let go = gosource::read("server.go");
-
-        for (name, ours, what) in [
-            ("holderStale", HOLDER_STALE, "how long a claim is believed"),
-            ("pullTimeout", PULL_TIMEOUT, "how long one fetch may run"),
-            (
-                "partialStale",
-                PARTIAL_STALE,
-                "when a scratch tree is somebody's abandoned work",
-            ),
-        ] {
-            assert_eq!(
-                gosource::duration_value(&go, name),
-                Some(ours),
-                "{name} — {what} — is no longer the same on both sides"
-            );
-        }
-    }
-
-    // TEST_SCENARIO: the window reader is only worth having if a declaration it cannot parse fails the comparison rather than passing it. Go writes these as expressions, not literals, so the shapes it accepts and refuses are the whole guarantee — a reader that returned something plausible for a form it had not understood would agree with a file it never read.
-    #[test]
-    fn a_window_the_reader_cannot_parse_is_not_silently_agreed_with() {
+    fn the_claim_windows_are_the_ones_every_process_on_the_directory_believes() {
         let minutes = |n: u64| Duration::from_secs(n * 60);
-
+        assert_eq!(HOLDER_STALE, minutes(30), "how long a claim is believed");
+        assert_eq!(PULL_TIMEOUT, minutes(20), "how long one fetch may run");
         assert_eq!(
-            gosource::duration_value("\tholderStale = 30 * time.Minute", "holderStale"),
-            Some(minutes(30))
-        );
-        assert_eq!(
-            gosource::duration_value(
-                "\tpullTimeout = 20 * time.Minute\n\tpartialStale = 2 * pullTimeout",
-                "partialStale"
-            ),
-            Some(minutes(40)),
-            "one window stated in terms of another"
-        );
-
-        assert_eq!(
-            gosource::duration_value("\tholderStale = 30 * time.Minute", "pullTimeout"),
-            None,
-            "a window that is not there"
-        );
-        assert_eq!(
-            gosource::duration_value("\tstateTTL = time.Second", "stateTTL"),
-            None,
-            "a bare unit is a form this reader does not claim to understand"
-        );
-        assert_eq!(
-            gosource::duration_value("\tholderStale = 30 * time.Fortnight", "holderStale"),
-            None,
-            "an unknown unit is refused rather than guessed at"
-        );
-        assert_eq!(
-            gosource::duration_value("\tholderStale = quietWindow", "holderStale"),
-            None,
-            "and so is an alias with no count"
-        );
-        assert_eq!(
-            gosource::duration_value("\ta = 2 * b\n\tb = 2 * a", "a"),
-            None,
-            "a pair that refer to each other ends rather than runs forever"
+            PARTIAL_STALE,
+            minutes(40),
+            "when a scratch tree is somebody's abandoned work"
         );
     }
 
-    // TEST_SCENARIO: the entry patterns decide what is counted against the budget and what may be evicted, so a matcher that admits one name more or less than the Go one is a matcher that deletes something the other side is protecting. It is hand-written here, which is only safe while the pattern it was written against is still the pattern in force.
+    // TEST_SCENARIO: the three characters a reference carries that a path segment cannot, each replaced by an underscore and nothing escaped. Replacing a different set, or escaping, gives the same image two names — one from this release and one from the entries already on the node — so each process fetches what the other already has, and neither sees the other's claim on it.
     #[test]
-    fn the_entry_patterns_are_the_ones_this_matcher_was_written_against() {
-        let go = gosource::read("server.go");
-
-        assert_eq!(
-            gosource::regexp_source(&go, "cachedImage").as_deref(),
-            Some(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$"),
-            "is_cached_image is hand-written against this pattern and has to be rewritten with it"
-        );
-        assert_eq!(
-            gosource::regexp_source(&go, "cachedArchive").as_deref(),
-            Some(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}\.tar$"),
-            "is_cached_archive likewise"
-        );
-    }
-
-    // TEST_SCENARIO: the three characters a reference carries that a path segment cannot. Replacing a different set, or escaping where Go does not, gives the same image two names — so each process fetches what the other already has, and neither sees the other's claim on it.
-    #[test]
-    fn a_reference_becomes_the_same_entry_name_on_both_sides() {
-        let go = gosource::read("server.go");
-        assert_eq!(
-            gosource::call_args_in(&go, "(s *Server) cachePath", "strings.NewReplacer(").as_deref(),
-            Some(r#""/", "_", ":", "_", "@", "_""#),
-            "cache_path replaces exactly these and must change with them"
-        );
-
+    fn a_reference_becomes_an_entry_name_by_replacing_what_a_path_segment_cannot_carry() {
         let dir = Path::new("/images");
         assert_eq!(
             cache_path(dir, "quay.io/dam-agents/agent:1.2.3"),
@@ -638,69 +555,17 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the digest root is where both runners put an entry keyed by digest, and a process of either kind reads the other's index during a rollout. A root, an index directory or a window named differently on one side is an entry each side fetches again, and a trust window that differs is a tag each side resolves on its own schedule.
+    // TEST_SCENARIO: the digest root and its index directory are where every process on the node, and every earlier release, keeps an entry keyed by digest, and the trust window is how long each of them believes an index file. A root or an index directory named differently is an entry fetched again beside the one already there, and a different window is a tag resolved on a schedule the other processes do not share.
     #[test]
-    fn the_go_runner_keys_entries_by_digest_the_same_way() {
-        let go = gosource::read("digest.go");
-
-        assert_eq!(
-            gosource::const_value(&go, "digestRoot").as_deref(),
-            Some(DIGEST_ROOT)
-        );
-        assert_eq!(
-            gosource::const_value(&go, "refsDir").as_deref(),
-            Some(REFS_DIR)
-        );
-        assert_eq!(gosource::duration_value(&go, "refFresh"), Some(REF_FRESH));
-        assert_eq!(
-            gosource::regexp_source(&go, "imageDigest").as_deref(),
-            Some(r"^sha256:[a-f0-9]{64}$"),
-            "is_digest is hand-written against this pattern"
-        );
-        assert_eq!(
-            gosource::regexp_source(&go, "digestEntry").as_deref(),
-            Some(r"^sha256_[a-f0-9]{64}$"),
-            "is_digest_entry likewise"
-        );
-        assert_eq!(
-            gosource::call_args_in(&go, "(s *Server) digestPath", "strings.Replace(").as_deref(),
-            Some(r#"digest, ":", "_", 1"#),
-            "digest_path replaces the first colon and nothing else"
-        );
-        let names_refs = gosource::function_body(&go, "(s *Server) refPath")
-            .expect("digest.go still names an index file");
-        assert!(
-            names_refs.contains("sha256.Sum256([]byte(ref))")
-                && names_refs.contains("hex.EncodeToString(sum[:])"),
-            "ref_path hashes the whole reference to lower-case hex, as refPath does: {names_refs}"
-        );
-        assert_eq!(
-            gosource::struct_fields(&go, "refRecord"),
-            vec![
-                gosource::GoField {
-                    json: "ref".into(),
-                    omitempty: false
-                },
-                gosource::GoField {
-                    json: "digest".into(),
-                    omitempty: false
-                },
-            ],
-            "an index file is read by both runners"
-        );
+    fn entries_keyed_by_digest_keep_their_root_index_and_window() {
+        assert_eq!(DIGEST_ROOT, ".v2");
+        assert_eq!(REFS_DIR, "refs");
+        assert_eq!(REF_FRESH, Duration::from_secs(10 * 60));
     }
 
-    // TEST_SCENARIO: a claim is read by every process on the directory, and a claim on a digest entry has to name the root as well as the entry or a reader joins it to the wrong place and spares nothing. Both runners publish names relative to the image directory.
+    // TEST_SCENARIO: a claim is read by every process on the directory, and a claim on a digest entry has to name the root as well as the entry or a reader joins it to the wrong place and spares nothing. So names are published relative to the image directory, and read back the same way.
     #[test]
-    fn the_go_runner_publishes_claims_relative_to_the_directory() {
-        let go = gosource::read("server.go");
-        let publishes = gosource::function_body(&go, "(s *Server) publishHolders")
-            .expect("server.go still publishes claims");
-        assert!(
-            publishes.contains("filepath.Rel(s.ImageDir, path)"),
-            "publish_holders strips the image directory, as publishHolders does: {publishes}"
-        );
-
+    fn a_claim_names_its_entry_relative_to_the_image_directory() {
         let dir = tempdir();
         let held = [
             dir.path().join("quay.io_x_old_1"),
@@ -723,9 +588,9 @@ mod tests {
 
     const DIGEST: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
-    // TEST_SCENARIO: the index file for a reference is found by hashing the reference, so the two runners agree on the file only if they agree on the hash byte for byte. The value is the SHA-256 of the reference text, checked against a hash computed outside either runner.
+    // TEST_SCENARIO: the index file for a reference is found by hashing the reference, so every process on the directory finds the same file only if they agree on the hash byte for byte. The value is the SHA-256 of the reference text, checked against a hash computed outside the runner, and a digest entry is the digest with its one colon replaced.
     #[test]
-    fn a_reference_names_the_same_index_file_on_both_sides() {
+    fn a_reference_names_one_index_file_and_a_digest_one_entry() {
         let dir = Path::new("/images");
         assert_eq!(
             ref_path(dir, "quay.io/x/vm:1"),
@@ -839,7 +704,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&kept).unwrap(),
             format!(r#"{{"ref":"quay.io/x/kept:1","digest":"{other}"}}"#),
-            "the bytes are the ones the Go runner writes"
+            "the bytes are the ones earlier releases wrote and every process reads"
         );
     }
 

@@ -10,7 +10,7 @@ use crate::api::ImageLaunch;
 
 // UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an earlier release cached. The third, a config fetched from the registry when neither exists, needs a registry client and is not ported yet.
 
-// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree. Read by whichever runner boots a machine from that tree next, which during a rollout is the other implementation, so the name and the field spellings are the Go runner's.
+// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree. Trees cached by earlier releases carry one under this name and with these field spellings, and a machine booted from such a tree reads it.
 pub const LAUNCH_FILE: &str = "launch.json";
 
 // UNIT_BOUNDARY_DESCRIPTION: the largest entry in an archive that could still be an image config. Layers are megabytes to gigabytes and configs are kilobytes, so this is what keeps a config scan from reading a whole image into memory looking for a JSON object.
@@ -139,48 +139,23 @@ mod tests {
     use crate::gosource;
     use std::path::PathBuf;
 
-    // TEST_SCENARIO: the launch record is written by one runner and read by whichever one boots a machine from that tree next, which during a rollout is the other implementation. A different file name is a tree whose launch the next runner cannot find, and the fallbacks behind it are a registry fetch per boot or a refusal.
+    // TEST_SCENARIO: the launch record sits beside every tree earlier releases unpacked, under this name. A different file name is a tree whose launch cannot be found, and the fallbacks behind it are a registry fetch per boot or a refusal.
     #[test]
-    fn the_go_runner_keeps_the_record_under_the_same_name() {
-        let go = gosource::read("server.go");
-        assert_eq!(
-            gosource::const_value(&go, "launchFile").as_deref(),
-            Some(LAUNCH_FILE),
-            "the two runners no longer read one tree's launch record"
-        );
-        assert_eq!(
-            gosource::int_value(&go, "maxImageConfig"),
-            Some(MAX_IMAGE_CONFIG),
-            "the two runners hold a different set of an archive's entries while scanning it"
-        );
-
-        assert_eq!(
-            gosource::int_value("\tmaxImageConfig = 1 << 20", "maxImageConfig"),
-            Some(1 << 20)
-        );
-        assert_eq!(
-            gosource::int_value("\tcapturedOutput = 2000", "capturedOutput"),
-            Some(2000)
-        );
-        assert_eq!(
-            gosource::int_value("\tmaxImageConfig = someCall()", "maxImageConfig"),
-            None,
-            "a size stated in a form this reader does not know must fail the comparison, not pass it"
-        );
-        assert_eq!(gosource::int_value("\tother = 5", "maxImageConfig"), None);
+    fn the_launch_record_keeps_the_name_earlier_releases_wrote_it_under() {
+        assert_eq!(LAUNCH_FILE, "launch.json");
     }
 
     // TEST_SCENARIO: these five names are the OCI image config's own spelling, capitals and all, and nothing on this side would notice one being wrong — a mis-spelled key reads as absent, which for Entrypoint and Cmd together is a refusal to boot and for Env is a machine started without its image's environment.
     #[test]
-    fn the_image_config_is_read_under_the_names_the_go_runner_reads() {
-        let go = gosource::read("server.go");
-        let literals = gosource::literals_in(&go, "launchFromConfig");
-        for key in ["config", "Entrypoint", "Cmd", "Env", "WorkingDir"] {
-            assert!(
-                literals.iter().any(|literal| literal == key),
-                "launchFromConfig no longer reads {key:?}: {literals:?}"
-            );
-        }
+    fn the_image_config_is_read_under_the_oci_spellings() {
+        let launch = launch_from_config(
+            br#"{"config":{"Entrypoint":["/init"],"Cmd":["serve"],"Env":["A=1"],"WorkingDir":"/srv"}}"#,
+        )
+        .unwrap();
+        assert_eq!(launch.entrypoint, ["/init"]);
+        assert_eq!(launch.cmd, ["serve"]);
+        assert_eq!(launch.env, ["A=1"]);
+        assert_eq!(launch.working_dir, "/srv");
     }
 
     // TEST_SCENARIO: a real image config writes JSON null for a list it does not set, and Go's decoder reads that as an empty list. A decoder that refused it would fail on ordinary images, on the boot path, and only once a machine was already being created.
@@ -249,9 +224,9 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record read here was written by the other runner's `json.Marshal`, and `api.go` tags entrypoint, cmd and env without `omitempty` — so a list Go left nil is in the file as JSON null rather than left out. Go refuses an image that names neither an entrypoint nor a command, so every record it writes sets one of those two and leaves the other nil. A reader that refuses a null list therefore reads almost every tree the Go runner unpacked as broken, and refuses a machine that runner boots.
+    // TEST_SCENARIO: records beside trees unpacked by earlier releases were written by Go's `json.Marshal` from the struct in `api.go`, which tags entrypoint, cmd and env without `omitempty` — so a list left nil is in the file as JSON null rather than left out. An image that names neither an entrypoint nor a command is refused, so every such record sets one of the two and leaves the other nil. A reader that refuses a null list therefore reads almost every tree already on the node as broken.
     #[test]
-    fn a_record_the_go_runner_wrote_is_read_rather_than_refused() {
+    fn a_record_an_earlier_release_wrote_is_read_rather_than_refused() {
         let api = gosource::read("api.go");
         let fields = gosource::struct_fields(&api, "ImageLaunch");
         assert!(
@@ -265,7 +240,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("api.go no longer writes {listed:?} into the record"));
             assert!(
                 !field.omitempty,
-                "api.go now leaves an empty {listed:?} out of the record, so a null list is no longer what the Go runner writes and this test's premise is stale"
+                "api.go now leaves an empty {listed:?} out of the record, so a null list is no longer what the records on a node hold and this test's premise is stale"
             );
         }
 
@@ -281,7 +256,7 @@ mod tests {
         assert_eq!(launch.entrypoint, ["/init"]);
         assert!(
             launch.cmd.is_empty(),
-            "a list the Go runner left nil must read back as an empty one"
+            "a list an earlier release left nil must read back as an empty one"
         );
         assert!(launch.env.is_empty());
     }

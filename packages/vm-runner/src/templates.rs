@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command;
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk templates smolvm formats a machine's disks from. The release ships them compressed beside its binary and smolvm expands one the first time a machine needs it — 24 s of a 25 s first start after every pod roll, paid by whoever creates the next agent. The runner expands each one once onto its claim instead, and links it both beside the release, where a disk the Go runner made names it, and where smolvm's embedded runtime looks: its own executable's directory is not the release's, so without that link smolvm would find no template at all.
+// UNIT_BOUNDARY_DESCRIPTION: the disk templates smolvm formats a machine's disks from. The release ships them compressed beside its binary and smolvm expands one the first time a machine needs it — 24 s of a 25 s first start after every pod roll, paid by whoever creates the next agent. The runner expands each one once onto its claim instead, and links it both beside the release, where a disk an earlier release made names it, and where smolvm's embedded runtime looks: its own executable's directory is not the release's, so without that link smolvm would find no template at all.
 
 // UNIT_BOUNDARY_DESCRIPTION: where expanded templates are kept under HOME, which is the runner's claim, so a pod roll costs a hash of each compressed template and a link rather than the expansion. One directory per compressed template's sha256: a new smolvm release lands its templates in a new directory, so a disk smolvm backed onto an older template never sees its bytes change. It sits beside smolvm's own directories rather than inside them, so nothing smolvm lists or cleans up can take one.
 pub const KEPT_DIR: &str = ".disk-templates";
@@ -153,7 +153,6 @@ pub fn link(install: &Path, home: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
     struct TempDir(PathBuf);
 
@@ -254,16 +253,10 @@ mod tests {
         assert!(to_warm(&install.0).is_empty());
     }
 
-    // TEST_SCENARIO: the expansion must stay sparse and bounded as the Go runner's is, or warming a 20 GiB template fills the claim it is kept on.
+    // TEST_SCENARIO: templates expanded by earlier releases sit under this name on the claim, and are found there rather than expanded again after every pod roll. The name and the bound on one expansion are pinned; an unbounded expansion of a 20 GiB template could hold the runner for as long as the claim takes to fill.
     #[test]
-    fn the_go_runner_expands_the_same_way() {
-        let go = gosource::read("smolvm.go");
-        assert!(gosource::literals_in(&go, "expandTemplate")
-            .iter()
-            .any(|l| l == "--sparse"));
-        assert_eq!(
-            gosource::duration_value(&go, "warmTimeout"),
-            Some(WARM_TIMEOUT)
-        );
+    fn the_kept_templates_directory_and_warm_budget_are_pinned() {
+        assert_eq!(KEPT_DIR, ".disk-templates");
+        assert_eq!(WARM_TIMEOUT, Duration::from_secs(5 * 60));
     }
 }

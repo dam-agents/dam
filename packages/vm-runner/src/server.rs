@@ -40,7 +40,7 @@ pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
 pub use crate::imagecache::ROOTFS_DIR;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start. The same values as the Go runner's flags, which the controller sets on the runner's Deployment.
+// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment.
 pub struct Config {
     pub state_dir: PathBuf,
     pub image_dir: PathBuf,

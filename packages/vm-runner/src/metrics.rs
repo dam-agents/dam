@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::api::{STATE_CREATING, STATE_RESTARTING, STATE_STARTING, STATE_STOPPING};
 
-// UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines and its image cache, for the platform's collector to scrape, under the Go runner's names so one dashboard reads either. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
+// UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines and its image cache, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
 pub const NAMESPACE: &str = "platform_vm_runner";
 
 const BOOT_BUCKETS: &[f64] = &[
@@ -95,7 +95,7 @@ impl Default for Metrics {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the gauges read from the runner as it is at the moment of the scrape rather than recorded as it goes. `committed_mib` is None when the runner could not count it, which is reported as NaN, as the Go runner does, rather than as a number nobody committed.
+// UNIT_BOUNDARY_DESCRIPTION: the gauges read from the runner as it is at the moment of the scrape rather than recorded as it goes. `committed_mib` is None when the runner could not count it, which is reported as NaN rather than as a number nobody committed.
 pub struct Gauges {
     pub budget_bytes: i64,
     pub limit_mib: i32,
@@ -337,71 +337,58 @@ fn histogram(out: &mut String, name: &str, help: &str, keys: &[&str], h: &Histog
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    fn names(text: &str) -> std::collections::BTreeSet<String> {
-        text.lines()
-            .filter_map(|line| line.strip_prefix("# TYPE "))
-            .map(|rest| rest.split(' ').next().unwrap().to_string())
-            .collect()
-    }
-
-    // TEST_SCENARIO: the platform's dashboards and alerts are written against the Go runner's series. Every one it defines is exposed here under the same name, with the same help, label names and buckets, and nothing it does not define — so a roll from one runner to the other moves no panel. Go's own process and runtime collectors have no counterpart in a Rust process and are the one difference.
+    // TEST_SCENARIO: the platform's dashboards and alerts select these series by name, type and label names, and a renamed or dropped series moves a panel without failing anything else. The whole set is spelled out here, in the order a scrape exposes it, and a scrape exposes nothing beyond it; the label names of every labelled family are pinned through a sample of each, and a gauge the runner could not count reads as NaN.
     #[test]
-    fn every_series_is_the_go_runners() {
-        let go = gosource::read("metrics.go");
-        assert!(
-            go.lines()
-                .any(|l| l == format!("const metricsNamespace = \"{NAMESPACE}\"")),
-            "the Go runner names its series under another namespace"
-        );
-        let theirs: std::collections::BTreeSet<String> = go
-            .lines()
-            .filter_map(|line| line.split_once("Name: \"")?.1.split_once('"'))
-            .map(|(name, _)| format!("{NAMESPACE}_{name}"))
-            .collect();
+    fn a_scrape_exposes_exactly_the_series_the_dashboards_select() {
         let metrics = Metrics::default();
+        metrics.operation(STATE_CREATING, Duration::from_secs(1), true);
+        metrics.start(STATE_CREATING, Duration::from_secs(1), true);
+        metrics.became_ready(STATE_CREATING, Duration::from_secs(1));
+        metrics.failed(STATE_CREATING, "MachineBootFailed");
+        metrics.lookup(true);
+        metrics.fetched(Duration::from_secs(1), false);
         let text = metrics.render(&Gauges {
             budget_bytes: 1,
             limit_mib: 2,
             reserve_mib: 3,
             committed_mib: None,
         });
-        assert_eq!(names(&text), theirs);
-        for line in text.lines().filter_map(|l| l.strip_prefix("# HELP ")) {
-            let (_, help) = line.split_once(' ').unwrap();
-            assert!(
-                go.contains(&format!("Help: \"{help}\""))
-                    || go.contains(&format!("Help:    \"{help}\"")),
-                "the Go runner explains this series differently: {help}"
-            );
-        }
-        for (buckets, ours) in [
-            ("bootBuckets", BOOT_BUCKETS),
-            ("fetchBuckets", FETCH_BUCKETS),
+
+        let types: Vec<&str> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("# TYPE "))
+            .collect();
+        assert_eq!(
+            types,
+            [
+                "platform_vm_runner_machine_operation_duration_seconds histogram",
+                "platform_vm_runner_machine_start_duration_seconds histogram",
+                "platform_vm_runner_machine_ready_seconds histogram",
+                "platform_vm_runner_machine_unhealthy_restarts_total counter",
+                "platform_vm_runner_machine_operation_failures_total counter",
+                "platform_vm_runner_machine_admission_refusals_total counter",
+                "platform_vm_runner_image_cache_lookups_total counter",
+                "platform_vm_runner_image_fetch_duration_seconds histogram",
+                "platform_vm_runner_image_cache_evictions_total counter",
+                "platform_vm_runner_image_cache_evicted_bytes_total counter",
+                "platform_vm_runner_image_cache_bytes gauge",
+                "platform_vm_runner_image_cache_budget_bytes gauge",
+                "platform_vm_runner_memory_limit_mib gauge",
+                "platform_vm_runner_memory_reserve_mib gauge",
+                "platform_vm_runner_memory_committed_mib gauge",
+            ]
+        );
+        for line in [
+            "platform_vm_runner_machine_operation_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"0.25\"} 0",
+            "platform_vm_runner_machine_start_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"600\"} 1",
+            "platform_vm_runner_machine_ready_seconds_bucket{op=\"create\",le=\"+Inf\"} 1",
+            "platform_vm_runner_machine_operation_failures_total{op=\"create\",reason=\"MachineBootFailed\"} 1",
+            "platform_vm_runner_image_cache_lookups_total{result=\"hit\"} 1",
+            "platform_vm_runner_image_fetch_duration_seconds_bucket{outcome=\"failed\",le=\"1200\"} 1",
+            "platform_vm_runner_memory_committed_mib NaN",
         ] {
-            let line = go
-                .lines()
-                .find(|l| l.starts_with(&format!("var {buckets} = []float64{{")))
-                .unwrap_or_else(|| panic!("metrics.go no longer declares {buckets}"));
-            let theirs: Vec<f64> = line
-                .split_once('{')
-                .unwrap()
-                .1
-                .trim_end_matches('}')
-                .split(',')
-                .map(|n| n.trim().parse().unwrap())
-                .collect();
-            assert_eq!(theirs, ours, "{buckets}");
-        }
-        for (label, keys) in [
-            ("[]string{\"op\", \"outcome\"}", 2),
-            ("[]string{\"op\"}", 1),
-            ("[]string{\"op\", \"reason\"}", 1),
-            ("[]string{\"result\"}", 1),
-            ("[]string{\"outcome\"}", 1),
-        ] {
-            assert_eq!(go.matches(label).count(), keys, "{label}");
+            assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }
     }
 
