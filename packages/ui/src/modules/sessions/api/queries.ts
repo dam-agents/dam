@@ -113,7 +113,8 @@ export function useAcpSessions(
           ];
           if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
-          if (include.scheduled) allowed.push(SessionType.ScheduleCron);
+          if (include.scheduled)
+            allowed.push(SessionType.ScheduleCron, SessionType.ScheduleOnce);
           const fresh = sessions.filter((s) => allowed.includes(s.type));
           const activeId = options?.activeSessionId;
           if (!activeId || fresh.some((s) => s.sessionId === activeId))

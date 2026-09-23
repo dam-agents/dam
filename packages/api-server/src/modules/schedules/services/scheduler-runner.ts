@@ -177,6 +177,7 @@ export function createSchedulerRunner(
       task: sched.spec.task ?? "",
       fireAt: fireAt.toISOString(),
     };
+    if (sched.spec.type === "once") payload.once = true;
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;

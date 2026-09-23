@@ -45,11 +45,11 @@ export function createTriggerPlugin(deps: {
     task: string,
   ): Promise<void> => {
     const platformMeta = {
-      type: SessionType.ScheduleCron,
+      type: payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron,
       mode: SessionMode.Chat,
       scheduleId: payload.scheduleId,
     };
-    if ((payload.sessionMode ?? "fresh") === "continuous") {
+    if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
       if (prior) {
         await deps.driver.start({

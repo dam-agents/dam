@@ -7,6 +7,7 @@ export const podSessionTypeSchema = z.enum([
   "channel_slack",
   "channel_telegram",
   "schedule_cron",
+  "schedule_once",
   "experiment_execute",
   "cli_run",
 ]);

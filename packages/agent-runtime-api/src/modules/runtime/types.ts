@@ -129,6 +129,7 @@ export const triggerEventPayload = z.object({
   scheduleId: z.string().min(1),
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
+  once: z.literal(true).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),

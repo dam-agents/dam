@@ -151,7 +151,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const isMachineSession = (sessionId: string): boolean => {
     const meta = deps.sessionMetadata?.get(sessionId)?.meta;
-    return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
+    return (
+      meta?.type === SessionType.ScheduleCron ||
+      meta?.type === SessionType.ScheduleOnce ||
+      Boolean(meta?.scheduleId)
+    );
   };
 
   let shuttingDown = false;
