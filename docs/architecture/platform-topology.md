@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -77,7 +77,7 @@ The pods behind the `vm` Backend: **one runner per owner**, a single-replica Dep
 
 ### gateway
 
-A per-agent Envoy pod paired with the agent-runtime pod. Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap. Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler. NetworkPolicy admits ingress only from the paired agent pod and egress only to upstream services, the api-server's ext_authz port, and DNS. See [security-and-credentials](security-and-credentials.md).
+A per-agent Envoy pod paired with the agent-runtime pod. Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap. Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler. A per-pair NetworkPolicy admits ingress to its proxy port only from the paired agent pod and, for a vm Agent, the owner's VM runner. See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
@@ -129,7 +129,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
 
-For each `Agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS) — on the `vm` Backend the agent StatefulSet is replaced by a machine on the [VM runner](#vm-runner), and the agent Service selects that runner, mapping the agent port onto the one its machine publishes there — a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **two per-agent Istio AuthorizationPolicies** (harness path-prefix at the waypoint, ext-authz Service principal), and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate. Installing the CRDs requires cluster-admin at install time — moving to CRDs deliberately gave up the namespace-scoped install the earlier ConfigMap model allowed; the controller also needs write access to ServiceAccounts and Istio AuthorizationPolicies. See [`helm/`](../../helm/) for the install layout.
+For each `Agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS) — on the `vm` Backend the agent StatefulSet is replaced by a machine on the [VM runner](#vm-runner), and the agent Service selects that runner, mapping the agent port onto the one its machine publishes there — a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **two per-agent Istio AuthorizationPolicies** (harness path-prefix at the waypoint, ext-authz Service principal), per-pair agent-egress and gateway-ingress NetworkPolicies, and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate. Installing the CRDs requires cluster-admin at install time — moving to CRDs deliberately gave up the namespace-scoped install the earlier ConfigMap model allowed; the controller also needs write access to ServiceAccounts and Istio AuthorizationPolicies. See [`helm/`](../../helm/) for the install layout.
 
 ## Invariants
 

@@ -318,8 +318,85 @@ func TestVMBackendStopsTheMachineOnHardStop(t *testing.T) {
 func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.Delete(context.Background(), "my-agent")
+	r.Delete(context.Background(), "my-agent", agent.Labels)
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a second owner's runner, with its own fake node behind it, so a test can tell which runner a call reached.
+func addRunner(t *testing.T, r *AgentReconciler, owner string) *fakeNode {
+	t.Helper()
+	ctx := context.Background()
+	node, srv := newFakeNode(t)
+	dep := readyRunnerDeployment()
+	dep.Name, dep.Labels[envoyOwnerLabel] = r.runnerName(owner), owner
+	_, err := r.client.AppsV1().Deployments("test-agents").Create(ctx, dep, metav1.CreateOptions{})
+	require.NoError(t, err)
+	sec := runnerSecret()
+	sec.Name = r.runnerName(owner)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+	require.NoError(t, err)
+	first := r.runnerEndpoint
+	r.runnerEndpoint = func(o string) string {
+		if o == owner {
+			return srv.URL
+		}
+		return first(o)
+	}
+	return node
+}
+
+// TEST_SCENARIO: the deleted Agent's owner label names the runner its machine is on, so only that runner is asked. Another owner's runner is not called at all, and an owner with no runner gets no Secret minted for a runner that does not exist.
+func TestADeleteReachesOnlyTheOwnersRunner(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	other := addRunner(t, r, "owner-b")
+
+	r.Delete(ctx, "my-agent", agent.Labels)
+	assert.Equal(t, []string{"my-agent"}, node.deleted)
+	assert.Empty(t, other.deleted, "another owner's runner is not asked about this Agent's machine")
+
+	r.Delete(ctx, "no-runner-agent", map[string]string{envoyOwnerLabel: "owner-without-runner"})
+	_, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName("owner-without-runner"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a delete does not mint credentials for a runner that does not exist")
+}
+
+// TEST_SCENARIO: an Agent whose labels were never seen, the informer having lost its last state, still has a machine somewhere, so a delete without an owner is offered to every runner.
+func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	other := addRunner(t, r, "owner-b")
+
+	r.Delete(context.Background(), "my-agent", nil)
+	assert.Equal(t, []string{"my-agent"}, node.deleted)
+	assert.Equal(t, []string{"my-agent"}, other.deleted)
+}
+
+// TEST_SCENARIO: the sweep needs every runner's token, and runs every ten minutes over every owner. Runner Secrets the controller minted carry the component label, so one List serves them all and no Secret is read by name.
+func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	for _, owner := range []string{testOwner, "owner-b"} {
+		if owner != testOwner {
+			addRunner(t, r, owner)
+		}
+		sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		sec.Labels = vmRunnerLabels(owner, r.config.ReleaseName)
+		_, err = r.client.CoreV1().Secrets("test-agents").Update(ctx, sec, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+	fakeClient := r.client.(*fake.Clientset)
+	fakeClient.ClearActions()
+
+	runners, err := r.knownRunners(ctx)
+	require.NoError(t, err)
+	assert.Len(t, runners, 2)
+	for _, action := range fakeClient.Actions() {
+		assert.False(t, action.GetResource().Resource == "secrets" && action.GetVerb() == "get",
+			"a runner Secret was read by name although the List already returned it")
+	}
 }
 
 // TEST_SCENARIO: the guest's MITM CA comes from the same leaf Secret the pod mounts; until cert-manager issues it there is nothing to boot with, so the reconcile requeues instead of creating a machine that cannot trust its gateway.
@@ -794,13 +871,15 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 
 	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
-	require.Len(t, confined.Spec.Egress, 3, "DNS, the paired gateways, and what the install named")
+	require.Len(t, confined.Spec.Egress, 3, "DNS, the owner's gateways, and what the install named")
 
 	var sawGateway, sawCIDR bool
 	for _, rule := range confined.Spec.Egress {
 		for _, to := range rule.To {
 			if to.PodSelector != nil && to.PodSelector.MatchLabels[LabelRole] == RoleGateway {
 				sawGateway = true
+				assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
+					"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}
@@ -817,7 +896,7 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 
 // TEST_SCENARIO: an install names a narrow registry and, as the guidance says, subtracts the cluster's own ranges. Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so that pairing has to render as a policy the API server will actually accept.
 func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
-	rules := runnerEgress("test-agents",
+	rules := runnerEgress("test-agents", testOwner,
 		[]string{"203.0.113.0/24", "0.0.0.0/0"},
 		[]string{"10.128.0.0/14", "172.30.0.0/16"})
 

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#MISE description="Run the machine API conformance suite against a live VM runner on the lima cluster (needs virtualization.enabled and a runner, i.e. one vm agent). Stops the controller for the run so its orphan sweep leaves the suite's machines alone, and restarts the runner once — every machine on it stops. Options: --runner=NAME. Honors LIMA_INSTANCE."
+#MISE raw=true
+set -euo pipefail
+
+LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+export KUBECONFIG
+AGENT_NS="${AGENT_NS:-platform-agents}"
+RELEASE_NS="${RELEASE_NS:-default}"
+IMAGE="platform-vm-conformance-guest:latest"
+LOCAL_PORT="${VMRUNNER_CONFORMANCE_LOCAL_PORT:-14600}"
+
+RUNNER=""
+for arg in "$@"; do
+  case "$arg" in
+    --runner=*) RUNNER="${arg#--runner=}" ;;
+  esac
+done
+if [ -z "$RUNNER" ]; then
+  RUNNER="$(kubectl -n "$AGENT_NS" get deploy -l app.kubernetes.io/component=vm-runner -o name | head -1)"
+  RUNNER="${RUNNER#deployment.apps/}"
+fi
+if [ -z "$RUNNER" ]; then
+  echo "cluster:vm-conformance: no VM runner in $AGENT_NS. Runners are created per owner on demand: install with --set=virtualization.enabled=true and create one vm agent first." >&2
+  exit 1
+fi
+echo "Conformance target: $RUNNER"
+
+# The runner fetches nothing here: like the agent images, the guest is an
+# archive on the node's image directory, named the way the runner looks it up.
+echo "Building and staging $IMAGE..."
+docker build -t "$IMAGE" -f packages/controller/Dockerfile.vm-conformance-guest packages/controller/
+tar="/tmp/$(printf '%s' "$IMAGE" | tr '/:@' '___').tar"
+docker save -o "$tar" "$IMAGE"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
+else
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
+fi
+rm -f "$tar"
+
+WORK="$(mktemp -d)"
+CONTROLLER_SELECTOR="app.kubernetes.io/component=controller"
+FORWARD_PID=""
+CONTROLLER_REPLICAS="$(kubectl -n "$RELEASE_NS" get deploy -l "$CONTROLLER_SELECTOR" -o jsonpath='{.items[0].spec.replicas}')"
+CONTROLLER_REPLICAS="${CONTROLLER_REPLICAS:-1}"
+cleanup() {
+  local code=$?
+  if [ -n "$FORWARD_PID" ]; then
+    pkill -P "$FORWARD_PID" 2>/dev/null || true
+    kill "$FORWARD_PID" 2>/dev/null || true
+  fi
+  echo "Restoring the controller..."
+  kubectl -n "$RELEASE_NS" scale deploy -l "$CONTROLLER_SELECTOR" --replicas="$CONTROLLER_REPLICAS" || true
+  rm -rf "$WORK"
+  exit $code
+}
+trap cleanup EXIT
+
+# The controller deletes any machine no Agent owns, which is every machine the
+# suite creates; stopped, it also leaves the runner's pod alone while the suite
+# restarts it.
+echo "Stopping the controller for the run..."
+kubectl -n "$RELEASE_NS" scale deploy -l "$CONTROLLER_SELECTOR" --replicas=0
+kubectl -n "$RELEASE_NS" wait --for=delete pod -l "$CONTROLLER_SELECTOR" --timeout=2m || true
+
+kubectl -n "$AGENT_NS" get secret "$RUNNER" -o jsonpath='{.data.token}' | base64 -d > "$WORK/token"
+kubectl -n "$AGENT_NS" get secret "$RUNNER" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$WORK/ca.crt"
+
+# The runner's pod is replaced by the restart case, which ends a port-forward;
+# the loop reconnects to whichever pod the Deployment has.
+(while :; do
+  kubectl -n "$AGENT_NS" port-forward "deploy/$RUNNER" "$LOCAL_PORT:4600" >/dev/null 2>&1 || true
+  sleep 1
+done) &
+FORWARD_PID=$!
+
+export VMRUNNER_CONFORMANCE_URL="https://127.0.0.1:$LOCAL_PORT"
+export VMRUNNER_CONFORMANCE_TOKEN="$(cat "$WORK/token")"
+export VMRUNNER_CONFORMANCE_CA_FILE="$WORK/ca.crt"
+export VMRUNNER_CONFORMANCE_SERVER_NAME="$RUNNER"
+export VMRUNNER_CONFORMANCE_IMAGE="$IMAGE"
+export VMRUNNER_CONFORMANCE_READY_TIMEOUT="${VMRUNNER_CONFORMANCE_READY_TIMEOUT:-10m}"
+export VMRUNNER_CONFORMANCE_RESTART="kubectl -n $AGENT_NS rollout restart deploy/$RUNNER && kubectl -n $AGENT_NS rollout status deploy/$RUNNER --timeout=5m"
+
+for _ in $(seq 60); do
+  curl -skf -m 2 "$VMRUNNER_CONFORMANCE_URL/healthz" >/dev/null && break
+  sleep 1
+done
+mise run //packages/controller:vm-conformance
