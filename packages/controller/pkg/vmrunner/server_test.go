@@ -35,6 +35,7 @@ case "$2" in
     echo "{\"state\":\"$(cat "$FAKE_STATE/$name")\"}" ;;
   create) echo created > "$FAKE_STATE/$4" ;;
   start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"
+    [ -n "$FAKE_CONSOLE" ] && cat "$FAKE_CONSOLE_SRC" >> "$FAKE_CONSOLE"
     if [ -n "$FAKE_START_FAIL_ONCE" ] && [ ! -f "$FAKE_STATE/.failed-once" ]; then touch "$FAKE_STATE/.failed-once"; echo "$FAKE_START_FAIL_ONCE" >&2; exit 1; fi
     if [ -n "$FAKE_VMS" ]; then mkdir -p "$FAKE_VMS/vm-$4"; printf %s "$4" > "$FAKE_VMS/vm-$4/name"; fi
     echo running > "$FAKE_STATE/$4" ;;

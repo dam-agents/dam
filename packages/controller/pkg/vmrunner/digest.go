@@ -157,6 +157,7 @@ func (s *Server) digestImage(forMachine, ref, digest string) (string, *ImageLaun
 	if err != nil {
 		return "", nil, err
 	}
+	s.metrics.lookup(launch != nil)
 	if launch == nil && s.Crane != "" {
 		if err := s.cacheImage(repository(ref)+"@"+digest, entry, forMachine); err != nil {
 			return "", nil, err

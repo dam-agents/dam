@@ -560,12 +560,39 @@ func TestEveryCacheIsBoundedAndEveryRunnerNamed(t *testing.T) {
 func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
 	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", nil, nil)
 
-	require.Len(t, np.Spec.Ingress, 1)
-	require.NotEmpty(t, np.Spec.Ingress[0].From)
-	for _, from := range np.Spec.Ingress[0].From {
-		require.NotNil(t, from.NamespaceSelector, "a bare pod selector would only match the runner's own namespace")
-		assert.Equal(t, "release-ns", from.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	require.Len(t, np.Spec.Ingress, 2, "the machine API and published ports, and the scrape port")
+	for _, rule := range np.Spec.Ingress {
+		require.NotEmpty(t, rule.From)
+		for _, from := range rule.From {
+			require.NotNil(t, from.NamespaceSelector, "a bare pod selector would only match the runner's own namespace")
+			assert.Equal(t, "release-ns", from.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+		}
 	}
+}
+
+// TEST_SCENARIO: the scrape port carries no token, so the NetworkPolicy is its only gate — it must admit the platform's collector to that port alone, and nothing else may reach it, while the collector reaches nothing but it.
+func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", nil, nil)
+
+	var scrapers []string
+	for _, rule := range np.Spec.Ingress {
+		reachesScrape := false
+		for _, port := range rule.Ports {
+			if port.Port.IntValue() == vmRunnerMetricsPort {
+				reachesScrape = true
+			}
+		}
+		for _, from := range rule.From {
+			component := from.PodSelector.MatchLabels["app.kubernetes.io/component"]
+			if component == vmRunnerMetricsScraper {
+				require.Len(t, rule.Ports, 1, "the collector reaches the scrape port and nothing else")
+			}
+			if reachesScrape {
+				scrapers = append(scrapers, component)
+			}
+		}
+	}
+	assert.Equal(t, []string{vmRunnerMetricsScraper}, scrapers)
 }
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
@@ -578,7 +605,7 @@ func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *test
 			instances = append(instances, from.PodSelector.MatchLabels["app.kubernetes.io/instance"])
 		}
 	}
-	require.Len(t, instances, 2, "the api-server and the controller, and nothing else")
+	require.Len(t, instances, 3, "the api-server, the controller and the collector, and nothing else")
 	for _, got := range instances {
 		assert.Equal(t, "dam", got, "peers are selected by the release name the chart puts on its pods")
 	}

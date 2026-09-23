@@ -18,6 +18,7 @@ import (
 
 func main() {
 	listen := flag.String("listen", ":4600", "address to serve the machine API on")
+	metricsListen := flag.String("metrics-listen", "", "address to serve Prometheus metrics on, in plain HTTP and without the machine API's token (empty serves none)")
 	stateDir := flag.String("state-dir", "/var/lib/platform/machines", "per-machine state: published port, applied spec, and the share each guest reads its plan, CA and platform-init from")
 	imageDir := flag.String("image-dir", "/var/lib/platform/images", "unpacked agent images and local archives, shared by every runner on this node when the install gives them a host directory")
 	runnerID := flag.String("runner-id", "", "this runner's name among the runners sharing the image directory; empty keeps the cache private to this runner")
@@ -79,14 +80,14 @@ func main() {
 		os.Exit(1)
 	}
 	srv.Background(srv.Runtime.WarmTemplates)
-	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin)
+	slog.Info("VM runner serving", "listen", *listen, "stateDir", *stateDir, "imageDir", *imageDir, "tls", *tlsCert != "", "platformInit", *initBin, "metrics", *metricsListen)
 
 	// UNIT_BOUNDARY_DESCRIPTION: a runner that ignores SIGTERM is killed where it stands, thirty seconds later and without warning, and everything it was part-way through is abandoned as it lies — a fetch unpacking into a scratch directory leaves that directory behind, in a node directory that outlives every pod and where nothing counts it against the image budget or ever evicts it. Answering the signal is what lets the runner close itself: its in-flight work is cancelled rather than severed, and each operation unwinds its own cleanup on the way out.
 	stopping := make(chan os.Signal, 1)
 	signal.Notify(stopping, syscall.SIGTERM, syscall.SIGINT)
 
 	api := &http.Server{Addr: *listen, Handler: srv.Handler()}
-	serving := make(chan error, 1)
+	serving := make(chan error, 2)
 	go func() {
 		if *tlsCert != "" {
 			serving <- api.ListenAndServeTLS(*tlsCert, *tlsKey)
@@ -94,6 +95,16 @@ func main() {
 		}
 		serving <- api.ListenAndServe()
 	}()
+
+	var scrape *http.Server
+	if *metricsListen != "" {
+		scrape = &http.Server{Addr: *metricsListen, Handler: srv.MetricsHandler(), ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			if err := scrape.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serving <- err
+			}
+		}()
+	}
 
 	select {
 	case err := <-serving:
@@ -109,6 +120,9 @@ func main() {
 	defer done()
 	if err := api.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Warn("the machine API did not shut down cleanly", "error", err)
+	}
+	if scrape != nil {
+		_ = scrape.Shutdown(shutdown)
 	}
 	srv.Close()
 	slog.Info("VM runner stopped")

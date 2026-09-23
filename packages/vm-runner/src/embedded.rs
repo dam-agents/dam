@@ -11,6 +11,7 @@ use smolvm::network::NetworkBackend;
 use smolvm::storage::{expand_disk, Storage, StorageDisk, STORAGE_DISK_FILENAME};
 
 use crate::api::{MachineSpec, STATE_ABSENT, STATE_RUNNING, STATE_STOPPED};
+use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
     adopt_kept_storage, clear_for_start, discard_overlay, grown_storage, kept_dir, kill_orphans,
@@ -198,6 +199,13 @@ impl Runtime for Smolvm {
             Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
         }
+    }
+
+    fn console_tail(&self, id: &str) -> String {
+        console::tail_of(
+            &vm_data_dir(id).join(console::CONSOLE_LOG),
+            console::CONSOLE_TAIL_BYTES,
+        )
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a disk kept by an interrupted recreate is the one the next boot adopts, so it counts as the machine's disk here too.

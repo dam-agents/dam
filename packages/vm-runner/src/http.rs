@@ -30,6 +30,27 @@ pub fn router(server: Arc<Server>, token: &str) -> Router {
         .with_state(api)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the scrape endpoint, served on its own port and without the machine API's token. The token is what lets a caller create and delete machines, and a scraper that held it could do both; what this serves names no machine, image or owner, so the NetworkPolicy that admits only the platform's collector to its port is the whole of its gate.
+pub fn metrics_router(server: Arc<Server>) -> Router {
+    Router::new().route(
+        "/metrics",
+        get(move || {
+            let server = server.clone();
+            async move {
+                match tokio::task::spawn_blocking(move || server.metrics_text()).await {
+                    Ok(text) => (
+                        StatusCode::OK,
+                        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+                        text,
+                    )
+                        .into_response(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+            }
+        }),
+    )
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: Go's http.Error: the message and a newline as text/plain. The controller's client puts this text, trimmed, into its error.
 fn plain(status: StatusCode, message: &str) -> Response {
     (
