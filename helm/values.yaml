@@ -261,7 +261,7 @@ virtualization:
     # A directory on the node holding `docker save` archives named after the
     # image reference, mounted read-only into every runner. It is how a
     # cluster with no registry (local dev) gives runners their agent image;
-    # empty means runners pull from the registry as usual.
+    # empty means runners fetch images from the registry.
     imageArchiveHostPath: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever
@@ -293,7 +293,7 @@ virtualization:
     # On OpenShift the internal registry is a Service address, so excepting the
     # Service range blocks pulls from it: name that registry in egressCidrs and
     # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
-    # below so the runner can resolve it — or stage images on the node instead.
+    # above so the runner can resolve it — or stage images on the node instead.
     egressCidrs: []
     # Subtracted from the entries above that contain them — Kubernetes rejects
     # a policy whose exception falls outside its own block, so a narrow entry
