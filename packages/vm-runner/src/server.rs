@@ -23,7 +23,7 @@ use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::ImageCache;
 use crate::launch::{launch_from_archive, read_launch};
 use crate::metrics::{Gauges, Metrics};
-use crate::plan::{self, admissible, create_only_drift, needs_restart, reads_ready, Health};
+use crate::plan::{self, admissible, image_changed, needs_restart, reads_ready, Health};
 use crate::runtime::{grown_storage, redact, Machine, Runtime};
 use crate::share::{write_share, SHARE_DIR};
 use crate::state::{
@@ -445,17 +445,12 @@ impl Server {
             if grown_storage(Some(applied), spec).is_some() && !self.runtime.storage_growable(id) {
                 anyhow::bail!("{STORAGE_NOT_GROWABLE}");
             }
-            let drift = create_only_drift(applied, spec);
-            {
-                let mut inner = locked(&self.inner);
-                match &drift {
-                    Some(drift) => inner.drift.insert(id.to_string(), drift.clone()),
-                    None => inner.drift.remove(id),
-                };
-            }
-            if let Some(drift) = drift {
-                tracing::warn!(machine = id, detail = %drift.replace(['\n', '\r'], " "), "machine spec differs in a create-only field");
-                spec.image = applied.image.clone();
+            if image_changed(applied, spec) {
+                anyhow::bail!(
+                    "this runner cannot yet move a machine to a new image, so it keeps what it has: image is {}, wanted {}",
+                    applied.image,
+                    spec.image
+                );
             }
         }
         let port = state::port(&self.config.state_dir, id);
