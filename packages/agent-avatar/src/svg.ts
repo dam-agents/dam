@@ -25,7 +25,12 @@ import {
   wingPath,
   winkLayout,
 } from "./layout.js";
-import { type AvatarTraits, avatarTraits, type Look } from "./traits.js";
+import {
+  type AvatarSeed,
+  type AvatarTraits,
+  avatarTraits,
+  type Look,
+} from "./traits.js";
 
 type Attrs = Record<string, string | number>;
 
@@ -503,7 +508,7 @@ function gapLines(t: AvatarTraits, head: HeadGeometry): string {
   );
 }
 
-export function avatarSvg(seed: string, sleeping = false): string {
+export function avatarSvg(seed: AvatarSeed, sleeping = false): string {
   const t = avatarTraits(seed);
   const head = HEAD_GEOMETRY[t.head];
   const defs =

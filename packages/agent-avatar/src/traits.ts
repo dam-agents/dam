@@ -179,6 +179,14 @@ export function avatarKey(owner: string, name: string): string {
   return `${owner}\n${name}`;
 }
 
+export const AVATAR_VERSION = 1;
+
+export type AvatarSeed = string | number;
+
+export function avatarSeed(key: string): number {
+  return hashSeed(key);
+}
+
 function hashSeed(seed: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
@@ -403,8 +411,8 @@ const PATCHABLE: ReadonlySet<Derp> = new Set([
   "tiny",
 ]);
 
-export function avatarTraits(seed: string): AvatarTraits {
-  const random = mulberry32(hashSeed(seed));
+export function avatarTraits(seed: AvatarSeed): AvatarTraits {
+  const random = mulberry32(typeof seed === "number" ? seed : hashSeed(seed));
   const colors = pickColors(random);
   const head = pickFrom(random, HEAD_SHAPES);
   const top = pickWeighted(random, TOP_WEIGHTS);

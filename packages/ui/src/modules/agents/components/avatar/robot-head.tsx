@@ -1,8 +1,8 @@
+import { avatarDataUri, avatarKey } from "agent-avatar";
+
 import { cn } from "@/lib/utils";
 
 import { getUser } from "../../../../auth.js";
-import { avatarDataUri } from "../../lib/avatar/svg.js";
-import { avatarKey } from "../../lib/avatar/traits.js";
 
 export interface RobotHeadProps {
   name: string;

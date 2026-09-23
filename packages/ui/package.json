@@ -33,6 +33,7 @@
     "@trpc/tanstack-react-query": "^11.16.0",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
+    "agent-avatar": "workspace:*",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
     "class-variance-authority": "^0.7.1",

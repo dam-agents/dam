@@ -1,11 +1,7 @@
 // TEST_OVERVIEW: An agent avatar is a figure drawn from a hash of the agent's name and its owner, so nothing is stored. The same name must always draw the same figure; its parts mix freely across head shapes; and no eye or visor may sit on a gap between parts, or reach past the head.
 import { describe, expect, it } from "vitest";
 
-import {
-  clearance,
-  HEAD_GEOMETRY,
-  samplePath,
-} from "../../modules/agents/lib/avatar/geometry.js";
+import { clearance, HEAD_GEOMETRY, samplePath } from "../../geometry.js";
 import {
   bugEyeCenter,
   EDGE_MARGIN,
@@ -20,17 +16,18 @@ import {
   visorBox,
   wingPath,
   winkLayout,
-} from "../../modules/agents/lib/avatar/layout.js";
+} from "../../layout.js";
 import {
   AVATAR_GAP,
   AVATAR_PALETTES,
   avatarKey,
+  avatarSeed,
   type AvatarTraits,
   avatarTraits,
   DERPS,
   HEAD_SHAPES,
   hueDistance,
-} from "../../modules/agents/lib/avatar/traits.js";
+} from "../../traits.js";
 
 const NAMES = Array.from({ length: 1000 }, (_, i) => `agent-${i}`);
 const ALL = NAMES.map((name) => ({ name, traits: avatarTraits(name) }));
@@ -59,6 +56,12 @@ describe("avatarTraits", () => {
     expect(avatarTraits(avatarKey("owner-a", "my-agent"))).toEqual(
       avatarTraits(avatarKey("owner-a", "my-agent")),
     );
+  });
+
+  // TEST_SCENARIO: The server renders a Slack icon from the name's hash, so the URL never carries the name. The hash must draw the same figure as the name.
+  it("draws the same figure from the name's hash", () => {
+    for (const name of NAMES.slice(0, 100))
+      expect(avatarTraits(avatarSeed(name)), name).toEqual(avatarTraits(name));
   });
 
   // TEST_SCENARIO: A user with a dozen agents tells them apart at a glance, so different names must give different figures.

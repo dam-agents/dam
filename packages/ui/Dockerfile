@@ -18,6 +18,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/dev-config/package.json packages/dev-config/
 COPY packages/ui/package.json packages/ui/
 COPY packages/api-server-api/package.json packages/api-server-api/
+COPY packages/agent-avatar/package.json packages/agent-avatar/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
@@ -25,6 +26,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
 
 COPY packages/dev-config/ packages/dev-config/
 COPY packages/api-server-api/ packages/api-server-api/
+COPY packages/agent-avatar/ packages/agent-avatar/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/ui/ packages/ui/
 
