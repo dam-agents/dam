@@ -9,13 +9,15 @@
 #   <output>  digest (default): push by digest and write /tmp/digests/<component>/<hex>
 #             cacheonly: build without exporting, to prove it builds
 #             sha: push <component>:$GITHUB_SHA
+#             load: load into the local docker as platform-<component>:latest
 #   --serial      build one at a time, for images too large to build side by
 #                 side on one runner's disk; the builder is pruned between
 #                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
 #   --base-image  BASE_IMAGE for the components built on a base (mock, agents,
 #                 workloads)
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
-# registry buildcache (main, tags, schedule). Every build runs even after one
+# registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
+# caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
 # By path, like image:resolve: the agent and workload jobs do not set up mise.
@@ -55,6 +57,7 @@ output_for() {
     digest) echo "type=image,name=$IMAGE_PREFIX/$1,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true" ;;
     cacheonly) echo "type=cacheonly" ;;
     sha) echo "type=image,name=$IMAGE_PREFIX/$1:$GITHUB_SHA,push=true" ;;
+    load) echo "type=docker,name=platform-$1:latest" ;;
     *) echo "ci-build: unknown output $2" >&2; return 1 ;;
   esac
 }
@@ -72,7 +75,7 @@ build_one() {
   if [ "${CACHE_TO:-}" = 1 ]; then
     args+=(--cache-to "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch,mode=max,image-manifest=true")
   fi
-  if [ "$c" = keycloak ]; then
+  if [ "$c" = keycloak ] && [ -z "${KEYCLOAK_THEME_BUILT:-}" ]; then
     # The image bakes in the theme JAR.
     mise run //packages/keycloak-theme:build || return 1
   fi

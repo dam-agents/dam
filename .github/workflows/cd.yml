@@ -170,7 +170,7 @@ jobs:
 
   build-images:
     # One job per arch builds all five images side by side; see image:ci-build.
-    # A PR builds in build-images-pr instead.
+    # A PR builds its images in e2e instead: see e2e:ci-images.
     needs: [changes]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -204,51 +204,6 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-images-${{ matrix.arch }}
-          path: /tmp/digests
-          retention-days: 1
-          if-no-files-found: error
-
-  build-images-pr:
-    name: build images
-    # One job for a PR's amd64 images, like build-images. It needs no job: it
-    # asks image:resolve itself whether platform-base moved, rather than wait
-    # for a runner slot for `detect stale images` and then another for itself.
-    # mock joins the builds unless platform-base moved: then build-mock builds
-    # it on top of this run's platform-base.
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # image:resolve reads the commit that last touched platform-base.
-          fetch-depth: 0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: ${{ env.MISE_VERSION }}
-      - name: Build
-        run: |
-          set -euo pipefail
-          # The same decision the changes job makes for build-platform-base.
-          base="$(.mise/tasks/image/resolve resolve platform-base)"
-          echo "platform-base: $base"
-          mock=() base_arg=()
-          if [ "${base%% *}" = REUSE ]; then
-            mock=(mock:sha) base_arg=(--base-image "${base#REUSE }")
-          fi
-          # e2e does not run the vm-runner, so a PR only proves it builds.
-          .mise/tasks/image/ci-build "${base_arg[@]}" amd64 \
-            controller api-server ui keycloak vm-runner:cacheonly "${mock[@]}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: digests-images-amd64
           path: /tmp/digests
           retention-days: 1
           if-no-files-found: error
@@ -515,7 +470,7 @@ jobs:
   build-mock:
     name: build mock (e2e fixture)
     needs: [build-platform-base, changes]
-    # On a PR, build-images-pr builds mock unless platform-base moved.
+    # On a PR, e2e builds mock itself unless platform-base moved.
     if: >-
       ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() &&
           (github.event_name != 'pull_request' || needs.changes.outputs.platform_base == 'true') }}
@@ -560,9 +515,10 @@ jobs:
   e2e:
     name: mise e2e
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
-    # no image, so it runs while they build. e2e:ci-images waits for them in
-    # the background, and cluster:install waits for it at the image load. A
-    # failed build still fails this job, there.
+    # no image, so it runs while they build. e2e:ci-images builds them here on
+    # a PR, or waits for this run's build jobs, in the background, and
+    # cluster:install waits for it at the image load. A failed build still
+    # fails this job, there.
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
@@ -576,23 +532,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # On a PR, image:resolve reads the commit that last touched
+          # platform-base.
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
+      - if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Fetch this run's images in the background
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # The jobs that make the images e2e loads; see e2e:ci-images.
-          CI_IMAGES_JOBS: >-
-            ${{ github.event_name == 'pull_request'
-                && 'detect stale images|build images|build mock (e2e fixture)'
-                || 'detect stale images|build-images (amd64)|build mock (e2e fixture)' }}
-        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+      # The keycloak image bakes in the theme JAR. Built here, before the
+      # background build starts, so it does not race e2e:install's own run of
+      # the same task, which is then a cache hit.
+      - if: github.event_name == 'pull_request'
+        run: mise run //packages/keycloak-theme:build
+      - name: Build or fetch this run's images in the background
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYCLOAK_THEME_BUILT: "1"
+          CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
+          # The jobs that make the images e2e loads; see e2e:ci-images.
+          CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          CI_IMAGES_JOBS: >-
+            ${{ github.event_name == 'pull_request'
+                && 'detect stale images|build mock (e2e fixture)'
+                || 'detect stale images|build-images (amd64)|build mock (e2e fixture)' }}
+        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
@@ -604,6 +573,15 @@ jobs:
       - name: Image fetch log
         if: ${{ !cancelled() }}
         run: cat /tmp/ci-images.log
+      # The vm-runner build e2e:ci-images left running in the background.
+      - name: vm-runner build
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        run: |
+          set -euo pipefail
+          [ -e /tmp/vm-runner-build.log ] || { echo "::error::the vm-runner build never started; see the image fetch log"; exit 1; }
+          for _ in $(seq 180); do [ -s /tmp/vm-runner-build.status ] && break; sleep 10; done
+          cat /tmp/vm-runner-build.log || true
+          [ "$(cat /tmp/vm-runner-build.status 2>/dev/null)" = 0 ]
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
