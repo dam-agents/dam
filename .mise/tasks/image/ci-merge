@@ -32,23 +32,34 @@ case "$GITHUB_REF" in
     ;;
 esac
 
-failed=()
-for c in "$@"; do
-  tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
+# Each create pushes the list once per tag, which takes minutes for one
+# image, so the images merge side by side.
+merge_one() {
+  local c=$1 s t seen=" " args=() srcs=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
   if [[ " ${SOURCE_SHA_TAGGED:-} " == *" $c "* ]]; then
     s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
     [ -n "$s" ] && tags+=("$s")
   fi
-  args=() seen=" "
   for t in "${tags[@]}"; do
     [[ "$seen" == *" $t "* ]] && continue
     seen+="$t " args+=(-t "$IMAGE_PREFIX/$c:$t")
   done
-  srcs=()
   for d in "$dir/$c"/*; do [ -e "$d" ] && srcs+=("$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
-  if [ "${#srcs[@]}" -eq 0 ]; then echo "::error::no digests for $c"; failed+=("$c"); continue; fi
+  if [ "${#srcs[@]}" -eq 0 ]; then echo "::error::no digests for $c"; return 1; fi
   echo "$c:$seen<- ${srcs[*]}"
-  docker buildx imagetools create "${args[@]}" "${srcs[@]}" || failed+=("$c")
+  docker buildx imagetools create "${args[@]}" "${srcs[@]}"
+}
+
+mkdir -p /tmp/ci-merge
+pids=() failed=()
+for c in "$@"; do
+  merge_one "$c" > "/tmp/ci-merge/$c.log" 2>&1 &
+  pids+=($!)
+done
+names=("$@")
+for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
+for c in "$@"; do
+  echo "::group::$c"; cat "/tmp/ci-merge/$c.log"; echo "::endgroup::"
 done
 
 if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to merge: ${failed[*]}"; exit 1; fi
