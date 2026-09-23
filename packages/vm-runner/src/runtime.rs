@@ -211,7 +211,7 @@ pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out and then killed, the files a dead VMM leaves are removed, and the overlay is discarded.
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied.
 pub fn clear_for_start(id: &str, proc_root: &Path, vm_dir: &Path) {
     if !vm_dir.is_dir() {
         return;
@@ -224,6 +224,7 @@ pub fn clear_for_start(id: &str, proc_root: &Path, vm_dir: &Path) {
         let _ = fs::remove_file(vm_dir.join(file));
     }
     discard_overlay(id, proc_root, vm_dir);
+    crate::console::clear_console(id, vm_dir);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs one machine operation and logs it with its duration: info for every operation, a warning when it was slow or failed. The error is redacted because an operator's Secret reaches the guest through the env, and smolvm's own errors may echo the record they were given.

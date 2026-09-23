@@ -590,22 +590,20 @@ impl Server {
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note.
-    fn watch_boot(
-        &self,
-        id: &str,
-        status: &mut MachineStatus,
-        started_at: Option<Instant>,
-        no_failure: bool,
-    ) {
-        let (op, note) = {
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
+    fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
+        let (op, note, started_at) = {
             let mut inner = locked(&self.inner);
             let op = inner.awaiting.get(id).copied();
             if status.ready {
                 inner.awaiting.remove(id);
                 inner.slow_boots.remove(id);
             }
-            (op, inner.slow_boots.get(id).cloned())
+            (
+                op,
+                inner.slow_boots.get(id).cloned(),
+                inner.started_at.get(id).copied(),
+            )
         };
         let Some(at) = started_at else {
             return;
@@ -772,7 +770,7 @@ impl Server {
         }
         if reads_ready(&status.state) {
             status.ready = healthy(port);
-            self.watch_boot(id, &mut status, started_at, no_failure);
+            self.watch_boot(id, &mut status, no_failure);
         }
         if status.state == STATE_RUNNING {
             locked(&self.inner)
