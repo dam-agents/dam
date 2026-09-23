@@ -166,7 +166,7 @@ fn main() -> anyhow::Result<()> {
         .block_on(serve(args, token))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     for device in ["/dev/kvm", "/dev/net/tun"] {
@@ -183,9 +183,13 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
         }
         std::fs::create_dir_all(dir)
             .map_err(|e| anyhow::anyhow!("creating state dir {}: {e}", dir.display()))?;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
-            anyhow::anyhow!("opening state dir {} to machine uids: {e}", dir.display())
-        })?;
+        if let Err(e) = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)) {
+            if dir == &args.image_dir && e.kind() == std::io::ErrorKind::ReadOnlyFilesystem {
+                tracing::warn!(path = %dir.display(), "image dir is read-only, so machine uids see the mount's own permissions");
+                continue;
+            }
+            anyhow::bail!("opening state dir {} to machine uids: {e}", dir.display());
+        }
     }
     Ok(())
 }
