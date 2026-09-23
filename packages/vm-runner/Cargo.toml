@@ -17,10 +17,10 @@ default-members = [".", "platform-init"]
 exclude = [".smolvm"]
 
 [dependencies]
-# The same release the runner image installs for its assets — see the version
-# invariant in the Dockerfile. `smolvm.pin` names the commit, and nothing
-# else does: a path dependency is recorded in Cargo.lock as a bare version, with
-# no source and no commit, so the lock says nothing about which tree is there.
+# The same release the runner image installs for its assets: `smolvm.pin` names
+# it for both, and it alone names the commit — a path dependency is recorded
+# in Cargo.lock as a bare version, with no source and no commit, so the lock
+# says nothing about which tree is there.
 smolvm = { path = ".smolvm" }
 # The guest contract. The paths this runner writes a machine's share at are
 # the ones platform-init reads it from, because both link the one file.
@@ -29,9 +29,6 @@ anyhow = "1"
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 clap = { version = "4", features = ["derive"] }
-# --allow-from is a list of CIDRs the runner refuses to start on if any is
-# malformed; parsing them by hand is how an allowlist quietly admits everybody.
-ipnet = "2"
 # kill(2) for a VMM that outlived its stop. Already in the lock by way of
 # smolvm, so this adds an edge and no crate.
 libc = "0.2"

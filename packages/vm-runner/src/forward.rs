@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ipnet::IpNet;
 use tokio_util::sync::CancellationToken;
 
-// UNIT_BOUNDARY_DESCRIPTION: publishes each machine's agent port on a port of the runner pod, which is what the agent's Service maps onto. smolvm publishes the guest's port on loopback only, at the machine's port plus LOOPBACK_OFFSET; this forwards the pod-facing port there, admitting only the sources the install names. It also answers whether a guest is up, by asking its health endpoint on that loopback port.
+// UNIT_BOUNDARY_DESCRIPTION: publishes each machine's agent port on a port of the runner pod, which is what the agent's Service maps onto. smolvm publishes the guest's port on loopback only, at the machine's port plus LOOPBACK_OFFSET; this forwards the pod-facing port there. Who may dial it is for the runner's NetworkPolicy to decide. It also answers whether a guest is up, by asking its health endpoint on that loopback port.
 
 // UNIT_BOUNDARY_DESCRIPTION: where smolvm publishes a machine's guest port, relative to the port the runner publishes it on. The pod-facing port is the one the Service reaches; the loopback one is never reachable from outside the pod.
 pub const LOOPBACK_OFFSET: u16 = 1000;
@@ -23,20 +22,14 @@ pub type Listen = dyn Fn(u16) -> std::io::Result<std::net::TcpListener> + Send +
 
 pub struct Forwarder {
     runtime: tokio::runtime::Handle,
-    allow_from: Arc<Vec<IpNet>>,
     listen: Option<Arc<Listen>>,
     published: Mutex<HashMap<String, CancellationToken>>,
 }
 
 impl Forwarder {
-    pub fn new(
-        runtime: tokio::runtime::Handle,
-        allow_from: Vec<IpNet>,
-        listen: Option<Arc<Listen>>,
-    ) -> Self {
+    pub fn new(runtime: tokio::runtime::Handle, listen: Option<Arc<Listen>>) -> Self {
         Self {
             runtime,
-            allow_from: Arc::new(allow_from),
             listen,
             published: Mutex::new(HashMap::new()),
         }
@@ -54,7 +47,6 @@ impl Forwarder {
         listener.set_nonblocking(true)?;
         let stop = CancellationToken::new();
         published.insert(id.to_string(), stop.clone());
-        let allow_from = self.allow_from.clone();
         let guest = SocketAddr::from(([127, 0, 0, 1], port + LOOPBACK_OFFSET));
         self.runtime.spawn(async move {
             let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
@@ -65,15 +57,12 @@ impl Forwarder {
                     _ = stop.cancelled() => return,
                     accepted = listener.accept() => accepted,
                 };
-                let Ok((mut conn, from)) = accepted else {
+                let Ok((mut conn, _)) = accepted else {
                     tokio::select! {
                         _ = stop.cancelled() => return,
                         _ = tokio::time::sleep(ACCEPT_RETRY) => continue,
                     }
                 };
-                if !allowed(&allow_from, from.ip()) {
-                    continue;
-                }
                 tokio::spawn(async move {
                     let dial =
                         tokio::time::timeout(DIAL_TIMEOUT, tokio::net::TcpStream::connect(guest));
@@ -117,15 +106,6 @@ impl Forwarder {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a source may reach a published port. An empty list admits everyone, leaving the runner's NetworkPolicy as the only gate. An IPv4 address that arrives mapped into IPv6, as it does on a dual-stack listener, is matched as the IPv4 address it is.
-pub fn allowed(allow_from: &[IpNet], from: IpAddr) -> bool {
-    if allow_from.is_empty() {
-        return true;
-    }
-    let from = from.to_canonical();
-    allow_from.iter().any(|net| net.contains(&from))
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: whether the guest answers its health endpoint with a 200. Asked with a bare HTTP/1.1 request, bounded to HEALTH_TIMEOUT, on the loopback port smolvm publishes the guest on.
 pub fn healthy(port: u16) -> bool {
     if port == 0 {
@@ -166,16 +146,6 @@ pub fn healthy(port: u16) -> bool {
 mod tests {
     use super::*;
     use std::net::TcpListener;
-
-    // TEST_SCENARIO: the allowlist is the runner's own check on a published port, on top of the NetworkPolicy. A source outside it is refused, one inside it is admitted, an IPv4 source arriving as a mapped IPv6 address is judged as IPv4, and an empty list admits everyone.
-    #[test]
-    fn a_published_port_admits_only_the_sources_it_was_told_to() {
-        let nets: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
-        assert!(allowed(&nets, "10.1.2.3".parse().unwrap()));
-        assert!(!allowed(&nets, "192.168.0.1".parse().unwrap()));
-        assert!(allowed(&nets, "::ffff:10.1.2.3".parse().unwrap()));
-        assert!(allowed(&[], "192.168.0.1".parse().unwrap()));
-    }
 
     fn guest(status: &'static str) -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -229,7 +199,6 @@ mod tests {
         let handed = Mutex::new(Some(public));
         let forwarder = Forwarder::new(
             tokio::runtime::Handle::current(),
-            Vec::new(),
             Some(Arc::new(move |_| {
                 handed
                     .lock()
@@ -259,39 +228,6 @@ mod tests {
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-    }
-
-    // TEST_SCENARIO: a source outside the allowlist gets its connection closed without the guest ever being dialled.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn a_refused_source_never_reaches_the_guest() {
-        let (public, upstream) = pair();
-        let port = public.local_addr().unwrap().port();
-        upstream.set_nonblocking(true).unwrap();
-        let handed = Mutex::new(Some(public));
-        let forwarder = Forwarder::new(
-            tokio::runtime::Handle::current(),
-            vec!["192.0.2.0/24".parse().unwrap()],
-            Some(Arc::new(move |_| {
-                handed
-                    .lock()
-                    .unwrap()
-                    .take()
-                    .ok_or_else(|| std::io::Error::other("the port was already handed over"))
-            })),
-        );
-        forwarder.publish("m1", port).unwrap();
-        let read = tokio::task::spawn_blocking(move || {
-            let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
-            let mut got = Vec::new();
-            let _ = conn.read_to_end(&mut got);
-            got
-        });
-        assert!(read.await.unwrap().is_empty());
-        assert!(
-            upstream.accept().is_err(),
-            "the guest was dialled for a refused source"
-        );
-        forwarder.unpublish_all();
     }
 
     // TEST_SCENARIO: a machine's guest port is published on loopback at this offset when it is created, and forwarded to at the same offset for as long as it lives, so the offset and both timeouts are pinned; a longer health timeout makes every readiness poll wait on a guest that is not there.

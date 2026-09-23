@@ -30,7 +30,6 @@ func renderedRunnerArgs(t *testing.T) []string {
 	t.Helper()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.IngressCIDRs = []string{"10.0.0.0/8", "fd00::/8"}
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})

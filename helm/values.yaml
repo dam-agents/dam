@@ -153,8 +153,10 @@ istio:
 # runner runs as every machine's entrypoint; the rest of the guest is a root
 # overlay the machine discards each time it stops, so anything installed
 # outside HOME is gone on the next boot. An Agent whose mounts ask to persist
-# a path outside HOME is refused rather than silently losing it. The controller drives its machine API (TLS,
-# bearer token; both minted by the controller); the agent Service resolves to the
+# a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
+# and a bearer token: the controller mints the token, and cert-manager issues
+# the runner's certificate from `controller.envoyMitm`'s CA issuer, so
+# virtualization needs `controller.envoyMitm.enabled`; the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = the create refuses the vm backend
 # and existing vm agents fail reconcile. One runner per owner; per-user fair-use
@@ -256,19 +258,6 @@ virtualization:
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
-    # A runner image reference (repository:tag) for the canary owners only —
-    # a new smolvm or runner build reaches them first, and everyone else stays
-    # on `image`. Empty = no canary. Owners are chosen by `canary.owners`
-    # (owner labels, as on the Agent) and by `canary.percent`: a stable hash
-    # of the owner puts each one in a bucket of 100, so the same owners are
-    # picked every time and raising the percentage only adds owners. The
-    # canary image rolls in through `rollout` like any other change. To
-    # promote it, set `image` to it and clear `canaryImage`: the canary
-    # owners' pods are then unchanged and do not restart again.
-    canaryImage: ""
-    canary:
-      owners: []
-      percent: 0
     # A directory on the node holding `docker save` archives named after the
     # image reference, mounted read-only into every runner. It is how a
     # cluster with no registry (local dev) gives runners their agent image;
@@ -283,10 +272,6 @@ virtualization:
     # lives inside the cluster and whose excepts leave that range reachable;
     # it resolves Service names and loses nothing, since nothing is blocked.
     dnsPolicy: Default
-    # Extra sources the runner itself admits on machines' published ports,
-    # on top of the NetworkPolicy that limits them to the api-server and the
-    # controller; empty means the policy is the only gate.
-    ingressCidrs: []
     # Where the runner pod itself may send traffic. REQUIRED when
     # virtualization.enabled — the install fails without it, because leaving
     # it empty means no policy at all, and that is the weakest point of this

@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime};
 
-use ipnet::IpNet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -46,7 +45,6 @@ pub struct Config {
     pub ports: RangeInclusive<u16>,
     pub memory_mib: i32,
     pub reserve_mib: i32,
-    pub allow_from: Vec<IpNet>,
     pub pinned: Vec<String>,
     pub listen: Option<Arc<Listen>>,
 }
@@ -130,11 +128,7 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
-        let forwarder = Forwarder::new(
-            tokio::runtime::Handle::current(),
-            config.allow_from.clone(),
-            config.listen.clone(),
-        );
+        let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
         let cache = ImageCache {
             dir: config.image_dir.clone(),

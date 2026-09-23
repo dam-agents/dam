@@ -3,9 +3,7 @@ package reconciler
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -114,6 +112,13 @@ func runnerSecret() *corev1.Secret {
 	}
 }
 
+func runnerTLSSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner) + "-tls", Namespace: "test-agents"},
+		Data:       map[string][]byte{"ca.crt": []byte("RUNNER-CA"), "tls.crt": []byte("CERT"), "tls.key": []byte("KEY")},
+	}
+}
+
 // TEST_SCENARIO: the runner is kept away from Service and pod addresses, and the cluster's DNS is a Service — so resolving through it is exactly what an egress policy forbids, and a registry pull dies on the lookup. The node's resolver is what a pod confined like this has left.
 func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 	agent := vmAgentCR()
@@ -159,7 +164,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 			Message: "0/15 nodes are available: 3 Insufficient devices.kubevirt.io/kvm",
 		}}},
 	}
-	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), pod)
+	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
@@ -207,7 +212,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		agent.Labels = map[string]string{}
 	}
 	agent.Labels[envoyOwnerLabel] = testOwner
-	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
+	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
@@ -370,6 +375,17 @@ func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: stands in for cert-manager, which issues the runner's TLS Secret some time after its Certificate is applied.
+func issueRunnerTLS(t *testing.T, r *AgentReconciler, owner string) {
+	t.Helper()
+	tls := runnerTLSSecret()
+	tls.Name = r.runnerTLSName(owner)
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), tls, metav1.CreateOptions{})
+	if !k8serrors.IsAlreadyExists(err) {
+		require.NoError(t, err)
+	}
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a second owner's runner, with its own fake node behind it, so a test can tell which runner a call reached.
 func addRunner(t *testing.T, r *AgentReconciler, owner string) *fakeNode {
 	t.Helper()
@@ -383,6 +399,7 @@ func addRunner(t *testing.T, r *AgentReconciler, owner string) *fakeNode {
 	sec.Name = r.runnerName(owner)
 	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
 	require.NoError(t, err)
+	issueRunnerTLS(t, r, owner)
 	first := r.runnerEndpoint
 	r.runnerEndpoint = func(o string) string {
 		if o == owner {
@@ -420,7 +437,7 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }
 
-// TEST_SCENARIO: the sweep needs every runner's token, and runs every ten minutes over every owner. Runner Secrets the controller minted carry the component label, so one List serves them all and no Secret is read by name.
+// TEST_SCENARIO: the sweep needs every runner's token and CA, and runs every ten minutes over every owner. Both of a runner's Secrets carry the component label — the token by the controller, the TLS Secret by cert-manager from the Certificate's template — so one List serves them all and no Secret is read by name.
 func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -429,11 +446,13 @@ func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 		if owner != testOwner {
 			addRunner(t, r, owner)
 		}
-		sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
-		require.NoError(t, err)
-		sec.Labels = vmRunnerLabels(owner, r.config.ReleaseName)
-		_, err = r.client.CoreV1().Secrets("test-agents").Update(ctx, sec, metav1.UpdateOptions{})
-		require.NoError(t, err)
+		for _, name := range []string{r.runnerName(owner), r.runnerTLSName(owner)} {
+			sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
+			require.NoError(t, err)
+			sec.Labels = vmRunnerLabels(owner, r.config.ReleaseName)
+			_, err = r.client.CoreV1().Secrets("test-agents").Update(ctx, sec, metav1.UpdateOptions{})
+			require.NoError(t, err)
+		}
 	}
 	fakeClient := r.client.(*fake.Clientset)
 	fakeClient.ClearActions()
@@ -452,7 +471,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
-	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret())
+	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	err := r.Reconcile(context.Background(), agent)
@@ -477,9 +496,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	ctx := context.Background()
 
 	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errRunnerTLSPending, "a runner is not dialled before cert-manager issues its certificate")
 	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errRunnerTLSPending)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
 	assert.NotEqual(t, a, b, "one runner per owner")
@@ -502,11 +521,18 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	secretB, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.NotEqual(t, secretA.Data["token"], secretB.Data["token"], "a runner's token is its own")
-	assert.NotEmpty(t, secretA.Data["tls.crt"])
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		cert, err := r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{})
+		require.NoError(t, err, "each runner asks cert-manager for a certificate of its own")
+		hosts, _, _ := unstructured.NestedStringSlice(cert.Object, "spec", "dnsNames")
+		assert.Equal(t, []string{r.runnerHost(owner)}, hosts)
+	}
 
 	r.deleteRunner(ctx, "owner-a")
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, a, metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
+	_, err = r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(ctx, r.runnerTLSName("owner-a"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "nor a certificate for one")
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err, "and the other owner's runner is untouched")
 }
@@ -790,6 +816,12 @@ func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["secret"] = sec.OwnerReferences
+	tls, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerTLSName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["tls secret"] = tls.OwnerReferences
+	cert, err := r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(ctx, r.runnerTLSName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	owners["certificate"] = cert.GetOwnerReferences()
 	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["pvc"] = pvc.OwnerReferences
@@ -889,29 +921,45 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
 }
 
-// TEST_SCENARIO: the controller trusts a runner by the certificate it minted for it, so that certificate has to name the Service the controller dials — a cert for the wrong name fails the handshake, and anything that is not a certificate at all would silently leave the connection unverified.
+// TEST_SCENARIO: the controller trusts a runner by the CA that issued its certificate, so the certificate has to name the Service the controller dials, come from the install's CA issuer, and label its Secret so the sweep finds it. A TLS Secret with no CA in it must be refused, because an empty trust pool silently falls back to the system roots.
 func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 	r, _ := setupReconciler(t, vmAgentCR())
-	r.config.ReleaseName = "platform"
-	r.config.ReleaseNamespace = "default"
-	name := r.runnerName(testOwner)
+	r.config.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
 
-	certPEM, keyPEM, err := selfSignedCert(name, r.runnerHost(testOwner))
-	require.NoError(t, err)
-	require.NotEmpty(t, keyPEM)
+	cert := r.buildRunnerCertificate(testOwner, nil)
+	assert.Equal(t, []string{r.runnerHost(testOwner)}, cert.Spec.DNSNames, "the cert names the Service the controller dials")
+	assert.Equal(t, r.runnerTLSName(testOwner), cert.Spec.SecretName)
+	assert.Equal(t, "platform-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
+	assert.Equal(t, vmRunnerComponent, cert.Spec.SecretTemplate.Labels["app.kubernetes.io/component"])
 
-	block, _ := pem.Decode([]byte(certPEM))
-	require.NotNil(t, block, "the minted material is a PEM block")
-	cert, err := x509.ParseCertificate(block.Bytes)
-	require.NoError(t, err, "and it parses as a certificate")
-	assert.Contains(t, cert.DNSNames, r.runnerHost(testOwner), "the cert names the Service the controller dials")
-	assert.Contains(t, cert.DNSNames, name)
-
-	_, err = vmrunner.NewClient("https://"+r.runnerHost(testOwner)+":4600", "token", certPEM)
-	require.NoError(t, err, "the controller trusts what it minted")
+	ctx := context.Background()
+	tls := runnerTLSSecret()
+	delete(tls.Data, "ca.crt")
+	for _, sec := range []*corev1.Secret{runnerSecret(), tls} {
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	_, err := r.runnerFor(ctx, testOwner)
+	require.ErrorContains(t, err, "no ca.crt")
 
 	_, err = vmrunner.NewClient("https://x:4600", "token", "not-a-cert")
 	require.Error(t, err, "and refuses to dial with something that is not a certificate")
+}
+
+// TEST_SCENARIO: a new owner's runner cannot serve until cert-manager issues its certificate, and its pod cannot mount the Secret before then. The reconcile requeues, as it does for a gateway's leaf, rather than marking the Agent failed, and no machine is asked for.
+func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
+	agent := vmAgentCR()
+	node, srv := newFakeNode(t)
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
+	r.runnerEndpoint = func(string) string { return srv.URL }
+
+	err := r.Reconcile(context.Background(), agent)
+	require.ErrorIs(t, err, errRunnerTLSPending)
+	assert.Empty(t, node.specs)
+	_, err = r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(context.Background(), r.runnerTLSName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err, "the certificate is asked for on the same pass")
 }
 
 // TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.

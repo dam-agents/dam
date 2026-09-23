@@ -217,7 +217,6 @@ mod tests {
                 ports: 31000..=31099,
                 memory_mib: 1 << 20,
                 reserve_mib: 0,
-                allow_from: Vec::new(),
                 pinned: Vec::new(),
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
             },

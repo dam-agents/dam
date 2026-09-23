@@ -1,9 +1,8 @@
-// TEST_OVERVIEW: a runner's machines are its processes, so a change to the runner pod reboots every machine of that owner. The controller must create a new owner's runner at once, leave a runner alone while its rendered pod is unchanged, and roll a changed pod to at most `rollout.maxConcurrent` runners at a time, each holding its place until its new pod is ready and the machines that were ready before are ready again — or until the settle timeout says it never will be. A canary image reaches only the owners the install names or whose stable bucket falls under the canary percentage.
+// TEST_OVERVIEW: a runner's machines are its processes, so a change to the runner pod reboots every machine of that owner. The controller must create a new owner's runner at once, leave a runner alone while its rendered pod is unchanged, and roll a changed pod to at most `rollout.maxConcurrent` runners at a time, each holding its place until its new pod is ready and the machines that were ready before are ready again — or until the settle timeout says it never will be.
 package reconciler
 
 import (
 	"context"
-	"fmt"
 	"net/http/httptest"
 	"sort"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -57,6 +55,7 @@ func setupRolloutReconciler(t *testing.T, owners ...string) (*AgentReconciler, m
 func createRolloutRunner(t *testing.T, r *AgentReconciler, owner string) {
 	t.Helper()
 	ctx := context.Background()
+	issueRunnerTLS(t, r, owner)
 	_, _, err := r.ensureRunner(ctx, owner, runnerDemand{})
 	require.NoError(t, err)
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
@@ -137,6 +136,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	r.config.VM.Runner.Image = runnerV2
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
 
+	issueRunnerTLS(t, r, "owner-new")
 	_, _, err := r.ensureRunner(ctx, "owner-new", runnerDemand{})
 	require.NoError(t, err)
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-new"))
@@ -223,44 +223,6 @@ func TestTheSweepRollsRunnersNoAgentReconciles(t *testing.T) {
 		}
 		settleRunnerPod(t, r, owners[pass])
 	}
-}
-
-// TEST_SCENARIO: an install trials a new runner build on a few owners first. Named owners and owners in the canary percentage get the canary image, and everyone else keeps the install's image.
-func TestACanaryImageReachesOnlyTheCanaryOwners(t *testing.T) {
-	r, _ := setupRolloutReconciler(t)
-	r.config.VM.Runner.CanaryImage = runnerV2
-	r.config.VM.Runner.Canary = config.VMRunnerCanary{Owners: []string{"owner-canary"}}
-
-	for _, owner := range []string{"owner-canary", "owner-plain"} {
-		createRolloutRunner(t, r, owner)
-	}
-	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-canary"))
-	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-plain"))
-
-	r.config.VM.Runner.CanaryImage = ""
-	assert.Equal(t, runnerV1, runnerImage(r.config.VM.Runner, "owner-canary"), "no canary image means no canary, whoever is named")
-}
-
-// TEST_SCENARIO: the canary percentage picks owners by a hash of the owner label alone. The same owner is picked every time, raising the percentage only adds owners, and the share picked is close to what was asked.
-func TestTheCanaryPercentageIsStable(t *testing.T) {
-	picked := func(percent int) map[string]bool {
-		out := map[string]bool{}
-		for i := range 1000 {
-			owner := fmt.Sprintf("user-%d", i)
-			if isCanaryOwner(owner, config.VMRunnerCanary{Percent: percent}) {
-				out[owner] = true
-			}
-		}
-		return out
-	}
-	assert.Empty(t, picked(0))
-	assert.Len(t, picked(100), 1000)
-	ten, twenty := picked(10), picked(20)
-	assert.Equal(t, ten, picked(10), "the same owners every time")
-	for owner := range ten {
-		assert.True(t, twenty[owner], "%s was a canary at 10%% and must stay one at 20%%", owner)
-	}
-	assert.InDelta(t, 100, len(ten), 40)
 }
 
 // TEST_SCENARIO: an owner waits their turn while one of their machines is starting, so their agent reconciles every half second. The gate keeps its last "the roll is full" answer for a short while, so those passes do not list every runner, which is what the rest of the settle check — calls to the rolling owner's runner about each of its machines — hangs off.

@@ -12,6 +12,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
+{{- include "platform.validate.vmRunnerNeedsTheCertificateIssuer" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
@@ -95,6 +96,19 @@ first evicted — taking every machine with it.
 {{- end -}}
 
 {{/*
+The controller trusts a runner by the CA that issued its serving certificate,
+and cert-manager issues that certificate from the envoyMitm CA issuer. With
+envoyMitm off neither the issuer nor the controller's right to request
+Certificates exists, so every runner would wait forever for a Secret nobody
+issues.
+*/}}
+{{- define "platform.validate.vmRunnerNeedsTheCertificateIssuer" -}}
+{{- if and .Values.virtualization.enabled (not (and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled)) -}}
+{{- fail "virtualization.enabled=true requires controller.envoyMitm.enabled — cert-manager issues each VM runner's serving certificate from that CA issuer, and the controller trusts a runner by it." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A machine's egress allowlist is enforced by smolvm inside the very process an
 escaped guest would own. The runner's own NetworkPolicy is the kernel gate on
 where such a guest may go (each gateway's ingress policy separately decides whose
@@ -164,7 +178,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range $field := list "egressCidrs" "egressExceptCidrs" "ingressCidrs" -}}
+{{- range $field := list "egressCidrs" "egressExceptCidrs" -}}
 {{- range (index $v.runner $field | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
 {{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}

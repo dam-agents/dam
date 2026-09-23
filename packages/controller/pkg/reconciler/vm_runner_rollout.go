@@ -3,11 +3,9 @@ package reconciler
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -41,22 +39,6 @@ func (g *runnerRollGate) stillFull(now time.Time) bool {
 		recheck = defaultRunnerRollRecheck
 	}
 	return g.full && now.Sub(g.checkedAt) < recheck
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an owner is a canary when the install names them, or when their bucket falls under the canary percentage. The bucket is a hash of the owner label and nothing else, so it is the same on every reconcile and every controller replica, and raising the percentage only adds owners: an owner who is a canary at 10 stays one at 20.
-func isCanaryOwner(owner string, canary config.VMRunnerCanary) bool {
-	if slices.Contains(canary.Owners, owner) {
-		return true
-	}
-	sum := sha256.Sum256([]byte("canary/" + owner))
-	return binary.BigEndian.Uint64(sum[:8])%100 < uint64(max(canary.Percent, 0))
-}
-
-func runnerImage(spec config.VMRunnerSpec, owner string) string {
-	if spec.CanaryImage != "" && isCanaryOwner(owner, spec.Canary) {
-		return spec.CanaryImage
-	}
-	return spec.Image
 }
 
 func runnerTemplateHash(spec appsv1.DeploymentSpec) (string, error) {

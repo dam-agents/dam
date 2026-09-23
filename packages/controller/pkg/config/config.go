@@ -248,9 +248,6 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
-	if p := cfg.VM.Runner.Canary.Percent; p < 0 || p > 100 {
-		return nil, fmt.Errorf("AGENT_VM: runner.canary.percent is %d, it must be between 0 and 100", p)
-	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
 	}

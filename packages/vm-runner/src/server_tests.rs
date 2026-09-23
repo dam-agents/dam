@@ -156,7 +156,6 @@ impl Harness {
             ports: base..=base + 1,
             memory_mib: 1 << 20,
             reserve_mib: 0,
-            allow_from: Vec::new(),
             pinned: Vec::new(),
             listen: Some(Arc::new(move |port| match locked(&held).remove(&port) {
                 Some(listener) => Ok(listener),
@@ -730,7 +729,6 @@ async fn a_restarted_runner_republishes_its_ports() {
             ports: port..=port + 1,
             memory_mib: 1 << 20,
             reserve_mib: 0,
-            allow_from: Vec::new(),
             pinned: Vec::new(),
             listen: Some(listen),
         },

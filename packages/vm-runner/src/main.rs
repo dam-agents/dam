@@ -4,13 +4,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use ipnet::IpNet;
 use vm_runner::embedded::Smolvm;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials, the runner's budgets and allowlist. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -59,28 +58,6 @@ struct Args {
     tls_cert: String,
     #[arg(long = "tls-key", default_value = "")]
     tls_key: String,
-    // UNIT_BOUNDARY_DESCRIPTION: CIDRs allowed to dial published machine ports; empty admits any. Parsed at startup rather than at first use, because the failure of an allowlist is that it admits everybody, and a runner that took a malformed entry would report nothing wrong while doing exactly that.
-    #[arg(long = "allow-from", default_value = "", value_parser = allow_from)]
-    allow_from: AllowFrom,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the whole list as one flag value, which is what it is — a newtype rather than a bare Vec because clap reads a Vec field as "one of these per occurrence" and would hand the parser a single entry while expecting a single entry back. Declared as a Vec it builds, rejects a malformed CIDR correctly, and then panics on the success path downcasting what it parsed.
-#[derive(Clone, Debug, Default)]
-struct AllowFrom(Vec<IpNet>);
-
-// UNIT_BOUNDARY_DESCRIPTION: this flag is split on commas, blank entries are skipped, and anything that is not a CIDR exits the runner before it starts.
-fn allow_from(value: &str) -> anyhow::Result<AllowFrom> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| {
-            entry
-                .parse::<IpNet>()
-                .map_err(|e| anyhow::anyhow!("--allow-from {entry}: {e}"))
-        })
-        .collect::<anyhow::Result<Vec<IpNet>>>()
-        .map(AllowFrom)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
@@ -137,6 +114,22 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
 const REAP_EVERY: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: how often the serving certificate is read again. cert-manager renews it in the mounted Secret well before it expires, and restarting to pick it up would reboot every machine, so the runner re-reads it in place instead.
+const TLS_RELOAD_EVERY: Duration = Duration::from_secs(300);
+
+fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: String) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(TLS_RELOAD_EVERY);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            if let Err(e) = tls.reload_from_pem_file(&cert, &key).await {
+                tracing::warn!(error = %e, "the serving certificate could not be re-read; keeping the one loaded");
+            }
+        }
+    });
+}
 
 fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
@@ -208,7 +201,6 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
-            allow_from: args.allow_from.0.clone(),
             pinned: Vec::new(),
             listen: None,
         },
@@ -271,6 +263,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
                     &args.tls_key,
                 )
                 .await?;
+                reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
                 axum_server::from_tcp_rustls(listener, tls)
                     .handle(handle)
                     .serve(app)
@@ -304,30 +297,6 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // TEST_SCENARIO: an allowlist fails open — a value it cannot read admits everybody rather than nobody, and says nothing. So each of the flag's three rules is pinned: entries split on commas, surrounding space ignored, blanks skipped, and anything that is not a CIDR refused before the runner starts rather than ignored while it runs.
-    #[test]
-    fn the_allowlist_reads_comma_separated_cidrs_and_nothing_else() {
-        assert_eq!(allow_from("").unwrap().0, vec![]);
-        assert_eq!(allow_from(" , ").unwrap().0, vec![]);
-        assert_eq!(
-            allow_from("10.0.0.0/8, 192.168.1.0/24").unwrap().0,
-            vec![
-                "10.0.0.0/8".parse::<IpNet>().unwrap(),
-                "192.168.1.0/24".parse().unwrap()
-            ]
-        );
-        assert_eq!(
-            allow_from("fd00::/8").unwrap().0,
-            vec!["fd00::/8".parse::<IpNet>().unwrap()]
-        );
-
-        let err = allow_from("10.0.0.0/8,not-a-cidr").unwrap_err().to_string();
-        assert!(
-            err.contains("not-a-cidr"),
-            "the refusal has to name the entry: {err}"
-        );
-    }
 
     // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
     #[test]
@@ -390,19 +359,6 @@ mod tests {
             Some(install.join("agent-rootfs").into_os_string())
         );
         let _ = std::fs::remove_dir_all(&install);
-    }
-
-    // TEST_SCENARIO: clap reads a Vec field as one value per occurrence, so a parser that returns the whole list against a Vec field builds, refuses a bad CIDR correctly, and then panics downcasting a good one. Parsing the flag through the real Args is what tells the two apart — the unit test above passes either way.
-    #[test]
-    fn a_parsed_allowlist_survives_being_read_back_off_the_args() {
-        let args = Args::try_parse_from([
-            "vm-runner",
-            "--memory-mib=1",
-            "--allow-from=10.0.0.0/8,192.168.1.0/24",
-        ])
-        .expect("these are the flags the controller passes");
-        assert_eq!(args.allow_from.0.len(), 2);
-        assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.

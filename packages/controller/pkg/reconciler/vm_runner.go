@@ -2,21 +2,16 @@ package reconciler
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/hex"
-	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/netip"
 	"strings"
-	"time"
 
+	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -40,7 +35,6 @@ const (
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
 	vmRunnerPort         = 4600
-	vmRunnerCertYears    = 10
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
@@ -54,7 +48,10 @@ const (
 type runnerConn struct {
 	client *vmrunner.Client
 	token  string
+	caPEM  string
 }
+
+var errRunnerTLSPending = errors.New("VM runner TLS Secret not yet issued")
 
 // UNIT_BOUNDARY_DESCRIPTION: this suffix is the whole of a runner's identity — it names the Secret, the disk and the Service — so two owners colliding here would silently share one runner's credentials and machines. 64 bits puts that out of reach while leaving a Service name, capped at 63 characters, 36 for the release's own.
 func runnerSuffix(owner string) string {
@@ -104,14 +101,16 @@ func vmRunnerLabels(owner, release string) map[string]string {
 	return labels
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their credentials, renders their objects, and hands the caller a client once the pod reports ready.
+// UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their tokens, asks cert-manager for their serving certificates, renders their objects, and hands the caller a client once the pod reports ready.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand runnerDemand) (*vmrunner.Client, bool, error) {
 	name := r.runnerName(owner)
 	ns := r.config.Namespace
 
-	client, err := r.runnerFor(ctx, owner)
-	if err != nil {
+	if err := r.ensureRunnerToken(ctx, owner); err != nil {
 		return nil, false, err
+	}
+	if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, r.runnerOwnerRef(ctx))); err != nil {
+		return nil, false, fmt.Errorf("applying the runner's certificate: %w", err)
 	}
 	if err := r.applyRunnerPVC(ctx, owner, demand); err != nil {
 		return nil, false, err
@@ -127,6 +126,15 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
 		return nil, false, err
 	}
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, ref := range r.runnerOwnerRef(ctx) {
+		if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), ref); err != nil {
+			slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
+		}
+	}
 	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return client, false, err
@@ -140,103 +148,86 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	return client, ready, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — mint or read its credentials, then dial it — so the credential is never handled anywhere but here.
-func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunner.Client, error) {
-	token, caPEM, err := r.ensureRunnerSecret(ctx, owner)
-	if err != nil {
-		return nil, err
-	}
-	return r.runnerClient(owner, token, caPEM)
+func (r *AgentReconciler) runnerTLSName(owner string) string {
+	return r.runnerName(owner) + "-tls"
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's serving certificate comes from the same CA issuer as the gateways' leaf certificates, so cert-manager holds the only CA key and renews what it issued. It names only the Service host the controller dials, and is good for serving alone. The Secret carries the runner's labels so the sweep's one List of runner Secrets finds it too.
+func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav1.OwnerReference) *cmv1.Certificate {
+	name := r.runnerTLSName(owner)
+	labels := vmRunnerLabels(owner, r.config.ReleaseName)
+	return &cmv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.config.Namespace, Labels: labels, OwnerReferences: ownerRefs},
+		Spec: cmv1.CertificateSpec{
+			SecretName:     name,
+			SecretTemplate: &cmv1.CertificateSecretTemplate{Labels: labels},
+			DNSNames:       []string{r.runnerHost(owner)},
+			Usages:         []cmv1.KeyUsage{cmv1.UsageDigitalSignature, cmv1.UsageServerAuth},
+			IssuerRef: cmmetav1.IssuerReference{
+				Name:  r.config.EnvoyMitmCAIssuer,
+				Kind:  "ClusterIssuer",
+				Group: "cert-manager.io",
+			},
+			PrivateKey: &cmv1.CertificatePrivateKey{Algorithm: cmv1.ECDSAKeyAlgorithm, Size: 256},
+		},
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — read its token and the CA that issued its certificate, then dial it — so the credential is never handled anywhere but here. A runner whose certificate cert-manager has not issued yet cannot be dialled, and its pod cannot start either, so the caller requeues as it does for a gateway's leaf.
+func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunner.Client, error) {
+	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
+	token, err := secrets.Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("reading the runner's token: %w", err)
+	}
+	tls, err := secrets.Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil, errRunnerTLSPending
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the runner's TLS Secret: %w", err)
+	}
+	return r.runnerClient(owner, string(token.Data["token"]), string(tls.Data["ca.crt"]))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a client is kept per owner until the token or the CA it was built with changes. An empty CA is refused, because the HTTP client would then trust the system roots, which vouch for any public name.
 func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Client, error) {
 	r.runnerMu.Lock()
 	defer r.runnerMu.Unlock()
-	if conn, ok := r.runners[owner]; ok && conn.token == token {
+	if conn, ok := r.runners[owner]; ok && conn.token == token && conn.caPEM == caPEM {
 		return conn.client, nil
 	}
-	endpoint := fmt.Sprintf("https://%s:%d", r.runnerHost(owner), vmRunnerPort)
+	endpoint, trust := fmt.Sprintf("https://%s:%d", r.runnerHost(owner), vmRunnerPort), caPEM
 	if r.runnerEndpoint != nil {
-		endpoint = r.runnerEndpoint(owner)
-		caPEM = ""
+		endpoint, trust = r.runnerEndpoint(owner), ""
+	} else if caPEM == "" {
+		return nil, fmt.Errorf("the runner's TLS Secret %s has no ca.crt", r.runnerTLSName(owner))
 	}
-	client, err := vmrunner.NewClient(endpoint, token, caPEM)
+	client, err := vmrunner.NewClient(endpoint, token, trust)
 	if err != nil {
 		return nil, err
 	}
 	if r.runners == nil {
 		r.runners = map[string]runnerConn{}
 	}
-	r.runners[owner] = runnerConn{client: client, token: token}
+	r.runners[owner] = runnerConn{client: client, token: token, caPEM: caPEM}
 	return client, nil
 }
 
-func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) (string, string, error) {
+func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
-	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
-		return string(existing.Data["token"]), string(existing.Data["tls.crt"]), nil
-	}
+	_, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if !k8serrors.IsNotFound(err) {
-		return "", "", err
+		return err
 	}
-	certPEM, keyPEM, err := selfSignedCert(name, r.runnerHost(owner))
-	if err != nil {
-		return "", "", err
-	}
-	token := utilrand.String(48)
 	sec := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
-		Data: map[string][]byte{
-			"token":   []byte(token),
-			"tls.crt": []byte(certPEM),
-			"tls.key": []byte(keyPEM),
-		},
+		Data:       map[string][]byte{"token": []byte(utilrand.String(48))},
 	}
-	if _, err := r.client.CoreV1().Secrets(ns).Create(ctx, sec, metav1.CreateOptions{}); err != nil {
-		if !k8serrors.IsAlreadyExists(err) {
-			return "", "", err
-		}
-		again, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return "", "", err
-		}
-		return string(again.Data["token"]), string(again.Data["tls.crt"]), nil
+	if _, err := r.client.CoreV1().Secrets(ns).Create(ctx, sec, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return err
 	}
-	return token, certPEM, nil
-}
-
-func selfSignedCert(names ...string) (string, string, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return "", "", err
-	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		return "", "", err
-	}
-	tmpl := x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: names[0]},
-		DNSNames:              names,
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().AddDate(vmRunnerCertYears, 0, 0),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
-	if err != nil {
-		return "", "", err
-	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return "", "", err
-	}
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-	return string(certPEM), string(keyPEM), nil
+	return nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the cached images may occupy. Every cache is bounded by this one number, wherever it lives: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so neither can be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node or the disks it shares with run out.
@@ -454,7 +445,13 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	}
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
-		{Name: "credentials", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr.To[int32](0o400)}}},
+		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+			DefaultMode: ptr.To[int32](0o400),
+			Sources: []corev1.VolumeProjection{
+				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: name}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
+				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "tls.crt", Path: "tls.crt"}, {Key: "tls.key", Path: "tls.key"}}}},
+			},
+		}}},
 	}
 	switch {
 	case spec.ImageCacheHostPath != "":
@@ -490,7 +487,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					ImagePullSecrets:             spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,
-						Image:           runnerImage(spec, owner),
+						Image:           spec.Image,
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
 							fmt.Sprintf("--listen=:%d", vmRunnerPort),
@@ -506,7 +503,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-							fmt.Sprintf("--allow-from=%s", strings.Join(spec.IngressCIDRs, ",")),
 						},
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
@@ -551,7 +547,7 @@ type runnerRef struct {
 	client *vmrunner.Client
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's Secret. Reading them one at a time is a Get per runner on every sweep, so the runners' Secrets are listed once by their component label, which every Secret the controller mints carries. A runner whose Secret is not in that list, because the list failed or the Secret was minted after it, is resolved the ordinary way, which reads it by name.
+// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's token and TLS Secrets. Reading them one at a time is two Gets per runner on every sweep, so the runners' Secrets are listed once by their component label, which both carry. A runner whose Secrets are not both in that list, because the list failed or they were written after it, is resolved the ordinary way, which reads them by name.
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
 	selector := metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent}
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, selector)
@@ -573,8 +569,9 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 			continue
 		}
 		var client *vmrunner.Client
-		if sec, ok := secrets[r.runnerName(owner)]; ok && len(sec.Data["token"]) > 0 {
-			client, err = r.runnerClient(owner, string(sec.Data["token"]), string(sec.Data["tls.crt"]))
+		token, tls := secrets[r.runnerName(owner)], secrets[r.runnerTLSName(owner)]
+		if len(token.Data["token"]) > 0 && len(tls.Data["ca.crt"]) > 0 {
+			client, err = r.runnerClient(owner, string(token.Data["token"]), string(tls.Data["ca.crt"]))
 		} else {
 			client, err = r.runnerFor(ctx, owner)
 		}
@@ -596,7 +593,14 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 		return
 	}
 	for _, del := range []func() error{
+		func() error {
+			if r.dynamic == nil {
+				return nil
+			}
+			return r.dynamic.Resource(certificateGVR).Namespace(ns).Delete(ctx, r.runnerTLSName(owner), opts)
+		},
 		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },
+		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, r.runnerTLSName(owner), opts) },
 		func() error { return r.client.CoreV1().Services(ns).Delete(ctx, name, opts) },
 		func() error {
 			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)

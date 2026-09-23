@@ -11,6 +11,5 @@
   "--memory-mib=$(RUNNER_MEMORY_MIB)",
   "--reserve-mib=512",
   "--tls-cert=/etc/vm-runner/tls.crt",
-  "--tls-key=/etc/vm-runner/tls.key",
-  "--allow-from=10.0.0.0/8,fd00::/8"
+  "--tls-key=/etc/vm-runner/tls.key"
 ]

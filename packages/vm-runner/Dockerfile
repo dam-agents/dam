@@ -43,13 +43,33 @@ FROM quay.io/fedora/fedora:42 AS runner
 
 # tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
 # expands the ext4 templates onto the runner's claim, once per release, so the
-# first agent created after a roll does not wait for it; the smolvm release
-# itself comes from GitHub, pinned. Its multi-GiB ext4 templates are sparse and
-# stay so in the layer.
-ARG SMOLVM_VERSION=1.16.0
-RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-core catatonit zstd && dnf clean all && \
-    (umask 022; curl -sSL https://smolmachines.com/install.sh | HOME=/opt bash -s -- --version ${SMOLVM_VERSION} --prefix /opt/smolvm) && \
-    mv /opt/.local/share/smolvm/agent-rootfs /opt/smolvm/agent-rootfs && rm -rf /opt/.local && \
+# first agent created after a roll does not wait for it.
+RUN dnf install -y --setopt=install_weak_deps=False tar e2fsprogs util-linux-core catatonit zstd && dnf clean all
+
+# The smolvm release comes from GitHub, at the tag smolvm.pin names and refused
+# unless it has the digest the pin records for this architecture. The tarball is
+# already the layout the runner reads — the launcher, with its libraries, the
+# guest agent's rootfs and the compressed disk templates beside it — so only
+# those are unpacked, and the release's Kubernetes shim, which the runner does
+# not use, is left out.
+COPY smolvm.pin /tmp/smolvm.pin
+RUN set -eu; \
+    version=$(sed -n 's/^tag=v//p' /tmp/smolvm.pin); \
+    case "$(uname -m)" in \
+    x86_64) arch=x86_64 ;; \
+    aarch64) arch=arm64 ;; \
+    *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    sha=$(sed -n "s/^sha256-linux-${arch}=//p" /tmp/smolvm.pin); \
+    [ -n "$version" ] && [ -n "$sha" ] || { echo "smolvm.pin names no release for linux-${arch}" >&2; exit 1; }; \
+    release="smolvm-${version}-linux-${arch}"; \
+    curl -fsSL "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" -o /tmp/smolvm.tar.gz; \
+    echo "$sha /tmp/smolvm.tar.gz" | sha256sum -c -; \
+    mkdir -p /opt/smolvm; \
+    (umask 022; tar -xzf /tmp/smolvm.tar.gz -C /opt/smolvm --strip-components=1 \
+        "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
+        "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"); \
+    rm /tmp/smolvm.tar.gz /tmp/smolvm.pin; \
     chmod -R a+rX /opt/smolvm
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
