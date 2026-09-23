@@ -14,6 +14,7 @@ use crate::api::{
     STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
     STATE_STOPPING, STATE_UNKNOWN,
 };
+use crate::cache::{self, repository, REF_FRESH};
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::embedded::STORAGE_NOT_GROWABLE;
@@ -25,7 +26,9 @@ use crate::metrics::{Gauges, Metrics};
 use crate::plan::{self, admissible, image_changed, needs_restart, reads_ready, Health};
 use crate::runtime::{grown_storage, redact, Machine, Runtime};
 use crate::share::{write_share, SHARE_DIR};
-use crate::state::{self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec};
+use crate::state::{
+    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
+};
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, driven to the shape the controller asks for. Every PUT is planned against what the machine is doing now and the planned operation runs in the background, one at a time per machine, while GET reports it as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share — and what the runner is doing to it lives here and is lost with the process, which is why a restarted runner rebuilds only what the disk can tell it.
 
@@ -487,8 +490,8 @@ impl Server {
     }
 
     fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
-        let (port, image, launch) = self.resolve(id, spec, auths)?;
-        self.boot(id, spec, port, &image, &launch)
+        let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
+        self.boot(id, spec, port, &image, &launch, digest.as_deref())
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: moves a machine to a new image. The new image is fetched and its launch read while the old machine still runs, so the agent is down for the stop, the recreate and the boot and not for a pull, and a pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image stays held while this runs, because the stored spec names it until the new machine has booted; it is rewritten only after that, and the holders published after it release the old image.
@@ -499,13 +502,13 @@ impl Server {
         state: &str,
         auths: &[String],
     ) -> anyhow::Result<()> {
-        let (port, image, launch) = self.resolve(id, spec, auths)?;
+        let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
         self.forget_state(id);
         if state == STATE_RUNNING {
             self.runtime.stop(id)?;
         }
         self.runtime.delete_keeping_storage(id)?;
-        self.boot(id, spec, port, &image, &launch)?;
+        self.boot(id, spec, port, &image, &launch, digest.as_deref())?;
         write_spec(&self.config.state_dir, id, spec)
     }
 
@@ -515,7 +518,7 @@ impl Server {
         id: &str,
         spec: &MachineSpec,
         auths: &[String],
-    ) -> anyhow::Result<(u16, String, ImageLaunch)> {
+    ) -> anyhow::Result<(u16, String, ImageLaunch, Option<String>)> {
         let port = {
             let _ports = locked(&self.ports);
             state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
@@ -524,58 +527,40 @@ impl Server {
         if !is_image_ref(&image) || image.contains("..") {
             anyhow::bail!("invalid image reference {image:?}");
         }
-        let base = self.cache.entry(&image);
-        let archive = PathBuf::from(format!("{}.tar", base.display()));
-        let mut launch = read_launch(&base)?;
-        self.metrics.lookup(launch.is_some());
-        if launch.is_some() {
-            self.cache.may_reuse(&image, auths)?;
-        }
-        let mut cached: Option<PathBuf> = None;
-        if launch.is_none() {
-            let archived = archive.exists();
-            if !self.config.crane.is_empty() {
-                let started = Instant::now();
-                let fetched = self.cache.fetch(
-                    &image,
-                    auths,
-                    &self.images_in_use(Some(id)),
-                    &self.images_in_use(None),
-                );
-                self.metrics.fetched(started.elapsed(), fetched.is_ok());
-                match fetched {
-                    Ok(trim) => {
-                        for bytes in trim.freed {
-                            self.metrics.evicted(bytes);
-                        }
-                        if let Some(used) = trim.used {
-                            self.metrics.cache_size(used);
-                        }
-                        launch = read_launch(&base)?;
-                    }
-                    Err(e) if archived => {
-                        tracing::warn!(image = %image, error = %format!("{e:#}"), "image cache: keeping the archive after a failed unpack");
-                    }
-                    Err(e) => return Err(e),
+        let mut digest = self.cache.resolve_digest(&image, REF_FRESH, auths);
+        let mut booted = match self.digest_image(id, &image, digest.as_deref(), auths) {
+            Ok(found) => found.map(Ok),
+            Err(e) => Some(Err(e)),
+        };
+        if !matches!(booted, Some(Ok(_))) {
+            let legacy = self.legacy_image(&image)?;
+            if digest.is_none() {
+                self.metrics.lookup(legacy.is_some());
+            }
+            if let Some(legacy) = legacy {
+                if let Some(Err(e)) = &booted {
+                    tracing::warn!(image = %image, error = %format!("{e:#}"), "image cache: the digest entry could not be fetched, booting the entry named after the reference");
                 }
-            }
-            if launch.is_none() && archived {
-                launch =
-                    Some(launch_from_archive(&archive).map_err(|e| unusable(format!("{e:#}")))?);
-                cached = Some(archive.clone());
+                digest = None;
+                booted = Some(Ok(legacy));
             }
         }
-        if launch.is_some() && cached.is_none() {
-            cached = Some(base.join(ROOTFS_DIR));
-        }
-        let launch = match launch {
-            Some(launch) => launch,
-            None => fetch::launch_from_registry(&self.config.crane, &image, auths, &self.lifetime)?,
+        let (cached, launch) = match booted {
+            Some(Ok((cached, launch))) => (Some(cached), launch),
+            Some(Err(e)) => return Err(e),
+            None => {
+                if let Some(digest) = &digest {
+                    image = format!("{}@{digest}", repository(&image));
+                }
+                let launch =
+                    fetch::launch_from_registry(&self.config.crane, &image, auths, &self.lifetime)?;
+                (None, launch)
+            }
         };
         if let Some(cached) = cached.filter(|path| path.exists()) {
             image = cached.to_string_lossy().into_owned();
         }
-        Ok((port, image, launch))
+        Ok((port, image, launch, digest))
     }
 
     fn boot(
@@ -585,7 +570,9 @@ impl Server {
         port: u16,
         image: &str,
         launch: &ImageLaunch,
+        digest: Option<&str>,
     ) -> anyhow::Result<()> {
+        self.record_digest(id, digest)?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
         self.forget_state(id);
@@ -703,12 +690,95 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the cache entries this runner's machines hold, read from their specs on disk rather than tracked alongside them, because a spec outlives the process that wrote it. Both names of each image are held, the tree and the archive an earlier release cached.
+    // UNIT_BOUNDARY_DESCRIPTION: the tree a machine of this digest boots, fetched into the digest root if it is not there. None, with no error, means this format cannot serve the create: no digest was known, or there is no crane to fetch with, and the caller tries the first format.
+    fn digest_image(
+        &self,
+        id: &str,
+        image: &str,
+        digest: Option<&str>,
+        auths: &[String],
+    ) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
+        let Some(digest) = digest else {
+            return Ok(None);
+        };
+        let entry = self.cache.digest_entry(digest);
+        let pinned = format!("{}@{digest}", repository(image));
+        let mut launch = read_launch(&entry)?;
+        if launch.is_some() {
+            self.cache.may_reuse(&pinned, &entry, auths)?;
+        }
+        self.metrics.lookup(launch.is_some());
+        if launch.is_none() && !self.config.crane.is_empty() {
+            let started = Instant::now();
+            let fetched = self.cache.fetch(
+                &pinned,
+                auths,
+                &entry,
+                &self.images_in_use(Some(id)),
+                &self.images_in_use(None),
+            );
+            self.metrics.fetched(started.elapsed(), fetched.is_ok());
+            let trim = fetched?;
+            for bytes in trim.freed {
+                self.metrics.evicted(bytes);
+            }
+            if let Some(used) = trim.used {
+                self.metrics.cache_size(used);
+            }
+            launch = read_launch(&entry)?;
+        }
+        Ok(launch.map(|launch| (entry.join(ROOTFS_DIR), launch)))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: an entry in the first format, named after the reference: a tree with its launch beside it, or an archive an earlier release cached. This release reads these and never writes them, and a machine boots from one only when the digest root cannot serve it — the tag cannot be resolved, there is no crane, or the fetch failed. They are not moved into the digest root, because a guest of an older runner may have one mounted and that runner holds it by its old name; once nothing holds one, eviction takes it like any other entry.
+    fn legacy_image(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
+        let base = self.cache.entry(image);
+        if let Some(launch) = read_launch(&base)? {
+            return Ok(Some((base.join(ROOTFS_DIR), launch)));
+        }
+        let archive = PathBuf::from(format!("{}.tar", base.display()));
+        if !archive.exists() {
+            return Ok(None);
+        }
+        let launch = launch_from_archive(&archive).map_err(|e| unusable(format!("{e:#}")))?;
+        Ok(Some((archive, launch)))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and publishes it: a machine that started with no record is one whose tree another runner may evict. With no digest the record is removed, because that machine boots from the first format and its spec's reference already holds that entry.
+    fn record_digest(&self, id: &str, digest: Option<&str>) -> anyhow::Result<()> {
+        let dir = machine_dir(&self.config.state_dir, id)
+            .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
+        let path = dir.join(IMAGE_DIGEST_FILE);
+        match digest {
+            None => match fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+                _ => Ok(()),
+            },
+            Some(digest) => {
+                crate::files::write(&path, digest.as_bytes(), 0o644)
+                    .map_err(|e| anyhow::anyhow!("recording the image a machine boots: {e}"))?;
+                self.publish_holders();
+                Ok(())
+            }
+        }
+    }
+
+    fn recorded_digest(&self, id: &str) -> Option<String> {
+        let dir = machine_dir(&self.config.state_dir, id)?;
+        let digest = fs::read_to_string(dir.join(IMAGE_DIGEST_FILE)).ok()?;
+        let digest = digest.trim();
+        cache::is_digest(digest).then(|| digest.to_string())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the cache entries this runner's machines hold, read from their state on disk rather than tracked alongside them, because that state outlives the process that wrote it. A machine holds the digest entry it booted, by its record, and both first-format names of its reference: the tree and the archive an earlier release cached.
     fn images_in_use(&self, except: Option<&str>) -> BTreeSet<PathBuf> {
         let mut in_use = BTreeSet::new();
         for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
             if Some(id.as_str()) == except {
                 continue;
+            }
+            if let Some(digest) = self.recorded_digest(&id) {
+                in_use.insert(self.cache.digest_entry(&digest));
             }
             let Some(spec) = read_spec(&self.config.state_dir, &id) else {
                 continue;

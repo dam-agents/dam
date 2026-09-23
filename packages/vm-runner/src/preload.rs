@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+use crate::cache::repository;
 use crate::imagecache::ImageCache;
 use crate::launch::read_launch;
 use crate::pullauth::PullSecrets;
@@ -15,7 +16,7 @@ pub struct Preloader {
 }
 
 impl Preloader {
-    // UNIT_BOUNDARY_DESCRIPTION: one pass. Claims are published before anything is fetched and again after each fetch, because a pass can outlast the window a runner believes a claim for, and a claim written only at the start would go stale while the pass that wrote it was still running. The directory is swept every pass, not only after a fetch: runners tidy it only as a side effect of a miss, and a node whose images are all cached would otherwise never reclaim what a departed owner left.
+    // UNIT_BOUNDARY_DESCRIPTION: one pass. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the claim moves with it; the old digest's tree is then held only by the machines still running it. Claims are published before anything is fetched and again after each fetch, because a pass can outlast the window a runner believes a claim for, and a claim written only at the start would go stale while the pass that wrote it was still running. The directory is swept every pass, not only after a fetch: runners tidy it only as a side effect of a miss, and a node whose images are all cached would otherwise never reclaim what a departed owner left.
     pub fn sweep(&self, auths: &[String]) {
         let none = BTreeSet::new();
         self.cache.publish(&none);
@@ -30,11 +31,16 @@ impl Preloader {
                 );
                 continue;
             }
-            if matches!(read_launch(&self.cache.entry(reference)), Ok(Some(_))) {
+            let Some(digest) = self.cache.resolve_digest(reference, Duration::ZERO, auths) else {
+                tracing::warn!(image = %reference, "image cache: the registry cannot say which image this install ships under a tag");
                 continue;
-            }
-            if let Err(e) = self.cache.fetch(reference, auths, &none, &none) {
-                tracing::warn!(image = %reference, error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+            };
+            let entry = self.cache.digest_entry(&digest);
+            if !matches!(read_launch(&entry), Ok(Some(_))) {
+                let pinned = format!("{}@{digest}", repository(reference));
+                if let Err(e) = self.cache.fetch(&pinned, auths, &entry, &none, &none) {
+                    tracing::warn!(image = %reference, error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+                }
             }
             self.cache.publish(&none);
         }
@@ -131,7 +137,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tokio_util::sync::CancellationToken;
 
     // TEST_SCENARIO: the chart hands the budget and the interval over as it writes them. The forms it uses must read as the numbers they mean, and anything else must be refused — a budget read as a smaller number evicts images the node needs, and an interval read as a longer one lets the preloader's claims go stale.
@@ -157,7 +163,9 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a pass fetches each shipped image the cache lacks, once, and claims it under the service's name so a runner's eviction spares it; a second pass over a warm cache fetches nothing.
+    const DIGEST_HEX: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+    // TEST_SCENARIO: a pass resolves each shipped tag, fetches the digest it names when the cache lacks it, and claims that digest entry under the service's name so a runner's eviction spares it; a second pass over a warm cache resolves again and fetches nothing.
     #[test]
     fn a_pass_fetches_what_is_missing_and_claims_it() {
         let dir =
@@ -168,8 +176,8 @@ mod tests {
         fs::write(
             &crane,
             format!(
-                "#!/bin/sh\necho \"$@\" >> {}/crane.log\nif [ \"$1\" = config ]; then printf '{{\"config\":{{\"Cmd\":[\"serve\"]}}}}'; exit 0; fi\nd=$(mktemp -d); echo x > \"$d/f\"; tar -cf - -C \"$d\" .; rm -rf \"$d\"\n",
-                dir.0.display()
+                "#!/bin/sh\necho \"$@\" >> {}/crane.log\nif [ \"$1\" = digest ]; then echo sha256:{DIGEST_HEX}; exit 0; fi\nif [ \"$1\" = config ]; then printf '{{\"config\":{{\"Cmd\":[\"serve\"]}}}}'; exit 0; fi\nd=$(mktemp -d); echo x > \"$d/f\"; tar -cf - -C \"$d\" .; rm -rf \"$d\"\n",
+                dir.0.display(),
             ),
         )
         .unwrap();
@@ -187,19 +195,24 @@ mod tests {
             pull_secrets: None,
         };
         preloader.sweep(&[]);
-        let entry = preloader.cache.entry("quay.io/x/claude-code:1");
+        let entry = preloader
+            .cache
+            .digest_entry(&format!("sha256:{DIGEST_HEX}"));
         assert!(read_launch(&entry).unwrap().is_some());
         let claims = fs::read_to_string(dir.0.join("images/.holders/cache-node-a")).unwrap();
+        let claimed = entry.strip_prefix(dir.0.join("images")).unwrap();
+        assert!(claims.lines().any(|l| Path::new(l) == claimed), "{claims}");
+        let log = fs::read_to_string(dir.0.join("crane.log")).unwrap();
         assert!(
-            claims
-                .lines()
-                .any(|l| l == entry.file_name().unwrap().to_str().unwrap()),
-            "{claims}"
+            log.lines()
+                .any(|l| l == format!("export quay.io/x/claude-code@sha256:{DIGEST_HEX} -")),
+            "the tree was not fetched by the digest the tag resolved to: {log}"
         );
         let fetches = || {
             fs::read_to_string(dir.0.join("crane.log"))
                 .unwrap()
                 .lines()
+                .filter(|l| !l.starts_with("digest "))
                 .count()
         };
         let first = fetches();
