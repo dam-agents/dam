@@ -392,10 +392,12 @@ impl Server {
             self.config.init.as_deref(),
         )?;
         let applied = read_spec(&self.config.state_dir, id);
-        if grown_storage(applied.as_ref(), spec).is_some() && !self.runtime.storage_growable(id) {
-            anyhow::bail!("{STORAGE_NOT_GROWABLE}");
-        }
+        let ungrowable =
+            grown_storage(applied.as_ref(), spec).is_some() && !self.runtime.storage_growable(id);
         if state == STATE_ABSENT {
+            if ungrowable {
+                anyhow::bail!("{STORAGE_NOT_GROWABLE}");
+            }
             self.create(id, spec)?;
             return write_spec(&self.config.state_dir, id, spec);
         }
@@ -411,6 +413,11 @@ impl Server {
                     spec.allow_cidrs.join(" ")
                 )));
             }
+        }
+        if ungrowable {
+            anyhow::bail!("{STORAGE_NOT_GROWABLE}");
+        }
+        if let Some(applied) = &applied {
             if image_changed(applied, spec) {
                 return self.recreate(id, spec, state);
             }

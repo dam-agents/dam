@@ -890,6 +890,25 @@ async fn a_new_image_with_a_size_the_disk_cannot_take_is_refused_before_the_recr
     );
 }
 
+// TEST_SCENARIO: a machine whose gateway moved and whose disk cannot take the size asked for has two reasons to be refused. The moved gateway wins: the machine is stopped rather than left running on an address nobody checked, and the controller is told the gateway moved.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_moved_gateway_stops_a_machine_even_when_its_disk_cannot_grow() {
+    let h = Harness::new("ungrowable-egress");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut moved = spec(true);
+    moved.allow_cidrs = vec!["10.0.0.9/32".into()];
+    moved.storage_gib += 10;
+    h.server.put("m1", moved.clone()).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", moved).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_EGRESS_CHANGED, "{status:?}");
+    assert_eq!(h.fake.calls(), ["create m1", "start m1", "stop m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_STOPPED);
+}
+
 // TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size. The create that resumes it adopts that disk, so a larger size asked for then is refused before the create too, and never recorded as applied.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resumed_recreate_does_not_record_a_size_the_kept_disk_lacks() {
