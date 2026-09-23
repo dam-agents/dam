@@ -340,6 +340,7 @@ export {
   connectionEgressPathPrefix,
   stripConnectionEgressPrefix,
   applyConnectionEgressAddressing,
+  unaddressableRivalHost,
 } from "./modules/connections/egress-addressing.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";

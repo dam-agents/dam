@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
 export function useAppConnections(options?: {
@@ -21,5 +22,12 @@ export function useConnectionTemplates(options?: { enabled?: boolean }) {
     ...trpc.connections.listTemplates.queryOptions(),
     enabled: options?.enabled ?? true,
     meta: { errorToast: "Couldn't load connection templates" },
+  });
+}
+
+export function fetchConnection(id: string) {
+  return queryClient.fetchQuery({
+    ...trpc.connections.get.queryOptions({ id }),
+    staleTime: 0,
   });
 }

@@ -20,6 +20,7 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
+import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { resolvePromptTarget } from "../lib/prompt-target.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
 import {
@@ -32,7 +33,6 @@ import type {
   LiveSession,
   StartedSession,
 } from "./use-acp-connection.js";
-import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export type PromptInitiator = "user" | "system";
 

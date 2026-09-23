@@ -207,20 +207,22 @@ the operator the dry run must happen on the pod after onboarding.
 Run the bundled validator against the generated repo:
 
 ```bash
-bash scripts/validate-definition.sh <path-to-generated-repo>
+bash scripts/validate-definition.sh --reference code-guardian <path-to-generated-repo>
 ```
 
 It checks: required files, allowlist `.gitignore` shape, semver/changelog agreement,
 mandatory CLAUDE.md sections, leftover placeholders or `TODO(creator)` markers, `bash -n`
 on all scripts, dead relative links, and the `kit.yaml` invariants a mis-declared kit
 would otherwise only fail at — silently dropped from the catalog listing, or stamped
-onboarded at create. Fix everything it reports, then re-run until
-clean. Also do a judgment pass the script cannot: no instance-specific values hard-coded
+onboarded at create — and, with `--reference`, any mention of the reference
+implementation this skill was extracted from (copied text). Fix everything it reports,
+then re-run until clean. Also do a judgment pass the script cannot: no instance-specific values hard-coded
 into the definition (they belong in `work/CONFIG.md`), no concept restated in two places,
 CLAUDE.md still slim.
 
 Then make the checks permanent: copy the validator itself into the generated repo as
-`scripts/validate-definition.sh` (it is self-copy-safe) and generate
+`scripts/validate-definition.sh` (it is self-copy-safe and names no reference itself —
+the generated CI runs it without `--reference`) and generate
 `.github/workflows/ci.yml` from the template — every definition PR then runs the syntax
 sweep, this validator, the cross-file section-reference check, and the offline test
 suite. That is the self-modification §9 validation sweep, mechanized; the generated §9
