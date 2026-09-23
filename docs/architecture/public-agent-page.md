@@ -1,10 +1,10 @@
 # Public Agent Page
 
-Last verified: 2026-09-15
+Last verified: 2026-09-23
 
 ## Overview
 
-The **Public Agent Page** is the one Platform surface that renders for a visitor with no login. It exists because of a specific dead end: an Agent posts in a shared Slack conversation, someone who is not its owner clicks the link in the [Agent Footer](channel-turns.md#the-agent-footer), and the platform told them the thing did not exist. It does exist — they hit an access boundary, and nothing on the page said so.
+The **Public Agent Page** is the one Platform page that renders for a visitor with no login. It exists because of a specific dead end: an Agent posts in a shared Slack conversation, someone who is not its owner clicks the link in the [Agent Footer](channel-turns.md#the-agent-footer), and the platform told them the thing did not exist. It does exist — they hit an access boundary, and nothing on the page said so.
 
 So the page is built as a **conversion surface, not an error page**. For most people in a shared conversation it is the first and only Platform screen they will ever see, so it names the Agent, names its owner, says what the install is, and invites the reader to create an Agent of their own. Treating it as an error state is the mistake it was created to fix.
 

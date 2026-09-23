@@ -50,7 +50,8 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     "/api/public",
     createPublicAgentRoutes({ service: boot.publicAgentPageService }),
   );
-  app.route("/api/public", createPublicAvatarRoutes());
+  if (config.slackAgentAvatars)
+    app.route("/api/public", createPublicAvatarRoutes());
 
   app.route(
     "/api/oauth",

@@ -54,4 +54,30 @@ describe("public avatar route", () => {
     ])
       expect((await get(path)).status, path).toBe(404);
   });
+
+  // TEST_SCENARIO: A caller asking for many fresh seeds at once cannot queue unbounded renders. Past a few renders in flight a miss is refused with a retryable 503, while the requests that got in still succeed.
+  it("refuses misses past the renders in flight with a retryable 503", async () => {
+    const fresh = createPublicAvatarRoutes();
+    const responses = await Promise.all(
+      [1, 2, 3, 4].map((seed) =>
+        fresh.request(`/avatars/v${AVATAR_VERSION}/${seed}.png`),
+      ),
+    );
+    const statuses = responses.map((res) => res.status);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(2);
+    const refused = responses.filter((res) => res.status === 503);
+    expect(refused).toHaveLength(2);
+    for (const res of refused) expect(res.headers.get("retry-after")).toBe("1");
+  });
+
+  // TEST_SCENARIO: Many viewers fetching the same new icon at once share one render, so none of them is refused.
+  it("shares a render already under way for the same seed", async () => {
+    const fresh = createPublicAvatarRoutes();
+    const responses = await Promise.all(
+      [0, 1, 2, 3].map(() =>
+        fresh.request(`/avatars/v${AVATAR_VERSION}/77.png`),
+      ),
+    );
+    expect(responses.map((res) => res.status)).toEqual([200, 200, 200, 200]);
+  });
 });

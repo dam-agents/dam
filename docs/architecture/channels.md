@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-09-21
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -143,7 +143,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Degrade to a smaller result**, when a partial answer is still useful: attempted reactively, with a missing-scope failure caught and turned into a narrower result rather than an outright failure. `describe_channel` without the channel-list scopes still returns the bound conversations; a user profile without `users:read.email` still resolves, minus its `email` field; a bound conversation's display name, shown beside the binding in the UI, falls back to the raw conversation id when Slack refuses the lookup or does not answer within a short budget — the agent list is a core read and never waits on Slack for long, and names are cached briefly so it rarely asks at all.
 - **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call, and the affordance drops out of the tool list rather than staying registered to fail forever. **No Slack capability takes this path.** It is the tool list that would have to carry the verdict, and a tool list is per Agent while a grant is per workspace — so with several installed there is always a partial answer to give, and the rule above selects the first strategy for every one of them.
 
-Either way an unreachable bot or unanswered check counts as _unknown_, never _missing_, and fails open, so a transient hiccup never hides a working capability.
+Either way an unreachable bot or unanswered check counts as _unknown_, never _missing_, and fails open, so a transient hiccup never hides a working capability. The one scope that fails closed is not a capability but a per-message identity override: an Agent posts under its own name and avatar (`chat:write.customize`) only on a grant known to hold it, since the app's own identity is always a correct fallback ([channel-turns](channel-turns.md#the-agent-footer)).
 
 ### Telegram — platform channel
 

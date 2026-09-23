@@ -105,8 +105,8 @@ mise run cluster:install -- \
 
 Two things have to be in place:
 
-- **The `chat:write.customize` scope.** It is in [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml). An app created earlier re-applies the manifest and each workspace re-installs, as described above. A workspace without the scope keeps getting posts under the app's own name, and the api-server logs the missing scope at startup.
-- **An avatar address Slack can fetch.** Slack's servers download the icon themselves, so `<urls.ui>/api/public/avatars/` has to be reachable from the internet. If only another address in front of the api-server is, such as a reverse proxy or a CDN serving that path, set `apiServer.slackAvatarBaseUrl` to it. If neither is, leave the feature off: Slack cannot show an icon it cannot fetch.
+- **The `chat:write.customize` scope.** It is in [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml). An app created earlier re-applies the manifest and each workspace re-installs, as described above. A workspace without the scope keeps getting posts under the app's own name. The api-server logs the missing scope at startup for the app's own workspace only; a workspace added through the install flow is not checked, so if its agents still post under the app's name, check its grant.
+- **An avatar address Slack can fetch.** Slack's servers download the icon themselves, so `<urls.ui>/api/public/avatars/` has to be reachable from the internet. If only another address in front of the api-server is, such as a reverse proxy or a CDN serving that path, set `apiServer.slackAvatarBaseUrl` to it. If neither is, leave the feature off: Slack cannot show an icon it cannot fetch. With the switch off, the api-server serves no avatar images at all.
 
 The image URLs carry a hash of the agent's owner and name, not either of them, so two people's default-named agents get different faces. Renaming an agent gives its later posts a new face, and its earlier posts keep theirs.
 
