@@ -6,11 +6,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
 use crate::api::{
-    ImageLaunch, REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE,
-    STATE_CREATING, STATE_STARTING,
+    REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE, STATE_CREATING,
+    STATE_STARTING,
 };
 use crate::cache::{archive_path, PARTIAL_PREFIX};
 use crate::imagecache::PRIVATE_FILE;
+use crate::launch::ImageLaunch;
 use std::path::Path;
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.

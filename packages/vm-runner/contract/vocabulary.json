@@ -1,0 +1,10 @@
+{
+  "states": ["absent", "unknown", "creating", "starting", "restarting", "running", "stopping", "stopped"],
+  "reasons": [
+    "MachineNotReady",
+    "MachineOutOfCapacity",
+    "MachineImageUnavailable",
+    "MachineBootFailed",
+    "MachineEgressChanged"
+  ]
+}

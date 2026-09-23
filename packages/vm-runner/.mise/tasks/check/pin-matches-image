@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-#MISE sources=["smolvm.pin", "{{vars.repo_root}}/packages/controller/Dockerfile.vm-runner"]
+#MISE sources=["smolvm.pin", "Dockerfile"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 pinned=$(sed -n 's/^tag=v//p' smolvm.pin)
-image=$(sed -n 's/^ARG SMOLVM_VERSION=//p' ../controller/Dockerfile.vm-runner)
+image=$(sed -n 's/^ARG SMOLVM_VERSION=//p' Dockerfile)
 if [ "$pinned" != "$image" ]; then
-  echo "smolvm.pin builds against $pinned but Dockerfile.vm-runner installs $image." >&2
+  echo "smolvm.pin builds against $pinned but the Dockerfile installs $image." >&2
   echo "The crate and the release that supplies its agent rootfs and disk templates must be one version." >&2
   exit 1
 fi

@@ -3,8 +3,9 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::api::{ImageLaunch, MachineSpec};
+use crate::api::MachineSpec;
 use crate::guest::INIT_PATH;
+use crate::launch::ImageLaunch;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server plans machines against this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
 pub trait Runtime: Send + Sync {

@@ -6,12 +6,11 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::{
-    ImageLaunch, REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE,
-    REASON_OUT_OF_CAPACITY,
+    REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY,
 };
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
-use crate::launch::launch_from_config;
+use crate::launch::{launch_from_config, ImageLaunch};
 use crate::runtime::IMAGE_LAUNCH_UNKNOWN;
 
 // UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache.

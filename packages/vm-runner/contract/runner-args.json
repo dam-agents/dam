@@ -1,0 +1,16 @@
+[
+  "--listen=:4600",
+  "--port-min=31000",
+  "--port-max=31099",
+  "--token-file=/etc/vm-runner/token",
+  "--state-dir=/var/lib/platform/machines",
+  "--metrics-listen=:4601",
+  "--image-dir=/var/lib/platform/images",
+  "--runner-id=platform-vm-runner-391887cbcf922e19",
+  "--image-budget-bytes=53687091200",
+  "--memory-mib=$(RUNNER_MEMORY_MIB)",
+  "--reserve-mib=512",
+  "--tls-cert=/etc/vm-runner/tls.crt",
+  "--tls-key=/etc/vm-runner/tls.key",
+  "--allow-from=10.0.0.0/8,fd00::/8"
+]

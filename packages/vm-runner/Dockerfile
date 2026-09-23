@@ -3,42 +3,40 @@
 # hosts vm-backend agents as microVMs. Same image everywhere; only the pod's
 # device grant differs per cluster.
 #
-# The runner itself is the Rust crate in packages/vm-runner, which drives smolvm
-# through its embedding API rather than forking the CLI, and so is the per-node
-# image cache service beside it. The crate is a second build context, named
-# `vm-runner`: this Dockerfile's own context stays packages/controller for
-# platform-init, the one Go binary that still ships.
-#   docker build --build-context vm-runner=packages/vm-runner \
-#     -f packages/controller/Dockerfile.vm-runner packages/controller
+# Everything in this image is built from this directory, its only context: the
+# runner, which drives smolvm through its embedding API rather than forking the
+# CLI; the per-node image cache service beside it; and platform-init, the
+# entrypoint the runner hands every machine.
+#   docker build packages/vm-runner
 
 # Built for the target platform rather than cross-compiled: CI builds each
 # architecture on a runner of that architecture, and a native build needs no
 # cross linker. smolvm is cloned at the commit smolvm.pin names by the crate's
 # own fetch script, the same one the crate's checks run.
 FROM registry.access.redhat.com/hi/rust:1.94-builder AS rust-builder
+# platform-init runs inside the agent's image, which shares no libc with this
+# one, so it is linked statically, against glibc's static archive. The builder
+# carries only the gnu target, so this is the static link it can make.
+RUN dnf install -y --setopt=install_weak_deps=False glibc-static && dnf clean all
 WORKDIR /src
-COPY --from=vm-runner smolvm.pin Cargo.toml Cargo.lock ./
-COPY --from=vm-runner .mise/fetch-smolvm .mise/fetch-smolvm
+COPY smolvm.pin Cargo.toml Cargo.lock ./
+COPY .mise/fetch-smolvm .mise/fetch-smolvm
 RUN ./.mise/fetch-smolvm
-COPY --from=vm-runner src src
+COPY src src
+COPY platform-init platform-init
+# The static flag is scoped to platform-init's own target triple, so it reaches
+# neither the runner nor the build scripts cargo runs on the host. The check
+# after it fails the build on a binary that still names a dynamic loader or a
+# shared library, because that binary would fail only inside a guest.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked && \
-    cp target/release/vm-runner /vm-runner && cp target/release/vm-image-cache /vm-image-cache
-
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS builder
-
-ENV GOTOOLCHAIN=auto
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-COPY . .
-ARG TARGETOS TARGETARCH
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -o /platform-init ./cmd/platform-init
+    cargo build --release --locked -p vm-runner && \
+    cp target/release/vm-runner /vm-runner && cp target/release/vm-image-cache /vm-image-cache && \
+    host=$(rustc -vV | sed -n 's/^host: //p') && \
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p platform-init --target "$host" && \
+    cp "target/$host/release/platform-init" /platform-init && \
+    readelf -lW /platform-init > /tmp/headers && ! grep -q 'program interpreter' /tmp/headers && \
+    readelf -dW /platform-init > /tmp/dynamic && ! grep -q '(NEEDED)' /tmp/dynamic
 
 
 FROM quay.io/fedora/fedora:42 AS runner
@@ -94,13 +92,16 @@ RUN vm-image-cache --help >/dev/null
 # copies it into each machine's share, where the guest runs it before the agent
 # image's own entrypoint. It is statically linked because the guest it runs in
 # is the agent image, which shares no libc with this one.
-COPY --from=builder /platform-init /usr/local/libexec/platform-init
+COPY --from=rust-builder /platform-init /usr/local/libexec/platform-init
 
 # smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
 # chart mounts the disks: one of three mounts under /var/lib/platform, beside the
 # per-machine bookkeeping and the image cache, each with a lifetime of its own.
 # catatonit reaps whatever is orphaned to PID 1; the runner reaps the VMMs it
-# spawned itself. --smolvm names the release's launcher, beside which the runner
-# finds the libraries its VMMs load, the guest agent and the disk templates.
+# spawned itself. The ENTRYPOINT names every path that is this image's layout
+# and not the controller's to choose — the smolvm release's launcher, beside
+# which the runner finds the libraries its VMMs load, the guest agent and the
+# disk templates; crane; platform-init — so the runner relies on no default for
+# any of them. The controller passes the rest.
 ENV HOME=/var/lib/platform/disks
-ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm"]
+ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init"]

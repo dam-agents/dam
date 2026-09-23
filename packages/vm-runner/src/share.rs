@@ -78,7 +78,7 @@ fn staged_path(to: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{gosource, guest};
+    use crate::guest;
 
     // TEST_SCENARIO: the share is the one place the host and the inside of a machine meet on a path. The host writes this layout and platform-init reads it at the paths in guest.rs, so the two are one contract written in two places: a share whose CA sits somewhere else is a guest that trusts nothing the platform signed, and an init at another name is a machine that boots with no agent in it.
     #[test]
@@ -95,14 +95,18 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts `/etc/platform/ca/ca.crt` in the agent's own environment as NODE_EXTRA_CA_CERTS, a package away, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate.
+    // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts the guest's CA file in the agent's own environment as NODE_EXTRA_CA_CERTS, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate. The controller's tests hold its environment to the same fixture.
     #[test]
     fn the_ca_is_named_what_the_agents_environment_points_at() {
-        let resources = gosource::read_in("reconciler", "resources.go");
-        assert!(
-            resources.contains(&format!("\"{}/{CA_FILE}\"", guest::GUEST_CA_DIR)),
-            "NODE_EXTRA_CA_CERTS no longer names {}/{CA_FILE}, so the agent trusts nothing the platform signed",
-            guest::GUEST_CA_DIR
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/guest.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the guest fixture is JSON");
+        assert_eq!(
+            fixture["caFile"],
+            format!("{}/{CA_FILE}", guest::GUEST_CA_DIR),
+            "the agent's environment names a CA file the share does not write"
         );
     }
 

@@ -1,13 +1,6 @@
 package vmrunner
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes.
-type ImageLaunch struct {
-	Entrypoint []string `json:"entrypoint"`
-	Cmd        []string `json:"cmd"`
-	Env        []string `json:"env"`
-	WorkingDir string   `json:"workingDir"`
-}
-
+// UNIT_BOUNDARY_DESCRIPTION: the controller's half of the machine API, which it speaks to a vm runner over HTTP. The runner is Rust, so the two meet as JSON and never as types. What both sides must write and read is held in the JSON documents under packages/vm-runner/contract, which this package's tests and the runner's tests both round-trip, so a renamed field or a different omitempty fails a test on the side that changed.
 type MachineSpec struct {
 	Image      string            `json:"image"`
 	CPUs       int               `json:"cpus"`

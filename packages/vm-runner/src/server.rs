@@ -10,9 +10,9 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    ImageLaunch, MachineSpec, MachineStatus, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY,
-    STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
-    STATE_STOPPING, STATE_UNKNOWN,
+    MachineSpec, MachineStatus, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY, STATE_ABSENT,
+    STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    STATE_UNKNOWN,
 };
 use crate::cache::{self, repository, REF_FRESH};
 use crate::capacity::Capacity;
@@ -20,7 +20,7 @@ use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::fetch::{self, egress_changed, failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::ImageCache;
-use crate::launch::{launch_from_archive, read_launch};
+use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{self, admissible, image_changed, needs_restart, reads_ready, Health};
 use crate::runtime::{redact, Machine, Runtime};

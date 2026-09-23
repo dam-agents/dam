@@ -115,7 +115,6 @@ fn auths_of(secret: &Value) -> Option<Map<String, Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
     fn secret(key: &str, doc: &str) -> Value {
         serde_json::json!({
@@ -123,7 +122,7 @@ mod tests {
         })
     }
 
-    // TEST_SCENARIO: a pod lists several pull Secrets and the kubelet tries each. Their registries are read from both keys a Secret is written under, and the Secrets are kept apart rather than merged: the Go controller hands a machine the same list, so a stale credential for a registry does not hide a good one a later Secret holds.
+    // TEST_SCENARIO: a pod lists several pull Secrets and the kubelet tries each. Their registries are read from both keys a Secret is written under, and the Secrets are kept apart rather than merged, as the controller keeps them apart in the list it hands a machine, so a stale credential for a registry does not hide a good one a later Secret holds.
     #[test]
     fn each_secret_keeps_its_own_registries() {
         let first = auths_of(&secret(
@@ -139,13 +138,6 @@ mod tests {
         assert_eq!(first["quay.io"]["auth"], "Zmlyc3Q=");
         assert_eq!(second["quay.io"]["auth"], "c2Vjb25k");
         assert_eq!(second["ghcr.io"]["auth"], "Z2hjcg==");
-
-        let go = gosource::read_in("pullauth", "pullauth.go");
-        let resolves = gosource::function_body(&go, "Resolve").expect("pullauth.go has a Resolve");
-        assert!(
-            resolves.contains("docs = append(docs, string(doc))") && !go.contains("func merge("),
-            "the Go controller no longer keeps each Secret's docker config apart: {resolves}"
-        );
     }
 
     // TEST_SCENARIO: a Secret that holds no docker config the service can read is skipped rather than failing the pass, and one whose config names no registry adds no document, so a pass with nothing to fetch with is an anonymous fetch rather than one with an empty config.

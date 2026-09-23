@@ -1107,8 +1107,3 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 		"or a slow boot reports no phases, and debug would bury them under every status call")
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
 }
-
-// TEST_SCENARIO: the agent home is one path on both backends, but it is written down twice — here, and in the machine contract platform-init reads. The guest binary carries no Kubernetes libraries and this package pulls in nearly three hundred, so it cannot import its way to one copy. Nothing but this would notice the two drifting, and a machine would then bind-mount a home the controller never set.
-func TestTheAgentHomeAgreesWithTheMachineContract(t *testing.T) {
-	assert.Equal(t, agentHomeDir, vmrunner.AgentHome)
-}

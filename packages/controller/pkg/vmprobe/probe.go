@@ -12,9 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: the guest path a machine keeps, which is where the probe looks for its marker unless told otherwise. platform-init mounts the disk there; the probe's test holds this to the vm runner's guest fixture, the same one platform-init's tests read.
+const AgentHome = "/home/agent"
 
 const (
 	EnvWrite       = "CONFORMANCE_WRITE"
@@ -40,7 +41,7 @@ func FromEnv(getenv func(string) string) Guest {
 		ExpectEmpty: getenv(EnvExpectEmpty) != "",
 	}
 	if g.Dir == "" {
-		g.Dir = vmrunner.AgentHome
+		g.Dir = AgentHome
 	}
 	return g
 }

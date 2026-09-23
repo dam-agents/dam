@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-#MISE sources=["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml"]
+# The vm runner's contract fixtures are inputs: the machine API client and the
+# runner's Deployment are tested against them, and the runner's own tests read
+# the same files, so a fixture the runner's side changed must rerun these. Go's
+# own test cache does not see them — it tracks only the files a test opens
+# inside the module, and the fixtures and the chart's CRDs are outside it — so
+# its result cache is bypassed with -count=1 and this task's cache, which does
+# key on them, decides when the suite runs. The test binaries still come from
+# the build cache.
+#MISE sources=["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/*.json"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
-go test ./... "$@"
+go test -count=1 ./... "$@"

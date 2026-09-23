@@ -268,7 +268,7 @@ pub fn storage_disk_path(id: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ImageLaunch;
+    use crate::launch::ImageLaunch;
     use std::fs;
     use std::sync::Mutex;
 

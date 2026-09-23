@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 #MISE raw=true
-#MISE depends=["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
+#MISE depends=["//packages/controller:image", "//packages/vm-runner:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #

@@ -10,7 +10,7 @@ use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials, the runner's budgets and allowlist. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -37,12 +37,13 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image the shared cache does not hold; empty disables the fetch.
     #[arg(long, default_value = "crane")]
     crane: String,
-    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest, built and shipped separately from this runner.
+    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest: the platform-init package beside this one, linked statically because it runs against the agent image's libc and not this one's.
     #[arg(
         long = "platform-init",
         default_value = "/usr/local/libexec/platform-init"
     )]
     platform_init: PathBuf,
+    // UNIT_BOUNDARY_DESCRIPTION: the pod ports machines are published on. The controller opens exactly this range in the runner's NetworkPolicy and passes it here from the same constants, so a machine is never published on a port the policy drops.
     #[arg(long = "port-min", default_value_t = 31000)]
     port_min: u16,
     #[arg(long = "port-max", default_value_t = 31099)]
@@ -404,37 +405,9 @@ mod tests {
         assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
     }
 
-    // TEST_SCENARIO: the controller builds the runner's arguments in code, and a flag this binary does not know is a runner pod that exits on start rather than a failed build. Every flag the controller's Deployment passes is read from that code and must be one this binary defines.
-    #[test]
-    fn every_flag_the_controller_passes_is_known() {
-        use clap::CommandFactory;
-        let path = "../controller/pkg/reconciler/vm_runner.go";
-        let go = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("the controller builds the runner's args in {path}: {e}"));
-        let deployment = go
-            .split_once("func (r *AgentReconciler) applyRunnerDeployment(")
-            .expect("vm_runner.go still builds the runner's Deployment")
-            .1;
-        let deployment = deployment.split_once("\n}").unwrap().0;
-        let passed: Vec<&str> = deployment
-            .split("\"--")
-            .skip(1)
-            .filter_map(|rest| rest.split_once('=').map(|(name, _)| name))
-            .collect();
-        assert!(passed.contains(&"metrics-listen"), "{passed:?}");
-        let command = Args::command();
-        for flag in passed {
-            assert!(
-                command.get_arguments().any(|a| a.get_long() == Some(flag)),
-                "the controller passes --{flag}, which this runner does not define"
-            );
-        }
-    }
-
-    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary runs under that ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
-    #[test]
-    fn the_images_entrypoint_arguments_are_accepted() {
-        let path = "../controller/Dockerfile.vm-runner";
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.
+    fn entrypoint_args() -> Vec<String> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile");
         let dockerfile = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
         let line = dockerfile
@@ -448,10 +421,64 @@ mod tests {
             .iter()
             .position(|word| word == "vm-runner")
             .expect("the ENTRYPOINT runs vm-runner");
+        words[runner + 1..].to_vec()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the args the controller renders into the runner's Deployment, as the controller's own test records them. Kubernetes expands `$(NAME)` from the container's environment before the runner sees an arg. The controller uses one such reference, the pod's memory limit, and it is given a value here; any other reference fails, so a new one gets a stated value rather than reaching the parser unexpanded.
+    fn controller_args() -> Vec<String> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/runner-args.json");
+        let args: Vec<String> = serde_json::from_str(
+            &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the runner args fixture is a list of strings");
+        args.into_iter()
+            .map(|arg| {
+                let arg = arg.replace("$(RUNNER_MEMORY_MIB)", "4096");
+                assert!(
+                    !arg.contains("$("),
+                    "{arg} names an environment variable this test gives no value"
+                );
+                arg
+            })
+            .collect()
+    }
+
+    fn pod_argv() -> Vec<String> {
         let mut argv = vec!["vm-runner".to_string()];
-        argv.extend(words[runner + 1..].iter().cloned());
-        argv.push("--memory-mib=1".to_string());
-        Args::try_parse_from(&argv)
-            .unwrap_or_else(|e| panic!("the ENTRYPOINT's arguments {argv:?} are rejected: {e}"));
+        argv.extend(entrypoint_args());
+        argv.extend(controller_args());
+        argv
+    }
+
+    // TEST_SCENARIO: the pod runs this binary with the ENTRYPOINT's args followed by the controller's. A flag it does not know, a value it cannot read, or a flag both of them set is a runner pod that exits on start rather than a failed build, so the two lists must parse together, as the one argv the pod passes.
+    #[test]
+    fn the_args_the_pod_runs_with_are_accepted() {
+        let argv = pod_argv();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
+    }
+
+    // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.
+    #[test]
+    fn every_flag_is_set_by_the_image_or_the_controller() {
+        use clap::CommandFactory;
+        let argv = pod_argv();
+        let passed: Vec<&str> = argv
+            .iter()
+            .filter_map(|word| word.strip_prefix("--"))
+            .map(|flag| flag.split_once('=').map_or(flag, |(name, _)| name))
+            .collect();
+        let command = Args::command();
+        for flag in command
+            .get_arguments()
+            .filter_map(|arg| arg.get_long())
+            .filter(|flag| !matches!(*flag, "help" | "version"))
+        {
+            assert!(
+                passed.contains(&flag),
+                "--{flag} is set by neither the image's ENTRYPOINT nor the controller, so the runner runs on its default"
+            );
+        }
     }
 }

@@ -45,6 +45,10 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
 	vmRunnerMetricsScraper = "clickstack-collector"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the pod ports the runner publishes machines on. The NetworkPolicy opens exactly this range and the runner is told it in its args, so a machine is never published on a port the policy drops.
+	vmRunnerPortMin = 31000
+	vmRunnerPortMax = 31099
 )
 
 type runnerConn struct {
@@ -324,8 +328,8 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	scrape := intstr.FromInt(vmRunnerMetricsPort)
-	first := intstr.FromInt(31000)
-	last := int32(31099)
+	first := intstr.FromInt(vmRunnerPortMin)
+	last := int32(vmRunnerPortMax)
 	peer := func(component string) networkingv1.NetworkPolicyPeer {
 		return networkingv1.NetworkPolicyPeer{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": releaseNS}},
@@ -489,6 +493,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Image:           runnerImage(spec, owner),
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
 						Args: []string{
+							fmt.Sprintf("--listen=:%d", vmRunnerPort),
+							fmt.Sprintf("--port-min=%d", vmRunnerPortMin),
+							fmt.Sprintf("--port-max=%d", vmRunnerPortMax),
+							"--token-file=/etc/vm-runner/token",
 							"--state-dir=" + vmRunnerMachinesPath,
 							fmt.Sprintf("--metrics-listen=:%d", vmRunnerMetricsPort),
 							"--image-dir=" + vmRunnerImagesPath,

@@ -1,20 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(default)]
-pub struct ImageLaunch {
-    #[serde(default, deserialize_with = "null_as_empty")]
-    pub entrypoint: Vec<String>,
-    #[serde(default, deserialize_with = "null_as_empty")]
-    pub cmd: Vec<String>,
-    #[serde(default, deserialize_with = "null_as_empty")]
-    pub env: Vec<String>,
-    #[serde(rename = "workingDir")]
-    pub working_dir: String,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the controller's half of this contract is packages/controller/pkg/vmrunner/api.go, which stays Go — the controller dials this runner over HTTP, so the two sides meet as JSON and never as types. Every rename here is a wire break, which is why the field names are spelled out rather than derived from the Rust ones.
+// UNIT_BOUNDARY_DESCRIPTION: the wire half of the machine API. The controller speaks it from Go, and the two meet as JSON and never as types, so every rename here is a wire break — which is why the field names are spelled out rather than derived from the Rust ones. What both sides must write and read is held in the JSON documents under contract/, which this crate's tests and the controller's tests both round-trip, so neither side reads the other's source.
 // UNIT_BOUNDARY_DESCRIPTION: a field the JSON leaves out reads as its zero value, as Go's decoder reads it. Without that, a body the controller's client sends naming only what changed — a stop that names nothing but `running` — is refused here as malformed.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
@@ -61,14 +47,6 @@ pub struct MachineStatus {
     pub starting_ms: i64,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a list Go left nil, read back as an empty one. `api.go` tags these fields without `omitempty`, so `json.Marshal` writes them as JSON null rather than leaving them out, and serde's own decoder refuses a null list. Every record an earlier release wrote carries at least one: an image that names neither an entrypoint nor a command was refused, so whichever of the two the image does not set is nil in the file.
-fn null_as_empty<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<Vec<String>>::deserialize(deserializer)?.unwrap_or_default())
-}
-
 fn is_zero_i32(n: &i32) -> bool {
     *n == 0
 }
@@ -95,65 +73,52 @@ pub const REASON_EGRESS_CHANGED: &str = "MachineEgressChanged";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
+    use serde::de::DeserializeOwned;
+    use serde_json::Value;
 
-    // UNIT_BOUNDARY_DESCRIPTION: the JSON names this crate actually writes, taken from serde's own output rather than from the attributes, so a rename, a dropped field or a skip condition that does not fire is caught as the wire sees it and not as the source reads.
-    fn wire_names(value: &impl Serialize) -> Vec<String> {
-        match serde_json::to_value(value).expect("the wire types serialize") {
-            serde_json::Value::Object(map) => map.keys().cloned().collect(),
-            other => panic!("a wire type must serialize to an object, got {other}"),
-        }
+    fn fixture(name: &str) -> Value {
+        let path = format!("{}/contract/{name}", env!("CARGO_MANIFEST_DIR"));
+        let body = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {path}: {e}"));
+        serde_json::from_str(&body).unwrap_or_else(|e| panic!("{path} is not JSON: {e}"))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: asserts one Rust type writes exactly what its Go counterpart declares. `filled` holds a non-zero value in every field and must produce every JSON name Go declares; `Default` must produce exactly those Go does not mark omitempty, which is what makes a mismatched skip condition visible instead of merely untested.
-    fn matches_go_struct<T: Serialize + Default>(go: &str, name: &str, filled: &T) {
-        let fields = gosource::struct_fields(go, name);
-        assert!(
-            !fields.is_empty(),
-            "no json-tagged fields found for Go struct {name} — the reader no longer understands api.go"
-        );
+    // UNIT_BOUNDARY_DESCRIPTION: holds one wire type to its two fixtures, as serde writes and reads it rather than as the attributes read. `filled` sets every field, and the struct literal that builds it names every field, so a field added here fails to compile until the test gives it a value — and then fails until the fixture holds it too. Reading the full fixture back and writing it again catches the other direction: a field the fixture holds and this type does not know is dropped on the way in and missing on the way out. The zero fixture is exactly the fields written when every value is zero, which is where a skip condition that differs from the controller's omitempty shows.
+    fn matches_the_contract<T: Serialize + DeserializeOwned + Default>(name: &str, filled: &T) {
+        let full = fixture(&format!("{name}.json"));
+        let zero = fixture(&format!("{name}.zero.json"));
+        let written = |value: &T| serde_json::to_value(value).expect("the wire types serialize");
+        let read = |value: &Value| -> T {
+            serde_json::from_value(value.clone())
+                .unwrap_or_else(|e| panic!("{name}: the fixture does not decode: {e}"))
+        };
 
-        let mut declared: Vec<&str> = fields.iter().map(|f| f.json.as_str()).collect();
-        let mut ours = wire_names(filled);
-        declared.sort_unstable();
-        ours.sort_unstable();
         assert_eq!(
-            declared, ours,
-            "{name} writes different JSON names than api.go declares"
+            written(filled),
+            full,
+            "{name}: a value with every field set does not write the full fixture"
         );
-
-        let mut always: Vec<&str> = fields
-            .iter()
-            .filter(|f| !f.omitempty)
-            .map(|f| f.json.as_str())
-            .collect();
-        let mut ours_when_zero = wire_names(&T::default());
-        always.sort_unstable();
-        ours_when_zero.sort_unstable();
         assert_eq!(
-            always, ours_when_zero,
-            "{name} omits a different set of fields than api.go's omitempty tags when every value is zero"
+            written(&read(&full)),
+            full,
+            "{name}: the full fixture does not survive being read and written again"
+        );
+        assert_eq!(
+            written(&T::default()),
+            zero,
+            "{name}: the zero value does not write the zero fixture"
+        );
+        assert_eq!(
+            written(&read(&zero)),
+            zero,
+            "{name}: the zero fixture does not survive being read and written again"
         );
     }
 
-    // TEST_SCENARIO: these types are one half of a contract whose other half is Go, and the two processes meet as JSON over the wire and never as types — so nothing but a test can tell them apart. A renamed field, a dropped one, or an omitempty that only one side applies does not fail a build: it fails at runtime, between a controller and a runner, as a value that silently reads as its zero. api.go is read as the source of truth and every field is compared as serde actually writes it.
+    // TEST_SCENARIO: these types are one half of a contract whose other half is the controller, in Go, and the two processes meet as JSON and never as types — so nothing but a test can tell them apart. A renamed field, a dropped one, or an omitempty that only one side applies does not fail a build: it fails at runtime, between a controller and a runner, as a value that silently reads as its zero. The fixtures are what both sides are held to; the controller's tests round-trip the same files.
     #[test]
-    fn the_go_half_of_the_wire_contract_says_the_same_thing() {
-        let go = gosource::read("api.go");
-
-        matches_go_struct(
-            &go,
-            "ImageLaunch",
-            &ImageLaunch {
-                entrypoint: vec!["/entry".into()],
-                cmd: vec!["serve".into()],
-                env: vec!["A=image".into()],
-                working_dir: "/app".into(),
-            },
-        );
-        matches_go_struct(
-            &go,
-            "MachineSpec",
+    fn the_wire_types_write_and_read_what_the_contract_says() {
+        matches_the_contract(
+            "machine-spec",
             &MachineSpec {
                 image: "quay.io/x/vm:1".into(),
                 cpus: 2,
@@ -167,9 +132,8 @@ mod tests {
                 pull_auths: vec!["{\"auths\":{}}".into()],
             },
         );
-        matches_go_struct(
-            &go,
-            "MachineStatus",
+        matches_the_contract(
+            "machine-status",
             &MachineStatus {
                 state: STATE_RUNNING.into(),
                 reason: REASON_NOT_READY.into(),
@@ -191,62 +155,34 @@ mod tests {
         assert!(!stop.running && stop.image.is_empty() && stop.cpus == 0 && stop.env.is_empty());
         let status: MachineStatus = serde_json::from_str(r#"{"state":"running"}"#).unwrap();
         assert!(!status.ready && status.port == 0);
-        let launch: ImageLaunch = serde_json::from_str(r#"{"cmd":["serve"]}"#).unwrap();
-        assert!(launch.working_dir.is_empty() && launch.entrypoint.is_empty());
     }
 
     // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
     #[test]
     fn the_states_and_reasons_are_the_ones_the_controller_matches_on() {
-        let go = gosource::read("api.go");
-
-        for (name, ours) in [
-            ("StateAbsent", STATE_ABSENT),
-            ("StateUnknown", STATE_UNKNOWN),
-            ("StateCreating", STATE_CREATING),
-            ("StateStarting", STATE_STARTING),
-            ("StateRestarting", STATE_RESTARTING),
-            ("StateRunning", STATE_RUNNING),
-            ("StateStopping", STATE_STOPPING),
-            ("StateStopped", STATE_STOPPED),
-            ("ReasonNotReady", REASON_NOT_READY),
-            ("ReasonOutOfCapacity", REASON_OUT_OF_CAPACITY),
-            ("ReasonImageUnavailable", REASON_IMAGE_UNAVAILABLE),
-            ("ReasonBootFailed", REASON_BOOT_FAILED),
-            ("ReasonEgressChanged", REASON_EGRESS_CHANGED),
-        ] {
-            assert_eq!(
-                gosource::const_value(&go, name).as_deref(),
-                Some(ours),
-                "{name} disagrees between api.go and api.rs"
-            );
-        }
-    }
-
-    // TEST_SCENARIO: the reader is worth having only if a struct it cannot find fails the comparison rather than passing it vacuously — an empty field list must be caught by the assertion above, not read as "nothing disagrees".
-    #[test]
-    fn a_struct_the_reader_cannot_find_yields_no_fields() {
-        assert!(gosource::struct_fields("type Other struct {\n}", "MachineSpec").is_empty());
-        assert!(gosource::struct_fields("", "MachineSpec").is_empty());
-    }
-
-    // TEST_SCENARIO: omitempty is the half of a tag a reader is most likely to get quietly wrong, because a tag it mis-splits still yields a plausible name. Both shapes api.go uses are pinned here.
-    #[test]
-    fn the_reader_tells_an_omitempty_tag_from_a_plain_one() {
-        let go = "type S struct {\n\tA string `json:\"a\"`\n\tB string `json:\"b,omitempty\"`\n}";
-        let fields = gosource::struct_fields(go, "S");
+        let vocabulary = fixture("vocabulary.json");
         assert_eq!(
-            fields,
-            vec![
-                gosource::GoField {
-                    json: "a".into(),
-                    omitempty: false
-                },
-                gosource::GoField {
-                    json: "b".into(),
-                    omitempty: true
-                },
-            ]
+            vocabulary["states"],
+            serde_json::json!([
+                STATE_ABSENT,
+                STATE_UNKNOWN,
+                STATE_CREATING,
+                STATE_STARTING,
+                STATE_RESTARTING,
+                STATE_RUNNING,
+                STATE_STOPPING,
+                STATE_STOPPED,
+            ])
+        );
+        assert_eq!(
+            vocabulary["reasons"],
+            serde_json::json!([
+                REASON_NOT_READY,
+                REASON_OUT_OF_CAPACITY,
+                REASON_IMAGE_UNAVAILABLE,
+                REASON_BOOT_FAILED,
+                REASON_EGRESS_CHANGED,
+            ])
         );
     }
 }

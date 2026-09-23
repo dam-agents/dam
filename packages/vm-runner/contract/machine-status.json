@@ -1,0 +1,11 @@
+{
+  "state": "running",
+  "reason": "MachineNotReady",
+  "restarts": 1,
+  "port": 31000,
+  "ready": true,
+  "cpus": 2,
+  "memoryMiB": 2048,
+  "message": "up",
+  "startingMs": 1
+}

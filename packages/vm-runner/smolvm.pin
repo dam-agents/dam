@@ -1,6 +1,6 @@
 # The smolvm release this crate builds against.
 #
-# It MUST equal SMOLVM_VERSION in packages/controller/Dockerfile.vm-runner.
+# It MUST equal SMOLVM_VERSION in the Dockerfile beside it.
 # The crate is only half of what the runner needs: the same release supplies
 # the agent rootfs and the ext4 disk templates the library reaches for at
 # runtime, and a guest agent from one version talking to a library from
