@@ -18,15 +18,16 @@ set -e
 
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_SHA:?}" "${IMAGE_PREFIX:?}"
 
-# The same component list and job names as cd.yml's build-images matrix and
-# build-mock job. e2e needed every one of them green before it started, so it
-# still does. `changes` is watched too: when it fails, the build matrix never
-# expands into these names, and nothing else would end the wait.
-COMPONENTS="controller vm-runner api-server ui keycloak"
+# CI_IMAGES_JOBS names the jobs e2e needs finished, separated by `|`. cd.yml
+# sets it: the job names differ between a PR, which builds in one job, and
+# every other run, which builds a matrix. `detect stale images` is always on
+# it: when it fails, the build jobs never start under their names, and nothing
+# else would end the wait. `skipped` counts as done, since a PR skips whichever
+# mock build it does not need; an image a skipped job did not make fails the
+# pull below instead.
+: "${CI_IMAGES_JOBS:?}"
 LOADED="controller api-server ui keycloak"
-JOBS=("detect stale images")
-for c in $COMPONENTS; do JOBS+=("build-images ($c, amd64)"); done
-JOBS+=("build mock (e2e fixture)")
+IFS='|' read -r -a JOBS <<< "$CI_IMAGES_JOBS"
 wanted="$(printf '%s\n' "${JOBS[@]}" | jq -R . | jq -cs .)"
 
 deadline=$((SECONDS + ${CI_IMAGES_TIMEOUT:-2400}))
@@ -37,7 +38,7 @@ while :; do
     state="$(printf '%s' "$jobs" | jq -r --argjson wanted "$wanted" '
       [.jobs[] | select(.name as $n | $wanted | index($n))] as $j
       | ($j | map(select(.status == "completed"))) as $done
-      | ($done | map(select(.conclusion != "success"))) as $bad
+      | ($done | map(select(.conclusion != "success" and .conclusion != "skipped"))) as $bad
       | if ($bad | length) > 0 then "failed: " + ($bad | map(.name + "=" + .conclusion) | join(", "))
         elif ($done | length) == ($wanted | length) then "ready"
         else "waiting: \($done | length)/\($wanted | length) done" end')"
