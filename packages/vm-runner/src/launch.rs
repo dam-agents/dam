@@ -8,9 +8,9 @@ use serde::Deserialize;
 
 use crate::api::ImageLaunch;
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an earlier release cached. The third, a config fetched from the registry when neither exists, needs a registry client and is not ported yet.
+// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an install with no registry staged. The third, a config read from the registry when neither exists, is in the fetch module.
 
-// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree. Trees cached by earlier releases carry one under this name and with these field spellings, and a machine booted from such a tree reads it.
+// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree, which a machine booted from that tree reads.
 pub const LAUNCH_FILE: &str = "launch.json";
 
 // UNIT_BOUNDARY_DESCRIPTION: the largest entry in an archive that could still be an image config. Layers are megabytes to gigabytes and configs are kilobytes, so this is what keeps a config scan from reading a whole image into memory looking for a JSON object.
@@ -136,14 +136,7 @@ fn clean_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
     use std::path::PathBuf;
-
-    // TEST_SCENARIO: the launch record sits beside every tree earlier releases unpacked, under this name. A different file name is a tree whose launch cannot be found, and the fallbacks behind it are a registry fetch per boot or a refusal.
-    #[test]
-    fn the_launch_record_keeps_the_name_earlier_releases_wrote_it_under() {
-        assert_eq!(LAUNCH_FILE, "launch.json");
-    }
 
     // TEST_SCENARIO: these five names are the OCI image config's own spelling, capitals and all, and nothing on this side would notice one being wrong — a mis-spelled key reads as absent, which for Entrypoint and Cmd together is a refusal to boot and for Env is a machine started without its image's environment.
     #[test]
@@ -195,7 +188,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: the archive below, or the registry fetch that is not ported yet.
+    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: a staged archive, or the registry.
     #[test]
     fn a_tree_with_no_record_beside_it_is_nothing_to_say_rather_than_a_failure() {
         let dir = TempDir::new("record");
@@ -224,44 +217,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: records beside trees unpacked by earlier releases were written by Go's `json.Marshal` from the struct in `api.go`, which tags entrypoint, cmd and env without `omitempty` — so a list left nil is in the file as JSON null rather than left out. An image that names neither an entrypoint nor a command is refused, so every such record sets one of the two and leaves the other nil. A reader that refuses a null list therefore reads almost every tree already on the node as broken.
-    #[test]
-    fn a_record_an_earlier_release_wrote_is_read_rather_than_refused() {
-        let api = gosource::read("api.go");
-        let fields = gosource::struct_fields(&api, "ImageLaunch");
-        assert!(
-            !fields.is_empty(),
-            "no ImageLaunch fields were read out of api.go, so this comparison proves nothing"
-        );
-        for listed in ["entrypoint", "cmd", "env"] {
-            let field = fields
-                .iter()
-                .find(|field| field.json == listed)
-                .unwrap_or_else(|| panic!("api.go no longer writes {listed:?} into the record"));
-            assert!(
-                !field.omitempty,
-                "api.go now leaves an empty {listed:?} out of the record, so a null list is no longer what the records on a node hold and this test's premise is stale"
-            );
-        }
-
-        let dir = TempDir::new("go-record");
-        fs::write(
-            dir.path().join(LAUNCH_FILE),
-            br#"{"entrypoint":["/init"],"cmd":null,"env":null,"workingDir":""}"#,
-        )
-        .unwrap();
-        let launch = read_launch(dir.path())
-            .unwrap()
-            .expect("the record is there");
-        assert_eq!(launch.entrypoint, ["/init"]);
-        assert!(
-            launch.cmd.is_empty(),
-            "a list an earlier release left nil must read back as an empty one"
-        );
-        assert!(launch.env.is_empty());
-    }
-
-    // TEST_SCENARIO: the whole point of the archive path — an archive still boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.
+    // TEST_SCENARIO: an archive staged for an install with no registry boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.
     #[test]
     fn an_archive_yields_the_launch_its_manifest_points_at() {
         let dir = TempDir::new("archive");

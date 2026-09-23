@@ -12,7 +12,7 @@ pub fn write(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
         .mode(mode)
         .open(path)?;
     file.write_all(body)?;
-    // UNIT_BOUNDARY_DESCRIPTION: a create does not change the mode of a file that already exists, and every file written here is rewritten — so the mode is set as well as asked for, or one left loose by an earlier release stays loose forever.
+    // UNIT_BOUNDARY_DESCRIPTION: the mode given to the open is masked by the umask, and a create does not change the mode of a file that already exists — so the mode is set on the open file as well as asked for.
     file.set_permissions(fs::Permissions::from_mode(mode))?;
     file.sync_all()
 }
@@ -43,7 +43,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a file written a second time is rewritten, not appended to, and is retightened. A create leaves an existing file's mode alone, so a file some earlier release left loose would stay loose through every rewrite.
+    // TEST_SCENARIO: a file written a second time is rewritten, not appended to, and gets the mode the second write asks for. A create leaves an existing file's mode alone, so a writer that only asked the open for a mode would keep the first one.
     #[test]
     fn a_rewrite_replaces_the_body_and_retightens_the_mode() {
         let dir = TempDir::new("rewrite");
@@ -60,7 +60,7 @@ mod tests {
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600,
-            "a file that was already loose stayed loose"
+            "the rewrite kept the first write's mode"
         );
     }
 

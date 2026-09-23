@@ -38,7 +38,7 @@ impl Preloader {
             let entry = self.cache.digest_entry(&digest);
             if !matches!(read_launch(&entry), Ok(Some(_))) {
                 let pinned = format!("{}@{digest}", repository(reference));
-                if let Err(e) = self.cache.fetch(&pinned, auths, &entry, &none, &none) {
+                if let Err(e) = self.cache.fetch(&pinned, auths, &entry, &none) {
                     tracing::warn!(image = %reference, error = %format!("{e:#}"), "image cache: preloading an image this install ships");
                 }
             }

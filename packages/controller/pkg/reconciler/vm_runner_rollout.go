@@ -96,10 +96,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 		return err
 	}
 	if existing.Annotations[annRunnerTemplate] == hash {
-		return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-			_, err := cli.Update(ctx, existing, metav1.UpdateOptions{})
-			return err
-		})
+		return nil
 	}
 
 	r.runnerRollMu.Lock()

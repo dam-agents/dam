@@ -10,7 +10,7 @@ use axum::{Json, Router};
 use crate::api::MachineSpec;
 use crate::server::{Rejected, Server};
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects, unchanged from earlier releases so a controller of either age can drive it. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
+// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
 
 #[derive(Clone)]
 struct Api {

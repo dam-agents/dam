@@ -29,17 +29,9 @@ pub trait Runtime: Send + Sync {
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk an earlier release made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
-    fn storage_growable(&self, _id: &str) -> bool {
-        true
-    }
-    // UNIT_BOUNDARY_DESCRIPTION: whether a storage disk kept by a recreate is waiting for this machine, which means the recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so that create must not ask for more than the disk it gets.
-    fn has_kept_storage(&self, _id: &str) -> bool {
-        false
-    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a cached archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
+// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
 pub struct Machine<'a> {
     pub spec: &'a MachineSpec,
     pub image: &'a str,
@@ -75,11 +67,11 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
 // UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
 
-// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it. Earlier releases kept their disks at the same place, so a recreate one of them began is finished here.
+// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it.
 pub const KEPT_DISKS_DIR: &str = "kept-disks";
 
-// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: a raw file, or a qcow2 one backed by the shared template when an earlier release made it at smolvm's default size, and the marker that says its filesystem is made — without which smolvm formats it again. A qcow2 file's template is outside the data directory, so moving the file does not break it.
-pub const STORAGE_FILES: [&str; 3] = ["storage.raw", "storage.qcow2", "storage.formatted"];
+// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: the raw disk, and the marker that says its filesystem is made — without which smolvm formats it again.
+pub const STORAGE_FILES: [&str; 2] = ["storage.raw", "storage.formatted"];
 
 pub fn kept_dir(home: &Path, id: &str) -> std::path::PathBuf {
     home.join(KEPT_DISKS_DIR).join(id)
@@ -497,7 +489,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine's directory outlives the runner that made it, and a VMM from an earlier release leaves the same sockets, lock and pid file in it. What a start clears and what a discard removes is pinned by name, so a renamed entry here does not leave an old machine's stale socket in place and its next boot believing it is still up.
+    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears and what a discard removes is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
     #[test]
     fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
@@ -550,16 +542,6 @@ mod tests {
         assert!(vm.join("storage.formatted").exists());
         assert!(!kept.exists());
         adopt_kept_storage(&kept, &vm).unwrap();
-    }
-
-    // TEST_SCENARIO: a runner replaced mid-recreate leaves the machine's disk where earlier releases kept it, and this one must find it there and know every file of it — or it boots the recreated machine onto an empty disk and the agent's work is gone.
-    #[test]
-    fn disks_are_kept_where_earlier_releases_kept_them() {
-        assert_eq!(KEPT_DISKS_DIR, "kept-disks");
-        assert_eq!(
-            STORAGE_FILES,
-            ["storage.raw", "storage.qcow2", "storage.formatted"]
-        );
     }
 
     struct TempDir(PathBuf);

@@ -9,7 +9,7 @@ use crate::api::{
     ImageLaunch, REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE,
     STATE_CREATING, STATE_STARTING,
 };
-use crate::cache::{cache_path, PARTIAL_PREFIX};
+use crate::cache::{archive_path, PARTIAL_PREFIX};
 use crate::imagecache::PRIVATE_FILE;
 use std::path::Path;
 
@@ -24,8 +24,6 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     discarded: Mutex<Vec<String>>,
     console: Mutex<String>,
-    ungrowable: AtomicBool,
-    kept: AtomicBool,
 }
 
 impl Fake {
@@ -102,14 +100,6 @@ impl Runtime for Fake {
 
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
-    }
-
-    fn storage_growable(&self, _id: &str) -> bool {
-        !self.ungrowable.load(Ordering::SeqCst)
-    }
-
-    fn has_kept_storage(&self, _id: &str) -> bool {
-        self.kept.load(Ordering::SeqCst)
     }
 }
 
@@ -743,29 +733,9 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: a tree with no launch record beside it names nothing to run, in either format. It is never booted from; the image is fetched again into its digest entry and the complete entry replaces the incomplete one there.
+// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory. The fetch fails there, and the staged archive boots instead — with the launch read out of the archive's own config.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_tree_with_no_launch_beside_it_is_not_booted_from() {
-    let h = Harness::new("no-launch");
-    let legacy = cache_path(&h.dir.join("images"), "quay.io/x/vm:1");
-    fs::create_dir_all(legacy.join(ROOTFS_DIR)).unwrap();
-    h.server
-        .cache
-        .resolve_digest("quay.io/x/vm:1", Duration::ZERO, &[])
-        .unwrap();
-    let entry = h.entry("quay.io/x/vm:1");
-    fs::create_dir_all(entry.join(ROOTFS_DIR)).unwrap();
-    h.server.put("m1", spec(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    assert_eq!((h.crane_log("config"), h.crane_log("export")), (1, 1));
-    assert!(read_launch(&entry).unwrap().is_some());
-    let (image, _) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), entry.join(ROOTFS_DIR));
-}
-
-// TEST_SCENARIO: an install whose fetch fails still has the archive an earlier release cached, and that archive still boots — with the launch read out of the archive's own config.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_failed_fetch_still_boots_the_archive_on_disk() {
+async fn a_failed_fetch_boots_the_staged_archive() {
     let h = Harness::new("archive");
     fs::write(
         h.dir.join("crane"),
@@ -774,10 +744,7 @@ async fn a_failed_fetch_still_boots_the_archive_on_disk() {
     .unwrap();
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
-    let archive = PathBuf::from(format!(
-        "{}.tar",
-        cache_path(&images, "quay.io/x/vm:1").display()
-    ));
+    let archive = archive_path(&images, "quay.io/x/vm:1");
     write_archive(&archive, r#"{"config":{"Entrypoint":["/from-archive"]}}"#);
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
@@ -1242,113 +1209,4 @@ async fn a_scrape_counts_what_a_create_did() {
         !scrape.contains("m1") && !scrape.contains("quay.io"),
         "{scrape}"
     );
-}
-
-// TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_disk_that_cannot_grow_is_not_resized_under_a_running_machine() {
-    let h = Harness::new("ungrowable");
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    h.fake.ungrowable.store(true, Ordering::SeqCst);
-    let mut bigger = spec(true);
-    bigger.storage_gib += 10;
-    h.server.put("m1", bigger).unwrap();
-    let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
-        "{status:?}"
-    );
-    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
-    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
-    assert_eq!(
-        read_spec(&h.dir.join("machines"), "m1")
-            .unwrap()
-            .storage_gib,
-        spec(true).storage_gib
-    );
-}
-
-// TEST_SCENARIO: an image upgrade that also asks for more storage on a disk that cannot grow is refused before the old machine is stopped, so the agent keeps running on its old image rather than being recreated at a size it will never have.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_new_image_with_a_size_the_disk_cannot_take_is_refused_before_the_recreate() {
-    let h = Harness::new("ungrowable-recreate");
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    h.fake.ungrowable.store(true, Ordering::SeqCst);
-    let mut upgraded = spec(true);
-    upgraded.image = "quay.io/x/vm:2".into();
-    upgraded.storage_gib += 10;
-    h.server.put("m1", upgraded).unwrap();
-    let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
-        "{status:?}"
-    );
-    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
-    assert_eq!(
-        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
-        "quay.io/x/vm:1"
-    );
-}
-
-// TEST_SCENARIO: a machine whose gateway moved and whose disk cannot take the size asked for has two reasons to be refused. The moved gateway wins: the machine is stopped rather than left running on an address nobody checked, and the controller is told the gateway moved.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_moved_gateway_stops_a_machine_even_when_its_disk_cannot_grow() {
-    let h = Harness::new("ungrowable-egress");
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    h.fake.ungrowable.store(true, Ordering::SeqCst);
-    let mut moved = spec(true);
-    moved.allow_cidrs = vec!["10.0.0.9/32".into()];
-    moved.storage_gib += 10;
-    h.server.put("m1", moved.clone()).unwrap();
-    h.settle("m1").await;
-    h.server.put("m1", moved).unwrap();
-    let status = h.settle("m1").await;
-    assert_eq!(status.reason, REASON_EGRESS_CHANGED, "{status:?}");
-    assert_eq!(h.fake.calls(), ["create m1", "start m1", "stop m1"]);
-    assert_eq!(h.fake.state("m1").unwrap(), STATE_STOPPED);
-}
-
-// TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size, and the next spec also asks for a larger disk. The create that resumes it boots onto the kept disk, which is never grown at start, so it is capped at the size that disk has: the agent comes back, the stored spec says what it really has, and the larger size is then taken like any other resize — here refused, because the kept disk cannot grow, while the machine keeps running.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_resumed_recreate_boots_at_the_size_the_kept_disk_has() {
-    let h = Harness::new("ungrowable-resume");
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    locked(&h.fake.states).remove("m1");
-    h.server.forget_state("m1");
-    h.fake.kept.store(true, Ordering::SeqCst);
-    h.fake.ungrowable.store(true, Ordering::SeqCst);
-    let mut resumed = spec(true);
-    resumed.image = "quay.io/x/vm:2".into();
-    resumed.storage_gib += 10;
-    h.server.put("m1", resumed.clone()).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    assert_eq!(
-        h.fake.calls(),
-        ["create m1", "start m1", "create m1", "start m1"]
-    );
-    assert_eq!(
-        read_spec(&h.dir.join("machines"), "m1")
-            .unwrap()
-            .storage_gib,
-        spec(true).storage_gib
-    );
-    h.fake.kept.store(false, Ordering::SeqCst);
-
-    h.server.put("m1", resumed).unwrap();
-    let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
-        "{status:?}"
-    );
-    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
 }

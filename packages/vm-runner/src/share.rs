@@ -95,12 +95,6 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: machines created by earlier releases have their share under this name, and its path is baked into each machine's command line. A runner that wrote the share under another name would write it beside the old one, and the machine would keep booting against a directory nobody updates, its CA never rotated and no error anywhere.
-    #[test]
-    fn the_share_keeps_the_name_earlier_releases_wrote_it_under() {
-        assert_eq!(SHARE_DIR, "share");
-    }
-
     // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts `/etc/platform/ca/ca.crt` in the agent's own environment as NODE_EXTRA_CA_CERTS, a package away, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate.
     #[test]
     fn the_ca_is_named_what_the_agents_environment_points_at() {
@@ -112,7 +106,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse, and the shares of machines from earlier releases carry these same modes.
+    // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse.
     #[test]
     fn the_share_is_written_with_stated_modes_rather_than_the_umask() {
         let dir = TempDir::new("modes");

@@ -5,12 +5,12 @@ use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
 
-// UNIT_BOUNDARY_DESCRIPTION: the image cache is not this process's data structure, it is a protocol between every process that mounts the directory — which on a node cache is one runner per owner, plus the preloader — and with the entries earlier releases left in it. Every process has to agree exactly: an entry one of them counts and another does not is an entry one of them deletes while the other's guest has it mounted as its root filesystem. Every name, format and window below is therefore pinned by a test, not merely written down once.
+// UNIT_BOUNDARY_DESCRIPTION: the image cache is not this process's data structure, it is a protocol between every process that mounts the directory — which on a node cache is one runner per owner, plus the preloader. Every process has to agree exactly: an entry one of them counts and another does not is an entry one of them deletes while the other's guest has it mounted as its root filesystem. Every name, format and window below is therefore pinned by a test, not merely written down once.
 
 // UNIT_BOUNDARY_DESCRIPTION: where each process publishes what its own machines hold, one file per runner named after it. Read by every other process before it evicts anything.
 pub const HOLDERS_DIR: &str = ".holders";
 
-// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from a finished entry and dot-prefixed so neither entry pattern can match it — a half-written tree must never be counted as one a machine can boot.
+// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from a finished entry and dot-prefixed so the entry pattern cannot match it — a half-written tree must never be counted as one a machine can boot.
 pub const PARTIAL_PREFIX: &str = ".unpack-";
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a holders file is believed after its last write. Machines are processes of the runner that made them, so a runner that stopped refreshing has no machines left running and its claims are safe to ignore.
@@ -20,18 +20,15 @@ pub const HOLDER_STALE: Duration = Duration::from_secs(30 * 60);
 pub const PULL_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 pub const PARTIAL_STALE: Duration = Duration::from_secs(2 * 20 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: the root of the cache's second format, where an entry is named by the digest of the image it holds. It is dot-prefixed so the patterns of the first format cannot match it: a process that knows only the first format never counts, evicts or prunes anything under it.
-pub const DIGEST_ROOT: &str = ".v2";
-
-// UNIT_BOUNDARY_DESCRIPTION: the index from a reference to the digest it last resolved to, inside the digest root. One file per reference, named by a hash of the reference, and its mtime is when the resolution was made.
+// UNIT_BOUNDARY_DESCRIPTION: the index from a reference to the digest it last resolved to. One file per reference, named by a hash of the reference, and its mtime is when the resolution was made.
 pub const REFS_DIR: &str = "refs";
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a tag's resolution is trusted without asking the registry again. It also decides when an index file whose tree is gone may be removed.
 pub const REF_FRESH: Duration = Duration::from_secs(10 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: an image reference becomes a directory name by replacing the three characters a reference may carry that a path segment must not. Nothing is escaped, so two references that differ only in those characters collide — kept that way because earlier releases named entries so, and every process must name the same entry for the same image or each will fetch what the other already has.
-pub fn cache_path(image_dir: &Path, image: &str) -> PathBuf {
-    image_dir.join(image.replace(['/', ':', '@'], "_"))
+// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages the `docker save` archive of an image: the reference with the three characters a path segment must not carry replaced by an underscore, and `.tar` after it. `cluster:install` writes the archive under this name, so both must replace the same characters. The runner only reads these archives, and eviction never counts one.
+pub fn archive_path(image_dir: &Path, image: &str) -> PathBuf {
+    image_dir.join(format!("{}.tar", image.replace(['/', ':', '@'], "_")))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a string is a digest this cache can name an entry by: `sha256:` and 64 lower-case hex digits. Hand-written rather than a regex, and pinned by a test.
@@ -41,7 +38,7 @@ pub fn is_digest(digest: &str) -> bool {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a name under the digest root is an entry: a digest with its colon replaced, so it is a single path segment.
+// UNIT_BOUNDARY_DESCRIPTION: whether a name in the image directory is an entry: a digest with its colon replaced, so it is a single path segment.
 pub fn is_digest_entry(name: &str) -> bool {
     name.strip_prefix("sha256_")
         .is_some_and(|hex| is_digest(&format!("sha256:{hex}")))
@@ -64,35 +61,16 @@ pub fn repository(image: &str) -> &str {
 }
 
 pub fn digest_path(image_dir: &Path, digest: &str) -> PathBuf {
-    image_dir
-        .join(DIGEST_ROOT)
-        .join(digest.replacen(':', "_", 1))
+    image_dir.join(digest.replacen(':', "_", 1))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where the index keeps what a reference resolved to: the hex SHA-256 of the whole reference. The escaping of the first format is not used, because it names two different references alike, and an index that did would boot one image under the other's name.
+// UNIT_BOUNDARY_DESCRIPTION: where the index keeps what a reference resolved to: the hex SHA-256 of the whole reference. It is hashed rather than escaped, because an escaping names two different references alike, and an index that did would boot one image under the other's name.
 pub fn ref_path(image_dir: &Path, image: &str) -> PathBuf {
     let hex: String = Sha256::digest(image.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    image_dir.join(DIGEST_ROOT).join(REFS_DIR).join(hex)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: whether a name is an unpacked entry. Hand-written rather than a regex so the crate carries no matcher of its own, and pinned by a test: first character alphanumeric, the rest alphanumeric or one of `.`, `_`, `-`, and at most 255 characters. The leading class is what excludes a dot-prefixed scratch tree.
-pub fn is_cached_image(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !first.is_ascii_alphanumeric() || name.chars().count() > 255 {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: whether a name is an archive an earlier release cached. The same shape with a `.tar` suffix, which the suffix itself satisfies, so the check is the entry rule plus the ending.
-pub fn is_cached_archive(name: &str) -> bool {
-    name.ends_with(".tar") && is_cached_image(name)
+    image_dir.join(REFS_DIR).join(hex)
 }
 
 pub fn dir_size(path: &Path) -> u64 {
@@ -109,7 +87,7 @@ pub fn dir_size(path: &Path) -> u64 {
         .sum()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: publishes what this process holds, as names relative to the image directory, one per line, sorted. An entry of the first format is a bare name and one under the digest root carries the root, so a reader that joins a name to the directory finds either. Written to a `.new` file and renamed, because a reader that caught a partial write would read a shorter claim than the truth and evict what it did not see. Failure is reported and not returned: a runner that cannot publish still runs its machines, and the cost is that another may evict an image it holds.
+// UNIT_BOUNDARY_DESCRIPTION: publishes what this process holds, as names relative to the image directory, one per line, sorted. Written to a `.new` file and renamed, because a reader that caught a partial write would read a shorter claim than the truth and evict what it did not see. Failure is reported and not returned: a runner that cannot publish still runs its machines, and the cost is that another may evict an image it holds.
 pub fn publish_holders(image_dir: &Path, runner_id: &str, held: &BTreeSet<PathBuf>) {
     if runner_id.is_empty() {
         return;
@@ -170,7 +148,7 @@ pub fn held_elsewhere(image_dir: &Path, runner_id: &str) -> BTreeSet<PathBuf> {
     held
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reclaims the scratch trees a killed fetch left. Invisible as well as abandoned — neither entry pattern matches a dot-prefixed name, so those bytes are counted against no budget and chosen for no eviction — which is why this runs before anything is measured. Only a tree older than any fetch may run is taken, so a fetch still running elsewhere on the node keeps its own.
+// UNIT_BOUNDARY_DESCRIPTION: reclaims the scratch trees a killed fetch left. Invisible as well as abandoned — the entry pattern does not match a dot-prefixed name, so those bytes are counted against no budget and chosen for no eviction — which is why this runs before anything is measured. Only a tree older than any fetch may run is taken, so a fetch still running elsewhere on the node keeps its own.
 pub fn prune_partial_unpacks(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -203,7 +181,7 @@ fn older_than(path: &Path, window: Duration) -> bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: removes the index files that no longer save anything: stale, and pointing at a tree that is gone. A file the reader cannot parse is removed once stale too, which is also what reclaims a staged write a killed process left.
 pub fn prune_refs(dir: &Path) {
-    let refs = dir.join(DIGEST_ROOT).join(REFS_DIR);
+    let refs = dir.join(REFS_DIR);
     let Ok(entries) = fs::read_dir(&refs) else {
         return;
     };
@@ -242,11 +220,14 @@ pub struct Entry {
     pub modified: SystemTime,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the cache's entries in both formats, oldest write first, which is the order eviction takes them in. A directory is measured by walking it and a file by its own size; anything matching none of the patterns is not an entry at all, which is how a scratch tree, the index and the holders directory are passed over rather than deleted.
+// UNIT_BOUNDARY_DESCRIPTION: the cache's entries, oldest write first, which is the order eviction takes them in. Each is measured by walking its tree. Anything not named like a digest entry is not an entry at all, which is how a scratch tree, a staged archive, the index and the holders directory are passed over rather than deleted.
 pub fn entries(dir: &Path) -> Vec<Entry> {
-    let mut all = first_format_entries(dir);
-    if let Ok(read) = fs::read_dir(dir.join(DIGEST_ROOT)) {
-        all.extend(read.flatten().filter_map(|entry| {
+    let Ok(read) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut all: Vec<Entry> = read
+        .flatten()
+        .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             if !entry.file_type().ok()?.is_dir() || !is_digest_entry(&name) {
                 return None;
@@ -256,35 +237,10 @@ pub fn entries(dir: &Path) -> Vec<Entry> {
                 modified: entry.metadata().ok()?.modified().ok()?,
                 path: entry.path(),
             })
-        }));
-    }
+        })
+        .collect();
     all.sort_by_key(|entry| entry.modified);
     all
-}
-
-fn first_format_entries(dir: &Path) -> Vec<Entry> {
-    let Ok(read) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    read.flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let kind = entry.file_type().ok()?;
-            let metadata = entry.metadata().ok()?;
-            let size = if kind.is_dir() && is_cached_image(&name) {
-                dir_size(&entry.path())
-            } else if !kind.is_dir() && is_cached_archive(&name) {
-                metadata.len()
-            } else {
-                return None;
-            };
-            Some(Entry {
-                path: entry.path(),
-                size,
-                modified: metadata.modified().ok()?,
-            })
-        })
-        .collect()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: takes entries oldest-first until the cache is inside its budget, sparing anything held. A budget of zero or less evicts nothing, because the runner is refused rather than started without one and a preloader pass with none has nothing to weigh against. Going over budget is the outcome when everything left is held: an image a machine is running is never freed to make room, and the caller reports it rather than taking one.
@@ -295,7 +251,6 @@ pub fn evict(
     in_use: &BTreeSet<PathBuf>,
 ) -> Vec<Entry> {
     prune_partial_unpacks(dir);
-    prune_partial_unpacks(&dir.join(DIGEST_ROOT));
     prune_refs(dir);
     if budget <= 0 {
         return Vec::new();
@@ -310,12 +265,7 @@ pub fn evict(
         if Some(entry.path.as_path()) == keep || in_use.contains(&entry.path) {
             continue;
         }
-        let removed = if entry.path.is_dir() {
-            fs::remove_dir_all(&entry.path)
-        } else {
-            fs::remove_file(&entry.path)
-        };
-        if removed.is_err() {
+        if fs::remove_dir_all(&entry.path).is_err() {
             continue;
         }
         used = used.saturating_sub(entry.size);
@@ -324,21 +274,11 @@ pub fn evict(
     evicted
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the union a caller evicts against — what its own machines hold, plus what every other process on the directory published. An entry claimed elsewhere is spared under both names, because a release that cached an archive and one that cached a tree name the same image differently and the claim carries only one of them.
-pub fn spared(own: &BTreeSet<PathBuf>, elsewhere: &BTreeSet<PathBuf>) -> BTreeSet<PathBuf> {
-    let mut spared = own.clone();
-    for path in elsewhere {
-        spared.insert(path.clone());
-        spared.insert(PathBuf::from(format!("{}.tar", path.display())));
-    }
-    spared
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // TEST_SCENARIO: the claims directory and the scratch prefix are names on a shared directory, read by every runner and preloader on the node and left there by earlier releases. A rename has to fail here rather than on a node, where the symptom is one process evicting a tree another's guest is running from.
+    // TEST_SCENARIO: the claims directory and the scratch prefix are names on a shared directory, read by every runner and preloader on the node. A rename has to fail here rather than on a node, where the symptom is one process evicting a tree another's guest is running from.
     #[test]
     fn the_claims_directory_and_the_scratch_prefix_keep_their_names() {
         assert_eq!(
@@ -347,7 +287,7 @@ mod tests {
         );
         assert_eq!(
             PARTIAL_PREFIX, ".unpack-",
-            "the prefix that keeps a half-written tree out of both entry patterns"
+            "the prefix that keeps a half-written tree out of the entry pattern"
         );
     }
 
@@ -364,56 +304,27 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the three characters a reference carries that a path segment cannot, each replaced by an underscore and nothing escaped. Replacing a different set, or escaping, gives the same image two names — one from this release and one from the entries already on the node — so each process fetches what the other already has, and neither sees the other's claim on it.
+    // TEST_SCENARIO: an install with no registry stages each image's archive under a name `cluster:install` makes by replacing the three characters a reference carries that a path segment cannot. The runner has to look for the same name, or it finds no archive and the machine has nothing to boot.
     #[test]
-    fn a_reference_becomes_an_entry_name_by_replacing_what_a_path_segment_cannot_carry() {
+    fn a_staged_archive_is_named_after_its_reference() {
         let dir = Path::new("/images");
         assert_eq!(
-            cache_path(dir, "quay.io/dam-agents/agent:1.2.3"),
-            dir.join("quay.io_dam-agents_agent_1.2.3")
+            archive_path(dir, "quay.io/dam-agents/agent:1.2.3"),
+            dir.join("quay.io_dam-agents_agent_1.2.3.tar")
         );
         assert_eq!(
-            cache_path(dir, "quay.io/x@sha256:abc"),
-            dir.join("quay.io_x_sha256_abc")
+            archive_path(dir, "quay.io/x@sha256:abc"),
+            dir.join("quay.io_x_sha256_abc.tar")
         );
     }
 
-    // TEST_SCENARIO: the matcher's edges, where a wrong answer is a deleted rootfs or a leaked tree. A dot-prefixed name is the one that matters most: it is how a scratch tree stays out of the budget, and admitting one here would make eviction take a fetch that is still running.
+    // TEST_SCENARIO: a claim is published for another process to read, so what matters is the bytes on disk: names relative to the image directory, one per line, sorted, and no half-written file ever visible under the real name.
     #[test]
-    fn the_matcher_admits_an_entry_and_refuses_everything_else() {
-        assert!(is_cached_image("quay.io_x_vm_1"));
-        assert!(is_cached_image("a"));
-        assert!(is_cached_image(&"a".repeat(255)));
-
-        assert!(!is_cached_image(""));
-        assert!(
-            !is_cached_image(&"a".repeat(256)),
-            "the pattern caps at 255"
-        );
-        assert!(
-            !is_cached_image(".unpack-123"),
-            "a scratch tree is not an entry"
-        );
-        assert!(!is_cached_image(".holders"), "nor is the claims directory");
-        assert!(!is_cached_image("-leading-dash"));
-        assert!(!is_cached_image("has/slash"));
-        assert!(!is_cached_image("has space"));
-
-        assert!(is_cached_archive("quay.io_x_vm_1.tar"));
-        assert!(
-            !is_cached_archive("quay.io_x_vm_1"),
-            "a tree is not an archive"
-        );
-        assert!(!is_cached_archive(".unpack-1.tar"));
-    }
-
-    // TEST_SCENARIO: a claim is published for another process to read, so what matters is the bytes on disk: basenames, one per line, sorted, and no half-written file ever visible under the real name.
-    #[test]
-    fn a_claim_is_published_as_sorted_basenames_through_a_staged_rename() {
+    fn a_claim_is_published_as_sorted_names_through_a_staged_rename() {
         let dir = tempdir();
         let held = [
-            dir.path().join("quay.io_x_second_1"),
-            dir.path().join("quay.io_x_first_1"),
+            digest_path(dir.path(), &digest('b')),
+            digest_path(dir.path(), &digest('a')),
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();
@@ -421,10 +332,15 @@ mod tests {
         publish_holders(dir.path(), "runner-a", &held);
 
         let body = fs::read_to_string(dir.path().join(HOLDERS_DIR).join("runner-a")).unwrap();
-        assert_eq!(body, "quay.io_x_first_1\nquay.io_x_second_1");
+        assert_eq!(body, format!("{}\n{}", entry_name('a'), entry_name('b')));
         assert!(
             !dir.path().join(HOLDERS_DIR).join("runner-a.new").exists(),
             "the staging file is renamed, not left beside the claim where a reader would see two"
+        );
+        assert_eq!(
+            held_elsewhere(dir.path(), "runner-b"),
+            held,
+            "a reader joins each name back to the entry it claims"
         );
     }
 
@@ -465,28 +381,16 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: eviction takes the oldest write first and stops as soon as the cache is inside its budget, and it never takes an entry something holds — which is the whole safety property, because an unpacked image is the root filesystem of every machine running it.
+    // TEST_SCENARIO: eviction takes the oldest write first and stops as soon as the cache is inside its budget, and it never takes an entry something holds — which is the whole safety property, because an unpacked image is the root filesystem of every machine running it. Nothing that is not named like an entry is counted or taken: not the index, not a staged archive.
     #[test]
     fn eviction_takes_the_oldest_unheld_entries_until_it_is_inside_the_budget() {
         let dir = tempdir();
-        let oldest = entry_of(
-            dir.path(),
-            "quay.io_x_oldest_1",
-            1024,
-            Duration::from_secs(300),
-        );
-        let held = entry_of(
-            dir.path(),
-            "quay.io_x_held_1",
-            1024,
-            Duration::from_secs(200),
-        );
-        let newest = entry_of(
-            dir.path(),
-            "quay.io_x_newest_1",
-            1024,
-            Duration::from_secs(100),
-        );
+        let oldest = entry_of(dir.path(), &entry_name('a'), 1024, Duration::from_secs(300));
+        let held = entry_of(dir.path(), &entry_name('b'), 1024, Duration::from_secs(200));
+        let newest = entry_of(dir.path(), &entry_name('c'), 1024, Duration::from_secs(100));
+        fs::create_dir_all(dir.path().join(REFS_DIR)).unwrap();
+        let archive = archive_path(dir.path(), "quay.io/x/vm:1");
+        fs::write(&archive, vec![0u8; 4096]).unwrap();
 
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
         let evicted = evict(dir.path(), None, 2500, &in_use);
@@ -502,18 +406,18 @@ mod tests {
             "an entry a machine is running from is never taken"
         );
         assert!(newest.exists());
+        assert!(
+            dir.path().join(REFS_DIR).exists(),
+            "the index is not an entry"
+        );
+        assert!(archive.exists(), "nor is a staged archive");
     }
 
     // TEST_SCENARIO: when everything left is held there is nothing to take, and the cache stays over its budget rather than freeing a running machine's filesystem. Going over is the reported outcome; taking one is not an outcome at all.
     #[test]
     fn eviction_goes_over_budget_rather_than_take_a_held_entry() {
         let dir = tempdir();
-        let held = entry_of(
-            dir.path(),
-            "quay.io_x_held_1",
-            4096,
-            Duration::from_secs(300),
-        );
+        let held = entry_of(dir.path(), &entry_name('a'), 4096, Duration::from_secs(300));
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
 
         assert!(evict(dir.path(), None, 1, &in_use).is_empty());
@@ -539,54 +443,22 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a claim names one entry, but a release that cached an archive and one that cached a tree name the same image differently. Sparing only the name written down would let a runner take the other form out from under the machine reading it.
+    // TEST_SCENARIO: the index directory is where every process on the node looks up what a tag resolved to, and the trust window is how long each of them believes an index file. An index directory named differently is a tag resolved again beside the answer already there, and a different window is a tag resolved on a schedule the other processes do not share.
     #[test]
-    fn a_claim_elsewhere_spares_both_forms_of_the_entry() {
-        let own = [PathBuf::from("/images/mine")].into_iter().collect();
-        let elsewhere = [PathBuf::from("/images/theirs")].into_iter().collect();
-
-        let spared = spared(&own, &elsewhere);
-
-        assert!(spared.contains(Path::new("/images/mine")));
-        assert!(spared.contains(Path::new("/images/theirs")));
-        assert!(
-            spared.contains(Path::new("/images/theirs.tar")),
-            "the archive form of the same image"
-        );
-    }
-
-    // TEST_SCENARIO: the digest root and its index directory are where every process on the node, and every earlier release, keeps an entry keyed by digest, and the trust window is how long each of them believes an index file. A root or an index directory named differently is an entry fetched again beside the one already there, and a different window is a tag resolved on a schedule the other processes do not share.
-    #[test]
-    fn entries_keyed_by_digest_keep_their_root_index_and_window() {
-        assert_eq!(DIGEST_ROOT, ".v2");
+    fn the_index_keeps_its_directory_and_window() {
         assert_eq!(REFS_DIR, "refs");
         assert_eq!(REF_FRESH, Duration::from_secs(10 * 60));
     }
 
-    // TEST_SCENARIO: a claim is read by every process on the directory, and a claim on a digest entry has to name the root as well as the entry or a reader joins it to the wrong place and spares nothing. So names are published relative to the image directory, and read back the same way.
-    #[test]
-    fn a_claim_names_its_entry_relative_to_the_image_directory() {
-        let dir = tempdir();
-        let held = [
-            dir.path().join("quay.io_x_old_1"),
-            digest_path(dir.path(), DIGEST),
-        ]
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-        publish_holders(dir.path(), "runner-a", &held);
-        let body = fs::read_to_string(dir.path().join(HOLDERS_DIR).join("runner-a")).unwrap();
-        assert_eq!(
-            body,
-            format!(".v2/sha256_{}\nquay.io_x_old_1", "1".repeat(64))
-        );
-        assert_eq!(
-            held_elsewhere(dir.path(), "runner-b"),
-            held,
-            "a reader joins either kind of name back to the entry it claims"
-        );
+    const DIGEST: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+
+    fn digest(hex: char) -> String {
+        format!("sha256:{}", hex.to_string().repeat(64))
     }
 
-    const DIGEST: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    fn entry_name(hex: char) -> String {
+        format!("sha256_{}", hex.to_string().repeat(64))
+    }
 
     // TEST_SCENARIO: the index file for a reference is found by hashing the reference, so every process on the directory finds the same file only if they agree on the hash byte for byte. The value is the SHA-256 of the reference text, checked against a hash computed outside the runner, and a digest entry is the digest with its one colon replaced.
     #[test]
@@ -594,30 +466,32 @@ mod tests {
         let dir = Path::new("/images");
         assert_eq!(
             ref_path(dir, "quay.io/x/vm:1"),
-            dir.join(".v2/refs/17c7481dc14ad29b0ce7071724d8db96cab34a2165937a86c52db163611ae6d4"),
+            dir.join("refs/17c7481dc14ad29b0ce7071724d8db96cab34a2165937a86c52db163611ae6d4"),
             "sha256sum of the reference text"
         );
         assert_ne!(
             ref_path(dir, "quay.io/a/b:1"),
             ref_path(dir, "quay.io/a_b:1"),
-            "two references the first format names alike get two index files"
+            "two references an escaping would name alike get two index files"
         );
         assert_eq!(
             digest_path(dir, DIGEST),
-            dir.join(format!(".v2/sha256_{}", "1".repeat(64)))
+            dir.join(format!("sha256_{}", "1".repeat(64)))
         );
     }
 
-    // TEST_SCENARIO: the matchers for a digest and for a digest entry decide what is booted and what is evicted under the digest root. A digest with upper-case hex, another algorithm or the wrong length is not one this cache names an entry by.
+    // TEST_SCENARIO: the matchers for a digest and for a digest entry decide what is booted and what is evicted. A digest with upper-case hex, another algorithm or the wrong length is not one this cache names an entry by, and nothing else in the directory is an entry.
     #[test]
     fn only_a_sha256_digest_names_an_entry() {
         assert!(is_digest(DIGEST));
         assert!(!is_digest(&DIGEST.to_uppercase()));
         assert!(!is_digest("sha512:abc"));
         assert!(!is_digest(&DIGEST[..70]));
-        assert!(is_digest_entry(&format!("sha256_{}", "a".repeat(64))));
+        assert!(is_digest_entry(&entry_name('a')));
         assert!(!is_digest_entry(REFS_DIR));
+        assert!(!is_digest_entry(HOLDERS_DIR));
         assert!(!is_digest_entry(".unpack-1"));
+        assert!(!is_digest_entry("quay.io_x_vm_1.tar"));
 
         assert_eq!(
             pinned_digest(&format!("quay.io/x/vm@{DIGEST}")),
@@ -638,43 +512,6 @@ mod tests {
         assert_eq!(repository("vm:1"), "vm");
     }
 
-    // TEST_SCENARIO: the budget covers both formats, so an entry under the digest root is counted and evicted by the same oldest-first rule, and a held one is spared the same way. Nothing else under the root is an entry: not the index, not a scratch tree.
-    #[test]
-    fn eviction_weighs_both_formats_together() {
-        let dir = tempdir();
-        let root = dir.path().join(DIGEST_ROOT);
-        let oldest = entry_of(
-            &root,
-            &format!("sha256_{}", "a".repeat(64)),
-            1024,
-            Duration::from_secs(300),
-        );
-        let held = entry_of(
-            &root,
-            &format!("sha256_{}", "b".repeat(64)),
-            1024,
-            Duration::from_secs(200),
-        );
-        let legacy = entry_of(
-            dir.path(),
-            "quay.io_x_old_1",
-            1024,
-            Duration::from_secs(100),
-        );
-        fs::create_dir_all(root.join(REFS_DIR)).unwrap();
-
-        let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
-        let evicted = evict(dir.path(), None, 2500, &in_use);
-
-        assert_eq!(
-            evicted.into_iter().map(|e| e.path).collect::<Vec<_>>(),
-            vec![oldest]
-        );
-        assert!(held.exists());
-        assert!(legacy.exists());
-        assert!(root.join(REFS_DIR).exists(), "the index is not an entry");
-    }
-
     // TEST_SCENARIO: an index file outlives the tree it points at, and one that is stale and points at nothing saves nothing. It is removed, while a fresh one and one whose tree is still there are kept.
     #[test]
     fn a_stale_index_file_whose_tree_is_gone_is_removed() {
@@ -691,7 +528,7 @@ mod tests {
             path
         };
         let gone = write("quay.io/x/gone:1", DIGEST, REF_FRESH * 2);
-        let other = format!("sha256:{}", "2".repeat(64));
+        let other = digest('2');
         let kept = write("quay.io/x/kept:1", &other, REF_FRESH * 2);
         fs::create_dir_all(digest_path(dir.path(), &other)).unwrap();
         let fresh = write("quay.io/x/fresh:1", DIGEST, Duration::from_secs(1));
@@ -704,7 +541,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&kept).unwrap(),
             format!(r#"{{"ref":"quay.io/x/kept:1","digest":"{other}"}}"#),
-            "the bytes are the ones earlier releases wrote and every process reads"
+            "the bytes every process on the directory reads"
         );
     }
 

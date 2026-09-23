@@ -6,12 +6,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::cache::{
-    self, cache_path, digest_path, pinned_digest, ref_path, RefRecord, PARTIAL_PREFIX,
-};
+use crate::cache::{self, digest_path, pinned_digest, ref_path, RefRecord, PARTIAL_PREFIX};
 use crate::command;
 use crate::fetch::{self, unusable, DockerConfig, ANONYMOUS};
-use crate::launch::{launch_from_config, read_launch, LAUNCH_FILE};
+use crate::launch::{launch_from_config, LAUNCH_FILE};
 use crate::state::is_image_ref;
 
 // UNIT_BOUNDARY_DESCRIPTION: one process's hand in the image cache — a runner, or the preloader that fills a node directory before any runner exists. The cache is a protocol between every process that mounts the directory, so this is its one implementation: how an image is fetched and unpacked, how a finished unpack is claimed, what this process tells the others it holds, and what it may evict. Whatever a process holds of its own is passed in by the caller, because only the caller knows: a runner reads its machines' specs, the preloader holds nothing but its pins.
@@ -33,28 +31,17 @@ pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const PRIVATE_FILE: &str = "private";
 
 impl ImageCache {
-    pub fn entry(&self, reference: &str) -> PathBuf {
-        cache_path(&self.dir, reference)
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: both names an image may be cached under — the unpacked tree and the archive an earlier release left — so holding one holds the other.
-    pub fn both_names(&self, reference: &str) -> [PathBuf; 2] {
-        let base = self.entry(reference);
-        [PathBuf::from(format!("{}.tar", base.display())), base]
-    }
-
     pub fn digest_entry(&self, digest: &str) -> PathBuf {
         digest_path(&self.dir, digest)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the pins hold: for each image, the digest entry its reference last resolved to, and the tree and the archive an earlier release named after the reference — still held because an archive an earlier release cached still boots a machine, and evicting it would cost the install the only copy it has.
+    // UNIT_BOUNDARY_DESCRIPTION: what the pins hold: for each image, the digest entry its reference last resolved to.
     pub fn pinned(&self) -> BTreeSet<PathBuf> {
         let mut held = BTreeSet::new();
         for reference in &self.pinned {
             if !is_image_ref(reference) || reference.contains("..") {
                 continue;
             }
-            held.extend(self.both_names(reference));
             if let Some(digest) = self.known_digest(reference) {
                 held.insert(self.digest_entry(&digest));
             }
@@ -97,7 +84,7 @@ impl ImageCache {
         self.read_ref(reference).map(|(digest, _)| digest)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is taken from the index; otherwise the registry is asked and the answer written to the index for every process on the directory. A registry that cannot answer boots the digest the tag last resolved to, so an outage boots what was cached before. None means the tag was never resolved here and cannot be now, and the caller falls back to the first format.
+    // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is taken from the index; otherwise the registry is asked and the answer written to the index for every process on the directory. A registry that cannot answer boots the digest the tag last resolved to, so an outage boots what was cached before. None means the tag was never resolved here and cannot be now, and the caller falls back to a staged archive or the registry.
     pub fn resolve_digest(
         &self,
         reference: &str,
@@ -154,13 +141,12 @@ impl ImageCache {
         cache::publish_holders(&self.dir, &self.owner, &held);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auths` are the docker configs to fetch with, tried in order, and none for an anonymous fetch; the layers come with the one that read the config. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auths` are the docker configs to fetch with, tried in order, and none for an anonymous fetch; the layers come with the one that read the config. `own` is everything this process holds, spared by the trim.
     pub fn fetch(
         &self,
         reference: &str,
         auths: &[String],
         cached: &Path,
-        busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
     ) -> anyhow::Result<Trim> {
         let parent = cached.parent().unwrap_or(&self.dir);
@@ -198,7 +184,7 @@ impl ImageCache {
             bytes = cache::dir_size(scratch.path()),
             "image unpacked into the shared cache"
         );
-        self.claim(scratch.path(), cached, busy)?;
+        self.claim(scratch.path(), cached)?;
         Ok(self.evict(own, Some(cached)))
     }
 
@@ -247,36 +233,23 @@ impl ImageCache {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Processes on one node directory may unpack the same image at once, so a loser that finds a complete entry keeps it — both wrote the same image. An entry with no launch record is from a release that stored none, and is replaced unless a machine here or elsewhere is running from it.
-    fn claim(&self, scratch: &Path, cached: &Path, busy: &BTreeSet<PathBuf>) -> anyhow::Result<()> {
+    // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Processes on one node directory may unpack the same image at once, so a loser that finds the entry already there keeps it — both wrote the same image, and a finished entry is only ever renamed into place whole.
+    fn claim(&self, scratch: &Path, cached: &Path) -> anyhow::Result<()> {
         match fs::rename(scratch, cached) {
-            Ok(()) => return Ok(()),
             Err(e) if !matches!(e.raw_os_error(), Some(libc::EEXIST) | Some(libc::ENOTEMPTY)) => {
-                return Err(e.into());
+                Err(e.into())
             }
-            Err(_) => {}
+            _ => Ok(()),
         }
-        if matches!(read_launch(cached), Ok(Some(_))) {
-            return Ok(());
-        }
-        if busy.contains(cached) || cache::held_elsewhere(&self.dir, &self.owner).contains(cached) {
-            anyhow::bail!(
-                "{} is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image",
-                cached.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-            );
-        }
-        fs::remove_dir_all(cached)?;
-        fs::rename(scratch, cached)?;
-        Ok(())
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: trims the cache to its budget, oldest write first, sparing what this process holds, its pins, and every claim another process published. Goes over budget rather than free an image something is running from.
     pub fn evict(&self, own: &BTreeSet<PathBuf>, keep: Option<&Path>) -> Trim {
         let mut mine = own.clone();
         mine.extend(self.pinned());
-        let spared = cache::spared(&mine, &cache::held_elsewhere(&self.dir, &self.owner));
+        mine.extend(cache::held_elsewhere(&self.dir, &self.owner));
         let mut trim = Trim::default();
-        for evicted in cache::evict(&self.dir, keep, self.budget, &spared) {
+        for evicted in cache::evict(&self.dir, keep, self.budget, &mine) {
             tracing::info!(
                 image = %evicted.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                 bytes = evicted.size,

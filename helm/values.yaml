@@ -191,9 +191,7 @@ virtualization:
     # NAT, CHOWN + FOWNER so it can restore a container image's own
     # ownership when it unpacks one for its machines to share, and
     # DAC_OVERRIDE so that unpack can keep writing into the read-only and
-    # foreign-owned directories a faithful rootfs contains — and so the
-    # runner can manage machine directories that a release which briefly
-    # gave each VMM its own uid chowned away from it.
+    # foreign-owned directories a faithful rootfs contains.
     # Set this only where that
     # SCC is off, or where the runner needs a shape it refuses (a hostPath for
     # `imageArchiveHostPath`). Empty = no extra binding rendered.
@@ -205,11 +203,6 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
-    # Upgrading onto this layout abandons the machines an earlier release kept
-    # under `smolvm/` and `vm-runner/` on the same claim: those agents are
-    # recreated with empty disks, and the bytes stay until the owner's last vm
-    # agent goes and the claim is deleted with the runner. Delete the runner
-    # PVCs before the upgrade to reclaim them at once.
     # `storage` is the CEILING of one owner's claim, not its size. The claim
     # is sized from demand: the sum of that owner's machine disks, 1Gi of
     # headroom per machine for its root overlay and bookkeeping, and
@@ -218,13 +211,12 @@ virtualization:
     # as the owner adds agents, up to this value and no further, so an
     # owner's disks past it do not fit. Growing needs a class that allows
     # volume expansion; on a class that does not, or one the controller
-    # cannot read, the claim is created at this value instead, as it always
-    # was, because it could not grow later. A refused resize costs a warning
+    # cannot read, the claim is created at this value instead, because it
+    # could not grow later. A refused resize costs a warning
     # in the controller log and leaves that runner at the size it has, rather
     # than failing its reconcile.
     # Kubernetes never shrinks a claim: lowering this, or removing agents,
-    # changes no claim that exists, and claims created at the old fixed size
-    # keep it.
+    # changes no claim that exists.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
@@ -261,8 +253,6 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
-    # Upgrading onto a release that has this rolls every existing runner once,
-    # in the same staged way; one whose pod is unchanged is not restarted.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m

@@ -21,7 +21,7 @@ ipnet = "2"
 # smolvm, so this adds an edge and no crate.
 libc = "0.2"
 # Already in the lock by way of smolvm, so this adds a dependency edge and no
-# crate: an archive an earlier release cached still boots a machine, and the
+# crate: an archive an install with no registry stages boots a machine, and the
 # config saying how is inside it.
 tar = "0.4"
 # The TLS stack axum-server serves over. smolvm pulls in both of rustls's
@@ -33,9 +33,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 base64 = "0.22"
 # Already in the lock by way of smolvm: the cache index names a reference by
-# its SHA-256, the name earlier releases wrote and still find; a kept
-# disk template is named by the SHA-256 of the compressed one it was expanded
-# from.
+# its SHA-256, and a kept disk template is named by the SHA-256 of the
+# compressed one it was expanded from.
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

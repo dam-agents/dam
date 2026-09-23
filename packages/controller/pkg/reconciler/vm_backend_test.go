@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -113,24 +112,6 @@ func runnerSecret() *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner), Namespace: "test-agents"},
 		Data:       map[string][]byte{"token": []byte("node-token")},
 	}
-}
-
-// TEST_SCENARIO: a cluster that already ran a vm agent under the old mechanism has an endpoint slice the controller wrote by hand, under the agent's own name. Kubernetes maintains that Service's endpoints now and unions every slice naming it, so a leftover reading ready would take a share of the traffic toward an address its machine no longer answers on.
-func TestTheHandWrittenEndpointSliceIsRemoved(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
-	_, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Create(ctx, &discoveryv1.EndpointSlice{
-		ObjectMeta:  metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		AddressType: discoveryv1.AddressTypeIPv4,
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-
-	_, err = r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "the hand-written slice is gone, leaving only the one Kubernetes keeps")
 }
 
 // TEST_SCENARIO: the runner is kept away from Service and pod addresses, and the cluster's DNS is a Service — so resolving through it is exactly what an egress policy forbids, and a registry pull dies on the lookup. The node's resolver is what a pod confined like this has left.
@@ -632,7 +613,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath so the claim's root, which still holds trees from earlier releases, is never exposed.
+// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -849,29 +830,6 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
 
-// TEST_SCENARIO: a runner built before the controller owned its objects; the Secret and Service are created once and never re-applied, and the PVC's spec is touched only to raise its size, so an upgrade would leave exactly the objects holding that owner's disk and credentials with no owner, and uninstall would strand them.
-func TestRunnerObjectsCreatedBeforeOwnershipAreAdopted(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	_, err := r.client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "runner-sa-uid"},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-
-	name := r.runnerName(testOwner)
-	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	require.Empty(t, sec.OwnerReferences, "the harness seeds it the way an older controller left it")
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-
-	sec, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	require.Len(t, sec.OwnerReferences, 1, "the existing Secret is adopted")
-	assert.Equal(t, types.UID("runner-sa-uid"), sec.OwnerReferences[0].UID)
-}
-
 // TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status carries the runner's own explanation of what to free.
 func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	ctx := context.Background()
@@ -1042,7 +1000,7 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
-// TEST_SCENARIO: the runner unpacks each image once for every machine of it to share, and restoring a rootfs faithfully means writing the ownership and modes its files carry. Under a policy that drops every capability tar cannot: it fails on chown, then — given only CHOWN — on setting a mode it no longer owns, and then on writing into a directory it has just given away, which bits forbid even to root. All three are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it. DAC_OVERRIDE is also what lets the runner manage machine directories an earlier per-VM uid chowned away.
+// TEST_SCENARIO: the runner unpacks each image once for every machine of it to share, and restoring a rootfs faithfully means writing the ownership and modes its files carry. Under a policy that drops every capability tar cannot: it fails on chown, then — given only CHOWN — on setting a mode it no longer owns, and then on writing into a directory it has just given away, which bits forbid even to root. All three are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it.
 func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -1054,7 +1012,7 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
 	require.NotNil(t, caps)
 	assert.Contains(t, caps.Add, corev1.Capability("DAC_OVERRIDE"),
-		"or a machine directory an earlier per-VM uid chowned away is one this runner can no longer manage")
+		"and then writes into a directory it has just given away")
 	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
 	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
 	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")

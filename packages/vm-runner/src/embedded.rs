@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use smolvm::agent::{state_probe, vm_data_dir, HostMount, PortMapping, VmResources};
@@ -19,7 +19,7 @@ use crate::runtime::{
     VMM_EXIT_WAIT,
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — exactly where the smolvm CLI keeps it under the runner's HOME, so machines an earlier release created are machines this one can start, stop and delete. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
+// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
 pub struct Smolvm {
     runtime: EmbeddedRuntime,
     db: SmolvmDb,
@@ -90,7 +90,7 @@ impl Runtime for Smolvm {
                 Some(USER.to_string()),
             )?;
             self.adopt_kept(id)?;
-            if let Some(gib) = storage_gib.filter(|_| !has_qcow2_storage(&vm_data_dir(id))) {
+            if let Some(gib) = storage_gib {
                 raw_storage_disk(id, gib)?;
             }
             Ok(())
@@ -137,8 +137,6 @@ impl Runtime for Smolvm {
                 let disk = vm_data_dir(id).join(STORAGE_DISK_FILENAME);
                 if disk.exists() {
                     expand_disk::<Storage>(&disk, gib)?;
-                } else if has_qcow2_storage(&vm_data_dir(id)) {
-                    anyhow::bail!("{}", STORAGE_NOT_GROWABLE);
                 }
             }
             self.db.update_vm(id, |r| {
@@ -207,19 +205,9 @@ impl Runtime for Smolvm {
             console::CONSOLE_TAIL_BYTES,
         )
     }
-
-    // UNIT_BOUNDARY_DESCRIPTION: a disk kept by an interrupted recreate is the one the next boot adopts, so it counts as the machine's disk here too.
-    fn storage_growable(&self, id: &str) -> bool {
-        let kept_qcow2 = self.kept(id).is_some_and(|kept| has_qcow2_storage(&kept));
-        !template_backed_storage(id) && !kept_qcow2
-    }
-
-    fn has_kept_storage(&self, id: &str) -> bool {
-        self.kept(id).is_some_and(|kept| kept.exists())
-    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine, in the shape the previous runner's `machine create` flags produced, so a machine of either age reads alike: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
+// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
 fn embedded_spec(
     id: &str,
     machine: &Machine<'_>,
@@ -273,20 +261,8 @@ fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a larger size is refused for a template-backed disk, in words that reach the Agent's status. The machine keeps running at the size it has.
-pub const STORAGE_NOT_GROWABLE: &str = "this machine's storage disk is an overlay over the disk template an earlier runner shipped, and it cannot be grown; recreate the agent to give it more storage";
-
 pub fn storage_disk_path(id: &str) -> PathBuf {
     vm_data_dir(id).join(STORAGE_DISK_FILENAME)
-}
-
-pub fn template_backed_storage(id: &str) -> bool {
-    has_qcow2_storage(&vm_data_dir(id))
-}
-
-fn has_qcow2_storage(dir: &Path) -> bool {
-    dir.join(Path::new(STORAGE_DISK_FILENAME).with_extension("qcow2"))
-        .exists()
 }
 
 #[cfg(test)]
@@ -346,9 +322,9 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is what the previous runner's `machine create` flags said, read back from smolvm's own database rather than from what this code meant to write.
+    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write.
     #[test]
-    fn a_created_machine_is_recorded_the_way_the_go_runner_created_it() {
+    fn a_created_machine_is_recorded_as_its_spec_says() {
         let home = Home::new("create");
         let share = home.path.join("share");
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
@@ -436,7 +412,7 @@ mod tests {
         let disk = storage_disk_path("m1");
         assert!(disk.exists(), "no raw disk was made");
         assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
-        assert!(!template_backed_storage("m1"));
+        assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
@@ -645,51 +621,5 @@ mod tests {
         smolvm.discard_kept_storage("m1").unwrap();
         assert!(!kept_dir(&home.path, "m1").exists());
         smolvm.discard_kept_storage("m1").unwrap();
-    }
-
-    // TEST_SCENARIO: a machine an earlier release made has a qcow2 storage disk when it was created at smolvm's default size. It is recognised as such, so the runner can say which agents depend on the shipped template before an upgrade changes it.
-    #[test]
-    fn a_template_backed_disk_is_recognised() {
-        let _home = Home::new("qcow2");
-        let dir = vm_data_dir("old");
-        fs::create_dir_all(&dir).unwrap();
-        assert!(!template_backed_storage("old"));
-        fs::write(dir.join("storage.qcow2"), "x").unwrap();
-        assert!(template_backed_storage("old"));
-    }
-
-    // TEST_SCENARIO: a template-backed disk cannot be grown, by smolvm or by this runner. A resize that asks for more is refused with a reason the Agent shows, and the record keeps the size the disk has, so the next reconcile sees the resize as still to do rather than done.
-    #[test]
-    fn a_template_backed_disk_is_not_recorded_as_grown() {
-        let home = Home::new("qcow2-grow");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
-        let spec = spec();
-        let launch = launch();
-        smolvm
-            .create(
-                "m1",
-                &Machine {
-                    spec: &spec,
-                    image: "quay.io/x/vm:1",
-                    host_port: 32000,
-                    share: &share,
-                    launch: Some(&launch),
-                },
-            )
-            .unwrap();
-        fs::remove_file(storage_disk_path("m1")).unwrap();
-        fs::write(vm_data_dir("m1").join("storage.qcow2"), "x").unwrap();
-        assert!(!smolvm.storage_growable("m1"));
-
-        let mut desired = spec.clone();
-        desired.storage_gib = spec.storage_gib + 10;
-        let err = smolvm.update("m1", &desired, Some(&spec)).unwrap_err();
-        assert!(format!("{err:#}").contains(STORAGE_NOT_GROWABLE), "{err:#}");
-        assert_eq!(
-            smolvm.record("m1").unwrap().unwrap().storage_gb,
-            Some(u64::try_from(spec.storage_gib).unwrap())
-        );
     }
 }

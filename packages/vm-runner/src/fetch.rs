@@ -19,7 +19,7 @@ use crate::runtime::IMAGE_LAUNCH_UNKNOWN;
 pub const IMAGE_UNUSABLE: &str = "the image cannot be run";
 pub const EGRESS_CHANGED: &str = "egress allowlist changed";
 
-// UNIT_BOUNDARY_DESCRIPTION: a failure that carries the reason the controller reports it under. The reason is part of the error rather than guessed from its text, except for the failures that come from smolvm, which carry none.
+// UNIT_BOUNDARY_DESCRIPTION: a failure that carries the reason the controller reports it under. The reason is part of the error rather than guessed from its text; a failure that carries none is a boot that failed.
 #[derive(Debug)]
 pub struct Refusal {
     pub reason: &'static str,
@@ -50,22 +50,18 @@ pub fn egress_changed(detail: impl std::fmt::Display) -> anyhow::Error {
     .into()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under. A typed refusal says its own; anything else is read from its text by fixed rules, which is how a failure that came out of smolvm is told apart from a boot that simply failed.
+pub fn out_of_capacity(detail: impl std::fmt::Display) -> anyhow::Error {
+    Refusal {
+        reason: REASON_OUT_OF_CAPACITY,
+        message: detail.to_string(),
+    }
+    .into()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under: a typed refusal's own, and a failed boot for anything else.
 pub fn failure_reason(err: &anyhow::Error) -> &'static str {
-    if let Some(refusal) = err.downcast_ref::<Refusal>() {
-        return refusal.reason;
-    }
-    let message = format!("{err:#}");
-    if message.contains("cannot read archive")
-        || message.contains("--image")
-        || message.contains("pull")
-    {
-        REASON_IMAGE_UNAVAILABLE
-    } else if message.contains("no free machine port") {
-        REASON_OUT_OF_CAPACITY
-    } else {
-        REASON_BOOT_FAILED
-    }
+    err.downcast_ref::<Refusal>()
+        .map_or(REASON_BOOT_FAILED, |refusal| refusal.reason)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a tool that fails per entry reports per entry, and for a whole image that ran to 2.6 MB. That text becomes the Agent's condition message, and the API server rejects a condition message over 32 KiB — so the status write fails, the reconcile never records why, and every retry fetches the image again. The head is kept because the first failure is the one that explains the rest.
@@ -241,31 +237,26 @@ mod tests {
         assert_eq!(RESOLVE_TIMEOUT, Duration::from_secs(60));
     }
 
-    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, text from smolvm is sorted by the words it contains, and the typed failures' own wording reaches the Agent's status, so it is pinned too.
+    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, even under added context, and anything untyped is a boot to retry. The typed failures' own wording reaches the Agent's status, so it is pinned too.
     #[test]
     fn failures_are_reported_under_the_reason_the_controller_matches() {
         assert_eq!(IMAGE_UNUSABLE, "the image cannot be run");
         assert_eq!(EGRESS_CHANGED, "egress allowlist changed");
         assert_eq!(failure_reason(&unusable("x")), REASON_IMAGE_UNAVAILABLE);
         assert_eq!(failure_reason(&egress_changed("x")), REASON_EGRESS_CHANGED);
-        for (text, reason) in [
-            (
-                "smolvm machine create: cannot read archive /x.tar",
-                REASON_IMAGE_UNAVAILABLE,
-            ),
-            ("invalid --image value", REASON_IMAGE_UNAVAILABLE),
-            (
-                "start machine: pull failed: unauthorized",
-                REASON_IMAGE_UNAVAILABLE,
-            ),
-            ("no free machine port", REASON_OUT_OF_CAPACITY),
-            (
-                "start machine: guest agent never became ready",
-                REASON_BOOT_FAILED,
-            ),
-        ] {
-            assert_eq!(failure_reason(&anyhow::anyhow!(text)), reason, "{text}");
-        }
+        assert_eq!(
+            failure_reason(&out_of_capacity("no free machine port")),
+            REASON_OUT_OF_CAPACITY
+        );
+        assert_eq!(
+            failure_reason(&unusable("x").context("creating the machine")),
+            REASON_IMAGE_UNAVAILABLE
+        );
+        assert_eq!(
+            failure_reason(&anyhow::anyhow!("pull failed: unauthorized")),
+            REASON_BOOT_FAILED,
+            "a reason is never guessed from the text"
+        );
     }
 
     // TEST_SCENARIO: a failure's text is stored in the Agent's condition, which the API server caps at 32 KiB. The head is kept, marked as cut, and a cut never splits a character — a message ending in half of one is rejected as invalid UTF-8 by the same write it was shortened for.

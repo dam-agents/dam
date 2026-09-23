@@ -77,19 +77,6 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 	}}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Secret and Service are created once and never re-applied, and the PVC's spec is touched only to raise its size, so one that predates the owner reference would keep none — and those are exactly the objects holding an owner's disk and credentials.
-func (r *AgentReconciler) adoptRunnerObject(ctx context.Context, meta *metav1.ObjectMeta, update func() error) error {
-	if len(meta.OwnerReferences) > 0 {
-		return nil
-	}
-	refs := r.runnerOwnerRef(ctx)
-	if len(refs) == 0 {
-		return nil
-	}
-	meta.OwnerReferences = refs
-	return update()
-}
-
 func (r *AgentReconciler) runnerName(owner string) string {
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
@@ -184,12 +171,6 @@ func (r *AgentReconciler) ensureRunnerSecret(ctx context.Context, owner string) 
 	name, ns := r.runnerName(owner), r.config.Namespace
 	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
-		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-			_, err := r.client.CoreV1().Secrets(ns).Update(ctx, existing, metav1.UpdateOptions{})
-			return err
-		}); err != nil {
-			slog.Warn("vm runner: adopting the existing Secret", "owner", owner, "error", err)
-		}
 		return string(existing.Data["token"]), string(existing.Data["tls.crt"]), nil
 	}
 	if !k8serrors.IsNotFound(err) {
@@ -288,15 +269,6 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 	name, ns := r.runnerName(owner), r.config.Namespace
 	size, ceiling, sizeErr := r.runnerClaimSize(demand)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-			adopted, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
-			if err == nil {
-				existing = adopted
-			}
-			return err
-		}); err != nil {
-			return err
-		}
 		if sizeErr != nil {
 			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
 			return nil
@@ -340,18 +312,11 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 		},
 	}
 	cli := r.client.CoreV1().Services(ns)
-	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		_, err = cli.Create(ctx, svc, metav1.CreateOptions{})
+	if _, err := cli.Get(ctx, name, metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
 		return err
 	}
-	if err != nil {
-		return err
-	}
-	return r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
-		_, err := cli.Update(ctx, existing, metav1.UpdateOptions{})
-		return err
-	})
+	_, err := cli.Create(ctx, svc, metav1.CreateOptions{})
+	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
@@ -441,7 +406,7 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and this runner turns that off, because a VMM that takes one cannot then read what the runner shares with it. It reaches the image cache through an idmapped mount of one entry, on-disk uid 0, so every file the image gives another uid arrives in the guest as nobody — 27,374 of this image's 35,430, whose workload then exits the moment it starts. Measured both ways on one store: with the drop the guest boots in 150 ms and dies; without it the same tree presents those files as the user the image named, and the machine runs. Machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well, by a route not traced here — so this is the mechanism that was isolated, not the whole of what the drop costs.
-// UNIT_BOUNDARY_DESCRIPTION: the runner unpacks each image once for every machine of it to share, and a rootfs restored faithfully carries the ownership and modes its files were built with — so tar chowns each entry (CHOWN), sets a mode on a file it has just given away (FOWNER), and goes on writing into directories it no longer owns or that are read-only, which permission bits forbid even to root (DAC_OVERRIDE). All three are load-bearing: without them an image that is not already cached cannot be unpacked at all. DAC_OVERRIDE earns its place twice over, because a release that briefly gave each machine's VMM its own uid chowned those machines' directories away from the runner, which must still manage them.
+// UNIT_BOUNDARY_DESCRIPTION: the runner unpacks each image once for every machine of it to share, and a rootfs restored faithfully carries the ownership and modes its files were built with — so tar chowns each entry (CHOWN), sets a mode on a file it has just given away (FOWNER), and goes on writing into directories it no longer owns or that are read-only, which permission bits forbid even to root (DAC_OVERRIDE). All three are load-bearing: without them an image that is not already cached cannot be unpacked at all.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
@@ -578,7 +543,7 @@ type runnerRef struct {
 	client *vmrunner.Client
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's Secret. Reading them one at a time is a Get per runner on every sweep, so the runners' Secrets are listed once by their component label, which every Secret the controller mints carries. A runner whose Secret is not in that list, such as one an older release created without the label, is resolved the ordinary way, which reads it by name and adopts it.
+// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's Secret. Reading them one at a time is a Get per runner on every sweep, so the runners' Secrets are listed once by their component label, which every Secret the controller mints carries. A runner whose Secret is not in that list, because the list failed or the Secret was minted after it, is resolved the ordinary way, which reads it by name.
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
 	selector := metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent}
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, selector)

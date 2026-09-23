@@ -18,9 +18,7 @@ seccomp (all from restricted-v2). The two real relaxations are:
     per-machine NAT. CHOWN + FOWNER + DAC_OVERRIDE are the VM runner's
     alone, and all three are what unpacking an image faithfully costs:
     tar restores each file's owner and mode and then keeps writing into
-    directories it has just given away or made read-only. DAC_OVERRIDE
-    also lets the runner manage machine directories that a release which
-    briefly gave each VMM its own uid chowned away from it.
+    directories it has just given away or made read-only.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only

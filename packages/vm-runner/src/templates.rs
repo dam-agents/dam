@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,9 +10,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command;
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk templates smolvm formats a machine's disks from. The release ships them compressed beside its binary and smolvm expands one the first time a machine needs it — 24 s of a 25 s first start after every pod roll, paid by whoever creates the next agent. The runner expands each one once onto its claim instead, and links it both beside the release, where a disk an earlier release made names it, and where smolvm's embedded runtime looks: its own executable's directory is not the release's, so without that link smolvm would find no template at all.
+// UNIT_BOUNDARY_DESCRIPTION: the disk templates smolvm formats a machine's disks from. The release ships them compressed beside its binary and smolvm expands one the first time a machine needs it — 24 s of a 25 s first start after every pod roll, paid by whoever creates the next agent. The runner expands each one once onto its claim instead, and links it where smolvm's embedded runtime looks: its own executable's directory is not the release's, so without that link smolvm would find no template at all.
 
-// UNIT_BOUNDARY_DESCRIPTION: where expanded templates are kept under HOME, which is the runner's claim, so a pod roll costs a hash of each compressed template and a link rather than the expansion. One directory per compressed template's sha256: a new smolvm release lands its templates in a new directory, so a disk smolvm backed onto an older template never sees its bytes change. It sits beside smolvm's own directories rather than inside them, so nothing smolvm lists or cleans up can take one.
+// UNIT_BOUNDARY_DESCRIPTION: where expanded templates are kept under HOME, which is the runner's claim, so a pod roll costs a hash of each compressed template and a link rather than the expansion. One directory per compressed template's sha256: a new smolvm release lands its templates in a new directory, so a template it changed is expanded again rather than taken for the one already kept. It sits beside smolvm's own directories rather than inside them, so nothing smolvm lists or cleans up can take one.
 pub const KEPT_DIR: &str = ".disk-templates";
 
 // UNIT_BOUNDARY_DESCRIPTION: long enough never to cut a healthy expansion short, and there so a decompressor that hangs cannot hold the warm-up for the life of the runner.
@@ -37,32 +39,33 @@ fn expanded(packed: &Path) -> PathBuf {
     packed.with_extension("")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: puts every missing template in `install` in place and links every expanded one into `home`. With `kept` a template is expanded once into it and `install` gets a link; without it the template is expanded into `install` itself, which a roll throws away. A failure is logged and left: smolvm still expands what it needs itself.
+// UNIT_BOUNDARY_DESCRIPTION: puts every missing template in place and links each into `home`. With `kept` a template is expanded once into it; without it the template is expanded into `install` itself, which a roll throws away. A template the release ships already expanded is linked as it is. A failure is logged and left: smolvm still expands what it needs itself.
 pub fn warm(install: &Path, kept: Option<&Path>, home: &Path, cancel: &CancellationToken) {
+    let mut ready = expanded_in(install);
     let packed = to_warm(install);
-    if packed.is_empty() && !has_expanded(install) {
+    if packed.is_empty() && ready.is_empty() {
         tracing::info!(dir = %install.display(), "no disk templates to warm");
     }
     for packed in packed {
         let target = expanded(&packed);
         let started = Instant::now();
         let result = match kept {
-            Some(kept) => keep(&packed, kept, cancel).and_then(|at| {
-                put_link(&at, &target)?;
-                Ok(at)
-            }),
+            Some(kept) => keep(&packed, kept, cancel),
             None => expand(&packed, &target, cancel).map(|()| target.clone()),
         };
         match result {
             Ok(at) => {
-                tracing::info!(template = %target.display(), kept = %at.display(), duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX), "template warmed")
+                tracing::info!(template = %target.display(), kept = %at.display(), duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX), "template warmed");
+                if let Some(name) = at.file_name() {
+                    ready.insert(name.to_os_string(), at.clone());
+                }
             }
             Err(e) => {
                 tracing::warn!(template = %packed.display(), error = %format!("{e:#}"), "template warm-up failed; the first machine will expand it instead")
             }
         }
     }
-    link(install, home);
+    link(ready.into_values(), home);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the kept copy of a compressed template, expanded unless an earlier pod already did. The name inside the content-keyed directory is the template's own, because smolvm tells its templates apart by file name.
@@ -103,7 +106,39 @@ fn expand(packed: &Path, target: &Path, cancel: &CancellationToken) -> anyhow::R
     result
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points `target` at `at`, made under a temporary name and renamed over it, so a machine created meanwhile sees either no template or a whole one.
+fn expanded_in(dir: &Path) -> BTreeMap<OsString, PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return BTreeMap::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".ext4"))
+        .map(|e| (e.file_name(), e.path()))
+        .collect()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: points `home/.smolvm/<template>` at each expanded template. That is the first place smolvm looks, and smolvm canonicalizes the link before it writes a template's path into a qcow2 overlay, so an overlay names the expanded file and not the link. Each link is made under a temporary name and renamed over the old one, so a machine created meanwhile sees either the old template or the new one, never none.
+pub fn link(templates: impl IntoIterator<Item = PathBuf>, home: &Path) {
+    let dir = home.join(".smolvm");
+    if let Err(e) = fs::create_dir_all(&dir) {
+        tracing::warn!(dir = %dir.display(), error = %e, "cannot link the disk templates");
+        return;
+    }
+    for template in templates {
+        let Some(name) = template.file_name() else {
+            continue;
+        };
+        let at = dir.join(name);
+        if fs::read_link(&at).ok().as_deref() == Some(template.as_path()) {
+            continue;
+        }
+        if let Err(e) = put_link(&template, &at) {
+            tracing::warn!(template = %at.display(), error = %format!("{e:#}"), "cannot link a disk template");
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: points `target` at `at`, made under a temporary name and renamed over it.
 fn put_link(at: &Path, target: &Path) -> anyhow::Result<()> {
     let staged = target.with_extension("ext4.linking");
     let _ = fs::remove_file(&staged);
@@ -112,42 +147,6 @@ fn put_link(at: &Path, target: &Path) -> anyhow::Result<()> {
         let _ = fs::remove_file(&staged);
     })?;
     Ok(())
-}
-
-fn has_expanded(dir: &Path) -> bool {
-    fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .any(|e| e.file_name().to_string_lossy().ends_with(".ext4"))
-        })
-        .unwrap_or(false)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: points `home/.smolvm/<template>` at each expanded template in `install`. That is the first place smolvm looks, and smolvm canonicalizes the link before it writes a template's path into a qcow2 disk, so a new disk names the kept file and not either link.
-pub fn link(install: &Path, home: &Path) {
-    let dir = home.join(".smolvm");
-    if let Err(e) = fs::create_dir_all(&dir) {
-        tracing::warn!(dir = %dir.display(), error = %e, "cannot link the disk templates");
-        return;
-    }
-    let Ok(entries) = fs::read_dir(install) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        if !name.to_string_lossy().ends_with(".ext4") {
-            continue;
-        }
-        let at = dir.join(&name);
-        if fs::read_link(&at).ok().as_deref() == Some(entry.path().as_path()) {
-            continue;
-        }
-        let _ = fs::remove_file(&at);
-        if let Err(e) = std::os::unix::fs::symlink(entry.path(), &at) {
-            tracing::warn!(template = %at.display(), error = %e, "cannot link a disk template");
-        }
-    }
 }
 
 #[cfg(test)]
@@ -204,8 +203,8 @@ mod tests {
         std::os::unix::fs::symlink("/nowhere", home.0.join(".smolvm/overlay-template.ext4"))
             .unwrap();
 
-        link(&install.0, &home.0);
-        link(&install.0, &home.0);
+        warm(&install.0, None, &home.0, &CancellationToken::new());
+        warm(&install.0, None, &home.0, &CancellationToken::new());
         assert_eq!(
             fs::read_link(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
             install.0.join("overlay-template.ext4")
@@ -213,7 +212,7 @@ mod tests {
         assert!(!home.0.join(".smolvm/overlay-template.ext4.zst").exists());
     }
 
-    // TEST_SCENARIO: a kept template is named by the content of the compressed one, so a pod of the same release finds the copy an earlier pod expanded, and a new release's template lands beside it instead of overwriting bytes an existing disk is backed by. The file keeps the template's own name, which is how smolvm tells its templates apart.
+    // TEST_SCENARIO: a kept template is named by the content of the compressed one, so a pod of the same release finds the copy an earlier pod expanded, and a new release's template lands beside it instead of being taken for the old one. The file keeps the template's own name, which is how smolvm tells its templates apart.
     #[test]
     fn a_kept_template_is_named_by_its_content() {
         let install = TempDir::new("keyed");
@@ -228,7 +227,7 @@ mod tests {
         assert_ne!(first, kept_path(&old, &kept).unwrap());
     }
 
-    // TEST_SCENARIO: a pod whose claim already holds the kept copy links it beside the release and expands nothing, so no compressor runs; a link a machine could open never points anywhere else meanwhile, and one left dangling by a release whose template was dropped is replaced.
+    // TEST_SCENARIO: a pod whose claim already holds the kept copy links it where smolvm looks and expands nothing, so no compressor runs, and a link left pointing at nothing is replaced.
     #[test]
     fn a_template_already_kept_is_linked_without_expanding() {
         let install = TempDir::new("kept");
@@ -239,21 +238,26 @@ mod tests {
         let at = kept_path(&packed, &kept).unwrap();
         fs::create_dir_all(at.parent().unwrap()).unwrap();
         fs::write(&at, "expanded").unwrap();
-        std::os::unix::fs::symlink("/nowhere", install.0.join("overlay-template.ext4")).unwrap();
+        fs::create_dir_all(home.0.join(".smolvm")).unwrap();
+        std::os::unix::fs::symlink("/nowhere", home.0.join(".smolvm/overlay-template.ext4"))
+            .unwrap();
 
         warm(&install.0, Some(&kept), &home.0, &CancellationToken::new());
         assert_eq!(
-            fs::read_link(install.0.join("overlay-template.ext4")).unwrap(),
+            fs::read_link(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
             at
         );
         assert_eq!(
             fs::read_to_string(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
             "expanded"
         );
-        assert!(to_warm(&install.0).is_empty());
+        assert!(
+            fs::symlink_metadata(install.0.join("overlay-template.ext4")).is_err(),
+            "nothing is linked beside the release"
+        );
     }
 
-    // TEST_SCENARIO: templates expanded by earlier releases sit under this name on the claim, and are found there rather than expanded again after every pod roll. The name and the bound on one expansion are pinned; an unbounded expansion of a 20 GiB template could hold the runner for as long as the claim takes to fill.
+    // TEST_SCENARIO: templates an earlier pod expanded sit under this name on the claim, and are found there rather than expanded again after every pod roll. The name and the bound on one expansion are pinned; an unbounded expansion of a 20 GiB template could hold the runner for as long as the claim takes to fill.
     #[test]
     fn the_kept_templates_directory_and_warm_budget_are_pinned() {
         assert_eq!(KEPT_DIR, ".disk-templates");

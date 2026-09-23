@@ -294,7 +294,7 @@ mod tests {
         forwarder.unpublish_all();
     }
 
-    // TEST_SCENARIO: machines from earlier releases were created with their guest port published on loopback at this offset, so a different offset forwards their published port to nothing. The offset and both timeouts are pinned; a longer health timeout makes every readiness poll wait on a guest that is not there.
+    // TEST_SCENARIO: a machine's guest port is published on loopback at this offset when it is created, and forwarded to at the same offset for as long as it lives, so the offset and both timeouts are pinned; a longer health timeout makes every readiness poll wait on a guest that is not there.
     #[test]
     fn the_loopback_offset_and_timeouts_are_pinned() {
         assert_eq!(LOOPBACK_OFFSET, 1000);

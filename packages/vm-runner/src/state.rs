@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::api::MachineSpec;
 use crate::files;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a machine leaves on disk, which is what lets a runner be restarted without losing the machines it was running. Every answer here is read from the filesystem rather than from memory, because the machines outlive the process that made them: a spec on disk says what a machine was asked to be, its port file says where it is published, and the directory's existence says it is this runner's at all. Machines made by earlier releases have the same files in the same formats, and a rollout reads their state directory as it stands, so the names and modes are pinned by the tests.
+// UNIT_BOUNDARY_DESCRIPTION: what a machine leaves on disk, which is what lets a runner be restarted without losing the machines it was running. Every answer here is read from the filesystem rather than from memory, because the machines outlive the process that made them: a spec on disk says what a machine was asked to be, its port file says where it is published, and the directory's existence says it is this runner's at all.
 
 // UNIT_BOUNDARY_DESCRIPTION: the spec a machine was created with, kept beside it so a runner that restarts can tell a machine that already matches from one that has to be reshaped.
 pub const SPEC_FILE: &str = "spec.json";
@@ -16,7 +16,7 @@ pub const PORT_FILE: &str = "port";
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so eviction reads this file to know which digest entry the machine holds.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
-// UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so a machine's state reads the same whatever umask the runner was started under, and the same as earlier releases wrote it.
+// UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so a machine's state reads the same whatever umask the runner was started under.
 pub const PORT_MODE: u32 = 0o644;
 
 // UNIT_BOUNDARY_DESCRIPTION: the mode the spec is written with, named because it is the exception: every other file this runner writes is world-readable, and this one is not, because its env holds the Agent's secrets in plaintext.
@@ -81,7 +81,7 @@ pub fn is_image_ref(image: &str) -> bool {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped. The registry credential is cleared too: it is sent only so that the image can be fetched, and a stored copy would keep a credential on the state volume for as long as the machine exists.
-// UNIT_BOUNDARY_DESCRIPTION: written 0600, the one restrictive mode any machine state is written with, and the reason is inside the file: a spec's env carries the values of the Agent's secretRef Secret, copied in whole by the controller, so this is the only piece of machine state holding secret material in plaintext. An ordinary write takes the process umask and lands 0644 — what every other file here is, and a leak in this one. The mode is set on an existing file too, so a spec an earlier release left world-readable is tightened on its next write: no reader is worse off for a tighter mode, and this file holds secrets.
+// UNIT_BOUNDARY_DESCRIPTION: written 0600, the one restrictive mode any machine state is written with, and the reason is inside the file: a spec's env carries the values of the Agent's secretRef Secret, copied in whole by the controller, so this is the only piece of machine state holding secret material in plaintext. An ordinary write takes the process umask and lands 0644 — what every other file here is, and a leak in this one.
 pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
     let dir =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
@@ -128,7 +128,7 @@ pub fn allocate_port(
     let free = range
         .into_iter()
         .find(|candidate| !taken.contains(candidate))
-        .ok_or_else(|| anyhow::anyhow!("no free machine port"))?;
+        .ok_or_else(|| crate::fetch::out_of_capacity("no free machine port"))?;
     files::write(&dir.join(PORT_FILE), free.to_string().as_bytes(), PORT_MODE)?;
     Ok(free)
 }
@@ -137,16 +137,6 @@ pub fn allocate_port(
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-
-    // TEST_SCENARIO: machines made by earlier releases are read from the state directory as they stand. A file named differently is a machine this runner cannot see — which it would then recreate, on a port it believes free, over a disk another machine is using — and a record named differently is one whose tree reads as unheld under the digest root, so its rootfs is evicted from under it. The names and the modes are pinned as literals.
-    #[test]
-    fn a_machines_files_keep_the_names_and_modes_earlier_releases_wrote() {
-        assert_eq!(SPEC_FILE, "spec.json");
-        assert_eq!(PORT_FILE, "port");
-        assert_eq!(IMAGE_DIGEST_FILE, "image-digest");
-        assert_eq!(SPEC_MODE, 0o600);
-        assert_eq!(PORT_MODE, 0o644);
-    }
 
     // TEST_SCENARIO: the modes this module writes with, checked on the files themselves rather than trusted to the constants. Both go through the shared writer, which states the mode instead of taking the umask — so an install with a tighter umask writes the same state directory as one with the usual umask.
     #[test]
@@ -192,7 +182,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a spec is read back by a later process, possibly a later release, so it is checked on the way out and not only on the way in. A reference that could name something outside the cache is refused however it came to be on disk — the file is as untrusted as the request that made it.
+    // TEST_SCENARIO: a spec is read back by a later process, so it is checked on the way out and not only on the way in. A reference that could name something outside the cache is refused however it came to be on disk — the file is as untrusted as the request that made it.
     #[test]
     fn a_spec_naming_an_image_that_could_escape_the_cache_does_not_read_back() {
         let dir = TempDir::new();
@@ -260,24 +250,6 @@ mod tests {
         assert_eq!(
             mode, 0o600,
             "the machine's secrets are readable by every uid on the node"
-        );
-    }
-
-    // TEST_SCENARIO: a spec left behind by an earlier release, or by anything else, is rewritten with the mode it should have had. Earlier releases left an existing file's mode alone, so their machines can carry a world-readable spec — a tighter mode breaks no reader, and this file holds secrets.
-    #[test]
-    fn a_spec_that_was_already_world_readable_is_tightened_on_the_next_write() {
-        let dir = TempDir::new();
-        fs::create_dir_all(dir.path().join("agent-a")).unwrap();
-        let path = dir.path().join("agent-a").join(SPEC_FILE);
-        fs::write(&path, b"{}").unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-
-        write_spec(dir.path(), "agent-a", &MachineSpec::default()).unwrap();
-
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600,
-            "a spec that was already loose stayed loose"
         );
     }
 

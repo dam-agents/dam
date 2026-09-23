@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use clap::Parser;
 use ipnet::IpNet;
-use vm_runner::embedded::{self, Smolvm};
+use vm_runner::embedded::Smolvm;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
-use vm_runner::{http, state, templates};
+use vm_runner::{http, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines, kept name-for-name across releases. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -67,7 +67,7 @@ struct Args {
 #[derive(Clone, Debug, Default)]
 struct AllowFrom(Vec<IpNet>);
 
-// UNIT_BOUNDARY_DESCRIPTION: this flag is split on commas, blank entries are skipped, and anything that is not a CIDR exits the runner before it starts. The three rules are the ones earlier releases applied, so an install's value means what it meant before.
+// UNIT_BOUNDARY_DESCRIPTION: this flag is split on commas, blank entries are skipped, and anything that is not a CIDR exits the runner before it starts.
 fn allow_from(value: &str) -> anyhow::Result<AllowFrom> {
     value
         .split(',')
@@ -213,7 +213,6 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         },
         runtime.clone(),
     )?;
-    warn_template_backed(&args.state_dir);
 
     let install = args
         .smolvm
@@ -301,25 +300,13 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: names the machines whose storage disk is a qcow2 overlay over the shipped template, which earlier releases made for agents sized at exactly smolvm's default. Their home depends on the template file in this image; an upgrade that changes it changes the bytes under them. Reported so an operator can find them before an upgrade does.
-fn warn_template_backed(state_dir: &Path) {
-    let backed: Vec<String> = state::machine_ids(state_dir)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|id| embedded::template_backed_storage(id))
-        .collect();
-    if !backed.is_empty() {
-        tracing::warn!(machines = ?backed, "these machines' storage disks are overlays over the shipped disk template; a runner image with a different template would change the data under them");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // TEST_SCENARIO: an allowlist fails open — a value it cannot read admits everybody rather than nobody, and says nothing. So each of the flag's three rules is pinned: entries split on commas, surrounding space ignored, blanks skipped, and anything that is not a CIDR refused before the runner starts rather than ignored while it runs.
     #[test]
-    fn the_allowlist_reads_every_shape_the_go_runner_accepts_and_no_others() {
+    fn the_allowlist_reads_comma_separated_cidrs_and_nothing_else() {
         assert_eq!(allow_from("").unwrap().0, vec![]);
         assert_eq!(allow_from(" , ").unwrap().0, vec![]);
         assert_eq!(
@@ -368,7 +355,7 @@ mod tests {
 
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
-    fn the_go_runners_listen_address_binds_every_interface() {
+    fn a_bare_port_binds_every_interface() {
         let listener = bind(":0").unwrap();
         assert!(listener.local_addr().unwrap().ip().is_unspecified());
         assert!(bind(":http").is_err());
