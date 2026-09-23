@@ -5,7 +5,7 @@
 # harness image is `mise oci build -E <harness>` over the two.
 #
 # Tool versions follow packages/platform-base/config.toml, except that every
-# tool is baked in: there are no lazy tools here.
+# tool is baked in: there are no lazy tools, no tool shims and no oc here.
 
 [settings]
 experimental = true
@@ -23,12 +23,12 @@ fd = "latest"
 rg = "latest"
 gh = "2.101.0"
 uv = "latest"
-python = { version = "3.12", postinstall = 'sh "{{config_root}}/python-postinstall.sh"' }
+python = "3.12"
 kubectl = "latest"
-oc = "latest"
-# k3s and docker are not here: they come from host-tools.toml. A tool's bin
-# directory lands ahead of everything on the image PATH, and both need the
-# shims in /usr/local/share/tool-shims to run first.
+# Neither daemon is started for the agent: /etc/docker/daemon.json and
+# /etc/rancher/k3s/config.yaml put their data on the vm Backend's disk, and
+# AGENTS.md says how to start them.
+k3s = "latest"
 
 # gws from its release rather than npm: mise's npm backend skips install scripts,
 # and the npm package fetches its binary in one, so it would only download
@@ -39,6 +39,15 @@ version = "0.22.5"
 [tools."http:gws".platforms]
 linux-x64 = { url = "https://github.com/googleworkspace/cli/releases/download/v{{version}}/google-workspace-cli-x86_64-unknown-linux-gnu.tar.gz" }
 linux-arm64 = { url = "https://github.com/googleworkspace/cli/releases/download/v{{version}}/google-workspace-cli-aarch64-unknown-linux-gnu.tar.gz" }
+
+# Docker's static bundle (dockerd, containerd 2.x, runc, docker-proxy) rather
+# than Debian's docker.io, which is a release line behind.
+[tools."http:docker"]
+version = "29.8.1"
+
+[tools."http:docker".platforms]
+linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
+linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/docker-{{version}}.tgz" }
 
 # Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
 # scripts included. Fedora's list from platform-base, in Debian names, plus the
@@ -73,10 +82,8 @@ cmd = ["node", "dist/server.js"]
 [oci.env]
 # Replaces the base image's PATH rather than extending it, and the tool bin
 # directories are prepended to it at build time.
-PATH = "/usr/local/share/tool-shims:/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+PATH = "/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 HOME = "/home/agent"
-MISE_PROVENANCE_API_FAILURES_FATAL = "false"
-MISE_NODE_VERIFY = "false"
 SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"

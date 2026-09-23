@@ -1,0 +1,3 @@
+# The vm Backend root is an overlay, which overlayfs refuses as an upperdir, so
+# the data dir is on the machine disk.
+data-dir: /workspace/k3s

@@ -25,15 +25,13 @@ done
 [ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
 
-# The postinstall hooks edit installs, and mise's layer cache is keyed by tool,
-# version, path and owner only, so both are keyed by the files that shape an
-# install: a changed hook starts from fresh installs instead of a stale layer.
-key="$(cat "$pkg/debian-base/image.toml" "$pkg/debian-base/host-tools.toml" "$pkg/debian-base/python-postinstall.sh" \
-  packages/platform-base/drop-pip.sh "$pkg/$image/image.toml" | sha256sum | cut -c1-16)"
+# node's postinstall hook edits its install, and mise's layer cache is keyed by
+# tool, version, path and owner only, so both are keyed by the configs: a
+# changed hook starts from fresh installs instead of a stale layer.
+key="$(cat "$pkg/debian-base/image.toml" "$pkg/$image/image.toml" | sha256sum | cut -c1-16)"
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
 work="$state/$key"
 stage="$work/stage"
-host_tools="$work/host-tools"
 runtime="$work/runtime"
 out="$state/out/$image"
 
@@ -47,31 +45,29 @@ npm_config_inject_workspace_packages=true \
 cp packages/agent-runtime/package.json "$runtime/package.json"
 (cd "$runtime" && pnpm pkg delete devDependencies)
 
-# From here on mise runs for the image, not for the repo: nothing of the task's
-# own mise environment may leak in, the staged configs sit outside the repo so
-# its root config is not a parent of theirs, and the ceiling stops the walk up.
-while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^MISE_')
+# From here on mise runs for the image, not for the repo: the project and task
+# context mise hands this task is dropped (settings the caller exported stay),
+# the staged configs sit outside the repo so its root config is not a parent of
+# theirs, and the ceiling stops the walk up.
+unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT
+while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^MISE_TASK_')
 mkdir -p "$work"/{data,cache,config,state}
 export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
   MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
   MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
-rm -rf "$stage" "$host_tools"
-mkdir -p "$stage/rootfs" "$host_tools"
-cp "$pkg/debian-base/host-tools.toml" "$host_tools/mise.toml"
+rm -rf "$stage"
+mkdir -p "$stage/rootfs"
 cp "$pkg/debian-base/image.toml" "$stage/mise.toml"
 cp "$pkg/$image/image.toml" "$stage/mise.$image.toml"
-cp "$pkg/debian-base/python-postinstall.sh" packages/platform-base/drop-pip.sh "$stage/"
-mise trust -q "$host_tools"
 mise trust -q "$stage"
-mise -C "$host_tools" install
 mise -C "$stage" -E "$image" install
 
 # Rewrites a host install path to where the same file sits inside the image.
 in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
 export -f in_image
-export ROOTFS="$stage/rootfs" RUNTIME="$runtime" HOST_TOOLS="$host_tools" STAGE="$stage"
+export ROOTFS="$stage/rootfs" RUNTIME="$runtime" STAGE="$stage"
 "$pkg/debian-base/stage.sh"
 "$pkg/$image/stage.sh"
 
