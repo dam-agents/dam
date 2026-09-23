@@ -137,7 +137,7 @@ func discardOverlay(id, dir string) {
 		slog.Warn("machine still has a VMM holding its disks; leaving the root overlay in place", "machine", id)
 		return
 	}
-	for _, f := range []string{"overlay.qcow2", "overlay.formatted"} {
+	for _, f := range []string{"overlay.qcow2", "overlay.raw", "overlay.formatted"} {
 		if err := os.Remove(filepath.Join(dir, f)); err != nil && !os.IsNotExist(err) {
 			slog.Warn("could not discard the root overlay", "machine", id, "file", f, "error", err)
 		}
