@@ -99,7 +99,7 @@ impl ImageCache {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, one of its own credentials, tried in the order they were sent, must still read the image — or an anonymous read must, when it has none. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down.
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, an anonymous read or one of its own credentials, tried in the order they were sent, must still read the image. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down. The anonymous read comes first for every machine, not only one without credentials, because an install with default pull secrets sends every machine one, and a mark a flaky probe left on a public image would otherwise never clear.
     pub fn may_reuse(&self, reference: &str, auths: &[String]) -> anyhow::Result<()> {
         match fs::symlink_metadata(self.entry(reference).join(PRIVATE_FILE)) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -111,12 +111,7 @@ impl ImageCache {
                 "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
             )));
         }
-        if auths.is_empty() {
-            if !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
-                return Err(unusable(format!(
-                    "{reference} is cached from a private registry, and this machine has no pull credentials that could read its manifest"
-                )));
-            }
+        if fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
             self.mark_public(reference);
             return Ok(());
         }

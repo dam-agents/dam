@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
@@ -163,14 +163,17 @@ pub fn unpack(
 // UNIT_BOUNDARY_DESCRIPTION: a docker config that names no registry. A probe run with it is a truly anonymous read, whatever the runner's own environment holds.
 pub const ANONYMOUS: &str = "{}";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers.
+// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget the Go runner gives a tag resolution, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
+pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is private and the check that lets a machine reuse one, get RESOLVE_TIMEOUT.
 pub fn readable(crane: &str, reference: &str, auth: &str, cancel: &CancellationToken) -> bool {
     let Ok(credentials) = DockerConfig::new(auth) else {
         return false;
     };
     command::output(
         credentials.apply(Command::new(crane).arg("digest").arg(reference)),
-        Instant::now() + PULL_TIMEOUT,
+        Instant::now() + RESOLVE_TIMEOUT,
         cancel,
     )
     .is_ok()
@@ -232,6 +235,29 @@ fn scratch_name(parent: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::gosource;
+
+    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and both runners share the cache, so they must give up on a silent registry after the same time. The Go runner's budget is the tag-resolution one, and it asks the anonymous read first in the reuse check.
+    #[test]
+    fn a_manifest_read_gets_the_go_runners_resolve_budget() {
+        let digest = gosource::read("digest.go");
+        assert!(
+            digest
+                .lines()
+                .any(|line| line.trim() == "resolveTimeout = time.Minute"),
+            "the Go runner no longer gives a manifest read a minute"
+        );
+        assert_eq!(RESOLVE_TIMEOUT, Duration::from_secs(60));
+
+        let server = gosource::read("server.go");
+        let reuse = gosource::function_body(&server, "(s *Server) mayReuse")
+            .expect("server.go has mayReuse");
+        let anonymous = reuse.find("s.readable(ref, anonymous)");
+        let credentials = reuse.find("s.readable(ref, auth)");
+        assert!(
+            matches!((anonymous, credentials), (Some(a), Some(c)) if a < c),
+            "the Go runner no longer reads a private entry anonymously before it tries a machine's credentials: {reuse}"
+        );
+    }
 
     // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, and text from smolvm is sorted by the Go runner's rules, word for word.
     #[test]

@@ -901,6 +901,23 @@ async fn a_public_image_marked_private_by_a_failed_probe_is_cleared() {
     );
 }
 
+// TEST_SCENARIO: an install with default pull Secrets sends every machine a credential, so no machine ever reuses a cached entry with none. If only a machine without credentials could clear a private mark that a flaky probe left on a public image, that mark would never clear on such an install. The anonymous read comes first for every machine, so a machine with credentials that finds the image public clears the mark too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_with_credentials_also_clears_a_mark_a_flaky_probe_left() {
+    let h = Harness::new("private-heals-credentialed");
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let marker = cache_path(&h.dir.join("images"), "quay.io/x/vm:1").join(PRIVATE_FILE);
+    fs::write(&marker, "").unwrap();
+
+    h.server.put("m2", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert!(
+        !marker.exists(),
+        "a machine that sent credentials proved the image public and left it private"
+    );
+}
+
 // TEST_SCENARIO: runners of every owner on a node share its cache, so an image one owner fetched with credentials is not another's to boot by naming it. A machine with no credential is refused the private entry as an image problem; one whose credential still reads the manifest boots the tree already there without fetching it again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_private_image_is_reused_only_with_credentials_that_read_it() {
