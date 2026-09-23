@@ -173,7 +173,9 @@ else
   pass "no unresolved placeholders or TODO(creator) markers"
 fi
 
-grep -rqi 'code-guardian' --include='*.md' --include='*.sh' . 2>/dev/null \
+# --exclude: same reason — this check's own pattern and message name code-guardian
+grep -rqi 'code-guardian' --include='*.md' --include='*.sh' \
+  --exclude='validate-definition.sh' . 2>/dev/null \
   && warn "definition mentions 'code-guardian' — copied text? (fine only as an explicit credit)" \
   || pass "no stray reference-implementation mentions"
 
