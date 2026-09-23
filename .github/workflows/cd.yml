@@ -250,6 +250,8 @@ jobs:
           - component: vm-runner
             dockerfile: packages/controller/Dockerfile.vm-runner
             context: packages/controller
+            # The runner is the Rust crate, built from a second named context.
+            build-contexts: vm-runner=packages/vm-runner
           - component: api-server
             dockerfile: packages/api-server/Dockerfile
             context: .
@@ -279,6 +281,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
