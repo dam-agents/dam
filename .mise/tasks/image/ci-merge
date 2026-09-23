@@ -10,6 +10,11 @@
 # Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
 #   COMPOSITE (the app version), SOURCE_SHAS (image:resolve's JSON map) and
 #   SOURCE_SHA_TAGGED (the components that also get their source-sha tag).
+#   SKIP_UNCHANGED names components left unmerged when their source-sha tag
+#   already exists: the chart pins them by that tag, so an unchanged one needs
+#   no new list, and like a reused agent it gets no <sha> tag and no scan
+#   until the nightly run. CI_MERGE_DEBUG names components whose merge logs
+#   every registry request, timestamped.
 #
 # The tags are what docker/metadata-action gave each image: the commit sha,
 # the composite version, and on a v* tag its semver version, major.minor
@@ -45,9 +50,19 @@ merge_one() {
     [[ "$seen" == *" $t "* ]] && continue
     seen+="$t " args+=(-t "$IMAGE_PREFIX/$c:$t")
   done
+  if [ -n "${s:-}" ] && [[ " ${SKIP_UNCHANGED:-} " == *" $c "* ]] &&
+     docker buildx imagetools inspect "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
+    echo "$c: $IMAGE_PREFIX/$c:$s exists, so its source is unchanged; not merged"
+    return 0
+  fi
   for d in "$dir/$c"/*; do [ -e "$d" ] && srcs+=("$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
   if [ "${#srcs[@]}" -eq 0 ]; then echo "::error::no digests for $c"; return 1; fi
   echo "$c:$seen<- ${srcs[*]}"
+  if [[ " ${CI_MERGE_DEBUG:-} " == *" $c "* ]]; then
+    docker --log-level debug buildx imagetools create "${args[@]}" "${srcs[@]}" 2>&1 |
+      while IFS= read -r line; do printf '%s %s\n' "$(date -u +%T.%3N)" "$line"; done
+    return "${PIPESTATUS[0]}"
+  fi
   docker buildx imagetools create "${args[@]}" "${srcs[@]}"
 }
 

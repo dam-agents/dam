@@ -234,6 +234,12 @@ jobs:
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
           SOURCE_SHA_TAGGED: keycloak vm-runner
+          # keycloak's merge takes minutes of copying inside the registry, and
+          # its source rarely moves. A main push leaves an unchanged one alone;
+          # tags and the nightly run merge it, with its registry requests
+          # logged to find where the time goes.
+          SKIP_UNCHANGED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'keycloak' || '' }}
+          CI_MERGE_DEBUG: keycloak
         run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
 
   build-platform-base:
