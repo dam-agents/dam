@@ -16,6 +16,8 @@ type Preloader struct {
 	Budget   int64
 	Crane    string
 	Every    time.Duration
+	// UNIT_BOUNDARY_DESCRIPTION: the docker configs to fetch with, one per install default pull Secret, tried in order. It is read again on every pass, so a rotated Secret is used without a restart. Nil or empty fetches anonymously.
+	PullAuths func() []string
 }
 
 func (p *Preloader) cache() *Server {
@@ -26,19 +28,23 @@ func (p *Preloader) cache() *Server {
 func (p *Preloader) Sweep() {
 	cache := p.cache()
 	cache.publishHolders()
+	var auths []string
+	if p.PullAuths != nil {
+		auths = p.PullAuths()
+	}
 	for _, ref := range p.Images {
 		if !imageRef.MatchString(ref) || strings.Contains(ref, "..") {
 			slog.Warn("image cache: this install names an image the preloader will not fetch", "reason", "the reference is not one a cache entry can be named after")
 			continue
 		}
-		digest := cache.resolveDigest(ref, 0)
+		digest := cache.resolveDigest(ref, 0, auths)
 		if digest == "" {
 			slog.Warn("image cache: the registry cannot say which image this install ships under a tag", "image", ref)
 			continue
 		}
 		cached := cache.digestPath(digest)
 		if launch, _ := readLaunch(cached); launch == nil {
-			if err := cache.cacheImage(repository(ref)+"@"+digest, cached, ""); err != nil {
+			if err := cache.cacheImage(repository(ref)+"@"+digest, cached, "", auths); err != nil {
 				slog.Warn("image cache: preloading an image this install ships", "image", ref, "error", err)
 			}
 		}

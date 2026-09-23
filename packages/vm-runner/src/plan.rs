@@ -584,6 +584,21 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one on every reconcile. So the applied spec and the desired one always differ in it. If that difference counted as a change of shape, every machine that pulls with credentials would restart about once a minute.
+    #[test]
+    fn a_registry_credential_is_never_a_reason_to_restart() {
+        let applied = running_spec();
+        let desired = MachineSpec {
+            pull_auths: vec!["{\"auths\":{}}".into()],
+            ..running_spec()
+        };
+        assert!(!needs_restart(&applied, &desired));
+        assert_eq!(
+            plan(Some(&applied), &desired, STATE_RUNNING, true, false),
+            None
+        );
+    }
+
     fn running_spec() -> MachineSpec {
         MachineSpec {
             image: "quay.io/x/vm:1".into(),
@@ -595,6 +610,7 @@ mod tests {
             allow_cidrs: vec!["10.0.0.7/32".into()],
             revision: "1".into(),
             running: true,
+            pull_auths: Vec::new(),
         }
     }
 
