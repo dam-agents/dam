@@ -1,7 +1,7 @@
 # MicroVM runtimes for the VM runner — survey
 
 Status: research note, 2026-09-14. Compares the runtimes that could replace
-smolvm inside the VM runner pod ([platform-topology](../architecture/platform-topology.md#vm-runner)).
+smolvm inside the VM runner pod ([vm-runner](../architecture/vm-runner.md)).
 The bar, set by JP: a guest must run k3s, the host must get memory back when
 the guest frees it (virtio-balloon with free page reporting), and the option
 must not be obviously worse than the smolvm implementation that works today.
