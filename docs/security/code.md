@@ -1,15 +1,19 @@
 # Code scanning
 
-Last verified: 2026-06-12
+Last verified: 2026-09-23
 
 ## CodeQL
 
-GitHub **CodeQL** is enabled via the default setup. It runs SAST (static application security testing) on every PR for:
+GitHub **CodeQL** runs SAST (static application security testing) from the repository's own workflows, one per language:
 
 - **Go** — the controller
 - **JavaScript / TypeScript** — api-server, agent-runtime, UI, CLI
+- **Rust** — vm-runner
+- **GitHub Actions** — the workflows themselves
 
-Findings surface in **GitHub → Security → Code scanning**. PRs that introduce new findings are flagged in the review.
+Each language's workflow runs on pushes to `main`, weekly, and on a PR only when the PR changes a file of that language. For Go and JavaScript / TypeScript the same job also runs the **Code Quality** queries on the same database, so the quality results cost no separate job.
+
+Security findings surface in **GitHub → Security → Code scanning**, quality findings under **Code quality**. PRs that introduce new findings are flagged in the review.
 
 ## Pre-commit hardening
 
