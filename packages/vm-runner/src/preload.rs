@@ -4,17 +4,20 @@ use std::time::Duration;
 use crate::cache::repository;
 use crate::imagecache::ImageCache;
 use crate::launch::read_launch;
+use crate::pullauth::PullSecrets;
 use crate::state::is_image_ref;
 
 // UNIT_BOUNDARY_DESCRIPTION: the per-node service that fills a node's image cache before any runner needs it. A runner exists only once one of its owner's agents needs one, so without this the first machine on every image, on every node, after every deploy, waits out the fetch with a user on the other end. It is a process on the cache with no machines: it holds nothing but its pins, which are the harness images the install ships, and it claims them the way a runner claims its machines' images — which is what keeps eviction from taking an image nobody is running yet, since it is held by nobody and is the oldest write.
 pub struct Preloader {
     pub cache: ImageCache,
     pub every: Duration,
+    // UNIT_BOUNDARY_DESCRIPTION: the install's default pull Secrets to fetch with. They are read again on every pass, so a rotated Secret is used without a restart. None fetches anonymously.
+    pub pull_secrets: Option<PullSecrets>,
 }
 
 impl Preloader {
     // UNIT_BOUNDARY_DESCRIPTION: one pass. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the claim moves with it; the old digest's tree is then held only by the machines still running it. Claims are published before anything is fetched and again after each fetch, because a pass can outlast the window a runner believes a claim for, and a claim written only at the start would go stale while the pass that wrote it was still running. The directory is swept every pass, not only after a fetch: runners tidy it only as a side effect of a miss, and a node whose images are all cached would otherwise never reclaim what a departed owner left.
-    pub fn sweep(&self) {
+    pub fn sweep(&self, auths: &[String]) {
         let none = BTreeSet::new();
         self.cache.publish(&none);
         for reference in &self.cache.pinned {
@@ -28,14 +31,14 @@ impl Preloader {
                 );
                 continue;
             }
-            let Some(digest) = self.cache.resolve_digest(reference, Duration::ZERO) else {
+            let Some(digest) = self.cache.resolve_digest(reference, Duration::ZERO, auths) else {
                 tracing::warn!(image = %reference, "image cache: the registry cannot say which image this install ships under a tag");
                 continue;
             };
             let entry = self.cache.digest_entry(&digest);
             if !matches!(read_launch(&entry), Ok(Some(_))) {
                 let pinned = format!("{}@{digest}", repository(reference));
-                if let Err(e) = self.cache.fetch(&pinned, &entry, &none, &none) {
+                if let Err(e) = self.cache.fetch(&pinned, auths, &entry, &none, &none) {
                     tracing::warn!(image = %reference, error = %format!("{e:#}"), "image cache: preloading an image this install ships");
                 }
             }
@@ -48,8 +51,15 @@ impl Preloader {
     pub async fn run(self) {
         let this = std::sync::Arc::new(self);
         loop {
+            let auths = match &this.pull_secrets {
+                Some(secrets) => secrets.resolve().await.unwrap_or_else(|e| {
+                    tracing::warn!(error = %format!("{e:#}"), "image cache: reading the install's pull Secrets, fetching anonymously this pass");
+                    Vec::new()
+                }),
+                None => Vec::new(),
+            };
             let pass = this.clone();
-            if tokio::task::spawn_blocking(move || pass.sweep())
+            if tokio::task::spawn_blocking(move || pass.sweep(&auths))
                 .await
                 .is_err()
             {
@@ -182,8 +192,9 @@ mod tests {
                 lifetime: CancellationToken::new(),
             },
             every: Duration::from_secs(60),
+            pull_secrets: None,
         };
-        preloader.sweep();
+        preloader.sweep(&[]);
         let entry = preloader
             .cache
             .digest_entry(&format!("sha256:{DIGEST_HEX}"));
@@ -205,7 +216,7 @@ mod tests {
                 .count()
         };
         let first = fetches();
-        preloader.sweep();
+        preloader.sweep(&[]);
         assert_eq!(fetches(), first, "a warm cache was fetched again");
     }
 }

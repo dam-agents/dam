@@ -28,6 +28,10 @@ tar = "0.4"
 # crypto backends, so rustls cannot choose one itself and the runner installs
 # ring explicitly. Already in the lock by way of smolvm.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# The image cache service reads the install's pull Secrets from the API
+# server. Both are already in the lock by way of smolvm, with these features.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+base64 = "0.22"
 # Already in the lock by way of smolvm: the cache index names a reference by
 # its SHA-256, and the Go runner has to find the file this crate writes; a kept
 # disk template is named by the SHA-256 of the compressed one it was expanded

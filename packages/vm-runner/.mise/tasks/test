@@ -5,7 +5,8 @@
 # directories are declared rather than the files read today, so a test added
 # later cannot silently fall outside the key. This list grows with the packages
 # gosource::read_in is pointed at — reconciler is here because the share's CA
-# file name is pinned against the agent environment the controller builds.
+# file name is pinned against the agent environment the controller builds, and
+# pullauth because the image cache service merges pull Secrets by its rule.
 # `smolvm.pin` is an input for the same reason on the other side: the clone it
 # names is what this compiles against, and the provider that makes it is not a
 # task, so its staleness never reaches this key. A pin that moves `commit=`
@@ -13,7 +14,7 @@
 # there as a bare version — so without this the run is replayed against the
 # source it was taken on. The runner image's Dockerfile is an input because its
 # ENTRYPOINT passes arguments this binary has to accept.
-#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "smolvm.pin", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go", "{{vars.repo_root}}/packages/controller/pkg/reconciler/*.go", "{{vars.repo_root}}/packages/controller/Dockerfile.vm-runner"]
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "smolvm.pin", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go", "{{vars.repo_root}}/packages/controller/pkg/reconciler/*.go", "{{vars.repo_root}}/packages/controller/pkg/pullauth/*.go", "{{vars.repo_root}}/packages/controller/Dockerfile.vm-runner"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail

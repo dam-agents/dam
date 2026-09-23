@@ -10,7 +10,7 @@ use crate::cache::{
     self, cache_path, digest_path, pinned_digest, ref_path, RefRecord, PARTIAL_PREFIX,
 };
 use crate::command;
-use crate::fetch::{self, unusable};
+use crate::fetch::{self, unusable, DockerConfig, ANONYMOUS};
 use crate::launch::{launch_from_config, read_launch, LAUNCH_FILE};
 use crate::state::is_image_ref;
 
@@ -28,6 +28,9 @@ pub const ROOTFS_DIR: &str = "rootfs";
 
 // UNIT_BOUNDARY_DESCRIPTION: a resolution is a manifest HEAD and nothing else. A registry that has not answered in a minute is treated as down, so a create falls back to the last digest the tag resolved to rather than waiting out the pull timeout.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+
+// UNIT_BOUNDARY_DESCRIPTION: marks a cache entry that only a fetch with credentials could read. It sits beside the launch, outside the tree the guest sees. An entry without it was readable with no credentials at all, so any machine may boot from it; an entry with it is reused only by a machine whose own credentials still read the image's manifest, because a cache on a node directory is shared by every owner's runner there. Without the check one owner's credentials would fetch the image and another owner could boot it by naming the same reference.
+pub const PRIVATE_FILE: &str = "private";
 
 impl ImageCache {
     pub fn entry(&self, reference: &str) -> PathBuf {
@@ -95,7 +98,12 @@ impl ImageCache {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is taken from the index; otherwise the registry is asked and the answer written to the index for every process on the directory. A registry that cannot answer boots the digest the tag last resolved to, so an outage boots what was cached before. None means the tag was never resolved here and cannot be now, and the caller falls back to the first format.
-    pub fn resolve_digest(&self, reference: &str, fresh: Duration) -> Option<String> {
+    pub fn resolve_digest(
+        &self,
+        reference: &str,
+        fresh: Duration,
+        auths: &[String],
+    ) -> Option<String> {
         if let Some(digest) = pinned_digest(reference) {
             return Some(digest.to_string());
         }
@@ -110,14 +118,23 @@ impl ImageCache {
             return known;
         }
         let logged = reference.replace(['\n', '\r'], " ");
-        let answer = command::output(
-            Command::new(&self.crane).arg("digest").arg(reference),
-            Instant::now() + RESOLVE_TIMEOUT,
-            &self.lifetime,
-        )
-        .ok()
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .filter(|digest| cache::is_digest(digest));
+        let anonymous = [String::new()];
+        let candidates = if auths.is_empty() {
+            &anonymous[..]
+        } else {
+            auths
+        };
+        let answer = candidates.iter().find_map(|auth| {
+            let credentials = DockerConfig::new(auth).ok()?;
+            command::output(
+                credentials.apply(Command::new(&self.crane).arg("digest").arg(reference)),
+                Instant::now() + RESOLVE_TIMEOUT,
+                &self.lifetime,
+            )
+            .ok()
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+            .filter(|digest| cache::is_digest(digest))
+        });
         let Some(digest) = answer else {
             if let Some(known) = &known {
                 tracing::warn!(image = %logged, digest = %known, "image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to");
@@ -137,10 +154,11 @@ impl ImageCache {
         cache::publish_holders(&self.dir, &self.owner, &held);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auths` are the docker configs to fetch with, tried in order, and none for an anonymous fetch; the layers come with the one that read the config. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
     pub fn fetch(
         &self,
         reference: &str,
+        auths: &[String],
         cached: &Path,
         busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
@@ -150,8 +168,8 @@ impl ImageCache {
         let scratch = Scratch::new(parent)?;
         fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
         let started = Instant::now();
-        let config =
-            fetch::read_config(&self.crane, reference, &self.lifetime).inspect_err(|_| {
+        let (config, used) = fetch::read_config(&self.crane, reference, auths, &self.lifetime)
+            .inspect_err(|_| {
                 tracing::warn!(
                     image = reference,
                     duration_ms = elapsed_ms(started),
@@ -164,12 +182,16 @@ impl ImageCache {
             &self.crane,
             reference,
             &scratch.path().join(ROOTFS_DIR),
+            &used,
             &self.lifetime,
         )?;
         fs::write(
             scratch.path().join(LAUNCH_FILE),
             serde_json::to_vec(&launch)?,
         )?;
+        if !used.is_empty() && !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
+            fs::write(scratch.path().join(PRIVATE_FILE), "")?;
+        }
         tracing::info!(
             image = reference,
             duration_ms = elapsed_ms(started),
@@ -178,6 +200,51 @@ impl ImageCache {
         );
         self.claim(scratch.path(), cached, busy)?;
         Ok(self.evict(own, Some(cached)))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, an anonymous read or one of its own credentials, tried in the order they were sent, must still read the image. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down. The anonymous read comes first for every machine, not only one without credentials, because an install with default pull secrets sends every machine one, and a mark a flaky probe left on a public image would otherwise never clear.
+    pub fn may_reuse(
+        &self,
+        reference: &str,
+        cached: &Path,
+        auths: &[String],
+    ) -> anyhow::Result<()> {
+        match fs::symlink_metadata(cached.join(PRIVATE_FILE)) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+            Ok(_) => {}
+        }
+        if self.crane.is_empty() {
+            return Err(unusable(format!(
+                "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
+            )));
+        }
+        if fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
+            self.mark_public(reference, cached);
+            return Ok(());
+        }
+        if !auths
+            .iter()
+            .any(|auth| fetch::readable(&self.crane, reference, auth, &self.lifetime))
+        {
+            return Err(unusable(format!(
+                "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
+            )));
+        }
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the private marker is written when the anonymous probe at fetch time fails, and a probe fails for a registry that was briefly unreachable or rate-limiting just as it does for one that refused. So the answer is revisable: an anonymous read that succeeds later removes the marker, and a mismarked public image costs one extra read instead of a live registry for every boot until it is evicted.
+    fn mark_public(&self, reference: &str, cached: &Path) {
+        match fs::remove_file(cached.join(PRIVATE_FILE)) {
+            Ok(()) => {
+                tracing::info!(image = %reference.replace(['\n', '\r'], " "), "image cache: an entry marked private reads anonymously, so it is public after all")
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(image = %reference.replace(['\n', '\r'], " "), error = %e, "image cache: cannot clear the private marker of an entry that reads anonymously")
+            }
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Processes on one node directory may unpack the same image at once, so a loser that finds a complete entry keeps it — both wrote the same image. An entry with no launch record is from a release that stored none, and is replaced unless a machine here or elsewhere is running from it.

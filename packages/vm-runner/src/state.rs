@@ -383,7 +383,7 @@ mod tests {
 
         let body = fs::read_to_string(dir.path().join("agent-a").join(SPEC_FILE)).unwrap();
         assert!(
-            !body.contains("c2VjcmV0") && !body.contains("pullAuths"),
+            !body.contains("c2VjcmV0") && !body.contains("pullAuth"),
             "the registry credential was stored with the spec: {body}"
         );
         let go = gosource::read("server.go");

@@ -10,6 +10,7 @@ use crate::api::{
     STATE_CREATING, STATE_STARTING,
 };
 use crate::cache::{cache_path, PARTIAL_PREFIX};
+use crate::imagecache::PRIVATE_FILE;
 use std::path::Path;
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.
@@ -750,7 +751,7 @@ async fn a_tree_with_no_launch_beside_it_is_not_booted_from() {
     fs::create_dir_all(legacy.join(ROOTFS_DIR)).unwrap();
     h.server
         .cache
-        .resolve_digest("quay.io/x/vm:1", Duration::ZERO)
+        .resolve_digest("quay.io/x/vm:1", Duration::ZERO, &[])
         .unwrap();
     let entry = h.entry("quay.io/x/vm:1");
     fs::create_dir_all(entry.join(ROOTFS_DIR)).unwrap();
@@ -972,6 +973,175 @@ async fn a_pinned_reference_is_never_resolved() {
     assert!(read_launch(&h.server.cache.digest_entry(&digest))
         .unwrap()
         .is_some());
+}
+
+const PRIVATE_CRANE: &str = r##"#!/bin/sh
+here="$(dirname "$0")"
+echo "$@" >> "$here/crane.log"
+auth=""
+if [ -n "$DOCKER_CONFIG" ]; then
+  auth=$(cat "$DOCKER_CONFIG/config.json")
+  echo "$1 $(stat -c %a "$DOCKER_CONFIG") $DOCKER_CONFIG $auth" >> "$here/auth.log"
+fi
+case "$1" in
+  digest) case "$auth" in *c2VjcmV0*) echo sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; exit 0;; esac; echo UNAUTHORIZED >&2; exit 1;;
+  config) case "$auth" in *c2VjcmV0*) printf '{"config":{"Cmd":["serve"]}}'; exit 0;; esac; echo UNAUTHORIZED >&2; exit 1;;
+esac
+d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
+"##;
+
+const CREDENTIAL: &str = r#"{"auths":{"quay.io":{"auth":"c2VjcmV0"}}}"#;
+
+fn with_credential(running: bool) -> MachineSpec {
+    MachineSpec {
+        pull_auths: vec![CREDENTIAL.into()],
+        ..spec(running)
+    }
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_under(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}
+
+// TEST_SCENARIO: the controller sends a machine's registry credential on its spec so a private image can be fetched. It reaches crane alone, through a DOCKER_CONFIG directory only the runner can read that is gone once the fetch ends: never the stored spec, the share the guest mounts, or the runtime. An image an anonymous read cannot reach is marked private in the cache.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_registry_credential_reaches_crane_alone() {
+    let h = Harness::new("pull-auth");
+    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let log = fs::read_to_string(h.dir.join("auth.log")).unwrap();
+    for op in ["config", "export"] {
+        let line = log
+            .lines()
+            .find(|l| l.starts_with(&format!("{op} ")))
+            .unwrap_or_else(|| panic!("crane {op} ran without the credential: {log}"));
+        let fields: Vec<&str> = line.splitn(4, ' ').collect();
+        assert_eq!(fields[1], "700", "{line}");
+        assert_eq!(fields[3], CREDENTIAL);
+        assert!(
+            !Path::new(fields[2]).exists(),
+            "{} was left behind",
+            fields[2]
+        );
+    }
+    assert!(
+        log.lines()
+            .any(|l| l.starts_with("digest ") && l.ends_with(" {}")),
+        "the image was never probed anonymously: {log}"
+    );
+    for file in files_under(&h.dir.join("machines")) {
+        let body = fs::read(&file).unwrap_or_default();
+        assert!(
+            !String::from_utf8_lossy(&body).contains("c2VjcmV0"),
+            "the credential reached {}",
+            file.display()
+        );
+    }
+    let entry = h.entry("quay.io/x/vm:1");
+    assert!(entry.join(PRIVATE_FILE).exists());
+    assert!(!entry.join(ROOTFS_DIR).join(PRIVATE_FILE).exists());
+}
+
+const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
+
+// TEST_SCENARIO: a pod lists several pull Secrets and the kubelet tries each, so when an Agent's own credential for a registry has gone stale, the install default for that registry still pulls. The runner tries them in the order they were sent: the stale one is refused, the next one reads the config, and the layers are fetched with the one that worked.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stale_credential_does_not_hide_a_good_one_listed_after_it() {
+    let h = Harness::new("pull-auth-fallback");
+    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    let spec = MachineSpec {
+        pull_auths: vec![STALE.into(), CREDENTIAL.into()],
+        ..spec(true)
+    };
+    h.server.put("m1", spec).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let log = fs::read_to_string(h.dir.join("auth.log")).unwrap();
+    let with = |op: &str| -> Vec<String> {
+        log.lines()
+            .filter(|l| l.starts_with(&format!("{op} ")))
+            .map(|l| l.splitn(4, ' ').nth(3).unwrap_or_default().to_string())
+            .collect()
+    };
+    assert_eq!(with("config"), [STALE, CREDENTIAL], "{log}");
+    assert_eq!(with("export"), [CREDENTIAL], "{log}");
+}
+
+// TEST_SCENARIO: an anonymous probe that failed at fetch time — a registry briefly unreachable, a rate limit — marks a public image private. The next machine without credentials asks again, and an anonymous read that succeeds clears the marker, so the image goes back to booting from the cache with the registry down.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_public_image_marked_private_by_a_failed_probe_is_cleared() {
+    let h = Harness::new("private-heals");
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let marker = h.entry("quay.io/x/vm:1").join(PRIVATE_FILE);
+    fs::write(&marker, "").unwrap();
+
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert!(
+        !marker.exists(),
+        "an anonymous read that succeeded left the image private"
+    );
+}
+
+// TEST_SCENARIO: an install with default pull Secrets sends every machine a credential, so no machine ever reuses a cached entry with none. If only a machine without credentials could clear a private mark that a flaky probe left on a public image, that mark would never clear on such an install. The anonymous read comes first for every machine, so a machine with credentials that finds the image public clears the mark too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_with_credentials_also_clears_a_mark_a_flaky_probe_left() {
+    let h = Harness::new("private-heals-credentialed");
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let marker = h.entry("quay.io/x/vm:1").join(PRIVATE_FILE);
+    fs::write(&marker, "").unwrap();
+
+    h.server.put("m2", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert!(
+        !marker.exists(),
+        "a machine that sent credentials proved the image public and left it private"
+    );
+}
+
+// TEST_SCENARIO: runners of every owner on a node share its cache, so an image one owner fetched with credentials is not another's to boot by naming it. A machine with no credential is refused the private entry as an image problem; one whose credential still reads the manifest boots the tree already there without fetching it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_private_image_is_reused_only_with_credentials_that_read_it() {
+    let h = Harness::new("private-reuse");
+    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    h.server.put("m2", spec(true)).unwrap();
+    let refused = h.settle("m2").await;
+    assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
+    assert!(refused.message.contains("private registry"), "{refused:?}");
+    assert!(!locked(&h.fake.created).contains_key("m2"));
+
+    h.server.delete("m2").unwrap();
+    let exports = || {
+        fs::read_to_string(h.dir.join("crane.log"))
+            .unwrap()
+            .lines()
+            .filter(|l| l.starts_with("export "))
+            .count()
+    };
+    let before = exports();
+    h.server.put("m2", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert_eq!(
+        exports(),
+        before,
+        "a readable private image was fetched again"
+    );
 }
 
 const PROXY: &str = "http://10.0.0.1:10000";
