@@ -15,6 +15,9 @@ pub const LOOPBACK_OFFSET: u16 = 1000;
 pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 pub const DIAL_TIMEOUT: Duration = Duration::from_secs(3);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a published port waits after a failed accept before it accepts again. The failures worth surviving, such as a pod out of file descriptors, pass once a connection closes, so the port keeps listening rather than dying with them, but it must not spin a worker thread while they last.
+pub const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+
 // UNIT_BOUNDARY_DESCRIPTION: how a published port is bound. Tests hand over a listener they already hold, so the port is never unbound between a check that it is free and the runner taking it.
 pub type Listen = dyn Fn(u16) -> std::io::Result<std::net::TcpListener> + Send + Sync;
 
@@ -63,7 +66,10 @@ impl Forwarder {
                     accepted = listener.accept() => accepted,
                 };
                 let Ok((mut conn, from)) = accepted else {
-                    continue;
+                    tokio::select! {
+                        _ = stop.cancelled() => return,
+                        _ = tokio::time::sleep(ACCEPT_RETRY) => continue,
+                    }
                 };
                 if !allowed(&allow_from, from.ip()) {
                     continue;
