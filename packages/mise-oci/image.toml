@@ -1,10 +1,9 @@
-# The Debian Claude Code image as a `mise oci` config: what the platform-base and
-# claude-code Dockerfiles build together, minus the builder stage (the image
-# task builds agent-runtime on the host and copies it in). The task stages this
-# file as the build's mise.toml.
+# The Debian Claude Code image as a `mise oci` config. The image task stages
+# this file as the build's mise.toml; everything else in the image is rootfs/
+# and agent-runtime, which the task builds on the host.
 #
-# Tool versions follow packages/platform-base/config.toml, except that every
-# tool is baked in: there are no lazy tools, no tool shims and no oc here.
+# It started from platform-base and claude-code and diverges from them on
+# purpose: every tool is baked in, with no lazy installs, tool shims or oc.
 
 [settings]
 experimental = true
@@ -13,9 +12,9 @@ npm.package_manager = "npm"
 python.compile = false
 
 [tools]
-# npm self-upgrade for the same bundled-dependency findings platform-base
-# upgrades it for; the hook edits the host install that becomes the node layer.
-node = { version = "24", postinstall = '"$MISE_TOOL_INSTALL_PATH/bin/npm" install -g npm@11.19.1' }
+# 26 rather than platform-base's 24: 26.8.2 and later bundle npm 11.19.1, the
+# release platform-base self-upgrades npm to, so no hook edits the install.
+node = "26"
 pnpm = "12.3.4"
 jq = "latest"
 fd = "latest"
@@ -52,7 +51,7 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 
 # Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
 # scripts included. Fedora's list from platform-base, in Debian names, plus the
-# NSS module the agent account needs.
+# NSS module the agent account needs and libatomic, which node 26 links against.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
@@ -61,6 +60,7 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 "apt:gawk" = "latest"
 "apt:git" = "latest"
 "apt:iptables" = "latest"
+"apt:libatomic1" = "latest"
 "apt:libnss-extrausers" = "latest"
 "apt:openssh-server" = "latest"
 "apt:openssl" = "latest"

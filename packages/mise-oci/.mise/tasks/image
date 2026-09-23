@@ -21,12 +21,8 @@ done
 [ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
 
-# node's postinstall hook edits its install, and mise's layer cache is keyed by
-# tool, version, path and owner only, so both are keyed by the config: a changed
-# hook starts from fresh installs instead of a stale layer.
-key="$(sha256sum "$pkg/image.toml" | cut -c1-16)"
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
-work="$state/$key"
+work="$state/build"
 stage="$work/stage"
 runtime="$work/runtime"
 out="$state/out/claude-code"
@@ -59,41 +55,16 @@ cp "$pkg/image.toml" "$stage/mise.toml"
 mise trust -q "$stage"
 mise -C "$stage" install
 
-# The COPY payload of both Dockerfiles, in one tree. Later copies win: this
-# package's rootfs replaces platform-base's AGENTS.md, and claude-code's harness
-# scripts and manifest replace the base's. Every file ends up owned by the
-# build's --owner (the agent), which is what the empty directories are for: the
-# agent writes into them at runtime.
+# rootfs/ is the image's own payload at its image paths. The directories the
+# agent writes into at runtime are made here, since git keeps no empty ones;
+# every added file ends up owned by the build's --owner, the agent.
 r="$stage/rootfs"
-b=packages/platform-base
-c=packages/agents/claude-code
 mkdir -p "$r"
-cp -a "$b/rootfs/." "$r/"
-mv "$r/usr/local/bin/dam-run.mjs" "$r/usr/local/bin/dam-run"
 cp -a "$pkg/rootfs/." "$r/"
-install -d "$r"/{home/agent,etc/logrotate.d,etc/ssl/certs,etc/claude-code,etc/profile.d} \
-  "$r"/usr/local/share/{ca-certificates,tool-bin,dam-skills} \
-  "$r"/usr/local/lib/platform-python "$r"/app/working-dir/.agents/skills
-cp -a "$b/skills/." "$r/app/working-dir/.agents/skills/"
-cp -a "$b/dam-skills/." "$c/dam-skills/." "$r/usr/local/share/dam-skills/"
-install -m 644 "$b/skills-manifest.json" "$r/usr/local/share/dam-skill-manifest.json"
-install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$r/usr/local/lib/platform-python/"
+install -d "$r"/{home/agent,etc/logrotate.d,etc/ssl/certs} "$r"/usr/local/share/{ca-certificates,tool-bin}
 cp -a "$runtime/package.json" "$runtime/node_modules" "$r/app/"
 cp -a packages/agent-runtime/dist "$r/app/dist"
 install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$r/usr/local/lib/driver-sdk.mjs"
-
-ln -sfn /etc/AGENTS.md "$r/etc/claude-code/CLAUDE.md"
-install -m 644 "$c/managed-settings.json" "$r/etc/claude-code/managed-settings.json"
-for f in model-gateway.mjs report-background-work.mjs model-gateway.sh sync-otel-settings.mjs harness-history-lib.mjs; do
-  install -m 644 "$c/$f" "$r/usr/local/lib/$f"
-done
-install -m 755 "$c/pod-service.sh" "$r/usr/local/bin/pod-service"
-install -m 644 "$c/model-gateway-login.sh" "$r/etc/profile.d/model-gateway.sh"
-install -m 755 "$c/harness-chat.sh" "$r/usr/local/bin/harness-chat"
-install -m 755 "$c/harness-terminal.sh" "$r/usr/local/bin/harness-terminal"
-install -m 644 "$c/runtime-manifest.yaml" "$r/app/runtime-manifest.yaml"
-ln -sfn ../.agents/skills "$r/app/working-dir/.claude/skills"
-cp -a "$c/workspace/." "$r/app/working-dir/"
 
 # The two tool-bin links the harness scripts and manifest name, resolved on the
 # host and pointed at where the adapter's install sits inside the image.
