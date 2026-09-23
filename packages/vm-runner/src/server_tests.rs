@@ -263,6 +263,7 @@ fn spec(running: bool) -> MachineSpec {
         allow_cidrs: vec!["10.0.0.1/32".into()],
         revision: "r1".into(),
         running,
+        pull_auths: Vec::new(),
     }
 }
 

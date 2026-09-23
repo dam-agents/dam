@@ -30,6 +30,7 @@ const fakeSmolvm = `#!/bin/sh
 echo "$@" >> "$FAKE_LOG"
 case "$2" in
   status)
+    [ -n "$FAKE_STATUS_FAIL" ] && { echo "status unavailable" >&2; exit 1; }
     name=$4
     [ -f "$FAKE_STATE/$name" ] || { echo "machine '$name' not found" >&2; exit 1; }
     echo "{\"state\":\"$(cat "$FAKE_STATE/$name")\"}" ;;
@@ -1602,4 +1603,194 @@ func TestTheRuntimeSharesTheRunnersLifetime(t *testing.T) {
 	require.NoError(t, h.node.Runtime.Lifetime.Err(), "which is live while the runner is")
 	h.node.Close()
 	assert.ErrorIs(t, h.node.Runtime.Lifetime.Err(), context.Canceled, "and cancelled once it closes")
+}
+
+// TEST_SCENARIO: admission used to ask smolvm for every other machine's state on every PUT, one subprocess each. The runner already knows which machines it started and stopped, so a machine that fits is admitted without asking about any other.
+func TestAdmittingAMachineThatFitsAsksSmolvmAboutNoOther(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 8192, 0
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	require.NoError(t, os.WriteFile(h.log, nil, 0o644))
+
+	_, err = h.client().Ensure(t.Context(), "m2", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m2")
+	log, _ := os.ReadFile(h.log)
+	assert.NotContains(t, string(log), "machine status -n m1", "admitting m2 forked a status call for m1")
+}
+
+// TEST_SCENARIO: a machine can die without the runner stopping it, and the runner then still counts its memory. A PUT that would be refused on that count asks smolvm once more, so a dead machine never keeps a live one out.
+func TestAMachineThatDiedOnItsOwnDoesNotHoldItsMemory(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	st, err := h.client().Ensure(t.Context(), "m2", second)
+	require.NoError(t, err)
+	assert.Empty(t, st.Reason, "a machine that is no longer running still held the runner's memory")
+}
+
+// TEST_SCENARIO: the running set lives in memory, and a runner can restart while its machines are still up — a process restart in the same pod, or a test. The new process reads each machine once when it starts, so the machines already running still count against its memory.
+func TestARestartedRunnerStillCountsTheMachinesThatAreRunning(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	h.node.Close()
+	restarted := &Server{
+		Token: h.node.Token, StateDir: h.node.StateDir, ImageDir: h.node.ImageDir, Runtime: &Smolvm{Bin: h.node.Runtime.Bin},
+		PortMin: h.node.PortMin, PortMax: h.node.PortMax, MemoryMiB: 2048, Init: h.node.Init,
+	}
+	require.NoError(t, restarted.Start())
+	t.Cleanup(restarted.Close)
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	assert.ErrorContains(t, restarted.roomFor("m2", second), "does not fit")
+}
+
+// TEST_SCENARIO: finding a machine's vm directory means reading the name file of every machine. The answer is kept, but a machine that is deleted and created again gets a new directory, and a kept answer must never send a start or a stop to the old one.
+func TestAMachinesVMDirIsFoundAgainAfterItIsRecreated(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("HOME", t.TempDir())
+	vms := filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms")
+	named := func(dir, id string) string {
+		path := filepath.Join(vms, dir)
+		require.NoError(t, os.MkdirAll(path, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(path, "name"), []byte(id+"\n"), 0o644))
+		return path
+	}
+	old := named("vm1", "m1")
+	other := named("vm2", "m2")
+	assert.Equal(t, old, h.node.Runtime.vmDir("m1"))
+	assert.Equal(t, other, h.node.Runtime.vmDir("m2"))
+
+	require.NoError(t, os.RemoveAll(old))
+	recreated := named("vm3", "m1")
+	assert.Equal(t, recreated, h.node.Runtime.vmDir("m1"), "a kept directory whose name file is gone was returned")
+
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("running"), 0o644))
+	require.NoError(t, h.node.Runtime.Delete("m1"))
+	require.NoError(t, os.RemoveAll(recreated))
+	assert.Empty(t, h.node.Runtime.vmDir("m1"), "a deleted machine still has a directory")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a zstd that copies its input to its output and logs each call, so a test can see whether a template was expanded without a real compressor.
+func fakeZstd(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "zstd.log")
+	script := "#!/bin/sh\necho \"$@\" >> " + log + "\nwhile [ $# -gt 1 ]; do [ \"$1\" = -o ] && out=$2; shift; done\ncp \"$1\" \"$out\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "zstd"), []byte(script), 0o755))
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	return log
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the binary's directory of a freshly rolled runner pod: the compressed templates the image ships, and nothing expanded.
+func freshPod(t *testing.T, packed string) *Smolvm {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "smolvm"), []byte("bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "storage-template.ext4.zst"), []byte(packed), 0o644))
+	return &Smolvm{Bin: filepath.Join(dir, "smolvm")}
+}
+
+// TEST_SCENARIO: expanding the templates is 24 s of a pod's start, and it was paid again after every roll because the expanded files lived in the container. They are kept on the runner's claim now, keyed by the compressed file's content: the next pod of the same release links to them without expanding anything, and a release with different templates expands its own beside them, never over bytes a disk may be backed by.
+func TestTemplatesExpandedByOnePodAreKeptForTheNext(t *testing.T) {
+	calls := fakeZstd(t)
+	kept := t.TempDir()
+
+	first := freshPod(t, "release-1")
+	first.TemplateDir = kept
+	first.WarmTemplates()
+	target := filepath.Join(filepath.Dir(first.Bin), "storage-template.ext4")
+	resolved, err := filepath.EvalSymlinks(target)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(resolved, kept), "the template smolvm finds is not the one on the claim: %s", resolved)
+	body, _ := os.ReadFile(target)
+	assert.Equal(t, "release-1", string(body))
+
+	require.NoError(t, os.WriteFile(calls, nil, 0o644))
+	rolled := freshPod(t, "release-1")
+	rolled.TemplateDir = kept
+	rolled.WarmTemplates()
+	log, _ := os.ReadFile(calls)
+	assert.Empty(t, string(log), "a rolled pod expanded a template the claim already held")
+	again, err := filepath.EvalSymlinks(filepath.Join(filepath.Dir(rolled.Bin), "storage-template.ext4"))
+	require.NoError(t, err)
+	assert.Equal(t, resolved, again)
+
+	upgraded := freshPod(t, "release-2")
+	upgraded.TemplateDir = kept
+	upgraded.WarmTemplates()
+	next, err := filepath.EvalSymlinks(filepath.Join(filepath.Dir(upgraded.Bin), "storage-template.ext4"))
+	require.NoError(t, err)
+	assert.NotEqual(t, resolved, next, "a new release's template was written where the old one's was")
+	body, _ = os.ReadFile(resolved)
+	assert.Equal(t, "release-1", string(body), "the old release's template changed under the disks backed by it")
+}
+
+// TEST_SCENARIO: a restarted runner cannot read a machine's state, which is how an orphan VMM left by an earlier runner process can look. Counting it as nothing would admit a machine the runner has no memory for, so it is counted at its applied size until a read says otherwise. A refusal then rechecks it, and a machine that turns out to be stopped stops holding the memory.
+func TestAMachineWhoseStateCannotBeReadAtStartStillCounts(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	h.node.Close()
+	t.Setenv("FAKE_STATUS_FAIL", "1")
+	restarted := &Server{
+		Token: h.node.Token, StateDir: h.node.StateDir, ImageDir: h.node.ImageDir, Runtime: &Smolvm{Bin: h.node.Runtime.Bin},
+		PortMin: h.node.PortMin, PortMax: h.node.PortMax, MemoryMiB: 2048, Init: h.node.Init,
+	}
+	require.NoError(t, restarted.Start())
+	t.Cleanup(restarted.Close)
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	assert.ErrorContains(t, restarted.roomFor("m2", second), "does not fit",
+		"a machine the runner could not read was counted as using no memory")
+
+	t.Setenv("FAKE_STATUS_FAIL", "")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+	assert.NoError(t, restarted.roomFor("m2", second), "once smolvm answers, a stopped machine stops holding its memory")
+}
+
+// TEST_SCENARIO: the runner holds one machine as running that has since stopped, and another as stopped that is running after all. Before it refuses a machine it asks smolvm about both: the first stops counting and the second starts. Rechecking only the machines it counts would drop the first and never see the second, and so admit a machine the runner has no memory for.
+func TestARefusalRechecksMachinesTheRunnerHoldsAsStopped(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 4096, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+
+	hidden := spec(true)
+	hidden.MemoryMiB = 2000
+	require.NoError(t, os.MkdirAll(filepath.Join(h.node.StateDir, "m3"), 0o755))
+	require.NoError(t, h.node.writeSpec("m3", hidden))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m3"), []byte("running"), 0o644))
+
+	wanted := spec(true)
+	wanted.MemoryMiB = 2500
+	assert.ErrorContains(t, h.node.roomFor("m2", wanted), "does not fit",
+		"a running machine the runner held as stopped was not counted before the machine was admitted")
 }

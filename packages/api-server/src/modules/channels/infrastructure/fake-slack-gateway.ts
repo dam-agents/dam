@@ -174,6 +174,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.replyBroadcast !== undefined
           ? { replyBroadcast: args.replyBroadcast }
           : {}),
+        ...(args.unfurlLinks !== undefined
+          ? { unfurlLinks: args.unfurlLinks }
+          : {}),
+        ...(args.unfurlMedia !== undefined
+          ? { unfurlMedia: args.unfurlMedia }
+          : {}),
       });
     },
 

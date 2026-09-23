@@ -24,6 +24,7 @@ import {
   type SkillSetSaved,
   type SkillSetDeleted,
   type KindedAgentCreated,
+  type StarterKitApplied,
   type ExperimentChanged,
   type InvocationSpawned,
   type FeatureFlagChanged,
@@ -548,6 +549,34 @@ export function startPersistActivitySaga(
           } catch (err) {
             process.stderr.write(
               `[usage/persist-activity] kinded_agent_created insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<StarterKitApplied>(EventType.StarterKitApplied),
+        mergeMap(async (event) => {
+          try {
+            await deps.insert({
+              type: "starter_kit_applied",
+              actorSub: event.actorSub,
+              agentId: event.agentId,
+              surface: event.surface,
+              outcome: "success",
+              payload: {
+                catalog: event.catalog,
+                kitId: event.kitId,
+                version: event.version,
+              },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] starter_kit_applied insert failed: ${err}\n`,
             );
           }
         }, STREAM_CONCURRENCY),

@@ -393,12 +393,12 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
-			Egress: runnerEgress(ns, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, owner, egress, exceptCIDRs),
 		},
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores and every other owner's gateway. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 // UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
 func containedIn(cidr string, except []string) []string {
 	block, err := netip.ParsePrefix(cidr)
@@ -416,7 +416,7 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
-func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
+func runnerEgress(agentNS, owner string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
 	}
@@ -427,7 +427,7 @@ func runnerEgress(agentNS string, cidrs, except []string) []networkingv1.Network
 	}, {
 		To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
-			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
 	}}
 	for _, cidr := range cidrs {
@@ -576,12 +576,20 @@ type runnerRef struct {
 	client *vmrunner.Client
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's Secret. Reading them one at a time is a Get per runner on every sweep, so the runners' Secrets are listed once by their component label, which every Secret the controller mints carries. A runner whose Secret is not in that list, such as one an older release created without the label, is resolved the ordinary way, which reads it by name and adopts it.
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
-	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent,
-	})
+	selector := metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent}
+	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, selector)
 	if err != nil {
 		return nil, err
+	}
+	secrets := map[string]corev1.Secret{}
+	if listed, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, selector); err == nil {
+		for _, sec := range listed.Items {
+			secrets[sec.Name] = sec
+		}
+	} else {
+		slog.Warn("vm runner: listing runner Secrets failed; reading each one instead", "error", err)
 	}
 	var out []runnerRef
 	for i := range list.Items {
@@ -589,7 +597,12 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 		if owner == "" {
 			continue
 		}
-		client, err := r.runnerFor(ctx, owner)
+		var client *vmrunner.Client
+		if sec, ok := secrets[r.runnerName(owner)]; ok && len(sec.Data["token"]) > 0 {
+			client, err = r.runnerClient(owner, string(sec.Data["token"]), string(sec.Data["tls.crt"]))
+		} else {
+			client, err = r.runnerFor(ctx, owner)
+		}
 		if err != nil {
 			continue
 		}

@@ -1,7 +1,6 @@
 package vmrunner
 
 import (
-	"math"
 	"net/http"
 	"time"
 
@@ -126,13 +125,7 @@ func newMetrics(s *Server) *metrics {
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: metricsNamespace, Name: "memory_committed_mib",
 			Help: "Memory committed to running machines and to machines being started, as admission counts it.",
-		}, func() float64 {
-			used, err := s.committedMiB("")
-			if err != nil {
-				return math.NaN()
-			}
-			return float64(used)
-		}),
+		}, func() float64 { return float64(s.committed("")) }),
 	)
 	return m
 }

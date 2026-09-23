@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Run the machine API conformance suite against a live VM runner named by VMRUNNER_CONFORMANCE_URL (plus _TOKEN, _CA_FILE, _SERVER_NAME, _IMAGE, _MEMORY_MIB, _READY_TIMEOUT, _RESTART, _PUBLISHED_HOST). On the lima dev cluster use `mise run cluster:vm-conformance`, which sets all of these."
+#MISE raw=true
+set -euo pipefail
+if [ -z "${VMRUNNER_CONFORMANCE_URL:-}" ] || [ -z "${VMRUNNER_CONFORMANCE_IMAGE:-}" ]; then
+  echo "vm-conformance: set VMRUNNER_CONFORMANCE_URL and VMRUNNER_CONFORMANCE_IMAGE (an image whose entrypoint is cmd/vm-conformance-guest)" >&2
+  exit 2
+fi
+exec go test ./pkg/vmconformance -run '^TestLiveRunnerConforms$' -count=1 -v -timeout 60m "$@"
