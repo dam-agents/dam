@@ -1,6 +1,6 @@
 # Comment Guidelines
 
-Rules for comments in TS/JS/Go source. Enforced twice: `mise run strip-comments -- --write` deletes every comment that carries no registered type, and `mise run check:comment-types` fails when one slips in.
+Rules for comments in TS/JS/Go/Rust source. Enforced twice: `mise run strip-comments -- --write` deletes every comment that carries no registered type, and `mise run check:comment-types` fails when one slips in.
 
 ## The rule
 
@@ -24,4 +24,10 @@ A new kind of comment starts by registering its type in `COMMENT_TYPES` — an u
 
 ## Tool directives
 
-`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`) live in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments); a new directive pattern is added there.
+`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`, `PRESERVE_RUST`) live in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments); a new directive pattern is added there.
+
+In Rust the one directive is a `// SAFETY:` comment (or `/* SAFETY: … */`) justifying an `unsafe` block or impl — clippy's `undocumented_unsafe_blocks` reads it. Upper case, and one comment: a continuation line is its own comment and needs a type. Attributes (`#[allow(…)]`, `#[rustfmt::skip]`) are code, not comments, so they need nothing.
+
+## Rust comment forms
+
+A typed comment may use any Rust comment form: `//`, `/* */`, and the doc forms `///`, `//!`, `/** */`, `/*! */`. The type follows the marker (`/// TEST_SCENARIO: …`). Each `//` or `///` line is its own comment, so a typed comment is one line or one block. A nested block comment is one comment.
