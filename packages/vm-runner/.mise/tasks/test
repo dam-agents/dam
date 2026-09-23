@@ -14,7 +14,7 @@
 # there as a bare version — so without this the run is replayed against the
 # source it was taken on. The runner image's Dockerfile is an input because its
 # ENTRYPOINT passes arguments this binary has to accept.
-#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "smolvm.pin", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go", "{{vars.repo_root}}/packages/controller/pkg/reconciler/*.go", "{{vars.repo_root}}/packages/controller/pkg/pullauth/*.go", "{{vars.repo_root}}/packages/controller/Dockerfile.vm-runner"]
+#MISE sources=["src/**/*.rs", "Cargo.toml", "Cargo.lock", "smolvm.pin", "{{vars.repo_root}}/packages/controller/pkg/vmrunner/*.go", "{{vars.repo_root}}/packages/controller/pkg/reconciler/*.go", "{{vars.repo_root}}/packages/controller/pkg/pullauth/*.go", "{{vars.repo_root}}/packages/controller/Dockerfile.vm-runner", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
