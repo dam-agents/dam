@@ -3043,8 +3043,10 @@ dependencies = [
  "axum-server",
  "clap",
  "filetime",
+ "http-body-util",
  "ipnet",
  "libc",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3052,6 +3054,7 @@ dependencies = [
  "tar",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]

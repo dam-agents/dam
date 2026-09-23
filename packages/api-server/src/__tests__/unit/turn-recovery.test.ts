@@ -258,4 +258,50 @@ describe("turn recovery", () => {
     expect(events).toEqual(["done"]);
     recovery.stop();
   });
+  /**
+   * TEST_SCENARIO: standing down with two nudges running, where one finishes
+   * inside the limit and one never does. The warning must name only the nudge
+   * whose outcome is really unrecorded, or an operator reading it after a
+   * deploy chases turns that were in fact accounted for.
+   */
+  it("counts only the nudges still running when the stand-down limit passes", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "info", write: (l) => lines.push(l) });
+    try {
+      const recovery = createTurnRecovery({
+        turnStatus: async () => "ended",
+        podGone: async () => false,
+      });
+      let release: (() => void) | undefined;
+      recovery.watch(
+        makeTurn({
+          sessionId: "s-quick",
+          recover: () =>
+            new Promise<void>((r) => {
+              release = r;
+            }),
+        }).turn,
+        { endedAs: "clean" },
+      );
+      recovery.watch(
+        makeTurn({
+          sessionId: "s-stuck",
+          recover: () => new Promise<void>(() => {}),
+        }).turn,
+        { endedAs: "clean" },
+      );
+
+      const stopping = recovery.stop();
+      release!();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await stopping;
+
+      const abandoned = lines
+        .map((l) => JSON.parse(l) as { msg?: string; nudges?: number })
+        .find((l) => l.msg?.includes("recovery_abandoned"));
+      expect(abandoned).toMatchObject({ nudges: 1 });
+    } finally {
+      configureLogger({ level: "error", write: () => {} });
+    }
+  });
 });
