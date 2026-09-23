@@ -365,7 +365,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			errEgressChanged, applied.AllowCIDRs, spec.AllowCIDRs)
 	}
 	if applied != nil && imageChanged(*applied, spec) {
-		return s.recreate(id, spec, state)
+		return s.recreate(id, spec, *applied, state)
 	}
 	if p := s.port(id); p != 0 {
 		if err := s.forward(id, p); err != nil {
@@ -398,16 +398,17 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 }
 
 func (s *Server) create(id string, spec MachineSpec) error {
-	port, image, launch, err := s.resolve(id, spec)
+	boot, err := s.resolve(id, spec)
 	if err != nil {
 		return err
 	}
-	return s.boot(id, spec, port, image, launch)
+	return s.boot(id, spec, boot)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the new image is fetched and its launch read while the old machine still runs, so the agent is down only for the stop, the recreate and the boot, and not for a pull. A pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image is still held while this runs, because the machine's stored spec names it until the new machine has booted; the stored spec is rewritten only after that, and the holders published after it release the old image.
-func (s *Server) recreate(id string, spec MachineSpec, state string) error {
-	port, image, launch, err := s.resolve(id, spec)
+// UNIT_BOUNDARY_DESCRIPTION: the new image is fetched and its launch read while the old machine still runs, so the agent is down only for the stop, the recreate and the boot, and not for a pull. A pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The machine is created at the disk size it already has: a kept qcow2 disk is opened as it is and never grown at start, so a larger size would be recorded and not given. The stored spec keeps that size, and the next reconcile grows the disk with the in-place update like any other resize. The old image is still held while this runs, because the machine's stored spec and recorded digest name it until the new machine has booted; both are rewritten only after that, and the holders published after them release the old image.
+func (s *Server) recreate(id string, spec, applied MachineSpec, state string) error {
+	spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)
+	boot, err := s.resolve(id, spec)
 	if err != nil {
 		return err
 	}
@@ -420,63 +421,51 @@ func (s *Server) recreate(id string, spec MachineSpec, state string) error {
 	if err := s.Runtime.DeleteKeepingStorage(id); err != nil {
 		return err
 	}
-	if err := s.boot(id, spec, port, image, launch); err != nil {
+	if err := s.boot(id, spec, boot); err != nil {
 		return err
 	}
 	return s.writeSpec(id, spec)
 }
 
-func (s *Server) resolve(id string, spec MachineSpec) (int, string, *ImageLaunch, error) {
-	port, err := s.allocatePort(id)
-	if err != nil {
-		return 0, "", nil, err
-	}
-	image, launch, err := s.imageSource(id, spec.Image)
-	return port, image, launch, err
+// UNIT_BOUNDARY_DESCRIPTION: what a machine boots, decided before anything about the machine changes: its published port, the image source smolvm is handed, what that image says to run, and the digest it was resolved to.
+type bootSource struct {
+	port   int
+	image  string
+	launch *ImageLaunch
+	digest string
 }
 
-func (s *Server) imageSource(id, image string) (string, *ImageLaunch, error) {
+func (s *Server) resolve(id string, spec MachineSpec) (bootSource, error) {
+	port, err := s.allocatePort(id)
+	if err != nil {
+		return bootSource{}, err
+	}
+	image := spec.Image
 	if !imageRef.MatchString(image) {
-		return "", nil, fmt.Errorf("invalid image reference %q", image)
+		return bootSource{}, fmt.Errorf("invalid image reference %q", image)
 	}
 	if strings.Contains(image, "..") {
-		return "", nil, fmt.Errorf("invalid image reference %q", image)
+		return bootSource{}, fmt.Errorf("invalid image reference %q", image)
 	}
-	base := s.cachePath(image)
-	launch, err := readLaunch(base)
-	if err != nil {
-		return "", nil, err
-	}
-	cached := ""
-	// UNIT_BOUNDARY_DESCRIPTION: an archive an earlier release cached still boots, but it boots the slow way — unpacked again into every machine's own disk, which is the thirty seconds and the gigabyte the shared tree exists to stop paying. Holding it would mean an install that already ran an image never gets the faster path for it, however long it keeps running that image, so the tree is built once and the archive kept only for the case that cannot: no crane to fetch with, or a fetch that failed while the archive on disk would still have started a machine.
+	digest := s.resolveDigest(image, refFresh)
+	cached, launch, fetchErr := s.digestImage(id, image, digest)
 	if launch == nil {
-		archived := false
-		if _, err := os.Stat(base + ".tar"); err == nil {
-			archived = true
+		if cached, launch, err = s.legacyImage(image); err != nil {
+			return bootSource{}, err
 		}
-		if s.Crane != "" {
-			if err := s.cacheImage(image, base, id); err != nil {
-				if !archived {
-					return "", nil, err
-				}
-				slog.Warn("image cache: keeping the archive after a failed unpack", "image", image, "error", err)
-			} else if launch, err = readLaunch(base); err != nil {
-				return "", nil, err
-			}
-		}
-		if launch == nil && archived {
-			cached = base + ".tar"
-			if launch, err = launchFromArchive(cached); err != nil {
-				return "", nil, fmt.Errorf("%w: %w", errImageUnusable, err)
-			}
+		if launch != nil {
+			digest = ""
 		}
 	}
-	if launch != nil && cached == "" {
-		cached = filepath.Join(base, rootfsDir)
+	if launch == nil && fetchErr != nil {
+		return bootSource{}, fetchErr
 	}
 	if launch == nil {
+		if digest != "" {
+			image = repository(image) + "@" + digest
+		}
 		if launch, err = s.launchFromRegistry(image); err != nil {
-			return "", nil, err
+			return bootSource{}, err
 		}
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a tree with no launch beside it is never handed to smolvm, however it came to be there — the registry reference is used instead, which needs no cache and still boots. Falling back to such a tree would produce the very failure the launch exists to prevent, and silently, since a machine given one starts and merely runs nothing.
@@ -485,19 +474,22 @@ func (s *Server) imageSource(id, image string) (string, *ImageLaunch, error) {
 			image = cached
 		}
 	}
-	return image, launch, nil
+	return bootSource{port: port, image: image, launch: launch, digest: digest}, nil
 }
 
-func (s *Server) boot(id string, spec MachineSpec, port int, image string, launch *ImageLaunch) error {
+func (s *Server) boot(id string, spec MachineSpec, source bootSource) error {
+	if err := s.recordDigest(id, source.digest); err != nil {
+		return err
+	}
 	dir, err := s.machineDir(id)
 	if err != nil {
 		return err
 	}
 	s.forgetState(id)
-	if err := s.Runtime.Create(id, spec, image, port+loopbackOffset, filepath.Join(dir, shareDir), launch); err != nil {
+	if err := s.Runtime.Create(id, spec, source.image, source.port+loopbackOffset, filepath.Join(dir, shareDir), source.launch); err != nil {
 		return err
 	}
-	if err := s.forward(id, port); err != nil {
+	if err := s.forward(id, source.port); err != nil {
 		return err
 	}
 	s.markStarting(id)
@@ -573,7 +565,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string) error {
 	if err := s.claim(tmp, cached, forMachine); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(cached), cached, s.ImageBudget)
+	s.evictImages(s.ImageDir, cached, s.ImageBudget)
 	return nil
 }
 
@@ -739,6 +731,9 @@ func (s *Server) imagesInUse(except string) map[string]bool {
 		if id == except {
 			continue
 		}
+		if digest := s.recordedDigest(id); digest != "" {
+			inUse[s.digestPath(digest)] = true
+		}
 		spec := s.readSpec(id)
 		if spec == nil || spec.Image == "" {
 			continue
@@ -765,7 +760,9 @@ func (s *Server) publishHolders() {
 	}
 	names := make([]string, 0, len(held))
 	for path := range held {
-		names = append(names, filepath.Base(path))
+		if name, err := filepath.Rel(s.ImageDir, path); err == nil && !strings.HasPrefix(name, "..") {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	path := filepath.Join(dir, s.RunnerID)
@@ -838,6 +835,8 @@ func prunePartialUnpacks(dir string) {
 
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	prunePartialUnpacks(dir)
+	prunePartialUnpacks(filepath.Join(dir, digestRoot))
+	defer pruneRefs(dir)
 	if budget <= 0 {
 		return
 	}
@@ -874,6 +873,17 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		default:
 			continue
 		}
+		used += size
+		all = append(all, archive{path, size, info.ModTime()})
+	}
+	digests, _ := os.ReadDir(filepath.Join(dir, digestRoot))
+	for _, e := range digests {
+		info, err := e.Info()
+		if err != nil || !e.IsDir() || !digestEntry.MatchString(e.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, digestRoot, e.Name())
+		size := dirSize(path)
 		used += size
 		all = append(all, archive{path, size, info.ModTime()})
 	}
