@@ -14,6 +14,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  onceState,
   precheckSchema,
   quietWindowSchema,
   type SchedulesService,
@@ -727,10 +728,12 @@ export function createMcpSession(
 
   server.tool(
     "list_schedules",
-    "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
+    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
     {},
     async () => {
-      const list = await schedules.list(agentId);
+      const list = (await schedules.list(agentId)).map((s) =>
+        s.spec.type === "once" ? { ...s, state: onceState(s.status) } : s,
+      );
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(list, null, 2) },
@@ -741,7 +744,7 @@ export function createMcpSession(
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
+    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. For work that should happen exactly once — a check-back, a retry, a hand-off to a fresh session — use `schedule_once` instead. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
     {
       name: z
         .string()
@@ -875,6 +878,68 @@ export function createMcpSession(
   );
 
   server.tool(
+    "schedule_once",
+    "Run a task EXACTLY ONCE on this agent, in a fresh session of its own: at a given local time, or immediately when `at` is omitted. PREFER THIS over `create_schedule` for anything that should happen once — checking back on something still in flight, retrying after a transient failure, handing a task to a fresh session now — so no recurring schedule is left behind to delete. The moment is always absolute: work out the local date and time from the current time yourself, then check the resolved instant this tool returns. It shows up in the host UI as a one-time task, and the user can cancel it there (or you can, with `delete_schedule`). The number of one-time schedules you may hold and create per hour is limited.",
+    {
+      name: z
+        .string()
+        .min(1)
+        .describe("Human-readable name shown in the host UI"),
+      task: z
+        .string()
+        .min(1)
+        .describe("Prompt the new session will receive when it runs"),
+      at: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+        .optional()
+        .describe(
+          "Local wall-clock time in `timezone`, as YYYY-MM-DDTHH:mm, e.g. '2026-10-05T08:30'. Omit to run immediately.",
+        ),
+      timezone: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "IANA timezone `at` is expressed in, e.g. 'Europe/Prague'. Required with `at`.",
+        ),
+    },
+    async ({ name, task, at, timezone }) => {
+      if (at !== undefined && !timezone)
+        return errorResult("`at` requires `timezone`.");
+      const zone = timezone ?? "UTC";
+      try {
+        const sched = await schedules.createOnce(
+          { name, agentId, task, timezone: zone, ...(at ? { at } : {}) },
+          "agent",
+        );
+        const fireAt =
+          sched.spec.type === "once" ? sched.spec.at : sched.status?.nextRun;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  id: sched.id,
+                  name: sched.name,
+                  fireAt,
+                  fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
+                  timezone: zone,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
     "toggle_schedule",
     "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
     { id: z.string().min(1) },
@@ -993,6 +1058,20 @@ export function createMcpSession(
   });
 
   return { transport, server };
+}
+
+function localTime(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const f = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${f.year}-${f.month}-${f.day}T${f.hour}:${f.minute}`;
 }
 
 export interface MountMcpDeps {

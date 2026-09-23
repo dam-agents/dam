@@ -4,6 +4,7 @@ import type { Redis } from "ioredis";
 import type { SchedulesService } from "api-server-api";
 import { OnceResult } from "api-server-api";
 import { emit, EventType } from "../../events.js";
+import type { AgentOnceLimits } from "./services/schedules-service.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { AgentActivityStamp } from "../agents/index.js";
 import {
@@ -26,18 +27,24 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
 
 const ONCE_RETENTION_DAYS = 30;
+const DEFAULT_AGENT_ONCE_LIMITS: AgentOnceLimits = {
+  maxOpen: 20,
+  maxPerHour: 30,
+};
 
 export interface SchedulesBoot {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runner: SchedulerRunner;
   worker: RunningWorker;
+  agentOnceLimits: AgentOnceLimits;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
 
 export interface ComposeSchedulesAtBootOpts {
   db: Db;
+  agentOnceLimits?: AgentOnceLimits;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
@@ -82,6 +89,7 @@ export function composeSchedulesAtBoot(
     queue,
     runner,
     worker,
+    agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
     async retentionTick() {
       const pruned = await repo.deleteFinishedOnceOlderThan(
         ONCE_RETENTION_DAYS,
@@ -134,6 +142,7 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
       runner: boot.runner,
       owner,
       agentBinding: opts.agentBinding,
+      agentOnceLimits: boot.agentOnceLimits,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),
     isOwnedSchedule: async (scheduleId) =>

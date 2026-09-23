@@ -8,7 +8,7 @@ import type {
   ScheduleUpdateOnceInput,
   ScheduleUpdateRRuleInput,
 } from "api-server-api";
-import { SPEC_VERSION } from "api-server-api";
+import { OnceResult, SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { SchedulerRunner } from "./scheduler-runner.js";
 import {
@@ -20,6 +20,13 @@ import {
 import { resolveOnceMoment } from "../domain/once.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
+
+export interface AgentOnceLimits {
+  maxOpen: number;
+  maxPerHour: number;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
 
 function badRequest(message: string): TRPCError {
   return new TRPCError({ code: "BAD_REQUEST", message });
@@ -54,6 +61,7 @@ export function createSchedulesService(deps: {
   owner: string;
   agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
+  agentOnceLimits?: AgentOnceLimits;
   now?: () => Date;
 }): SchedulesService {
   const now = deps.now ?? (() => new Date());
@@ -63,6 +71,26 @@ export function createSchedulesService(deps: {
     const ok = await deps.agentExists(agentId);
     if (!ok)
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+  }
+
+  async function ensureAgentWithinLimits(agentId: string): Promise<void> {
+    const limits = deps.agentOnceLimits;
+    if (!limits) return;
+    const { open, recent } = await deps.repo.countAgentOnce(
+      agentId,
+      OnceResult.Delivering,
+      new Date(now().getTime() - HOUR_MS),
+    );
+    if (open >= limits.maxOpen)
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `this agent already has ${open} one-time schedules waiting to run (limit ${limits.maxOpen}); delete one or let them fire first — a user can still create one-time tasks in the UI`,
+      });
+    if (recent >= limits.maxPerHour)
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `this agent created ${recent} one-time schedules in the last hour (limit ${limits.maxPerHour}); try again later — a user can still create one-time tasks in the UI`,
+      });
   }
 
   return {
@@ -173,6 +201,7 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
+      if (createdBy === "agent") await ensureAgentWithinLimits(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "once",

@@ -967,6 +967,10 @@ export async function bootstrap() {
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    agentOnceLimits: {
+      maxOpen: config.onceScheduleAgentMaxOpen,
+      maxPerHour: config.onceScheduleAgentMaxPerHour,
+    },
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),

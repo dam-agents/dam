@@ -390,6 +390,10 @@ spec:
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: ACP_TURN_STALL_PROBE_SECONDS
               value: {{ .Values.apiServer.acpTurnStallProbeSeconds | quote }}
+            - name: ONCE_SCHEDULE_AGENT_MAX_OPEN
+              value: {{ .Values.apiServer.oneTimeSchedules.agentMaxOpen | quote }}
+            - name: ONCE_SCHEDULE_AGENT_MAX_PER_HOUR
+              value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}

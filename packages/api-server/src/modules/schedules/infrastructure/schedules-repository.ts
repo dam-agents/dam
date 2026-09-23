@@ -67,6 +67,11 @@ export interface SchedulesRepository {
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
   replaceResult(id: string, expected: string, next: string): Promise<boolean>;
+  countAgentOnce(
+    agentId: string,
+    openResult: string,
+    createdSince: Date,
+  ): Promise<{ open: number; recent: number }>;
   deleteFinishedOnceOlderThan(
     days: number,
     keepResult: string,
@@ -331,6 +336,26 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           agentId: schedulesTable.agentId,
           owner: schedulesTable.owner,
         });
+    },
+
+    async countAgentOnce(agentId, openResult, createdSince) {
+      const rows = await db
+        .select({
+          open: sql<number>`count(*) filter (where ${schedulesTable.lastFiredResult} is null or ${schedulesTable.lastFiredResult} = ${openResult})`,
+          recent: sql<number>`count(*) filter (where ${schedulesTable.createdAt} > ${createdSince.toISOString()}::timestamptz)`,
+        })
+        .from(schedulesTable)
+        .where(
+          and(
+            eq(schedulesTable.agentId, agentId),
+            sql`${schedulesTable.spec}->>'type' = 'once'`,
+            sql`${schedulesTable.spec}->>'createdBy' = 'agent'`,
+          ),
+        );
+      return {
+        open: Number(rows[0]?.open ?? 0),
+        recent: Number(rows[0]?.recent ?? 0),
+      };
     },
 
     async replaceResult(id, expected, next): Promise<boolean> {

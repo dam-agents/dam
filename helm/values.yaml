@@ -978,6 +978,15 @@ apiServer:
   # minutes.
   acpTurnStallProbeSeconds: 1800
 
+  # -- Bounds on the one-time schedules an agent creates for itself, so an
+  # agent that keeps scheduling itself cannot run turns without end. Users
+  # are not bound by these.
+  oneTimeSchedules:
+    # -- Most not-yet-delivered one-time schedules an agent may hold.
+    agentMaxOpen: 20
+    # -- Most one-time schedules an agent may create in a sliding hour.
+    agentMaxPerHour: 30
+
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
   # the api-server proxy boundary (rejects oversized Content-Length AND
   # destroys the upstream pipe when streamed bytes pass the cap). The
