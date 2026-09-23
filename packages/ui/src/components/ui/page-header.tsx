@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
   title: ReactNode;
+  leading?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   adornment?: ReactNode;
@@ -12,6 +13,7 @@ interface PageHeaderProps {
 
 export function PageHeader({
   title,
+  leading,
   description,
   actions,
   adornment,
@@ -22,6 +24,7 @@ export function PageHeader({
       <div className="flex flex-col @lg:flex-row @lg:flex-wrap @lg:items-center @lg:justify-between @lg:gap-x-4">
         {}
         <div className="order-1 flex min-h-10 min-w-0 items-center gap-3">
+          {leading}
           <h1
             title={typeof title === "string" ? title : undefined}
             className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"
