@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is stopped and started again, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; the image and egress allow-list are fixed at create, so a change to either is reported and the rest of the spec still applies; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port; a machine is admitted only when the runner has the memory for it, and a guest the runner had to restart is counted so the platform can tell a reboot from a slow start.
+// TEST_OVERVIEW: the VM runner turns the controller's desired machine (shape + power state) into smolvm CLI calls and reports the machine back. What must hold: a bearer token gates every call; an absent machine that should run is created with its published port, CA mount, egress allowlist and env, then started; a stopped one is re-shaped in place and started; a running one that should stop is stopped; a change of size, env, CA or restart revision restarts the machine (stop, update, start) without recreating it; a machine that was healthy and then stops answering is stopped and started again, but only after a window no legitimate boot reaches, and every state change restarts that window so a slow wake is never cut short; a new image is a restart too, but smolvm cannot change a machine's image, so the machine is recreated on it around the same storage disk and keeps its port — the new image is fetched before the old machine stops, and a disk kept across a recreate is put back by whichever start comes next; the egress allow-list is fixed at create, so a change to it stops the machine and is reported; a start first recovers whatever an unclean stop left (smolvm reports such a machine unreachable, and its root overlay — throwaway by contract, only the storage disk persists — can come back dirty and make the boot exit at once, in which case it is discarded and the start retried; a clean overlay is kept because recreating one costs most of smolvm's ready window) and leaves no guest process behind when smolvm gives up on it; delete waits for the in-flight operation, removes the machine and frees its port; ports are unique on the node; only allowed sources may dial a published port; a machine is admitted only when the runner has the memory for it, and a guest the runner had to restart is counted so the platform can tell a reboot from a slow start.
 package vmrunner
 
 import (
@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,10 +38,14 @@ case "$2" in
   start) [ -n "$FAKE_START_SLEEP" ] && sleep "$FAKE_START_SLEEP"
     [ -n "$FAKE_CONSOLE" ] && cat "$FAKE_CONSOLE_SRC" >> "$FAKE_CONSOLE"
     if [ -n "$FAKE_START_FAIL_ONCE" ] && [ ! -f "$FAKE_STATE/.failed-once" ]; then touch "$FAKE_STATE/.failed-once"; echo "$FAKE_START_FAIL_ONCE" >&2; exit 1; fi
+    if [ -n "$FAKE_VMS" ]; then mkdir -p "$FAKE_VMS/vm-$4"; printf %s "$4" > "$FAKE_VMS/vm-$4/name"; fi
     echo running > "$FAKE_STATE/$4" ;;
   stop) [ -n "$FAKE_STOP_SLEEP" ] && sleep "$FAKE_STOP_SLEEP"
     echo stopped > "$FAKE_STATE/$4" ;;
-  delete) rm -f "$FAKE_STATE/$4" ;;
+  delete) rm -f "$FAKE_STATE/$4"
+    if [ -n "$FAKE_VMS" ]; then rm -rf "$FAKE_VMS/vm-$4"; fi ;;
+  data-dir) [ -f "$FAKE_STATE/$4" ] || { echo "machine '$4' not found" >&2; exit 1; }
+    echo "$FAKE_VMS/vm-$4" ;;
 esac
 `
 
@@ -589,23 +594,201 @@ func TestTheRootOverlayIsDiscardedInEitherForm(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, "storage.raw"), "the agent's disk was discarded with the overlay")
 }
 
-// TEST_SCENARIO: the controller re-sends a running machine's spec with a different image: the machine keeps the image it booted with, says so in its message, and the rest of the spec still applies.
-func TestCreateOnlyDriftIsReportedAndDoesNotBlockTheRest(t *testing.T) {
+// UNIT_BOUNDARY_DESCRIPTION: gives the fake smolvm data directories where the real one keeps them, under HOME, so the runner finds a machine's disks by the name file a start writes, and a delete takes the directory with it.
+func (h *harness) withDataDirs(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	vms := filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms")
+	require.NoError(t, os.MkdirAll(vms, 0o755))
+	t.Setenv("FAKE_VMS", vms)
+	return vms
+}
+
+// TEST_SCENARIO: a template upgrade moves a running vm agent to a new harness image. smolvm cannot change a machine's image, so the machine is stopped, deleted and created again on the new image, and it boots onto the storage disk it had — the agent's work is on that disk and nowhere else. The Service already maps to the machine's published port, so the port stays. The image cache must then hold the new image for this machine and not the old one, or eviction keeps what nobody runs and takes what somebody does.
+func TestANewImageRecreatesTheMachineAroundItsStorageDisk(t *testing.T) {
 	h := newHarness(t)
-	desired := spec(true)
-	_, err := h.client().Ensure(t.Context(), "m1", desired)
+	vms := h.withDataDirs(t)
+	h.node.RunnerID = "runner-a"
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	port := h.settle(t, "m1").Port
+	disk := filepath.Join(vms, "vm-m1", "storage.raw")
+	require.NoError(t, os.WriteFile(disk, []byte("work"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(vms, "vm-m1", "storage.formatted"), []byte("1"), 0o644))
+
+	before := len(h.calls())
+	upgraded := spec(true)
+	upgraded.Image = "quay.io/x/vm:2"
+	st, err := c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	assert.Equal(t, StateRestarting, st.State, "the agent is told it is restarting, as for any change that restarts it")
+	st = h.settle(t, "m1")
+
+	assert.Equal(t, StateRunning, st.State)
+	assert.Empty(t, st.Message)
+	assert.Equal(t, port, st.Port, "the recreated machine publishes where the agent's Service already points")
+	assert.Zero(t, st.Restarts, "an upgrade is not a guest that stopped answering")
+	calls := h.calls()[before:]
+	cached := digestTree(h.node, "quay.io/x/vm:2")
+	assert.Regexp(t, `(?s)machine stop -n m1\nmachine delete -n m1 -f\nmachine create -n m1 -I `+regexp.QuoteMeta(cached)+`/rootfs .*-p `+strconv.Itoa(port+loopbackOffset)+`:8080 .*-- /platform/init /entry serve\nmachine data-dir -n m1\nmachine start -n m1`, calls,
+		"stopped, deleted, created on the new image with that image's launch, and its disk put back before it starts")
+
+	work, err := os.ReadFile(disk)
+	require.NoError(t, err, "the recreated machine has its storage disk back")
+	assert.Equal(t, "work", string(work))
+	assert.FileExists(t, filepath.Join(vms, "vm-m1", "storage.formatted"), "and knows it is already formatted, or smolvm would format it again")
+	assert.NoDirExists(t, filepath.Join(os.Getenv("HOME"), keptDisksDir, "m1"), "nothing is left waiting")
+
+	held, err := os.ReadFile(filepath.Join(h.node.ImageDir, holdersDir, "runner-a"))
+	require.NoError(t, err)
+	assert.Contains(t, string(held), filepath.Base(cached), "the new image is held")
+	assert.NotContains(t, string(held), filepath.Base(digestTree(h.node, "quay.io/x/vm:1")), "and the old one released")
+	assert.Equal(t, "quay.io/x/vm:2", h.node.readSpec("m1").Image)
+
+	before = len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	assert.NotContains(t, h.calls()[before:], "machine", "once on the new image there is nothing left to do")
+}
+
+// TEST_SCENARIO: one spec moves the image and grows the disk. smolvm opens a kept qcow2 disk as it is and never grows it at start, so creating the new machine at the larger size would record a size the disk does not have. The machine is recreated at the size it has, and the next reconcile grows the disk with the in-place update, which is how every other resize happens.
+func TestANewImageAndALargerDiskAreAppliedOneAfterTheOther(t *testing.T) {
+	h := newHarness(t)
+	h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
 	require.NoError(t, err)
 	h.settle(t, "m1")
 
-	desired.Image = "quay.io/x/vm:2"
-	desired.MemoryMiB = 4096
-	_, err = h.client().Ensure(t.Context(), "m1", desired)
+	before := len(h.calls())
+	upgraded := spec(true)
+	upgraded.Image, upgraded.StorageGiB = "quay.io/x/vm:2", 8
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Regexp(t, `machine create -n m1 -I `+regexp.QuoteMeta(digestTree(h.node, "quay.io/x/vm:2"))+`/rootfs .*--storage 5 `, h.calls()[before:], "recreated at the size its disk has")
+	assert.Equal(t, 5, h.node.readSpec("m1").StorageGiB)
+
+	before = len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	calls := h.calls()[before:]
+	assert.Contains(t, calls, "machine update -n m1 --cpus 2 --mem 2048 --storage 8", "and then grown in place")
+	assert.NotContains(t, calls, "machine delete")
+	assert.Equal(t, 8, h.node.readSpec("m1").StorageGiB)
+}
+
+// TEST_SCENARIO: a recreate is interrupted after its delete, and the next spec also asks for a larger disk. The machine now reads as absent, so an ordinary create runs — and it boots onto the kept disk, which smolvm never grows at start when it is a qcow2. So that create is capped at the size the disk has, the stored spec says so, and the reconcile after it grows the disk in place like any other resize.
+func TestACreateOntoAKeptDiskAsksForNoMoreThanTheDiskHas(t *testing.T) {
+	h := newHarness(t)
+	vms := h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	kept := filepath.Join(os.Getenv("HOME"), keptDisksDir, "m1")
+	require.NoError(t, os.MkdirAll(kept, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "storage.qcow2"), []byte("work"), 0o644))
+	require.NoError(t, os.RemoveAll(filepath.Join(vms, "vm-m1")))
+	require.NoError(t, os.Remove(filepath.Join(h.state, "m1")))
+
+	grown := spec(true)
+	grown.Image, grown.StorageGiB = "quay.io/x/vm:2", 8
+	before := len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", grown)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Regexp(t, `machine create -n m1 .*--storage 5 `, h.calls()[before:], "created at the size of the disk it boots onto")
+	assert.Equal(t, 5, h.node.readSpec("m1").StorageGiB)
+	work, err := os.ReadFile(filepath.Join(vms, "vm-m1", "storage.qcow2"))
+	require.NoError(t, err)
+	assert.Equal(t, "work", string(work))
+
+	before = len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", grown)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Contains(t, h.calls()[before:], "--storage 8", "and then grown in place")
+	assert.Equal(t, 8, h.node.readSpec("m1").StorageGiB)
+}
+
+// TEST_SCENARIO: a hibernated agent is upgraded and later woken. Its machine is already stopped, so there is nothing to stop: the wake itself recreates the machine on the new image and starts it on the disk it had.
+func TestAStoppedMachineWakesOnItsNewImage(t *testing.T) {
+	h := newHarness(t)
+	vms := h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	_, err = c.Ensure(t.Context(), "m1", spec(false))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	require.NoError(t, os.WriteFile(filepath.Join(vms, "vm-m1", "storage.raw"), []byte("work"), 0o644))
+
+	before := len(h.calls())
+	upgraded := spec(true)
+	upgraded.Image = "quay.io/x/vm:2"
+	st, err := c.Ensure(t.Context(), "m1", upgraded)
+	require.NoError(t, err)
+	assert.Equal(t, StateStarting, st.State)
+	st = h.settle(t, "m1")
+
+	assert.Equal(t, StateRunning, st.State)
+	calls := h.calls()[before:]
+	assert.NotContains(t, calls, "machine stop -n m1\nmachine delete", "a stopped machine is not stopped again")
+	assert.Contains(t, calls, "machine create -n m1 -I "+filepath.Join(digestTree(h.node, "quay.io/x/vm:2"), "rootfs"))
+	work, err := os.ReadFile(filepath.Join(vms, "vm-m1", "storage.raw"))
+	require.NoError(t, err)
+	assert.Equal(t, "work", string(work))
+}
+
+// TEST_SCENARIO: the new image cannot be fetched. That is found out before the old machine is touched, so the agent keeps running on the image it has, and the reason it did not move is the image's.
+func TestANewImageThatCannotBeFetchedLeavesTheOldMachineRunning(t *testing.T) {
+	h := newHarness(t)
+	h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	crane := filepath.Join(t.TempDir(), "crane")
+	require.NoError(t, os.WriteFile(crane, []byte("#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n"), 0o755))
+	h.node.Crane = crane
+
+	before := len(h.calls())
+	upgraded := spec(true)
+	upgraded.Image = "quay.io/x/vm:2"
+	_, err = c.Ensure(t.Context(), "m1", upgraded)
 	require.NoError(t, err)
 	st := h.settle(t, "m1")
-	assert.Contains(t, st.Message, "fixed at create")
-	assert.Contains(t, st.Message, "quay.io/x/vm:2")
-	assert.Contains(t, h.calls(), "--mem 4096", "the mutable part of the spec is still applied")
-	assert.Equal(t, 4096, st.MemoryMiB)
+
+	assert.Equal(t, ReasonImageUnavailable, st.Reason)
+	assert.Equal(t, StateRunning, st.State, "the old machine is still there, running")
+	assert.NotContains(t, h.calls()[before:], "machine stop", "and was never stopped for an image that was not there")
+	assert.NotContains(t, h.calls()[before:], "machine delete")
+	assert.Equal(t, "quay.io/x/vm:1", h.node.readSpec("m1").Image)
+}
+
+// TEST_SCENARIO: the runner is killed after it deleted a machine for a new image and before the new machine started, so the storage disk is still kept aside. The next create must boot onto that disk and not seed an empty one — that would lose the agent's work without an error. A delete of the agent takes a kept disk with it, even when there is no machine left to delete.
+func TestADiskKeptAcrossAnInterruptedRecreateIsNotLost(t *testing.T) {
+	h := newHarness(t)
+	vms := h.withDataDirs(t)
+	kept := filepath.Join(os.Getenv("HOME"), keptDisksDir, "m1")
+	require.NoError(t, os.MkdirAll(kept, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "storage.raw"), []byte("work"), 0o644))
+
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	assert.Equal(t, StateRunning, h.settle(t, "m1").State)
+	work, err := os.ReadFile(filepath.Join(vms, "vm-m1", "storage.raw"))
+	require.NoError(t, err, "the start put the kept disk back")
+	assert.Equal(t, "work", string(work))
+	assert.NoDirExists(t, kept)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(os.Getenv("HOME"), keptDisksDir, "m2"), 0o700))
+	require.NoError(t, h.client().Delete(t.Context(), "m2"))
+	assert.NoDirExists(t, filepath.Join(os.Getenv("HOME"), keptDisksDir, "m2"), "a deleted agent leaves no disk behind")
 }
 
 // TEST_SCENARIO: a machine smolvm still calls running has stopped answering long after it was last healthy: the runner stops and starts it rather than reporting the same dead machine forever, and counts that revival so the platform can tell it from a machine that was merely slow to start.
