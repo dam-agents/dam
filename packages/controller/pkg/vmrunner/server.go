@@ -141,9 +141,7 @@ func (s *Server) Start() error {
 	}
 	for _, id := range ids {
 		if s.Runtime != nil {
-			if state, err := s.Runtime.State(id); err == nil {
-				s.observe(id, state)
-			}
+			s.observeAtStart(id)
 		}
 		if p := s.port(id); p != 0 {
 			if err := s.forward(id, p); err != nil {
@@ -1388,11 +1386,29 @@ func (s *Server) committed(except string) int {
 	return used
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be read when the runner starts is counted as running at its applied size. Leaving it out would count its memory as nothing, and admission would then let in a machine that does not fit, which is what admission exists to prevent. Counting it errs the other way, and a refusal rechecks it against smolvm before it is given.
+func (s *Server) observeAtStart(id string) {
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		slog.Warn("could not read a machine's state at start; counting it as running until a read succeeds", "machine", id, "error", err)
+		state = StateRunning
+	}
+	s.observe(id, state)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: asks smolvm about every machine this runner has, not only the ones it counts, so that a machine it holds as stopped but that is running after all is counted before a refusal is given.
 func (s *Server) recheckRunning(except string) {
+	all, _ := s.machineIDs()
 	s.mu.Lock()
-	ids := make([]string, 0, len(s.running))
+	ids := make([]string, 0, len(all)+len(s.running))
 	for other := range s.running {
 		if _, inFlight := s.committing[other]; other != except && !inFlight {
+			ids = append(ids, other)
+		}
+	}
+	for _, other := range all {
+		_, counted := s.running[other]
+		if _, inFlight := s.committing[other]; other != except && !inFlight && !counted {
 			ids = append(ids, other)
 		}
 	}

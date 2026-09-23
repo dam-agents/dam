@@ -29,6 +29,7 @@ const fakeSmolvm = `#!/bin/sh
 echo "$@" >> "$FAKE_LOG"
 case "$2" in
   status)
+    [ -n "$FAKE_STATUS_FAIL" ] && { echo "status unavailable" >&2; exit 1; }
     name=$4
     [ -f "$FAKE_STATE/$name" ] || { echo "machine '$name' not found" >&2; exit 1; }
     echo "{\"state\":\"$(cat "$FAKE_STATE/$name")\"}" ;;
@@ -1556,4 +1557,33 @@ func TestTemplatesExpandedByOnePodAreKeptForTheNext(t *testing.T) {
 	assert.NotEqual(t, resolved, next, "a new release's template was written where the old one's was")
 	body, _ = os.ReadFile(resolved)
 	assert.Equal(t, "release-1", string(body), "the old release's template changed under the disks backed by it")
+}
+
+// TEST_SCENARIO: a restarted runner cannot read a machine's state, which is how an orphan VMM left by an earlier runner process can look. Counting it as nothing would admit a machine the runner has no memory for, so it is counted at its applied size until a read says otherwise. A refusal then rechecks it, and a machine that turns out to be stopped stops holding the memory.
+func TestAMachineWhoseStateCannotBeReadAtStartStillCounts(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 2048, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+
+	h.node.Close()
+	t.Setenv("FAKE_STATUS_FAIL", "1")
+	restarted := &Server{
+		Token: h.node.Token, StateDir: h.node.StateDir, ImageDir: h.node.ImageDir, Runtime: &Smolvm{Bin: h.node.Runtime.Bin},
+		PortMin: h.node.PortMin, PortMax: h.node.PortMax, MemoryMiB: 2048, Init: h.node.Init,
+	}
+	require.NoError(t, restarted.Start())
+	t.Cleanup(restarted.Close)
+
+	second := spec(true)
+	second.MemoryMiB = 1024
+	assert.ErrorContains(t, restarted.roomFor("m2", second), "does not fit",
+		"a machine the runner could not read was counted as using no memory")
+
+	t.Setenv("FAKE_STATUS_FAIL", "")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+	assert.NoError(t, restarted.roomFor("m2", second), "once smolvm answers, a stopped machine stops holding its memory")
 }
