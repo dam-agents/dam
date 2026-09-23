@@ -14,15 +14,30 @@ import type {
 } from "../../types.js";
 import type { AcpUpdate } from "./types.js";
 
-const SYSTEM_TAG_RE = /<([a-z-]+)>[\s\S]*?<\/\1>/g;
-function stripUserTags(raw: string): string {
-  let result = raw;
-  let prev;
-  do {
-    prev = result;
-    result = result.replace(SYSTEM_TAG_RE, "");
-  } while (result !== prev);
-  return result.trim();
+const PLUMBING_TAGS = [
+  "how-to-respond",
+  "addressed-to-you",
+  "reading-along",
+  "network-access",
+  "attached-files",
+  "turn-undelivered",
+  "turn-interrupted",
+  "system-reminder",
+  "task-notification",
+  "command-name",
+  "command-message",
+  "command-args",
+  "local-command-stdout",
+  "local-command-stderr",
+  "local-command-caveat",
+  "user-prompt-submit-hook",
+];
+const PLUMBING_RE = new RegExp(
+  `<(${PLUMBING_TAGS.join("|")})>[\\s\\S]*?<\\/\\1>`,
+  "g",
+);
+function stripPlumbing(raw: string): string {
+  return raw.replace(PLUMBING_RE, "").trim();
 }
 
 function mapToolContent(
@@ -40,19 +55,36 @@ function mapToolContent(
     .filter((c) => c.text);
 }
 
+const EMBEDDED_RE =
+  /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)|<context>([\s\S]*?)<\/context>|<new-messages>([\s\S]*?)<\/new-messages>/g;
+const SPEAKER_LINE_RE = /^\[ts [^\]]+\] <@[^>]+>: |^\[@[^\]]+\] /;
+
+function steeredMessages(block: string): string {
+  const lines = block.split("\n");
+  const first = lines.findIndex((line) => SPEAKER_LINE_RE.test(line));
+  return (first === -1 ? block : lines.slice(first).join("\n")).trim();
+}
+
+function embeddedPart(m: RegExpMatchArray): MessagePart | null {
+  const [, ref, mention, mentionPath, history, steered] = m;
+  if (history !== undefined) return { kind: "history", text: history.trim() };
+  if (steered !== undefined) {
+    const text = steeredMessages(steered);
+    return text ? { kind: "text", text } : null;
+  }
+  return { kind: "file", name: ref ?? mention ?? mentionPath, mimeType: "" };
+}
+
 function parseUserText(text: string): MessagePart[] {
   const parts: MessagePart[] = [];
-  const regex =
-    /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)/g;
   let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
+  for (const m of text.matchAll(EMBEDDED_RE)) {
     if (m.index > last) {
       const seg = text.slice(last, m.index).trim();
       if (seg) parts.push({ kind: "text", text: seg });
     }
-    const name = m[1] ?? m[2] ?? m[3];
-    parts.push({ kind: "file", name, mimeType: "" });
+    const part = embeddedPart(m);
+    if (part) parts.push(part);
     last = m.index + m[0].length;
   }
   if (last < text.length) {
@@ -354,7 +386,7 @@ function handleUserChunk(
 
   let parts: MessagePart[] | null = null;
   if (u.content.type === "text") {
-    const txt = stripUserTags(u.content.text);
+    const txt = stripPlumbing(u.content.text);
     if (txt) parts = parseUserText(txt);
   } else if (u.content.type === "image") {
     parts = [

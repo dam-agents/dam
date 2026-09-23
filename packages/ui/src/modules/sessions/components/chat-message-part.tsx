@@ -4,6 +4,7 @@ import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
 import type { MessagePart, Role } from "../../../types.js";
+import { HistoryBlock } from "./history-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
@@ -37,6 +38,8 @@ export function ChatMessagePart({
       );
     case "thought":
       return <ThoughtBlock text={part.text} streaming={streaming} />;
+    case "history":
+      return <HistoryBlock text={part.text} />;
     case "image":
       return (
         <img

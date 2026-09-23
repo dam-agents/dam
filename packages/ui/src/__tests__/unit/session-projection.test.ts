@@ -290,6 +290,70 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[1].streaming).toBe(false);
   });
 
+  test("a message steered into a running turn shows as a user message", () => {
+    const start: Message[] = [
+      userMsg("u1", "go"),
+      assistantMsg("a1", "working", true),
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u2",
+      content: {
+        type: "text" as const,
+        text: [
+          "<new-messages>",
+          "2 more messages arrived in this conversation while you were working.",
+          "Several messages now share this turn, so pass the [ts …] tag.",
+          "[ts 1.1] <@U1>: first",
+          "second line",
+          "[ts 1.2] <@U2>: third",
+          "</new-messages>",
+        ].join("\n"),
+      },
+    });
+    expect(out).toHaveLength(3);
+    expect(out[1].streaming).toBe(false);
+    expect(out[2].parts).toEqual([
+      {
+        kind: "text",
+        text: "[ts 1.1] <@U1>: first\nsecond line\n[ts 1.2] <@U2>: third",
+      },
+    ]);
+  });
+
+  test("replayed channel history shows as a history part, the frame does not", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: [
+          "<how-to-respond>\nreply with the tool\n</how-to-respond>",
+          "<context>\nThe history below is the thread.\n\n[Mon] alice: hi\n</context>",
+          "what now?",
+        ].join("\n\n"),
+      },
+    });
+    expect(out[0].parts).toEqual([
+      {
+        kind: "history",
+        text: "The history below is the thread.\n\n[Mon] alice: hi",
+      },
+      { kind: "text", text: "what now?" },
+    ]);
+  });
+
+  test("a lowercase tag that is not platform plumbing stays visible", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: { type: "text" as const, text: "wrap it in <b-tag>x</b-tag>" },
+    });
+    expect(out[0].parts).toEqual([
+      { kind: "text", text: "wrap it in <b-tag>x</b-tag>" },
+    ]);
+  });
+
   test("user_message_chunk extracts binary file reference as file chip", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
