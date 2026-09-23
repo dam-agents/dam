@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -17,7 +17,7 @@ Three rules carry the security model:
    `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
-   *kernel* by a per-pair NetworkPolicy;
+   *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
    gateway pod's SPIFFE principal.
