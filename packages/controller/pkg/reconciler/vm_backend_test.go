@@ -871,13 +871,15 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 
 	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
-	require.Len(t, confined.Spec.Egress, 3, "DNS, the paired gateways, and what the install named")
+	require.Len(t, confined.Spec.Egress, 3, "DNS, the owner's gateways, and what the install named")
 
 	var sawGateway, sawCIDR bool
 	for _, rule := range confined.Spec.Egress {
 		for _, to := range rule.To {
 			if to.PodSelector != nil && to.PodSelector.MatchLabels[LabelRole] == RoleGateway {
 				sawGateway = true
+				assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
+					"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}
@@ -894,7 +896,7 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 
 // TEST_SCENARIO: an install names a narrow registry and, as the guidance says, subtracts the cluster's own ranges. Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so that pairing has to render as a policy the API server will actually accept.
 func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
-	rules := runnerEgress("test-agents",
+	rules := runnerEgress("test-agents", testOwner,
 		[]string{"203.0.113.0/24", "0.0.0.0/0"},
 		[]string{"10.128.0.0/14", "172.30.0.0/16"})
 
