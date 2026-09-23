@@ -19,6 +19,8 @@ import {
   hatLayout,
   MOUTH_Y,
   placeEyes,
+  STRAP_WIDTH,
+  strapLine,
   visorBox,
   wingPath,
   winkLayout,
@@ -64,6 +66,7 @@ const EAR_RADIUS = 10;
 const SOFT_CORNER = 4;
 const GRIN_SOFTEN = 3;
 const FIN_REACH = 10.5;
+const PATCH_GROWTH = 1.5;
 
 function softened(fill: string, width = SOFT_CORNER) {
   return {
@@ -341,22 +344,44 @@ function shades(t: AvatarTraits, head: HeadGeometry, sleeping: boolean) {
   }).join("");
 }
 
+function eyePatch(t: AvatarTraits, head: HeadGeometry): string {
+  if (t.patch === null) return "";
+  const covered = placeEyes(t, head)[t.patch];
+  const strap = strapLine(t, head, t.patch);
+  if (!covered || !strap) return "";
+  return (
+    el("line", {
+      ...strap,
+      stroke: AVATAR_INK,
+      "stroke-width": STRAP_WIDTH,
+      "stroke-linecap": "round",
+    }) +
+    el("circle", {
+      cx: covered.x,
+      cy: covered.y,
+      r: covered.r + PATCH_GROWTH,
+      fill: AVATAR_INK,
+    })
+  );
+}
+
 function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   switch (t.face) {
     case "blank":
       return "";
-    case "eyes":
-      if (sleeping)
-        return placeEyes(t, head)
-          .map((e) => closedEye(e.x, e.y - e.r * 0.3, e.r * 0.8, AVATAR_INK))
-          .join("");
-      return placeEyes(t, head)
-        .map(
-          (e) =>
-            el("circle", { cx: e.x, cy: e.y, r: e.r, fill: AVATAR_SCLERA }) +
-            (e.pupil > 0 ? pupil(e.x, e.y, e.r, e.pupil, e.look) : ""),
-        )
-        .join("");
+    case "eyes": {
+      const open = placeEyes(t, head).filter((_, i) => i !== t.patch);
+      const eyes = sleeping
+        ? open.map((e) =>
+            closedEye(e.x, e.y - e.r * 0.3, e.r * 0.8, AVATAR_INK),
+          )
+        : open.map(
+            (e) =>
+              el("circle", { cx: e.x, cy: e.y, r: e.r, fill: AVATAR_SCLERA }) +
+              (e.pupil > 0 ? pupil(e.x, e.y, e.r, e.pupil, e.look) : ""),
+          );
+      return eyes.join("") + eyePatch(t, head);
+    }
     case "visor":
     case "happy":
       return visor(t, head, sleeping);

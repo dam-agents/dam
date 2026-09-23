@@ -285,3 +285,56 @@ export function bugEyeCenter(
     head.top - AVATAR_GAP - 1 - r,
   ];
 }
+
+export const STRAP_WIDTH = 4;
+const STRAP_REACH = 80;
+const MOUTH_CLEARANCE = 10;
+const STRAP_TILTS = [45, 35, 55, 25].map((deg) => (deg * Math.PI) / 180);
+
+export interface Segment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+function distanceToLine(px: number, py: number, line: Segment): number {
+  const dx = line.x2 - line.x1;
+  const dy = line.y2 - line.y1;
+  return (
+    Math.abs(dy * (px - line.x1) - dx * (py - line.y1)) / Math.hypot(dx, dy)
+  );
+}
+
+export function strapLine(
+  traits: AvatarTraits,
+  head: HeadGeometry,
+  patch: number,
+): Segment | null {
+  const placed = placeEyes(traits, head);
+  const covered = placed[patch];
+  if (!covered) return null;
+  const others = placed.filter((_, i) => i !== patch);
+  const side = covered.x < AVATAR_CENTER ? -1 : 1;
+  for (const toward of [-side, side])
+    for (const tilt of STRAP_TILTS) {
+      const dx = toward * Math.sin(tilt) * STRAP_REACH;
+      const dy = -Math.cos(tilt) * STRAP_REACH;
+      const line = {
+        x1: covered.x - dx,
+        y1: covered.y - dy,
+        x2: covered.x + dx,
+        y2: covered.y + dy,
+      };
+      const clearOfEyes = others.every(
+        (e) =>
+          distanceToLine(e.x, e.y, line) >= e.r + STRAP_WIDTH / 2 + AVATAR_GAP,
+      );
+      const clearOfMouth =
+        traits.mouth === "none" ||
+        distanceToLine(AVATAR_CENTER, MOUTH_Y + 2.5, line) >=
+          MOUTH_CLEARANCE + STRAP_WIDTH / 2;
+      if (clearOfEyes && clearOfMouth) return line;
+    }
+  return null;
+}

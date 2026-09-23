@@ -15,6 +15,8 @@ import {
   MOUTH_Y,
   mouthFits,
   placeEyes,
+  STRAP_WIDTH,
+  strapLine,
   visorBox,
   wingPath,
   winkLayout,
@@ -296,5 +298,28 @@ describe("head outline sampling", () => {
   it("refuses a command it cannot trace, even right after a close", () => {
     expect(() => samplePath("M0,0 L10,0 Z A5,5 0 0 1 20,20")).toThrow(/A/);
     expect(() => samplePath("M0,0 L10,0 Z 5,5")).toThrow();
+  });
+
+  // TEST_SCENARIO: Now and then a two-eyed figure wears a pirate eyepatch over one eye. Its strap runs across the head clear of the uncovered eye, so the patch never hides the face it sits on.
+  it("puts an occasional eyepatch on a two-eyed face, its strap clear of the other eye", () => {
+    const patched = ALL.filter(({ traits }) => traits.patch !== null);
+    expect(patched.length).toBeGreaterThan(20);
+    expect(patched.length).toBeLessThan(ALL.length / 5);
+    for (const { name, traits } of patched) {
+      expect(traits.face, name).toBe("eyes");
+      expect(traits.eyes, name).toHaveLength(2);
+      const head = HEAD_GEOMETRY[traits.head];
+      const strap = strapLine(traits, head, traits.patch!)!;
+      expect(strap, name).not.toBeNull();
+      const other = placeEyes(traits, head)[1 - traits.patch!]!;
+      const dx = strap.x2 - strap.x1;
+      const dy = strap.y2 - strap.y1;
+      const distance =
+        Math.abs(dy * (other.x - strap.x1) - dx * (other.y - strap.y1)) /
+        Math.hypot(dx, dy);
+      expect(distance, name).toBeGreaterThanOrEqual(
+        other.r + STRAP_WIDTH / 2 + AVATAR_GAP,
+      );
+    }
   });
 });

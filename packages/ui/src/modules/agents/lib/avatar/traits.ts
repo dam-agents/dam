@@ -3,6 +3,7 @@ import {
   faceZone,
   mouthFits,
   placeEyes,
+  strapLine,
   visorBox,
   WINK_HEIGHT,
 } from "./layout.js";
@@ -169,6 +170,7 @@ export interface AvatarTraits {
   banding: Banding;
   bottom: Bottom;
   mouth: Mouth;
+  patch: number | null;
 }
 
 export type Random = () => number;
@@ -391,6 +393,16 @@ function pickColors(random: Random): AvatarColors {
   };
 }
 
+const PATCH_CHANCE = 0.15;
+const PATCHABLE: ReadonlySet<Derp> = new Set([
+  "side-eye",
+  "wonky",
+  "mismatched",
+  "uneven",
+  "googly",
+  "tiny",
+]);
+
 export function avatarTraits(seed: string): AvatarTraits {
   const random = mulberry32(hashSeed(seed));
   const colors = pickColors(random);
@@ -417,7 +429,7 @@ export function avatarTraits(seed: string): AvatarTraits {
     (face === "eyes" || face === "blank" || face === "dots") &&
     banding === "none" &&
     mouthFits(HEAD_GEOMETRY[head]);
-  return makeRoomForFace({
+  const traits = makeRoomForFace({
     colors,
     head,
     face,
@@ -429,7 +441,18 @@ export function avatarTraits(seed: string): AvatarTraits {
     banding,
     bottom,
     mouth: hasMouth ? pickedMouth : "none",
+    patch: null,
   });
+  const patchRoll = random();
+  const patchIndex = random() < 0.5 ? 0 : 1;
+  const patch =
+    patchRoll < PATCH_CHANCE && derp !== null && PATCHABLE.has(derp)
+      ? patchIndex
+      : null;
+  return patch !== null &&
+    strapLine(traits, HEAD_GEOMETRY[traits.head], patch) !== null
+    ? { ...traits, patch }
+    : traits;
 }
 
 const MIN_VISOR_HEIGHT = 14;
