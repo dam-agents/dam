@@ -24,10 +24,27 @@ impl Capacity<'_> {
         if self.limit_mib == 0 {
             return Ok(());
         }
+        let used = self.committed(Some(id), committing, running)?;
+        if used + i64::from(want_mib) + i64::from(self.reserve_mib) > i64::from(self.limit_mib) {
+            anyhow::bail!(
+                "this machine's {want_mib} MiB does not fit: the VM runner has {} MiB for machines and {used} MiB is already committed; stop another agent or give the runner more memory",
+                self.limit_mib - self.reserve_mib
+            );
+        }
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and the applied size of each machine that is running.
+    pub fn committed(
+        &self,
+        except: Option<&str>,
+        committing: &BTreeMap<String, i32>,
+        running: &dyn Fn(&str) -> bool,
+    ) -> anyhow::Result<i64> {
         let mut ids = machine_ids(self.state_dir)?;
         ids.extend(committing.keys().cloned());
         let mut used: i64 = 0;
-        for other in ids.iter().filter(|other| other.as_str() != id) {
+        for other in ids.iter().filter(|other| Some(other.as_str()) != except) {
             if let Some(mib) = committing.get(other) {
                 used += i64::from(*mib);
                 continue;
@@ -39,13 +56,7 @@ impl Capacity<'_> {
                 used += i64::from(applied.memory_mib);
             }
         }
-        if used + i64::from(want_mib) + i64::from(self.reserve_mib) > i64::from(self.limit_mib) {
-            anyhow::bail!(
-                "this machine's {want_mib} MiB does not fit: the VM runner has {} MiB for machines and {used} MiB is already committed; stop another agent or give the runner more memory",
-                self.limit_mib - self.reserve_mib
-            );
-        }
-        Ok(())
+        Ok(used)
     }
 }
 
