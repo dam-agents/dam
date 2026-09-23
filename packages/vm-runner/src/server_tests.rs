@@ -888,6 +888,8 @@ async fn a_private_image_is_reused_only_with_credentials_that_read_it() {
         exports(),
         before,
         "a readable private image was fetched again"
+    );
+}
 
 // TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
 #[tokio::test(flavor = "multi_thread")]
