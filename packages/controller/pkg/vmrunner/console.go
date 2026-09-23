@@ -87,7 +87,7 @@ func tailOf(path string, limit int64) string {
 	text = strings.Join(kept, "\n")
 	for int64(len(text)) > limit {
 		cut := strings.IndexByte(text, '\n')
-		if cut < 0 {
+		if cut < 0 || int64(cut) >= limit {
 			text = text[int64(len(text))-limit:]
 			break
 		}

@@ -58,11 +58,12 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
     while kept.len() > 1 && total > limit {
         total -= kept.remove(0).len() + 1;
     }
-    let mut tail = kept.join("\n");
-    if tail.len() > limit {
-        tail = tail[tail.len() - limit..].to_string();
+    let tail = kept.join("\n");
+    let mut start = tail.len().saturating_sub(limit);
+    while !tail.is_char_boundary(start) {
+        start += 1;
     }
-    printable(&tail)
+    printable(&tail[start..])
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted.
@@ -170,6 +171,22 @@ mod tests {
         }
         fs::write(&log, &text).unwrap();
         assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: the console holds whatever bytes the guest wrote. A last line longer than the limit with no newline in it, of bytes that are not UTF-8, must still give a tail: the cut lands on a character boundary, never inside one, and what follows the cut is the end of that line.
+    #[test]
+    fn a_long_last_line_of_bad_bytes_is_cut_at_a_character() {
+        let dir =
+            std::env::temp_dir().join(format!("vm-runner-console-bytes-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join(CONSOLE_LOG);
+        let mut bytes = b"guest panic: ".to_vec();
+        bytes.extend(std::iter::repeat_n(0xFF, 2000));
+        fs::write(&log, &bytes).unwrap();
+        let tail = tail_of(&log, 4096);
+        assert!(!tail.is_empty());
+        assert!(tail.ends_with('\u{FFFD}'), "{tail:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -70,6 +70,17 @@ func TestProbeLinesDoNotCrowdTheGuestOutOfTheTail(t *testing.T) {
 	assert.Equal(t, "kernel panic\n"+flatten, tailOf(path, consoleTailBytes))
 }
 
+// TEST_SCENARIO: a last line longer than the limit with no newline in it still gives a tail: the end of that line, as many bytes as the limit allows, and nothing before it.
+func TestALongLastLineKeepsItsEnd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), consoleLogName)
+	text := "first\n" + strings.Repeat("x", 6000) + "END"
+	require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+	tail := tailOf(path, consoleTailBytes)
+	assert.Len(t, tail, consoleTailBytes)
+	assert.True(t, strings.HasSuffix(tail, "END"))
+	assert.NotContains(t, tail, "first")
+}
+
 // TEST_SCENARIO: the runtime refuses to boot the machine. The failure the Agent is told carries the end of the console after it, with the env value the guest printed replaced, and the whole message stays well inside what a condition may hold.
 func TestABootFailureCarriesTheRedactedConsoleTail(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
