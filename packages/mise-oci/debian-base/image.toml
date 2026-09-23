@@ -1,0 +1,77 @@
+# The Debian agent base, as a `mise oci` config: what platform-base's Dockerfile
+# builds, minus its builder stage (the image task builds agent-runtime on the
+# host and copies it in). The image task stages this file as the build's
+# mise.toml and a harness's image.toml next to it as mise.<harness>.toml, so a
+# harness image is `mise oci build -E <harness>` over the two.
+#
+# Tool versions follow packages/platform-base/config.toml, except that every
+# tool is baked in: there are no lazy tools here.
+
+[settings]
+experimental = true
+minimum_release_age = "7d"
+npm.package_manager = "npm"
+python.compile = false
+
+[tools]
+# npm self-upgrade for the same bundled-dependency findings platform-base
+# upgrades it for; the hook edits the host install that becomes the node layer.
+node = { version = "24", postinstall = '"$MISE_TOOL_INSTALL_PATH/bin/npm" install -g npm@11.19.1' }
+pnpm = "12.3.4"
+jq = "latest"
+fd = "latest"
+rg = "latest"
+gh = "2.101.0"
+uv = "latest"
+python = { version = "3.12", postinstall = 'sh "{{config_root}}/python-postinstall.sh"' }
+"npm:@googleworkspace/cli" = "latest"
+kubectl = "latest"
+oc = "latest"
+# k3s and docker are not here: they come from host-tools.toml. A tool's bin
+# directory lands ahead of everything on the image PATH, and both need the
+# shims in /usr/local/share/tool-shims to run first.
+
+# Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
+# scripts included. Fedora's list from platform-base, in Debian names, plus the
+# NSS module the agent account needs.
+[bootstrap.packages]
+"apt:ca-certificates" = "latest"
+"apt:catatonit" = "latest"
+"apt:curl" = "latest"
+"apt:file" = "latest"
+"apt:gawk" = "latest"
+"apt:git" = "latest"
+"apt:iptables" = "latest"
+"apt:libnss-extrausers" = "latest"
+"apt:openssh-server" = "latest"
+"apt:openssl" = "latest"
+"apt:patch" = "latest"
+"apt:procps" = "latest"
+"apt:unzip" = "latest"
+"apt:xz-utils" = "latest"
+"apt:zip" = "latest"
+
+[oci]
+from = "docker.io/library/debian:trixie-slim"
+# The same MISE_DATA_DIR platform-base uses, so paths the shared scripts and
+# manifests name keep resolving.
+mount_point = "/usr/local/share/mise"
+user = "65532"
+workdir = "/app"
+entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/debian-entrypoint"]
+cmd = ["node", "dist/server.js"]
+
+[oci.env]
+# Replaces the base image's PATH rather than extending it, and the tool bin
+# directories are prepended to it at build time.
+PATH = "/usr/local/share/tool-shims:/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+HOME = "/home/agent"
+MISE_PROVENANCE_API_FAILURES_FATAL = "false"
+MISE_NODE_VERIFY = "false"
+SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+PYTHONPATH = "/usr/local/lib/platform-python"
+PORT = "8080"
+
+[oci.labels]
+"org.opencontainers.image.description" = "Experimental Debian agent base built with mise oci"

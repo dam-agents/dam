@@ -1,0 +1,15 @@
+# The Claude Code harness over debian-base: staged as mise.claude-code.toml and
+# merged into the base config with `-E claude-code`. Mirrors
+# packages/agents/claude-code/Dockerfile; stage.sh copies its files.
+
+[tools]
+"npm:@agentclientprotocol/claude-agent-acp" = "0.75.1"
+
+[oci.env]
+PLATFORM_HARNESS = "claude-code"
+CLAUDE_CODE_EXECUTABLE = "/usr/local/share/tool-bin/claude"
+DISABLE_TELEMETRY = "1"
+DISABLE_ERROR_REPORTING = "1"
+DISABLE_FEEDBACK_COMMAND = "1"
+DISABLE_FEEDBACK_SURVEY = "1"
+DISABLE_AUTOUPDATER = "1"

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Debian stand-in for Fedora's `update-ca-trust extract`, which the shared
+# agent-entrypoint calls once it has dropped the platform MITM CA into the
+# Fedora anchors directory. Debian has neither the command nor p11-kit's
+# `trust`, so the anchors go through update-ca-certificates instead, and the
+# merged bundle is also written where the shared script caches it from.
+set -eu
+
+[ "${1:-}" = extract ] || { echo "usage: update-ca-trust extract" >&2; exit 2; }
+
+anchors=/etc/pki/ca-trust/source/anchors
+local_dir=/usr/local/share/ca-certificates/platform
+extracted=/etc/pki/ca-trust/extracted/pem
+
+mkdir -p "$local_dir" "$extracted"
+rm -f "$local_dir"/*.crt
+for f in "$anchors"/*; do
+	[ -f "$f" ] || continue
+	name=${f##*/}
+	cp "$f" "$local_dir/${name%.*}.crt"
+done
+
+update-ca-certificates >/dev/null
+cp /etc/ssl/certs/ca-certificates.crt "$extracted/tls-ca-bundle.pem"

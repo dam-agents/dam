@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+#MISE description="Experimental: build a Debian agent image with `mise oci` instead of a Dockerfile (claude-code). Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-claude-code-debian:latest)"
+#MISE dir="{{vars.repo_root}}"
+set -euo pipefail
+
+pkg=packages/mise-oci
+image=claude-code
+from=""
+load=""
+for a in "$@"; do
+  case "$a" in
+    --from=*) from="${a#--from=}" ;;
+    --load) load=default ;;
+    --load=*) load="${a#--load=}" ;;
+    -*) echo "unknown option: $a" >&2; exit 2 ;;
+    *) image="$a" ;;
+  esac
+done
+[ -f "$pkg/$image/image.toml" ] || { echo "no such image: $image" >&2; exit 2; }
+[ "$load" = default ] && load="platform-$image-debian:latest"
+
+# `mise oci build` packages the host's own installs and runs the host's apt-get
+# for [bootstrap.packages], so the host must be Linux of the image's arch and
+# Debian-family.
+[ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
+command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
+
+# The postinstall hooks edit installs, and mise's layer cache is keyed by tool,
+# version, path and owner only, so both are keyed by the files that shape an
+# install: a changed hook starts from fresh installs instead of a stale layer.
+key="$(cat "$pkg/debian-base/image.toml" "$pkg/debian-base/host-tools.toml" "$pkg/debian-base/python-postinstall.sh" \
+  packages/platform-base/drop-pip.sh "$pkg/$image/image.toml" | sha256sum | cut -c1-16)"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
+work="$state/$key"
+stage="$work/stage"
+host_tools="$work/host-tools"
+runtime="$work/runtime"
+out="$state/out/$image"
+
+# agent-runtime and driver-sdk, built with the repo's own toolchain the way
+# platform-base's builder stage builds them.
+pnpm --filter agent-runtime exec tsup
+pnpm --filter driver-sdk exec tsup
+rm -rf "$runtime"
+npm_config_inject_workspace_packages=true \
+  pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+cp packages/agent-runtime/package.json "$runtime/package.json"
+(cd "$runtime" && pnpm pkg delete devDependencies)
+
+# From here on mise runs for the image, not for the repo: nothing of the task's
+# own mise environment may leak in, the staged configs sit outside the repo so
+# its root config is not a parent of theirs, and the ceiling stops the walk up.
+while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^MISE_')
+mkdir -p "$work"/{data,cache,config,state}
+export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+  MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
+  MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
+: > "$MISE_GLOBAL_CONFIG_FILE"
+
+rm -rf "$stage" "$host_tools"
+mkdir -p "$stage/rootfs" "$host_tools"
+cp "$pkg/debian-base/host-tools.toml" "$host_tools/mise.toml"
+cp "$pkg/debian-base/image.toml" "$stage/mise.toml"
+cp "$pkg/$image/image.toml" "$stage/mise.$image.toml"
+cp "$pkg/debian-base/python-postinstall.sh" packages/platform-base/drop-pip.sh "$stage/"
+mise trust -q "$host_tools" "$stage"
+mise -C "$host_tools" install
+mise -C "$stage" -E "$image" install
+
+# Rewrites a host install path to where the same file sits inside the image.
+in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
+export -f in_image
+export ROOTFS="$stage/rootfs" RUNTIME="$runtime" HOST_TOOLS="$host_tools" STAGE="$stage"
+"$pkg/debian-base/stage.sh"
+"$pkg/$image/stage.sh"
+
+copies=()
+for d in "$ROOTFS"/*; do copies+=(--copy "$d:/${d##*/}"); done
+rm -rf "$out"
+mise -C "$stage" -E "$image" oci build -o "$out" --owner 65532:0 \
+  ${from:+--from "$from"} "${copies[@]}"
+echo "OCI layout: $out"
+
+if [ -n "$load" ]; then
+  tar -C "$out" -cf "$work/image.tar" .
+  id="$(docker load -i "$work/image.tar" | sed -n 's/^Loaded image ID: //p')"
+  docker tag "$id" "$load"
+  rm -f "$work/image.tar"
+  echo "loaded into docker as $load"
+fi

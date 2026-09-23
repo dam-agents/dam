@@ -1,0 +1,8 @@
+# Settings for the mise an agent runs inside the image. `mise oci build` writes
+# /etc/mise/config.toml itself with the baked [tools] only, so anything else the
+# runtime mise needs rides in conf.d.
+[settings]
+experimental = true
+minimum_release_age = "7d"
+npm.package_manager = "npm"
+python.compile = false

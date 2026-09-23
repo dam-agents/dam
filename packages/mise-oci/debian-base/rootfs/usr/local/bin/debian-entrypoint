@@ -1,0 +1,32 @@
+#!/bin/sh
+# Wraps the shared agent-entrypoint for the Debian image, running once before
+# it and once after it: `debian-entrypoint CMD...` does the pre-boot fixes, then
+# hands itself to the shared script as `debian-entrypoint --after CMD...`, which
+# that script's final `exec "$@"` re-enters.
+set -eu
+
+bundle=/etc/ssl/certs/ca-certificates.crt
+extracted=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+
+if [ "${1:-}" = --after ]; then
+	shift
+	# On the vm Backend the shared script may restore the trust store from its
+	# cache instead of running update-ca-trust. That restores the extracted
+	# bundle only, so the system bundle Debian's clients read is synced to it.
+	if [ -s "$extracted" ] && ! cmp -s "$extracted" "$bundle"; then
+		cp "$extracted" "$bundle.new" && mv "$bundle.new" "$bundle"
+	fi
+	exec "$@"
+fi
+
+if [ "$(id -u)" = 0 ]; then
+	# The shared script remaps `agent` to uid 0 in /etc/passwd for a machine
+	# run as root; here the account lives in extrausers.
+	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /var/lib/extrausers/passwd
+	# Debian's sshd, run as root, refuses to start without its root-owned
+	# privilege-separation directory, and nothing in the image can ship one:
+	# every file a `mise oci` layer adds carries the one build-wide owner.
+	install -d -m 0755 /run/sshd
+fi
+
+exec /usr/local/bin/agent-entrypoint "$0" --after "$@"
