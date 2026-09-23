@@ -343,7 +343,7 @@ jobs:
           # build <name> <dockerfile> <context> <output> [extra args...]
           build() {
             local name=$1 file=$2 ctx=$3 out=$4; shift 4
-            docker buildx build --platform linux/amd64 -f "$file" \
+            docker buildx build --no-cache --platform linux/amd64 -f "$file" \
               --cache-from "type=registry,ref=$IMAGE_PREFIX/$name:buildcache-amd64" \
               --output "$out" --metadata-file "/tmp/meta/$name.json" "$@" "$ctx" \
               > "/tmp/logs/$name.log" 2>&1 &
