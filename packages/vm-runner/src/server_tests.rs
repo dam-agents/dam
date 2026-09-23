@@ -1164,7 +1164,7 @@ async fn a_failed_boot_carries_the_redacted_console() {
     assert!(!status.message.contains(PROXY));
 }
 
-// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it.
+// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it. A probe the guest misses after that is a health blip: no note, and no starting time.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guest_that_never_answers_is_explained() {
     let h = Harness::new("slow-boot");
@@ -1192,6 +1192,16 @@ async fn a_guest_that_never_answers_is_explained() {
     assert!(
         scrape.contains("platform_vm_runner_machine_ready_seconds_count{op=\"create\"} 1"),
         "{scrape}"
+    );
+    let down = h.server.status("m1");
+    assert!(!down.ready);
+    assert_eq!(
+        down.message, "",
+        "a missed probe after the answer is not a stuck boot"
+    );
+    assert_eq!(
+        down.starting_ms, 0,
+        "a machine that answered is no longer starting"
     );
 }
 

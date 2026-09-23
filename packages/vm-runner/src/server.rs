@@ -623,20 +623,18 @@ impl Server {
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. An answer also drops the start stamp: from then on the machine is up, and a probe it misses later is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
     fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
         let (op, note, started_at) = {
             let mut inner = locked(&self.inner);
             let op = inner.awaiting.get(id).copied();
+            let started_at = inner.started_at.get(id).copied();
             if status.ready {
                 inner.awaiting.remove(id);
                 inner.slow_boots.remove(id);
+                inner.started_at.remove(id);
             }
-            (
-                op,
-                inner.slow_boots.get(id).cloned(),
-                inner.started_at.get(id).copied(),
-            )
+            (op, inner.slow_boots.get(id).cloned(), started_at)
         };
         let Some(at) = started_at else {
             return;
