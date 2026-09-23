@@ -76,7 +76,7 @@ other than its paired gateway. Enforcement is layered:
 - **Per-pair NetworkPolicies** gate the agent → paired gateway hop
   at both ends. The agent pod opts out of ambient mesh, so the kernel
   sees real destination IPs rather than HBONE tunnelled to ztunnel.
-- **vm Backend.** Its gates live with the per-owner [VM runner](platform-topology.md#vm-runner).
+- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
   busy-probe). agent-runtime serves unauthenticated on the assumption

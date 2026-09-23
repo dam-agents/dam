@@ -1,10 +1,16 @@
-use std::path::PathBuf;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 use ipnet::IpNet;
+use vm_runner::embedded::{self, Smolvm};
+use vm_runner::runtime::MAX_IMAGE_BYTES;
+use vm_runner::server::{Config, Server};
+use vm_runner::{http, state, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name, with one deliberate exception below. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
-// UNIT_BOUNDARY_DESCRIPTION: --smolvm is the exception, and is gone. It named the CLI binary to fork; this runner drives smolvm as a library, so there is no binary to point at and a path here would configure nothing. Dropping a flag is only safe because the controller does not pass this one — it never has — so no Deployment sets an argument this binary would now reject.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -22,6 +28,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
+    #[arg(long, default_value = "/opt/smolvm/smolvm")]
+    smolvm: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image the shared cache does not hold; empty disables the fetch.
     #[arg(long, default_value = "crane")]
     crane: String,
@@ -79,6 +88,52 @@ fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Opt
     Some(args.next().map(PathBuf::from))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the Go runner's `--max-image-size`.
+fn configure_smolvm(launcher: &Path) {
+    let install = launcher.parent().unwrap_or(Path::new("/"));
+    let lib = install.join("lib");
+    std::env::set_var("SMOLVM_LIB_DIR", &lib);
+    let ld = match std::env::var_os("LD_LIBRARY_PATH") {
+        Some(existing) if !existing.is_empty() => {
+            let mut joined = lib.into_os_string();
+            joined.push(":");
+            joined.push(existing);
+            joined
+        }
+        _ => lib.into_os_string(),
+    };
+    std::env::set_var("LD_LIBRARY_PATH", ld);
+    let rootfs = install.join("agent-rootfs");
+    if rootfs.is_dir() && std::env::var_os("SMOLVM_AGENT_ROOTFS").is_none() {
+        std::env::set_var("SMOLVM_AGENT_ROOTFS", rootfs);
+    }
+    if std::env::var_os("SMOLVM_MAX_IMAGE_BYTES").is_none() {
+        std::env::set_var("SMOLVM_MAX_IMAGE_BYTES", MAX_IMAGE_BYTES.to_string());
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Go runner's listen address, `:4600` meaning every interface. Bound dual-stack where the pod has IPv6 and IPv4-only where it does not.
+fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
+    let listener = match listen.strip_prefix(':') {
+        Some(port) => {
+            let port: u16 = port
+                .parse()
+                .map_err(|e| anyhow::anyhow!("--listen {listen}: {e}"))?;
+            std::net::TcpListener::bind(("::", port))
+                .or_else(|_| std::net::TcpListener::bind(("0.0.0.0", port)))?
+        }
+        None => std::net::TcpListener::bind(listen.parse::<SocketAddr>()?)?,
+    };
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. Inside the thirty seconds kubelet allows before SIGKILL, so the runner's own close still gets a turn after it.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+
+// UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
+const REAP_EVERY: Duration = Duration::from_secs(1);
+
 fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
@@ -92,21 +147,147 @@ fn main() -> anyhow::Result<()> {
         args.memory_mib > 0,
         "--memory-mib is required: without it the runner admits machines against no limit at all"
     );
+    anyhow::ensure!(
+        args.port_min <= args.port_max,
+        "--port-min is above --port-max"
+    );
     let token = std::fs::read_to_string(&args.token_file)
         .map_err(|e| anyhow::anyhow!("reading {}: {e}", args.token_file.display()))?;
-    anyhow::ensure!(!token.trim().is_empty(), "the token file is empty");
+    let token = token.trim().to_string();
+    anyhow::ensure!(!token.is_empty(), "the token file is empty");
+    configure_smolvm(&args.smolvm);
+    prepare_host(&args)?;
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(serve(args, token))
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: the Go runner logs its resolved configuration as it begins serving, which is how an install tells a runner that read its flags from one that fell back to defaults. This one has read and validated the same flags, so it says that and no more — claiming to serve is the one thing this binary must not log.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device.
+fn prepare_host(args: &Args) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for device in ["/dev/kvm", "/dev/net/tun"] {
+        if let Err(e) = std::fs::set_permissions(device, std::fs::Permissions::from_mode(0o666)) {
+            tracing::warn!(path = device, error = %e, "device not writable for machine uids");
+        }
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    for dir in [&home, &args.state_dir, &args.image_dir] {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        std::fs::create_dir_all(dir)
+            .map_err(|e| anyhow::anyhow!("creating state dir {}: {e}", dir.display()))?;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
+            anyhow::anyhow!("opening state dir {} to machine uids: {e}", dir.display())
+        })?;
+    }
+    Ok(())
+}
+
+async fn serve(args: Args, token: String) -> anyhow::Result<()> {
+    let runtime = Arc::new(tokio::task::spawn_blocking(Smolvm::open).await??);
+    let server = Server::start(
+        Config {
+            state_dir: args.state_dir.clone(),
+            image_dir: args.image_dir.clone(),
+            runner_id: args.runner_id.clone(),
+            image_budget: args.image_budget_bytes,
+            crane: args.crane.clone(),
+            init: Some(args.platform_init.clone()),
+            ports: args.port_min..=args.port_max,
+            memory_mib: i32::try_from(args.memory_mib)?,
+            reserve_mib: i32::try_from(args.reserve_mib)?,
+            allow_from: args.allow_from.0.clone(),
+            pinned: Vec::new(),
+            listen: None,
+        },
+        runtime.clone(),
+    )?;
+    warn_template_backed(&args.state_dir);
+
+    let install = args
+        .smolvm
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    server.background(move |cancel| templates::warm(&install, &home, &cancel));
+    let reaper = runtime.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(REAP_EVERY);
+        loop {
+            tick.tick().await;
+            reaper.reap();
+        }
+    });
+
+    let listener = bind(&args.listen)?;
+    let app = http::router(server.clone(), &token).into_make_service();
+    let handle = axum_server::Handle::new();
     tracing::info!(
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
-        runner_id = %args.runner_id,
         tls = !args.tls_cert.is_empty(),
-        allow_from = args.allow_from.0.len(),
-        "vm-runner configuration accepted"
+        platform_init = %args.platform_init.display(),
+        "VM runner serving"
     );
-    anyhow::bail!("the machine API is not served yet: this binary is the scaffold for the Rust runner, not the runner")
+    let serving = {
+        let handle = handle.clone();
+        async move {
+            if args.tls_cert.is_empty() {
+                axum_server::from_tcp(listener)
+                    .handle(handle)
+                    .serve(app)
+                    .await
+            } else {
+                let _ = rustls::crypto::ring::default_provider().install_default();
+                let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                    &args.tls_cert,
+                    &args.tls_key,
+                )
+                .await?;
+                axum_server::from_tcp_rustls(listener, tls)
+                    .handle(handle)
+                    .serve(app)
+                    .await
+            }
+        }
+    };
+    tokio::pin!(serving);
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        result = &mut serving => {
+            server.close().await;
+            return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+        }
+        _ = term.recv() => tracing::info!(signal = "SIGTERM", "VM runner stopping"),
+        _ = tokio::signal::ctrl_c() => tracing::info!(signal = "SIGINT", "VM runner stopping"),
+    }
+    handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
+    if let Err(e) = serving.await {
+        tracing::warn!(error = %e, "the machine API did not shut down cleanly");
+    }
+    server.close().await;
+    tracing::info!("VM runner stopped");
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: names the machines whose storage disk is a qcow2 overlay over the shipped template, which the Go runner made for agents sized at exactly smolvm's default. Their home depends on the template file in this image; an upgrade that changes it changes the bytes under them. Reported so an operator can find them before an upgrade does.
+fn warn_template_backed(state_dir: &Path) {
+    let backed: Vec<String> = state::machine_ids(state_dir)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|id| embedded::template_backed_storage(id))
+        .collect();
+    if !backed.is_empty() {
+        tracing::warn!(machines = ?backed, "these machines' storage disks are overlays over the shipped disk template; a runner image with a different template would change the data under them");
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +341,44 @@ mod tests {
             None
         );
         assert_eq!(boot_config(args(&["vm-runner"]).into_iter()), None);
+    }
+
+    // TEST_SCENARIO: `:4600` is the Go runner's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
+    #[test]
+    fn the_go_runners_listen_address_binds_every_interface() {
+        let listener = bind(":0").unwrap();
+        assert!(listener.local_addr().unwrap().ip().is_unspecified());
+        assert!(bind(":http").is_err());
+        assert!(bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .ip()
+            .is_loopback());
+    }
+
+    // TEST_SCENARIO: the image's entrypoint names the smolvm release's launcher, and everything the VMM loads is found beside it — its libraries ahead of any already on the library path, and its guest agent's root filesystem — as the release's own launcher script finds them.
+    #[test]
+    fn the_smolvm_release_is_found_beside_its_launcher() {
+        let install =
+            std::env::temp_dir().join(format!("vm-runner-install-{}", std::process::id()));
+        std::fs::create_dir_all(install.join("agent-rootfs")).unwrap();
+        std::env::set_var("LD_LIBRARY_PATH", "/usr/lib/other");
+        std::env::remove_var("SMOLVM_AGENT_ROOTFS");
+        configure_smolvm(&install.join("smolvm"));
+        assert_eq!(
+            std::env::var_os("SMOLVM_LIB_DIR"),
+            Some(install.join("lib").into_os_string())
+        );
+        assert_eq!(
+            std::env::var("LD_LIBRARY_PATH").unwrap(),
+            format!("{}:/usr/lib/other", install.join("lib").display())
+        );
+        assert_eq!(
+            std::env::var_os("SMOLVM_AGENT_ROOTFS"),
+            Some(install.join("agent-rootfs").into_os_string())
+        );
+        let _ = std::fs::remove_dir_all(&install);
     }
 
     // TEST_SCENARIO: clap reads a Vec field as one value per occurrence, so a parser that returns the whole list against a Vec field builds, refuses a bad CIDR correctly, and then panics downcasting a good one. Parsing the flag through the real Args is what tells the two apart — the unit test above passes either way.

@@ -1,0 +1,32 @@
+name: CodeQL (actions)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/workflows/codeql-analyze.yml"
+      - ".github/workflows/codeql-actions.yml"
+  schedule:
+    - cron: "11 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-actions-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write
+    uses: $/.github/workflows/codeql-analyze.yml
+    with:
+      language: actions
+      build-mode: none
