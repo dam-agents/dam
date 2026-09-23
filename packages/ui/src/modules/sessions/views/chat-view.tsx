@@ -55,7 +55,6 @@ import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailab
 import {
   AgentAvatar,
   isAsleep,
-  STOPPED_AVATAR_CLASS,
 } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
@@ -577,9 +576,6 @@ export function ChatView() {
               size={40}
               sleeping={isAsleep(agentDisplay?.state)}
               stopped={agentView.stopRequested}
-              className={cn(
-                agentDisplay?.state !== "running" && STOPPED_AVATAR_CLASS,
-              )}
             />
           ) : (
             <span
