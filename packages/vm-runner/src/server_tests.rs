@@ -9,8 +9,9 @@ use crate::api::{
     REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
     STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
-use crate::cache::{archive_path, PARTIAL_PREFIX};
-use crate::imagecache::PRIVATE_FILE;
+use crate::cache::{archive_path, digest_path, PARTIAL_PREFIX};
+use crate::cacheapi;
+use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::ImageLaunch;
 use crate::plan::UNHEALTHY_RESTART;
 use std::path::Path;
@@ -149,14 +150,13 @@ impl Harness {
         let mut config = Config {
             state_dir: dir.join("machines"),
             image_dir: dir.join("images"),
-            runner_id: "runner-a".into(),
+            image_cache_socket: None,
             image_budget: 1 << 40,
             crane: crane.to_string_lossy().into_owned(),
             init: Some(init),
             ports: base..=base + 1,
             memory_mib: 1 << 20,
             reserve_mib: 0,
-            pinned: Vec::new(),
             listen: Some(Arc::new(move |port| match locked(&held).remove(&port) {
                 Some(listener) => Ok(listener),
                 None => TcpListener::bind(("127.0.0.1", port)),
@@ -173,24 +173,11 @@ impl Harness {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the digest entry a reference's machines boot from, by the digest it last resolved to here.
-    fn entry(&self, reference: &str) -> PathBuf {
-        let digest = self
-            .server
-            .cache
-            .known_digest(reference)
-            .unwrap_or_else(|| panic!("{reference} was never resolved"));
-        self.server.cache.digest_entry(&digest)
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: ages a reference's index record past the window it is trusted for, which is what time does between two creates an hour apart.
-    fn age_index(&self, reference: &str) {
-        fs::File::options()
-            .write(true)
-            .open(crate::cache::ref_path(&self.dir.join("images"), reference))
-            .unwrap()
-            .set_modified(SystemTime::now() - crate::cache::REF_FRESH - Duration::from_secs(1))
-            .unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: the cache entry a machine boots from, by the digest it recorded.
+    fn entry(&self, id: &str) -> PathBuf {
+        let digest = fs::read_to_string(self.dir.join("machines").join(id).join(IMAGE_DIGEST_FILE))
+            .unwrap_or_else(|e| panic!("{id} recorded no digest: {e}"));
+        digest_path(&self.dir.join("images"), digest.trim())
     }
 
     fn crane_log(&self, op: &str) -> usize {
@@ -340,10 +327,7 @@ async fn an_absent_machine_is_created_and_started() {
     assert_eq!(h.fake.calls(), vec!["create m1", "start m1"]);
 
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(
-        PathBuf::from(image),
-        h.entry("quay.io/x/vm:1").join(ROOTFS_DIR)
-    );
+    assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
     let launch = launch.unwrap();
     assert_eq!(launch.entrypoint, vec!["/entry"]);
     assert_eq!(launch.working_dir, "/app");
@@ -494,7 +478,7 @@ async fn a_new_image_is_applied_to_the_same_machine() {
     );
     assert_eq!(
         h.fake.last_update().image.map(PathBuf::from),
-        Some(h.entry("quay.io/x/vm:2").join(ROOTFS_DIR))
+        Some(h.entry("m1").join(ROOTFS_DIR))
     );
     assert_eq!(
         read_spec(&h.dir.join("machines"), "m1").unwrap().image,
@@ -722,14 +706,13 @@ async fn a_restarted_runner_republishes_its_ports() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            runner_id: "runner-a".into(),
+            image_cache_socket: None,
             image_budget: 1 << 40,
             crane: String::new(),
             init: None,
             ports: port..=port + 1,
             memory_mib: 1 << 20,
             reserve_mib: 0,
-            pinned: Vec::new(),
             listen: Some(listen),
         },
         h.fake.clone(),
@@ -757,7 +740,7 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
         after_first,
         "the second machine fetched the image again"
     );
-    let launch = read_launch(&h.entry("quay.io/x/vm:1")).unwrap();
+    let launch = read_launch(&h.entry("m2")).unwrap();
     assert_eq!(launch.unwrap().cmd, vec!["serve"]);
     assert!(
         !fs::read_dir(h.dir.join("images"))
@@ -768,9 +751,9 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory. The fetch fails there, and the staged archive boots instead — with the launch read out of the archive's own config.
+// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory, mounted read-only. The staged archive boots without the registry being asked anything, with the launch read out of the archive's own config.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_failed_fetch_boots_the_staged_archive() {
+async fn a_staged_archive_boots_without_asking_the_registry() {
     let h = Harness::new("archive");
     fs::write(
         h.dir.join("crane"),
@@ -786,6 +769,11 @@ async fn a_failed_fetch_boots_the_staged_archive() {
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), archive);
     assert_eq!(launch.unwrap().entrypoint, vec!["/from-archive"]);
+    assert_eq!(h.crane_calls(), 0);
+    assert!(
+        !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
+        "a machine booted from an archive holds no cache entry"
+    );
 }
 
 // TEST_SCENARIO: an image that cannot be read is reported as an image problem, which is what tells the person to fix the image rather than wait for a retry.
@@ -878,10 +866,10 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
     h.server.put("m2", other).unwrap();
     h.settle("m2").await;
     assert!(
-        h.entry("quay.io/x/vm:1").exists(),
+        h.entry("m1").exists(),
         "the running machine's image was evicted"
     );
-    assert!(h.entry("quay.io/x/other:1").exists());
+    assert!(h.entry("m2").exists());
 }
 
 fn write_archive(path: &Path, config: &str) {
@@ -897,63 +885,6 @@ fn write_archive(path: &Path, config: &str) {
         builder.append_data(&mut header, name, body).unwrap();
     }
     builder.finish().unwrap();
-}
-
-// TEST_SCENARIO: a tag moved in the registry. A machine created after the index stopped being trusted resolves the tag again and boots the new image, while a machine already running keeps the tree it has mounted: its recorded digest holds that tree, so eviction spares both, and a machine created inside the window boots from the index without asking the registry.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_moved_tag_boots_the_new_image_and_keeps_the_old_one_held() {
-    let h = Harness::with("moved-tag", |c| c.image_budget = 1);
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    let old = h.entry("quay.io/x/vm:1");
-
-    fs::write(h.dir.join("moved"), "v2").unwrap();
-    h.server.put("m2", spec(true)).unwrap();
-    h.settle("m2").await;
-    assert_eq!(
-        h.entry("quay.io/x/vm:1"),
-        old,
-        "a fresh index was asked again"
-    );
-
-    h.age_index("quay.io/x/vm:1");
-    h.server.delete("m2").unwrap();
-    h.server.put("m2", spec(true)).unwrap();
-    h.settle("m2").await;
-    let new = h.entry("quay.io/x/vm:1");
-    assert_ne!(new, old);
-    let (image, _) = locked(&h.fake.created).get("m2").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), new.join(ROOTFS_DIR));
-    assert!(
-        old.exists(),
-        "the tree a running machine has mounted was evicted"
-    );
-    let recorded = |id: &str| {
-        fs::read_to_string(h.dir.join("machines").join(id).join(IMAGE_DIGEST_FILE)).unwrap()
-    };
-    assert_eq!(h.server.cache.digest_entry(&recorded("m1")), old);
-    assert_eq!(h.server.cache.digest_entry(&recorded("m2")), new);
-    let claims = fs::read_to_string(h.dir.join("images/.holders/runner-a")).unwrap();
-    for held in [&old, &new] {
-        let name = held.strip_prefix(h.dir.join("images")).unwrap();
-        assert!(claims.lines().any(|l| Path::new(l) == name), "{claims}");
-    }
-}
-
-// TEST_SCENARIO: a registry that cannot say what a tag names does not stop a machine whose image is cached: it boots the digest the tag last resolved to, and fetches nothing.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_registry_outage_boots_the_digest_a_tag_last_resolved_to() {
-    let h = Harness::new("outage");
-    h.server.put("m1", spec(true)).unwrap();
-    h.settle("m1").await;
-    let entry = h.entry("quay.io/x/vm:1");
-    h.age_index("quay.io/x/vm:1");
-    fs::write(h.dir.join("registry-down"), "").unwrap();
-    h.server.put("m2", spec(true)).unwrap();
-    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
-    let (image, _) = locked(&h.fake.created).get("m2").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), entry.join(ROOTFS_DIR));
-    assert_eq!(h.crane_log("export"), 1);
 }
 
 // TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.
@@ -973,9 +904,8 @@ async fn a_pinned_reference_is_never_resolved() {
             .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
         "{fetched}"
     );
-    assert!(read_launch(&h.server.cache.digest_entry(&digest))
-        .unwrap()
-        .is_some());
+    assert_eq!(h.entry("m1"), digest_path(&h.dir.join("images"), &digest));
+    assert!(read_launch(&h.entry("m1")).unwrap().is_some());
 }
 
 const PRIVATE_CRANE: &str = r##"#!/bin/sh
@@ -1015,7 +945,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
     found
 }
 
-// TEST_SCENARIO: the controller sends a machine's registry credential on its spec so a private image can be fetched. It reaches crane alone, through a DOCKER_CONFIG directory only the runner can read that is gone once the fetch ends: never the stored spec, the share the guest mounts, or the runtime. An image an anonymous read cannot reach is marked private in the cache.
+// TEST_SCENARIO: the controller sends a machine's registry credential on its spec so a private image can be fetched. It reaches crane alone, through a DOCKER_CONFIG directory only the runner can read that is gone once the fetch ends: never the stored spec, the share the guest mounts, or the runtime.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_registry_credential_reaches_crane_alone() {
     let h = Harness::new("pull-auth");
@@ -1038,11 +968,6 @@ async fn a_registry_credential_reaches_crane_alone() {
             fields[2]
         );
     }
-    assert!(
-        log.lines()
-            .any(|l| l.starts_with("digest ") && l.ends_with(" {}")),
-        "the image was never probed anonymously: {log}"
-    );
     for file in files_under(&h.dir.join("machines")) {
         let body = fs::read(&file).unwrap_or_default();
         assert!(
@@ -1051,9 +976,6 @@ async fn a_registry_credential_reaches_crane_alone() {
             file.display()
         );
     }
-    let entry = h.entry("quay.io/x/vm:1");
-    assert!(entry.join(PRIVATE_FILE).exists());
-    assert!(!entry.join(ROOTFS_DIR).join(PRIVATE_FILE).exists());
 }
 
 const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
@@ -1079,72 +1001,6 @@ async fn a_stale_credential_does_not_hide_a_good_one_listed_after_it() {
     };
     assert_eq!(with("config"), [STALE, CREDENTIAL], "{log}");
     assert_eq!(with("export"), [CREDENTIAL], "{log}");
-}
-
-// TEST_SCENARIO: an anonymous probe that failed at fetch time — a registry briefly unreachable, a rate limit — marks a public image private. The next machine without credentials asks again, and an anonymous read that succeeds clears the marker, so the image goes back to booting from the cache with the registry down.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_public_image_marked_private_by_a_failed_probe_is_cleared() {
-    let h = Harness::new("private-heals");
-    h.server.put("m1", with_credential(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let marker = h.entry("quay.io/x/vm:1").join(PRIVATE_FILE);
-    fs::write(&marker, "").unwrap();
-
-    h.server.put("m2", spec(true)).unwrap();
-    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
-    assert!(
-        !marker.exists(),
-        "an anonymous read that succeeded left the image private"
-    );
-}
-
-// TEST_SCENARIO: an install with default pull Secrets sends every machine a credential, so no machine ever reuses a cached entry with none. If only a machine without credentials could clear a private mark that a flaky probe left on a public image, that mark would never clear on such an install. The anonymous read comes first for every machine, so a machine with credentials that finds the image public clears the mark too.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_machine_with_credentials_also_clears_a_mark_a_flaky_probe_left() {
-    let h = Harness::new("private-heals-credentialed");
-    h.server.put("m1", with_credential(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let marker = h.entry("quay.io/x/vm:1").join(PRIVATE_FILE);
-    fs::write(&marker, "").unwrap();
-
-    h.server.put("m2", with_credential(true)).unwrap();
-    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
-    assert!(
-        !marker.exists(),
-        "a machine that sent credentials proved the image public and left it private"
-    );
-}
-
-// TEST_SCENARIO: runners of every owner on a node share its cache, so an image one owner fetched with credentials is not another's to boot by naming it. A machine with no credential is refused the private entry as an image problem; one whose credential still reads the manifest boots the tree already there without fetching it again.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_private_image_is_reused_only_with_credentials_that_read_it() {
-    let h = Harness::new("private-reuse");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
-    h.server.put("m1", with_credential(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-
-    h.server.put("m2", spec(true)).unwrap();
-    let refused = h.settle("m2").await;
-    assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
-    assert!(refused.message.contains("private registry"), "{refused:?}");
-    assert!(!locked(&h.fake.created).contains_key("m2"));
-
-    h.server.delete("m2").unwrap();
-    let exports = || {
-        fs::read_to_string(h.dir.join("crane.log"))
-            .unwrap()
-            .lines()
-            .filter(|l| l.starts_with("export "))
-            .count()
-    };
-    let before = exports();
-    h.server.put("m2", with_credential(true)).unwrap();
-    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
-    assert_eq!(
-        exports(),
-        before,
-        "a readable private image was fetched again"
-    );
 }
 
 const PROXY: &str = "http://10.0.0.1:10000";
@@ -1239,4 +1095,88 @@ async fn a_scrape_counts_what_a_create_did() {
         !scrape.contains("m1") && !scrape.contains("quay.io"),
         "{scrape}"
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them.
+async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, CancellationToken) {
+    let cache = Arc::new(ImageCache::open(CacheConfig {
+        dir: h.dir.join("images"),
+        budget: 1,
+        crane: h.dir.join("crane").to_string_lossy().into_owned(),
+        pins: Vec::new(),
+        lifetime: CancellationToken::new(),
+        check_access: true,
+        ref_fresh: Duration::from_secs(600),
+        hold_lease: lease,
+        hold_grace: Duration::ZERO,
+    }));
+    let socket = h.dir.join("images/.cache.sock");
+    let stop = CancellationToken::new();
+    tokio::spawn({
+        let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
+        async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
+    });
+    while !socket.exists() {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    (cache, stop)
+}
+
+fn on_node_cache(c: &mut Config) {
+    c.image_cache_socket = Some(c.image_dir.join(".cache.sock"));
+    c.crane = String::new();
+}
+
+// TEST_SCENARIO: on a node cache the runner fetches nothing itself: it asks the node's service, which unpacks the image into the shared directory, and the machine boots that tree through the runner's own mount of it. The runner then holds the digest, so the service's eviction spares the tree for as long as the runner keeps renewing the hold — past the lease the resolve itself took.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_on_a_node_cache_boots_the_tree_the_service_unpacked() {
+    let h = Harness::with("node-cache", on_node_cache);
+    let (service, _stop) = node_service(&h, Duration::from_millis(300)).await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
+    assert!(h.entry("m1").join(ROOTFS_DIR).join("hello").exists());
+    assert_eq!(launch.unwrap().entrypoint, vec!["/entry"]);
+    assert_eq!(h.crane_log("export"), 1, "the service fetched it once");
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.hold_images())
+        .await
+        .unwrap();
+    service.evict(None);
+    assert!(
+        h.entry("m1").exists(),
+        "the service evicted a tree the runner holds"
+    );
+}
+
+// TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused as an image problem that says why, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() {
+    let h = Harness::with("node-cache-down", on_node_cache);
+    let (_service, stop) = node_service(&h, HOLD_LEASE).await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    stop.cancel();
+    while tokio::net::UnixStream::connect(h.dir.join("images/.cache.sock"))
+        .await
+        .is_ok()
+    {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert_eq!(h.entry("m2"), h.entry("m1"));
+
+    h.server.delete("m2").unwrap();
+    let mut other = spec(true);
+    other.image = "quay.io/x/other:1".into();
+    h.server.put("m3", other).unwrap();
+    let refused = h.settle("m3").await;
+    assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
+    assert!(refused.message.contains("cannot be reached"), "{refused:?}");
+    assert!(!locked(&h.fake.created).contains_key("m3"));
 }

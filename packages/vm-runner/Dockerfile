@@ -78,7 +78,8 @@ RUN set -eu; \
 # Drop this once a smolvm release ships a current crane.
 #
 # The same binary serves the runner: a machine may reach only its gateway, so the
-# guest cannot fetch its own image and the runner fetches it into the shared cache.
+# guest cannot fetch its own image: the runner fetches it into its own cache, or
+# the image cache service into a node cache.
 ARG CRANE_VERSION=v0.22.1
 RUN set -eu; \
     case "$(uname -m)" in \

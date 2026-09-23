@@ -410,6 +410,9 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
+const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
+
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -453,10 +456,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		}}},
 	}
+	imageCacheSocket := ""
 	switch {
 	case spec.ImageCacheHostPath != "":
 		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath})
+		imageCacheSocket = vmImageCacheSocket
+		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath, ReadOnly: true})
 		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageCacheHostPath, Type: &dir},
 		}})
@@ -497,7 +502,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--state-dir=" + vmRunnerMachinesPath,
 							fmt.Sprintf("--metrics-listen=:%d", vmRunnerMetricsPort),
 							"--image-dir=" + vmRunnerImagesPath,
-							"--runner-id=" + name,
+							"--image-cache-socket=" + imageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),

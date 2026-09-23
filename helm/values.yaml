@@ -310,21 +310,34 @@ virtualization:
     # covering it.
     egressExceptCidrs: []
   # A directory on each node that every runner scheduled there shares. A machine
-  # may reach only its gateway, so the guest cannot pull its own image; the
-  # runner fetches it here on a miss, and the next owner on that node boots the
-  # same image without touching the registry. Empty = each runner caches on its
-  # own claim, which means one pull per owner for the same few images.
+  # may reach only its gateway, so the guest cannot pull its own image; it is
+  # fetched and unpacked here once, and the next owner on that node boots the
+  # same tree without touching the registry. Empty = each runner caches on its
+  # own claim, as that claim's only writer, which means one pull per owner for
+  # the same few images.
   #
   # A host directory rather than a ReadWriteMany claim: RWX is the expensive
   # class to ask an install for, and it buys cluster-wide dedup where per-node
-  # is enough. The runner already holds /dev/kvm and runs as root, so a host
-  # directory is not a privilege it did not have — but on OpenShift it still
-  # needs `runner.scc`, since the chart's own agent SCC refuses hostPath.
+  # is enough. On OpenShift it needs `runner.scc`, since the chart's own agent
+  # SCC refuses hostPath.
   #
-  # Runners on one node evict from this directory independently, so each
-  # publishes which cached images its machines hold and reads the others'
-  # before deleting anything — otherwise one runner reclaiming space takes the
-  # root filesystem out from under another's running guest.
+  # Setting `hostPath` deploys the image cache service: a DaemonSet in
+  # `agentNamespace`, on the runners' nodeSelector and tolerations, that is the
+  # ONLY writer of this directory. Runners mount it read-only and ask the
+  # service, over a Unix socket inside it, for each image a machine boots; the
+  # service resolves the tag, fetches and unpacks it with the pull credentials
+  # the runner forwards for that machine, and evicts. So a guest that escapes
+  # into its runner cannot rewrite a tree another owner's machine boots. It is
+  # in the boot path: with it down, a runner boots only the trees its own
+  # machines already hold and refuses any other image as unavailable.
+  #
+  # Runners hold the trees their machines boot by naming them to the service
+  # every minute; eviction never takes a held tree. An entry fetched with
+  # credentials that an anonymous read cannot reach is served only to a runner
+  # whose forwarded credentials read the image's manifest, so naming a
+  # reference is not enough to borrow another owner's private image. The
+  # service keeps that knowledge in memory, so after it restarts each such
+  # entry is checked against the registry again.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte
@@ -333,72 +346,28 @@ virtualization:
   # with the machine disks, so a share of either would let the images eat
   # space that is not theirs. Keep it well under whichever it sits on.
   #
-  # `preload` is the per-node service that fills this directory before anyone
-  # needs it. A runner exists only once one of its owner's agents needs one,
-  # so without it nothing on the node can fetch an image ahead of the user
-  # waiting for it — and a release pins a new tag, so that wait is paid again
-  # on every node after every deploy. The service is a DaemonSet that fetches
-  # every enabled `harnessTemplates` image at deploy time and claims them the
-  # way a runner claims its machines' images, which is what stops eviction
-  # taking an image nobody is running yet — it is held by nobody and it is the
-  # oldest write, so it would otherwise go first. It also sweeps this
-  # directory on its own schedule: a runner tidies it only as a side effect of
-  # paying for a miss, and a host directory outlives every runner on the node,
-  # so images an owner who has gone left behind are reclaimed by nothing else.
-  #
-  # It only applies where `hostPath` above names a node directory: a runner's
-  # own claim is reachable by nothing but that runner, so there is nowhere
-  # else for the service to put anything.
-  #
-  # It is not in the boot path. With it down, a cached image still boots (the
-  # runner reads the tree from the directory) and a miss is still the runner's
-  # own to fetch — which is also the only path a custom agent image can take,
-  # since nothing can know about one at deploy time.
-  #
-  # Pull secrets: a runner fetches with the same Secrets an agent pod would
-  # list — the Agent's own `imagePullSecretRef` first, then
-  # `controller.agent.base.imagePullSecrets` — trying each in turn as the
-  # kubelet does, for that fetch only. They are never stored with the machine
-  # and never reach the guest. This service fetches with
-  # `controller.agent.base.imagePullSecrets` alone, which it reads through a
-  # Role limited to getting those Secrets by name in `agentNamespace`. So a
-  # private harness image is preloaded when the install default can read it.
-  # A per-template `imagePullSecret` is not used here yet, so an image that
-  # only such a Secret can read is still fetched on demand by the runner.
-  #
-  # An entry that an anonymous read could not have fetched is marked private.
-  # A runner boots a machine from a private entry only after that machine's
-  # own credentials read the image's manifest, so naming a reference is not
-  # enough to borrow another owner's private image from this shared
-  # directory. The check needs the registry to be reachable. Public entries
-  # skip it and still boot with the registry down.
-  #
-  # Size `budget` to hold the preloaded set with room to spare: those images
-  # are pinned, so a budget below their total leaves the cache permanently
-  # over it and saying so in its log.
+  # The service also preloads every enabled `harnessTemplates` image at
+  # deploy time and every `preloadInterval` after, and pins them against
+  # eviction, so the first machine on a node after a deploy does not wait out
+  # the fetch. It preloads with `controller.agent.base.imagePullSecrets`,
+  # mounted into it as a volume, so a private harness image is preloaded when
+  # the install default can read it; one only a per-template Secret reads is
+  # fetched when a machine first needs it. Size `budget` to hold the preloaded
+  # set with room to spare: pins are never evicted, so a budget below their
+  # total leaves the cache permanently over it and saying so in its log.
   imageCache:
     hostPath: ""
     budget: 50Gi
-    preload:
-      enabled: true
-      # How often claims are refreshed, a failed fetch retried and the
-      # directory swept. It is the lease on those claims, so it has to stay
-      # well inside the half hour a runner believes one for.
-      interval: 5m
-      # Placement. Empty falls back to `runner.nodeSelector` /
-      # `runner.tolerations` — preloading is worth nothing on a node no runner
-      # can land on.
-      nodeSelector: {}
-      tolerations: []
-      # Unpacking is I/O rather than CPU, and the tree is streamed rather than
-      # held, so this is small on purpose. Leave the CPU limit unset: a
-      # throttled unpack is the slow first boot this exists to remove.
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          memory: 1Gi
+    preloadInterval: 5m
+    # Unpacking is I/O rather than CPU, and the tree is streamed rather than
+    # held, so this is small on purpose. Leave the CPU limit unset: a
+    # throttled unpack is a slow first boot.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs

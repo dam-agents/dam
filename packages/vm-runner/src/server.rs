@@ -9,12 +9,13 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{MachineSpec, MachineStatus, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY};
-use crate::cache::{self, repository, REF_FRESH};
+use crate::cache::{self, pinned_digest, REF_FRESH};
+use crate::cacheapi::CacheClient;
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
-use crate::fetch::{self, failure_reason, unusable};
+use crate::fetch::{failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
-use crate::imagecache::ImageCache;
+use crate::imagecache::{CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE};
 use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{admissible, reads_ready, step, Action, Health};
@@ -34,18 +35,20 @@ pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
 pub use crate::imagecache::ROOTFS_DIR;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment.
+// UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
+pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
+
+// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. With `image_cache_socket` the image directory is the node's cache, read-only here, and every image is resolved by the node's service; without it the runner is the one writer of its own cache.
 pub struct Config {
     pub state_dir: PathBuf,
     pub image_dir: PathBuf,
-    pub runner_id: String,
+    pub image_cache_socket: Option<PathBuf>,
     pub image_budget: i64,
     pub crane: String,
     pub init: Option<PathBuf>,
     pub ports: RangeInclusive<u16>,
     pub memory_mib: i32,
     pub reserve_mib: i32,
-    pub pinned: Vec<String>,
     pub listen: Option<Arc<Listen>>,
 }
 
@@ -86,7 +89,7 @@ struct Machines {
 
 pub struct Server {
     config: Config,
-    cache: ImageCache,
+    images: Arc<dyn Images>,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
     machines: Mutex<Machines>,
@@ -130,17 +133,23 @@ impl Server {
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
-        let cache = ImageCache {
-            dir: config.image_dir.clone(),
-            owner: config.runner_id.clone(),
-            budget: config.image_budget,
-            crane: config.crane.clone(),
-            pinned: config.pinned.clone(),
-            lifetime: lifetime.clone(),
+        let images: Arc<dyn Images> = match &config.image_cache_socket {
+            Some(socket) => Arc::new(CacheClient::new(socket.clone())),
+            None => Arc::new(ImageCache::open(CacheConfig {
+                dir: config.image_dir.clone(),
+                budget: config.image_budget,
+                crane: config.crane.clone(),
+                pins: Vec::new(),
+                lifetime: lifetime.clone(),
+                check_access: false,
+                ref_fresh: REF_FRESH,
+                hold_lease: HOLD_LEASE,
+                hold_grace: Duration::ZERO,
+            })),
         };
         let server = Arc::new(Self {
             config,
-            cache,
+            images,
             runtime,
             forwarder,
             machines: Mutex::new(Machines::default()),
@@ -159,7 +168,21 @@ impl Server {
                 }
             }
         }
-        server.publish_holders();
+        server.hold_images();
+        let refreshing = Arc::downgrade(&server);
+        let lifetime = server.lifetime.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = lifetime.cancelled() => return,
+                    _ = tokio::time::sleep(HOLD_REFRESH) => {}
+                }
+                let Some(server) = refreshing.upgrade() else {
+                    return;
+                };
+                let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
+            }
+        });
         Ok(server)
     }
 
@@ -306,7 +329,6 @@ impl Server {
         }
         removed?;
         self.forwarder.unpublish(id);
-        self.publish_holders();
         Ok(())
     }
 
@@ -412,7 +434,6 @@ impl Server {
             Action::Create => self.create(id, &spec, &auths),
             Action::Start | Action::Restart { .. } => self.reshape(id, &spec, &auths, action),
         };
-        self.publish_holders();
         self.metrics
             .operation(action.label(), started.elapsed(), result.is_ok());
         let failure = result.err().map(|e| {
@@ -511,52 +532,69 @@ impl Server {
         write_spec(&self.config.state_dir, id, spec)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots. It is decided in order: the digest entry in the cache when its launch record is there, a fresh fetch into that entry, an archive an install with no registry staged in the image directory, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry.
     fn resolve(
         &self,
         spec: &MachineSpec,
         auths: &[String],
     ) -> anyhow::Result<(String, ImageLaunch, Option<String>)> {
-        let mut image = spec.image.clone();
-        if !is_image_ref(&image) || image.contains("..") {
+        let image = &spec.image;
+        if !is_image_ref(image) || image.contains("..") {
             anyhow::bail!("invalid image reference {image:?}");
         }
-        let mut digest = self.cache.resolve_digest(&image, REF_FRESH, auths);
-        let booted = match self.digest_image(&image, digest.as_deref(), auths) {
-            Ok(Some(found)) => Some(found),
-            fetched => {
-                let staged = self.staged_archive(&image)?;
-                if digest.is_none() {
-                    self.metrics.lookup(staged.is_some());
-                }
-                match (staged, fetched) {
-                    (Some(staged), fetched) => {
-                        if let Err(e) = fetched {
-                            tracing::warn!(image = %image, error = %format!("{e:#}"), "image cache: the digest entry could not be fetched, booting the staged archive");
-                        }
-                        digest = None;
-                        Some(staged)
-                    }
-                    (None, Err(e)) => return Err(e),
-                    (None, Ok(_)) => None,
-                }
-            }
-        };
-        let (cached, launch) = match booted {
-            Some((cached, launch)) => (Some(cached), launch),
-            None => {
-                if let Some(digest) = &digest {
-                    image = format!("{}@{digest}", repository(&image));
-                }
-                let launch =
-                    fetch::launch_from_registry(&self.config.crane, &image, auths, &self.lifetime)?;
-                (None, launch)
-            }
-        };
-        if let Some(cached) = cached.filter(|path| path.exists()) {
-            image = cached.to_string_lossy().into_owned();
+        if let Some((archive, launch)) = self.staged_archive(image)? {
+            self.metrics.lookup(true);
+            return Ok((archive.to_string_lossy().into_owned(), launch, None));
         }
-        Ok((image, launch, digest))
+        let lookup = self.images.resolve(image, auths);
+        if let Some(fetched) = &lookup.fetched {
+            self.metrics
+                .fetched(Duration::from_millis(fetched.ms), fetched.ok);
+            for bytes in &fetched.freed {
+                self.metrics.evicted(*bytes);
+            }
+            if let Some(used) = fetched.used {
+                self.metrics.cache_size(used);
+            }
+        }
+        let resolved = match lookup.resolved {
+            Ok(resolved) => resolved,
+            Err(e) if lookup.unreachable => {
+                let Some(held) = self.held_tree(image) else {
+                    return Err(e);
+                };
+                tracing::warn!(error = %format!("{e:#}"), digest = %held.digest, "image cache: the service cannot be reached, so this machine boots the tree another of this runner's machines holds");
+                held
+            }
+            Err(e) => return Err(e),
+        };
+        self.metrics.lookup(lookup.fetched.is_none());
+        let rootfs = cache::digest_path(&self.config.image_dir, &resolved.digest).join(ROOTFS_DIR);
+        Ok((
+            rootfs.to_string_lossy().into_owned(),
+            resolved.launch,
+            Some(resolved.digest),
+        ))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the tree one of this runner's machines already boots for this reference — the same reference, or the digest a pinned one names — when its launch record is still beside it.
+    fn held_tree(&self, image: &str) -> Option<Resolved> {
+        let held = pinned_digest(image)
+            .map(str::to_string)
+            .filter(|digest| self.held_digests().contains(digest));
+        let digest = held.or_else(|| {
+            state::machine_ids(&self.config.state_dir)
+                .ok()?
+                .iter()
+                .filter(|id| {
+                    read_spec(&self.config.state_dir, id).is_some_and(|s| s.image == image)
+                })
+                .find_map(|id| self.recorded_digest(id))
+        })?;
+        let launch = read_launch(&cache::digest_path(&self.config.image_dir, &digest))
+            .ok()
+            .flatten()?;
+        Some(Resolved { digest, launch })
     }
 
     fn start_machine(&self, id: &str, action: Action) -> anyhow::Result<()> {
@@ -673,42 +711,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the tree a machine of this digest boots, fetched into the cache if it is not there. None, with no error, means the cache cannot serve the create: no digest was known, or there is no crane to fetch with, and the caller tries a staged archive.
-    fn digest_image(
-        &self,
-        image: &str,
-        digest: Option<&str>,
-        auths: &[String],
-    ) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
-        let Some(digest) = digest else {
-            return Ok(None);
-        };
-        let entry = self.cache.digest_entry(digest);
-        let pinned = format!("{}@{digest}", repository(image));
-        let mut launch = read_launch(&entry)?;
-        if launch.is_some() {
-            self.cache.may_reuse(&pinned, &entry, auths)?;
-        }
-        self.metrics.lookup(launch.is_some());
-        if launch.is_none() && !self.config.crane.is_empty() {
-            let started = Instant::now();
-            let fetched = self
-                .cache
-                .fetch(&pinned, auths, &entry, &self.images_in_use());
-            self.metrics.fetched(started.elapsed(), fetched.is_ok());
-            let trim = fetched?;
-            for bytes in trim.freed {
-                self.metrics.evicted(bytes);
-            }
-            if let Some(used) = trim.used {
-                self.metrics.cache_size(used);
-            }
-            launch = read_launch(&entry)?;
-        }
-        Ok(launch.map(|launch| (entry.join(ROOTFS_DIR), launch)))
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so the digest entry can never be fetched there and this is what the machine boots.
+    // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
     fn staged_archive(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
         let archive = cache::archive_path(&self.config.image_dir, image);
         if !archive.exists() {
@@ -718,7 +721,7 @@ impl Server {
         Ok(Some((archive, launch)))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and publishes it: a machine that started with no record is one whose tree another runner may evict. With no digest the record is removed, because that machine boots from a staged archive or straight from the registry, and holds no cache entry.
+    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots from a staged archive and holds no cache entry.
     fn record_digest(&self, id: &str, digest: Option<&str>) -> anyhow::Result<()> {
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
@@ -731,7 +734,7 @@ impl Server {
             Some(digest) => {
                 crate::files::write(&path, digest.as_bytes(), 0o644)
                     .map_err(|e| anyhow::anyhow!("recording the image a machine boots: {e}"))?;
-                self.publish_holders();
+                self.hold_images();
                 Ok(())
             }
         }
@@ -744,18 +747,24 @@ impl Server {
         cache::is_digest(digest).then(|| digest.to_string())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the cache entries this runner's machines hold, read from their state on disk rather than tracked alongside them, because that state outlives the process that wrote it. A machine holds the digest entry it booted, by its record.
-    fn images_in_use(&self) -> BTreeSet<PathBuf> {
+    // UNIT_BOUNDARY_DESCRIPTION: the digests this runner's machines boot, read from their records on disk rather than tracked alongside them, because the records outlive the process that wrote them.
+    fn held_digests(&self) -> BTreeSet<String> {
         state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
             .filter_map(|id| self.recorded_digest(id))
-            .map(|digest| self.cache.digest_entry(&digest))
             .collect()
     }
 
-    pub fn publish_holders(&self) {
-        self.cache.publish(&self.images_in_use());
+    // UNIT_BOUNDARY_DESCRIPTION: holds every digest this runner's machines boot, so the cache's eviction spares their trees. It runs at start, after a machine records a new digest, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
+    pub fn hold_images(&self) {
+        let held = self.held_digests();
+        if held.is_empty() {
+            return;
+        }
+        if let Err(e) = self.images.hold(&held) {
+            tracing::warn!(error = %format!("{e:#}"), "image cache: cannot hold the images this runner's machines boot");
+        }
     }
 
     fn capacity(&self) -> Capacity<'_> {

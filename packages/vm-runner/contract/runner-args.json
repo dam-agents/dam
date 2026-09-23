@@ -6,7 +6,7 @@
   "--state-dir=/var/lib/platform/machines",
   "--metrics-listen=:4601",
   "--image-dir=/var/lib/platform/images",
-  "--runner-id=platform-vm-runner-391887cbcf922e19",
+  "--image-cache-socket=",
   "--image-budget-bytes=53687091200",
   "--memory-mib=$(RUNNER_MEMORY_MIB)",
   "--reserve-mib=512",

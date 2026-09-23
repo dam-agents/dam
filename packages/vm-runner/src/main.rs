@@ -21,19 +21,19 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images and local archives, shared by every runner on this node when the install gives them a host directory.
+    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the archives an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
     image_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: this runner's name among the runners sharing the image directory; empty keeps the cache private to this runner.
-    #[arg(long = "runner-id", default_value = "")]
-    runner_id: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket. Set, every image is resolved and fetched by that service and this runner only reads the image directory; empty makes this runner the one writer of its own cache.
+    #[arg(long = "image-cache-socket", default_value = "")]
+    image_cache_socket: String,
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image the shared cache does not hold; empty disables the fetch.
+    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image this runner's own cache does not hold; empty disables the fetch. Unused with a node cache, whose service fetches.
     #[arg(long, default_value = "crane")]
     crane: String,
     // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest: the platform-init package beside this one, linked statically because it runs against the agent image's libc and not this one's.
@@ -160,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         .block_on(serve(args, token))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     for device in ["/dev/kvm", "/dev/net/tun"] {
@@ -194,14 +194,14 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         Config {
             state_dir: args.state_dir.clone(),
             image_dir: args.image_dir.clone(),
-            runner_id: args.runner_id.clone(),
+            image_cache_socket: (!args.image_cache_socket.is_empty())
+                .then(|| PathBuf::from(&args.image_cache_socket)),
             image_budget: args.image_budget_bytes,
             crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
-            pinned: Vec::new(),
             listen: None,
         },
         runtime.clone(),

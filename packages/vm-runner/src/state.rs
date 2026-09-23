@@ -13,7 +13,7 @@ pub const SPEC_FILE: &str = "spec.json";
 // UNIT_BOUNDARY_DESCRIPTION: the published port, kept as a file rather than in memory because the allocator reads every machine's to find a free one, and a runner that forgot them would hand out a port another machine is already published on.
 pub const PORT_FILE: &str = "port";
 
-// UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so eviction reads this file to know which digest entry the machine holds.
+// UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so the runner reads this file to know which digest it holds against the cache's eviction, including after a restart.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
 // UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so a machine's state reads the same whatever umask the runner was started under.

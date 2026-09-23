@@ -8,10 +8,8 @@ use tokio_util::sync::CancellationToken;
 use crate::api::{REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
-use crate::launch::{launch_from_config, ImageLaunch};
-use crate::runtime::IMAGE_LAUNCH_UNKNOWN;
 
-// UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache.
+// UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache. Only the cache's one writer runs it.
 
 pub const IMAGE_UNUSABLE: &str = "the image cannot be run";
 
@@ -65,23 +63,6 @@ pub fn first_lines(out: &str) -> String {
         end -= 1;
     }
     format!("{}… (truncated)", &out[..end])
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, read from its registry without fetching a layer. This is the one source left for a machine that boots straight from a reference, and without it smolvm would launch the image's own entrypoint and leave the disk unmounted — so a runner that cannot fetch refuses the machine instead.
-pub fn launch_from_registry(
-    crane: &str,
-    reference: &str,
-    auths: &[String],
-    cancel: &CancellationToken,
-) -> anyhow::Result<ImageLaunch> {
-    if crane.is_empty() {
-        anyhow::bail!(
-            "{IMAGE_LAUNCH_UNKNOWN}: {reference} names no cached image and this runner cannot read one from the registry"
-        );
-    }
-    let (config, _) = read_config(crane, reference, auths, cancel)?;
-    launch_from_config(&config)
-        .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these docker configs the registry accepts, tried in the order a pod lists its pull Secrets: the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read anonymously. The config that worked is returned too, empty for a read without one, so the layers are fetched with the same credential. A credential that fails is never quoted.
@@ -150,7 +131,7 @@ pub const ANONYMOUS: &str = "{}";
 // UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget a tag resolution gets, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 
-// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is private and the check that lets a machine reuse one, get RESOLVE_TIMEOUT.
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is public and the check that lets a caller reuse one that is not, get RESOLVE_TIMEOUT.
 pub fn readable(crane: &str, reference: &str, auth: &str, cancel: &CancellationToken) -> bool {
     let Ok(credentials) = DockerConfig::new(auth) else {
         return false;
@@ -253,14 +234,5 @@ mod tests {
         let cut = first_lines(&long);
         assert!(cut.ends_with("… (truncated)"));
         assert!(cut.len() <= CAPTURED_OUTPUT + "… (truncated)".len());
-    }
-
-    // TEST_SCENARIO: a runner installed without crane can still boot images that are cached, but one naming only a registry reference is refused: booting it would run the image's own entrypoint, skip platform-init and lose the agent's home at the first stop.
-    #[test]
-    fn a_runner_that_cannot_fetch_refuses_an_uncached_image() {
-        let err =
-            launch_from_registry("", "quay.io/x/vm:1", &[], &CancellationToken::new()).unwrap_err();
-        assert!(err.to_string().starts_with(IMAGE_LAUNCH_UNKNOWN), "{err}");
-        assert_eq!(failure_reason(&err), REASON_BOOT_FAILED);
     }
 }

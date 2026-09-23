@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -670,11 +672,32 @@ func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	assert.Equal(t, "image-cache", node[vmRunnerImagesPath].Name, "the node directory replaces that mount rather than nesting in it")
 	require.NotNil(t, volumes["image-cache"].HostPath, "the node cache is a host directory, not a claim of its own")
 	assert.Equal(t, "/var/lib/platform-images", volumes["image-cache"].HostPath.Path)
-	assert.False(t, node[vmRunnerImagesPath].ReadOnly, "the runner fetches into this one, unlike the staged archives")
+	assert.True(t, node[vmRunnerImagesPath].ReadOnly, "the node's image cache service is the only writer of the node directory")
 }
 
-// TEST_SCENARIO: every runner announces itself and every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
-func TestEveryCacheIsBoundedAndEveryRunnerNamed(t *testing.T) {
+// TEST_SCENARIO: on a node cache the runner reaches the node's image cache service through a socket the chart's DaemonSet binds inside the same directory. The controller and the chart each name that path, so the controller's constant must be the one the chart passes, or every runner on a node cache refuses every image as unavailable. With no node cache the runner is told no socket, and is its cache's only writer.
+func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
+	template, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "helm", "templates", "controller", "vm-image-cache.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(template), "- --socket="+vmImageCacheSocket+"\n")
+	assert.Contains(t, string(template), "mountPath: "+vmRunnerImagesPath+"\n")
+
+	args := func(configure func(*config.VMRunnerSpec)) []string {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.VM.Runner)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return dep.Spec.Template.Spec.Containers[0].Args
+	}
+	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
+		"--image-cache-socket="+vmImageCacheSocket)
+	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
+}
+
+// TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
+func TestEveryCacheIsBounded(t *testing.T) {
 	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
@@ -689,7 +712,6 @@ func TestEveryCacheIsBoundedAndEveryRunnerNamed(t *testing.T) {
 
 	own, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
 	require.NoError(t, err)
-	assert.Contains(t, own, "--runner-id=platform-vm-runner-")
 	assert.Contains(t, own, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
 
 	shared, err := args(t, func(spec *config.VMRunnerSpec) {

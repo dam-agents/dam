@@ -21,8 +21,8 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The node image cache adds one more object nothing else renders: the DaemonSet
-# that preloads the install's harness images, which exists only where the cache
-# is a node directory.
+# that is the only writer of the node directory, which exists only where the
+# cache is a node directory.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
@@ -30,13 +30,14 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
-# With an install default pull Secret the cache service also gets a Role in the
-# agent namespace, to read that Secret, which no other render reaches.
+# With install default pull Secrets the cache service also mounts them as a
+# projected volume, which no other render reaches.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
+  --set 'controller.agent.base.imagePullSecrets[1]=fallback' \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
 # An install that reads kits from an enterprise host renders the api-server's
