@@ -36,7 +36,7 @@ func TestAnImageIsPreloadedBeforeAnyAgentAsksForIt(t *testing.T) {
 
 	service.Sweep()
 
-	cached := filepath.Join(h.node.ImageDir, "quay.io_x_vm_1")
+	cached := digestTree(h.node, spec(true).Image)
 	require.FileExists(t, filepath.Join(cached, rootfsDir, "hello"), "the tree every machine of this image will share")
 	require.FileExists(t, filepath.Join(cached, launchFile), "and what the image says to run, which the tree does not carry")
 	require.FileExists(t, preloaded, "which was fetched, since nothing had cached it")
@@ -61,7 +61,7 @@ func TestAPreloadedImageIsNotTheFirstThingEvicted(t *testing.T) {
 	service, _ := preloadService(t, images, "quay.io/x/preloaded:1")
 	service.Sweep()
 
-	preloaded := filepath.Join(images, "quay.io_x_preloaded_1")
+	preloaded := digestTree(service.cache(), "quay.io/x/preloaded:1")
 	require.DirExists(t, preloaded)
 	oldest := time.Now().Add(-9 * time.Hour)
 	require.NoError(t, os.Chtimes(preloaded, oldest, oldest), "and nothing in this directory is older")
@@ -79,7 +79,7 @@ func TestAPreloadStopsPinningOnceTheServiceStopsRefreshingIt(t *testing.T) {
 	service, _ := preloadService(t, images, "quay.io/x/preloaded:1")
 	service.Sweep()
 
-	preloaded := filepath.Join(images, "quay.io_x_preloaded_1")
+	preloaded := digestTree(service.cache(), "quay.io/x/preloaded:1")
 	require.DirExists(t, preloaded)
 	claim := filepath.Join(images, holdersDir, "image-cache")
 	expired := time.Now().Add(-holderStale - time.Minute)
@@ -97,7 +97,7 @@ func TestTheServicePrunesTheNodeDirectoryWithoutFetchingAnything(t *testing.T) {
 	service, fetches := preloadService(t, images, "quay.io/x/preloaded:1")
 	service.Sweep()
 
-	preloaded := filepath.Join(images, "quay.io_x_preloaded_1")
+	preloaded := digestTree(service.cache(), "quay.io/x/preloaded:1")
 	require.DirExists(t, preloaded)
 	departed := strayTree(t, images, "quay.io_x_departed_1")
 	require.NoError(t, os.Remove(fetches), "the fetch that preloading cost is not the one this pass is about")
@@ -107,7 +107,10 @@ func TestTheServicePrunesTheNodeDirectoryWithoutFetchingAnything(t *testing.T) {
 
 	assert.NoDirExists(t, departed, "no runner on this node claims it, and nothing else would ever have removed it")
 	assert.DirExists(t, preloaded, "while the image this install ships stays")
-	assert.NoFileExists(t, fetches, "and the pass that reclaimed the space fetched nothing: what it keeps was already unpacked")
+	asked, err := os.ReadFile(fetches)
+	require.NoError(t, err, "the pass resolves the tag again, which is how a tag that moved is noticed")
+	assert.Equal(t, "digest quay.io/x/preloaded:1\n", string(asked),
+		"and the pass that reclaimed the space fetched nothing: what it keeps was already unpacked")
 }
 
 // TEST_SCENARIO: the service is a second process evicting from a directory the runners' guests have mounted as their root filesystems, which is the one thing eviction must never take. It reads the runners' published claims exactly as they read each other's — a runner knows only its own machines, and the service knows none at all.
@@ -122,7 +125,7 @@ func TestTheServiceNeverEvictsAnImageARunnersMachineIsRunning(t *testing.T) {
 	service.Sweep()
 
 	assert.DirExists(t, held, "another process's guest has this tree open as its root filesystem")
-	assert.DirExists(t, filepath.Join(images, "quay.io_x_preloaded_1"), "and the image this install ships is kept over the budget rather than fetched again next time")
+	assert.DirExists(t, digestTree(service.cache(), "quay.io/x/preloaded:1"), "and the image this install ships is kept over the budget rather than fetched again next time")
 }
 
 // TEST_SCENARIO: the service is not in the boot path — a machine reads the tree out of the directory itself. So a service that is down costs an install nothing it had before: images already cached still boot, and an image nobody preloaded is still fetched by the runner that needs it, which is the only path a custom agent image can ever take.
@@ -154,6 +157,7 @@ func TestAMachineBootsFromThePreloadedTreeWithTheServiceGone(t *testing.T) {
 func craneAgeingTheClaim(log, holders, marker string) string {
 	return "#!/bin/sh\n" +
 		"echo \"$@\" >> " + log + "\n" +
+		answersDigest +
 		"if [ \"$1\" = config ]; then\n" +
 		"  if [ -f " + holders + " ] && [ ! -f " + marker + " ]; then touch -d @1 " + holders + "; : > " + marker + "; fi\n" +
 		"  printf '{\"config\":{\"Entrypoint\":[\"/entry\"],\"Cmd\":[\"serve\"],\"Env\":[\"PATH=/bin\"],\"WorkingDir\":\"/app\"}}'\n" +
@@ -182,7 +186,7 @@ func TestALongPassKeepsTheClaimItIsStillWriting(t *testing.T) {
 	held := peer.heldElsewhere(images)
 	assert.FileExists(t, holders, "a peer runner reads a stale claim as a dead process's and deletes it")
 	for _, ref := range service.Images {
-		assert.True(t, held[service.cache().cachePath(ref)],
+		assert.True(t, held[digestTree(service.cache(), ref)],
 			"a runner wanting room must still see %s as claimed, though the pass that claimed it outlived one lease window", ref)
 	}
 }
