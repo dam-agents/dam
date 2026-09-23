@@ -13,6 +13,7 @@ function fakeAgent(id: string): Agent {
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
     overBudget: false,
+    podRestarts: 0,
     contributionFailures: [],
     unsupportedContributionKinds: [],
     workspaceFailures: [],

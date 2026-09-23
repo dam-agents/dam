@@ -22,15 +22,33 @@ function isNonNullObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+function isTextBlock(
+  block: unknown,
+): block is Record<string, unknown> & { type: "text"; text: string } {
+  return (
+    isNonNullObject(block) &&
+    block.type === "text" &&
+    typeof block.text === "string"
+  );
+}
+
+function withContract(prompt: unknown[]): unknown[] {
+  const contract = directTurnContract();
+  const first = prompt.findIndex(isTextBlock);
+  if (first === -1) return [{ type: "text", text: contract }, ...prompt];
+  return prompt.map((block, i) =>
+    i === first && isTextBlock(block)
+      ? { ...block, text: `${contract}\n\n${block.text}` }
+      : block,
+  );
+}
+
 export function frameDirectTurn(frame: object): object {
   if (!isNonNullObject(frame)) return frame;
   const params = frame.params;
   if (!isNonNullObject(params) || !Array.isArray(params.prompt)) return frame;
   return {
     ...frame,
-    params: {
-      ...params,
-      prompt: [{ type: "text", text: directTurnContract() }, ...params.prompt],
-    },
+    params: { ...params, prompt: withContract(params.prompt) },
   };
 }

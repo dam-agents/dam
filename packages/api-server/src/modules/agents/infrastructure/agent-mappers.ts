@@ -264,6 +264,8 @@ export function assembleAgent(
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     podTerminationReason: infra.podTerminationReason,
+    podRestarts: infra.podRestarts,
+    podRestartReason: infra.podRestartReason,
     contributionFailures,
     unsupportedContributionKinds,
     workspaceFailures,
