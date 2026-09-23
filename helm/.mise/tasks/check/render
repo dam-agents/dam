@@ -37,3 +37,9 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
+# An install that reads kits from an enterprise host renders the api-server's
+# catalog credential, which the default values leave out entirely.
+helm template platform . "${COMMON[@]}" \
+  --set github.enterprise.host=github.example.com \
+  --set github.enterprise.tokenSecret.name=kit-catalog-token \
+  | "${KUBECONFORM[@]}" "$@"

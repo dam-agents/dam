@@ -121,6 +121,7 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 import {
+  aboveBoundary,
   isAfterTs,
   lastOwnPostTs,
   laterTs,
@@ -632,17 +633,17 @@ async function resolveAuthorNames(
   );
 }
 
-async function getContextMessages(
-  gateway: SlackGateway,
-  channel: string,
-  ts: string,
-  readingAgentId: string,
-  threadTs: string | undefined,
-  bot: { userId: string | null; label: string },
-  resolveAgentName: (agentId: string) => Promise<string>,
-  catchUp: CatchUpSelection | null,
-  teamId: SlackWorkspace,
-): Promise<{
+async function getContextMessages(read: {
+  gateway: SlackGateway;
+  channel: string;
+  teamId: SlackWorkspace;
+  threadTs: string | undefined;
+  readingAgentId: string;
+  carried: readonly string[];
+  bot: { userId: string | null; label: string };
+  resolveAgentName: (agentId: string) => Promise<string>;
+  catchUp: CatchUpSelection | null;
+}): Promise<{
   lines: string[];
   offeredThreads: string[];
   hasThreadMarker: boolean;
@@ -651,32 +652,33 @@ async function getContextMessages(
   readNewestTs: string | null;
   readHasMore: boolean;
 }> {
-  const read = await readConversation(
-    gateway,
-    channel,
+  const { bot, catchUp, threadTs } = read;
+  const conversation = await readConversation(
+    read.gateway,
+    read.channel,
     threadTs,
     catchUp?.since,
-    teamId,
+    read.teamId,
   );
-  const raw = read.messages;
 
-  const all = raw.map((message) => ({
+  const all = conversation.messages.map((message) => ({
     ts: message.ts,
     authorAgentId: parseAgentFooter(message)?.agentId ?? null,
     message,
   }));
+  const carried = new Set(read.carried);
   const selected = catchUp
     ? selectUnseen(all, catchUp)
-    : all.filter((e) => e.ts !== ts);
+    : all.filter((e) => e.ts === undefined || !carried.has(e.ts));
   const entries = selected.map((e) => ({
     message: e.message,
     footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
   }));
 
-  const names = await resolveAuthorNames(entries, resolveAgentName);
+  const names = await resolveAuthorNames(entries, read.resolveAgentName);
 
   const showThreadMarkers = threadTs === undefined;
-  const lines = labelMessages(entries, names, readingAgentId, bot, {
+  const lines = labelMessages(entries, names, read.readingAgentId, bot, {
     showThreadMarkers,
   });
   const offered = showThreadMarkers
@@ -695,7 +697,7 @@ async function getContextMessages(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
     readNewestTs: newestTs(all),
-    readHasMore: read.hasMore,
+    readHasMore: conversation.hasMore,
   };
 }
 
@@ -1333,6 +1335,71 @@ export function createSlackWorker(
     return entry.ts;
   }
 
+  const seenAbove = new Map<string, { tss: string[]; expiresAt: number }>();
+
+  function replaceSeenAbove(
+    instanceName: string,
+    threadKey: string,
+    tss: string[],
+  ): void {
+    const key = threadSeenKey(instanceName, threadKey);
+    if (tss.length === 0) {
+      seenAbove.delete(key);
+      return;
+    }
+    const now = Date.now();
+    if (seenAbove.size > 5_000) {
+      for (const [stale, entry] of seenAbove) {
+        if (entry.expiresAt <= now) seenAbove.delete(stale);
+      }
+    }
+    seenAbove.set(key, { tss, expiresAt: now + THREAD_SEEN_TTL_MS });
+  }
+
+  function readSeenAbove(instanceName: string, threadKey: string): string[] {
+    const entry = seenAbove.get(threadSeenKey(instanceName, threadKey));
+    if (!entry) return [];
+    if (entry.expiresAt <= Date.now()) return [];
+    return entry.tss;
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: What a delivered turn adds to the seen record.
+   * The boundary is a single point, so it may only reach a time below which
+   * every message was shown or carried: the batch, held back further by a read
+   * that hit its cap. A message steered into the turn sits above that point
+   * and is recorded one by one instead, because the messages between the batch
+   * and the steered one were shown to nobody and must stay unseen.
+   */
+  function commitSeenBoundary(turn: {
+    instanceName: string;
+    threadKey: string;
+    read: { hasMore: boolean; newestReadTs: string | null };
+    deliveredUpTo: string;
+    steeredTs: () => string[];
+  }): void {
+    const boundary = nextBoundary(
+      {
+        hasMore: turn.read.hasMore,
+        newestReadTs: turn.read.newestReadTs,
+        coveredUpTo: turn.deliveredUpTo,
+      },
+      readThreadSeen(turn.instanceName, turn.threadKey),
+    );
+    noteThreadSeen(turn.instanceName, turn.threadKey, boundary);
+    replaceSeenAbove(
+      turn.instanceName,
+      turn.threadKey,
+      aboveBoundary(
+        [
+          ...readSeenAbove(turn.instanceName, turn.threadKey),
+          ...turn.steeredTs(),
+        ],
+        boundary,
+      ),
+    );
+  }
+
   const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
   const offeredThreads = new Map<
     string,
@@ -1679,6 +1746,12 @@ export function createSlackWorker(
     const batched = ctx.messages.length > 1;
     const lastMessage = ctx.messages.at(-1)!;
     const eventTs = lastMessage.eventTs;
+    const deliveredUpTo = ctx.messages.reduce(
+      (newest, m) => laterTs(newest, m.eventTs),
+      eventTs,
+    );
+    const steeredTs = (): string[] =>
+      (ctx.siblingRefs?.() ?? []).map((ref) => ref.eventTs);
     const droppedNote = renderWithheldNote(
       (ctx.droppedFiles ?? []).map((name) => ({
         name,
@@ -1812,6 +1885,8 @@ export function createSlackWorker(
             ...ctx,
             eventTs,
             threadKey,
+            deliveredUpTo,
+            steeredTs,
             batchTs: ctx.messages.map((m) => m.eventTs),
           });
           return {
@@ -1829,7 +1904,15 @@ export function createSlackWorker(
         buildFreshPrompt: () =>
           buildThreadPrompt(
             gw,
-            { ...ctx, eventTs, text, threadKey },
+            {
+              ...ctx,
+              eventTs,
+              text,
+              threadKey,
+              batchTs: ctx.messages.map((m) => m.eventTs),
+              deliveredUpTo,
+              steeredTs,
+            },
             contract,
             {
               guidance,
@@ -1961,6 +2044,9 @@ export function createSlackWorker(
       text: string;
       hasThread: boolean;
       threadKey: string;
+      batchTs: string[];
+      deliveredUpTo: string;
+      steeredTs: () => string[];
       teamId: SlackWorkspace;
       images: FetchedImage[];
     },
@@ -1979,17 +2065,17 @@ export function createSlackWorker(
       offeredThreads: offeredHere,
       readNewestTs,
       readHasMore,
-    } = await getContextMessages(
-      gw,
-      ctx.channel,
-      ctx.eventTs,
-      ctx.instanceName,
-      ctx.hasThread ? ctx.threadTs : undefined,
+    } = await getContextMessages({
+      gateway: gw,
+      channel: ctx.channel,
+      teamId: ctx.teamId,
+      threadTs: ctx.hasThread ? ctx.threadTs : undefined,
+      readingAgentId: ctx.instanceName,
+      carried: ctx.batchTs,
       bot,
       resolveAgentName,
-      null,
-      ctx.teamId,
-    );
+      catchUp: null,
+    });
     noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
     const preamble = historyPreamble(
       ctx.hasThread
@@ -2018,21 +2104,19 @@ export function createSlackWorker(
         files: delivered?.files ?? [],
       }),
       commit: () =>
-        noteThreadSeen(
-          ctx.instanceName,
-          ctx.threadKey,
-          nextBoundary(
-            {
-              hasMore:
-                ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
-                  ? readHasMore
-                  : false,
-              newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
-            },
-            readThreadSeen(ctx.instanceName, ctx.threadKey),
-          ),
-        ),
+        commitSeenBoundary({
+          instanceName: ctx.instanceName,
+          threadKey: ctx.threadKey,
+          read: {
+            hasMore:
+              ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
+                ? readHasMore
+                : false,
+            newestReadTs: readNewestTs,
+          },
+          deliveredUpTo: ctx.deliveredUpTo,
+          steeredTs: ctx.steeredTs,
+        }),
     };
   }
 
@@ -2087,6 +2171,8 @@ export function createSlackWorker(
       eventTs: string;
       hasThread: boolean;
       threadKey: string;
+      deliveredUpTo: string;
+      steeredTs: () => string[];
       teamId: SlackWorkspace;
       batchTs: string[];
     },
@@ -2112,35 +2198,33 @@ export function createSlackWorker(
         offeredThreads: offeredHere,
         readNewestTs,
         readHasMore,
-      } = await getContextMessages(
-        gw,
-        ctx.channel,
-        ctx.eventTs,
-        ctx.instanceName,
-        conversationTs,
+      } = await getContextMessages({
+        gateway: gw,
+        channel: ctx.channel,
+        teamId: ctx.teamId,
+        threadTs: conversationTs,
+        readingAgentId: ctx.instanceName,
+        carried: ctx.batchTs,
         bot,
         resolveAgentName,
-        {
+        catchUp: {
           readingAgentId: ctx.instanceName,
           since,
-          triggeringTs: ctx.eventTs,
-          batchTs: ctx.batchTs,
+          until: ctx.deliveredUpTo,
+          carried: [
+            ...ctx.batchTs,
+            ...readSeenAbove(ctx.instanceName, threadKey),
+          ],
         },
-        ctx.teamId,
-      );
+      });
       const commit = () =>
-        noteThreadSeen(
-          ctx.instanceName,
+        commitSeenBoundary({
+          instanceName: ctx.instanceName,
           threadKey,
-          nextBoundary(
-            {
-              hasMore: readHasMore,
-              newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
-            },
-            readThreadSeen(ctx.instanceName, threadKey),
-          ),
-        );
+          read: { hasMore: readHasMore, newestReadTs: readNewestTs },
+          deliveredUpTo: ctx.deliveredUpTo,
+          steeredTs: ctx.steeredTs,
+        });
       if (lines.length === 0) return { frame: {}, commit };
       noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
       return {
@@ -3124,6 +3208,11 @@ export function createSlackWorker(
     if (!gateway) return { posted: false, replyText: null };
     const gw = gateway;
 
+    const deliveredUpTo = args.messages.reduce(
+      (newest, m) => laterTs(newest, m.eventTs),
+      args.eventTs,
+    );
+    const neverSteered = (): string[] => [];
     const multi = args.messages.length > 1;
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
@@ -3206,6 +3295,8 @@ export function createSlackWorker(
             eventTs: args.eventTs,
             hasThread: args.hasThread,
             threadKey: args.threadKey,
+            deliveredUpTo,
+            steeredTs: neverSteered,
             batchTs: args.messages.map((m) => m.eventTs),
           });
           return {
@@ -3232,6 +3323,9 @@ export function createSlackWorker(
               teamId: args.teamId,
               hasThread: args.hasThread,
               threadKey: args.threadKey,
+              batchTs: args.messages.map((m) => m.eventTs),
+              deliveredUpTo,
+              steeredTs: neverSteered,
               images: args.images,
             },
             contract,

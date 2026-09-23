@@ -17,6 +17,27 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
+{{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
+{{- end -}}
+
+{{/*
+The kit reader needs the host and the token together. Rendering one without
+the other would drop the pair silently, and every catalog and kit on that
+host would then read as a host nobody named — which the refresh settles as
+the author withdrawing them, pruning the very rows the setting was added to
+serve. Fail at render instead, where the operator is looking.
+*/}}
+{{- define "platform.validate.enterpriseGitHubNeedsBothHostAndToken" -}}
+{{- $ghe := dig "enterprise" dict (.Values.github | default dict) -}}
+{{- $named := $ghe.host | default "" | trim -}}
+{{- $fallback := dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer | trim -}}
+{{- $secret := ($ghe.tokenSecret | default dict).name | default "" | trim -}}
+{{- if and $named (not $secret) -}}
+{{- fail (printf "github.enterprise.host is %q but github.enterprise.tokenSecret.name is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Name the secret, or clear the host." $named) -}}
+{{- end -}}
+{{- if and $secret (not $named) (not $fallback) -}}
+{{- fail "github.enterprise.tokenSecret.name is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the secret — a token with no host to send it to reads nothing." -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
