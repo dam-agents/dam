@@ -66,8 +66,8 @@ interface WatchState {
  * be busy with a turn from another queue: a dismissal or a shutdown must
  * still reach it, and it stands down rather than answering a person who has
  * been answered since. A shutdown also waits for a running recovery, up to a
- * bounded limit, and logs whether it finished, so a replica that has stood
- * down leaves no nudge running unaccounted.
+ * bounded limit, and logs whether it finished and how many it gave up on, so
+ * a replica that has stood down leaves no nudge running unaccounted.
  */
 export function createTurnRecovery(deps: {
   turnStatus: (
@@ -214,9 +214,16 @@ export function createTurnRecovery(deps: {
         state.recovering === undefined ? [] : [state.recovering],
       );
       if (running.length === 0) return;
+      let settled = 0;
       let limit: ReturnType<typeof setTimeout> | undefined;
       const drained = await Promise.race([
-        Promise.allSettled(running).then(() => true),
+        Promise.allSettled(
+          running.map((recovery) =>
+            recovery.then(() => {
+              settled += 1;
+            }),
+          ),
+        ).then(() => true),
         new Promise<false>((resolve) => {
           limit = setTimeout(() => resolve(false), STAND_DOWN_LIMIT_MS);
         }),
@@ -229,7 +236,7 @@ export function createTurnRecovery(deps: {
         );
       } else {
         getLogger().warn(
-          { nudges: running.length, limitMs: STAND_DOWN_LIMIT_MS },
+          { nudges: running.length - settled, limitMs: STAND_DOWN_LIMIT_MS },
           "slack.turn.recovery_abandoned: standing down stopped waiting for a delivery nudge; its outcome is not recorded",
         );
       }

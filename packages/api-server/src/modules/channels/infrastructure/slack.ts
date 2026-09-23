@@ -1561,6 +1561,13 @@ export function createSlackWorker(
     endedAs?: WatchedTurnEnd;
   }): void {
     const { instanceName, sessionId, refs, endedAs, ...nudge } = turn;
+    if (!serving) {
+      getLogger().info(
+        { agentId: instanceName, sessionId, threadTs: nudge.threadTs },
+        "slack.turn.recovery_skipped: the replica is standing down; the undelivered turn is not nudged from it",
+      );
+      return;
+    }
     holdWatchedRefs(instanceName, refs);
     turnRecovery.watch(
       {

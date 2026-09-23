@@ -276,4 +276,37 @@ describe("delivery nudge lifecycle", () => {
       vi.useRealTimers();
     }
   });
+  /**
+   * TEST_SCENARIO: a turn that is still running when the replica stands down,
+   * and settles undelivered afterwards. Its verdict would nudge at once, from
+   * a replica that has already reported itself stopped, with nothing waiting
+   * on it. Standing down must close that door, and say it did.
+   */
+  it("does not nudge a turn that settles after standing down", async () => {
+    let releaseTurn: (() => void) | undefined;
+    let prompts = 0;
+    const h = harness({
+      sendPrompt: async (_prompt, sendOpts) => {
+        sendOpts.onSession?.("sess-1");
+        prompts += 1;
+        await new Promise<void>((r) => {
+          releaseTurn = r;
+        });
+        return "prose, never delivered";
+      },
+      turnStatus: async () => "unknown" as const,
+    });
+
+    const turn = h.mention(false);
+    await vi.waitFor(() => expect(releaseTurn).toBeDefined());
+    await h.worker.stopAll();
+    releaseTurn!();
+    await turn;
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(prompts).toBe(1);
+    expect(h.logMessages()).toContainEqual(
+      expect.stringContaining("slack.turn.recovery_skipped"),
+    );
+  });
 });
