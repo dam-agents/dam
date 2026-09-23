@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 // UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct ImageLaunch {
     #[serde(default, deserialize_with = "null_as_empty")]
     pub entrypoint: Vec<String>,
@@ -14,7 +15,9 @@ pub struct ImageLaunch {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the controller's half of this contract is packages/controller/pkg/vmrunner/api.go, which stays Go — the controller dials this runner over HTTP, so the two sides meet as JSON and never as types. Every rename here is a wire break, which is why the field names are spelled out rather than derived from the Rust ones.
+// UNIT_BOUNDARY_DESCRIPTION: a field the JSON leaves out reads as its zero value, as Go's decoder reads it. Without that, a body the Go runner accepted — a stop that names nothing but `running` — is refused here as malformed.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct MachineSpec {
     pub image: String,
     pub cpus: i32,
@@ -34,6 +37,7 @@ pub struct MachineSpec {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct MachineStatus {
     pub state: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -174,6 +178,17 @@ mod tests {
                 starting_ms: 1,
             },
         );
+    }
+
+    // TEST_SCENARIO: Go's decoder reads a field the JSON leaves out as its zero value, so a body naming only what changed is a valid request to the Go runner. It must decode here too, to the same zeroes, rather than be refused as malformed.
+    #[test]
+    fn a_field_the_json_leaves_out_reads_as_zero_as_it_does_in_go() {
+        let stop: MachineSpec = serde_json::from_str(r#"{"running":false}"#).unwrap();
+        assert!(!stop.running && stop.image.is_empty() && stop.cpus == 0 && stop.env.is_empty());
+        let status: MachineStatus = serde_json::from_str(r#"{"state":"running"}"#).unwrap();
+        assert!(!status.ready && status.port == 0);
+        let launch: ImageLaunch = serde_json::from_str(r#"{"cmd":["serve"]}"#).unwrap();
+        assert!(launch.working_dir.is_empty() && launch.entrypoint.is_empty());
     }
 
     // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
