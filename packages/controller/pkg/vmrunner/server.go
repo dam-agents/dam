@@ -433,12 +433,12 @@ func (s *Server) recreate(id string, spec, applied MachineSpec, state string, au
 	if err != nil {
 		return err
 	}
-	s.forgetState(id)
 	if state == StateRunning {
 		if err := s.stop(id); err != nil {
 			return err
 		}
 	}
+	s.forgetState(id)
 	if err := s.Runtime.DeleteKeepingStorage(id); err != nil {
 		return err
 	}
