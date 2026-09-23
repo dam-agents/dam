@@ -59,7 +59,6 @@ func runnerSuffix(owner string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner is created by the controller, not by Helm, so nothing would collect it on uninstall or when virtualization is switched off — owning it from the controller's own Deployment makes the cluster do that, and a runner is worthless without the controller anyway.
 // UNIT_BOUNDARY_DESCRIPTION: runners are per owner, so no single Agent can own them — one agent's deletion would collect a runner still holding another's disk. They are owned instead by the ServiceAccount the chart renders for them, which sits in the same namespace (an owner reference may not cross one) and is removed by uninstall, by rollback and by turning virtualization off — so the runners, their disks and their credentials go with it.
 // UNIT_BOUNDARY_DESCRIPTION: the reference is resolved on every call rather than cached for the process: a ServiceAccount that is deleted and recreated — switching virtualization off and on does exactly that — comes back with a new UID, and objects stamped with the old one are collected the moment they are written, which reads as a runner that silently never appears.
 func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerReference {
@@ -356,7 +355,6 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port alone, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 // UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
 func containedIn(cidr string, except []string) []string {
 	block, err := netip.ParsePrefix(cidr)
@@ -374,6 +372,7 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port alone, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
@@ -398,7 +397,6 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) 
 	return rules
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and this runner turns that off, because a VMM that takes one cannot then read what the runner shares with it. It reaches the image cache through an idmapped mount of one entry, on-disk uid 0, so every file the image gives another uid arrives in the guest as nobody — 27,374 of this image's 35,430, whose workload then exits the moment it starts. Measured both ways on one store: with the drop the guest boots in 150 ms and dies; without it the same tree presents those files as the user the image named, and the machine runs. Machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well, by a route not traced here — so this is the mechanism that was isolated, not the whole of what the drop costs.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
@@ -407,6 +405,7 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
 // UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN and FOWNER are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
 func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
 	caps := []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}
@@ -599,7 +598,6 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 	return out, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner outlives the agents that made it, so it is torn down only once the sweep finds it holding no machine at all — at which point its disk holds nothing either.
 // UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot — reached only once the sweep has found the runner holding no machine at all, at which point its disk holds nothing either.
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	name, ns := r.runnerName(owner), r.config.Namespace
