@@ -16,7 +16,7 @@ pub const PORT_FILE: &str = "port";
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so eviction reads this file to know which digest entry the machine holds.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
-// UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so the two runners write one machine's state the same way whatever umask each was started under.
+// UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so a machine's state reads the same whatever umask the runner was started under, and the same as earlier releases wrote it.
 pub const PORT_MODE: u32 = 0o644;
 
 // UNIT_BOUNDARY_DESCRIPTION: the mode the spec is written with, named because it is the exception: every other file this runner writes is world-readable, and this one is not, because its env holds the Agent's secrets in plaintext.
