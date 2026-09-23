@@ -62,7 +62,7 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
     "agent.pid",
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
+// UNIT_BOUNDARY_DESCRIPTION: the root overlay of smolvm's guest agent in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
@@ -186,7 +186,7 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay. A machine keeps HOME and nothing else, and this is what makes that rule exact: a kept overlay would make software installed outside HOME look persistent until the first boot that had to discard a corrupt one. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
+// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
 pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     if !vm_dir.is_dir() {
         return;

@@ -8,7 +8,7 @@ pub const SHARE_CA_DIR: &str = "/platform/ca";
 // UNIT_BOUNDARY_DESCRIPTION: where the image expects the platform's MITM CA. The share carries it and platform-init binds it here, so an image's own trust setup is the same sequence on both backends.
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 
-// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, so the disk is reachable by exactly one name, and that name is not "workspace" — which in this platform means the directory inside an agent's HOME.
+// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the fresh root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
 pub const DISK_DEVICE_PATH: &str = "/workspace";
 pub const DISK_PATH: &str = "/mnt/platform";
 
@@ -18,6 +18,9 @@ pub const AGENT_HOME: &str = "/home/agent";
 // UNIT_BOUNDARY_DESCRIPTION: the disk's two namespaces. The agent's home is mirrored under AGENT_DIR and the platform's own per-machine state lives under SYSTEM_DIR, so an image whose home happens to contain a `log` directory cannot overwrite the boot log — which a flat layout could not prevent, because the disk root would hold both.
 pub const AGENT_DIR: &str = "agent";
 pub const SYSTEM_DIR: &str = "system";
+
+// UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the fresh root the image boots on. platform-init empties it on every boot, so nothing the image writes outside HOME outlives the boot that wrote it.
+pub const ROOTFS_DIR: &str = "rootfs";
 
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)
@@ -62,6 +65,10 @@ mod tests {
         assert_eq!(
             system_store(root, "log"),
             Path::new("/mnt/platform/system/log")
+        );
+        assert_eq!(
+            system_store(root, ROOTFS_DIR),
+            Path::new("/mnt/platform/system/rootfs")
         );
     }
 }

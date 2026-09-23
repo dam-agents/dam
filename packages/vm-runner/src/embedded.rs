@@ -79,7 +79,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped, but its record says running while the process lives, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched.
+    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped, but its record says running while the process lives, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init boots every image on a fresh root: the root smolvm keeps on the disk for this machine, with the old image's changes in it, is never the one the new image runs on.
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
         let Update {
             desired,
@@ -150,7 +150,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
