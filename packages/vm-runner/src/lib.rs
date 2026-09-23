@@ -8,12 +8,14 @@ pub mod fetch;
 pub mod files;
 pub mod forward;
 pub mod guest;
+pub mod http;
 pub mod launch;
 pub mod plan;
 pub mod runtime;
 pub mod server;
 pub mod share;
 pub mod state;
+pub mod templates;
 
 #[cfg(test)]
 mod gosource;

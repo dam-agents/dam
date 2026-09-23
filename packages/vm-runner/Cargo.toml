@@ -24,6 +24,10 @@ libc = "0.2"
 # crate: an archive an earlier release cached still boots a machine, and the
 # config saying how is inside it.
 tar = "0.4"
+# The TLS stack axum-server serves over. smolvm pulls in both of rustls's
+# crypto backends, so rustls cannot choose one itself and the runner installs
+# ring explicitly. Already in the lock by way of smolvm.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Already in the lock by way of smolvm: the cache index names a reference by
 # its SHA-256, and the Go runner has to find the file this crate writes.
 sha2 = "0.10"
@@ -37,6 +41,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [dev-dependencies]
+# Drives the router in-process, the way the controller's client reaches it,
+# without binding a socket. Both are already in the lock by way of axum.
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
 # Backdating a file is how the cache's two time windows — a stale claim and an
 # abandoned scratch tree — are tested without waiting out thirty minutes.
 filetime = "0.2"
