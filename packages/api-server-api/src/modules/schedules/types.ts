@@ -37,11 +37,19 @@ export interface ScheduleSpecRRule {
   createdBy: ScheduleCreator;
 }
 
+export type OnceSessionChoice = "fresh" | "continue" | "report";
+
+export interface ScheduleOnceOrigin {
+  sessionRef: string;
+  mode: Exclude<OnceSessionChoice, "fresh">;
+}
+
 export interface ScheduleSpecOnce {
   version: string;
   type: "once";
   at: string;
   timezone: string;
+  origin?: ScheduleOnceOrigin;
   task?: string;
   precheck?: undefined;
   sessionMode?: undefined;
@@ -106,6 +114,7 @@ export interface SchedulesService {
   createOnce: (
     input: ScheduleCreateOnceInput,
     createdBy?: ScheduleCreator,
+    origin?: ScheduleOnceOrigin,
   ) => Promise<Schedule>;
   updateOnce: (input: ScheduleUpdateOnceInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;

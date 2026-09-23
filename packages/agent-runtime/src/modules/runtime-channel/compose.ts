@@ -66,6 +66,7 @@ export interface ComposeRuntimeChannelOpts {
   apiServerUrl: string;
   agentId: string;
   triggerDriver: TriggerSessionDriver;
+  findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
@@ -116,6 +117,9 @@ export async function composeRuntimeChannel(
       }),
       log,
       reporter,
+      ...(opts.findSessionByRef
+        ? { findSessionByRef: opts.findSessionByRef }
+        : {}),
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));

@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
-import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
+import {
+  PLATFORM_MCP_ENTRY_NAME,
+  type DriverBinding,
+  type KindHandler,
+  type Plugin,
+} from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
 import {
   createMcpEntryStateStore,
@@ -36,7 +41,11 @@ const bindingSchema = z
     }
   });
 
-export function createMcpEntryPlugin(): Plugin {
+export function createMcpEntryPlugin(deps?: {
+  onPlatformEntry?: (
+    entry: { url: string; headers?: Record<string, string> } | null,
+  ) => void;
+}): Plugin {
   const fileOps = createFileOps();
 
   return {
@@ -63,8 +72,17 @@ export function createMcpEntryPlugin(): Plugin {
         const installed = new Set(stateStore.getInstalled());
 
         const entries: Record<string, unknown> = {};
+        let platformEntry: {
+          url: string;
+          headers?: Record<string, string>;
+        } | null = null;
         for (const c of contributions) {
           if (c.kind !== "mcp-entry") continue;
+          if (c.name === PLATFORM_MCP_ENTRY_NAME)
+            platformEntry = {
+              url: c.url,
+              ...(c.headers ? { headers: c.headers } : {}),
+            };
           entries[c.name] = {
             ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
             ...(c.headers ? { headers: c.headers } : {}),
@@ -106,6 +124,7 @@ export function createMcpEntryPlugin(): Plugin {
           log: ctx.log,
         });
         stateStore.setInstalled(names);
+        deps?.onPlatformEntry?.(platformEntry);
       };
     },
   };

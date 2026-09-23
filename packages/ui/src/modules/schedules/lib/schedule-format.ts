@@ -25,8 +25,16 @@ export function formatRunTime(iso: string, now: Date = new Date()): string {
 
 export function scheduleCadenceText(schedule: Schedule): string {
   switch (schedule.type) {
-    case "once":
-      return schedule.at ? `Once · ${formatRunTime(schedule.at)}` : "Once";
+    case "once": {
+      const when = schedule.at
+        ? `Once · ${formatRunTime(schedule.at)}`
+        : "Once";
+      if (schedule.inSession === "continue")
+        return `${when} · continues the session that scheduled it`;
+      if (schedule.inSession === "report")
+        return `${when} · reports back to the session that scheduled it`;
+      return when;
+    }
     case "rrule":
       return schedule.rrule ? rruleToText(schedule.rrule) : "";
     case "cron":

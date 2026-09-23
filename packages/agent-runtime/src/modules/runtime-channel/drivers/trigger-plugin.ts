@@ -29,6 +29,10 @@ const WIRE_OUTCOME: Record<PrecheckOutcome["verdict"], EventOutcome> = {
   "precheck-failed": "failed",
 };
 
+function continuationPrompt(name: string, task: string): string {
+  return `[One-time task "${name}", scheduled from this session, is due now]\n\n${task}`;
+}
+
 function withContext(task: string, context: string | undefined): string {
   return context ? `${task}\n\n---\nPrecheck output:\n${context}` : task;
 }
@@ -39,6 +43,7 @@ export function createTriggerPlugin(deps: {
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter?: EventReporter;
+  findSessionByRef?: (ref: string) => string | undefined;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
@@ -49,6 +54,34 @@ export function createTriggerPlugin(deps: {
       mode: SessionMode.Chat,
       scheduleId: payload.scheduleId,
     };
+    const origin = payload.origin;
+    if (origin?.mode === "continue") {
+      const originSession = deps.findSessionByRef?.(origin.sessionRef);
+      if (originSession) {
+        await deps.driver.start({
+          task: continuationPrompt(origin.name, task),
+          mcpServers: payload.mcpServers,
+          resumeSessionId: originSession,
+          unattended: true,
+        });
+        return;
+      }
+      deps.log(
+        `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
+      );
+    }
+    if (origin?.mode === "report") {
+      await deps.driver.start({
+        task,
+        mcpServers: payload.mcpServers,
+        platformMeta: {
+          ...platformMeta,
+          reportTo: origin.sessionRef,
+          reportName: origin.name,
+        },
+      });
+      return;
+    }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
       if (prior) {

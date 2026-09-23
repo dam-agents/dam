@@ -10,6 +10,7 @@ import {
 function fakeStore(): SessionMetadataStore {
   return {
     get: () => undefined,
+    findByRef: () => undefined,
     set: () => {},
     recordActivity: () => {},
     recordSeen: () => {},

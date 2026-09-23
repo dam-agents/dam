@@ -1,3 +1,4 @@
+import { SESSION_REF_HEADER } from "agent-runtime-api";
 import { match } from "ts-pattern";
 import { basename } from "node:path";
 import type { Hono } from "hono";
@@ -126,6 +127,7 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  sessionRef?: string;
 }
 
 export function createMcpSession(
@@ -879,7 +881,7 @@ export function createMcpSession(
 
   server.tool(
     "schedule_once",
-    "Run a task EXACTLY ONCE on this agent, in a fresh session of its own: at a given local time, or immediately when `at` is omitted. PREFER THIS over `create_schedule` for anything that should happen once — checking back on something still in flight, retrying after a transient failure, handing a task to a fresh session now — so no recurring schedule is left behind to delete. The moment is always absolute: work out the local date and time from the current time yourself, then check the resolved instant this tool returns. It shows up in the host UI as a one-time task, and the user can cancel it there (or you can, with `delete_schedule`). The number of one-time schedules you may hold and create per hour is limited.",
+    "Run a task EXACTLY ONCE on this agent: at a given local time, or immediately when `at` is omitted. By default it runs in a fresh session of its own; `inSession` can instead continue THIS session when it is due (a check-back that keeps your context), or run fresh and report its result back into THIS session as a new turn when it finishes. PREFER THIS over `create_schedule` for anything that should happen once — checking back on something still in flight, retrying after a transient failure, handing a task to a fresh session now — so no recurring schedule is left behind to delete. The moment is always absolute: work out the local date and time from the current time yourself, then check the resolved instant this tool returns. It shows up in the host UI as a one-time task, and the user can cancel it there (or you can, with `delete_schedule`). The number of one-time schedules you may hold and create per hour is limited.",
     {
       name: z
         .string()
@@ -903,15 +905,29 @@ export function createMcpSession(
         .describe(
           "IANA timezone `at` is expressed in, e.g. 'Europe/Prague'. Required with `at`.",
         ),
+      inSession: z
+        .enum(["fresh", "continue", "report"])
+        .optional()
+        .describe(
+          "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
+        ),
     },
-    async ({ name, task, at, timezone }) => {
+    async ({ name, task, at, timezone, inSession }) => {
       if (at !== undefined && !timezone)
         return errorResult("`at` requires `timezone`.");
       const zone = timezone ?? "UTC";
+      const mode = inSession ?? "fresh";
+      if (mode !== "fresh" && !deps.sessionRef)
+        return errorResult(
+          `inSession "${mode}" needs to know which session is calling, and this harness does not identify it; use "fresh".`,
+        );
       try {
         const sched = await schedules.createOnce(
           { name, agentId, task, timezone: zone, ...(at ? { at } : {}) },
           "agent",
+          mode !== "fresh" && deps.sessionRef
+            ? { sessionRef: deps.sessionRef, mode }
+            : undefined,
         );
         const fireAt =
           sched.spec.type === "once" ? sched.spec.at : sched.status?.nextRun;
@@ -926,6 +942,7 @@ export function createMcpSession(
                   fireAt,
                   fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
                   timezone: zone,
+                  inSession: mode,
                 },
                 null,
                 2,
@@ -1116,7 +1133,9 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
     const ownerIsInspector = await deps.carriesInspectorRole(verified.owner);
+    const sessionRef = c.req.header(SESSION_REF_HEADER);
     const session = createMcpSession(agentId, {
+      ...(sessionRef ? { sessionRef } : {}),
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

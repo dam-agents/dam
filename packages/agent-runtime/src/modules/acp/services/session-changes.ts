@@ -56,6 +56,7 @@ export function notifyingSessionMetadataStore(
 ): SessionMetadataStore {
   return {
     get: (sessionId) => store.get(sessionId),
+    findByRef: (ref) => store.findByRef(ref),
     all: () => store.all(),
     isTombstoned: (sessionId) => store.isTombstoned(sessionId),
     runStartsOf: (sessionId) => store.runStartsOf(sessionId),

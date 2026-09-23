@@ -136,6 +136,8 @@ export type {
   ScheduleSpecCron,
   ScheduleSpecRRule,
   ScheduleSpecOnce,
+  ScheduleOnceOrigin,
+  OnceSessionChoice,
   ScheduleStatus,
   QuietWindow,
   ScheduleCreator,

@@ -1,6 +1,9 @@
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
-import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
+import {
+  SCHEDULE_SURFACE,
+  type AcpRuntime,
+} from "./acp-runtime/acp-runtime.js";
 
 export interface TriggerSessionDriver {
   start(opts: {
@@ -8,6 +11,7 @@ export interface TriggerSessionDriver {
     mcpServers?: unknown[];
     resumeSessionId?: string;
     platformMeta?: PlatformSessionMeta;
+    unattended?: boolean;
   }): Promise<{ sessionId: string }>;
 }
 
@@ -15,7 +19,13 @@ export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
 }): TriggerSessionDriver {
   return {
-    async start({ task, mcpServers, resumeSessionId, platformMeta }) {
+    async start({
+      task,
+      mcpServers,
+      resumeSessionId,
+      platformMeta,
+      unattended,
+    }) {
       const caller = createInProcessCaller((channel) =>
         deps.acpRuntime.attach(channel, { viewer: false }),
       );
@@ -54,6 +64,9 @@ export function createTriggerSessionDriver(deps: {
         caller.notify("session/prompt", {
           sessionId,
           prompt: [{ type: "text", text: task }],
+          ...(unattended && {
+            _meta: { platform: { surface: SCHEDULE_SURFACE } },
+          }),
         });
 
         return { sessionId };

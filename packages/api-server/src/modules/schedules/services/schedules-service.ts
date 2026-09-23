@@ -3,6 +3,7 @@ import type {
   SchedulesService,
   ScheduleCreateCronInput,
   ScheduleCreateOnceInput,
+  ScheduleOnceOrigin,
   ScheduleCreateRRuleInput,
   ScheduleSpec,
   ScheduleUpdateOnceInput,
@@ -197,7 +198,11 @@ export function createSchedulesService(deps: {
       return schedule;
     },
 
-    async createOnce(input: ScheduleCreateOnceInput, createdBy = "user") {
+    async createOnce(
+      input: ScheduleCreateOnceInput,
+      createdBy = "user",
+      origin?: ScheduleOnceOrigin,
+    ) {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
@@ -210,6 +215,7 @@ export function createSchedulesService(deps: {
         task: input.task,
         enabled: true,
         createdBy,
+        ...(origin ? { origin } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -231,7 +237,12 @@ export function createSchedulesService(deps: {
         agentId: input.agentId,
         target: schedule.id,
         result: "success",
-        detail: { createdBy, type: "once", at: spec.at },
+        detail: {
+          createdBy,
+          type: "once",
+          at: spec.at,
+          inSession: origin?.mode ?? "fresh",
+        },
       });
       return (await deps.repo.get(schedule.id, deps.owner)) ?? schedule;
     },

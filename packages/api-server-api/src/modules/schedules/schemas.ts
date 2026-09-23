@@ -140,6 +140,12 @@ const scheduleSpecOnceSchema = z
     type: z.literal("once"),
     at: z.string().datetime({ offset: true }),
     timezone: z.string(),
+    origin: z
+      .object({
+        sessionRef: z.string().min(1),
+        mode: z.enum(["continue", "report"]),
+      })
+      .optional(),
     task: z.string().optional(),
     enabled: z.boolean(),
     createdBy: scheduleCreatorSchema,

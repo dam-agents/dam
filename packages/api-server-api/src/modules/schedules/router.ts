@@ -18,7 +18,11 @@ import {
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
-import type { Schedule } from "./types.js";
+import type { OnceSessionChoice, Schedule, ScheduleSpecOnce } from "./types.js";
+
+function onceSessionChoice(spec: ScheduleSpecOnce): OnceSessionChoice {
+  return spec.origin?.mode ?? "fresh";
+}
 
 function toView(sched: Schedule) {
   const base = {
@@ -40,6 +44,7 @@ function toView(sched: Schedule) {
         ...base,
         cron: spec.cron,
         rrule: null,
+        inSession: null,
         at: null,
         timezone: null,
         quietHours: [],
@@ -49,6 +54,7 @@ function toView(sched: Schedule) {
         ...base,
         cron: null,
         rrule: spec.rrule,
+        inSession: null,
         at: null,
         timezone: spec.timezone,
         quietHours: spec.quietHours ?? [],
@@ -58,6 +64,7 @@ function toView(sched: Schedule) {
         ...base,
         cron: null,
         rrule: null,
+        inSession: onceSessionChoice(spec),
         at: spec.at,
         timezone: spec.timezone,
         quietHours: [],
