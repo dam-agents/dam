@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The tRPC WebSocket door authenticates on the connection's first frame. A refused bearer must reach the caller as a tRPC error on its own request, whatever the gap between that first frame and the request.
+// TEST_OVERVIEW: The tRPC WebSocket door authenticates on the connection's first frame. A refused bearer must reach the caller as a tRPC error on its own request, as long as that request follows the first frame within the door's one-second grace window.
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
