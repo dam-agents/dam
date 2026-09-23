@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-09-16
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -104,7 +104,7 @@ Six properties of that stream are load-bearing for anyone reading the numbers:
 
 Three sagas subscribe to the bus:
 
-- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. Runs only when activity tracking is enabled.
+- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind or from a Starter Kit), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. Runs only when activity tracking is enabled.
 - **persist-actor-roles** — upserts `actor_roles` with the user's core-role flag on `UserAuthenticated`. Deliberately a separate saga that runs **unconditionally**: the flag also gates the case-study inspector read paths ([case-studies](case-studies.md)), which must work on installs that disabled activity writes.
 
 - **persist-agents** — writes one `agents` row per `AgentCreated`. The row is marked deleted by the agent cleanup contract on every deletion path, clearing the runtime and config snapshots it carried, not by this saga. A startup bootstrap separately backfills the table from the K8s API for agents that pre-dated the saga.
