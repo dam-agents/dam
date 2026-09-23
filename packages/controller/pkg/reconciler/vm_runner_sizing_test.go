@@ -19,9 +19,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 func runnerPod(t *testing.T, r *AgentReconciler, request, limit string) {
@@ -312,4 +316,84 @@ func TestAMistypedCeilingLeavesExistingClaimsAlone(t *testing.T) {
 	r.config.VM.Runner.Storage = "a lot"
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, "100Gi", runnerClaim(t, r))
+}
+
+func actionsOn(r *AgentReconciler, verb, resource string) int {
+	n := 0
+	for _, a := range r.client.(*fake.Clientset).Actions() {
+		if a.GetVerb() == verb && a.GetResource().Resource == resource {
+			n++
+		}
+	}
+	for _, a := range r.dynamic.(*dynfake.FakeDynamicClient).Actions() {
+		if a.GetVerb() == verb && a.GetResource().Resource == resource {
+			n++
+		}
+	}
+	return n
+}
+
+// TEST_SCENARIO: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second. The owner's agents therefore come from the informer cache, and a peer's run decision from the controller's own memory of its last reconcile, so reading demand asks the cluster for nothing.
+func TestDemandIsReadWithoutAskingTheCluster(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	peer := vmAgentCR()
+	peer.Name = "peer"
+	peer.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	for _, a := range []*apiv1.Agent{agent, peer} {
+		u, err := agentToUnstructured(a)
+		require.NoError(t, err)
+		require.NoError(t, indexer.Add(u))
+	}
+	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
+	r.vmRunning.Store("peer", true)
+
+	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2*3072, d.memoryMiB)
+	assert.Zero(t, actionsOn(r, "list", "agents"), "the owner's agents come from the cache")
+	assert.Zero(t, actionsOn(r, "get", "statefulsets"), "a peer's decision comes from memory")
+}
+
+// TEST_SCENARIO: a runner whose request already matches its demand is not listed again on every half-second poll. A change of demand is acted on at once, and a runner seen not ready — as a replacement pod is — is looked at again as soon as it is ready.
+func TestAMatchingRequestIsNotListedOnEveryPoll(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	ctx := context.Background()
+
+	r.resizeRunnerPod(ctx, testOwner, 3072)
+	r.resizeRunnerPod(ctx, testOwner, 3072)
+	assert.Equal(t, 1, actionsOn(r, "list", "pods"), "an unchanged demand is not listed again")
+
+	r.resizeRunnerPod(ctx, testOwner, 4096)
+	assert.Equal(t, 2, actionsOn(r, "list", "pods"), "a changed demand is acted on at once")
+	assert.Equal(t, "4608Mi", runnerPodRequest(t, r))
+
+	r.runnerResized.Delete(testOwner)
+	r.resizeRunnerPod(ctx, testOwner, 4096)
+	assert.Equal(t, 3, actionsOn(r, "list", "pods"), "a runner that was not ready is looked at again")
+}
+
+// TEST_SCENARIO: an accepted resize is only a request to the node. When the kubelet reports it pending — infeasible on this node, or deferred until there is room — the controller reports that, once per pod and size, rather than treating the memory as accounted for.
+func TestAPendingResizeIsReportedOnce(t *testing.T) {
+	r, _, _ := setupVMReconciler(t, vmAgentCR())
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "runner-abc"},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonInfeasible, Message: "Node didn't have enough capacity",
+		}}},
+	}
+	want := resource.MustParse("3584Mi")
+	r.reportResizePending(testOwner, pod, want)
+	r.reportResizePending(testOwner, pod, want)
+	notices := 0
+	r.resizeNotices.Range(func(any, any) bool { notices++; return true })
+	assert.Equal(t, 1, notices)
 }

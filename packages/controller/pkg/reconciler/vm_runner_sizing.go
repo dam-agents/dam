@@ -5,18 +5,28 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: what each machine may write on the claim beyond its disk: the root overlay it runs on, which is thrown away at every stop but grows while the guest runs, and the bookkeeping under machines/.
 const runnerClaimHeadroomGiB = 1
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner pod whose request already matches its demand goes unlisted. A change of demand is acted on at once; this bounds only how late a replacement pod, which starts at the install's request, is noticed when no reconcile saw its runner not ready.
+const runnerResizeRecheck = 30 * time.Second
+
+type runnerResize struct {
+	demandMiB int
+	at        time.Time
+}
 
 const (
 	resizeSupportUnknown int32 = iota
@@ -38,22 +48,18 @@ func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
 
 // UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
-	items, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: envoyOwnerLabel + "=" + owner,
-	})
+	r.vmRunning.Store(self.Name, selfRunning)
+	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
-		return runnerDemand{}, fmt.Errorf("listing the owner's agents: %w", err)
+		return runnerDemand{}, err
 	}
 	agents := []*apiv1.Agent{self}
-	for i := range items.Items {
-		if items.Items[i].GetName() == self.Name {
-			continue
-		}
-		a, err := FromCacheObject[apiv1.Agent](&items.Items[i])
+	for _, obj := range items {
+		a, err := FromCacheObject[apiv1.Agent](obj)
 		if err != nil {
-			return runnerDemand{}, fmt.Errorf("decoding agent %s: %w", items.Items[i].GetName(), err)
+			return runnerDemand{}, fmt.Errorf("decoding an agent of owner %s: %w", owner, err)
 		}
-		if a.Spec.IsVM() {
+		if a.Name != self.Name && a.Spec.IsVM() {
 			agents = append(agents, a)
 		}
 	}
@@ -65,17 +71,44 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		}
 		d.diskGiB += disk
 		d.machines++
-		running := selfRunning
-		if a != self {
-			if running, err = r.agentDesiredUp(ctx, a.Name, true); err != nil {
-				return runnerDemand{}, err
-			}
+		running, err := r.peerShouldRun(ctx, a.Name)
+		if err != nil {
+			return runnerDemand{}, err
 		}
 		if running {
 			d.memoryMiB += r.machineMemoryMiB(&a.Spec)
 		}
 	}
 	return d, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second, so the owner's agents come from the informer cache the controller already keeps rather than from a live List. A reconciler built without that cache — the tests — lists them live.
+func (r *AgentReconciler) ownerAgents(ctx context.Context, owner string) ([]runtime.Object, error) {
+	selector := labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner})
+	if r.agentCache != nil {
+		items, err := r.agentCache.ByNamespace(r.config.Namespace).List(selector)
+		if err != nil {
+			return nil, fmt.Errorf("listing the owner's agents: %w", err)
+		}
+		return items, nil
+	}
+	list, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, fmt.Errorf("listing the owner's agents: %w", err)
+	}
+	items := make([]runtime.Object, len(list.Items))
+	for i := range list.Items {
+		items[i] = &list.Items[i]
+	}
+	return items, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an agent's machine should run is the decision its own last reconcile made, which this controller keeps in memory. Only an agent not reconciled since the controller started is read from the cluster, by its gateway, which is scaled up exactly when its machine should run.
+func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool, error) {
+	if running, ok := r.vmRunning.Load(name); ok {
+		return running.(bool), nil
+	}
+	return r.agentDesiredUp(ctx, name, true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
@@ -141,6 +174,11 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 	if !r.podResizeAvailable() {
 		return
 	}
+	if last, ok := r.runnerResized.Load(owner); ok {
+		if seen := last.(runnerResize); seen.demandMiB == demandMiB && time.Since(seen.at) < runnerResizeRecheck {
+			return
+		}
+	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
 	})
@@ -171,6 +209,7 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 		want := runnerMemoryRequest(demandMiB, r.config.VM.Runner.ReserveMiB, floor, limit)
 		current := res.Requests[corev1.ResourceMemory]
 		if current.Cmp(want) == 0 {
+			r.reportResizePending(owner, pod, want)
 			continue
 		}
 		if res.Requests == nil {
@@ -184,9 +223,29 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 				return
 			}
 			slog.Warn("vm runner: resizing the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String(), "error", err)
+			return
+		}
+		slog.Info("vm runner: asked the node for a new memory request on the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String())
+	}
+	r.runnerResized.Store(owner, runnerResize{demandMiB: demandMiB, at: time.Now()})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an accepted resize is a request to the node, not an allocation. The kubelet reports what it did with it on the pod: deferred while the node has no room right now, infeasible when it never will. Either way the scheduler has not accounted for that memory, so it is reported once per pod and size rather than read as done — the runner's own admission against its limit is what still stands between the owner's machines and the node.
+func (r *AgentReconciler) reportResizePending(owner string, pod *corev1.Pod, want resource.Quantity) {
+	for _, c := range pod.Status.Conditions {
+		if c.Type != corev1.PodResizePending || c.Status != corev1.ConditionTrue {
 			continue
 		}
-		slog.Info("vm runner: resized the runner pod's memory request", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String())
+		key := fmt.Sprintf("%s/%s/%s/%s", owner, pod.Name, c.Reason, want.String())
+		if _, seen := r.resizeNotices.LoadOrStore(key, struct{}{}); seen {
+			return
+		}
+		switch c.Reason {
+		case corev1.PodReasonInfeasible:
+			slog.Warn("vm runner: the node cannot give the runner pod the memory its machines commit, so the scheduler does not see it", "owner", owner, "pod", pod.Name, "request", want.String(), "message", c.Message)
+		default:
+			slog.Info("vm runner: the node has deferred the runner pod's new memory request", "owner", owner, "pod", pod.Name, "request", want.String(), "reason", c.Reason, "message", c.Message)
+		}
 	}
 }
 

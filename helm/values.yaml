@@ -235,8 +235,9 @@ virtualization:
     # happen; with no request Kubernetes uses the limit and nothing moves.
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
-    # set, and the controller logs that once. Leave the CPU limit unset: it
-    # would throttle every guest at once.
+    # set, and the controller logs that once. A node with no room defers or
+    # refuses the resize, which the controller reports too. Leave the CPU
+    # limit unset: it would throttle every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
