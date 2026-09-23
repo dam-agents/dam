@@ -92,6 +92,19 @@ type VMRunnerSpec struct {
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
+	CanaryImage          string                        `json:"canaryImage,omitempty"`
+	Canary               VMRunnerCanary                `json:"canary,omitempty"`
+	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
+}
+
+type VMRunnerCanary struct {
+	Owners  []string `json:"owners,omitempty"`
+	Percent int      `json:"percent,omitempty"`
+}
+
+type VMRunnerRollout struct {
+	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
+	SettleTimeout Duration `json:"settleTimeout,omitempty"`
 }
 
 type AgentProbes struct {

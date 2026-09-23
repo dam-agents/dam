@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 
-import { parseGithubRepoUrl } from "./catalog-source.js";
+import type { GitHosts } from "./git-hosts.js";
 
 const seedSchema = z.array(
   z
@@ -28,7 +28,10 @@ export interface CatalogSeed {
   dir?: string;
 }
 
-export function parseCatalogSeeds(raw: string | undefined): CatalogSeed[] {
+export function parseCatalogSeeds(
+  raw: string | undefined,
+  hosts: GitHosts,
+): CatalogSeed[] {
   if (!raw || raw.trim() === "") return [];
   let json: unknown;
   try {
@@ -53,10 +56,11 @@ export function parseCatalogSeeds(raw: string | undefined): CatalogSeed[] {
     seen.add(c.name);
   }
   for (const c of parsed.data) {
-    if (c.url && !parseGithubRepoUrl(c.url))
+    if (c.url && !hosts.locate(c.url))
       throw new Error(
         `STARTER_KITS_CATALOGS catalog "${c.name}" names a url this reader cannot serve: ${c.url}. ` +
-          `It must be a plain https://github.com/<owner>/<repo> URL — write a version as "ref" and a subdirectory as "dir", never inside the url.`,
+          `It must be a plain https://<host>/<owner>/<repo> URL on a host this install may read ` +
+          `(${hosts.readableHosts.join(", ")}) — write a version as "ref" and a subdirectory as "dir", never inside the url.`,
       );
   }
   return parsed.data.map((c) => ({

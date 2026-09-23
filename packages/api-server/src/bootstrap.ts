@@ -159,11 +159,14 @@ import { createReposRepository } from "./modules/repos/infrastructure/repos-repo
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
+  catalogEntryHosts,
   createCatalogSourceFromLocator,
   createOnboardingChecklist,
   createOnboardingChecklistRepository,
   createOnboardingMarker,
   createCatalogRefresh,
+  createGitCatalogSource,
+  createGitHosts,
   createGitRefResolver,
   createResolvedCatalogRepository,
   createStarterKitsRepository,
@@ -326,18 +329,35 @@ export async function bootstrap() {
   const starterKitsRepo = createStarterKitsRepository({
     resolved: resolvedCatalog,
   });
+  const kitGitHosts = createGitHosts({
+    host: config.githubEnterpriseHost,
+    token: config.githubEnterpriseToken,
+  });
   const starterKitsRefresh = createCatalogRefresh({
-    catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
+    catalogs: parseCatalogSeeds(
+      config.starterKitsCatalogs,
+      kitGitHosts,
+    ).flatMap((c) => {
       const located = createCatalogSourceFromLocator(
+        kitGitHosts,
         c.locator,
         c.kind,
         c.ref,
         c.dir,
       );
-      return located ? [{ name: c.name, ...located }] : [];
+      if (!located) return [];
+      return [
+        {
+          name: c.name,
+          ...located,
+          entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
+        },
+      ];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(),
+    refs: createGitRefResolver(kitGitHosts),
+    sourceForEntry: (gitUrl, ref) =>
+      createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
