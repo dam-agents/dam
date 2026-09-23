@@ -23,11 +23,19 @@ import {
   buildPresetFromFlags,
   parseQuietWindow,
 } from "../domain/recurrence-flags.js";
+import {
+  localTimeIn,
+  parseAtFlag,
+  recurringFlagsGiven,
+} from "../domain/once-flags.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 
 interface CreateOpts {
   name: string;
   task: string;
+  once?: boolean;
+  at?: string;
+  now?: boolean;
   daily?: string;
   every?: string;
   rrule?: string;
@@ -47,10 +55,21 @@ export function buildCreateCommand(deps: {
   createScheduleService: (host: string) => ScheduleService;
 }): Command {
   return new Command("create")
-    .description("Create an RRULE schedule on an Agent")
+    .description(
+      "Create an RRULE schedule on an Agent, or with --once a one-time task",
+    )
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .requiredOption("--name <name>", "schedule name")
     .requiredOption("--task <task>", "task prompt to run each tick")
+    .option(
+      "--once",
+      "run the task exactly once, at --at or --now, in a fresh session",
+    )
+    .option(
+      "--at <YYYY-MM-DD HH:MM>",
+      "with --once: the local time (in --timezone) to run at",
+    )
+    .option("--now", "with --once: run immediately")
     .option("--daily <HH:MM>", "run daily at HH:MM (24h)")
     .option("--every <interval>", "run every N minutes (Nm) or hours (Nh)")
     .option(
@@ -88,9 +107,37 @@ export function buildCreateCommand(deps: {
       "\nExamples:\n" +
         "  dam schedule create my-agent --name nightly --task 'Check dashboards' --daily 22:00\n" +
         "  dam schedule create my-agent --name standup --task 'Summarize' --every 30m --weekdays MO,WE,FR --quiet-window 22:00-06:00\n" +
-        "  dam schedule create my-agent --name custom --task 'Run' --rrule 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7;BYMINUTE=0'\n",
+        "  dam schedule create my-agent --name custom --task 'Run' --rrule 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7;BYMINUTE=0'\n" +
+        "  dam schedule create my-agent --name notes --task 'Prepare release notes' --once --at '2026-10-01 08:30'\n" +
+        "  dam schedule create my-agent --name export --task 'Run the export' --once --now\n",
     )
     .action(async (ref: string, opts: CreateOpts) => {
+      let at: string | undefined;
+      if (opts.once) {
+        const conflicting = recurringFlagsGiven(opts);
+        if (conflicting.length > 0) {
+          process.stderr.write(
+            `error: --once does not take ${conflicting.join(", ")}\n`,
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        if ((opts.at === undefined) === (opts.now !== true)) {
+          process.stderr.write(
+            "error: --once needs exactly one of --at or --now\n",
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        try {
+          at = opts.at === undefined ? undefined : parseAtFlag(opts.at);
+        } catch (e) {
+          process.stderr.write(`error: ${(e as Error).message}\n`);
+          process.exit(EXIT_INVALID_INPUT);
+        }
+      } else if (opts.at !== undefined || opts.now) {
+        process.stderr.write("error: --at and --now need --once\n");
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
       const host = await resolveActiveHost(deps, {
         flag: opts.server ? { server: opts.server } : undefined,
         exitCodes: {
@@ -106,6 +153,34 @@ export function buildCreateCommand(deps: {
       if (!resolved.ok) {
         printResolveError(resolved.error, host);
         process.exit(exitCodeForResolveError(resolved.error));
+      }
+
+      if (opts.once) {
+        const timezone = opts.timezone ?? detectTimezone();
+        const created = await deps.createScheduleService(host).createOnce({
+          name: opts.name,
+          agentId: resolved.value.id,
+          task: opts.task,
+          timezone,
+          ...(at ? { at } : {}),
+        });
+        if (!created.ok) {
+          if (created.error.kind === "invalid-input") {
+            process.stderr.write(`error: ${created.error.message}\n`);
+            process.exit(EXIT_INVALID_INPUT);
+          }
+          printServiceError(created.error, host);
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+        if (opts.json) {
+          process.stdout.write(`${JSON.stringify(created.value)}\n`);
+        } else {
+          const fireAt = created.value.at ?? "";
+          process.stdout.write(
+            `✓ Created one-time schedule ${created.value.id} (${created.value.name}) on ${ref}, running at ${localTimeIn(fireAt, timezone)} ${timezone} (${fireAt}).\n`,
+          );
+        }
+        process.exit(EXIT_SUCCESS);
       }
 
       let rrule: string;

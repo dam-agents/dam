@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { rruleToText } from "api-server-api";
+import { onceState, rruleToText } from "api-server-api";
+import { localTimeIn } from "../domain/once-flags.js";
 import type { AgentService } from "../../agent/index.js";
 import { createAgentResolver } from "../../agent/index.js";
 import {
@@ -21,7 +22,19 @@ import type {
 } from "../services/schedule-service.js";
 
 function recurrenceText(view: ScheduleView): string {
-  return view.rrule !== null ? rruleToText(view.rrule) : (view.cron ?? "");
+  switch (view.type) {
+    case "once":
+      return `once at ${localTimeIn(view.at ?? "", view.timezone ?? "UTC")}`;
+    case "rrule":
+      return rruleToText(view.rrule ?? "");
+    case "cron":
+      return view.cron ?? "";
+  }
+}
+
+function resultText(view: ScheduleView): string {
+  if (view.type === "once") return onceState(view.status);
+  return view.status?.lastResult ?? "—";
 }
 
 export function buildListCommand(deps: {
@@ -98,7 +111,7 @@ export function buildListCommand(deps: {
             v.timezone ?? "—",
             String(v.enabled),
             v.status?.nextRun ?? "—",
-            v.status?.lastResult ?? "—",
+            resultText(v),
           ]),
         ]),
       );

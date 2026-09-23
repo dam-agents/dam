@@ -21,9 +21,18 @@ import {
   formatWeekdays,
   parseQuietWindow,
 } from "../domain/recurrence-flags.js";
-import type { ScheduleService } from "../services/schedule-service.js";
+import {
+  localTimeIn,
+  parseAtFlag,
+  recurringFlagsGiven,
+} from "../domain/once-flags.js";
+import type {
+  ScheduleService,
+  ScheduleView,
+} from "../services/schedule-service.js";
 
 interface UpdateOpts {
+  at?: string;
   name?: string;
   task?: string;
   daily?: string;
@@ -51,6 +60,10 @@ export function buildUpdateCommand(deps: {
     .argument("<schedule-id>", "Schedule id (from `dam schedule list`)")
     .option("--name <name>", "new schedule name")
     .option("--task <task>", "new task prompt")
+    .option(
+      "--at <YYYY-MM-DD HH:MM>",
+      "one-time schedules only: new local time to run at",
+    )
     .option("--daily <HH:MM>", "rebuild recurrence: daily at HH:MM")
     .option("--every <interval>", "rebuild recurrence: every Nm/Nh")
     .option("--rrule <body>", "rebuild recurrence: raw RFC 5545 RRULE body")
@@ -101,6 +114,7 @@ export function buildUpdateCommand(deps: {
         opts.weekdays !== undefined ||
         opts.precheck !== undefined ||
         opts.precheckNone === true ||
+        opts.at !== undefined ||
         recurrenceGiven ||
         quietGiven;
       if (!anyFlag) {
@@ -135,6 +149,15 @@ export function buildUpdateCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
       const view = current.value;
+      if (view.type === "once") {
+        await updateOnce(svc, host, view, opts);
+      }
+      if (opts.at !== undefined) {
+        process.stderr.write(
+          "error: --at only applies to one-time schedules\n",
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
       if (view.rrule === null) {
         process.stderr.write(
           "error: this is a legacy cron schedule; recreate it as an RRULE to edit\n",
@@ -217,4 +240,57 @@ export function buildUpdateCommand(deps: {
       }
       process.exit(EXIT_SUCCESS);
     });
+}
+
+async function updateOnce(
+  svc: ScheduleService,
+  host: string,
+  view: ScheduleView,
+  opts: UpdateOpts,
+): Promise<never> {
+  const conflicting = recurringFlagsGiven(opts);
+  if (conflicting.length > 0) {
+    process.stderr.write(
+      `error: a one-time schedule does not take ${conflicting.join(", ")}\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const timezone = opts.timezone ?? view.timezone ?? detectTimezone();
+  let at: string;
+  try {
+    at =
+      opts.at !== undefined
+        ? parseAtFlag(opts.at)
+        : parseAtFlag(localTimeIn(view.at ?? "", timezone));
+  } catch (e) {
+    process.stderr.write(`error: ${(e as Error).message}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const result = await svc.updateOnce({
+    id: view.id,
+    name: opts.name ?? view.name,
+    task: opts.task ?? view.task ?? "",
+    at,
+    timezone,
+  });
+  if (!result.ok) {
+    if (result.error.kind === "schedule-not-found") {
+      process.stderr.write(`error: schedule not found: ${view.id}\n`);
+      process.exit(EXIT_SCHEDULE_NOT_FOUND);
+    }
+    if (result.error.kind === "invalid-input") {
+      process.stderr.write(`error: ${result.error.message}\n`);
+      process.exit(EXIT_INVALID_INPUT);
+    }
+    printServiceError(result.error, host);
+    process.exit(EXIT_RUNTIME_FAILURE);
+  }
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(result.value)}\n`);
+  } else {
+    process.stdout.write(
+      `✓ Updated one-time schedule ${result.value.id} (${result.value.name}).\n`,
+    );
+  }
+  process.exit(EXIT_SUCCESS);
 }
