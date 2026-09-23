@@ -1,6 +1,5 @@
 import { Add } from "@carbon/icons-react";
-import type { ConnectionTemplateView } from "api-server-api";
-import { useMemo } from "react";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
@@ -15,6 +14,7 @@ import type { CatalogProviderGroup } from "../../connections/lib/catalog-provide
 
 interface Props {
   groups: CatalogProviderGroup[];
+  granted: readonly ConnectionView[];
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
@@ -25,6 +25,7 @@ interface Props {
 
 export function GrantedConnectionsPanel({
   groups,
+  granted,
   templateById,
   onToggleGrant,
   onOpenCatalog,
@@ -33,10 +34,6 @@ export function GrantedConnectionsPanel({
   leading,
 }: Props) {
   const maintenance = useConnectionMaintenance();
-  const granted = useMemo(
-    () => groups.flatMap((group) => group.connections),
-    [groups],
-  );
 
   const header = (
     <div className="mb-3 flex items-center justify-between">
@@ -52,11 +49,15 @@ export function GrantedConnectionsPanel({
       </Button>
     </div>
   );
+  const rivalryCallout = (
+    <GrantRivalryCallout granted={granted} inset={inset} className="mb-3" />
+  );
 
   if (groups.length === 0)
     return (
       <>
         {header}
+        {rivalryCallout}
         {leading && <Wrap inset={inset}>{leading}</Wrap>}
         {!leading && (
           <EmptyStateCard
@@ -71,8 +72,8 @@ export function GrantedConnectionsPanel({
   return (
     <>
       {header}
+      {rivalryCallout}
       <Wrap inset={inset}>
-        <GrantRivalryCallout granted={granted} />
         {leading}
         {groups.map((group) => (
           <ConnectionGroupCard

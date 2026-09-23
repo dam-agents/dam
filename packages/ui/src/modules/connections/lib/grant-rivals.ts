@@ -43,5 +43,5 @@ export function grantRivalryWarning({
   rival,
   host,
 }: GrantRivalry): string {
-  return `"${connection.name}" and "${rival.name}" both sign in to ${host}. This agent cannot tell them apart, so its requests to ${host} are refused. Remove one of them.`;
+  return `"${connection.name}" and "${rival.name}" both sign in to ${host}. This agent cannot tell them apart, so the requests both would sign there are refused. Remove one of them.`;
 }

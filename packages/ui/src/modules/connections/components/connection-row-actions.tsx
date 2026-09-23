@@ -153,14 +153,15 @@ function RowGrantAction({
   if (grant.blockedReason)
     return (
       <Tooltip content={grant.blockedReason}>
-        <span className="inline-flex">
+        <span className="inline-flex" tabIndex={0}>
           <Badge
             variant="muted"
             className="h-8 shrink-0 gap-1.5 px-3 text-sm font-normal"
             data-testid={`catalog-add-blocked-${connectionId}`}
           >
-            <WarningAlt size={16} className="text-warning" />
+            <WarningAlt size={16} className="text-warning" aria-hidden />
             Can&apos;t add
+            <span className="sr-only">{grant.blockedReason}</span>
           </Badge>
         </span>
       </Tooltip>
