@@ -68,6 +68,7 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
     overBudget: false,
+    podRestarts: 0,
     contributionFailures: [],
     unsupportedContributionKinds: [],
     workspaceFailures: [],

@@ -25,6 +25,8 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       memory: agent.spec.resources?.limits?.memory,
     },
     podTerminationReason: agent.podTerminationReason,
+    podRestarts: agent.podRestarts,
+    podRestartReason: agent.podRestartReason,
     contributionFailures: agent.contributionFailures,
     unsupportedContributionKinds: agent.unsupportedContributionKinds,
     workspaceFailures: agent.workspaceFailures,
