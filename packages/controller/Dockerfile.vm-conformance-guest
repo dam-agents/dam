@@ -17,5 +17,6 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -o /vm-conformance-guest ./cmd/vm-conformance-guest
 
 FROM scratch
+COPY --from=builder /etc/passwd /etc/group /etc/
 COPY --from=builder /vm-conformance-guest /vm-conformance-guest
 ENTRYPOINT ["/vm-conformance-guest"]
