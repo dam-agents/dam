@@ -1,4 +1,4 @@
-import { AVATAR_VERSION, avatarSeed, avatarSvg } from "agent-avatar";
+import { AVATAR_VERSION, avatarKey, avatarSeed, avatarSvg } from "agent-avatar";
 import { Hono } from "hono";
 import sharp from "sharp";
 
@@ -12,8 +12,8 @@ const ONE_DAY = 86_400;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An agent's avatar as a PNG, for surfaces that
  * fetch an image by URL rather than draw it, such as a Slack message icon.
- * The path carries the hash of the agent's name (`avatarSeed`), never the
- * name, and the figure is a pure function of that number: the route reads no
+ * The path carries the hash of the agent's owner and name (`avatarSeed` of
+ * `avatarKey`), never either of them, and the figure is a pure function of that number: the route reads no
  * agent data, so it confirms nothing about which agents exist. The version
  * segment keys the design for caches that never revalidate; any version
  * renders the current design, but only the current one is marked immutable.
@@ -64,7 +64,8 @@ export function publicAvatarPath(seed: number): string {
 
 export function publicAvatarUrl(
   baseUrl: string,
-): (agentName: string) => string {
+): (owner: string, agentName: string) => string {
   const origin = baseUrl.replace(/\/+$/, "");
-  return (agentName) => `${origin}${publicAvatarPath(avatarSeed(agentName))}`;
+  return (owner, agentName) =>
+    `${origin}${publicAvatarPath(avatarSeed(avatarKey(owner, agentName)))}`;
 }

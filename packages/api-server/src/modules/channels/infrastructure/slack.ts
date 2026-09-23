@@ -1044,7 +1044,7 @@ export function createSlackWorker(
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
-  agentIcon: ((agentName: string) => string) | null = null,
+  agentIcon: ((owner: string, agentName: string) => string) | null = null,
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1425,9 +1425,12 @@ export function createSlackWorker(
     teamId: SlackWorkspace,
   ): Promise<SlackAuthor | undefined> {
     if (!agentIcon || !(await canPostAsAgent(gw, teamId))) return undefined;
-    const name = await resolveAgentName(instanceName);
-    if (name === instanceName) return undefined;
-    return { username: name, iconUrl: agentIcon(name) };
+    const [name, owner] = await Promise.all([
+      resolveAgentName(instanceName),
+      getInstanceOwner(instanceName).catch(() => null),
+    ]);
+    if (name === instanceName || !owner) return undefined;
+    return { username: name, iconUrl: agentIcon(owner, name) };
   }
 
   async function ephemeral(

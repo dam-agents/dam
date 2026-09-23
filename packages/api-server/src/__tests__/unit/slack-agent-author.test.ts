@@ -17,8 +17,9 @@ configureLogger({ level: "error", write: () => {} });
 
 function harness(opts: {
   scopes: string[] | null;
-  icon: ((name: string) => string) | null;
+  icon: ((owner: string, name: string) => string) | null;
   agentName?: string | null;
+  owner?: string | null;
 }) {
   const gw = createFakeSlackGateway();
   gw.setChannels([{ id: BOUND, name: "agent-home", botIsMember: true }], "");
@@ -43,7 +44,7 @@ function harness(opts: {
     { resolve: async () => null } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
     createMemoryTtlStore(600_000),
-    async () => "kc|owner-1",
+    async () => (opts.owner === undefined ? "owner-1" : opts.owner),
     {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () => [{ id: BOUND, teamId: "" }],
@@ -71,8 +72,8 @@ function harness(opts: {
   };
 }
 
-const icon = (name: string) =>
-  `https://dam.example/api/public/avatars/v1/${name.length}.png`;
+const icon = (owner: string, name: string) =>
+  `https://dam.example/api/public/avatars/v1/${owner}-${name}.png`;
 
 describe("slack agent author", () => {
   // TEST_SCENARIO: The operator switched agent avatars on and the workspace granted the scope. The agent's post shows its own name and avatar.
@@ -81,7 +82,7 @@ describe("slack agent author", () => {
     expect(await h.send("hello")).toEqual({ ok: true });
     expect(h.posted.at(-1)?.author).toEqual({
       username: "velvet-comet",
-      iconUrl: icon("velvet-comet"),
+      iconUrl: icon("owner-1", "velvet-comet"),
     });
   });
 
@@ -104,6 +105,17 @@ describe("slack agent author", () => {
     const h = harness({
       scopes: ["chat:write", "chat:write.customize"],
       icon: null,
+    });
+    await h.send("hello");
+    expect(h.posted.at(-1)?.author).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: The agent's owner could not be read. The face is drawn from owner and name together, so without the owner it would not match the UI's; the post goes out as the app.
+  it("keeps the app's identity when the agent's owner cannot be resolved", async () => {
+    const h = harness({
+      scopes: ["chat:write", "chat:write.customize"],
+      icon,
+      owner: null,
     });
     await h.send("hello");
     expect(h.posted.at(-1)?.author).toBeUndefined();
