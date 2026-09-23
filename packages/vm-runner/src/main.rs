@@ -438,4 +438,28 @@ mod tests {
             );
         }
     }
+
+    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary is meant to replace the Go runner under that same ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
+    #[test]
+    fn the_images_entrypoint_arguments_are_accepted() {
+        let path = "../controller/Dockerfile.vm-runner";
+        let dockerfile = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
+        let line = dockerfile
+            .lines()
+            .find(|line| line.starts_with("ENTRYPOINT "))
+            .expect("the runner image has an ENTRYPOINT");
+        let words: Vec<String> =
+            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
+                .expect("the ENTRYPOINT is in exec form");
+        let runner = words
+            .iter()
+            .position(|word| word == "vm-runner")
+            .expect("the ENTRYPOINT runs vm-runner");
+        let mut argv = vec!["vm-runner".to_string()];
+        argv.extend(words[runner + 1..].iter().cloned());
+        argv.push("--memory-mib=1".to_string());
+        Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the ENTRYPOINT's arguments {argv:?} are rejected: {e}"));
+    }
 }

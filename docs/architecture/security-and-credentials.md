@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -17,7 +17,7 @@ Three rules carry the security model:
    `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
-   *kernel* by a per-pair NetworkPolicy;
+   *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
    gateway pod's SPIFFE principal.
@@ -62,7 +62,7 @@ flowchart LR
 
   api-server -->|write K8s Secrets<br/>agent-platform.ai/owner=sub| gatewaypod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| gatewaypod
-  controller -->|render agent + paired gateway<br/>+ per-pair agent egress NetworkPolicy<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
+  controller -->|render agent + paired gateway<br/>+ per-pair NetworkPolicies<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
 
   agent-runtime -->|HTTPS_PROXY=&lt;agent&gt;-gateway| envoy
   envoy -->|ext_authz Check| api-server
@@ -73,11 +73,9 @@ The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
-- **Per-pair agent egress NetworkPolicy** is the sole gate on the
-  agent → paired gateway hop. The agent pod opts out of ambient mesh, so the kernel sees real
-  destination IPs rather than HBONE tunnelled to ztunnel; the policy
-  admits exactly DNS and the paired gateway pod's Envoy port. HBONE
-  15008 is not admitted — the agent never speaks it.
+- **Per-pair NetworkPolicies** gate the agent → paired gateway hop
+  at both ends. The agent pod opts out of ambient mesh, so the kernel
+  sees real destination IPs rather than HBONE tunnelled to ztunnel.
 - **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
@@ -335,31 +333,29 @@ Pulling the agent's container image from a private registry uses a
 **structurally separate** credential class from the egress credentials
 above. It does not ride the Envoy path at all:
 
-- **The kubelet consumes it, not Envoy.** It is a
-  `kubernetes.io/dockerconfigjson` Secret referenced from the pod spec's
-  `imagePullSecrets`; the kubelet reads it at pod creation to authenticate
-  the image pull. It is never mounted into the gateway pod and never
-  projected into the agent container — like egress credentials, the agent
-  never holds the bytes, but here that is a property of *where the Secret
-  is consumed* rather than of Envoy injection.
+- **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
+  It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
+  `imagePullSecrets`. A vm Agent has no pod, so its runner tries the same
+  Secrets in the same order for that fetch alone, never storing them, and
+  re-checks a private cache entry per machine
+  ([persistence](persistence.md#the-machine-image-cache)). Either way the
+  agent never holds the bytes — because of *where the Secret is
+  consumed*, not Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
   owner-scoped and reusable across every Agent that owner runs; a pull
   credential is agent-scoped — one Secret per Agent (still carrying the
   creator's `agent-platform.ai/owner` for tenancy), created with the Agent and
-  torn down with it. There is no cross-agent reuse.
+  torn down with it.
 - **Per-agent precedence over the install-wide default.** An operator may
-  configure an install-wide default pull secret applied to every agent
-  pod. When an Agent carries its own pull-secret ref the controller lists
-  it *first* on the pod's `imagePullSecrets`, ahead of the install-wide
-  default, which is retained as a fallback — override, not replace.
+  configure a default pull secret for every agent. An Agent's own
+  pull-secret ref is listed *first*, ahead of that default, which is kept
+  as a fallback — override, not replace.
 
-The api-server builds the Secret from structured `{server, username,
-password}` input and writes it before the Agent record, rolling it back if
-that create fails. Teardown is a delete-time cleanup hook with a
-label-scoped orphan sweep as backstop; lifetime detail lives on
+The api-server builds the Secret from structured registry input and
+writes it before the Agent record, rolling it back if that create fails; its teardown lives on
 [persistence](persistence.md). The credential is validated only at pull
-time — a bad credential surfaces as an image-pull failure on the pod, not
-a create-time error.
+time — a bad credential surfaces as an image-pull failure (a vm Agent's
+image reads unavailable), not a create-time error.
 
 Scope is long-lived static credentials (registry PAT, robot account, basic
 auth, a GCP Artifact Registry JSON key as the password). Short-lived or
@@ -645,6 +641,9 @@ differ:
   scope the OpenShift SCC grant that permits uid 0 to exactly this
   workload — an ops-side, out-of-band binding. The pod joins no mesh and
   mounts no credentials.
+- **Image cache ServiceAccount** — a token, only with default pull
+  secrets set, and a Role that gets just those
+  ([persistence](persistence.md#the-machine-image-cache)).
 - **Per-Agent ServiceAccount** in the agent namespace, name ==
   Agent ID. Both pods of the long-lived pair run as this SA, but
   only the *gateway* pod is a mesh participant — istiod stamps it with
@@ -653,9 +652,12 @@ differ:
   `automountServiceAccountToken`
   stays false on both pods; the gateway's SPIFFE cert is independent
   of SA-token mounts.
-- **Agent → paired gateway** is gated at the kernel by the per-pair
-  `<id>-agent-egress` NetworkPolicy. One egress rule: the paired
-  gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy port.
+- **Agent → paired gateway** is gated at the kernel at both ends.
+  The per-pair `<id>-agent-egress` NetworkPolicy has one egress rule:
+  the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
+  proxy port. The gateway injects credentials for any caller, so
+  `<id>-gateway-ingress` admits that port only from the paired agent
+  pod and, for a vm Agent, the owner's VM runner.
   DNS is not admitted — the agent addresses its gateway by ClusterIP,
   and name resolution for external hosts happens in the gateway, so
   anything in the pod that tries to resolve names directly fails

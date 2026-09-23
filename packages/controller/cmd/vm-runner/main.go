@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -41,8 +42,13 @@ func main() {
 		slog.Error("reading token file", "path", *tokenFile, "error", err)
 		os.Exit(1)
 	}
+	runtime := &vmrunner.Smolvm{Bin: *smolvm}
+	// UNIT_BOUNDARY_DESCRIPTION: HOME is the runner's claim, so templates expanded under it survive a pod roll. It is beside smolvm's own directories there rather than inside them, so nothing smolvm lists or cleans up can take one.
+	if home := os.Getenv("HOME"); home != "" {
+		runtime.TemplateDir = filepath.Join(home, ".disk-templates")
+	}
 	srv := &vmrunner.Server{
-		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, ImageDir: *imageDir, Runtime: &vmrunner.Smolvm{Bin: *smolvm},
+		Token: strings.TrimSpace(string(token)), StateDir: *stateDir, ImageDir: *imageDir, Runtime: runtime,
 		PortMin: *portMin, PortMax: *portMax, MemoryMiB: *memory, ReserveMiB: *reserve,
 		Crane: *crane, Init: *initBin, RunnerID: *runnerID, ImageBudget: *imageBudget,
 	}

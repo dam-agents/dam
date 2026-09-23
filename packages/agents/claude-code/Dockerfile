@@ -44,10 +44,20 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 # Which harness family this image runs; kit bootstraps and pod shells read it.
 ENV PLATFORM_HARNESS=claude-code
 
-# managed-settings.json carries the Stop/SubagentStop background-work report;
-# keep it otherwise minimal — a legacy allowedMcpServers shape breaks Claude
-# Code 2.x startup. Leaving WebSearch/WebFetch undenied is deliberate: Anthropic
-# backends serve them natively, and a LiteLLM-fronted proxy keys on the tool
+# managed-settings.json carries the Stop/SubagentStop background-work report and
+# allow rules for the platform's own two MCP servers. Those rules resolve ahead
+# of any permission prompt or auto-mode classifier check, which is what keeps an
+# agent able to reach the platform — reply to its channel turn, report an
+# invocation result, read a knowledge base — in every permission mode. Without
+# them a mode that prompts has nobody to answer on an unattended turn, and the
+# agent goes silent with its answer undeliverable. Reach on those tools is
+# enforced by the platform (per-agent endpoint path, mesh identity, binding),
+# never by the harness's permission layer; per-operation control over them is
+# #3323's, not this file's. They live here rather than in user settings so an
+# agent cannot drop its own ability to answer. Keep it otherwise minimal — a
+# legacy allowedMcpServers shape breaks Claude Code 2.x startup. Leaving
+# WebSearch/WebFetch undenied is deliberate: Anthropic backends serve them
+# natively, and a LiteLLM-fronted proxy keys on the tool
 # declaration to run the search itself (proxy-side limitations: #3092). The old
 # cc-websearch DDG fallback is intentionally gone, not pending (#1087 revert).
 # harness-history-lib.mjs imports the adapter's own replay conversion; the

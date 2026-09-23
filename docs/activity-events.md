@@ -53,7 +53,8 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SkillPublished` | `skill_published` | skills |
 | `SkillSetSaved` | `skill_set_saved` | skills |
 | `SkillSetDeleted` | `skill_set_deleted` | skills |
-| `KindedAgentCreated` | `kinded_agent_created` | agents, starter-kits |
+| `KindedAgentCreated` | `kinded_agent_created` | agents |
+| `StarterKitApplied` | `starter_kit_applied` | starter-kits |
 | `InvocationSpawned` | `invocation_spawned` | invocations |
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
 | `ApiKeyChanged` | `api_key_<action>` | api-keys |

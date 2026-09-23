@@ -30,6 +30,15 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
+# With an install default pull Secret the cache service also gets a Role in the
+# agent namespace, to read that Secret, which no other render reaches.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
+  --set agentNamespace=platform-agents \
+  | "${KUBECONFORM[@]}" "$@"
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \
