@@ -171,7 +171,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
-				agentReconciler.Delete(ctx, u.GetName())
+				agentReconciler.Delete(ctx, u.GetName(), u.GetLabels())
 			}
 		},
 	})

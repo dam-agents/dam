@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -129,7 +129,7 @@ What does **not** survive hibernation: anything written to the container's ephem
 
 Mounting the disk is the platform's job rather than the image's. The runner hands every machine a read-only share holding the MITM CA and **platform-init**, and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, seeds `HOME` once from whatever the image ships there, bind-mounts it, and execs the image's own entrypoint. Any image therefore keeps its agent's home, including one that has never heard of this platform — where before the mounting lived in the agent base image, so any other image came up with its disk unmounted and lost everything at the first stop, silently, because the guard against that lived in the entrypoint that was missing. Because the storage model is a constant rather than something an Agent describes, the share carries no plan and the guest parses nothing. The disk keeps the agent's home and the platform's own state in separate namespaces, so an image whose home happens to hold a `log` directory cannot collide with what the platform writes there because a machine's root cannot keep it: the guest's boot log, which is where an agent's output goes since a machine's console goes nowhere, kept one boot deep so a machine that died still explains itself on the boot after; and the trust store the boot reuses rather than rebuilding. Both are rebuilt or resumed by the next boot rather than being state an Agent can lose.
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, and the image cache budget when the cache lives there; the install's value is the ceiling, not the size. It grows in place as agents are added, up to that ceiling, and is never shrunk. On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later. A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
+**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, and the image cache budget when the cache lives there; the install's value is the ceiling, not the size. The runtime's disk templates live there too, sparse enough to need no share of it. It grows in place as agents are added, up to that ceiling, and is never shrunk. On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later. A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 ### The machine image cache
 

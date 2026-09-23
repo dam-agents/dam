@@ -425,12 +425,12 @@ func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, ag
 	})
 }
 
-func (r *AgentReconciler) Delete(ctx context.Context, name string) {
+func (r *AgentReconciler) Delete(ctx context.Context, name string, labels map[string]string) {
 	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
-	r.deleteMachineEverywhere(ctx, name)
+	r.deleteMachine(ctx, name, labels[envoyOwnerLabel])
 	r.vmRunning.Delete(name)
 
 	r.clearDeniedWake(name)
