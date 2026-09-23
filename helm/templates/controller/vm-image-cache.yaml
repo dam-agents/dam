@@ -111,8 +111,9 @@ spec:
             owners and modes its files were built with, so tar chowns each
             entry (CHOWN), sets a mode on a file it has just given away
             (FOWNER), and keeps writing into directories that are read-only or
-            no longer its own (DAC_OVERRIDE). The profile matches the runner's
-            for the same unpack.
+            no longer its own (DAC_OVERRIDE). A runner that caches on its own
+            claim holds the same three for the same unpack; the runners this
+            service serves only read, so they hold no CHOWN or FOWNER.
             */}}
             runAsUser: 0
             capabilities:

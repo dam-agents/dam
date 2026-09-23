@@ -97,7 +97,7 @@ pub fn read_config(
     )))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the runner's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
+// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the cache writer's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
 pub fn unpack(
     crane: &str,
     reference: &str,

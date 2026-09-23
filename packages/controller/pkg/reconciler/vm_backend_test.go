@@ -1165,8 +1165,32 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
-// TEST_SCENARIO: the runner unpacks each image once for every machine of it to share, and restoring a rootfs faithfully means writing the ownership and modes its files carry. Under a policy that drops every capability tar cannot: it fails on chown, then — given only CHOWN — on setting a mode it no longer owns, and then on writing into a directory it has just given away, which bits forbid even to root. All three are therefore held, or an image that is not already cached cannot be unpacked and no machine can be created from it.
-func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
+// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns — so that runner holds CHOWN and FOWNER. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds NET_ADMIN for the per-machine NAT and DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
+	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.VM.Runner)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
+		require.NotNil(t, caps)
+		return caps.Add
+	}
+
+	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE", "CHOWN", "FOWNER"},
+		capsFor(func(*config.VMRunnerSpec) {}), "the runner that unpacks into its own claim")
+	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"},
+		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
+		"the node's image cache service unpacks, and this runner only reads")
+	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"},
+		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageArchiveHostPath = "/var/lib/platform-archives" }),
+		"a staged archive is flattened inside the guest")
+}
+
+// TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.
+func TestTheRunnerTakesNoServiceLinks(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
@@ -1174,13 +1198,6 @@ func TestTheRunnerHoldsWhatUnpackingAnImageNeeds(t *testing.T) {
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	caps := dep.Spec.Template.Spec.Containers[0].SecurityContext.Capabilities
-	require.NotNil(t, caps)
-	assert.Contains(t, caps.Add, corev1.Capability("DAC_OVERRIDE"),
-		"and then writes into a directory it has just given away")
-	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "the per-machine NAT still needs this")
-	assert.Contains(t, caps.Add, corev1.Capability("CHOWN"), "tar chowns each file to the uid the image gave it")
-	assert.Contains(t, caps.Add, corev1.Capability("FOWNER"), "and then sets a mode on a file it no longer owns")
 	require.NotNil(t, dep.Spec.Template.Spec.EnableServiceLinks)
 	assert.False(t, *dep.Spec.Template.Spec.EnableServiceLinks,
 		"service links would inject one env var set per sibling agent Service; the runner reads none of them")

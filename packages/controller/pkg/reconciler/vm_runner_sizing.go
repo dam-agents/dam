@@ -109,7 +109,7 @@ func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantit
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
 	}
 	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB) << 30
-	if spec := r.config.VM.Runner; spec.ImageCacheHostPath == "" && spec.ImageArchiveHostPath == "" {
+	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {
 		budget, err := imageBudgetBytes(spec)
 		if err != nil {
 			return resource.Quantity{}, resource.Quantity{}, err

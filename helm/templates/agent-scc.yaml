@@ -15,16 +15,20 @@ seccomp (all from restricted-v2). The two real relaxations are:
   - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
     caps.add. NET_RAW is the init container's alone; NET_ADMIN is asked
     for by that container and by the VM runner, which needs it for the
-    per-machine NAT. CHOWN + FOWNER + DAC_OVERRIDE are the VM runner's
-    alone, and all three are what unpacking an image faithfully costs:
-    tar restores each file's owner and mode and then keeps writing into
-    directories it has just given away or made read-only.
+    per-machine NAT. DAC_OVERRIDE, CHOWN and FOWNER are the VM runner's
+    alone. DAC_OVERRIDE lets its VMMs read an image's files that the
+    image keeps from root, such as a 0000 /etc/shadow, to serve them to
+    the guest. CHOWN + FOWNER are for unpacking an image into the
+    runner's own claim: tar restores each file's owner, then sets a mode
+    on a file it no longer owns. Only a runner that caches on its claim
+    asks for them; a runner on the node image cache mounts a hostPath,
+    which this SCC refuses, so it runs under `virtualization.runner.scc`.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init and for the VM runner,
-CHOWN, FOWNER and DAC_OVERRIDE for the runner alone.
+DAC_OVERRIDE, CHOWN and FOWNER for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints

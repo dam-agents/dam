@@ -399,13 +399,26 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and this runner turns that off, because a VMM that takes one cannot then read what the runner shares with it. It reaches the image cache through an idmapped mount of one entry, on-disk uid 0, so every file the image gives another uid arrives in the guest as nobody — 27,374 of this image's 35,430, whose workload then exits the moment it starts. Measured both ways on one store: with the drop the guest boots in 150 ms and dies; without it the same tree presents those files as the user the image named, and the machine runs. Machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well, by a route not traced here — so this is the mechanism that was isolated, not the whole of what the drop costs.
-// UNIT_BOUNDARY_DESCRIPTION: the runner unpacks each image once for every machine of it to share, and a rootfs restored faithfully carries the ownership and modes its files were built with — so tar chowns each entry (CHOWN), sets a mode on a file it has just given away (FOWNER), and goes on writing into directories it no longer owns or that are read-only, which permission bits forbid even to root (DAC_OVERRIDE). All three are load-bearing: without them an image that is not already cached cannot be unpacked at all.
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
 func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
 		return corev1.DNSClusterFirst
 	}
 	return corev1.DNSDefault
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN and FOWNER are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
+func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
+	caps := []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}
+	if runnerOwnsImageCache(spec) {
+		caps = append(caps, "CHOWN", "FOWNER")
+	}
+	return caps
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's image directory is a cache on its own claim, with the runner as its only writer. It is not when the node image cache service writes a node directory, or when the install stages read-only archives.
+func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
+	return spec.ImageCacheHostPath == "" && spec.ImageArchiveHostPath == ""
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
@@ -531,7 +544,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:       &root,
-							Capabilities:    &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "CHOWN", "FOWNER", "DAC_OVERRIDE"}},
+							Capabilities:    &corev1.Capabilities{Add: runnerCapabilities(spec)},
 							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 						},
 						Resources:    resources,

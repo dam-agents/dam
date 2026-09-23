@@ -190,13 +190,13 @@ virtualization:
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
-    # NAT, CHOWN + FOWNER so it can restore a container image's own
-    # ownership when it unpacks one for its machines to share, and
-    # DAC_OVERRIDE so that unpack can keep writing into the read-only and
-    # foreign-owned directories a faithful rootfs contains.
-    # Set this only where that
-    # SCC is off, or where the runner needs a shape it refuses (a hostPath for
-    # `imageArchiveHostPath`). Empty = no extra binding rendered.
+    # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
+    # served even where the image keeps them from root, and — only when the
+    # runner caches images on its own claim — CHOWN + FOWNER so it can
+    # restore each file's owner and mode as it unpacks. Set this only where
+    # that SCC is off, or where the runner needs a shape it refuses: the
+    # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
+    # Empty = no extra binding rendered.
     scc: ""
     # One claim, three directories with three lifetimes: `disks/` holds the
     # machine disks — every vm agent's storage — `machines/` the per-machine
@@ -426,7 +426,7 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and CHOWN + FOWNER + DAC_OVERRIDE which only
+    # allowedCapabilities, and DAC_OVERRIDE + CHOWN + FOWNER which only
     # the VM runner requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
