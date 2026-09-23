@@ -1208,6 +1208,69 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
     assert_ne!(ready.version, booted.version);
 }
 
+// TEST_SCENARIO: a guest that accepts its health check and never answers holds its probe for the whole health timeout. The other machines on their way up must still be probed at the boot cadence, or one hung guest would delay every wake on the runner by that timeout.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hung_guest_does_not_hold_up_the_probes_of_the_others() {
+    let h = Harness::new("prober-hung");
+    let _hung = TcpListener::bind(("127.0.0.1", h.base + LOOPBACK_OFFSET)).unwrap();
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    let booted = h.settle("m2").await;
+    assert_eq!(booted.port, i32::from(h.base + 1));
+    let _guest = guest(h.base + 1);
+    let started = Instant::now();
+    h.until("m2", "ready", |s| s.ready).await;
+    assert!(
+        started.elapsed() < BOOT_PROBE * 3,
+        "a hung guest held up another machine's probe for {:?}",
+        started.elapsed()
+    );
+    assert!(!h.server.status("m1").ready);
+}
+
+// TEST_SCENARIO: a probe that answers after its machine was deleted finds no entry, and must not put one back: the runner would keep probing a machine that is gone and report it forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_answering_after_a_delete_leaves_nothing_behind() {
+    let h = Harness::new("probe-after-delete");
+    h.server.record(
+        "gone",
+        Seen {
+            state: State::Running,
+            ready: false,
+            error: None,
+        },
+        Some(3),
+    );
+    assert!(!locked(&h.server.machines).entries.contains_key("gone"));
+}
+
+// TEST_SCENARIO: a worker that ends does so in the critical section that decided it had nothing left to do. A PUT landing right after starts a worker of its own, and the ended one must not then mark that new worker as done on its way out, or the new spec would wait for the next reconcile with no worker acting on it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ended_worker_does_not_end_the_next_one() {
+    let h = Harness::new("settle");
+    h.server.put("m1", spec(false)).unwrap();
+    h.machine("m1", |m| {
+        m.converging = true;
+        m.asked = 1;
+    });
+    {
+        let mut settle = Settle {
+            server: &h.server,
+            id: "m1",
+            armed: true,
+        };
+        assert!(!settle.settles(&mut locked(&h.server.machines), Some(0)));
+        assert!(settle.settles(&mut locked(&h.server.machines), Some(1)));
+        assert!(!h.server.converging("m1"), "ended under the lock");
+        h.machine("m1", |m| m.converging = true);
+    }
+    assert!(
+        h.server.converging("m1"),
+        "the ended worker left the next one running"
+    );
+}
+
 // TEST_SCENARIO: a create is counted as what it was — one operation, one start, one image the cache did not hold and one fetch — and the memory gauges read the runner as it stands, so the scrape after a boot shows the machine it booted.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_scrape_counts_what_a_create_did() {

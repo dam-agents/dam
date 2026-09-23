@@ -35,6 +35,7 @@ use crate::state::{
 pub const BOOT_PROBE: Duration = Duration::from_millis(500);
 pub const STEADY_PROBE: Duration = Duration::from_secs(10);
 const PROBE_TICK: Duration = Duration::from_millis(100);
+const PROBES_IN_FLIGHT: usize = 16;
 
 // UNIT_BOUNDARY_DESCRIPTION: the longest a status read waits for the machine's status to change.
 pub const STATUS_WAIT_CAP: Duration = Duration::from_secs(30);
@@ -96,6 +97,7 @@ struct MachineEntry {
     seen: Option<Seen>,
     looked: u64,
     probed: Option<Instant>,
+    probing: bool,
     version: u64,
 }
 
@@ -423,29 +425,35 @@ impl Server {
             .is_some_and(|e| e.converging)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the worker that brings one machine to its latest spec. It runs one action, and steps again only if a newer spec arrived while that action ran — which is how a stop sent mid-boot is honoured once the boot returns. It never steps again on its own result: an action that succeeds and still leaves the machine short, such as a guest that dies as it boots, is retried on the next reconcile rather than in a tight loop.
+    // UNIT_BOUNDARY_DESCRIPTION: the worker that brings one machine to its latest spec. It runs one action, and steps again only if a newer spec arrived while that action ran — which is how a stop sent mid-boot is honoured once the boot returns. It never steps again on its own result: an action that succeeds and still leaves the machine short, such as a guest that dies as it boots, is retried on the next reconcile rather than in a tight loop. Each decision to end is taken in the critical section that ends the worker, because a spec a PUT stored between the two would find the worker still marked and start none.
     fn converge(&self, id: &str, first: Action, asked: u64) {
-        let _done = Settle { server: self, id };
+        let mut settle = Settle {
+            server: self,
+            id,
+            armed: true,
+        };
         let mut planned = Some((first, asked));
         loop {
             let (action, asked) = match planned.take() {
                 Some(planned) => planned,
                 None => match self.plan_next(id) {
-                    Some(next) => next,
-                    None => return,
+                    Ok(next) => next,
+                    Err(seen) => {
+                        if settle.settles(&mut locked(&self.machines), Some(seen)) {
+                            return;
+                        }
+                        continue;
+                    }
                 },
             };
             let spec = {
                 let mut machines = locked(&self.machines);
-                if machines.closed {
+                if settle.settles(&mut machines, None) {
                     return;
                 }
                 let Some(entry) = machines.entries.get_mut(id) else {
                     return;
                 };
-                if entry.deleting {
-                    return;
-                }
                 if entry.asked != asked {
                     continue;
                 }
@@ -457,47 +465,35 @@ impl Server {
                 entry.desired.clone().unwrap_or_default()
             };
             self.run(id, action, spec);
-            let machines = locked(&self.machines);
-            if machines.closed
-                || machines
-                    .entries
-                    .get(id)
-                    .is_none_or(|e| e.deleting || e.asked == asked)
-            {
+            if settle.settles(&mut locked(&self.machines), Some(asked)) {
                 return;
             }
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the step towards the spec stored while the last action ran, against what the runtime reports now. Nothing to do ends the worker, but only while no newer spec has arrived during the planning itself, or that spec would wait for the next reconcile with no worker to act on it.
-    fn plan_next(&self, id: &str) -> Option<(Action, u64)> {
-        loop {
-            let (desired, asked) = {
-                let machines = locked(&self.machines);
-                let entry = machines.entries.get(id)?;
-                (entry.desired.clone()?, entry.asked)
-            };
-            let seen = self.observe(id, false);
-            if seen.error.is_some() {
-                return None;
-            }
-            let state = seen.state;
-            let ready = state == State::Running && seen.ready;
-            let applied = read_spec(&self.config.state_dir, id);
-            if let Some(action) = step(
-                applied.as_ref(),
-                &desired,
-                state,
-                ready,
-                self.dead_for_long(id),
-            ) {
-                return Some((action, asked));
-            }
+    // UNIT_BOUNDARY_DESCRIPTION: the step towards the spec stored while the last action ran, against what the runtime reports now. Nothing to do, or a runtime that cannot be read, answers with the count of specs it planned from, so the worker ends only if no newer spec arrived meanwhile.
+    fn plan_next(&self, id: &str) -> Result<(Action, u64), u64> {
+        let (desired, asked) = {
             let machines = locked(&self.machines);
-            if machines.entries.get(id).is_none_or(|e| e.asked == asked) {
-                return None;
-            }
+            let entry = machines.entries.get(id).ok_or(0u64)?;
+            (entry.desired.clone().ok_or(entry.asked)?, entry.asked)
+        };
+        let seen = self.observe(id, false);
+        if seen.error.is_some() {
+            return Err(asked);
         }
+        let state = seen.state;
+        let ready = state == State::Running && seen.ready;
+        let applied = read_spec(&self.config.state_dir, id);
+        step(
+            applied.as_ref(),
+            &desired,
+            state,
+            ready,
+            self.dead_for_long(id),
+        )
+        .map(|action| (action, asked))
+        .ok_or(asked)
     }
 
     fn run(&self, id: &str, action: Action, mut spec: MachineSpec) {
@@ -908,17 +904,18 @@ impl Server {
         seen
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it.
+    // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind, and a probe answering after its machine was deleted puts no entry back. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it.
     fn record(&self, id: &str, seen: Seen, guard: Option<u64>) {
         let answered = {
             let mut machines = locked(&self.machines);
-            if seen.state == State::Absent && !machines.entries.contains_key(id) {
+            let known = machines.entries.get(id).map(|e| e.looked);
+            if guard.is_some_and(|looked| looked != known.unwrap_or(0)) {
+                return;
+            }
+            if seen.state == State::Absent && known.is_none() {
                 return;
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
-            if guard.is_some_and(|looked| looked != entry.looked) {
-                return;
-            }
             let mut changed = entry.seen.as_ref() != Some(&seen);
             if entry.action.is_none() && seen.state == State::Running {
                 entry.health.observed_running(seen.ready, SystemTime::now());
@@ -961,24 +958,42 @@ impl Server {
         self.note_slow_boot(id);
     }
 
-    fn probe_due(&self) {
+    // UNIT_BOUNDARY_DESCRIPTION: starts a probe of each machine that is due and has none in flight, up to PROBES_IN_FLIGHT at once. Each runs on its own blocking thread, so a guest that hangs its health check costs its own probe the timeout and does not stretch the cadence of every other machine on its way up.
+    fn probe_due(self: &Arc<Self>) {
         let due: Vec<String> = {
-            let machines = locked(&self.machines);
+            let mut machines = locked(&self.machines);
             if machines.closed {
                 return;
             }
-            machines
+            let room = PROBES_IN_FLIGHT
+                .saturating_sub(machines.entries.values().filter(|e| e.probing).count());
+            let due: Vec<String> = machines
                 .entries
                 .iter()
                 .filter(|(_, entry)| {
-                    probe_every(entry)
-                        .is_some_and(|every| entry.probed.is_none_or(|at| at.elapsed() >= every))
+                    !entry.probing
+                        && probe_every(entry).is_some_and(|every| {
+                            entry.probed.is_none_or(|at| at.elapsed() >= every)
+                        })
                 })
                 .map(|(id, _)| id.clone())
-                .collect()
+                .take(room)
+                .collect();
+            for id in &due {
+                if let Some(entry) = machines.entries.get_mut(id) {
+                    entry.probing = true;
+                }
+            }
+            due
         };
         for id in due {
-            self.probe(&id);
+            let server = self.clone();
+            self.work.spawn_blocking(move || {
+                server.probe(&id);
+                if let Some(entry) = locked(&server.machines).entries.get_mut(&id) {
+                    entry.probing = false;
+                }
+            });
         }
     }
 
@@ -1062,7 +1077,7 @@ fn first_version() -> u64 {
         .map_or(0, |since| u64::try_from(since.as_micros()).unwrap_or(0))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that probes each machine worth probing at its cadence and records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
+// UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
 fn probe_until_closed(server: &Weak<Server>, lifetime: &CancellationToken) {
     while !lifetime.is_cancelled() {
         let Some(server) = server.upgrade() else {
@@ -1074,18 +1089,40 @@ fn probe_until_closed(server: &Weak<Server>, lifetime: &CancellationToken) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ends a machine's worker on every path out of it, a panic included, so a delete waiting for the worker is never left waiting and the next spec can start a new one.
+// UNIT_BOUNDARY_DESCRIPTION: ends a machine's worker. On the worker's own ways out it ends it under the lock that decided to, and is disarmed; dropped still armed — a panic — it ends the worker on the way out, so a delete waiting for the worker is never left waiting and the next spec can start a new one.
 struct Settle<'a> {
     server: &'a Server,
     id: &'a str,
+    armed: bool,
+}
+
+impl Settle<'_> {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the worker is done — the runner closed, the machine deleted or gone, or, given `asked`, no spec arrived after the `asked`-th — and if so ends it while the caller still holds the lock. A PUT then either lands first and is acted on, or lands after and starts a worker of its own.
+    fn settles(&mut self, machines: &mut Machines, asked: Option<u64>) -> bool {
+        let closed = machines.closed;
+        let Some(entry) = machines.entries.get_mut(self.id) else {
+            self.armed = false;
+            return true;
+        };
+        if !closed && !entry.deleting && asked != Some(entry.asked) {
+            return false;
+        }
+        entry.converging = false;
+        entry.action = None;
+        self.server.bump(entry);
+        self.armed = false;
+        true
+    }
 }
 
 impl Drop for Settle<'_> {
     fn drop(&mut self) {
-        if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
-            entry.converging = false;
-            entry.action = None;
-            self.server.bump(entry);
+        if self.armed {
+            if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
+                entry.converging = false;
+                entry.action = None;
+                self.server.bump(entry);
+            }
         }
         self.server.settled.notify_all();
     }
