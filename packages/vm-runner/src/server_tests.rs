@@ -16,6 +16,7 @@ struct Fake {
     states: Mutex<HashMap<String, &'static str>>,
     calls: Mutex<Vec<String>>,
     created: Mutex<HashMap<String, (String, Option<ImageLaunch>)>>,
+    created_storage: Mutex<HashMap<String, i32>>,
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
@@ -46,6 +47,7 @@ impl Runtime for Fake {
             id.to_string(),
             (machine.image.to_string(), machine.launch.cloned()),
         );
+        locked(&self.created_storage).insert(id.to_string(), machine.spec.storage_gib);
         locked(&self.states).insert(id.to_string(), STATE_STOPPED);
         Ok(())
     }
@@ -83,6 +85,16 @@ impl Runtime for Fake {
         Ok(())
     }
 
+    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()> {
+        self.record(format!("delete keeping storage {id}"));
+        locked(&self.states).remove(id);
+        Ok(())
+    }
+
+    fn discard_kept_storage(&self, _id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn storage_growable(&self, _id: &str) -> bool {
         !self.ungrowable.load(Ordering::SeqCst)
     }
@@ -91,6 +103,7 @@ impl Runtime for Fake {
 // UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass.
 const FAKE_CRANE: &str = r#"#!/bin/sh
 echo "$@" >> "$(dirname "$0")/crane.log"
+case "$2" in *unfetchable*) echo MANIFEST_UNKNOWN >&2; exit 1 ;; esac
 if [ "$1" = config ]; then
   printf '{"config":{"Entrypoint":["/entry"],"Cmd":["serve"],"Env":["PATH=/bin","A=image"],"WorkingDir":"/app"}}'
   exit 0
@@ -394,28 +407,106 @@ async fn operations_run_in_the_order_they_were_queued() {
     assert_eq!(h.fake.calls(), queued);
 }
 
-// TEST_SCENARIO: the image is fixed at create, so a spec with a different image is reported in the machine's message and the rest of the spec still applies. The machine keeps booting the image it has.
+// TEST_SCENARIO: a template upgrade gives a running machine a new image. smolvm cannot change a machine's image, so the machine is stopped, deleted with its storage disk kept, created on the new image and started — on the port its Service already points at. The stored spec names the new image only once it has booted, and the holders then claim the new image and not the old one.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_changed_image_is_reported_and_does_not_block_the_rest() {
-    let h = Harness::new("drift");
+async fn a_new_image_recreates_the_machine_around_its_disk() {
+    let h = Harness::new("recreate");
+    h.server.put("m1", spec(true)).unwrap();
+    let port = h.settle("m1").await.port;
+    let before = h.fake.calls().len();
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    assert_eq!(
+        h.server.put("m1", upgraded).unwrap().state,
+        STATE_RESTARTING
+    );
+    let status = h.settle("m1").await;
+
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(status.message.is_empty(), "{status:?}");
+    assert_eq!(status.port, port);
+    assert_eq!(status.restarts, 0);
+    assert_eq!(
+        h.fake.calls()[before..],
+        [
+            "stop m1",
+            "delete keeping storage m1",
+            "create m1",
+            "start m1"
+        ]
+    );
+    let (image, _) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert!(image.contains("quay.io_x_vm_2"), "{image}");
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:2"
+    );
+    let held = fs::read_to_string(
+        h.dir
+            .join("images")
+            .join(cache::HOLDERS_DIR)
+            .join("runner-a"),
+    )
+    .unwrap();
+    assert!(
+        held.contains("quay.io_x_vm_2") && !held.contains("quay.io_x_vm_1"),
+        "{held}"
+    );
+}
+
+// TEST_SCENARIO: the new image cannot be fetched. That is found before the old machine is touched, so the agent keeps running on the image it has and the failure names the image.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_that_cannot_be_fetched_leaves_the_old_machine_running() {
+    let h = Harness::new("unfetchable");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
-    let mut changed = spec(true);
-    changed.image = "quay.io/x/vm:2".into();
-    changed.revision = "r2".into();
-    h.server.put("m1", changed).unwrap();
+    let before = h.fake.calls().len();
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/unfetchable:2".into();
+    h.server.put("m1", upgraded).unwrap();
     let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains("image is quay.io/x/vm:1, wanted quay.io/x/vm:2"),
-        "{status:?}"
-    );
+
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(h.fake.calls()[before..].is_empty(), "{:?}", h.fake.calls());
     assert_eq!(
         read_spec(&h.dir.join("machines"), "m1").unwrap().image,
         "quay.io/x/vm:1"
     );
-    assert_eq!(h.fake.calls().last().unwrap(), "start m1");
+}
+
+// TEST_SCENARIO: one spec moves the image and grows the disk. A kept qcow2 disk is never grown at start, so the machine is recreated at the size its disk has, and the next reconcile grows it in place like any other resize.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_and_a_larger_disk_are_applied_one_after_the_other() {
+    let h = Harness::new("recreate-grow");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    upgraded.storage_gib = 8;
+    h.server.put("m1", upgraded.clone()).unwrap();
+    h.settle("m1").await;
+    assert_eq!(locked(&h.fake.created_storage).get("m1"), Some(&5));
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        5
+    );
+
+    let before = h.fake.calls().len();
+    h.server.put("m1", upgraded).unwrap();
+    h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls()[before..],
+        ["stop m1", "update m1", "start m1"]
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        8
+    );
 }
 
 // TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those. A machine whose gateway moved is stopped and reported, not run on an address that may now belong to another owner.
