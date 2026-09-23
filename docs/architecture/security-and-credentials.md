@@ -338,7 +338,8 @@ above. It does not ride the Envoy path at all:
 - **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
   It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
   `imagePullSecrets`. A vm Agent has no pod, so its runner tries the same
-  Secrets in the same order for that fetch alone, never storing them
+  Secrets in the same order for that fetch alone, never storing them, and
+  re-checks a private cache entry per machine
   ([persistence](persistence.md#the-machine-image-cache)). Either way the
   agent never holds the bytes — because of *where the Secret is
   consumed*, not Envoy injection.

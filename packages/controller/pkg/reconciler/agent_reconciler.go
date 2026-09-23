@@ -51,6 +51,8 @@ type AgentReconciler struct {
 	vmRunning      sync.Map
 	runnerResized  sync.Map
 	resizeNotices  sync.Map
+	pullAuthMu     sync.Mutex
+	pullAuthMemo   map[string]pullAuthMemo
 	preflightMu    sync.Mutex
 	preflight      vmPreflightResult
 	preflightDone  bool

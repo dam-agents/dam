@@ -541,7 +541,7 @@ func (s *Server) cacheImage(ref, cached, forMachine string, auths []string) erro
 	if err := os.WriteFile(filepath.Join(tmp, launchFile), encoded, 0o644); err != nil {
 		return err
 	}
-	if used != "" && !s.readable(ctx, ref, anonymous) {
+	if used != "" && !s.readable(ref, anonymous) {
 		if err := os.WriteFile(filepath.Join(tmp, privateFile), nil, 0o644); err != nil {
 			return err
 		}
@@ -621,8 +621,10 @@ func (s *Server) readConfig(ctx context.Context, ref string, auths []string) ([]
 	return nil, nil, nil, "", last
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest. It is the cheapest proof of access a registry gives: one request and no layers.
-func (s *Server) readable(ctx context.Context, ref, auth string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest. It is the cheapest proof of access a registry gives: one request and no layers. It gets the one-minute budget a tag resolution gets and not the pull timeout: a registry that does not answer a manifest read in a minute is treated as down, whether this is the probe that decides a fresh entry is private or the check that lets a machine reuse one.
+func (s *Server) readable(ref, auth string) bool {
+	ctx, cancel := context.WithTimeout(s.lifetime(), resolveTimeout)
+	defer cancel()
 	env, done, err := dockerConfig(auth)
 	if err != nil {
 		return false
@@ -633,7 +635,7 @@ func (s *Server) readable(ctx context.Context, ref, auth string) bool {
 	return probe.Run() == nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw. So before a machine reuses one, one of its own credentials, tried in the order they were sent, must still read the image; with none, an anonymous read must. This fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. Public entries skip the check and still boot with the registry down, as before. The mark is only as good as the probe that wrote it: a timeout or a rate limit at fetch time marks a public image private, and a complete entry is never fetched again, so nothing else would ever correct it. An anonymous read that succeeds here is proof the image is public, so it clears the mark; a removal that fails is left for the next such read.
+// UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw. So before a machine reuses one, an anonymous read or one of its own credentials, tried in the order they were sent, must still read the image. This fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. Public entries skip the check and still boot with the registry down, as before. The mark is only as good as the probe that wrote it: a timeout or a rate limit at fetch time marks a public image private, and a complete entry is never fetched again, so nothing else would ever correct it. So the anonymous read comes first, for every machine and not only one without credentials, since an install with default pull secrets sends every machine one. When it succeeds the image is public, and the mark is cleared; a removal that fails is left for the next such read.
 func (s *Server) mayReuse(ref, cached string, auths []string) error {
 	if _, err := os.Stat(filepath.Join(cached, privateFile)); errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -643,17 +645,12 @@ func (s *Server) mayReuse(ref, cached string, auths []string) error {
 	if s.Crane == "" {
 		return fmt.Errorf("%w: %s is cached from a private registry, and this runner has no crane to check this machine may read it", errImageUnusable, ref)
 	}
-	candidates := auths
-	if len(candidates) == 0 {
-		candidates = []string{anonymous}
-	}
-	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
-	defer cancel()
-	if !slices.ContainsFunc(candidates, func(auth string) bool { return s.readable(ctx, ref, auth) }) {
-		return fmt.Errorf("%w: %s is cached from a private registry, and this machine's pull credentials cannot read its manifest", errImageUnusable, ref)
-	}
-	if len(auths) == 0 {
+	if s.readable(ref, anonymous) {
 		_ = os.Remove(filepath.Join(cached, privateFile))
+		return nil
+	}
+	if !slices.ContainsFunc(auths, func(auth string) bool { return s.readable(ref, auth) }) {
+		return fmt.Errorf("%w: %s is cached from a private registry, and this machine's pull credentials cannot read its manifest", errImageUnusable, ref)
 	}
 	return nil
 }
