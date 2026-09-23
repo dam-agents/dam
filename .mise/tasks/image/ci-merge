@@ -32,8 +32,9 @@ case "$GITHUB_REF" in
     ;;
 esac
 
-# Each create pushes the list once per tag, which takes minutes for one
-# image, so the images merge side by side.
+# The images merge side by side, so the job takes as long as its slowest
+# image (keycloak's copy inside the registry takes minutes) rather than the
+# sum of them all.
 merge_one() {
   local c=$1 s t seen=" " args=() srcs=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
   if [[ " ${SOURCE_SHA_TAGGED:-} " == *" $c "* ]]; then
