@@ -179,7 +179,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    // TEST_SCENARIO: the console holds whatever bytes the guest wrote. A last line longer than the limit with no newline in it, of bytes that are not UTF-8, must still give a tail: the cut lands on a character boundary, never inside one, and what follows the cut is the end of that line.
+    // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end, as the Go runner keeps it: the two tails must agree on one console. Bytes that are not UTF-8 must still give a tail, so the cut lands on a character boundary, never inside one.
     #[test]
     fn a_long_last_line_of_bad_bytes_is_cut_at_a_character() {
         let dir =

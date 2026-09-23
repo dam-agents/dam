@@ -70,7 +70,7 @@ func TestProbeLinesDoNotCrowdTheGuestOutOfTheTail(t *testing.T) {
 	assert.Equal(t, "kernel panic\n"+flatten, tailOf(path, consoleTailBytes))
 }
 
-// TEST_SCENARIO: a last line longer than the limit with no newline in it still gives a tail: the end of that line, as many bytes as the limit allows, and nothing before it.
+// TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end: as many bytes as the limit allows, and nothing before it. The Rust runner keeps the same end, so the two tails agree on one console.
 func TestALongLastLineKeepsItsEnd(t *testing.T) {
 	path := filepath.Join(t.TempDir(), consoleLogName)
 	text := "first\n" + strings.Repeat("x", 6000) + "END"
