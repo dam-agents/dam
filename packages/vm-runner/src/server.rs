@@ -418,7 +418,7 @@ impl Server {
         if !spec.running {
             if state == STATE_RUNNING {
                 self.forget_state(id);
-                self.runtime.stop(id)?;
+                self.stop_machine(id)?;
             }
             return Ok(());
         }
@@ -444,7 +444,7 @@ impl Server {
             if plan::egress_changed(applied, spec) {
                 if state == STATE_RUNNING {
                     self.forget_state(id);
-                    self.runtime.stop(id)?;
+                    self.stop_machine(id)?;
                 }
                 return Err(egress_changed(format!(
                     "this machine may only reach [{}], but its gateway is now [{}] — recreate the agent",
@@ -478,7 +478,7 @@ impl Server {
             }
             op = STATE_RESTARTING;
             self.forget_state(id);
-            self.runtime.stop(id)?;
+            self.stop_machine(id)?;
             state = STATE_STOPPED;
         }
         if state == STATE_STOPPED {
@@ -505,7 +505,7 @@ impl Server {
         let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
         self.forget_state(id);
         if state == STATE_RUNNING {
-            self.runtime.stop(id)?;
+            self.stop_machine(id)?;
         }
         self.runtime.delete_keeping_storage(id)?;
         self.boot(id, spec, port, &image, &launch, digest.as_deref())?;
@@ -822,6 +822,17 @@ impl Server {
 
     fn forget_state(&self, id: &str) {
         locked(&self.inner).last_state.remove(id);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered kept its start stamp, and so reported a growing `startingMs` for as long as it stayed stopped.
+    fn stop_machine(&self, id: &str) -> anyhow::Result<()> {
+        {
+            let mut inner = locked(&self.inner);
+            inner.started_at.remove(id);
+            inner.awaiting.remove(id);
+            inner.slow_boots.remove(id);
+        }
+        self.runtime.stop(id)
     }
 
     fn machine_state(&self, id: &str) -> anyhow::Result<&'static str> {

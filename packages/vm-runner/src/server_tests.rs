@@ -1205,6 +1205,23 @@ async fn a_guest_that_never_answers_is_explained() {
     );
 }
 
+// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine reports no starting time and no stuck-boot note, however long ago it was asked to start.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_ends_the_boot_wait() {
+    let h = Harness::new("stop-ends-wait");
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(!h.settle("m1").await.ready);
+    locked(&h.server.inner).started_at.insert(
+        "m1".into(),
+        Instant::now() - SLOW_BOOT_AFTER - Duration::from_secs(1),
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    let stopped = h.settle("m1").await;
+    assert_eq!(stopped.state, STATE_STOPPED);
+    assert_eq!(stopped.starting_ms, 0, "a stopped machine is not starting");
+    assert_eq!(stopped.message, "");
+}
+
 // TEST_SCENARIO: a create is counted as what it was — one operation, one start, one image the cache did not hold and one fetch — and the memory gauges read the runner as it stands, so the scrape after a boot shows the machine it booted.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_scrape_counts_what_a_create_did() {

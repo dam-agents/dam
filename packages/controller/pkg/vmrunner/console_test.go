@@ -152,6 +152,24 @@ func TestAMissedProbeAfterTheGuestAnsweredIsNotAStuckBoot(t *testing.T) {
 	assert.Zero(t, down.StartingMs, "a machine that answered is no longer starting")
 }
 
+// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine reports no starting time and no stuck-boot note, however long ago it was asked to start.
+func TestAStopEndsTheBootWait(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	require.False(t, h.settle(t, "m1").Ready)
+	h.node.mu.Lock()
+	h.node.startedAt["m1"] = time.Now().Add(-slowBootAfter - time.Second)
+	h.node.mu.Unlock()
+	_, err = h.client().Ensure(t.Context(), "m1", spec(false))
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+	assert.Equal(t, StateStopped, st.State)
+	assert.Zero(t, st.StartingMs, "a stopped machine is not starting")
+	assert.Empty(t, st.Message)
+}
+
 func orNotReady(reason string) string {
 	if reason == "" {
 		return ReasonNotReady
