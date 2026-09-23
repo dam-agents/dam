@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#MISE description="CI only: wait for this run's amd64 image builds, then pull and tag what the e2e cluster loads. Writes ok|fail to the file named by its argument."
+#MISE hide=true
+# cd.yml's e2e job starts with the run instead of after the builds, because
+# bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
+# this in the background, and cluster:install waits on the status file
+# (CI_IMAGES_STATUS) right before it loads the images into k3s.
+#
+# By path, like image:resolve in the changes job: it starts before mise is set
+# up. Needs GH_TOKEN with actions:read, GITHUB_REPOSITORY, GITHUB_RUN_ID,
+# GITHUB_SHA and IMAGE_PREFIX.
+set -uo pipefail
+
+status_file="${1:?usage: ci-images <status-file>}"
+result=fail
+trap 'echo "$result" > "$status_file"' EXIT
+set -e
+
+: "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_SHA:?}" "${IMAGE_PREFIX:?}"
+
+# The same component list and job names as cd.yml's build-images matrix and
+# build-mock job. e2e needed every one of them green before it started, so it
+# still does. `changes` is watched too: when it fails, the build matrix never
+# expands into these names, and nothing else would end the wait.
+COMPONENTS="controller vm-runner api-server ui keycloak"
+LOADED="controller api-server ui keycloak"
+JOBS=("detect stale images")
+for c in $COMPONENTS; do JOBS+=("build-images ($c, amd64)"); done
+JOBS+=("build mock (e2e fixture)")
+wanted="$(printf '%s\n' "${JOBS[@]}" | jq -R . | jq -cs .)"
+
+deadline=$((SECONDS + ${CI_IMAGES_TIMEOUT:-2400}))
+while :; do
+  # filter=latest: on a re-run, a build that passed in an earlier attempt and
+  # was not re-run still counts.
+  if jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" 2>&1)"; then
+    state="$(printf '%s' "$jobs" | jq -r --argjson wanted "$wanted" '
+      [.jobs[] | select(.name as $n | $wanted | index($n))] as $j
+      | ($j | map(select(.status == "completed"))) as $done
+      | ($done | map(select(.conclusion != "success"))) as $bad
+      | if ($bad | length) > 0 then "failed: " + ($bad | map(.name + "=" + .conclusion) | join(", "))
+        elif ($done | length) == ($wanted | length) then "ready"
+        else "waiting: \($done | length)/\($wanted | length) done" end')"
+  else
+    state="waiting: jobs API error: $jobs"
+  fi
+  echo "$(date -u +%H:%M:%S) $state"
+  case "$state" in
+    ready) break ;;
+    failed:*) exit 1 ;;
+  esac
+  [ "$SECONDS" -lt "$deadline" ] || { echo "timed out waiting for the image builds" >&2; exit 1; }
+  sleep 10
+done
+
+mkdir -p /tmp/digests
+for c in $LOADED; do
+  gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "digests-$c-amd64" -D "/tmp/digests/digests-$c-amd64"
+done
+
+pids=()
+for c in $LOADED; do
+  docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
+  pids+=($!)
+done
+docker pull "$IMAGE_PREFIX/mock:$GITHUB_SHA" &
+pids+=($!)
+for pid in "${pids[@]}"; do wait "$pid"; done
+for c in $LOADED; do
+  docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" "platform-$c:latest"
+done
+docker tag "$IMAGE_PREFIX/mock:$GITHUB_SHA" "platform-mock:latest"
+
+result=ok
+echo "$(date -u +%H:%M:%S) images pulled and tagged"
