@@ -1,5 +1,5 @@
 import { readBytesWithin } from "./bounded-read.js";
-import { parseGithubRepoUrl } from "./catalog-source.js";
+import type { GitHosts } from "./git-hosts.js";
 
 const MAX_ADVERTISEMENT_BYTES = 2 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/;
@@ -67,14 +67,15 @@ function lookup(
 }
 
 export function createGitRefResolver(
+  hosts: GitHosts,
   fetchImpl: typeof fetch = fetch,
 ): RefResolver {
   return {
     async resolve(gitUrl, ref) {
-      const repo = parseGithubRepoUrl(gitUrl);
+      const repo = hosts.locate(gitUrl);
       if (!repo) return { status: "absent" };
-      const url = `https://github.com/${repo.owner}/${repo.repo}/info/refs?service=git-upload-pack`;
-      const res = await fetchImpl(url);
+      const request = repo.refAdvertisement();
+      const res = await fetchImpl(request.url, { headers: request.headers });
       if (!res.ok) return { status: "unreachable" };
       const body = await readBytesWithin(res, MAX_ADVERTISEMENT_BYTES);
       if (body === null) return { status: "unreachable" };
