@@ -42,6 +42,7 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	runnerRollMu   sync.Mutex
+	runnerRollGate runnerRollGate
 	requeue        func(name string, after time.Duration)
 }
 

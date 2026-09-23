@@ -25,7 +25,23 @@ const (
 	annRunnerAwaiting = "agent-platform.ai/runner-awaiting"
 
 	defaultRunnerSettleTimeout = 10 * time.Minute
+	defaultRunnerRollRecheck   = 15 * time.Second
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: the last answer to "is the roll full". A runner waiting its turn reaches the gate on every reconcile of its owner's agents, and a starting machine requeues every half second — so without this, each of those passes would list every runner and call another owner's runner about each machine it is waiting for. A full roll stays full for at least one machine boot, so the answer is kept for `recheck` and only then asked again.
+type runnerRollGate struct {
+	checkedAt time.Time
+	full      bool
+	recheck   time.Duration
+}
+
+func (g *runnerRollGate) stillFull(now time.Time) bool {
+	recheck := g.recheck
+	if recheck <= 0 {
+		recheck = defaultRunnerRollRecheck
+	}
+	return g.full && now.Sub(g.checkedAt) < recheck
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: an owner is a canary when the install names them, or when their bucket falls under the canary percentage. The bucket is a hash of the owner label and nothing else, so it is the same on every reconcile and every controller replica, and raising the percentage only adds owners: an owner who is a canary at 10 stays one at 20.
 func isCanaryOwner(owner string, canary config.VMRunnerCanary) bool {
@@ -88,15 +104,20 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 
 	r.runnerRollMu.Lock()
 	defer r.runnerRollMu.Unlock()
+	if r.runnerRollGate.stillFull(time.Now()) {
+		return nil
+	}
 	limit, _ := runnerRolloutLimits(r.config.VM.Runner)
 	rolling, err := r.runnersMidRoll(ctx, dep.Name)
 	if err != nil {
 		return err
 	}
-	if len(rolling) >= limit {
+	r.runnerRollGate.checkedAt, r.runnerRollGate.full = time.Now(), len(rolling) >= limit
+	if r.runnerRollGate.full {
 		slog.Info("vm runner: the pod changed, waiting for other runners to finish rolling", "owner", owner, "rolling", rolling)
 		return nil
 	}
+	r.runnerRollGate.full = len(rolling)+1 >= limit
 	dep.Annotations = map[string]string{}
 	for k, v := range existing.Annotations {
 		dep.Annotations[k] = v
