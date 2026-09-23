@@ -409,6 +409,9 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 45
     strategy:
+      # One arch's failed build must not cancel the other's, which then
+      # reports nothing of its own.
+      fail-fast: false
       matrix:
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:

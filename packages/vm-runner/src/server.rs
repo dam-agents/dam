@@ -71,7 +71,6 @@ struct Inner {
     committing: BTreeMap<String, i32>,
     failures: HashMap<String, Failed>,
     gens: HashMap<String, u64>,
-    drift: HashMap<String, String>,
     restarts: HashMap<String, i32>,
     health: HashMap<String, Health>,
     last_state: HashMap<String, (&'static str, Instant)>,
@@ -275,6 +274,9 @@ impl Server {
                 .delete(id)
                 .map_err(|e| Rejected::internal(format!("{e:#}")))?;
         }
+        self.runtime
+            .discard_kept_storage(id)
+            .map_err(|e| Rejected::internal(format!("{e:#}")))?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
         match fs::remove_dir_all(&dir) {
@@ -285,7 +287,6 @@ impl Server {
         {
             let mut inner = locked(&self.inner);
             inner.failures.remove(id);
-            inner.drift.remove(id);
             inner.restarts.remove(id);
             inner.health.remove(id);
             inner.last_state.remove(id);
@@ -425,11 +426,18 @@ impl Server {
             spec,
             self.config.init.as_deref(),
         )?;
+        let applied = read_spec(&self.config.state_dir, id);
+        let ungrowable =
+            grown_storage(applied.as_ref(), spec).is_some() && !self.runtime.storage_growable(id);
         if state == STATE_ABSENT {
+            if let Some(applied) = &applied {
+                if self.runtime.has_kept_storage(id) {
+                    spec.storage_gib = spec.storage_gib.min(applied.storage_gib);
+                }
+            }
             self.create(id, spec)?;
             return write_spec(&self.config.state_dir, id, spec);
         }
-        let applied = read_spec(&self.config.state_dir, id);
         if let Some(applied) = &applied {
             if plan::egress_changed(applied, spec) {
                 if state == STATE_RUNNING {
@@ -442,15 +450,13 @@ impl Server {
                     spec.allow_cidrs.join(" ")
                 )));
             }
-            if grown_storage(Some(applied), spec).is_some() && !self.runtime.storage_growable(id) {
-                anyhow::bail!("{STORAGE_NOT_GROWABLE}");
-            }
+        }
+        if ungrowable {
+            anyhow::bail!("{STORAGE_NOT_GROWABLE}");
+        }
+        if let Some(applied) = &applied {
             if image_changed(applied, spec) {
-                anyhow::bail!(
-                    "this runner cannot yet move a machine to a new image, so it keeps what it has: image is {}, wanted {}",
-                    applied.image,
-                    spec.image
-                );
+                return self.recreate(id, spec, state);
             }
         }
         let port = state::port(&self.config.state_dir, id);
@@ -481,8 +487,29 @@ impl Server {
         write_spec(&self.config.state_dir, id, spec)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: creates and boots a machine. What it boots is decided in order: the unpacked tree in the cache when its launch record is there, a fresh fetch into the cache, an archive an earlier release left, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
     fn create(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
+        let (port, image, launch, digest) = self.resolve(id, spec)?;
+        self.boot(id, spec, port, &image, &launch, digest.as_deref())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: moves a machine to a new image. The new image is fetched and its launch read while the old machine still runs, so the agent is down for the stop, the recreate and the boot and not for a pull, and a pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image stays held while this runs, because the stored spec names it until the new machine has booted; it is rewritten only after that, and the holders published after it release the old image.
+    fn recreate(&self, id: &str, spec: &MachineSpec, state: &str) -> anyhow::Result<()> {
+        let (port, image, launch, digest) = self.resolve(id, spec)?;
+        self.forget_state(id);
+        if state == STATE_RUNNING {
+            self.runtime.stop(id)?;
+        }
+        self.runtime.delete_keeping_storage(id)?;
+        self.boot(id, spec, port, &image, &launch, digest.as_deref())?;
+        write_spec(&self.config.state_dir, id, spec)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots, and on which port. What it boots is decided in order: the unpacked tree in the cache when its launch record is there, a fresh fetch into the cache, an archive an earlier release left, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
+    fn resolve(
+        &self,
+        id: &str,
+        spec: &MachineSpec,
+    ) -> anyhow::Result<(u16, String, ImageLaunch, Option<String>)> {
         let port = {
             let _ports = locked(&self.ports);
             state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
@@ -524,7 +551,19 @@ impl Server {
         if let Some(cached) = cached.filter(|path| path.exists()) {
             image = cached.to_string_lossy().into_owned();
         }
-        self.record_digest(id, digest.as_deref())?;
+        Ok((port, image, launch, digest))
+    }
+
+    fn boot(
+        &self,
+        id: &str,
+        spec: &MachineSpec,
+        port: u16,
+        image: &str,
+        launch: &ImageLaunch,
+        digest: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.record_digest(id, digest)?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
         self.forget_state(id);
@@ -532,10 +571,10 @@ impl Server {
             id,
             &Machine {
                 spec,
-                image: &image,
+                image,
                 host_port: port + LOOPBACK_OFFSET,
                 share: &dir.join(SHARE_DIR),
-                launch: Some(&launch),
+                launch: Some(launch),
             },
         )?;
         self.forwarder.publish(id, port)?;
@@ -787,12 +826,11 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine. An operation in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up: a restart's old guest and a stopping one answer until they die.
     pub fn status(&self, id: &str) -> MachineStatus {
-        let (pending, failed, drift, restarts, started_at) = {
+        let (pending, failed, restarts, started_at) = {
             let inner = locked(&self.inner);
             (
                 inner.pending.get(id).copied(),
                 inner.failures.get(id).cloned(),
-                inner.drift.get(id).cloned(),
                 inner.restarts.get(id).copied().unwrap_or_default(),
                 inner.started_at.get(id).copied(),
             )
@@ -807,7 +845,7 @@ impl Server {
                 .unwrap_or_default(),
             restarts,
             port: i32::from(port),
-            message: failed.map(|f| f.message).or(drift).unwrap_or_default(),
+            message: failed.map(|f| f.message).unwrap_or_default(),
             starting_ms: started_at
                 .map(|at| i64::try_from(at.elapsed().as_millis()).unwrap_or(i64::MAX))
                 .unwrap_or_default(),

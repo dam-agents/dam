@@ -21,8 +21,10 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    discarded: Mutex<Vec<String>>,
     console: Mutex<String>,
     ungrowable: AtomicBool,
+    kept: AtomicBool,
 }
 
 impl Fake {
@@ -86,12 +88,27 @@ impl Runtime for Fake {
         Ok(())
     }
 
+    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()> {
+        self.record(format!("delete-keeping-storage {id}"));
+        locked(&self.states).remove(id);
+        Ok(())
+    }
+
+    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()> {
+        locked(&self.discarded).push(id.to_string());
+        Ok(())
+    }
+
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
     }
 
     fn storage_growable(&self, _id: &str) -> bool {
         !self.ungrowable.load(Ordering::SeqCst)
+    }
+
+    fn has_kept_storage(&self, _id: &str) -> bool {
+        self.kept.load(Ordering::SeqCst)
     }
 }
 
@@ -438,29 +455,75 @@ async fn operations_run_in_the_order_they_were_queued() {
     assert_eq!(h.fake.calls(), queued);
 }
 
-// TEST_SCENARIO: the Go runner recreates a machine on a new image; this runner cannot yet. Until it can, a new image is refused before the machine is touched: the machine keeps running the image it has, the refusal names both images, and nothing is stopped or created — a machine stopped here would be a machine this runner cannot bring back.
+// TEST_SCENARIO: a template upgrade gives a running agent a new image. smolvm cannot change a machine's image, so the machine is stopped, deleted with its storage disk kept, and created on the new image — on the port its Service already maps to, from the new image's own tree. Its stored spec names the new image only once it has booted, which is when the cache stops holding the old one for it.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_new_image_is_refused_before_the_machine_is_touched() {
-    let h = Harness::new("drift");
+async fn a_new_image_recreates_the_machine_on_its_port() {
+    let h = Harness::new("new-image");
+    h.server.put("m1", spec(true)).unwrap();
+    let first = h.settle("m1").await;
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(status.message, "");
+    assert_eq!(status.port, first.port);
+    assert_eq!(
+        h.fake.calls(),
+        [
+            "create m1",
+            "start m1",
+            "stop m1",
+            "delete-keeping-storage m1",
+            "create m1",
+            "start m1"
+        ]
+    );
+    let (image, _) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert_eq!(
+        PathBuf::from(image),
+        h.entry("quay.io/x/vm:2").join(ROOTFS_DIR)
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:2"
+    );
+    assert!(h.server.forwarder.is_published("m1"));
+}
+
+// TEST_SCENARIO: the new image is fetched before the old machine is touched, so an image that cannot be read is reported as an image problem while the agent keeps running on what it has.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_that_cannot_be_fetched_leaves_the_machine_running() {
+    let h = Harness::new("new-image-fails");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
-    let before = h.fake.calls().len();
-    let mut changed = spec(true);
-    changed.image = "quay.io/x/vm:2".into();
-    h.server.put("m1", changed).unwrap();
+    fs::write(
+        h.dir.join("crane"),
+        "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
+    )
+    .unwrap();
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
     let status = h.settle("m1").await;
-    assert!(
-        status
-            .message
-            .contains("image is quay.io/x/vm:1, wanted quay.io/x/vm:2"),
-        "{status:?}"
-    );
-    assert_eq!(status.state, STATE_RUNNING);
-    assert!(h.fake.calls()[before..].is_empty(), "{:?}", h.fake.calls());
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
     assert_eq!(
         read_spec(&h.dir.join("machines"), "m1").unwrap().image,
         "quay.io/x/vm:1"
     );
+}
+
+// TEST_SCENARIO: a machine deleted outright takes any disk an interrupted recreate kept with it, so a later agent of the same name never boots onto a stranger's home.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_discards_a_kept_disk() {
+    let h = Harness::new("discard-kept");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.delete("m1").unwrap();
+    h.server.delete("never-created").unwrap();
+    assert_eq!(*locked(&h.fake.discarded), ["m1", "never-created"]);
 }
 
 // TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those. A machine whose gateway moved is stopped and reported, not run on an address that may now belong to another owner.
@@ -1008,5 +1071,96 @@ async fn a_disk_that_cannot_grow_is_not_resized_under_a_running_machine() {
             .unwrap()
             .storage_gib,
         spec(true).storage_gib
+    );
+}
+
+// TEST_SCENARIO: an image upgrade that also asks for more storage on a disk that cannot grow is refused before the old machine is stopped, so the agent keeps running on its old image rather than being recreated at a size it will never have.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_image_with_a_size_the_disk_cannot_take_is_refused_before_the_recreate() {
+    let h = Harness::new("ungrowable-recreate");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    upgraded.storage_gib += 10;
+    h.server.put("m1", upgraded).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:1"
+    );
+}
+
+// TEST_SCENARIO: a machine whose gateway moved and whose disk cannot take the size asked for has two reasons to be refused. The moved gateway wins: the machine is stopped rather than left running on an address nobody checked, and the controller is told the gateway moved.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_moved_gateway_stops_a_machine_even_when_its_disk_cannot_grow() {
+    let h = Harness::new("ungrowable-egress");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut moved = spec(true);
+    moved.allow_cidrs = vec!["10.0.0.9/32".into()];
+    moved.storage_gib += 10;
+    h.server.put("m1", moved.clone()).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", moved).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_EGRESS_CHANGED, "{status:?}");
+    assert_eq!(h.fake.calls(), ["create m1", "start m1", "stop m1"]);
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_STOPPED);
+}
+
+// TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size, and the next spec also asks for a larger disk. The create that resumes it boots onto the kept disk, which is never grown at start, so it is capped at the size that disk has: the agent comes back, the stored spec says what it really has, and the larger size is then taken like any other resize — here refused, because the kept disk cannot grow, while the machine keeps running.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_recreate_boots_at_the_size_the_kept_disk_has() {
+    let h = Harness::new("ungrowable-resume");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).remove("m1");
+    h.server.forget_state("m1");
+    h.fake.kept.store(true, Ordering::SeqCst);
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut resumed = spec(true);
+    resumed.image = "quay.io/x/vm:2".into();
+    resumed.storage_gib += 10;
+    h.server.put("m1", resumed.clone()).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.calls(),
+        ["create m1", "start m1", "create m1", "start m1"]
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
+    );
+    h.fake.kept.store(false, Ordering::SeqCst);
+
+    h.server.put("m1", resumed).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.state("m1").unwrap(), STATE_RUNNING);
+
+    let go = crate::gosource::read("server.go");
+    let ensure =
+        crate::gosource::function_body(&go, "(s *Server) ensure").expect("server.go has ensure");
+    assert!(
+        ensure.contains("s.Runtime.HasKeptStorage(id)")
+            && ensure.contains("spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)"),
+        "the Go runner no longer caps a create onto a kept disk at the disk's size: {ensure}"
     );
 }

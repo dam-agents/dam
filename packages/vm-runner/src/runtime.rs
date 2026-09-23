@@ -21,6 +21,10 @@ pub trait Runtime: Send + Sync {
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: deletes a stopped machine but moves its storage disk aside first, for the machine recreated under the same name on a new image to boot onto. smolvm cannot change a machine's image, and everything the agent keeps is on that disk. Every create and start puts a kept disk back before anything else, so a runner killed between the delete and the boot never boots onto an empty disk.
+    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: removes a disk kept by an interrupted recreate, for a machine that is being deleted outright.
+    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
@@ -28,6 +32,10 @@ pub trait Runtime: Send + Sync {
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk the Go runner made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
     fn storage_growable(&self, _id: &str) -> bool {
         true
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: whether a storage disk kept by a recreate is waiting for this machine, which means the recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so that create must not ask for more than the disk it gets.
+    fn has_kept_storage(&self, _id: &str) -> bool {
+        false
     }
 }
 
@@ -66,6 +74,45 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
+
+// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it. The Go runner keeps its disks at the same place, so either runner finishes a recreate the other began.
+pub const KEPT_DISKS_DIR: &str = "kept-disks";
+
+// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: a raw file, or a qcow2 one backed by the shared template when the Go runner made it at smolvm's default size, and the marker that says its filesystem is made — without which smolvm formats it again. A qcow2 file's template is outside the data directory, so moving the file does not break it.
+pub const STORAGE_FILES: [&str; 3] = ["storage.raw", "storage.qcow2", "storage.formatted"];
+
+pub fn kept_dir(home: &Path, id: &str) -> std::path::PathBuf {
+    home.join(KEPT_DISKS_DIR).join(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: moves whichever storage files are there. A file that is not there is not an error, so a move that stopped half way can be run again.
+pub fn move_storage(from: &Path, to: &Path) -> anyhow::Result<()> {
+    for file in STORAGE_FILES {
+        let source = from.join(file);
+        if !source.exists() {
+            continue;
+        }
+        fs::create_dir_all(to)?;
+        fs::rename(&source, to.join(file))?;
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: puts a kept storage disk back into the machine's data directory, which smolvm names by the machine's name and so is the one the old machine had. The kept disk is the agent's and replaces whatever storage files are there, which can only be an empty disk made before the kept one was put back.
+pub fn adopt_kept_storage(kept: &Path, vm_dir: &Path) -> anyhow::Result<()> {
+    if !kept.is_dir() {
+        return Ok(());
+    }
+    for file in STORAGE_FILES {
+        match fs::remove_file(vm_dir.join(file)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    move_storage(kept, vm_dir)?;
+    fs::remove_dir(kept)?;
+    Ok(())
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -516,6 +563,55 @@ mod tests {
         assert_eq!(
             gosource::int_value(&server, "guestAgentPort"),
             Some(u64::from(GUEST_AGENT_PORT))
+        );
+    }
+
+    // TEST_SCENARIO: a recreate moves the agent's disk out of the data directory and back into the recreated machine's, and the disk that comes back is the one that left, with its formatted marker, so smolvm does not format it again. An empty disk a create made before the kept one returned is replaced by it, and a move interrupted half way can simply be run again.
+    #[test]
+    fn a_kept_storage_disk_comes_back_whole() {
+        let root = TempDir::new("kept");
+        let vm = root.path().join("vm");
+        let kept = kept_dir(root.path(), "m1");
+        fs::create_dir_all(&vm).unwrap();
+        fs::write(vm.join("storage.raw"), "home").unwrap();
+        fs::write(vm.join("storage.formatted"), "1").unwrap();
+        fs::write(vm.join("overlay.raw"), "root").unwrap();
+
+        move_storage(&vm, &kept).unwrap();
+        move_storage(&vm, &kept).unwrap();
+        assert!(!vm.join("storage.raw").exists());
+        assert!(
+            vm.join("overlay.raw").exists(),
+            "the overlay is not the agent's"
+        );
+
+        fs::write(vm.join("storage.raw"), "empty").unwrap();
+        adopt_kept_storage(&kept, &vm).unwrap();
+        assert_eq!(fs::read_to_string(vm.join("storage.raw")).unwrap(), "home");
+        assert!(vm.join("storage.formatted").exists());
+        assert!(!kept.exists());
+        adopt_kept_storage(&kept, &vm).unwrap();
+    }
+
+    // TEST_SCENARIO: a Go runner rolled out mid-recreate leaves its machine's disk where it keeps them, and this runner must find it there and know every file of it — or it boots the recreated machine onto an empty disk and the agent's work is gone.
+    #[test]
+    fn disks_are_kept_where_the_go_runner_keeps_them() {
+        let go = gosource::read("smolvm.go");
+        assert_eq!(
+            gosource::const_value(&go, "keptDisksDir").as_deref(),
+            Some(KEPT_DISKS_DIR)
+        );
+        let files = format!(
+            "var storageFiles = []string{{{}}}",
+            STORAGE_FILES
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        assert!(
+            go.lines().any(|line| line.trim() == files),
+            "the Go runner no longer keeps exactly these files: {files}"
         );
     }
 
