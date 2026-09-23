@@ -9,32 +9,28 @@ use ipnet::IpNet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::api::{
-    MachineSpec, MachineStatus, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY, STATE_ABSENT,
-    STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
-    STATE_UNKNOWN,
-};
+use crate::api::{MachineSpec, MachineStatus, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY};
 use crate::cache::{self, repository, REF_FRESH};
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
-use crate::fetch::{self, egress_changed, failure_reason, unusable};
+use crate::fetch::{self, failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::ImageCache;
 use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::metrics::{Gauges, Metrics};
-use crate::plan::{self, admissible, image_changed, needs_restart, reads_ready, Health};
-use crate::runtime::{redact, Machine, Runtime};
+use crate::plan::{admissible, reads_ready, step, Action, Health};
+use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{write_share, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, driven to the shape the controller asks for. Every PUT is planned against what the machine is doing now and the planned operation runs in the background, one at a time per machine, while GET reports it as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share — and what the runner is doing to it lives here and is lost with the process, which is why a restarted runner rebuilds only what the disk can tell it.
+// UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine's state from the runtime is reused. The controller polls a starting machine every half second, and each answer costs a probe of the guest agent, while the state barely moves at that rate. Only the state is reused: whether the guest answers its health endpoint is asked every time.
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine's state from the runtime is reused. The controller polls a booting machine every half second and admission reads every other machine's state, and each read probes the guest agent, while the state barely moves at that rate. Whether the guest answers its health endpoint is still asked every time.
 pub const STATE_TTL: Duration = Duration::from_secs(1);
 
-// UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the operations already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
+// UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the actions already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
 pub use crate::imagecache::ROOTFS_DIR;
@@ -61,25 +57,33 @@ struct Failed {
     reason: &'static str,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a boot the runner waits on until its guest first answers: when it was asked, by which action, and the stuck-boot note once one is written. The note is kept, not rebuilt on each poll, because a message that changed twice a second would be a status write twice a second.
+struct Boot {
+    at: Instant,
+    action: Action,
+    note: Option<(String, Instant)>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
 #[derive(Default)]
-struct Inner {
+struct MachineEntry {
+    desired: Option<MachineSpec>,
+    asked: u64,
+    action: Option<Action>,
+    converging: bool,
+    deleting: bool,
+    failure: Option<Failed>,
+    health: Health,
+    restarts: i32,
+    boot: Option<Boot>,
+    secrets: Vec<String>,
+    observed: Option<(State, Instant)>,
+}
+
+#[derive(Default)]
+struct Machines {
     closed: bool,
-    pending: HashMap<String, &'static str>,
-    seq: HashMap<String, u64>,
-    served: HashMap<String, u64>,
-    committing: BTreeMap<String, i32>,
-    failures: HashMap<String, Failed>,
-    gens: HashMap<String, u64>,
-    restarts: HashMap<String, i32>,
-    health: HashMap<String, Health>,
-    last_state: HashMap<String, (&'static str, Instant)>,
-    started_at: HashMap<String, Instant>,
-    // UNIT_BOUNDARY_DESCRIPTION: the start each machine was last asked for, until its guest first answers, so the time to that answer is recorded once and under the operation that asked.
-    awaiting: HashMap<String, &'static str>,
-    // UNIT_BOUNDARY_DESCRIPTION: the note a machine that is stuck booting carries, and when it was written. Kept rather than rebuilt on every status, because the controller polls a starting machine twice a second and a message that changed each time would be a status write each time.
-    slow_boots: HashMap<String, (String, Instant)>,
-    // UNIT_BOUNDARY_DESCRIPTION: every env value this runner has been given for each machine. An operator's Secret reaches the guest in its environment, and a guest that prints its environment puts those values on the console; the console outlives a spec change, so values a machine no longer has are kept too.
-    secrets: HashMap<String, Vec<String>>,
+    entries: HashMap<String, MachineEntry>,
 }
 
 pub struct Server {
@@ -87,16 +91,16 @@ pub struct Server {
     cache: ImageCache,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
-    inner: Mutex<Inner>,
-    turns: Condvar,
-    locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    machines: Mutex<Machines>,
+    settled: Condvar,
+    admission: Mutex<()>,
     ports: Mutex<()>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a request the runner refuses outright, before planning anything, with the HTTP status that says whose mistake it is.
+// UNIT_BOUNDARY_DESCRIPTION: a request the runner refuses outright, with the HTTP status that says whose mistake it is.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Rejected {
     pub status: u16,
@@ -145,9 +149,9 @@ impl Server {
             cache,
             runtime,
             forwarder,
-            inner: Mutex::new(Inner::default()),
-            turns: Condvar::new(),
-            locks: Mutex::new(HashMap::new()),
+            machines: Mutex::new(Machines::default()),
+            settled: Condvar::new(),
+            admission: Mutex::new(()),
             ports: Mutex::new(()),
             lifetime,
             work: TaskTracker::new(),
@@ -165,9 +169,9 @@ impl Server {
         Ok(server)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: stops taking operations, cancels the ones running, and waits up to CLOSE_GRACE for them. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. Ports are dropped last, so an operation that finished inside the wait does not leave one bound.
+    // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, and waits up to CLOSE_GRACE for it. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
     pub async fn close(&self) {
-        locked(&self.inner).closed = true;
+        locked(&self.machines).closed = true;
         self.forwarder.unpublish_all();
         self.lifetime.cancel();
         self.work.close();
@@ -177,15 +181,15 @@ impl Server {
         {
             tracing::warn!(
                 grace_secs = CLOSE_GRACE.as_secs(),
-                "vm runner: machine operations were still running when the runner closed"
+                "vm runner: machine actions were still running when the runner closed"
             );
         }
         self.forwarder.unpublish_all();
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: work that belongs to no machine — the disk-template warm-up — joined to the same barrier as a machine operation, so closing the runner cancels and waits for everything it started. Work offered after close is refused.
+    // UNIT_BOUNDARY_DESCRIPTION: work that belongs to no machine — the disk-template warm-up — joined to the same barrier as a machine's worker, so closing the runner cancels and waits for everything it started. Work offered after close is refused.
     pub fn background(&self, work: impl FnOnce(CancellationToken) + Send + 'static) {
-        if locked(&self.inner).closed {
+        if locked(&self.machines).closed {
             return;
         }
         let lifetime = self.lifetime.clone();
@@ -198,55 +202,81 @@ impl Server {
             .collect())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired shape for one machine and answers with its status. When the machine needs work the work is started in the background and the answer reports the operation as its state; a machine that does not fit the runner's memory is refused here, before anything is created.
+    // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it.
     pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
         if !is_machine_id(id) {
             return Err(Rejected::bad_request("invalid machine id"));
         }
         admissible(&spec).map_err(Rejected::bad_request)?;
         self.remember_secrets(id, &spec);
-        let mut status = self.status(id);
-        let applied = read_spec(&self.config.state_dir, id);
-        let dead_for_long = self.dead_for_long(id);
-        let Some(planned) = plan::plan(
-            applied.as_ref(),
-            &spec,
-            &status.state,
-            status.ready,
-            dead_for_long,
-        ) else {
-            return Ok(status);
-        };
-        if planned.op != STATE_STOPPING {
-            if let Err(e) = self.room_for(id, &spec) {
-                self.metrics.refused();
-                let message = e.to_string();
-                locked(&self.inner).failures.insert(
-                    id.to_string(),
-                    Failed {
-                        message: message.clone(),
-                        reason: REASON_OUT_OF_CAPACITY,
-                    },
-                );
-                status.message = message;
-                status.reason = REASON_OUT_OF_CAPACITY.to_string();
-                status.ready = false;
+        loop {
+            let (state, mut status) = self.report(id);
+            let action = step(
+                read_spec(&self.config.state_dir, id).as_ref(),
+                &spec,
+                state,
+                status.ready,
+                self.dead_for_long(id),
+            );
+            let converging = self.converging(id);
+            let boots = if converging {
+                spec.running
+            } else {
+                action.is_some_and(|a| a != Action::Stop)
+            };
+            let _admitting = boots.then(|| locked(&self.admission));
+            if boots {
+                if let Err(e) = self.room_for(id, &spec) {
+                    return Ok(self.refuse(id, status, e.to_string()));
+                }
+            }
+            let mut machines = locked(&self.machines);
+            if machines.closed {
                 return Ok(status);
             }
-            locked(&self.inner)
-                .committing
-                .insert(id.to_string(), spec.memory_mib);
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            if entry.deleting {
+                return Ok(status);
+            }
+            if converging && !entry.converging {
+                continue;
+            }
+            entry.desired = Some(spec);
+            entry.asked += 1;
+            if entry.converging {
+                return Ok(status);
+            }
+            let Some(action) = action else {
+                return Ok(status);
+            };
+            entry.converging = true;
+            entry.action = Some(action);
+            let asked = entry.asked;
+            drop(machines);
+            let server = self.clone();
+            let target = id.to_string();
+            self.work
+                .spawn_blocking(move || server.converge(&target, action, asked));
+            status.state = action.label().to_string();
+            status.ready = false;
+            return Ok(status);
         }
-        let restart = planned.op == STATE_RESTARTING;
-        let unhealthy = planned.unhealthy;
-        let server = self.clone();
-        let target = id.to_string();
-        self.spawn(id, planned.op, move || {
-            server.ensure(&target, spec, restart, unhealthy)
+    }
+
+    fn refuse(&self, id: &str, mut status: MachineStatus, message: String) -> MachineStatus {
+        self.metrics.refused();
+        locked(&self.machines)
+            .entries
+            .entry(id.to_string())
+            .or_default()
+            .failure = Some(Failed {
+            message: message.clone(),
+            reason: REASON_OUT_OF_CAPACITY,
         });
-        status.state = planned.op.to_string();
+        status.message = message;
+        status.reason = REASON_OUT_OF_CAPACITY.to_string();
         status.ready = false;
-        Ok(status)
+        status
     }
 
     pub fn get(&self, id: &str) -> Result<MachineStatus, Rejected> {
@@ -256,171 +286,196 @@ impl Server {
         Ok(self.status(id))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state. It takes the machine's lock, so it waits for the operation running and then drops every operation queued behind it — the generation it bumps is what a queued operation checks before it runs.
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, then waits for the action in flight to return.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
         if !is_machine_id(id) {
             return Err(Rejected::bad_request("invalid machine id"));
         }
-        let lock = self.lock(id);
-        let _held = locked(&lock);
-        *locked(&self.inner).gens.entry(id.to_string()).or_default() += 1;
-        let state = self
-            .runtime
-            .state(id)
-            .map_err(|e| Rejected::internal(format!("{e:#}")))?;
-        if state != STATE_ABSENT {
-            self.runtime
-                .delete(id)
-                .map_err(|e| Rejected::internal(format!("{e:#}")))?;
-        }
-        self.runtime
-            .discard_kept_storage(id)
-            .map_err(|e| Rejected::internal(format!("{e:#}")))?;
-        let dir = machine_dir(&self.config.state_dir, id)
-            .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
-        match fs::remove_dir_all(&dir) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(Rejected::internal(e.to_string())),
-        }
         {
-            let mut inner = locked(&self.inner);
-            inner.failures.remove(id);
-            inner.restarts.remove(id);
-            inner.health.remove(id);
-            inner.last_state.remove(id);
-            inner.started_at.remove(id);
-            inner.awaiting.remove(id);
-            inner.slow_boots.remove(id);
-            inner.secrets.remove(id);
+            let mut machines = locked(&self.machines);
+            machines.entries.entry(id.to_string()).or_default().deleting = true;
+            while machines.entries.get(id).is_some_and(|e| e.converging) {
+                machines = self
+                    .settled
+                    .wait(machines)
+                    .unwrap_or_else(|e| e.into_inner());
+            }
         }
+        let removed = self.remove(id);
+        {
+            let mut machines = locked(&self.machines);
+            if removed.is_ok() {
+                machines.entries.remove(id);
+            } else if let Some(entry) = machines.entries.get_mut(id) {
+                entry.deleting = false;
+            }
+        }
+        removed?;
         self.forwarder.unpublish(id);
         self.publish_holders();
         Ok(())
     }
 
-    fn lock(&self, id: &str) -> Arc<Mutex<()>> {
-        locked(&self.locks)
-            .entry(id.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
+    fn remove(&self, id: &str) -> Result<(), Rejected> {
+        let internal = |e: anyhow::Error| Rejected::internal(format!("{e:#}"));
+        if self.runtime.state(id).map_err(internal)? != State::Absent {
+            self.runtime.delete(id).map_err(internal)?;
+        }
+        let dir = machine_dir(&self.config.state_dir, id)
+            .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
+        match fs::remove_dir_all(&dir) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(Rejected::internal(e.to_string()))
+            }
+            _ => Ok(()),
+        }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: runs one operation in the background, after the ones already queued for the machine and in the order they were queued. The order is a ticket taken here, when the operation is queued, and not the order the worker threads happen to reach the machine's lock: two threads started a moment apart can take the lock in either order, and a stop queued behind a boot that runs first leaves running a machine the controller asked to stop. Each clears only its own markers, so a boot that finishes does not erase the stop queued behind it. An operation refused because the runner is closing releases the memory its caller reserved for it.
-    fn spawn(
-        self: &Arc<Self>,
-        id: &str,
-        op: &'static str,
-        work: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
-    ) {
-        let (seq, generation) = {
-            let mut inner = locked(&self.inner);
-            if inner.closed {
-                inner.committing.remove(id);
+    fn converging(&self, id: &str) -> bool {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .is_some_and(|e| e.converging)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the worker that brings one machine to its latest spec. It runs one action, and steps again only if a newer spec arrived while that action ran — which is how a stop sent mid-boot is honoured once the boot returns. It never steps again on its own result: an action that succeeds and still leaves the machine short, such as a guest that dies as it boots, is retried on the next reconcile rather than in a tight loop.
+    fn converge(&self, id: &str, first: Action, asked: u64) {
+        let _done = Settle { server: self, id };
+        let mut planned = Some((first, asked));
+        loop {
+            let (action, asked) = match planned.take() {
+                Some(planned) => planned,
+                None => match self.plan_next(id) {
+                    Some(next) => next,
+                    None => return,
+                },
+            };
+            let spec = {
+                let mut machines = locked(&self.machines);
+                if machines.closed {
+                    return;
+                }
+                let Some(entry) = machines.entries.get_mut(id) else {
+                    return;
+                };
+                if entry.deleting {
+                    return;
+                }
+                if entry.asked != asked {
+                    continue;
+                }
+                entry.action = Some(action);
+                entry.health.action_started();
+                entry.desired.clone().unwrap_or_default()
+            };
+            self.run(id, action, spec);
+            let machines = locked(&self.machines);
+            if machines.closed
+                || machines
+                    .entries
+                    .get(id)
+                    .is_none_or(|e| e.deleting || e.asked == asked)
+            {
                 return;
             }
-            let seq = {
-                let next = inner.seq.entry(id.to_string()).or_default();
-                *next += 1;
-                *next
-            };
-            inner.pending.insert(id.to_string(), op);
-            inner
-                .health
-                .entry(id.to_string())
-                .or_default()
-                .operation_started();
-            (seq, inner.gens.get(id).copied().unwrap_or_default())
-        };
-        let server = self.clone();
-        let id = id.to_string();
-        self.work.spawn_blocking(move || {
-            let _turn = server.wait_turn(&id, seq);
-            let lock = server.lock(&id);
-            let _held = locked(&lock);
-            let gone = locked(&server.inner)
-                .gens
-                .get(&id)
-                .copied()
-                .unwrap_or_default()
-                != generation;
-            let result = if gone {
-                Ok(())
-            } else {
-                let started = Instant::now();
-                let result = work();
-                server
-                    .metrics
-                    .operation(op, started.elapsed(), result.is_ok());
-                result
-            };
-            let failed = result.err().map(|e| {
-                let mut message = format!("{e:#}");
-                tracing::error!(machine = %id, op, error = %message, "machine operation failed");
-                let reason = failure_reason(&e);
-                server.metrics.failed(op, reason);
-                if reason == REASON_BOOT_FAILED {
-                    message = with_console(&message, &server.console_tail(&id));
-                }
-                Failed { message, reason }
-            });
-            let mut inner = locked(&server.inner);
-            if inner.seq.get(&id) == Some(&seq) {
-                inner.pending.remove(&id);
-                inner.committing.remove(&id);
-            }
-            match failed {
-                None => {
-                    inner.failures.remove(&id);
-                }
-                Some(failed) => {
-                    inner.failures.insert(id, failed);
-                }
-            }
-        });
-    }
-
-    fn wait_turn(&self, id: &str, ticket: u64) -> Turn<'_> {
-        let mut inner = locked(&self.inner);
-        while inner.served.get(id).copied().unwrap_or_default() + 1 != ticket {
-            inner = self.turns.wait(inner).unwrap_or_else(|e| e.into_inner());
-        }
-        Turn {
-            server: self,
-            id: id.to_string(),
-            ticket,
         }
     }
 
-    fn ensure(
-        &self,
-        id: &str,
-        mut spec: MachineSpec,
-        restart: bool,
-        unhealthy: bool,
-    ) -> anyhow::Result<()> {
+    // UNIT_BOUNDARY_DESCRIPTION: the step towards the spec stored while the last action ran, against what the runtime reports now. Nothing to do ends the worker, but only while no newer spec has arrived during the planning itself, or that spec would wait for the next reconcile with no worker to act on it.
+    fn plan_next(&self, id: &str) -> Option<(Action, u64)> {
+        loop {
+            let (desired, asked) = {
+                let machines = locked(&self.machines);
+                let entry = machines.entries.get(id)?;
+                (entry.desired.clone()?, entry.asked)
+            };
+            self.forget_state(id);
+            let state = self.observed(id).ok()?;
+            let ready = state == State::Running && healthy(state::port(&self.config.state_dir, id));
+            let applied = read_spec(&self.config.state_dir, id);
+            if let Some(action) = step(
+                applied.as_ref(),
+                &desired,
+                state,
+                ready,
+                self.dead_for_long(id),
+            ) {
+                return Some((action, asked));
+            }
+            let machines = locked(&self.machines);
+            if machines.entries.get(id).is_none_or(|e| e.asked == asked) {
+                return None;
+            }
+        }
+    }
+
+    fn run(&self, id: &str, action: Action, mut spec: MachineSpec) {
         let auths = std::mem::take(&mut spec.pull_auths);
-        let result = self.ensure_inner(id, &spec, &auths, restart, unhealthy);
+        self.forget_state(id);
+        let started = Instant::now();
+        let result = match action {
+            Action::Stop => self.stop_machine(id),
+            Action::Create => self.create(id, &spec, &auths),
+            Action::Start | Action::Restart { .. } => self.reshape(id, &spec, &auths, action),
+        };
         self.publish_holders();
-        result
+        self.metrics
+            .operation(action.label(), started.elapsed(), result.is_ok());
+        let failure = result.err().map(|e| {
+            let mut message = format!("{e:#}");
+            tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
+            let reason = failure_reason(&e);
+            self.metrics.failed(action.label(), reason);
+            if reason == REASON_BOOT_FAILED {
+                message = with_console(&message, &self.console_tail(id));
+            }
+            Failed { message, reason }
+        });
+        let mut machines = locked(&self.machines);
+        if let Some(entry) = machines.entries.get_mut(id) {
+            entry.failure = failure;
+            entry.observed = None;
+        }
     }
 
-    fn ensure_inner(
+    fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
+        write_share(
+            &self.config.state_dir,
+            id,
+            spec,
+            self.config.init.as_deref(),
+        )?;
+        let port = {
+            let _ports = locked(&self.ports);
+            state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
+        };
+        let (image, launch, digest) = self.resolve(spec, auths)?;
+        self.record_digest(id, digest.as_deref())?;
+        let dir = machine_dir(&self.config.state_dir, id)
+            .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
+        self.runtime.create(
+            id,
+            &Machine {
+                spec,
+                image: &image,
+                host_port: port + LOOPBACK_OFFSET,
+                share: &dir.join(SHARE_DIR),
+                launch: Some(&launch),
+            },
+        )?;
+        self.forwarder.publish(id, port)?;
+        self.start_machine(id, Action::Create)?;
+        write_spec(&self.config.state_dir, id, spec)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
+    fn reshape(
         &self,
         id: &str,
         spec: &MachineSpec,
         auths: &[String],
-        restart: bool,
-        unhealthy: bool,
+        action: Action,
     ) -> anyhow::Result<()> {
-        let mut state = self.machine_state(id)?;
-        if !spec.running {
-            if state == STATE_RUNNING {
-                self.forget_state(id);
-                self.stop_machine(id)?;
-            }
-            return Ok(());
-        }
         write_share(
             &self.config.state_dir,
             id,
@@ -428,90 +483,46 @@ impl Server {
             self.config.init.as_deref(),
         )?;
         let applied = read_spec(&self.config.state_dir, id);
-        if state == STATE_ABSENT {
-            self.create(id, spec, auths)?;
-            return write_spec(&self.config.state_dir, id, spec);
-        }
-        if let Some(applied) = &applied {
-            if plan::egress_changed(applied, spec) {
-                if state == STATE_RUNNING {
-                    self.forget_state(id);
-                    self.stop_machine(id)?;
-                }
-                return Err(egress_changed(format!(
-                    "this machine may only reach [{}], but its gateway is now [{}] — recreate the agent",
-                    applied.allow_cidrs.join(" "),
-                    spec.allow_cidrs.join(" ")
-                )));
-            }
-        }
-        if let Some(applied) = &applied {
-            if image_changed(applied, spec) {
-                return self.recreate(id, spec, state, auths);
-            }
-        }
+        let image = match &applied {
+            Some(applied) if applied.image != spec.image => Some(self.resolve(spec, auths)?),
+            _ => None,
+        };
         let port = state::port(&self.config.state_dir, id);
         if port != 0 {
             self.forwarder.publish(id, port)?;
         }
-        let mut op = STATE_STARTING;
-        if state == STATE_RUNNING
-            && (restart || applied.as_ref().is_none_or(|a| needs_restart(a, spec)))
-        {
+        if let Action::Restart { unhealthy } = action {
             if unhealthy {
-                *locked(&self.inner)
-                    .restarts
-                    .entry(id.to_string())
-                    .or_default() += 1;
+                if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+                    entry.restarts += 1;
+                }
                 self.metrics.unhealthy_restart();
             }
-            op = STATE_RESTARTING;
-            self.forget_state(id);
             self.stop_machine(id)?;
-            state = STATE_STOPPED;
         }
-        if state == STATE_STOPPED {
-            self.forget_state(id);
-            self.runtime.update(id, spec, applied.as_ref())?;
-            self.start_machine(id, op)?;
+        if let Some((_, _, digest)) = &image {
+            self.record_digest(id, digest.as_deref())?;
         }
+        self.runtime.update(
+            id,
+            &Update {
+                desired: spec,
+                applied: applied.as_ref(),
+                image: image
+                    .as_ref()
+                    .map(|(image, launch, _)| (image.as_str(), launch)),
+            },
+        )?;
+        self.start_machine(id, action)?;
         write_spec(&self.config.state_dir, id, spec)
     }
 
-    fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
-        let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
-        self.boot(id, spec, port, &image, &launch, digest.as_deref())
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: moves a machine to a new image. The new image is fetched and its launch read while the old machine still runs, so the agent is down for the stop, the recreate and the boot and not for a pull, and a pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image stays held while this runs, because the stored spec names it until the new machine has booted; it is rewritten only after that, and the holders published after it release the old image.
-    fn recreate(
-        &self,
-        id: &str,
-        spec: &MachineSpec,
-        state: &str,
-        auths: &[String],
-    ) -> anyhow::Result<()> {
-        let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
-        self.forget_state(id);
-        if state == STATE_RUNNING {
-            self.stop_machine(id)?;
-        }
-        self.runtime.delete_keeping_storage(id)?;
-        self.boot(id, spec, port, &image, &launch, digest.as_deref())?;
-        write_spec(&self.config.state_dir, id, spec)
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots, and on which port. What it boots is decided in order: the digest entry in the cache when its launch record is there, a fresh fetch into that entry, an archive an install with no registry staged in the image directory, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots. It is decided in order: the digest entry in the cache when its launch record is there, a fresh fetch into that entry, an archive an install with no registry staged in the image directory, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
     fn resolve(
         &self,
-        id: &str,
         spec: &MachineSpec,
         auths: &[String],
-    ) -> anyhow::Result<(u16, String, ImageLaunch, Option<String>)> {
-        let port = {
-            let _ports = locked(&self.ports);
-            state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
-        };
+    ) -> anyhow::Result<(String, ImageLaunch, Option<String>)> {
         let mut image = spec.image.clone();
         if !is_image_ref(&image) || image.contains("..") {
             anyhow::bail!("invalid image reference {image:?}");
@@ -551,47 +562,35 @@ impl Server {
         if let Some(cached) = cached.filter(|path| path.exists()) {
             image = cached.to_string_lossy().into_owned();
         }
-        Ok((port, image, launch, digest))
+        Ok((image, launch, digest))
     }
 
-    fn boot(
-        &self,
-        id: &str,
-        spec: &MachineSpec,
-        port: u16,
-        image: &str,
-        launch: &ImageLaunch,
-        digest: Option<&str>,
-    ) -> anyhow::Result<()> {
-        self.record_digest(id, digest)?;
-        let dir = machine_dir(&self.config.state_dir, id)
-            .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
-        self.forget_state(id);
-        self.runtime.create(
-            id,
-            &Machine {
-                spec,
-                image,
-                host_port: port + LOOPBACK_OFFSET,
-                share: &dir.join(SHARE_DIR),
-                launch: Some(launch),
-            },
-        )?;
-        self.forwarder.publish(id, port)?;
-        self.start_machine(id, STATE_CREATING)
-    }
-
-    fn start_machine(&self, id: &str, op: &'static str) -> anyhow::Result<()> {
-        self.mark_starting(id, op);
+    fn start_machine(&self, id: &str, action: Action) -> anyhow::Result<()> {
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.boot = Some(Boot {
+                at: Instant::now(),
+                action,
+                note: None,
+            });
+        }
         let started = Instant::now();
         let result = self.runtime.start(id);
-        self.metrics.start(op, started.elapsed(), result.is_ok());
+        self.metrics
+            .start(action.label(), started.elapsed(), result.is_ok());
         result
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered would report a growing `startingMs` for as long as it stayed stopped.
+    fn stop_machine(&self, id: &str) -> anyhow::Result<()> {
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.boot = None;
+        }
+        self.runtime.stop(id)
+    }
+
     fn remember_secrets(&self, id: &str, spec: &MachineSpec) {
-        let mut inner = locked(&self.inner);
-        let known = inner.secrets.entry(id.to_string()).or_default();
+        let mut machines = locked(&self.machines);
+        let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;
         for value in spec.env.values() {
             if !known.contains(value) {
                 known.push(value.clone());
@@ -601,7 +600,11 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
     fn console_tail(&self, id: &str) -> String {
-        let remembered = locked(&self.inner).secrets.get(id).cloned();
+        let remembered = locked(&self.machines)
+            .entries
+            .get(id)
+            .map(|e| e.secrets.clone())
+            .filter(|secrets| !secrets.is_empty());
         let applied = read_spec(&self.config.state_dir, id);
         if remembered.is_none() && applied.is_none() {
             return String::new();
@@ -614,26 +617,24 @@ impl Server {
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. An answer also drops the start stamp: from then on the machine is up, and a probe it misses later is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it.
     fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
-        let (op, note, started_at) = {
-            let mut inner = locked(&self.inner);
-            let op = inner.awaiting.get(id).copied();
-            let started_at = inner.started_at.get(id).copied();
+        let (at, action, note) = {
+            let mut machines = locked(&self.machines);
+            let Some(entry) = machines.entries.get_mut(id) else {
+                return;
+            };
+            let Some(boot) = &entry.boot else {
+                return;
+            };
+            let seen = (boot.at, boot.action, boot.note.clone());
             if status.ready {
-                inner.awaiting.remove(id);
-                inner.slow_boots.remove(id);
-                inner.started_at.remove(id);
+                entry.boot = None;
             }
-            (op, inner.slow_boots.get(id).cloned(), started_at)
-        };
-        let Some(at) = started_at else {
-            return;
+            seen
         };
         if status.ready {
-            if let Some(op) = op {
-                self.metrics.became_ready(op, at.elapsed());
-            }
+            self.metrics.became_ready(action.label(), at.elapsed());
             return;
         }
         if !no_failure || at.elapsed() < SLOW_BOOT_AFTER {
@@ -643,11 +644,14 @@ impl Server {
             Some((message, noted)) if noted.elapsed() < SLOW_BOOT_AFTER => message,
             _ => {
                 let message = with_console(SLOW_BOOT, &self.console_tail(id));
-                let mut inner = locked(&self.inner);
-                if inner.started_at.get(id) == Some(&at) {
-                    inner
-                        .slow_boots
-                        .insert(id.to_string(), (message.clone(), Instant::now()));
+                let mut machines = locked(&self.machines);
+                if let Some(boot) = machines
+                    .entries
+                    .get_mut(id)
+                    .and_then(|e| e.boot.as_mut())
+                    .filter(|boot| boot.at == at)
+                {
+                    boot.note = Some((message.clone(), Instant::now()));
                 }
                 message
             }
@@ -661,16 +665,12 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the scrape, with the gauges read as the runner stands now.
     pub fn metrics_text(&self) -> String {
-        let committing = locked(&self.inner).committing.clone();
-        let committed = Capacity {
-            state_dir: &self.config.state_dir,
-            limit_mib: self.config.memory_mib,
-            reserve_mib: self.config.reserve_mib,
-        }
-        .committed(None, &committing, &|other: &str| {
-            matches!(self.machine_state(other), Ok(STATE_RUNNING))
-        })
-        .ok();
+        let committed = self
+            .capacity()
+            .committed(None, &self.committing(), &|other: &str| {
+                matches!(self.observed(other), Ok(State::Running))
+            })
+            .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
             limit_mib: self.config.memory_mib,
@@ -764,76 +764,90 @@ impl Server {
         self.cache.publish(&self.images_in_use());
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being created, which have no spec on disk yet. Running is read through the state cache, so admitting one machine costs no probe per machine when the controller has just asked.
-    fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-        let committing = locked(&self.inner).committing.clone();
+    fn capacity(&self) -> Capacity<'_> {
         Capacity {
             state_dir: &self.config.state_dir,
             limit_mib: self.config.memory_mib,
             reserve_mib: self.config.reserve_mib,
         }
-        .room_for(id, spec.memory_mib, &committing, &|other: &str| {
-            matches!(self.machine_state(other), Ok(STATE_RUNNING))
-        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is bringing up has asked for. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one.
+    fn committing(&self) -> BTreeMap<String, i32> {
+        locked(&self.machines)
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.converging)
+            .filter_map(|(id, entry)| {
+                let desired = entry.desired.as_ref().filter(|d| d.running)?;
+                Some((id.clone(), desired.memory_mib))
+            })
+            .collect()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is read through the state cache, so admitting one machine costs no probe per machine when the controller has just asked.
+    fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
+        self.capacity()
+            .room_for(id, spec.memory_mib, &self.committing(), &|other: &str| {
+                matches!(self.observed(other), Ok(State::Running))
+            })
     }
 
     fn dead_for_long(&self, id: &str) -> bool {
-        locked(&self.inner)
-            .health
+        locked(&self.machines)
+            .entries
             .get(id)
-            .is_some_and(|h| h.dead_for_long(SystemTime::now()))
-    }
-
-    fn mark_starting(&self, id: &str, op: &'static str) {
-        let mut inner = locked(&self.inner);
-        inner.started_at.insert(id.to_string(), Instant::now());
-        inner.awaiting.insert(id.to_string(), op);
-        inner.slow_boots.remove(id);
+            .is_some_and(|e| e.health.dead_for_long(SystemTime::now()))
     }
 
     fn forget_state(&self, id: &str) {
-        locked(&self.inner).last_state.remove(id);
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered kept its start stamp, and so reported a growing `startingMs` for as long as it stayed stopped.
-    fn stop_machine(&self, id: &str) -> anyhow::Result<()> {
-        {
-            let mut inner = locked(&self.inner);
-            inner.started_at.remove(id);
-            inner.awaiting.remove(id);
-            inner.slow_boots.remove(id);
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.observed = None;
         }
-        self.runtime.stop(id)
     }
 
-    fn machine_state(&self, id: &str) -> anyhow::Result<&'static str> {
-        if let Some((state, at)) = locked(&self.inner).last_state.get(id).copied() {
+    // UNIT_BOUNDARY_DESCRIPTION: the machine's state as the runtime reports it, reused for STATE_TTL. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind.
+    fn observed(&self, id: &str) -> anyhow::Result<State> {
+        if let Some((state, at)) = locked(&self.machines)
+            .entries
+            .get(id)
+            .and_then(|e| e.observed)
+        {
             if at.elapsed() < STATE_TTL {
                 return Ok(state);
             }
         }
         let state = self.runtime.state(id)?;
-        locked(&self.inner)
-            .last_state
-            .insert(id.to_string(), (state, Instant::now()));
+        let mut machines = locked(&self.machines);
+        if state != State::Absent || machines.entries.contains_key(id) {
+            machines.entries.entry(id.to_string()).or_default().observed =
+                Some((state, Instant::now()));
+        }
         Ok(state)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine. An operation in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up: a restart's old guest and a stopping one answer until they die.
+    // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
     pub fn status(&self, id: &str) -> MachineStatus {
-        let (pending, failed, restarts, started_at) = {
-            let inner = locked(&self.inner);
-            (
-                inner.pending.get(id).copied(),
-                inner.failures.get(id).cloned(),
-                inner.restarts.get(id).copied().unwrap_or_default(),
-                inner.started_at.get(id).copied(),
-            )
+        self.report(id).1
+    }
+
+    fn report(&self, id: &str) -> (State, MachineStatus) {
+        let (action, failed, restarts, started_at) = {
+            let machines = locked(&self.machines);
+            match machines.entries.get(id) {
+                Some(entry) => (
+                    entry.action,
+                    entry.failure.clone(),
+                    entry.restarts,
+                    entry.boot.as_ref().map(|boot| boot.at),
+                ),
+                None => (None, None, 0, None),
+            }
         };
         let port = state::port(&self.config.state_dir, id);
         let no_failure = failed.is_none();
         let mut status = MachineStatus {
-            state: STATE_ABSENT.to_string(),
+            state: State::Absent.to_string(),
             reason: failed
                 .as_ref()
                 .map(|f| f.reason.to_string())
@@ -850,47 +864,48 @@ impl Server {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
         }
-        match pending {
-            Some(op) => status.state = op.to_string(),
-            None => match self.machine_state(id) {
-                Ok(state) => status.state = state.to_string(),
+        let state = match action {
+            Some(action) => action.state(),
+            None => match self.observed(id) {
+                Ok(state) => state,
                 Err(e) => {
-                    status.state = STATE_UNKNOWN.to_string();
+                    status.state = State::Unknown.to_string();
                     if status.message.is_empty() {
                         status.message = format!("{e:#}");
                     }
-                    return status;
+                    return (State::Unknown, status);
                 }
             },
-        }
-        if reads_ready(&status.state) {
+        };
+        status.state = state.to_string();
+        if reads_ready(state) {
             status.ready = healthy(port);
             self.watch_boot(id, &mut status, no_failure);
         }
-        if status.state == STATE_RUNNING {
-            locked(&self.inner)
-                .health
-                .entry(id.to_string())
-                .or_default()
-                .observed_running(status.ready, SystemTime::now());
+        if state == State::Running {
+            if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+                entry
+                    .health
+                    .observed_running(status.ready, SystemTime::now());
+            }
         }
-        status
+        (state, status)
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an operation's place in its machine's queue. Dropping it hands the machine to the next ticket, on every path out of the operation including a panic, so one failed operation cannot stall every operation queued behind it.
-struct Turn<'a> {
+// UNIT_BOUNDARY_DESCRIPTION: ends a machine's worker on every path out of it, a panic included, so a delete waiting for the worker is never left waiting and the next spec can start a new one.
+struct Settle<'a> {
     server: &'a Server,
-    id: String,
-    ticket: u64,
+    id: &'a str,
 }
 
-impl Drop for Turn<'_> {
+impl Drop for Settle<'_> {
     fn drop(&mut self) {
-        locked(&self.server.inner)
-            .served
-            .insert(self.id.clone(), self.ticket);
-        self.server.turns.notify_all();
+        if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
+            entry.converging = false;
+            entry.action = None;
+        }
+        self.server.settled.notify_all();
     }
 }
 

@@ -3,29 +3,19 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::api::MachineSpec;
+use crate::api::{MachineSpec, State};
 use crate::guest::INIT_PATH;
 use crate::launch::ImageLaunch;
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server plans machines against this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server drives machines through this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
 pub trait Runtime: Send + Sync {
-    // UNIT_BOUNDARY_DESCRIPTION: one of the api states `absent`, `stopped` or `running`. Only those three: whether an operation is in flight is the server's knowledge, not the hypervisor's.
-    fn state(&self, id: &str) -> anyhow::Result<&'static str>;
+    // UNIT_BOUNDARY_DESCRIPTION: `Absent`, `Stopped` or `Running`, and only those: whether an action is in flight is the server's knowledge, not the hypervisor's.
+    fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new size and env to a stopped machine. `applied` is the spec the machine was last written with, which is what says which env keys the controller has since dropped and whether the disk has to grow.
-    fn update(
-        &self,
-        id: &str,
-        desired: &MachineSpec,
-        applied: Option<&MachineSpec>,
-    ) -> anyhow::Result<()>;
+    fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: deletes a stopped machine but moves its storage disk aside first, for the machine recreated under the same name on a new image to boot onto. smolvm cannot change a machine's image, and everything the agent keeps is on that disk. Every create and start puts a kept disk back before anything else, so a runner killed between the delete and the boot never boots onto an empty disk.
-    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: removes a disk kept by an interrupted recreate, for a machine that is being deleted outright.
-    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
@@ -39,6 +29,13 @@ pub struct Machine<'a> {
     pub host_port: u16,
     pub share: &'a Path,
     pub launch: Option<&'a ImageLaunch>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the new shape of a stopped machine, written to its record in place so its disk and port stay. `applied` is the spec it last had, which says which env keys the controller has since dropped and whether the disk must grow. `image` is set when the machine moves to another image: what it boots now, named as for a create, and the launch that image names.
+pub struct Update<'a> {
+    pub desired: &'a MachineSpec,
+    pub applied: Option<&'a MachineSpec>,
+    pub image: Option<(&'a str, &'a ImageLaunch)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the port the guest's agent listens on. The runner publishes it on a loopback port of its own and forwards the machine's published port there.
@@ -67,45 +64,6 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
-
-// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it.
-pub const KEPT_DISKS_DIR: &str = "kept-disks";
-
-// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: the raw disk, and the marker that says its filesystem is made — without which smolvm formats it again.
-pub const STORAGE_FILES: [&str; 2] = ["storage.raw", "storage.formatted"];
-
-pub fn kept_dir(home: &Path, id: &str) -> std::path::PathBuf {
-    home.join(KEPT_DISKS_DIR).join(id)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: moves whichever storage files are there. A file that is not there is not an error, so a move that stopped half way can be run again.
-pub fn move_storage(from: &Path, to: &Path) -> anyhow::Result<()> {
-    for file in STORAGE_FILES {
-        let source = from.join(file);
-        if !source.exists() {
-            continue;
-        }
-        fs::create_dir_all(to)?;
-        fs::rename(&source, to.join(file))?;
-    }
-    Ok(())
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: puts a kept storage disk back into the machine's data directory, which smolvm names by the machine's name and so is the one the old machine had. The kept disk is the agent's and replaces whatever storage files are there, which can only be an empty disk made before the kept one was put back.
-pub fn adopt_kept_storage(kept: &Path, vm_dir: &Path) -> anyhow::Result<()> {
-    if !kept.is_dir() {
-        return Ok(());
-    }
-    for file in STORAGE_FILES {
-        match fs::remove_file(vm_dir.join(file)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        }
-    }
-    move_storage(kept, vm_dir)?;
-    fs::remove_dir(kept)?;
-    Ok(())
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -516,33 +474,6 @@ mod tests {
         assert_eq!(SLOW_OP, Duration::from_secs(2));
         assert_eq!(MAX_IMAGE_BYTES, 16 * 1024 * 1024 * 1024);
         assert_eq!(GUEST_AGENT_PORT, 8080);
-    }
-
-    // TEST_SCENARIO: a recreate moves the agent's disk out of the data directory and back into the recreated machine's, and the disk that comes back is the one that left, with its formatted marker, so smolvm does not format it again. An empty disk a create made before the kept one returned is replaced by it, and a move interrupted half way can simply be run again.
-    #[test]
-    fn a_kept_storage_disk_comes_back_whole() {
-        let root = TempDir::new("kept");
-        let vm = root.path().join("vm");
-        let kept = kept_dir(root.path(), "m1");
-        fs::create_dir_all(&vm).unwrap();
-        fs::write(vm.join("storage.raw"), "home").unwrap();
-        fs::write(vm.join("storage.formatted"), "1").unwrap();
-        fs::write(vm.join("overlay.raw"), "root").unwrap();
-
-        move_storage(&vm, &kept).unwrap();
-        move_storage(&vm, &kept).unwrap();
-        assert!(!vm.join("storage.raw").exists());
-        assert!(
-            vm.join("overlay.raw").exists(),
-            "the overlay is not the agent's"
-        );
-
-        fs::write(vm.join("storage.raw"), "empty").unwrap();
-        adopt_kept_storage(&kept, &vm).unwrap();
-        assert_eq!(fs::read_to_string(vm.join("storage.raw")).unwrap(), "home");
-        assert!(vm.join("storage.formatted").exists());
-        assert!(!kept.exists());
-        adopt_kept_storage(&kept, &vm).unwrap();
     }
 
     struct TempDir(PathBuf);

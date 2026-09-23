@@ -110,22 +110,22 @@ func Run(t *testing.T, target Target) {
 		}
 	})
 
-	// TEST_SCENARIO: the egress allowlist is the gateway's address, and that address can move to another owner's gateway. A running machine whose allowlist changes is stopped and refused with the egress reason, and it stays stopped on every later ensure rather than being started against an address it no longer owns.
-	t.Run("an egress change is refused", func(t *testing.T) {
+	// TEST_SCENARIO: the egress allowlist is the gateway's address, and that address can move to another owner's gateway. A running machine whose allowlist changes is restarted onto the new one in place: it answers the ensure as restarting and becomes ready again on its port, with its disk.
+	t.Run("an egress change restarts the machine on the new allowlist", func(t *testing.T) {
 		m := newMachine(t, target)
-		m.ensure(t, m.spec())
-		m.waitReady(t)
+		first := m.spec()
+		first.Env = map[string]string{vmprobe.EnvWrite: m.marker}
+		m.ensure(t, first)
+		before := m.waitReady(t)
 
 		moved := m.spec()
 		moved.AllowCIDRs = []string{egressAfter}
-		m.ensure(t, moved)
-		m.waitReason(t, vmrunner.ReasonEgressChanged)
-		st := m.waitState(t, vmrunner.StateStopped)
-		assert.False(t, st.Ready)
-
-		again := m.ensure(t, moved)
-		assert.Equal(t, vmrunner.ReasonEgressChanged, again.Reason, "the refusal holds on the next ensure")
-		assert.Equal(t, vmrunner.StateStopped, again.State, "a refused machine is not started again")
+		moved.Env = map[string]string{vmprobe.EnvExpect: m.marker}
+		st := m.ensure(t, moved)
+		assert.Equal(t, vmrunner.StateRestarting, st.State)
+		after := m.waitReady(t)
+		assert.Equal(t, before.Port, after.Port, "an egress change keeps the machine's port")
+		assert.Empty(t, after.Reason)
 	})
 
 	// TEST_SCENARIO: a machine that does not fit the runner's memory is refused with the capacity reason and a message, and nothing is created for it.

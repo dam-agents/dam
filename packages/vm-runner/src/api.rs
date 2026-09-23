@@ -64,6 +64,40 @@ pub const STATE_RUNNING: &str = "running";
 pub const STATE_STOPPING: &str = "stopping";
 pub const STATE_STOPPED: &str = "stopped";
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine's state inside the runner. It is turned into one of the strings above only where a status leaves the runner, because those strings are what the controller matches on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Absent,
+    Unknown,
+    Creating,
+    Starting,
+    Restarting,
+    Running,
+    Stopping,
+    Stopped,
+}
+
+impl State {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            State::Absent => STATE_ABSENT,
+            State::Unknown => STATE_UNKNOWN,
+            State::Creating => STATE_CREATING,
+            State::Starting => STATE_STARTING,
+            State::Restarting => STATE_RESTARTING,
+            State::Running => STATE_RUNNING,
+            State::Stopping => STATE_STOPPING,
+            State::Stopped => STATE_STOPPED,
+        }
+    }
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";

@@ -160,8 +160,8 @@ async fn remove(State(api): State<Api>, headers: HeaderMap, Path(id): Path<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{MachineStatus, STATE_ABSENT, STATE_CREATING};
-    use crate::runtime::{Machine, Runtime};
+    use crate::api::{MachineStatus, State, STATE_CREATING};
+    use crate::runtime::{Machine, Runtime, Update};
     use crate::server::Config;
     use axum::body::Body;
     use axum::http::Request;
@@ -173,13 +173,13 @@ mod tests {
     struct Idle;
 
     impl Runtime for Idle {
-        fn state(&self, _: &str) -> anyhow::Result<&'static str> {
-            Ok(STATE_ABSENT)
+        fn state(&self, _: &str) -> anyhow::Result<State> {
+            Ok(State::Absent)
         }
         fn create(&self, _: &str, _: &Machine<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn update(&self, _: &str, _: &MachineSpec, _: Option<&MachineSpec>) -> anyhow::Result<()> {
+        fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
         fn start(&self, _: &str) -> anyhow::Result<()> {
@@ -189,12 +189,6 @@ mod tests {
             Ok(())
         }
         fn delete(&self, _: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn delete_keeping_storage(&self, _: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn discard_kept_storage(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
     }

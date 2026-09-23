@@ -5,9 +5,7 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{
-    REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY,
-};
+use crate::api::{REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
 use crate::launch::{launch_from_config, ImageLaunch};
@@ -16,7 +14,6 @@ use crate::runtime::IMAGE_LAUNCH_UNKNOWN;
 // UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache.
 
 pub const IMAGE_UNUSABLE: &str = "the image cannot be run";
-pub const EGRESS_CHANGED: &str = "egress allowlist changed";
 
 // UNIT_BOUNDARY_DESCRIPTION: a failure that carries the reason the controller reports it under. The reason is part of the error rather than guessed from its text; a failure that carries none is a boot that failed.
 #[derive(Debug)]
@@ -37,14 +34,6 @@ pub fn unusable(detail: impl std::fmt::Display) -> anyhow::Error {
     Refusal {
         reason: REASON_IMAGE_UNAVAILABLE,
         message: format!("{IMAGE_UNUSABLE}: {detail}"),
-    }
-    .into()
-}
-
-pub fn egress_changed(detail: impl std::fmt::Display) -> anyhow::Error {
-    Refusal {
-        reason: REASON_EGRESS_CHANGED,
-        message: format!("{EGRESS_CHANGED}: {detail}"),
     }
     .into()
 }
@@ -240,9 +229,7 @@ mod tests {
     #[test]
     fn failures_are_reported_under_the_reason_the_controller_matches() {
         assert_eq!(IMAGE_UNUSABLE, "the image cannot be run");
-        assert_eq!(EGRESS_CHANGED, "egress allowlist changed");
         assert_eq!(failure_reason(&unusable("x")), REASON_IMAGE_UNAVAILABLE);
-        assert_eq!(failure_reason(&egress_changed("x")), REASON_EGRESS_CHANGED);
         assert_eq!(
             failure_reason(&out_of_capacity("no free machine port")),
             REASON_OUT_OF_CAPACITY
