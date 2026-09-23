@@ -116,3 +116,38 @@ fn main() -> anyhow::Result<()> {
             anyhow::Ok(())
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TEST_SCENARIO: the chart's DaemonSet sets this binary's flags in a template, and a flag the binary does not know is a pod that exits on start on every node, which is what #3943 found when the Rust service shipped without `--pull-secrets`. Every `--flag` the template can pass is read from the template itself and must be one this binary defines.
+    #[test]
+    fn every_flag_the_chart_passes_is_known() {
+        use clap::CommandFactory;
+        let path = "../../helm/templates/controller/vm-image-cache.yaml";
+        let template = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            panic!("the chart renders this service's DaemonSet from {path}: {e}")
+        });
+        let passed: Vec<&str> = template
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("- --"))
+            .filter_map(|rest| rest.split_once('=').map(|(name, _)| name))
+            .collect();
+        for expected in [
+            "image-dir",
+            "images",
+            "pull-secrets",
+            "pull-secret-namespace",
+        ] {
+            assert!(passed.contains(&expected), "{passed:?}");
+        }
+        let command = Args::command();
+        for flag in passed {
+            assert!(
+                command.get_arguments().any(|a| a.get_long() == Some(flag)),
+                "the chart passes --{flag}, which this binary does not define"
+            );
+        }
+    }
+}
