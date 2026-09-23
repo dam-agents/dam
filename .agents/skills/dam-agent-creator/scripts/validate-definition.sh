@@ -2,13 +2,23 @@
 # validate-definition.sh — read-only structural validation of a generated agent
 # definition repository (dam-agent-creator, Phase 5).
 #
-# Usage: validate-definition.sh <path-to-generated-repo>
+# Usage: validate-definition.sh [--reference <name>]... <path-to-generated-repo>
+#   --reference  a definition this one may have been copied from; any mention of it
+#                is flagged. Generation-time only: the skill names its references,
+#                and a generated repo's own CI passes none.
 # Prints PASS/WARN/FAIL lines; exit 0 = no FAILs, exit 1 = at least one FAIL.
 # Deliberately awk-free and BSD/GNU-portable (runs on dev macOS and the Linux pod).
 
 set -u
 export LC_ALL=C
 
+REFS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --reference) REFS="$REFS ${2:?--reference needs a name}"; shift 2 ;;
+    *) break ;;
+  esac
+done
 REPO="${1:-.}"
 FAILS=0
 WARNS=0
@@ -173,11 +183,12 @@ else
   pass "no unresolved placeholders or TODO(creator) markers"
 fi
 
-# --exclude: same reason — this check's own pattern and message name code-guardian
-grep -rqi 'code-guardian' --include='*.md' --include='*.sh' \
-  --exclude='validate-definition.sh' . 2>/dev/null \
-  && warn "definition mentions 'code-guardian' — copied text? (fine only as an explicit credit)" \
-  || pass "no stray reference-implementation mentions"
+for ref in $REFS; do
+  grep -rqiF --include='*.md' --include='*.sh' --include='*.yaml' --include='*.yml' \
+      -e "$ref" . 2>/dev/null \
+    && warn "definition mentions reference implementation '$ref' — copied text? (fine only as an explicit credit)" \
+    || pass "no mentions of reference implementation '$ref'"
+done
 
 # ------------------------------------------------------------- shell scripts ----
 if [ -d scripts ]; then
