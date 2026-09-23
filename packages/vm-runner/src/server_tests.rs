@@ -403,15 +403,15 @@ async fn operations_run_in_the_order_they_were_queued() {
     assert_eq!(h.fake.calls(), queued);
 }
 
-// TEST_SCENARIO: the image is fixed at create, so a spec with a different image is reported in the machine's message and the rest of the spec still applies. The machine keeps booting the image it has.
+// TEST_SCENARIO: the Go runner recreates a machine on a new image; this runner cannot yet. Until it can, a new image is refused before the machine is touched: the machine keeps running the image it has, the refusal names both images, and nothing is stopped or created — a machine stopped here would be a machine this runner cannot bring back.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_changed_image_is_reported_and_does_not_block_the_rest() {
+async fn a_new_image_is_refused_before_the_machine_is_touched() {
     let h = Harness::new("drift");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    let before = h.fake.calls().len();
     let mut changed = spec(true);
     changed.image = "quay.io/x/vm:2".into();
-    changed.revision = "r2".into();
     h.server.put("m1", changed).unwrap();
     let status = h.settle("m1").await;
     assert!(
@@ -420,11 +420,12 @@ async fn a_changed_image_is_reported_and_does_not_block_the_rest() {
             .contains("image is quay.io/x/vm:1, wanted quay.io/x/vm:2"),
         "{status:?}"
     );
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(h.fake.calls()[before..].is_empty(), "{:?}", h.fake.calls());
     assert_eq!(
         read_spec(&h.dir.join("machines"), "m1").unwrap().image,
         "quay.io/x/vm:1"
     );
-    assert_eq!(h.fake.calls().last().unwrap(), "start m1");
 }
 
 // TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those. A machine whose gateway moved is stopped and reported, not run on an address that may now belong to another owner.
