@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Resvg } from "@resvg/resvg-js";
 import { avatarSvg } from "api-server-api/avatar/svg";
 import { avatarKey } from "api-server-api/avatar/traits";
@@ -7,6 +8,8 @@ import { getLogger } from "../../../core/logger.js";
 
 const ICON_PX = 128;
 const UPLOAD_TIMEOUT_MS = 10_000;
+const ICON_WAIT_MS = 2_000;
+const RETRY_AFTER_MS = 10 * 60_000;
 const IMGBB_UPLOAD_URL = "https://api.imgbb.com/1/upload";
 
 export type AgentIconUrl = (
@@ -20,14 +23,18 @@ export type AgentIconUrl = (
  * install has no public URL of its own, so the agent's avatar is drawn to a PNG
  * here and uploaded once to ImgBB, a public image host. The PNG is named by a
  * hash, never by the agent name, and each (owner, name) is uploaded once per
- * process. A failed upload answers null so the message falls back to the bot's
- * own icon, and the next message tries again.
+ * process. A Slack post waits at most ICON_WAIT_MS for the upload: past that it
+ * goes out with the bot's own icon while the upload finishes for later posts. A
+ * failed upload is not tried again for RETRY_AFTER_MS, so a slow or broken
+ * image host delays one post per avatar, not every post.
  */
 export function createImgbbAgentIcons(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  waitMs = ICON_WAIT_MS,
 ): AgentIconUrl {
   const urls = new Map<string, Promise<string | null>>();
+  const failedAt = new Map<string, number>();
 
   const upload = async (key: string): Promise<string> => {
     const png = new Resvg(avatarSvg(key), {
@@ -58,17 +65,22 @@ export function createImgbbAgentIcons(
 
   return (ownerSub, name) => {
     const key = avatarKey(ownerSub, name);
-    const cached = urls.get(key);
-    if (cached) return cached;
-    const pending = upload(key).catch((err: unknown) => {
-      urls.delete(key);
-      getLogger().warn(
-        { error: formatError(err) },
-        "slack.agent_icon.upload_failed",
-      );
-      return null;
-    });
-    urls.set(key, pending);
-    return pending;
+    const failed = failedAt.get(key);
+    if (failed !== undefined && Date.now() - failed < RETRY_AFTER_MS)
+      return Promise.resolve(null);
+    let url = urls.get(key);
+    if (!url) {
+      url = upload(key).catch((err: unknown) => {
+        urls.delete(key);
+        failedAt.set(key, Date.now());
+        getLogger().warn(
+          { error: formatError(err) },
+          "slack.agent_icon.upload_failed",
+        );
+        return null;
+      });
+      urls.set(key, url);
+    }
+    return Promise.race([url, sleep(waitMs, null, { ref: false })]);
   };
 }

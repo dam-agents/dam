@@ -947,10 +947,6 @@ const SCOPE_WITHHELD_REACTIONS =
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
   { scope: "chat:write", backs: "posting replies" },
-  {
-    scope: "chat:write.customize",
-    backs: "posting under the agent's own name and avatar",
-  },
   { scope: "files:read", backs: "reading the files people attach" },
   { scope: "files:write", backs: "sending files into a channel" },
   { scope: "channels:history", backs: "reading channel history for context" },

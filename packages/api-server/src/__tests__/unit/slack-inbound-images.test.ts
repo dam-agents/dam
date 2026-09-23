@@ -311,7 +311,7 @@ describe("slack inbound images", () => {
     expect(String(report!.msg)).toContain("files:read");
     expect(String(report!.msg)).toContain("reading the files people attach");
     expect(String(report!.msg)).toContain("Reinstall the app");
-    expect(String(report!.msg)).not.toContain("chat:write (posting replies)");
+    expect(String(report!.msg)).not.toContain("chat:write");
   });
 
   it("stays silent at startup when the granted permissions are unknown", async () => {

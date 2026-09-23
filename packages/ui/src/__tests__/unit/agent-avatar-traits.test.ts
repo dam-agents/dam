@@ -1,6 +1,4 @@
 // TEST_OVERVIEW: An agent avatar is a figure drawn from a hash of the agent's name and its owner, so nothing is stored. The same name must always draw the same figure; its parts mix freely across head shapes; and no eye or visor may sit on a gap between parts, or reach past the head.
-import { describe, expect, it } from "vitest";
-
 import {
   clearance,
   HEAD_GEOMETRY,
@@ -31,6 +29,7 @@ import {
   HEAD_SHAPES,
   hueDistance,
 } from "api-server-api/avatar/traits";
+import { describe, expect, it } from "vitest";
 
 const NAMES = Array.from({ length: 1000 }, (_, i) => `agent-${i}`);
 const ALL = NAMES.map((name) => ({ name, traits: avatarTraits(name) }));

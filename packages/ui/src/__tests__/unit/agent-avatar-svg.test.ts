@@ -1,14 +1,7 @@
 // TEST_OVERVIEW: Each avatar is built once per agent name as an SVG string and cached, so a long chat or agent list renders a single cached image per name instead of rebuilding the figure. The markup must be well formed and deterministic.
+import { avatarDataUri, avatarSvg } from "api-server-api/avatar/svg";
+import { AVATAR_SCLERA, avatarTraits } from "api-server-api/avatar/traits";
 import { describe, expect, it } from "vitest";
-
-import {
-  avatarDataUri,
-  avatarSvg,
-} from "api-server-api/avatar/svg";
-import {
-  AVATAR_SCLERA,
-  avatarTraits,
-} from "api-server-api/avatar/traits";
 
 const NAMES = Array.from({ length: 500 }, (_, i) => `agent-${i}`);
 

@@ -13,7 +13,10 @@ in the conversation) and agent avatars (a robot head drawn in the browser from
 a hash of the agent's name and its owner's identity, so nothing is stored,
 two people's default-named agents look different, and renaming an agent
 changes its face; the flag also names the agent on its chat messages, which
-otherwise say "Agent"). Graduating a feature to always-on is deletion: drop its
+otherwise say "Agent"). Slack replies are the one place an avatar leaves the
+browser: where a workspace grants the persona scope, the api-server uploads a
+PNG copy to a public image host for the message icon, whatever the owner's
+flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Experiments, Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).

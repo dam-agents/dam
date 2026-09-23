@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity. The avatar is uploaded to ImgBB as a PNG named by a hash, once per owner and name, and a failed upload is retried on the next post.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
@@ -142,18 +142,45 @@ describe("imgbb agent icons", () => {
     expect([...bytes.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
   });
 
-  // TEST_SCENARIO: A failed upload must not stick: it answers null for this post and the next post tries again.
-  it("answers null on failure and retries on the next call", async () => {
-    const imgbb = fakeImgbb([
-      () => new Response("down", { status: 503 }),
-      () => Response.json({ data: { url: "http://not-https" } }),
-      ok,
-    ]);
-    const icons = createImgbbAgentIcons("secret", imgbb.fetchImpl);
+  // TEST_SCENARIO: A failed upload answers null and is remembered, so the next posts don't pay for another attempt; after RETRY_AFTER_MS (10 minutes) the upload is tried again.
+  it("remembers a failed upload for ten minutes, then retries", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const imgbb = fakeImgbb([
+        () => new Response("down", { status: 503 }),
+        () => Response.json({ data: { url: "http://not-https" } }),
+        ok,
+      ]);
+      const icons = createImgbbAgentIcons("secret", imgbb.fetchImpl);
+
+      expect(await icons(OWNER, "Scout")).toBeNull();
+      expect(await icons(OWNER, "Scout")).toBeNull();
+      expect(imgbb.uploads).toHaveLength(1);
+
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(await icons(OWNER, "Scout")).toBeNull();
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(await icons(OWNER, "Scout")).toBe(ICON);
+      expect(imgbb.uploads).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: A slow image host must not hold up the Slack post: past the wait the post goes out without an icon, and the upload that finishes later serves the next post without a second upload.
+  it("posts without an icon while a slow upload finishes", async () => {
+    let answer: (res: Response) => void = () => {};
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Promise<Response>((resolve) => (answer = resolve));
+    }) as unknown as typeof fetch;
+    const icons = createImgbbAgentIcons("secret", fetchImpl, 5);
 
     expect(await icons(OWNER, "Scout")).toBeNull();
-    expect(await icons(OWNER, "Scout")).toBeNull();
+    answer(ok());
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(await icons(OWNER, "Scout")).toBe(ICON);
-    expect(imgbb.uploads).toHaveLength(3);
+    expect(calls).toBe(1);
   });
 });
