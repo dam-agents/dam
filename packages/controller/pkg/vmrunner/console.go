@@ -1,8 +1,11 @@
 package vmrunner
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,6 +38,18 @@ func (r *Smolvm) ConsoleTail(id string) string {
 		return ""
 	}
 	return tailOf(filepath.Join(dir, consoleLogName), consoleTailBytes)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given — a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console: what a tail can show is then only the boot this runner started, with a spec it holds. The VMM is gone by the time this runs, so no writer holds the file open. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted.
+func clearConsole(id, dir string) {
+	path := filepath.Join(dir, consoleLogName)
+	err := os.Truncate(path, 0)
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		slog.Warn("could not clear the machine console before its start", "machine", id, "error", err)
+	}
 }
 
 func tailOf(path string, limit int64) string {
@@ -75,7 +90,7 @@ func printable(text string) string {
 	return strings.TrimSpace(text)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches the guest in its environment, and a guest that prints its environment puts those values on the console — so the tail is redacted with every value this runner has been given for the machine, the way a failed smolvm call's output is. The console outlives a spec change, so values a machine no longer has are kept too: an earlier boot's lines are still in the file. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
+// UNIT_BOUNDARY_DESCRIPTION: an operator's Secret reaches the guest in its environment, and a guest that prints its environment puts those values on the console — so the tail is redacted with every value this runner has been given for the machine, the way a failed smolvm call's output is. Every start empties the console, so it only ever holds a boot this process started; values a machine no longer has are kept anyway, because a spec can change while that boot is still in the file. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
 func (s *Server) rememberSecrets(id string, spec MachineSpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,6 +135,7 @@ func withConsole(message, tail string) string {
 func (s *Server) watchBoot(id string, st *MachineStatus, startedAt time.Time, noFailure bool) {
 	s.mu.Lock()
 	op, awaiting := s.awaiting[id]
+	started := s.startedAt[id]
 	if st.Ready {
 		delete(s.awaiting, id)
 		delete(s.slowBoots, id)
@@ -127,8 +143,8 @@ func (s *Server) watchBoot(id string, st *MachineStatus, startedAt time.Time, no
 	note, noted := s.slowBoots[id]
 	s.mu.Unlock()
 	if st.Ready {
-		if awaiting && !startedAt.IsZero() {
-			s.metrics.becameReady(op, time.Since(startedAt))
+		if awaiting {
+			s.metrics.becameReady(op, time.Since(started))
 		}
 		return
 	}

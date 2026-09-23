@@ -114,7 +114,7 @@ func vmRunnerLabels(owner, release string) map[string]string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their credentials, renders their objects, and hands the caller a client once the pod reports ready.
-func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmrunner.Client, bool, error) {
+func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand runnerDemand) (*vmrunner.Client, bool, error) {
 	name := r.runnerName(owner)
 	ns := r.config.Namespace
 
@@ -122,7 +122,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err != nil {
 		return nil, false, err
 	}
-	if err := r.applyRunnerPVC(ctx, owner); err != nil {
+	if err := r.applyRunnerPVC(ctx, owner, demand); err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerService(ctx, owner); err != nil {
@@ -140,7 +140,13 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err != nil {
 		return client, false, err
 	}
-	return client, dep.Status.ReadyReplicas > 0, nil
+	ready := dep.Status.ReadyReplicas > 0
+	if ready {
+		r.resizeRunnerPod(ctx, owner, demand.memoryMiB)
+	} else {
+		r.runnerResized.Delete(owner)
+	}
+	return client, ready, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — mint or read its credentials, then dial it — so the credential is never handled anywhere but here.
@@ -260,14 +266,9 @@ func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 	return size.Value(), nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner's whole vm fleet lives on this one claim — every machine disk, and the image cache unless the install moved it — so the size an install states is the ceiling on how many agents that owner can keep, and raising it is the only remedy there is. A claim already bound is therefore grown to a raised size rather than left at what the first agent of that owner happened to create it with, which is the same rule the machine disks on it already follow: a size that rises is applied in place, a size that falls is ignored because Kubernetes refuses to shrink a claim at all.
-// UNIT_BOUNDARY_DESCRIPTION: a class without volume expansion rejects that update, and so does a size the install mistyped — neither is worth the owner's runner, which serves every one of their agents and works exactly as before at the size it has. Both are reported and reconciliation continues, so a values typo costs a warning in the controller log rather than a fleet that no longer reconciles.
-func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim *corev1.PersistentVolumeClaim) {
-	size, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
-	if err != nil {
-		slog.Warn("vm runner: the configured storage is not a quantity, the claim keeps the size it has", "owner", owner, "storage", r.config.VM.Runner.Storage, "error", err)
-		return
-	}
+// UNIT_BOUNDARY_DESCRIPTION: a claim already bound is grown when its owner's demand outgrows it, which is the same rule the machine disks on it already follow: a size that rises is applied in place, a size that falls is ignored because Kubernetes refuses to shrink a claim at all.
+// UNIT_BOUNDARY_DESCRIPTION: a class without volume expansion rejects that update, and a size the install mistyped cannot be worked out at all. Both are reported and reconciliation continues, because the runner serves every one of the owner's agents and works exactly as before at the size it has — a values typo costs a warning, not a fleet that no longer reconciles.
+func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim *corev1.PersistentVolumeClaim, size resource.Quantity) {
 	current := claim.Spec.Resources.Requests[corev1.ResourceStorage]
 	if size.Cmp(current) <= 0 {
 		return
@@ -283,8 +284,9 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 	slog.Info("vm runner: grew the claim", "owner", owner, "from", current.String(), "to", size.String())
 }
 
-func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
+func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, demand runnerDemand) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
+	size, ceiling, sizeErr := r.runnerClaimSize(demand)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
 		if err := r.adoptRunnerObject(ctx, &existing.ObjectMeta, func() error {
 			adopted, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
@@ -295,14 +297,20 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 		}); err != nil {
 			return err
 		}
-		r.growRunnerPVC(ctx, owner, existing)
+		if sizeErr != nil {
+			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
+			return nil
+		}
+		r.growRunnerPVC(ctx, owner, existing, size)
 		return nil
 	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
-	size, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
-	if err != nil {
-		return fmt.Errorf("vm runner storage: %w", err)
+	if sizeErr != nil {
+		return sizeErr
+	}
+	if size.Cmp(ceiling) < 0 && !r.runnerClassExpands(ctx) {
+		size = ceiling
 	}
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
@@ -314,7 +322,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 	if sc := r.config.VM.Runner.StorageClass; sc != "" {
 		pvc.Spec.StorageClassName = &sc
 	}
-	_, err = r.client.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{})
+	_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{})
 	if k8serrors.IsAlreadyExists(err) {
 		return nil
 	}

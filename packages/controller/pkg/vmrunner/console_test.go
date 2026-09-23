@@ -23,6 +23,17 @@ func writeConsole(t *testing.T, id, text string) string {
 	return path
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what a boot writes to its console, arranged so the fake runtime writes it during start the way a VMM does. Anything written before the start is gone by then, because every start empties the console.
+func bootWrites(t *testing.T, id, text string) string {
+	t.Helper()
+	path := writeConsole(t, id, "")
+	src := filepath.Join(t.TempDir(), "boot")
+	require.NoError(t, os.WriteFile(src, []byte(text), 0o644))
+	t.Setenv("FAKE_CONSOLE", path)
+	t.Setenv("FAKE_CONSOLE_SRC", src)
+	return path
+}
+
 func longConsole(last string) string {
 	var b strings.Builder
 	for i := range 2000 {
@@ -53,7 +64,7 @@ func TestABootFailureCarriesTheRedactedConsoleTail(t *testing.T) {
 	t.Setenv("FAKE_START_FAIL_ONCE", "the VMM refused to boot")
 	h := newHarness(t)
 	secret := spec(true).Env["HTTPS_PROXY"]
-	writeConsole(t, "m1", longConsole("platform-init: FATAL: no storage disk; proxy was "+secret))
+	bootWrites(t, "m1", longConsole("platform-init: FATAL: no storage disk; proxy was "+secret))
 
 	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
 	require.NoError(t, err)
@@ -82,7 +93,7 @@ func TestOnlyABootFailureCarriesTheConsole(t *testing.T) {
 func TestAGuestThatNeverAnswersIsExplainedByItsConsole(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	h := newHarness(t)
-	console := writeConsole(t, "m1", "booting\nsmolvm-agent: waiting for the workload\n")
+	console := bootWrites(t, "m1", "booting\nsmolvm-agent: waiting for the workload\n")
 	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
 	require.NoError(t, err)
 	st := h.settle(t, "m1")
@@ -129,4 +140,18 @@ func TestAConsoleTheRunnerCannotRedactIsNotShown(t *testing.T) {
 
 	h.node.rememberSecrets("m9", MachineSpec{Env: map[string]string{"OPENAI_API_KEY": "sk-live-rotated"}})
 	assert.Equal(t, "OPENAI_API_KEY=***", h.node.consoleTail("m9"), "a value the machine no longer has is still redacted: the console holds earlier boots")
+}
+
+// TEST_SCENARIO: an earlier boot printed a Secret, the operator rotated it, and the runner restarted and so forgot the old value. The console still holds that boot. Starting the machine again empties it first, so no later tail can quote a value the runner no longer knows to redact.
+func TestAStartEmptiesTheConsoleAnEarlierBootLeft(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	h := newHarness(t)
+	console := writeConsole(t, "m1", "OPENAI_API_KEY=sk-live-withdrawn\n")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+
+	require.NoError(t, h.node.Runtime.Start("m1"))
+
+	body, err := os.ReadFile(console)
+	require.NoError(t, err)
+	assert.Empty(t, body, "the withdrawn value is gone before the new boot writes anything")
 }

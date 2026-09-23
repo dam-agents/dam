@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -20,12 +20,13 @@ flowchart LR
     appstate[(UI app state)]
   end
   exporters -->|OTLP| collector
+  collector -->|scrape| runners[VM runners]
   collector -->|write| store
   ui -->|read| store
   ui --> appstate
 ```
 
-- **Collector** — an OpenTelemetry collector that receives OTLP and writes the signals into the telemetry store. It is platform-owned (deliberately not the collector ClickStack bundles — see *Access control*) and holds no upstream credentials; it only ingests telemetry.
+- **Collector** — an OpenTelemetry collector that receives OTLP and writes the signals into the telemetry store. It is platform-owned (deliberately not the collector ClickStack bundles — see *Access control*) and holds no upstream credentials. Its one pull path is the [VM runners](#vm-runner), which it scrapes because they cannot push; finding them is its only Kubernetes access, read-only pods in the agent namespace.
 - **Telemetry store** — a columnar analytical database built for high-volume, high-cardinality, time-series telemetry. It is the only place telemetry lives. Retention is bounded: when the collector first creates the telemetry tables it stamps them with a TTL — 30 days by default, overridable per install through the chart — so signals age out instead of accumulating until the volume fills. The TTL lands only at table creation; changing it on an existing install means altering the tables by hand.
 - **Exploration UI** — reads the telemetry store directly so an operator can explore signals. Its own application state (dashboards, sources, saved views) lives in a separate document store that holds no telemetry.
 
@@ -103,7 +104,7 @@ What a runner measures is what judging the vm backend against the container one 
 
 The [usage counters](#usage-counters)' identity-free rule holds here with a sharper edge: a runner exists per owner, so a machine id, an image reference or the runner's owner label would each make a series a person. Every dimension comes from a closed set — operation, outcome, failure reason, cache result — and the scrape copies no pod label onto a series. Series are still partitioned by runner, because each runner is a process with its own cumulative counters, so a runner restart resets them and rates are the honest read.
 
-The runner's other duty here rides the machine status rather than a signal: **explaining a boot**. A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side. It carries the guest kernel and the runtime's guest agent, not the harness, whose output goes to the boot log ([persistence](persistence.md)). When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes, stripped to printable text, and redacted with every env value the machine has been given, because a guest that prints its environment puts an operator's Secret there. A console the runner cannot redact, holding no spec for the machine, is not shown. The note for a quiet guest is refreshed about once a minute, not on every readiness poll, so a stuck machine does not rewrite its Agent's condition on each one.
+The runner's other duty here rides the machine status rather than a signal: **explaining a boot**. A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side. It carries the guest kernel and the runtime's guest agent, not the harness, whose output goes to the boot log ([persistence](persistence.md)). When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes, stripped to printable text, and redacted with every env value the machine has been given, because a guest that prints its environment puts an operator's Secret there. Every start empties the console first, because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds. A console the runner cannot redact, holding no spec for the machine, is not shown. The note for a quiet guest is refreshed about once a minute, not on every readiness poll, so a stuck machine does not rewrite its Agent's condition on each one.
 
 ## Trusted attribution
 
