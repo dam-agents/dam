@@ -9,6 +9,7 @@ import {
   AVATAR_CENTER,
   AVATAR_VIEWBOX,
   bandEdges,
+  beltEdges,
   type Box,
   bugEyeCenter,
   capCurve,
@@ -93,6 +94,25 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
           fill,
         })
       );
+    case "fins":
+      return SIDES.map((side) => {
+        const edge = side < 0 ? left : right;
+        const out = edge + side * 9;
+        return el("path", {
+          d: `M${num(edge)},35 L${num(out)},43 V57 L${num(edge)},64 Z`,
+          fill,
+          stroke: fill,
+          "stroke-width": 3,
+          "stroke-linejoin": "round",
+        });
+      }).join("");
+    case "double":
+      return SIDES.flatMap((side) => {
+        const x = side < 0 ? left - 7 : right;
+        return [38, 38 + 10 + AVATAR_GAP].map((y) =>
+          el("rect", { x, y, width: 7, height: 10, rx: 3.5, fill }),
+        );
+      }).join("");
     case "wings":
       return SIDES.map((side) =>
         el("path", {
@@ -117,6 +137,35 @@ function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
       const { brim, crown } = hatLayout(head);
       return rect(brim, t.colors.cap) + rect(crown, fill);
     }
+    case "crown":
+      return [-12, 0, 12]
+        .map((dx) => {
+          const height = dx === 0 ? 12 : 8;
+          return el("rect", {
+            x: AVATAR_CENTER + dx - 3.75,
+            y: clear - height,
+            width: 7.5,
+            height,
+            rx: 3.75,
+            fill,
+          });
+        })
+        .join("");
+    case "siren":
+      return (
+        el("path", {
+          d: `M${AVATAR_CENTER - 9},${num(clear - 4.5)} A9,9 0 0 1 ${AVATAR_CENTER + 9},${num(clear - 4.5)} Z`,
+          fill,
+        }) +
+        el("rect", {
+          x: AVATAR_CENTER - 12,
+          y: clear - 4.5,
+          width: 24,
+          height: 4.5,
+          rx: 2.25,
+          fill: t.colors.cap,
+        })
+      );
     case "bolt":
       return el("rect", {
         x: AVATAR_CENTER - 8,
@@ -161,6 +210,34 @@ function bottom(t: AvatarTraits, head: HeadGeometry): string {
         rx: 3,
         fill: t.colors.neck ?? AVATAR_STICK,
       });
+    case "stand":
+      return (
+        el("rect", {
+          x: AVATAR_CENTER - 6,
+          y: below,
+          width: 12,
+          height: 5.5,
+          rx: 2.5,
+          fill: t.colors.neck ?? AVATAR_STICK,
+        }) +
+        el("rect", {
+          x: AVATAR_CENTER - 16,
+          y: below + 5.5 + AVATAR_GAP,
+          width: 32,
+          height: 5.5,
+          rx: 2.75,
+          fill: t.colors.bottom,
+        })
+      );
+    case "wheels":
+      return SIDES.map((side) =>
+        el("circle", {
+          cx: AVATAR_CENTER + side * 12,
+          cy: below + 5,
+          r: 5,
+          fill: t.colors.bottom,
+        }),
+      ).join("");
     case "stripes": {
       const wide = Math.min(21, head.halfWidth - 2);
       const narrow = wide - 5;
@@ -203,8 +280,9 @@ function overlays(t: AvatarTraits, head: HeadGeometry): string {
       }),
     );
   }
-  if (t.banding === "bands") {
-    const [upper, lower] = bandEdges(head);
+  if (t.banding === "bands" || t.banding === "belt") {
+    const [upper, lower] =
+      t.banding === "bands" ? bandEdges(head) : beltEdges(head);
     parts.push(
       el("rect", {
         x: 0,
@@ -240,6 +318,30 @@ function visor(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   return rect(box, AVATAR_INK) + glyphs;
 }
 
+function shades(t: AvatarTraits, head: HeadGeometry, sleeping: boolean) {
+  const box = visorBox(t, head);
+  const bridge = 5;
+  const width = (box.width - bridge) / 2;
+  const glint = Math.min(2.6, box.height * 0.16);
+  return SIDES.map((side) => {
+    const x = side < 0 ? box.x : box.x + width + bridge;
+    const lens = rect(
+      { x, y: box.y, width, height: box.height, rx: box.height / 2.4 },
+      AVATAR_INK,
+    );
+    if (sleeping) return lens;
+    return (
+      lens +
+      el("circle", {
+        cx: x + box.height * 0.42,
+        cy: box.y + box.height * 0.36,
+        r: glint,
+        fill: t.colors.glow,
+      })
+    );
+  }).join("");
+}
+
 function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   switch (t.face) {
     case "blank":
@@ -259,6 +361,19 @@ function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
     case "visor":
     case "happy":
       return visor(t, head, sleeping);
+    case "shades":
+      return shades(t, head, sleeping);
+    case "dots": {
+      const wink = winkLayout(t, head);
+      const xs = [wink.dot.cx, wink.dash.x + wink.dash.width / 2];
+      return xs
+        .map((cx) =>
+          sleeping
+            ? closedEye(cx, wink.dot.cy - 2, wink.dot.r, AVATAR_INK)
+            : el("circle", { cx, cy: wink.dot.cy, r: 5, fill: AVATAR_INK }),
+        )
+        .join("");
+    }
     case "wink": {
       const wink = winkLayout(t, head);
       if (sleeping)
@@ -281,7 +396,9 @@ function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
 
 function mouth(t: AvatarTraits, sleeping: boolean): string {
   const y = MOUTH_Y;
-  switch (sleeping && t.mouth === "smile" ? "line" : t.mouth) {
+  const asleep =
+    sleeping && (t.mouth === "smile" || t.mouth === "grin") ? "line" : t.mouth;
+  switch (asleep) {
     case "none":
       return "";
     case "line":
@@ -308,6 +425,20 @@ function mouth(t: AvatarTraits, sleeping: boolean): string {
         r: 3.8,
         fill: AVATAR_INK,
       });
+    case "grin":
+      return el("path", {
+        d: `M${AVATAR_CENTER - 8},${y - 0.5} H${AVATAR_CENTER + 8} Q${AVATAR_CENTER + 8},${y + 6.5} ${AVATAR_CENTER},${y + 6.5} Q${AVATAR_CENTER - 8},${y + 6.5} ${AVATAR_CENTER - 8},${y - 0.5} Z`,
+        fill: AVATAR_INK,
+      });
+    case "cat":
+      return el("path", {
+        d: `M${AVATAR_CENTER - 8},${y + 1} Q${AVATAR_CENTER - 4},${y + 6} ${AVATAR_CENTER},${y + 1} Q${AVATAR_CENTER + 4},${y + 6} ${AVATAR_CENTER + 8},${y + 1}`,
+        fill: "none",
+        stroke: AVATAR_INK,
+        "stroke-width": 4,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      });
   }
 }
 
@@ -315,8 +446,8 @@ function gapLines(t: AvatarTraits, head: HeadGeometry): string {
   const lines: string[] = [];
   if (t.top === "cap") lines.push(el("path", { d: capCurve(head) }));
   if (t.banding === "chin") lines.push(el("path", { d: chinCurve(head) }));
-  if (t.banding === "bands")
-    for (const y of bandEdges(head))
+  if (t.banding === "bands" || t.banding === "belt")
+    for (const y of t.banding === "bands" ? bandEdges(head) : beltEdges(head))
       lines.push(el("line", { x1: 0, y1: y, x2: 100, y2: y }));
   if (t.face === "visor" || t.face === "happy") {
     const box = visorBox(t, head);

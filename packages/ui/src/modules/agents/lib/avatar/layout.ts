@@ -12,6 +12,7 @@ const CAP_DIP = 3.5;
 const CHIN_RISE = 2.5;
 const FIT_STEPS = 16;
 const SHRINK = 0.94;
+const MIN_VISOR_SHRINK = 8;
 
 export interface Box {
   x: number;
@@ -48,6 +49,10 @@ export function bandEdges(head: HeadGeometry): [number, number] {
   return [head.bottom - 23, head.bottom - 12];
 }
 
+export function beltEdges(head: HeadGeometry): [number, number] {
+  return [head.bottom - 16, head.bottom - 9];
+}
+
 export function gapRanges(traits: AvatarTraits, head: HeadGeometry): Range[] {
   const half = AVATAR_GAP / 2;
   const ranges: Range[] = [];
@@ -59,8 +64,10 @@ export function gapRanges(traits: AvatarTraits, head: HeadGeometry): Range[] {
     const edge = chinEdge(head);
     ranges.push({ top: edge - CHIN_RISE - half, bottom: edge + half });
   }
-  if (traits.banding === "bands") {
-    for (const edge of bandEdges(head))
+  if (traits.banding === "bands" || traits.banding === "belt") {
+    const edges =
+      traits.banding === "bands" ? bandEdges(head) : beltEdges(head);
+    for (const edge of edges)
       ranges.push({ top: edge - half, bottom: edge + half });
   }
   return ranges;
@@ -155,6 +162,10 @@ export function visorBox(traits: AvatarTraits, head: HeadGeometry): Box {
   while (!visorFits(head, box) && halfWidth > head.halfWidth * 0.5) {
     halfWidth -= 1;
     box = { ...box, x: AVATAR_CENTER - halfWidth, width: halfWidth * 2 };
+  }
+  while (!visorFits(head, box) && box.height > MIN_VISOR_SHRINK) {
+    const height = box.height - 1;
+    box = { ...box, height, rx: height / 2 };
   }
   return box;
 }

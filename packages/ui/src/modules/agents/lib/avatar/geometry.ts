@@ -96,6 +96,37 @@ const SHAPES: Record<HeadShape, Omit<HeadGeometry, "outline">> = {
     top: 22,
     bottom: 78,
   },
+  hexagon: {
+    path: roundedPolygon(
+      [
+        [34, 22],
+        [66, 22],
+        [80, 49],
+        [66, 76],
+        [34, 76],
+        [20, 49],
+      ],
+      4,
+    ),
+    halfWidth: 30,
+    top: 22,
+    bottom: 76,
+  },
+  shield: {
+    path: roundedPolygon(
+      [
+        [22, 23],
+        [78, 23],
+        [78, 55],
+        [50, 78],
+        [22, 55],
+      ],
+      7,
+    ),
+    halfWidth: 28,
+    top: 23,
+    bottom: 78,
+  },
   bell: {
     path: "M22,64 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V64 Q78,76 66,76 H34 Q22,76 22,64 Z",
     halfWidth: 28,
@@ -194,6 +225,8 @@ export const HEAD_GEOMETRY: Record<HeadShape, HeadGeometry> = {
   box: traced(SHAPES.box),
   bell: traced(SHAPES.bell),
   capsule: traced(SHAPES.capsule),
+  hexagon: traced(SHAPES.hexagon),
+  shield: traced(SHAPES.shield),
 };
 
 function segmentDistance(p: Point, a: Point, b: Point): number {

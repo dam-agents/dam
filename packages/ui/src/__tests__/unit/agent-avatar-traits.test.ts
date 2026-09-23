@@ -85,6 +85,31 @@ describe("avatarTraits", () => {
     expect(pairs.has("capsule:hat")).toBe(true);
   });
 
+  // TEST_SCENARIO: Every variation of every part turns up across a realistic spread of names, so none is dead weight in the tables.
+  it("uses every variation of every part", () => {
+    const seen = (pick: (t: AvatarTraits) => string) =>
+      new Set(ALL.map(({ traits }) => pick(traits)));
+    expect(seen((t) => t.head)).toEqual(new Set(HEAD_SHAPES));
+    expect(seen((t) => t.face)).toEqual(
+      new Set(["eyes", "visor", "happy", "wink", "shades", "dots", "blank"]),
+    );
+    expect(seen((t) => t.sides)).toEqual(
+      new Set(["none", "block", "round", "wings", "fins", "double"]),
+    );
+    expect(seen((t) => t.top)).toEqual(
+      new Set(["none", "hat", "bolt", "cap", "bug-eyes", "crown", "siren"]),
+    );
+    expect(seen((t) => t.banding)).toEqual(
+      new Set(["none", "chin", "bands", "belt"]),
+    );
+    expect(seen((t) => t.bottom)).toEqual(
+      new Set(["none", "neck", "stripes", "stand", "wheels"]),
+    );
+    expect(seen((t) => t.mouth)).toEqual(
+      new Set(["none", "line", "smile", "o", "grin", "cat"]),
+    );
+  });
+
   // TEST_SCENARIO: Colour variety comes from combining palettes. An avatar's parts draw on more than its head colour.
   it("combines several colours in one figure", () => {
     for (const { traits } of ALL.slice(0, 200)) {
@@ -166,7 +191,7 @@ describe("face layout", () => {
   // TEST_SCENARIO: On a narrow head the wink's dot and dash must still keep a margin from the outline.
   it("fits the wink inside the head", () => {
     for (const { name, traits } of ALL) {
-      if (traits.face !== "wink") continue;
+      if (traits.face !== "wink" && traits.face !== "dots") continue;
       const head = HEAD_GEOMETRY[traits.head];
       const { dot, dash } = winkLayout(traits, head);
       expect(
@@ -188,7 +213,7 @@ describe("face layout", () => {
   // TEST_SCENARIO: A visor carries its own gap ring. That ring must not run into the cap, chin or band gaps, nor into the head's outline.
   it("keeps the visor and its ring clear of other gaps and the outline", () => {
     for (const { name, traits } of ALL) {
-      if (traits.face !== "visor" && traits.face !== "happy") continue;
+      if (!["visor", "happy", "shades"].includes(traits.face)) continue;
       const head = HEAD_GEOMETRY[traits.head];
       const box = visorBox(traits, head);
       expect(box.height, name).toBeGreaterThan(8);
@@ -243,6 +268,10 @@ describe("face layout", () => {
       const head = HEAD_GEOMETRY[shape];
       const stripesBottom = head.bottom + AVATAR_GAP * 2 + 5.5 * 2;
       expect(stripesBottom, shape).toBeLessThanOrEqual(96);
+      const standBottom = head.bottom + AVATAR_GAP * 2 + 5.5 * 2;
+      expect(standBottom, shape).toBeLessThanOrEqual(96);
+      expect(head.bottom + AVATAR_GAP + 10, shape).toBeLessThanOrEqual(96);
+      expect(head.top - AVATAR_GAP - 12, shape).toBeGreaterThanOrEqual(-4);
       const { brim, crown } = hatLayout(head);
       expect(crown.y, shape).toBeGreaterThanOrEqual(IMAGE_TOP);
       expect(crown.height, shape).toBeGreaterThanOrEqual(10);

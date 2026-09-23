@@ -86,15 +86,31 @@ export const HEAD_SHAPES = [
   "box",
   "bell",
   "capsule",
+  "hexagon",
+  "shield",
 ] as const;
 export type HeadShape = (typeof HEAD_SHAPES)[number];
 
-export type Face = "eyes" | "visor" | "happy" | "wink" | "blank";
-export type Sides = "none" | "block" | "round" | "wings";
-export type Top = "none" | "hat" | "bolt" | "cap" | "bug-eyes";
-export type Banding = "none" | "chin" | "bands";
-export type Bottom = "none" | "neck" | "stripes";
-export type Mouth = "none" | "line" | "smile" | "o";
+export type Face =
+  | "eyes"
+  | "visor"
+  | "happy"
+  | "wink"
+  | "shades"
+  | "dots"
+  | "blank";
+export type Sides = "none" | "block" | "round" | "wings" | "fins" | "double";
+export type Top =
+  | "none"
+  | "hat"
+  | "bolt"
+  | "cap"
+  | "bug-eyes"
+  | "crown"
+  | "siren";
+export type Banding = "none" | "chin" | "bands" | "belt";
+export type Bottom = "none" | "neck" | "stripes" | "stand" | "wheels";
+export type Mouth = "none" | "line" | "smile" | "o" | "grin" | "cat";
 
 export interface Look {
   dx: number;
@@ -123,6 +139,8 @@ export const DERPS = [
   "huge-cyclops",
   "triple",
   "trio-row",
+  "tiny",
+  "quad",
 ] as const;
 export type Derp = (typeof DERPS)[number];
 
@@ -258,6 +276,17 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
         eye(12, 42, 6.5, randomLook(random)),
         eye(0, 57, 8, randomLook(random)),
       ];
+    case "tiny": {
+      const look = random() < 0.5 ? sideLook(random, side) : randomLook(random);
+      return [eye(-17, 48, 5.5, look, 0.55), eye(17, 48, 5.5, look, 0.55)];
+    }
+    case "quad":
+      return [
+        eye(-10, 41, 6, randomLook(random)),
+        eye(10, 41, 6, randomLook(random)),
+        eye(-10, 57, 6, randomLook(random)),
+        eye(10, 57, 6, randomLook(random)),
+      ];
     case "trio-row": {
       const look = random() < 0.5 ? sideLook(random, side) : null;
       return [-17, 0, 17].map((x, i) =>
@@ -273,37 +302,63 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
 }
 
 const TOP_WEIGHTS: readonly (readonly [Top, number])[] = [
-  ["none", 16],
-  ["hat", 22],
-  ["bolt", 14],
-  ["cap", 18],
-  ["bug-eyes", 22],
+  ["none", 14],
+  ["hat", 17],
+  ["bolt", 11],
+  ["cap", 15],
+  ["bug-eyes", 18],
+  ["crown", 13],
+  ["siren", 12],
 ];
 
 const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
-  ["eyes", 68],
-  ["visor", 12],
-  ["happy", 10],
-  ["wink", 10],
+  ["eyes", 60],
+  ["visor", 10],
+  ["happy", 8],
+  ["wink", 8],
+  ["shades", 7],
+  ["dots", 7],
 ];
 
 const BUG_FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
-  ["blank", 45],
-  ["eyes", 25],
-  ["happy", 15],
-  ["wink", 15],
+  ["blank", 38],
+  ["eyes", 20],
+  ["happy", 12],
+  ["wink", 12],
+  ["dots", 18],
 ];
 
 const BANDING_WEIGHTS: readonly (readonly [Banding, number])[] = [
-  ["none", 50],
-  ["chin", 25],
-  ["bands", 25],
+  ["none", 45],
+  ["chin", 20],
+  ["bands", 20],
+  ["belt", 15],
 ];
 
-const SIDES_ANY: readonly Sides[] = ["none", "block", "round", "wings"];
-const SIDES_WIDE: readonly Sides[] = ["none", "block", "round"];
-const BOTTOMS: readonly Bottom[] = ["none", "neck", "neck", "stripes"];
-const MOUTHS: readonly Mouth[] = ["none", "line", "smile", "o"];
+const SIDES_ANY: readonly Sides[] = [
+  "none",
+  "block",
+  "round",
+  "wings",
+  "fins",
+  "double",
+];
+const SIDES_WIDE: readonly Sides[] = [
+  "none",
+  "block",
+  "round",
+  "fins",
+  "double",
+];
+const BOTTOMS: readonly Bottom[] = [
+  "none",
+  "neck",
+  "neck",
+  "stripes",
+  "stand",
+  "wheels",
+];
+const MOUTHS: readonly Mouth[] = ["none", "line", "smile", "o", "grin", "cat"];
 
 function pickPalettes(
   random: Random,
@@ -359,7 +414,7 @@ export function avatarTraits(seed: string): AvatarTraits {
   const bottom = pickFrom(random, BOTTOMS);
   const pickedMouth = pickFrom(random, MOUTHS);
   const hasMouth =
-    (face === "eyes" || face === "blank") &&
+    (face === "eyes" || face === "blank" || face === "dots") &&
     banding === "none" &&
     mouthFits(HEAD_GEOMETRY[head]);
   return makeRoomForFace({
@@ -382,9 +437,13 @@ const MIN_EYE_SCALE = 0.65;
 
 function faceFits(traits: AvatarTraits): boolean {
   const head = HEAD_GEOMETRY[traits.head];
-  if (traits.face === "visor" || traits.face === "happy")
+  if (
+    traits.face === "visor" ||
+    traits.face === "happy" ||
+    traits.face === "shades"
+  )
     return visorBox(traits, head).height >= MIN_VISOR_HEIGHT;
-  if (traits.face === "wink") {
+  if (traits.face === "wink" || traits.face === "dots") {
     const zone = faceZone(traits, head);
     return zone.bottom - zone.top >= WINK_HEIGHT;
   }
