@@ -29,6 +29,12 @@ INSTALL_ARGS=(
 if [ -z "${IS_SANDBOX:-}" ]; then
   INSTALL_ARGS+=(--vm-name="$VM_NAME")
 fi
+# E2E_VIRTUALIZATION=1 installs the vm backend too, which is what un-skips the
+# vm agent spec. It needs /dev/kvm (nested virtualization on the lima VM), so
+# it is opt-in and CI never sets it.
+if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
+  INSTALL_ARGS+=(--set=virtualization.enabled=true)
+fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
 
 # Targeted apiserver rollout: on a fresh cluster the apiserver pod starts in

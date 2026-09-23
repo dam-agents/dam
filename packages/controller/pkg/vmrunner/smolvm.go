@@ -3,9 +3,12 @@ package vmrunner
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -13,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -33,6 +37,12 @@ type Smolvm struct {
 	Bin string
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's lifetime, which every smolvm invocation is a child of. Nil means none, and each call is then bounded only by its own timeout — which is what a Preloader gets, having no runner to belong to. The Server sets it so that closing the runner ends the calls it has out, rather than leaving them to a timeout measured in minutes.
 	Lifetime context.Context
+	// UNIT_BOUNDARY_DESCRIPTION: where expanded disk templates are kept across pod rolls, one directory per compressed template's sha256. Empty keeps them beside the binary, in the container filesystem, which a roll throws away. Keying by content is what makes a new smolvm release safe here: its templates land in a new directory, so a disk that smolvm backed onto an older template never sees its bytes change.
+	TemplateDir string
+
+	// UNIT_BOUNDARY_DESCRIPTION: machine id to smolvm's vm directory. Finding one means reading the name file of every machine, and Start and Stop each need one; the entry is checked against its name file on every use and rescanned when that check fails, so a stale entry costs one rescan and never returns the wrong directory.
+	dirsMu sync.Mutex
+	dirs   map[string]string
 }
 
 func (r *Smolvm) lifetime() context.Context {
@@ -100,6 +110,7 @@ func (r *Smolvm) Create(id string, spec MachineSpec, image string, hostPort int,
 	}
 	args = append(args, envArgs(env)...)
 	args = append(append(args, "--", InitPath), command...)
+	r.forgetVMDir(id)
 	return r.run(envValues(spec.Env), args...)
 }
 
@@ -126,7 +137,10 @@ func (r *Smolvm) Stop(id string) error {
 	return nil
 }
 
-func (r *Smolvm) Delete(id string) error { return r.run(nil, "machine", "delete", "-n", id, "-f") }
+func (r *Smolvm) Delete(id string) error {
+	defer r.forgetVMDir(id)
+	return r.run(nil, "machine", "delete", "-n", id, "-f")
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's root is a throwaway overlay, and this is what makes that true rather than nearly true. Kept, it is a tier nobody declared: it survives an ordinary stop and start, so software installed outside the declared paths looks persistent, and is then thrown away by the first boot that has to discard a corrupt one — weeks later, silently, with no way to tell afterwards which of the two a machine did. Discarded every time, the rule is the same sentence as the container backend's: a declared path, or gone. It runs on the way down, so a hibernated fleet does not hold an overlay each on its owner's disk, and again on the way up, because a machine that died with its runner never got the stop and would otherwise wake onto a stale root.
 func discardOverlay(id, dir string) {
@@ -182,13 +196,39 @@ func vmmGone(procRoot, dir string, limit time.Duration) bool {
 }
 
 func (r *Smolvm) vmDir(id string) string {
+	r.dirsMu.Lock()
+	defer r.dirsMu.Unlock()
+	if dir, ok := r.dirs[id]; ok && namesMachine(dir, id) {
+		return dir
+	}
+	r.dirs = scanVMDirs()
+	return r.dirs[id]
+}
+
+func (r *Smolvm) forgetVMDir(id string) {
+	r.dirsMu.Lock()
+	delete(r.dirs, id)
+	r.dirsMu.Unlock()
+}
+
+func scanVMDirs() map[string]string {
 	names, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), ".cache", "smolvm", "vms", "*", "name"))
+	dirs := make(map[string]string, len(names))
 	for _, f := range names {
-		if b, err := os.ReadFile(f); err == nil && strings.TrimSpace(string(b)) == id {
-			return filepath.Dir(f)
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if id := strings.TrimSpace(string(b)); dirs[id] == "" {
+			dirs[id] = filepath.Dir(f)
 		}
 	}
-	return ""
+	return dirs
+}
+
+func namesMachine(dir, id string) bool {
+	b, err := os.ReadFile(filepath.Join(dir, "name"))
+	return err == nil && strings.TrimSpace(string(b)) == id
 }
 
 func orphanPIDs(procRoot, vmDir string) []int {
@@ -271,7 +311,7 @@ func envValues(env map[string]string) []string {
 	return out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runtime ships its disk templates compressed and expands them the first time a machine needs one, into the directory it lives in — which in a container is the image's own filesystem and so is thrown away with the pod. Every roll of this pod therefore hands the expansion to whoever creates the next agent: measured at 24 s of a 25 s `machine start`, while a second create on the same pod costs half a second. Doing it here costs a pod nobody is waiting on the same seconds, and a user none. It reports which templates are missing rather than expanding them, so the decision can be tested without a compressor.
+// UNIT_BOUNDARY_DESCRIPTION: the runtime ships its disk templates compressed and expands them the first time a machine needs one, into the directory it lives in — which in a container is the image's own filesystem and so is thrown away with the pod. Left alone, every roll of this pod hands the expansion to whoever creates the next agent: measured at 24 s of a 25 s `machine start`, while a second create on the same pod costs half a second. This finds the templates a fresh pod still has to put in place; WarmTemplates puts them there, from the runner's claim when an earlier pod already expanded them. It reports which templates are missing rather than expanding them, so the decision can be tested without a compressor.
 func templatesToWarm(dir string) []string {
 	packed, _ := filepath.Glob(filepath.Join(dir, "*.ext4.zst"))
 	var missing []string
@@ -283,7 +323,7 @@ func templatesToWarm(dir string) []string {
 	return missing
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not the default when the decompressor writes to a named file, and without it a 20 GiB template of mostly holes is written out in full: measured on the runner image at 20 GiB on disk and 33 s, against 672 KiB and 4 s with it, for byte-identical output. The templates are holes almost end to end, so this is the difference between warming them and filling the pod's filesystem. Expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
+// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not the default when the decompressor writes to a named file, and without it a 20 GiB template of mostly holes is written out in full: measured on the runner image at 20 GiB on disk and 33 s, against 672 KiB and 4 s with it, for byte-identical output. The templates are holes almost end to end, so this is the difference between warming them and filling the pod's filesystem. A failure here is logged and left alone — the runtime still expands what it needs, which is exactly the behaviour this exists to pre-empt.
 func (r *Smolvm) WarmTemplates() {
 	dir := filepath.Dir(r.Bin)
 	packedAll := templatesToWarm(dir)
@@ -296,19 +336,72 @@ func (r *Smolvm) WarmTemplates() {
 	defer cancel()
 	for _, packed := range packedAll {
 		target := strings.TrimSuffix(packed, ".zst")
-		tmp := target + ".warming"
-		started := time.Now()
-		if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "--sparse", "-o", tmp, packed).CombinedOutput(); err != nil {
-			slog.Warn("template warm-up failed; the first machine will expand it instead",
-				"template", packed, "error", err, "detail", firstLines(string(out)))
-			_ = os.Remove(tmp)
+		if r.TemplateDir == "" {
+			if err := expandTemplate(ctx, packed, target); err != nil {
+				slog.Warn("template warm-up failed; the first machine will expand it instead", "template", packed, "error", err)
+			}
 			continue
 		}
-		if err := os.Rename(tmp, target); err != nil {
-			slog.Warn("template warm-up could not be put in place", "template", target, "error", err)
-			_ = os.Remove(tmp)
-			continue
+		if err := r.linkKeptTemplate(ctx, packed, target); err != nil {
+			slog.Warn("template warm-up failed; the first machine will expand it instead", "template", packed, "error", err)
 		}
-		slog.Info("template warmed", "template", target, "duration_ms", time.Since(started).Milliseconds())
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: smolvm looks for a plain template beside its binary before it looks for the compressed one, and follows a symlink there. So the template is expanded once onto the runner's claim and the binary's directory gets a link to it: a pod roll then costs a hash of the compressed file and a symlink, not the 24 s expansion. smolvm resolves the link before it writes a template's path into a qcow2 disk, so new disks name the content-keyed file and not the link. The link is made under a temporary name and renamed over the target, so a machine created meanwhile sees either no template or a whole one.
+func (r *Smolvm) linkKeptTemplate(ctx context.Context, packed, target string) error {
+	key, err := fileSHA256(packed)
+	if err != nil {
+		return err
+	}
+	kept := filepath.Join(r.TemplateDir, key, filepath.Base(target))
+	started := time.Now()
+	if _, err := os.Stat(kept); err != nil {
+		if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
+			return err
+		}
+		if err := expandTemplate(ctx, packed, kept); err != nil {
+			return err
+		}
+	}
+	link := target + ".linking"
+	_ = os.Remove(link)
+	if err := os.Symlink(kept, link); err != nil {
+		return err
+	}
+	if err := os.Rename(link, target); err != nil {
+		_ = os.Remove(link)
+		return err
+	}
+	slog.Info("template warmed", "template", target, "kept", kept, "duration_ms", time.Since(started).Milliseconds())
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: expansion goes to a temporary name and is renamed over the target, so a machine created while this runs never opens a half-written template; the runtime writing its own copy in the meantime is harmless, both being the same bytes from the same source.
+func expandTemplate(ctx context.Context, packed, target string) error {
+	tmp := target + ".warming"
+	started := time.Now()
+	if out, err := exec.CommandContext(ctx, "zstd", "-d", "-q", "-f", "--sparse", "-o", tmp, packed).CombinedOutput(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("%w: %s", err, firstLines(string(out)))
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	slog.Info("template expanded", "template", target, "duration_ms", time.Since(started).Milliseconds())
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

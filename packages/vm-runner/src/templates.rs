@@ -258,7 +258,9 @@ mod tests {
     #[test]
     fn the_go_runner_expands_the_same_way() {
         let go = gosource::read("smolvm.go");
-        assert!(go.contains("\"--sparse\""));
+        assert!(gosource::literals_in(&go, "expandTemplate")
+            .iter()
+            .any(|l| l == "--sparse"));
         assert_eq!(
             gosource::duration_value(&go, "warmTimeout"),
             Some(WARM_TIMEOUT)

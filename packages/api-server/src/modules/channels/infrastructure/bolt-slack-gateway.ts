@@ -322,6 +322,12 @@ export function createBoltSlackGateway(
         thread_ts: args.threadTs,
         blocks: args.blocks,
         ...(args.replyBroadcast ? { reply_broadcast: true } : {}),
+        ...(args.unfurlLinks !== undefined
+          ? { unfurl_links: args.unfurlLinks }
+          : {}),
+        ...(args.unfurlMedia !== undefined
+          ? { unfurl_media: args.unfurlMedia }
+          : {}),
       } as ChatPostMessageArgs);
     },
 

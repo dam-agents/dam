@@ -16,6 +16,7 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/pullauth"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -102,6 +103,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
+	pullAuths, err := r.pullAuths(ctx, append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
+	if err != nil {
+		return vmrunner.MachineStatus{}, err
+	}
+
 	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
 		Image:      spec.Image,
@@ -113,6 +119,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		AllowCIDRs: []string{gatewayIP + "/32"},
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
+		PullAuths:  pullAuths,
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
@@ -126,6 +133,38 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		r.dropSupersededEndpointSlice(ctx, name)
 	}
 	return st, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a starting machine is reconciled every half second, and every reconcile sends the pull credentials again, so reading the Secrets each time would be several API reads a second for every agent that is booting, multiplied by a whole fleet on a roll. The documents are kept per list of Secret names for as long as the health poll, which is also about how soon a rotated Secret reaches the next fetch. A read that fails is not kept, so the next reconcile tries again. Entries past that age are dropped on the way, so an Agent that is gone leaves nothing behind.
+func (r *AgentReconciler) pullAuths(ctx context.Context, names []string) ([]string, error) {
+	key := strings.Join(names, "\x00")
+	r.pullAuthMu.Lock()
+	for k, memo := range r.pullAuthMemo {
+		if time.Since(memo.at) > vmHealthPoll {
+			delete(r.pullAuthMemo, k)
+		}
+	}
+	memo, ok := r.pullAuthMemo[key]
+	r.pullAuthMu.Unlock()
+	if ok {
+		return memo.docs, nil
+	}
+	docs, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace), names)
+	if err != nil {
+		return nil, err
+	}
+	r.pullAuthMu.Lock()
+	if r.pullAuthMemo == nil {
+		r.pullAuthMemo = map[string]pullAuthMemo{}
+	}
+	r.pullAuthMemo[key] = pullAuthMemo{docs: docs, at: time.Now()}
+	r.pullAuthMu.Unlock()
+	return docs, nil
+}
+
+type pullAuthMemo struct {
+	docs []string
+	at   time.Time
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an earlier release wrote this Service's endpoint by hand, under the agent's own name. Kubernetes now keeps one of its own for the same Service, and two slices naming one Service are unioned — so a leftover that once read ready, pointing at an address its machine no longer answers on, would take a share of the traffic and nothing would repair it. Delete is enough: the generated slice carries a suffixed name, so only the hand-written one matches. Remove this once no cluster has reconciled a vm agent under the old mechanism.
@@ -208,11 +247,34 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, and a delete arrives with only the agent's name — so it is offered to every runner, each of which ignores a machine it does not have.
-func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
+// UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first because resolving a client mints a runner's Secret when there is none, which would leave credentials for a runner that does not exist. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
+func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) {
 	if !r.config.VM.Enabled {
 		return
 	}
+	if owner == "" {
+		r.deleteMachineEverywhere(ctx, name)
+		return
+	}
+	_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return
+	}
+	if err != nil {
+		slog.Warn("deleting machine: reading the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
+		return
+	}
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		slog.Warn("deleting machine: reaching the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
+		return
+	}
+	if err := client.Delete(ctx, name); err != nil {
+		slog.Warn("deleting machine", "agent", name, "owner", owner, "error", err)
+	}
+}
+
+func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
 	runners, err := r.knownRunners(ctx)
 	if err != nil {
 		slog.Warn("deleting machine: listing VM runners failed", "agent", name, "error", err)

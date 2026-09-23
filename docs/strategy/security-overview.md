@@ -125,7 +125,10 @@ Each one only admits the gateway whose SPIFFE ID belongs to the right
 instance, so one instance can never call another instance's harness
 or ext-authz — the address resolves, but the call never lands. The
 gateway pod itself has no AuthorizationPolicy in front of it; the
-agent's NetworkPolicy is the only gate on the agent → gateway hop.
+agent → gateway hop is gated by two NetworkPolicies instead, one at
+each end: the agent's own reaches only its gateway, and the gateway's
+admits only its paired agent (and, for a VM agent, its owner's
+runner).
 
 On top of that, every outgoing request through the gateway runs
 through a second gate. Envoy (the program running inside the gateway
