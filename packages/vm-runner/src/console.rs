@@ -24,7 +24,7 @@ pub fn with_console(message: &str, tail: &str) -> String {
     format!("{message}{CONSOLE_ENDS}{tail}")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, and the runner opens one per health probe, so within a minute those lines are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
 pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(mut file) = fs::File::open(path) else {
         return String::new();
@@ -32,10 +32,11 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(size) = file.metadata().map(|m| m.len()) else {
         return String::new();
     };
-    let offset = size.saturating_sub(limit);
+    let window = limit.saturating_mul(16);
+    let offset = size.saturating_sub(window);
     let mut body = Vec::new();
     if file.seek(SeekFrom::Start(offset)).is_err()
-        || file.take(limit).read_to_end(&mut body).is_err()
+        || file.take(window).read_to_end(&mut body).is_err()
     {
         return String::new();
     }
@@ -44,7 +45,24 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
             body.drain(..=cut);
         }
     }
-    printable(&String::from_utf8_lossy(&body))
+    let text = String::from_utf8_lossy(&body);
+    let mut kept: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            !(line.contains("\"target\":\"smolvm_agent\"")
+                && line.contains("\"message\":\"accepted connection\""))
+        })
+        .collect();
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let mut total: usize = kept.iter().map(|line| line.len() + 1).sum();
+    while kept.len() > 1 && total > limit {
+        total -= kept.remove(0).len() + 1;
+    }
+    let mut tail = kept.join("\n");
+    if tail.len() > limit {
+        tail = tail[tail.len() - limit..].to_string();
+    }
+    printable(&tail)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted.
@@ -134,6 +152,24 @@ mod tests {
         assert_eq!(tail_of(&log, 14), "last line");
         assert_eq!(tail_of(&log, 1000), "first line\nsecond line\nlast line");
         assert_eq!(tail_of(&dir.join("missing"), 1000), "");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
+    #[test]
+    fn probe_lines_do_not_crowd_the_guest_out_of_the_tail() {
+        let dir =
+            std::env::temp_dir().join(format!("vm-runner-console-probes-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join(CONSOLE_LOG);
+        let probe = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
+        let flatten = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"flattening local image archive\"},\"target\":\"smolvm_agent::storage\"}";
+        let mut text = format!("kernel panic\n{flatten}\n");
+        for _ in 0..200 {
+            text.push_str(probe);
+        }
+        fs::write(&log, &text).unwrap();
+        assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
         let _ = fs::remove_dir_all(&dir);
     }
 

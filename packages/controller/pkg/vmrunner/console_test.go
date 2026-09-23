@@ -60,6 +60,16 @@ func TestTheConsoleTailIsBoundedWholeLinedAndPrintable(t *testing.T) {
 	assert.Empty(t, tailOf(filepath.Join(t.TempDir(), "missing"), consoleTailBytes))
 }
 
+// TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
+func TestProbeLinesDoNotCrowdTheGuestOutOfTheTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), consoleLogName)
+	probe := `{"timestamp":"t","level":"INFO","fields":{"message":"accepted connection"},"target":"smolvm_agent"}` + "\n"
+	flatten := `{"timestamp":"t","level":"INFO","fields":{"message":"flattening local image archive"},"target":"smolvm_agent::storage"}`
+	text := "kernel panic\n" + flatten + "\n" + strings.Repeat(probe, 200)
+	require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+	assert.Equal(t, "kernel panic\n"+flatten, tailOf(path, consoleTailBytes))
+}
+
 // TEST_SCENARIO: the runtime refuses to boot the machine. The failure the Agent is told carries the end of the console after it, with the env value the guest printed replaced, and the whole message stays well inside what a condition may hold.
 func TestABootFailureCarriesTheRedactedConsoleTail(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
