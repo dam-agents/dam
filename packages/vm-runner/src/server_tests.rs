@@ -1191,6 +1191,23 @@ async fn a_wait_with_no_change_answers_when_it_ends() {
     assert_eq!(answer.state, STATE_ABSENT);
 }
 
+// TEST_SCENARIO: the pod has a fixed grace between SIGTERM and SIGKILL, and the HTTP drain waits for every request in flight. A status read waiting out its half minute would take that whole grace, so stopping the runner answers every waiting read at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn stopping_the_runner_answers_a_waiting_read_at_once() {
+    let h = Harness::new("wait-close");
+    h.server.put("m1", spec(false)).unwrap();
+    let before = h.settle("m1").await;
+    let started = Instant::now();
+    let waiting = h.wait("m1", before.version, Duration::from_secs(20));
+    let stopping = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        h.server.stop_taking_work();
+    };
+    let (answer, ()) = tokio::join!(waiting, stopping);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(answer.version, before.version);
+}
+
 // TEST_SCENARIO: a guest that comes up after its start returned is noticed by the prober and not by the status read, and a read waiting on the machine is answered with it ready. This is the path by which the controller hears that a wake finished.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {

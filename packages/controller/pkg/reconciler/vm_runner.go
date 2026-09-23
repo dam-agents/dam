@@ -43,6 +43,9 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: the pod ports the runner publishes machines on. The NetworkPolicy opens exactly this range and the runner is told it in its args, so a machine is never published on a port the policy drops.
 	vmRunnerPortMin = 31000
 	vmRunnerPortMax = 31099
+
+	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call. The default thirty seconds would kill it at the end of that wait.
+	vmRunnerTerminationGraceSeconds = 45
 )
 
 type runnerConn struct {
@@ -493,13 +496,14 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
-					DNSPolicy:                    runnerDNSPolicy(spec.DNSPolicy),
-					ServiceAccountName:           spec.ServiceAccountName,
-					AutomountServiceAccountToken: ptrBool(false),
-					EnableServiceLinks:           ptrBool(false),
-					NodeSelector:                 spec.NodeSelector,
-					Tolerations:                  spec.Tolerations,
-					ImagePullSecrets:             spec.ImagePullSecrets,
+					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
+					TerminationGracePeriodSeconds: ptr.To(int64(vmRunnerTerminationGraceSeconds)),
+					ServiceAccountName:            spec.ServiceAccountName,
+					AutomountServiceAccountToken:  ptrBool(false),
+					EnableServiceLinks:            ptrBool(false),
+					NodeSelector:                  spec.NodeSelector,
+					Tolerations:                   spec.Tolerations,
+					ImagePullSecrets:              spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,
 						Image:           spec.Image,

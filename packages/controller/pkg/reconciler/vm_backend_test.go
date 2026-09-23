@@ -167,6 +167,20 @@ func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 		"ClusterFirst would send every lookup to a Service address the runner's own egress policy drops")
 }
 
+// TEST_SCENARIO: a runner that is stopped waits up to thirty seconds for machine actions that cannot be cut short, beside a short drain of its API. With kubelet's default thirty-second grace it would be killed at the end of that wait, so the pod is given room for both.
+func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	grace := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	require.NotNil(t, grace)
+	assert.Greater(t, *grace, int64(30+5))
+}
+
 // TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
 func TestAnInstallCanAskForClusterResolution(t *testing.T) {
 	agent := vmAgentCR()

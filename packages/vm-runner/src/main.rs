@@ -110,7 +110,7 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     Ok(listener)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. Inside the thirty seconds kubelet allows before SIGKILL, so the runner's own close still gets a turn after it.
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE the controller's termination grace on the runner pod covers.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
@@ -272,15 +272,18 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         _ = term.recv() => tracing::info!(signal = "SIGTERM", "VM runner stopping"),
         _ = tokio::signal::ctrl_c() => tracing::info!(signal = "SIGINT", "VM runner stopping"),
     }
-    handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
-    if let Err(e) = serving.await {
-        tracing::warn!(error = %e, "the machine API did not shut down cleanly");
-    }
-    if let Some((handle, serving)) = scrape {
+    server.stop_taking_work();
+    let draining = async {
         handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
-        let _ = serving.await;
-    }
-    server.close().await;
+        if let Err(e) = serving.await {
+            tracing::warn!(error = %e, "the machine API did not shut down cleanly");
+        }
+        if let Some((handle, serving)) = scrape {
+            handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
+            let _ = serving.await;
+        }
+    };
+    tokio::join!(draining, server.close());
     tracing::info!("VM runner stopped");
     Ok(())
 }

@@ -226,11 +226,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, and waits up to CLOSE_GRACE for it. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
     pub async fn close(&self) {
-        locked(&self.machines).closed = true;
-        self.changed.notify_all();
-        self.forwarder.unpublish_all();
-        self.lifetime.cancel();
-        self.work.close();
+        self.stop_taking_work();
         if tokio::time::timeout(CLOSE_GRACE, self.work.wait())
             .await
             .is_err()
@@ -241,6 +237,15 @@ impl Server {
             );
         }
         self.forwarder.unpublish_all();
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the part of closing that does not wait: no new work is taken, what runs is cancelled, and every status read waiting on a change answers now. The HTTP server's drain waits for those reads, so this comes before it.
+    pub fn stop_taking_work(&self) {
+        locked(&self.machines).closed = true;
+        self.changed.notify_all();
+        self.forwarder.unpublish_all();
+        self.lifetime.cancel();
+        self.work.close();
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: work that belongs to no machine — the disk-template warm-up — joined to the same barrier as a machine's worker, so closing the runner cancels and waits for everything it started. Work offered after close is refused.
