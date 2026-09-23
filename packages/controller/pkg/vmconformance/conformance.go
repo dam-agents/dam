@@ -65,7 +65,7 @@ func Run(t *testing.T, target Target) {
 		again := m.ensure(t, m.spec())
 		assert.Equal(t, vmrunner.StateRunning, again.State, "the same spec again is not a new operation")
 		assert.Equal(t, st.Port, again.Port)
-		assert.GreaterOrEqual(t, again.StartingMs, st.StartingMs, "the same spec again started the machine again")
+		assert.Zero(t, again.StartingMs, "a machine that answered is no longer starting")
 	})
 
 	// TEST_SCENARIO: hibernate and wake. A machine asked to stop stops and keeps its port; asked to run again, it starts with what its disk held — the probe guest is ready only if the marker its first boot wrote is still there.

@@ -131,7 +131,7 @@ func withConsole(message, tail string) string {
 	return message + "\nthe guest console ends:\n" + tail
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads "not ready" for as long as it stays stuck, and why is only on the console. The note is kept rather than rebuilt on every status, because the controller polls a starting machine twice a second and a message that changed each time would be a status write each time. A recorded failure carries its own tail and wins; a new start or an answer clears the note.
+// UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads "not ready" for as long as it stays stuck, and why is only on the console. The note is kept rather than rebuilt on every status, because the controller polls a starting machine twice a second and a message that changed each time would be a status write each time. A recorded failure carries its own tail and wins; a new start or an answer clears the note. An answer also drops the start stamp: from then on the machine is up, and a probe it misses later is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it.
 func (s *Server) watchBoot(id string, st *MachineStatus, startedAt time.Time, noFailure bool) {
 	s.mu.Lock()
 	op, awaiting := s.awaiting[id]
@@ -139,6 +139,7 @@ func (s *Server) watchBoot(id string, st *MachineStatus, startedAt time.Time, no
 	if st.Ready {
 		delete(s.awaiting, id)
 		delete(s.slowBoots, id)
+		delete(s.startedAt, id)
 	}
 	note, noted := s.slowBoots[id]
 	s.mu.Unlock()

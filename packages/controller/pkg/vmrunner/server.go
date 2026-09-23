@@ -1229,6 +1229,11 @@ func (s *Server) machineState(id string) (string, error) {
 func (s *Server) stop(id string) error {
 	s.forgetState(id)
 	defer s.forgetState(id)
+	s.mu.Lock()
+	delete(s.startedAt, id)
+	delete(s.awaiting, id)
+	delete(s.slowBoots, id)
+	s.mu.Unlock()
 	if err := s.Runtime.Stop(id); err != nil {
 		return err
 	}

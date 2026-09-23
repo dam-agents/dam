@@ -1164,7 +1164,7 @@ async fn a_failed_boot_carries_the_redacted_console() {
     assert!(!status.message.contains(PROXY));
 }
 
-// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it.
+// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it. A probe the guest misses after that is a health blip: no note, and no starting time.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guest_that_never_answers_is_explained() {
     let h = Harness::new("slow-boot");
@@ -1193,6 +1193,33 @@ async fn a_guest_that_never_answers_is_explained() {
         scrape.contains("platform_vm_runner_machine_ready_seconds_count{op=\"create\"} 1"),
         "{scrape}"
     );
+    let down = h.server.status("m1");
+    assert!(!down.ready);
+    assert_eq!(
+        down.message, "",
+        "a missed probe after the answer is not a stuck boot"
+    );
+    assert_eq!(
+        down.starting_ms, 0,
+        "a machine that answered is no longer starting"
+    );
+}
+
+// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine reports no starting time and no stuck-boot note, however long ago it was asked to start.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_ends_the_boot_wait() {
+    let h = Harness::new("stop-ends-wait");
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(!h.settle("m1").await.ready);
+    locked(&h.server.inner).started_at.insert(
+        "m1".into(),
+        Instant::now() - SLOW_BOOT_AFTER - Duration::from_secs(1),
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    let stopped = h.settle("m1").await;
+    assert_eq!(stopped.state, STATE_STOPPED);
+    assert_eq!(stopped.starting_ms, 0, "a stopped machine is not starting");
+    assert_eq!(stopped.message, "");
 }
 
 // TEST_SCENARIO: a create is counted as what it was — one operation, one start, one image the cache did not hold and one fetch — and the memory gauges read the runner as it stands, so the scrape after a boot shows the machine it booted.

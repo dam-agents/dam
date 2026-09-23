@@ -418,7 +418,7 @@ impl Server {
         if !spec.running {
             if state == STATE_RUNNING {
                 self.forget_state(id);
-                self.runtime.stop(id)?;
+                self.stop_machine(id)?;
             }
             return Ok(());
         }
@@ -444,7 +444,7 @@ impl Server {
             if plan::egress_changed(applied, spec) {
                 if state == STATE_RUNNING {
                     self.forget_state(id);
-                    self.runtime.stop(id)?;
+                    self.stop_machine(id)?;
                 }
                 return Err(egress_changed(format!(
                     "this machine may only reach [{}], but its gateway is now [{}] — recreate the agent",
@@ -478,7 +478,7 @@ impl Server {
             }
             op = STATE_RESTARTING;
             self.forget_state(id);
-            self.runtime.stop(id)?;
+            self.stop_machine(id)?;
             state = STATE_STOPPED;
         }
         if state == STATE_STOPPED {
@@ -505,7 +505,7 @@ impl Server {
         let (port, image, launch, digest) = self.resolve(id, spec, auths)?;
         self.forget_state(id);
         if state == STATE_RUNNING {
-            self.runtime.stop(id)?;
+            self.stop_machine(id)?;
         }
         self.runtime.delete_keeping_storage(id)?;
         self.boot(id, spec, port, &image, &launch, digest.as_deref())?;
@@ -623,20 +623,18 @@ impl Server {
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. A recorded failure carries its own tail and wins; a new start or an answer clears the note. An answer also drops the start stamp: from then on the machine is up, and a probe it misses later is a health blip, not a boot still waited on, so neither the note nor `startingMs` comes back for it. The start stamp is read under the same lock as the start it belongs to, so a start that lands mid-poll cannot pair one boot's watch with another's stamp and lose the ready-latency sample.
     fn watch_boot(&self, id: &str, status: &mut MachineStatus, no_failure: bool) {
         let (op, note, started_at) = {
             let mut inner = locked(&self.inner);
             let op = inner.awaiting.get(id).copied();
+            let started_at = inner.started_at.get(id).copied();
             if status.ready {
                 inner.awaiting.remove(id);
                 inner.slow_boots.remove(id);
+                inner.started_at.remove(id);
             }
-            (
-                op,
-                inner.slow_boots.get(id).cloned(),
-                inner.started_at.get(id).copied(),
-            )
+            (op, inner.slow_boots.get(id).cloned(), started_at)
         };
         let Some(at) = started_at else {
             return;
@@ -824,6 +822,17 @@ impl Server {
 
     fn forget_state(&self, id: &str) {
         locked(&self.inner).last_state.remove(id);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered kept its start stamp, and so reported a growing `startingMs` for as long as it stayed stopped.
+    fn stop_machine(&self, id: &str) -> anyhow::Result<()> {
+        {
+            let mut inner = locked(&self.inner);
+            inner.started_at.remove(id);
+            inner.awaiting.remove(id);
+            inner.slow_boots.remove(id);
+        }
+        self.runtime.stop(id)
     }
 
     fn machine_state(&self, id: &str) -> anyhow::Result<&'static str> {

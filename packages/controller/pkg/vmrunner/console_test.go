@@ -3,6 +3,8 @@ package vmrunner
 
 import (
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +121,53 @@ func TestAGuestThatNeverAnswersIsExplainedByItsConsole(t *testing.T) {
 	_, noted := h.node.slowBoots["m1"]
 	h.node.mu.Unlock()
 	assert.False(t, noted, "a new start clears the note")
+}
+
+// TEST_SCENARIO: the guest answered once, so the machine is up. A probe it misses later, from a busy harness or a slow hypervisor, is a health blip, not a boot the platform still waits on. The stuck-boot note and the starting time belong to that wait, so neither comes back after the answer, however long ago the machine was asked to start.
+func TestAMissedProbeAfterTheGuestAnsweredIsNotAStuckBoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	require.False(t, h.settle(t, "m1").Ready)
+	h.node.mu.Lock()
+	h.node.startedAt["m1"] = time.Now().Add(-slowBootAfter - time.Second)
+	h.node.mu.Unlock()
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", h.node.PortMin+loopbackOffset))
+	require.NoError(t, err)
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	up, err := h.client().Status(t.Context(), "m1")
+	require.NoError(t, err)
+	require.True(t, up.Ready)
+	assert.Empty(t, up.Message)
+
+	require.NoError(t, srv.Close())
+	down, err := h.client().Status(t.Context(), "m1")
+	require.NoError(t, err)
+	assert.False(t, down.Ready)
+	assert.Empty(t, down.Message, "a missed probe after the answer is not a stuck boot")
+	assert.Zero(t, down.StartingMs, "a machine that answered is no longer starting")
+}
+
+// TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine reports no starting time and no stuck-boot note, however long ago it was asked to start.
+func TestAStopEndsTheBootWait(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	h := newHarness(t)
+	_, err := h.client().Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	require.False(t, h.settle(t, "m1").Ready)
+	h.node.mu.Lock()
+	h.node.startedAt["m1"] = time.Now().Add(-slowBootAfter - time.Second)
+	h.node.mu.Unlock()
+	_, err = h.client().Ensure(t.Context(), "m1", spec(false))
+	require.NoError(t, err)
+	st := h.settle(t, "m1")
+	assert.Equal(t, StateStopped, st.State)
+	assert.Zero(t, st.StartingMs, "a stopped machine is not starting")
+	assert.Empty(t, st.Message)
 }
 
 func orNotReady(reason string) string {
