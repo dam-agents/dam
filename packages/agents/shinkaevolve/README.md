@@ -54,10 +54,10 @@ SHINKA_VERSION=0.0.7 mise run //packages/agents:image -- shinkaevolve
 ## CI / publishing
 
 The shinkaevolve image is published by CI (`.github/workflows/cd.yml`): the
-matrixed `build-workloads` job runs after `merge-agents` — it builds `FROM`
+per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/shinkaevolve` (no `imagePullSecret`). Registering the
 component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it
-in that matrix. The template is enabled in `values.yaml` under "Pre-configured
+in that job. The template is enabled in `values.yaml` under "Pre-configured
 Images" (`category: preconfigured`, `experimental: true`).

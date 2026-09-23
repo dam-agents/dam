@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#MISE description="CI only: tag each component's per-arch digests as one multi-arch image. See the usage block below."
+#MISE hide=true
+# cd.yml merges every image of one kind in one job instead of one job per
+# image; see image:ci-build.
+#
+# Usage: ci-merge <digests-dir> <component>...
+#   <digests-dir>/<component>/ holds one empty file per arch, named by the
+#   digest's hex, as image:ci-build writes them.
+# Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
+#   COMPOSITE (the app version), SOURCE_SHAS (image:resolve's JSON map) and
+#   SOURCE_SHA_TAGGED (the components that also get their source-sha tag).
+#
+# The tags are what docker/metadata-action gave each image: the commit sha,
+# the composite version, and on a v* tag its semver version, major.minor
+# (not for a prerelease) and latest.
+set -uo pipefail
+
+dir="${1:?usage: ci-merge <digests-dir> <component>...}"; shift
+[ $# -gt 0 ] || { echo "ci-merge: no components" >&2; exit 2; }
+: "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}" "${GITHUB_REF:?}" "${COMPOSITE:?}"
+
+release=()
+case "$GITHUB_REF" in
+  refs/tags/v*)
+    v="${GITHUB_REF_NAME#v}"
+    if [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+      release+=("$v")
+      [ -n "${BASH_REMATCH[3]}" ] || release+=("${BASH_REMATCH[1]}.${BASH_REMATCH[2]}")
+    fi
+    release+=(latest)
+    ;;
+esac
+
+failed=()
+for c in "$@"; do
+  tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
+  if [[ " ${SOURCE_SHA_TAGGED:-} " == *" $c "* ]]; then
+    s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
+    [ -n "$s" ] && tags+=("$s")
+  fi
+  args=() seen=" "
+  for t in "${tags[@]}"; do
+    [[ "$seen" == *" $t "* ]] && continue
+    seen+="$t " args+=(-t "$IMAGE_PREFIX/$c:$t")
+  done
+  srcs=()
+  for d in "$dir/$c"/*; do [ -e "$d" ] && srcs+=("$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
+  if [ "${#srcs[@]}" -eq 0 ]; then echo "::error::no digests for $c"; failed+=("$c"); continue; fi
+  echo "$c:$seen<- ${srcs[*]}"
+  docker buildx imagetools create "${args[@]}" "${srcs[@]}" || failed+=("$c")
+done
+
+if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to merge: ${failed[*]}"; exit 1; fi

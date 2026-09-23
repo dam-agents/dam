@@ -49,7 +49,7 @@ OPENEVOLVE_VERSION=0.2.27 mise run //packages/agents:image -- openevolve
 ## CI / publishing
 
 The openevolve image is published by CI (`.github/workflows/cd.yml`): the
-matrixed `build-workloads` job runs after `merge-agents` — it builds `FROM`
+per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/openevolve` (no `imagePullSecret`). The template is enabled
