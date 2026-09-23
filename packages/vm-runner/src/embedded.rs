@@ -11,6 +11,7 @@ use smolvm::network::NetworkBackend;
 use smolvm::storage::{expand_disk, Storage, StorageDisk, STORAGE_DISK_FILENAME};
 
 use crate::api::{MachineSpec, STATE_ABSENT, STATE_RUNNING, STATE_STOPPED};
+use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
     clear_for_start, discard_overlay, grown_storage, kill_orphans, timed, updated_env, workload,
@@ -156,6 +157,13 @@ impl Runtime for Smolvm {
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
+    }
+
+    fn console_tail(&self, id: &str) -> String {
+        console::tail_of(
+            &vm_data_dir(id).join(console::CONSOLE_LOG),
+            console::CONSOLE_TAIL_BYTES,
+        )
     }
 
     fn storage_growable(&self, id: &str) -> bool {

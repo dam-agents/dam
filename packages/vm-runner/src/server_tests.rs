@@ -21,6 +21,7 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    console: Mutex<String>,
     ungrowable: AtomicBool,
 }
 
@@ -83,6 +84,10 @@ impl Runtime for Fake {
         self.record(format!("delete {id}"));
         locked(&self.states).remove(id);
         Ok(())
+    }
+
+    fn console_tail(&self, _id: &str) -> String {
+        locked(&self.console).clone()
     }
 
     fn storage_growable(&self, _id: &str) -> bool {
@@ -902,6 +907,79 @@ async fn a_pinned_reference_is_never_resolved() {
     assert!(read_launch(&h.server.cache.digest_entry(&digest))
         .unwrap()
         .is_some());
+}
+
+const PROXY: &str = "http://10.0.0.1:10000";
+
+// TEST_SCENARIO: a boot that fails is explained by the end of the guest's console, carried in the machine's message. The guest prints what it likes, including the environment an operator's Secret reaches it through, so every env value the runner was given for the machine is redacted out of it first.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_boot_carries_the_redacted_console() {
+    let h = Harness::new("console");
+    *locked(&h.fake.console) = format!("booting\nHTTPS_PROXY={PROXY}\nkernel panic");
+    *locked(&h.fake.fail_start_once) = Some("guest agent never became ready".into());
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_BOOT_FAILED, "{status:?}");
+    assert!(
+        status
+            .message
+            .ends_with("\nthe guest console ends:\nbooting\nHTTPS_PROXY=***\nkernel panic"),
+        "{status:?}"
+    );
+    assert!(!status.message.contains(PROXY));
+}
+
+// TEST_SCENARIO: a guest that boots and never answers has no failure — its start returned — so after a minute the machine's message says it is stuck and shows the console, and keeps saying the same thing rather than changing on every poll. Once the guest answers, the note is gone and the time it took is recorded under the operation that started it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_that_never_answers_is_explained() {
+    let h = Harness::new("slow-boot");
+    *locked(&h.fake.console) = "waiting for disk".into();
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(h.settle("m1").await.message.is_empty());
+    locked(&h.server.inner).started_at.insert(
+        "m1".into(),
+        Instant::now() - SLOW_BOOT_AFTER - Duration::from_secs(1),
+    );
+    let stuck = h.server.status("m1");
+    assert!(!stuck.ready);
+    assert_eq!(
+        stuck.message,
+        format!("{SLOW_BOOT}\nthe guest console ends:\nwaiting for disk")
+    );
+    *locked(&h.fake.console) = "something else".into();
+    assert_eq!(h.server.status("m1").message, stuck.message);
+
+    let up = guest(h.base);
+    let ready = h.server.status("m1");
+    assert!(ready.ready && ready.message.is_empty(), "{ready:?}");
+    up.store(false, Ordering::SeqCst);
+    let scrape = h.server.metrics_text();
+    assert!(
+        scrape.contains("platform_vm_runner_machine_ready_seconds_count{op=\"create\"} 1"),
+        "{scrape}"
+    );
+}
+
+// TEST_SCENARIO: a create is counted as what it was — one operation, one start, one image the cache did not hold and one fetch — and the memory gauges read the runner as it stands, so the scrape after a boot shows the machine it booted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scrape_counts_what_a_create_did() {
+    let h = Harness::new("scrape");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let scrape = h.server.metrics_text();
+    for line in [
+        "platform_vm_runner_machine_operation_duration_seconds_count{op=\"create\",outcome=\"ok\"} 1",
+        "platform_vm_runner_machine_start_duration_seconds_count{op=\"create\",outcome=\"ok\"} 1",
+        "platform_vm_runner_image_cache_lookups_total{result=\"miss\"} 1",
+        "platform_vm_runner_image_fetch_duration_seconds_count{outcome=\"ok\"} 1",
+        "platform_vm_runner_memory_committed_mib 2048",
+    ] {
+        assert!(scrape.lines().any(|l| l == line), "missing {line}\n{scrape}");
+    }
+    assert!(
+        !scrape.contains("m1") && !scrape.contains("quay.io"),
+        "{scrape}"
+    );
 }
 
 // TEST_SCENARIO: a resize that asks for more storage than a disk that cannot grow is refused before the machine is touched: it keeps running at the size it has, the reason is in its status, and its stored spec still says the old size, so the resize is not taken for done.
