@@ -12,7 +12,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::api::REASON_IMAGE_UNAVAILABLE;
+use crate::api::{REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
 use crate::cache::PULL_TIMEOUT;
 use crate::fetch::{failure_reason, unusable, Refusal};
 use crate::imagecache::{Fetched, ImageCache, Images, Lookup, Resolved};
@@ -87,9 +87,13 @@ async fn resolve(
     }
 }
 
-async fn hold(State(cache): State<Arc<ImageCache>>, Json(ask): Json<HoldRequest>) -> StatusCode {
-    cache.hold(&ask.digests);
-    StatusCode::NO_CONTENT
+// UNIT_BOUNDARY_DESCRIPTION: a hold takes the cache's memory lock, which an eviction or a fetch can hold for a moment, so it runs on a blocking thread and never parks one of the few threads that serve every runner's socket.
+async fn hold(State(cache): State<Arc<ImageCache>>, Json(ask): Json<HoldRequest>) -> Response {
+    match tokio::task::spawn_blocking(move || cache.hold(&ask.digests)).await {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: serves the API on a socket at `path` until `shutdown` resolves. A socket file left by the previous process is removed first, since binding over it fails. The socket is 0600: runners run as root, and nothing else on the node has a reason to reach it.
@@ -223,14 +227,16 @@ impl Images for CacheClient {
                 "the image cache service answered {status}"
             )));
         };
-        let error = if failure.reason == REASON_IMAGE_UNAVAILABLE {
-            Refusal {
-                reason: REASON_IMAGE_UNAVAILABLE,
+        let error = match [REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY]
+            .into_iter()
+            .find(|reason| *reason == failure.reason)
+        {
+            Some(reason) => Refusal {
+                reason,
                 message: failure.message,
             }
-            .into()
-        } else {
-            anyhow::anyhow!(failure.message)
+            .into(),
+            None => anyhow::anyhow!(failure.message),
         };
         Lookup {
             resolved: Err(error),

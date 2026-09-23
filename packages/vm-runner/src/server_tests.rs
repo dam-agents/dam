@@ -1322,6 +1322,7 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         ref_fresh: Duration::from_secs(600),
         hold_lease: lease,
         hold_grace: Duration::ZERO,
+        fetch_ceiling: None,
     }));
     let socket = h.dir.join("images/.cache.sock");
     let stop = CancellationToken::new();

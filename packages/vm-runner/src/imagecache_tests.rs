@@ -76,6 +76,7 @@ impl Fixture {
             ref_fresh: Duration::from_secs(600),
             hold_lease: HOLD_LEASE,
             hold_grace: Duration::ZERO,
+            fetch_ceiling: None,
         };
         tune(&mut config);
         ImageCache::open(config)
@@ -208,7 +209,7 @@ fn eviction_spares_what_is_held_until_the_hold_lapses() {
     );
 
     std::thread::sleep(Duration::from_millis(1600));
-    cache.hold(&[second.clone()].into());
+    cache.hold(&[second.clone()].into()).unwrap();
     let trim = cache.evict(None);
     assert!(
         !cache.digest_entry(&first).exists(),
@@ -228,9 +229,93 @@ fn a_hold_cannot_drop_what_another_holds() {
     let f = Fixture::new("hold-extends", PUBLIC_CRANE);
     let cache = f.cache(|c| c.budget = 1);
     let held = digest_of(&cache, "quay.io/x/a:1");
-    cache.hold(&BTreeSet::new());
+    cache.hold(&BTreeSet::new()).unwrap();
     cache.evict(None);
     assert!(cache.digest_entry(&held).exists());
+}
+
+// TEST_SCENARIO: any runner on a node may hold over the shared socket, so what a hold makes the service remember is bounded: a digest with no entry on disk is not held at all, and a call naming more digests than any runner's machines could boot is refused whole.
+#[test]
+fn a_hold_is_bounded_by_what_the_cache_holds() {
+    let f = Fixture::new("hold-bounded", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let present = digest_of(&cache, IMAGE);
+    let absent = format!("sha256:{}", "e".repeat(64));
+    cache
+        .hold(&[present.clone(), absent.clone()].into())
+        .unwrap();
+    let holds = locked(&cache.memory).holds.clone();
+    assert!(holds.contains_key(&present));
+    assert!(
+        !holds.contains_key(&absent),
+        "a digest with no entry was held"
+    );
+
+    let flood: BTreeSet<String> = (0..=HOLDS_PER_CALL)
+        .map(|i| format!("sha256:{i:064x}"))
+        .collect();
+    assert!(cache.hold(&flood).is_err());
+}
+
+// TEST_SCENARIO: a hold or a resolve must never wait on the walk that weighs the cache's trees, which on a full node cache reads every file of every image. The walk runs outside the memory lock, so a hold made while one is running returns at once.
+#[test]
+fn a_hold_does_not_wait_for_the_cache_to_be_weighed() {
+    let f = Fixture::new("hold-unblocked", PUBLIC_CRANE);
+    let cache = Arc::new(f.cache(|_| {}));
+    let digest = digest_of(&cache, IMAGE);
+    let weighing = locked(&cache.measuring);
+    let holding = {
+        let cache = cache.clone();
+        std::thread::spawn(move || cache.hold(&[digest].into()))
+    };
+    let started = Instant::now();
+    while !holding.is_finished() {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a hold waited on the walk"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    drop(weighing);
+    holding.join().unwrap().unwrap();
+}
+
+// TEST_SCENARIO: eviction deletes outside the memory lock, so a resolve can reach an entry while it is chosen. An entry a resolve is reading is passed over rather than deleted under it, and taken by a later pass once it is free again; a resolve that comes after the delete finds it gone and fetches it again.
+#[test]
+fn eviction_passes_over_an_entry_a_resolve_is_reading() {
+    let f = Fixture::new("evict-reading", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 1;
+        c.hold_lease = Duration::ZERO;
+    });
+    let digest = digest_of(&cache, IMAGE);
+    let gate = cache.fetch_gate(&digest);
+    let reading = locked(&gate);
+    assert!(cache.evict(None).freed.is_empty());
+    assert!(cache.digest_entry(&digest).exists());
+    drop(reading);
+
+    assert_eq!(cache.evict(None).freed.len(), 1);
+    assert!(!cache.digest_entry(&digest).exists());
+    let exports = f.calls("export");
+    assert!(cache.resolve(IMAGE, &[]).fetched.is_some_and(|f| f.ok));
+    assert_eq!(f.calls("export"), exports + 1);
+}
+
+// TEST_SCENARIO: a node cache whose every tree is held cannot evict, so each further fetch would grow it without bound. Past its ceiling it refuses to fetch, as a capacity problem rather than a problem with the image, while an image it already holds still boots.
+#[test]
+fn a_node_cache_past_its_ceiling_refuses_to_fetch() {
+    let f = Fixture::new("ceiling", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 1;
+        c.fetch_ceiling = node_fetch_ceiling(1);
+    });
+    let held = digest_of(&cache, IMAGE);
+    let refused = cache.resolve("quay.io/x/other:1", &[]);
+    let error = refused.resolved.unwrap_err();
+    assert_eq!(failure_reason(&error), crate::api::REASON_OUT_OF_CAPACITY);
+    assert!(refused.fetched.is_none(), "a refused fetch was started");
+    assert_eq!(resolved(cache.resolve(IMAGE, &[])).digest, held);
 }
 
 // TEST_SCENARIO: the node service forgets every hold when it restarts. Until the runners have named theirs again, nothing is evicted, however far over budget the cache is.

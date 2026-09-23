@@ -112,9 +112,9 @@ pub fn entries(dir: &Path) -> Vec<Entry> {
     all
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: takes entries oldest-first until the cache is inside its budget, sparing anything held. A budget of zero or less evicts nothing, because a cache is refused rather than opened without one. Going over budget is the outcome when everything left is held: an image a machine is running is never freed to make room, and the caller reports it rather than taking one.
-pub fn evict(
-    dir: &Path,
+// UNIT_BOUNDARY_DESCRIPTION: chooses entries oldest-first until the cache would be inside its budget, sparing anything held. It only chooses: the caller deletes, outside any lock a resolve or a hold waits on. A budget of zero or less evicts nothing, because a cache is refused rather than opened without one. Going over budget is the outcome when everything left is held: an image a machine is running is never freed to make room, and the caller reports it rather than taking one.
+pub fn choose(
+    mut all: Vec<Entry>,
     keep: Option<&Path>,
     budget: i64,
     in_use: &BTreeSet<PathBuf>,
@@ -122,9 +122,9 @@ pub fn evict(
     if budget <= 0 {
         return Vec::new();
     }
-    let all = entries(dir);
+    all.sort_by_key(|entry| entry.modified);
     let mut used: u64 = all.iter().map(|entry| entry.size).sum();
-    let mut evicted = Vec::new();
+    let mut chosen = Vec::new();
     for entry in all {
         if used <= budget as u64 {
             break;
@@ -132,13 +132,16 @@ pub fn evict(
         if Some(entry.path.as_path()) == keep || in_use.contains(&entry.path) {
             continue;
         }
-        if fs::remove_dir_all(&entry.path).is_err() {
-            continue;
-        }
         used = used.saturating_sub(entry.size);
-        evicted.push(entry);
+        chosen.push(entry);
     }
-    evicted
+    chosen
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the digest an entry's directory is named for.
+pub fn entry_digest(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    is_digest_entry(name).then(|| name.replacen('_', ":", 1))
 }
 
 #[cfg(test)]
@@ -171,20 +174,23 @@ mod tests {
         fs::write(&archive, vec![0u8; 4096]).unwrap();
 
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
-        let evicted = evict(dir.path(), None, 2500, &in_use);
+        let found = entries(dir.path());
+        assert_eq!(found.len(), 3, "a staged archive is not an entry");
+        let chosen = choose(found, None, 2500, &in_use);
 
         assert_eq!(
-            evicted.into_iter().map(|e| e.path).collect::<Vec<_>>(),
+            chosen.into_iter().map(|e| e.path).collect::<Vec<_>>(),
             vec![oldest.clone()],
-            "the oldest write goes first, and only until it fits"
+            "the oldest write goes first, only until it fits, and never one a machine is running from"
         );
-        assert!(!oldest.exists());
         assert!(
-            held.exists(),
-            "an entry a machine is running from is never taken"
+            oldest.exists() && newest.exists(),
+            "choosing deletes nothing"
         );
-        assert!(newest.exists());
-        assert!(archive.exists(), "a staged archive is not an entry");
+        assert_eq!(
+            entry_digest(&oldest).as_deref(),
+            Some(format!("sha256:{}", "a".repeat(64)).as_str())
+        );
     }
 
     // TEST_SCENARIO: when everything left is held there is nothing to take, and the cache stays over its budget rather than freeing a running machine's filesystem. Going over is the reported outcome; taking one is not an outcome at all.
@@ -194,8 +200,7 @@ mod tests {
         let held = entry_of(dir.path(), &entry_name('a'), 4096, Duration::from_secs(300));
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
 
-        assert!(evict(dir.path(), None, 1, &in_use).is_empty());
-        assert!(held.exists());
+        assert!(choose(entries(dir.path()), None, 1, &in_use).is_empty());
     }
 
     // TEST_SCENARIO: a scratch tree is invisible to the budget and to eviction, so the one writer removes every one it finds when it opens the cache. It is the only writer, so any scratch tree there belongs to a process that is gone. Finished entries stay.

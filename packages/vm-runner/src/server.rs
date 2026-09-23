@@ -179,6 +179,7 @@ impl Server {
                 ref_fresh: REF_FRESH,
                 hold_lease: HOLD_LEASE,
                 hold_grace: Duration::ZERO,
+                fetch_ceiling: None,
             })),
         };
         let server = Arc::new(Self {

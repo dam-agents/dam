@@ -4,7 +4,7 @@ use std::sync::Arc;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use vm_runner::cacheapi;
-use vm_runner::imagecache::{CacheConfig, ImageCache, HOLD_LEASE, REF_FRESH};
+use vm_runner::imagecache::{node_fetch_ceiling, CacheConfig, ImageCache, HOLD_LEASE, REF_FRESH};
 use vm_runner::preload::{self, parse_duration, parse_quantity};
 
 // UNIT_BOUNDARY_DESCRIPTION: the flags the chart's DaemonSet sets: where the node's cache directory is mounted and the socket in it runners reach this service on, the budget, the harness images to preload and how often, and the directory the install's default pull Secrets are mounted in when it names any.
@@ -71,6 +71,7 @@ fn main() -> anyhow::Result<()> {
                 ref_fresh: REF_FRESH,
                 hold_lease: HOLD_LEASE,
                 hold_grace: HOLD_LEASE,
+                fetch_ceiling: node_fetch_ceiling(budget),
             }));
             tracing::info!(image_dir = %args.image_dir.display(), socket = %args.socket.display(), images = images.len(), pull_secrets = secrets.is_some(), interval = %args.interval, "VM image cache serving");
             let preloading = tokio::spawn(preload::run(
