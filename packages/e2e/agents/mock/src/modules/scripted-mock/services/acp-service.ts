@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { isRequest, parseFrame, type JsonRpcId } from "../domain/frames.js";
+import {
+  isRequest,
+  isResponse,
+  parseFrame,
+  type JsonRpcId,
+} from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
 import { recordPrompt, type ProxyFetch } from "./control-service.js";
 import type {
@@ -12,6 +17,8 @@ import type {
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
+const ASK_DIRECTIVE = /__ASK__\s+(\S+)/;
+const ASK_TIMEOUT_MS = 30_000;
 const EXPERIMENT_LAUNCH_DIRECTIVE =
   /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
 
@@ -33,6 +40,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
     deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
   const newSessionId = deps.newSessionId ?? (() => randomUUID());
   const knownSessions = new Set<string>();
+  const pendingAsks = new Map<JsonRpcId, (outcome: string) => void>();
 
   deps.channel.onLine((line) => {
     void handleLine(line);
@@ -40,7 +48,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
 
   async function handleLine(line: string): Promise<void> {
     const frame = parseFrame(line);
-    if (!frame || !isRequest(frame)) return;
+    if (!frame) return;
+    if (isResponse(frame)) {
+      const settle = pendingAsks.get(frame.id);
+      if (settle) {
+        pendingAsks.delete(frame.id);
+        settle(askOutcomeOf(frame.result));
+      }
+      return;
+    }
+    if (!isRequest(frame)) return;
     const { id, method, params } = frame;
     try {
       switch (method) {
@@ -132,6 +149,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
 
+    const askTool = ASK_DIRECTIVE.exec(promptStr)?.[1];
+    if (askTool) {
+      const outcome = await askPermission(sid, askTool);
+      const text = `permission ${outcome}`;
+      emitText(sid, text);
+      await maybeSlackReply(text, slackThreadTs);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
     const pyrunPath = PYRUN_DIRECTIVE.exec(promptStr)?.[1];
     if (pyrunPath) {
       const { code, output } = await deps.processRunner.run({
@@ -162,6 +189,34 @@ export function startAcpService(deps: AcpServiceDeps): void {
   ): Promise<void> {
     if (!threadTs || !deps.slackReply || text.trim() === "") return;
     await deps.slackReply({ text, threadTs });
+  }
+
+  function askPermission(sid: string, toolName: string): Promise<string> {
+    const askId = `ask-${newSessionId()}`;
+    return new Promise<string>((resolve) => {
+      const settle = (outcome: string) => {
+        clearTimeout(timer);
+        resolve(outcome);
+      };
+      const timer = setTimeout(() => {
+        pendingAsks.delete(askId);
+        resolve("unanswered");
+      }, ASK_TIMEOUT_MS);
+      pendingAsks.set(askId, settle);
+      deps.channel.send({
+        jsonrpc: "2.0",
+        id: askId,
+        method: "session/request_permission",
+        params: {
+          sessionId: sid,
+          toolCall: { toolCallId: askId, title: toolName },
+          options: [
+            { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+            { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+          ],
+        },
+      });
+    });
   }
 
   function emitText(sid: string, text: string): void {
@@ -210,6 +265,17 @@ export function startAcpService(deps: AcpServiceDeps): void {
   function notify(method: string, params: unknown): void {
     deps.channel.send({ jsonrpc: "2.0", method, params });
   }
+}
+
+function askOutcomeOf(result: unknown): string {
+  const outcome = (
+    result as { outcome?: { outcome?: unknown; optionId?: unknown } }
+  )?.outcome;
+  if (outcome?.outcome === "cancelled") return "cancelled";
+  if (outcome?.outcome === "selected" && typeof outcome.optionId === "string") {
+    return outcome.optionId;
+  }
+  return "unknown";
 }
 
 function extractSessionId(params: unknown): string | null {

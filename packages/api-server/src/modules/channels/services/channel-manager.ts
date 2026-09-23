@@ -29,6 +29,8 @@ export interface ChannelAttachment {
 export interface PostMessageOptions {
   conversationId?: string;
   attachment?: ChannelAttachment;
+  unfurlLinks?: boolean;
+  unfurlMedia?: boolean;
 }
 
 export interface ChannelReply {
@@ -37,6 +39,8 @@ export interface ChannelReply {
   conversationId?: string;
   alsoSendToChannel?: boolean;
   attachment?: ChannelAttachment;
+  unfurlLinks?: boolean;
+  unfurlMedia?: boolean;
 }
 
 export interface ChannelReaction {

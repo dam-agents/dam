@@ -353,14 +353,15 @@ export function createStarterKitsService(
         throw err;
       }
       await deps.wakeAgent(agent.id);
-      if (createInput.kind)
-        emit({
-          type: EventType.KindedAgentCreated,
-          agentId: agent.id,
-          actorSub: deps.owner,
-          surface: deps.surface,
-          kind: createInput.kind,
-        });
+      emit({
+        type: EventType.StarterKitApplied,
+        agentId: agent.id,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        catalog: loaded.catalog,
+        kitId: kit.id,
+        version,
+      });
 
       let skills: StarterKitApplyResult["skills"] = null;
       let skillsError: string | null = null;
