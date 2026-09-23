@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { match } from "ts-pattern";
 import {
   platformRunResultResponseSchema,
   type AcpPermissionOption,
@@ -232,13 +233,19 @@ export interface AcpClient {
   turnStatus(sessionId: string): Promise<AcpTurnStatus>;
 }
 
+function isRefusal(kind: AcpPermissionOption["kind"]): boolean {
+  return match(kind)
+    .with("reject_once", "reject_always", () => true)
+    .with("allow_once", "allow_always", undefined, () => false)
+    .exhaustive();
+}
+
 function rejectOptionId(
   options: readonly AcpPermissionOption[],
 ): string | null {
-  const once = options.find((option) => option.kind === "reject_once");
-  if (once) return once.optionId;
-  const any = options.find((option) => option.kind?.startsWith("reject"));
-  return any?.optionId ?? null;
+  const preferred = options.find((option) => option.kind === "reject_once");
+  const refusal = preferred ?? options.find((option) => isRefusal(option.kind));
+  return refusal?.optionId ?? null;
 }
 
 async function withAcpConnection<T>(
