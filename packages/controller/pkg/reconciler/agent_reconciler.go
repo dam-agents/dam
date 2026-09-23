@@ -51,6 +51,9 @@ type AgentReconciler struct {
 	vmRunning      sync.Map
 	runnerResized  sync.Map
 	resizeNotices  sync.Map
+	preflightMu    sync.Mutex
+	preflight      vmPreflightResult
+	preflightDone  bool
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {

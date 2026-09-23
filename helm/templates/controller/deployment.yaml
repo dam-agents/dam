@@ -85,7 +85,7 @@ spec:
                   "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
-                  "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "")
+                  "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources
                   "canaryImage" ($r.canaryImage | default "")
