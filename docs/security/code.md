@@ -11,9 +11,9 @@ GitHub **CodeQL** runs SAST (static application security testing) from the repos
 - **Rust** — vm-runner
 - **GitHub Actions** — the workflows themselves
 
-Each language's workflow runs on pushes to `main`, weekly, and on a PR only when the PR changes a file of that language. For Go and JavaScript / TypeScript the same job also runs the **Code Quality** queries on the same database, so the quality results cost no separate job.
+Each language's workflow runs on pushes to `main`, weekly, and on a PR only when the PR changes a file of that language. For Go and JavaScript / TypeScript the same job also runs CodeQL's `code-quality` query suite (maintainability and reliability) next to the security suite, so the quality results cost no separate job. GitHub's managed Code Quality setup is off: the CodeQL action runs it only in the workflow GitHub generates for it, where it would take a second job per language.
 
-Security findings surface in **GitHub → Security → Code scanning**, quality findings under **Code quality**. PRs that introduce new findings are flagged in the review.
+Security and quality findings both surface as alerts in **GitHub → Security → Code scanning**. PRs that introduce new findings are flagged in the review.
 
 ## Pre-commit hardening
 

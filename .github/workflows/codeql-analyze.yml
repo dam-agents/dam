@@ -9,10 +9,11 @@ name: CodeQL analyze
 # The category matches default setup's (`/language:<language>`), so alerts keep
 # their history across the switch.
 #
-# A caller that sets `quality` also runs the Code Quality queries on the same
-# database and uploads both results, so Code Quality holds no runner slot of its
-# own and rides the same path filter. `analysis-kinds` is an input the CodeQL
-# action still calls internal, so an action bump can change it.
+# A caller that sets `quality` also runs the `code-quality` query suite next to
+# the default security suite, on the same database and in the same upload, so
+# its findings are code scanning alerts. GitHub's Code Quality product itself
+# cannot run here: the action accepts `analysis-kinds: code-quality` only in the
+# workflow GitHub generates, and drops it from any other.
 
 on:
   workflow_call:
@@ -52,7 +53,7 @@ jobs:
         with:
           languages: ${{ inputs.language }}
           build-mode: ${{ inputs.build-mode }}
-          analysis-kinds: ${{ inputs.quality && 'code-scanning,code-quality' || 'code-scanning' }}
+          queries: ${{ inputs.quality && 'code-quality' || '' }}
       - uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           category: /language:${{ inputs.language }}
