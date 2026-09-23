@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   avatarDataUri,
   avatarSvg,
-} from "../../modules/agents/lib/avatar/svg.js";
+} from "api-server-api/avatar/svg";
 import {
   AVATAR_SCLERA,
   avatarTraits,
-} from "../../modules/agents/lib/avatar/traits.js";
+} from "api-server-api/avatar/traits";
 
 const NAMES = Array.from({ length: 500 }, (_, i) => `agent-${i}`);
 

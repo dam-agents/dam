@@ -995,6 +995,12 @@ apiServer:
   # t.me connect links and for mention detection; when empty the api-server
   # discovers it at startup via the Bot API.
   telegramBotName: ""
+  # -- ImgBB API key (https://api.imgbb.com). Slack fetches a message's icon
+  # from the public internet, so agent avatars are uploaded to ImgBB for Slack
+  # replies to show them. The images are public to anyone with the URL and
+  # named by a hash, never by the agent name. Leave empty and Slack replies
+  # still carry the agent's name, with the app's own icon.
+  imgbbApiKey: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the
   # usage reporting endpoints. Disable to stop all writes (the read

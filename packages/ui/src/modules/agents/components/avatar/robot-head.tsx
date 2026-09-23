@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 import { getUser } from "../../../../auth.js";
-import { avatarDataUri } from "../../lib/avatar/svg.js";
-import { avatarKey } from "../../lib/avatar/traits.js";
+import { avatarDataUri } from "api-server-api/avatar/svg";
+import { avatarKey } from "api-server-api/avatar/traits";
 
 export interface RobotHeadProps {
   name: string;

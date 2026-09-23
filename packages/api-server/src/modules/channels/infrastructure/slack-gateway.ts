@@ -116,6 +116,8 @@ export interface SlackPostMessage {
   teamId: SlackWorkspace;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
+  username?: string;
+  iconUrl?: string;
 }
 
 export interface SlackPostEphemeral {

@@ -328,6 +328,8 @@ export function createBoltSlackGateway(
         ...(args.unfurlMedia !== undefined
           ? { unfurl_media: args.unfurlMedia }
           : {}),
+        ...(args.username !== undefined ? { username: args.username } : {}),
+        ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
       } as ChatPostMessageArgs);
     },
 

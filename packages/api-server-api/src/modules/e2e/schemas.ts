@@ -148,6 +148,8 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
       replyBroadcast: z.boolean().optional(),
       unfurlLinks: z.boolean().optional(),
       unfurlMedia: z.boolean().optional(),
+      username: z.string().optional(),
+      iconUrl: z.string().optional(),
     })
     .strict(),
   z

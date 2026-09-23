@@ -5,7 +5,7 @@ import {
   clearance,
   HEAD_GEOMETRY,
   samplePath,
-} from "../../modules/agents/lib/avatar/geometry.js";
+} from "api-server-api/avatar/geometry";
 import {
   bugEyeCenter,
   EDGE_MARGIN,
@@ -20,7 +20,7 @@ import {
   visorBox,
   wingPath,
   winkLayout,
-} from "../../modules/agents/lib/avatar/layout.js";
+} from "api-server-api/avatar/layout";
 import {
   AVATAR_GAP,
   AVATAR_PALETTES,
@@ -30,7 +30,7 @@ import {
   DERPS,
   HEAD_SHAPES,
   hueDistance,
-} from "../../modules/agents/lib/avatar/traits.js";
+} from "api-server-api/avatar/traits";
 
 const NAMES = Array.from({ length: 1000 }, (_, i) => `agent-${i}`);
 const ALL = NAMES.map((name) => ({ name, traits: avatarTraits(name) }));
