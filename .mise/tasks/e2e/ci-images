@@ -20,11 +20,11 @@ set -e
 
 # CI_IMAGES_JOBS names the jobs e2e needs finished, separated by `|`. cd.yml
 # sets it: the job names differ between a PR, which builds in one job, and
-# every other run, which builds a matrix. `detect stale images` is always on
-# it: when it fails, the build jobs never start under their names, and nothing
-# else would end the wait. `skipped` counts as done, since a PR skips whichever
-# mock build it does not need; an image a skipped job did not make fails the
-# pull below instead.
+# every other run, which builds one job per arch. `detect stale images` is
+# always on it: when it fails, the jobs that need it never start under their
+# names, and nothing else would end the wait. `skipped` counts as done, since
+# a PR skips whichever mock build it does not need; an image a skipped job did
+# not make fails the pull below instead.
 : "${CI_IMAGES_JOBS:?}"
 LOADED="controller api-server ui keycloak"
 IFS='|' read -r -a JOBS <<< "$CI_IMAGES_JOBS"
@@ -54,21 +54,20 @@ while :; do
   sleep 10
 done
 
-mkdir -p /tmp/digests
-for c in $LOADED; do
-  gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "digests-$c-amd64" -D "/tmp/digests/digests-$c-amd64"
-done
+# One artifact holds every image's digest, at <component>/<hex>; see
+# image:ci-build.
+gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
 
 pids=()
 for c in $LOADED; do
-  docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
+  docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")" &
   pids+=($!)
 done
 docker pull "$IMAGE_PREFIX/mock:$GITHUB_SHA" &
 pids+=($!)
 for pid in "${pids[@]}"; do wait "$pid"; done
 for c in $LOADED; do
-  docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" "platform-$c:latest"
+  docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")" "platform-$c:latest"
 done
 docker tag "$IMAGE_PREFIX/mock:$GITHUB_SHA" "platform-mock:latest"
 

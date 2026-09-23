@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+#MISE description="CI only: build several component images for one arch in one job. See the usage block below."
+#MISE hide=true
+# cd.yml builds all of one arch's images, agents or workloads in one job
+# instead of one job per image. Each job costs a runner slot and a turn in the
+# shared queue, which is what a run waited on, not the builds.
+#
+# Usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<output>]...
+#   <output>  digest (default): push by digest and write /tmp/digests/<component>/<hex>
+#             cacheonly: build without exporting, to prove it builds
+#             sha: push <component>:$GITHUB_SHA
+#   --serial      build one at a time, for images too large to build side by
+#                 side on one runner's disk; the builder is pruned between
+#                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
+#   --base-image  BASE_IMAGE for the components built on a base (mock, agents,
+#                 workloads)
+# Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
+# registry buildcache (main, tags, schedule). Every build runs even after one
+# fails; the exit status names the failures.
+#
+# By path, like image:resolve: the agent and workload jobs do not set up mise.
+set -uo pipefail
+
+serial=false base=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --serial) serial=true; shift ;;
+    --base-image) base="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+arch="${1:?usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<output>]...}"; shift
+[ $# -gt 0 ] || { echo "ci-build: no components" >&2; exit 2; }
+: "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}"
+
+mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
+
+# spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
+spec() {
+  case "$1" in
+    controller) echo "packages/controller/Dockerfile packages/controller no" ;;
+    # The runner is the Rust crate, built from a second named context.
+    vm-runner) echo "packages/controller/Dockerfile.vm-runner packages/controller no vm-runner=packages/vm-runner" ;;
+    api-server) echo "packages/api-server/Dockerfile . no" ;;
+    ui) echo "packages/ui/Dockerfile . no" ;;
+    keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
+    mock) echo "packages/e2e/agents/mock/Dockerfile . yes" ;;
+    *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
+       echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
+  esac
+}
+
+output_for() {
+  case "$2" in
+    digest) echo "type=image,name=$IMAGE_PREFIX/$1,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true" ;;
+    cacheonly) echo "type=cacheonly" ;;
+    sha) echo "type=image,name=$IMAGE_PREFIX/$1:$GITHUB_SHA,push=true" ;;
+    *) echo "ci-build: unknown output $2" >&2; return 1 ;;
+  esac
+}
+
+build_one() {
+  local c=$1 kind=$2 s file ctx takes extra out args=()
+  s="$(spec "$c")" || return 1
+  read -r file ctx takes extra <<< "$s"
+  [ -z "$extra" ] || args+=(--build-context "$extra")
+  out="$(output_for "$c" "$kind")" || return 1
+  if [ "$takes" = yes ]; then
+    [ -n "$base" ] || { echo "ci-build: $c needs --base-image" >&2; return 1; }
+    args+=(--build-arg "BASE_IMAGE=$base")
+  fi
+  if [ "${CACHE_TO:-}" = 1 ]; then
+    args+=(--cache-to "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch,mode=max,image-manifest=true")
+  fi
+  if [ "$c" = keycloak ]; then
+    # The image bakes in the theme JAR.
+    mise run //packages/keycloak-theme:build || return 1
+  fi
+  docker buildx build --platform "linux/$arch" -f "$file" \
+    --cache-from "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch" \
+    --output "$out" --metadata-file "/tmp/ci-build/meta/$c.json" "${args[@]}" "$ctx"
+}
+
+names=() kinds=()
+for arg in "$@"; do
+  names+=("${arg%%:*}")
+  case "$arg" in *:*) kinds+=("${arg#*:}") ;; *) kinds+=(digest) ;; esac
+done
+
+failed=()
+if [ "$serial" = true ]; then
+  for i in "${!names[@]}"; do
+    echo "::group::${names[$i]}"
+    SECONDS=0
+    build_one "${names[$i]}" "${kinds[$i]}" 2>&1 || failed+=("${names[$i]}")
+    echo "${names[$i]}: ${SECONDS}s"
+    echo "::endgroup::"
+    free_gb=$(( $(df --output=avail -k / | tail -1) / 1048576 ))
+    if [ "$free_gb" -lt "${CI_BUILD_MIN_FREE_GB:-20}" ]; then
+      echo "${free_gb} GB free: pruning the builder"
+      docker buildx prune --all --force >/dev/null 2>&1 || true
+    fi
+  done
+else
+  pids=()
+  for i in "${!names[@]}"; do
+    build_one "${names[$i]}" "${kinds[$i]}" > "/tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
+    pids+=($!)
+  done
+  for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
+  for n in "${names[@]}"; do
+    echo "::group::$n"; cat "/tmp/ci-build/logs/$n.log"; echo "::endgroup::"
+  done
+fi
+
+if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to build: ${failed[*]}"; exit 1; fi
+
+for i in "${!names[@]}"; do
+  [ "${kinds[$i]}" = digest ] || continue
+  d="$(jq -r '."containerimage.digest"' "/tmp/ci-build/meta/${names[$i]}.json")"
+  case "$d" in sha256:*) ;; *) echo "::error::no digest for ${names[$i]}"; exit 1 ;; esac
+  mkdir -p "/tmp/digests/${names[$i]}" && touch "/tmp/digests/${names[$i]}/${d#sha256:}"
+done
