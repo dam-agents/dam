@@ -877,7 +877,13 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || true
+          rc=0
+          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+            echo "::error::govulncheck exited $rc, so this is not a scan result"
+            exit 1
+          fi
+          printf '%s' "$results" | jq -se 'any(.[]; .config != null)' > /dev/null
           out=$(printf '%s' "$results" | jq -s '
             [ .[]
               | select(.finding != null and .finding.trace[0].function != null)
@@ -958,6 +964,7 @@ jobs:
         run: |
           set -euo pipefail
           results=$(mise x --no-deps -- pnpm audit --prod --json) || true
+          printf '%s' "$results" | jq -e 'has("advisories") and has("metadata")' > /dev/null
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -1131,9 +1138,16 @@ jobs:
       - name: Reconcile summary issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCANNERS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
           shopt -s nullglob
+
+          unfinished=$(jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")' <<<"$SCANNERS")
+          if [ -n "$unfinished" ]; then
+            echo "::warning::scanner(s) did not finish: $unfinished; the summary issue is left as it is"
+            exit 0
+          fi
 
           files=(findings/*/findings.json)
           if [ "${#files[@]}" -eq 0 ]; then
