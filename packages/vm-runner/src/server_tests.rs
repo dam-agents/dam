@@ -859,6 +859,23 @@ async fn a_registry_credential_reaches_crane_alone() {
     assert!(!entry.join(ROOTFS_DIR).join(PRIVATE_FILE).exists());
 }
 
+// TEST_SCENARIO: an anonymous probe that failed at fetch time — a registry briefly unreachable, a rate limit — marks a public image private. The next machine without credentials asks again, and an anonymous read that succeeds clears the marker, so the image goes back to booting from the cache with the registry down.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_public_image_marked_private_by_a_failed_probe_is_cleared() {
+    let h = Harness::new("private-heals");
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let marker = cache_path(&h.dir.join("images"), "quay.io/x/vm:1").join(PRIVATE_FILE);
+    fs::write(&marker, "").unwrap();
+
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert!(
+        !marker.exists(),
+        "an anonymous read that succeeded left the image private"
+    );
+}
+
 // TEST_SCENARIO: runners of every owner on a node share its cache, so an image one owner fetched with credentials is not another's to boot by naming it. A machine with no credential is refused the private entry as an image problem; one whose credential still reads the manifest boots the tree already there without fetching it again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_private_image_is_reused_only_with_credentials_that_read_it() {

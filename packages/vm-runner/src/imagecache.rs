@@ -111,13 +111,34 @@ impl ImageCache {
                 "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
             )));
         }
-        let auth = if auth.is_empty() { ANONYMOUS } else { auth };
+        if auth.is_empty() {
+            if !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
+                return Err(unusable(format!(
+                    "{reference} is cached from a private registry, and this machine has no pull credentials that could read its manifest"
+                )));
+            }
+            self.mark_public(reference);
+            return Ok(());
+        }
         if !fetch::readable(&self.crane, reference, auth, &self.lifetime) {
             return Err(unusable(format!(
                 "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
             )));
         }
         Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the private marker is written when the anonymous probe at fetch time fails, and a probe fails for a registry that was briefly unreachable or rate-limiting just as it does for one that refused. So the answer is revisable: an anonymous read that succeeds later removes the marker, and a mismarked public image costs one extra read instead of a live registry for every boot until it is evicted.
+    fn mark_public(&self, reference: &str) {
+        match fs::remove_file(self.entry(reference).join(PRIVATE_FILE)) {
+            Ok(()) => {
+                tracing::info!(image = %reference.replace(['\n', '\r'], " "), "image cache: an entry marked private reads anonymously, so it is public after all")
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(image = %reference.replace(['\n', '\r'], " "), error = %e, "image cache: cannot clear the private marker of an entry that reads anonymously")
+            }
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Processes on one node directory may unpack the same image at once, so a loser that finds a complete entry keeps it — both wrote the same image. An entry with no launch record is from a release that stored none, and is replaced unless a machine here or elsewhere is running from it.
