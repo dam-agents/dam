@@ -140,7 +140,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- define "platform.validate.vmValuesTheControllerCanUse" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
-{{- $cidr := `^(([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
+{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
 {{- range $field := list "egressCidrs" "egressExceptCidrs" "ingressCidrs" -}}
 {{- range (index $v.runner $field | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
