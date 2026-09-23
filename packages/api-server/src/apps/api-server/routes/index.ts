@@ -13,6 +13,7 @@ import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastruct
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import { createBrandRoutes } from "./brand.js";
+import { createPublicAvatarRoutes } from "./public-avatars.js";
 import { createPublicAgentRoutes } from "../../../modules/agents/index.js";
 
 type App = Hono<{ Variables: ApiVariables }>;
@@ -49,6 +50,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     "/api/public",
     createPublicAgentRoutes({ service: boot.publicAgentPageService }),
   );
+  app.route("/api/public", createPublicAvatarRoutes());
 
   app.route(
     "/api/oauth",

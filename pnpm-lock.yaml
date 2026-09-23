@@ -256,6 +256,9 @@ importers:
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.16.0(typescript@6.0.2)
+      agent-avatar:
+        specifier: workspace:*
+        version: link:../agent-avatar
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api

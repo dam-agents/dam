@@ -8,6 +8,7 @@ export default defineConfig({
   splitting: false,
   clean: true,
   noExternal: [
+    "agent-avatar",
     "agent-runtime-api",
     "api-server-api",
     "db",
