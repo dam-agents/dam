@@ -38,3 +38,10 @@ export function isRequest(frame: JsonRpcFrame): frame is JsonRpcRequest {
   const f = frame as Partial<JsonRpcRequest>;
   return f.id !== undefined && typeof f.method === "string";
 }
+
+export function isResponse(frame: JsonRpcFrame): frame is JsonRpcResponse {
+  const f = frame as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
+  if (f.id === undefined) return false;
+  if (f.method !== undefined) return false;
+  return f.result !== undefined || f.error !== undefined;
+}
