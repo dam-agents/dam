@@ -136,12 +136,13 @@ pub fn allocate_port(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testdir::TempDir;
     use std::os::unix::fs::PermissionsExt;
 
     // TEST_SCENARIO: the modes this module writes with, checked on the files themselves rather than trusted to the constants. Both go through the shared writer, which states the mode instead of taking the umask — so an install with a tighter umask writes the same state directory as one with the usual umask.
     #[test]
     fn a_machines_state_is_written_with_the_modes_it_states() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         fs::create_dir_all(dir.path().join("agent-a")).unwrap();
 
         write_spec(dir.path(), "agent-a", &MachineSpec::default()).unwrap();
@@ -185,7 +186,7 @@ mod tests {
     // TEST_SCENARIO: a spec is read back by a later process, so it is checked on the way out and not only on the way in. A reference that could name something outside the cache is refused however it came to be on disk — the file is as untrusted as the request that made it.
     #[test]
     fn a_spec_naming_an_image_that_could_escape_the_cache_does_not_read_back() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         let state = dir.path();
         fs::create_dir_all(state.join("agent-a")).unwrap();
 
@@ -226,7 +227,7 @@ mod tests {
     // TEST_SCENARIO: a spec's env carries the values of the Agent's secretRef Secret, which the controller copies in whole, so this file holds secret material in plaintext — and it is the only piece of machine state that does. An ordinary write takes the process umask and lands world-readable, which is what every other file here is and what this one must not be. It is written 0600 and nothing else here is; the mode is asserted rather than assumed, because nothing downstream would notice it drifting.
     #[test]
     fn the_spec_is_not_readable_by_anyone_but_the_runner() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         fs::create_dir_all(dir.path().join("agent-a")).unwrap();
 
         write_spec(
@@ -256,7 +257,7 @@ mod tests {
     // TEST_SCENARIO: the stored spec says what shape a machine has, never whether it should be up. A runner restarting reads these files to learn what it is running, and one that believed a stale running flag would start machines their owner had stopped.
     #[test]
     fn a_stored_spec_never_says_the_machine_should_be_running() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         fs::create_dir_all(dir.path().join("agent-a")).unwrap();
 
         write_spec(
@@ -285,7 +286,7 @@ mod tests {
     // TEST_SCENARIO: the controller sends the machine's registry credential on every spec, so that the runner can fetch a private image. The credential is for the fetch only. A stored spec that kept it would put a registry credential on the state volume for as long as the machine exists.
     #[test]
     fn a_stored_spec_never_keeps_the_registry_credential() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         fs::create_dir_all(dir.path().join("agent-a")).unwrap();
 
         write_spec(
@@ -309,7 +310,7 @@ mod tests {
     // TEST_SCENARIO: ports are allocated from what the other machines' files say, not from memory, because the runner is restarted and the machines are not. A machine that already has one keeps it — a restart that reassigned ports would publish a machine somewhere its controller is not looking.
     #[test]
     fn a_port_is_allocated_around_the_ones_on_disk_and_never_reassigned() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         let state = dir.path();
         for id in ["agent-a", "agent-b"] {
             fs::create_dir_all(state.join(id)).unwrap();
@@ -339,7 +340,7 @@ mod tests {
     // TEST_SCENARIO: a port belongs to a machine that exists. The server writes the share before it ever allocates, so the directory is always there by then; a port file written into a directory this function had created itself would leave something `machine_ids` reads as a machine — holding a port, counted by the allocator, with no spec and no share behind it.
     #[test]
     fn a_machine_that_was_never_set_up_gets_no_port_and_no_directory() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
 
         assert!(
             allocate_port(dir.path(), "agent-a", 31000..=31001).is_err(),
@@ -355,7 +356,7 @@ mod tests {
     // TEST_SCENARIO: a runner reads its machines off the disk, so whatever else is in the state directory must not read as one. That includes the names it would itself refuse, which is what stops a stray directory becoming a machine nothing can address.
     #[test]
     fn only_directories_named_like_machines_read_as_machines() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("state");
         let state = dir.path();
         fs::create_dir_all(state.join("agent-a")).unwrap();
         fs::create_dir_all(state.join("Not-A-Machine")).unwrap();
@@ -372,29 +373,5 @@ mod tests {
                 .is_empty(),
             "a runner that has made no machine yet has none, rather than failing to say"
         );
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new() -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "vm-runner-state-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

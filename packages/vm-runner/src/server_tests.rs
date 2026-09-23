@@ -560,7 +560,7 @@ async fn a_delete_waits_for_the_action_in_flight_and_drops_the_spec_behind_it() 
     assert!(!h.dir.join("machines/m1").exists());
 }
 
-// TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those, so a machine must never keep running on an old one. A running machine is restarted onto the new allowlist; a stopped one is started onto it, where it used to be left stopped for good.
+// TEST_SCENARIO: the allowlist is the gateway's ClusterIP, and Kubernetes reuses those, so a machine must never keep running on an old one. A running machine is restarted onto the new allowlist; a stopped one is started onto it rather than left stopped.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_allowlist_is_applied_by_restarting_the_machine() {
     let h = Harness::new("egress");

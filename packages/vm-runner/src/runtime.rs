@@ -235,7 +235,7 @@ pub fn timed<T>(
     let started = Instant::now();
     let result = run();
     let elapsed = started.elapsed();
-    let duration_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let duration_ms = crate::elapsed_ms(started);
     match result {
         Ok(value) => {
             if elapsed > SLOW_OP {
@@ -256,6 +256,7 @@ pub fn timed<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testdir::TempDir;
     use std::path::PathBuf;
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {
@@ -392,11 +393,13 @@ mod tests {
     fn a_vmm_is_found_by_its_machines_directory_and_no_other() {
         let proc = TempDir::new("orphans");
         let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
-        proc.process(
+        process(
+            &proc,
             100,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
         );
-        proc.process(
+        process(
+            &proc,
             101,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc1234/boot-config.json",
         );
@@ -412,7 +415,8 @@ mod tests {
     fn a_start_waits_for_the_vmm_its_stop_left_behind() {
         let proc = TempDir::new("gone");
         let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
-        proc.process(
+        process(
+            &proc,
             100,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
         );
@@ -476,29 +480,9 @@ mod tests {
         assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-runtime-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-        fn process(&self, pid: i32, cmdline: &str) {
-            let dir = self.0.join(pid.to_string());
-            fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("cmdline"), cmdline).unwrap();
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
+    fn process(proc: &TempDir, pid: i32, cmdline: &str) {
+        let dir = proc.path().join(pid.to_string());
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("cmdline"), cmdline).unwrap();
     }
 }

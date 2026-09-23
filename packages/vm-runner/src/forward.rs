@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::locked;
+
 // UNIT_BOUNDARY_DESCRIPTION: publishes each machine's agent port on a port of the runner pod, which is what the agent's Service maps onto. smolvm publishes the guest's port on loopback only, at the machine's port plus LOOPBACK_OFFSET; this forwards the pod-facing port there. Who may dial it is for the runner's NetworkPolicy to decide. It also answers whether a guest is up, by asking its health endpoint on that loopback port.
 
 // UNIT_BOUNDARY_DESCRIPTION: where smolvm publishes a machine's guest port, relative to the port the runner publishes it on. The pod-facing port is the one the Service reaches; the loopback one is never reachable from outside the pod.
@@ -37,7 +39,7 @@ impl Forwarder {
 
     // UNIT_BOUNDARY_DESCRIPTION: publishes one machine's port, or does nothing when it is already published. Called on every ensure, because a runner that restarted has lost its listeners while its machines' ports are still on disk.
     pub fn publish(&self, id: &str, port: u16) -> anyhow::Result<()> {
-        let mut published = self.published.lock().unwrap_or_else(|e| e.into_inner());
+        let mut published = locked(&self.published);
         if published.contains_key(id) {
             return Ok(());
         }
@@ -77,24 +79,22 @@ impl Forwarder {
 
     // UNIT_BOUNDARY_DESCRIPTION: stops publishing one machine. Connections already open are left to finish; the port stops accepting new ones.
     pub fn unpublish(&self, id: &str) {
-        let mut published = self.published.lock().unwrap_or_else(|e| e.into_inner());
+        let mut published = locked(&self.published);
         if let Some(stop) = published.remove(id) {
             stop.cancel();
         }
     }
 
     pub fn unpublish_all(&self) {
-        let mut published = self.published.lock().unwrap_or_else(|e| e.into_inner());
+        let mut published = locked(&self.published);
         for (_, stop) in published.drain() {
             stop.cancel();
         }
     }
 
+    #[cfg(test)]
     pub fn is_published(&self, id: &str) -> bool {
-        self.published
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key(id)
+        locked(&self.published).contains_key(id)
     }
 
     fn bind(&self, port: u16) -> std::io::Result<std::net::TcpListener> {

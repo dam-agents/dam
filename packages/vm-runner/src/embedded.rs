@@ -116,7 +116,7 @@ impl Runtime for Smolvm {
             .validate()?;
             let grown = grown_storage(applied, desired);
             if let Some(gib) = grown {
-                let disk = vm_data_dir(id).join(STORAGE_DISK_FILENAME);
+                let disk = storage_disk_path(id);
                 if disk.exists() {
                     expand_disk::<Storage>(&disk, gib)?;
                 }
@@ -246,11 +246,11 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
 
 // UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing, and smolvm formats it on first boot as it does any other size.
 fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
-    StorageDisk::open_or_create_at(&vm_data_dir(id).join(STORAGE_DISK_FILENAME), gib)?;
+    StorageDisk::open_or_create_at(&storage_disk_path(id), gib)?;
     Ok(())
 }
 
-pub fn storage_disk_path(id: &str) -> PathBuf {
+fn storage_disk_path(id: &str) -> PathBuf {
     vm_data_dir(id).join(STORAGE_DISK_FILENAME)
 }
 

@@ -11,9 +11,6 @@ pub const PARTIAL_PREFIX: &str = ".unpack-";
 // UNIT_BOUNDARY_DESCRIPTION: the longest a single image fetch may run.
 pub const PULL_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a tag's resolution is trusted without asking the registry again.
-pub const REF_FRESH: Duration = Duration::from_secs(10 * 60);
-
 // UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages the `docker save` archive of an image: the reference with the three characters a path segment must not carry replaced by an underscore, and `.tar` after it. `cluster:install` writes the archive under this name, so both must replace the same characters. The runner only reads these archives, and eviction never counts one.
 pub fn archive_path(image_dir: &Path, image: &str) -> PathBuf {
     image_dir.join(format!("{}.tar", image.replace(['/', ':', '@'], "_")))
@@ -147,6 +144,7 @@ pub fn evict(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: an install with no registry stages each image's archive under a name `cluster:install` makes by replacing the three characters a reference carries that a path segment cannot. The runner has to look for the same name, or it finds no archive and the machine has nothing to boot.
     #[test]
@@ -165,7 +163,7 @@ mod tests {
     // TEST_SCENARIO: eviction takes the oldest write first and stops as soon as the cache is inside its budget, and it never takes an entry something holds — which is the whole safety property, because an unpacked image is the root filesystem of every machine running it. Nothing that is not named like an entry is counted or taken, such as a staged archive.
     #[test]
     fn eviction_takes_the_oldest_unheld_entries_until_it_is_inside_the_budget() {
-        let dir = tempdir();
+        let dir = TempDir::new("cache");
         let oldest = entry_of(dir.path(), &entry_name('a'), 1024, Duration::from_secs(300));
         let held = entry_of(dir.path(), &entry_name('b'), 1024, Duration::from_secs(200));
         let newest = entry_of(dir.path(), &entry_name('c'), 1024, Duration::from_secs(100));
@@ -192,7 +190,7 @@ mod tests {
     // TEST_SCENARIO: when everything left is held there is nothing to take, and the cache stays over its budget rather than freeing a running machine's filesystem. Going over is the reported outcome; taking one is not an outcome at all.
     #[test]
     fn eviction_goes_over_budget_rather_than_take_a_held_entry() {
-        let dir = tempdir();
+        let dir = TempDir::new("cache");
         let held = entry_of(dir.path(), &entry_name('a'), 4096, Duration::from_secs(300));
         let in_use = [held.clone()].into_iter().collect::<BTreeSet<_>>();
 
@@ -203,7 +201,7 @@ mod tests {
     // TEST_SCENARIO: a scratch tree is invisible to the budget and to eviction, so the one writer removes every one it finds when it opens the cache. It is the only writer, so any scratch tree there belongs to a process that is gone. Finished entries stay.
     #[test]
     fn opening_the_cache_reclaims_every_scratch_tree() {
-        let dir = tempdir();
+        let dir = TempDir::new("cache");
         let abandoned = entry_of(
             dir.path(),
             ".unpack-abandoned",
@@ -265,10 +263,6 @@ mod tests {
         assert_eq!(repository("vm:1"), "vm");
     }
 
-    fn tempdir() -> TempDir {
-        TempDir::new()
-    }
-
     fn entry_of(dir: &Path, name: &str, bytes: usize, age: Duration) -> PathBuf {
         let path = dir.join(name);
         fs::create_dir_all(&path).unwrap();
@@ -280,30 +274,5 @@ mod tests {
     fn backdate(path: &Path, age: Duration) {
         let when = SystemTime::now() - age;
         filetime::set_file_mtime(path, filetime::FileTime::from_system_time(when)).unwrap();
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: a directory removed when the test ends. Written here rather than taken as a dependency because it is four lines and the crate's only other use for one would be the same four.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new() -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "vm-runner-cache-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

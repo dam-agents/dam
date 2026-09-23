@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -11,8 +11,10 @@ use tokio_util::sync::CancellationToken;
 use crate::cache::{self, digest_path, pinned_digest, repository, PARTIAL_PREFIX};
 use crate::command;
 use crate::fetch::{self, first_lines, unusable, DockerConfig, ANONYMOUS, RESOLVE_TIMEOUT};
+use crate::files;
 use crate::launch::{launch_from_config, read_launch, ImageLaunch, LAUNCH_FILE};
 use crate::state::is_image_ref;
+use crate::{elapsed_ms, locked};
 
 // UNIT_BOUNDARY_DESCRIPTION: the one writer of an image cache directory: the node's image cache service, or the runner that owns its claim. It resolves a reference to a digest, fetches and unpacks that digest once for every machine of it, and evicts inside a budget. Everything it has to remember between requests — what a tag resolved to, which entries anyone may boot, which entries machines are running — is in this process's memory, because no other process writes the directory and so none has to read it.
 pub struct ImageCache {
@@ -23,6 +25,9 @@ pub struct ImageCache {
 }
 
 pub const ROOTFS_DIR: &str = "rootfs";
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a tag's resolution is trusted without asking the registry again.
+pub const REF_FRESH: Duration = Duration::from_secs(10 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
 pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
@@ -95,10 +100,6 @@ pub struct Trim {
     pub used: Option<u64>,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 impl ImageCache {
     // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, so it is removed now. A directory mounted read-only, as the staged archives are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
     pub fn open(config: CacheConfig) -> Self {
@@ -112,11 +113,12 @@ impl ImageCache {
         }
     }
 
-    pub fn dir(&self) -> &Path {
+    #[cfg(test)]
+    fn dir(&self) -> &Path {
         &self.config.dir
     }
 
-    pub fn digest_entry(&self, digest: &str) -> PathBuf {
+    fn digest_entry(&self, digest: &str) -> PathBuf {
         digest_path(&self.config.dir, digest)
     }
 
@@ -145,14 +147,8 @@ impl ImageCache {
                 ))
             });
         }
-        let anonymous = [String::new()];
-        let candidates = if auths.is_empty() {
-            &anonymous[..]
-        } else {
-            auths
-        };
         let mut last = String::new();
-        let answer = candidates.iter().find_map(|auth| {
+        let answer = fetch::in_turn(auths).iter().find_map(|auth| {
             let credentials = DockerConfig::new(auth).ok()?;
             match command::output(
                 credentials.apply(
@@ -163,7 +159,7 @@ impl ImageCache {
                 Instant::now() + RESOLVE_TIMEOUT,
                 &self.config.lifetime,
             ) {
-                Ok(out) => Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+                Ok(out) => Some(String::from_utf8_lossy(&out).trim().to_string())
                     .filter(|digest| cache::is_digest(digest)),
                 Err(e) => {
                     last = format!("{e:#}");
@@ -431,32 +427,17 @@ fn logged(reference: &str) -> String {
     reference.replace(['\n', '\r'], " ")
 }
 
-fn elapsed_ms(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from any finished entry and dot-prefixed so the cache patterns never count it. It removes itself when dropped — on every path out of a fetch, including a cancelled one — and a tree a killed process left is reclaimed when the cache is next opened.
 struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(parent: &Path) -> anyhow::Result<Self> {
         fs::create_dir_all(parent)?;
-        for attempt in 0..100u32 {
-            let nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos())
-                .unwrap_or_default();
-            let path = parent.join(format!(
-                "{PARTIAL_PREFIX}{}-{nanos:x}-{attempt}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e.into()),
-            }
-        }
-        anyhow::bail!("no free scratch directory in {}", parent.display())
+        Ok(Self(files::create_unique_dir(
+            parent,
+            PARTIAL_PREFIX,
+            0o777,
+        )?))
     }
 
     fn path(&self) -> &Path {

@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
-use vm_runner::cache::REF_FRESH;
 use vm_runner::cacheapi;
-use vm_runner::imagecache::{CacheConfig, ImageCache, HOLD_LEASE};
+use vm_runner::imagecache::{CacheConfig, ImageCache, HOLD_LEASE, REF_FRESH};
 use vm_runner::preload::{self, parse_duration, parse_quantity};
 
 // UNIT_BOUNDARY_DESCRIPTION: the flags the chart's DaemonSet sets: where the node's cache directory is mounted and the socket in it runners reach this service on, the budget, the harness images to preload and how often, and the directory the install's default pull Secrets are mounted in when it names any.
@@ -21,8 +20,6 @@ struct Args {
     socket: PathBuf,
     #[arg(long = "image-budget", default_value = "")]
     image_budget: String,
-    #[arg(long, default_value = "crane")]
-    crane: String,
     #[arg(long, default_value = "")]
     images: String,
     #[arg(long, default_value = "5m")]
@@ -67,7 +64,7 @@ fn main() -> anyhow::Result<()> {
             let cache = Arc::new(ImageCache::open(CacheConfig {
                 dir: args.image_dir.clone(),
                 budget,
-                crane: args.crane,
+                crane: "crane".to_string(),
                 pins: images.clone(),
                 lifetime: lifetime.clone(),
                 check_access: true,

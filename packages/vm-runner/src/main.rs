@@ -54,9 +54,10 @@ struct Args {
     reserve_mib: i64,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
-    #[arg(long = "tls-cert", default_value = "")]
+    // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
+    #[arg(long = "tls-cert")]
     tls_cert: String,
-    #[arg(long = "tls-key", default_value = "")]
+    #[arg(long = "tls-key")]
     tls_key: String,
 }
 
@@ -243,7 +244,6 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
-        tls = !args.tls_cert.is_empty(),
         platform_init = %args.platform_init.display(),
         metrics = %args.metrics_listen,
         "VM runner serving"
@@ -251,24 +251,15 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     let serving = {
         let handle = handle.clone();
         async move {
-            if args.tls_cert.is_empty() {
-                axum_server::from_tcp(listener)
-                    .handle(handle)
-                    .serve(app)
-                    .await
-            } else {
-                let _ = rustls::crypto::ring::default_provider().install_default();
-                let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                    &args.tls_cert,
-                    &args.tls_key,
-                )
-                .await?;
-                reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-                axum_server::from_tcp_rustls(listener, tls)
-                    .handle(handle)
-                    .serve(app)
-                    .await
-            }
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let tls =
+                axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
+                    .await?;
+            reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
+            axum_server::from_tcp_rustls(listener, tls)
+                .handle(handle)
+                .serve(app)
+                .await
         }
     };
     tokio::pin!(serving);

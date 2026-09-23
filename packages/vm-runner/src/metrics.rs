@@ -105,7 +105,7 @@ pub struct Gauges {
 
 impl Metrics {
     fn families(&self) -> std::sync::MutexGuard<'_, Families> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        crate::locked(&self.0)
     }
 
     pub fn operation(&self, op: &str, took: Duration, ok: bool) {

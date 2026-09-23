@@ -55,7 +55,7 @@ pub fn warm(install: &Path, kept: Option<&Path>, home: &Path, cancel: &Cancellat
         };
         match result {
             Ok(at) => {
-                tracing::info!(template = %target.display(), kept = %at.display(), duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX), "template warmed");
+                tracing::info!(template = %target.display(), kept = %at.display(), duration_ms = crate::elapsed_ms(started), "template warmed");
                 if let Some(name) = at.file_name() {
                     ready.insert(name.to_os_string(), at.clone());
                 }

@@ -3,21 +3,24 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{MachineSpec, MachineStatus, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY};
-use crate::cache::{self, pinned_digest, REF_FRESH};
+use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::fetch::{failure_reason, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
-use crate::imagecache::{CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE};
+use crate::imagecache::{
+    CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
+};
 use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
+use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{admissible, reads_ready, step, Action, Health};
 use crate::runtime::{redact, Machine, Runtime, Update};
@@ -38,8 +41,6 @@ pub const STATUS_WAIT_CAP: Duration = Duration::from_secs(30);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the actions already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
-
-pub use crate::imagecache::ROOTFS_DIR;
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
@@ -157,10 +158,6 @@ impl Rejected {
             message: message.into(),
         }
     }
-}
-
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Server {

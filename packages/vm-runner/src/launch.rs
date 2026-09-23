@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run, which a tree of its files does not carry. Read from the image when it is unpacked and kept beside the tree, because smolvm handed a bare rootfs launches nothing and waits for an exec that never comes. It never crosses the machine API: the runner writes it and the runner reads it.
+// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run: its entrypoint, command, env and working directory. It is kept beside an unpacked tree and never crosses the machine API.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ImageLaunch {
@@ -145,7 +145,7 @@ fn clean_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: these five names are the OCI image config's own spelling, capitals and all, and nothing on this side would notice one being wrong — a mis-spelled key reads as absent, which for Entrypoint and Cmd together is a refusal to boot and for Env is a machine started without its image's environment.
     #[test]
@@ -356,26 +356,5 @@ mod tests {
             builder.append(&header, body.as_slice()).unwrap();
         }
         builder.finish().unwrap();
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-launch-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

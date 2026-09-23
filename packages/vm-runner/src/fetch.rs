@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 use crate::api::{REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
+use crate::files;
 
 // UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache. Only the cache's one writer runs it.
 
@@ -65,6 +66,16 @@ pub fn first_lines(out: &str) -> String {
     format!("{}… (truncated)", &out[..end])
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the docker configs a registry read tries, in the order they were sent, or a single anonymous read when none were sent.
+pub fn in_turn(auths: &[String]) -> &[String] {
+    static ANONYMOUS_ONLY: [String; 1] = [String::new()];
+    if auths.is_empty() {
+        &ANONYMOUS_ONLY
+    } else {
+        auths
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these docker configs the registry accepts, tried in the order a pod lists its pull Secrets: the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read anonymously. The config that worked is returned too, empty for a read without one, so the layers are fetched with the same credential. A credential that fails is never quoted.
 pub fn read_config(
     crane: &str,
@@ -72,21 +83,15 @@ pub fn read_config(
     auths: &[String],
     cancel: &CancellationToken,
 ) -> anyhow::Result<(Vec<u8>, String)> {
-    let anonymous = [String::new()];
-    let candidates = if auths.is_empty() {
-        &anonymous[..]
-    } else {
-        auths
-    };
     let mut last = None;
-    for auth in candidates {
+    for auth in in_turn(auths) {
         let credentials = DockerConfig::new(auth)?;
         match command::output(
             credentials.apply(Command::new(crane).arg("config").arg(reference)),
             Instant::now() + PULL_TIMEOUT,
             cancel,
         ) {
-            Ok(out) => return Ok((out.stdout, auth.clone())),
+            Ok(out) => return Ok((out, auth.clone())),
             Err(e) => last = Some(e),
         }
     }
@@ -149,20 +154,12 @@ pub struct DockerConfig(Option<PathBuf>);
 
 impl DockerConfig {
     pub fn new(auth: &str) -> anyhow::Result<Self> {
-        use std::io::Write;
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
         if auth.is_empty() {
             return Ok(Self(None));
         }
-        let dir = scratch_name(&std::env::temp_dir());
-        fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        let dir = files::create_unique_dir(&std::env::temp_dir(), "crane-auth-", 0o700)?;
         let this = Self(Some(dir.clone()));
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(dir.join("config.json"))?
-            .write_all(auth.as_bytes())?;
+        files::write(&dir.join("config.json"), auth.as_bytes(), 0o600)?;
         Ok(this)
     }
 
@@ -180,20 +177,6 @@ impl Drop for DockerConfig {
             let _ = fs::remove_dir_all(dir);
         }
     }
-}
-
-fn scratch_name(parent: &Path) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or_default();
-    parent.join(format!(
-        "crane-auth-{}-{nanos:x}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ))
 }
 
 #[cfg(test)]
