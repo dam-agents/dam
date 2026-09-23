@@ -211,3 +211,20 @@ func TestAnAnonymousReadClearsAPrivateMarkAFlakyProbeLeft(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(entry, privateFile), "and the mark it proved wrong is gone")
 	assert.Equal(t, 1, strings.Count(readLog(t, log), "auth={}\n"), "one anonymous manifest read, made by the check")
 }
+
+// TEST_SCENARIO: an install with default pull Secrets sends every machine a credential, so no machine ever reuses a cached entry with none. If only a machine without credentials could clear a private mark that a flaky probe left on a public image, that mark would never clear on such an install, and every boot of the image would need a live registry. The anonymous read therefore comes first for every machine, and a machine with credentials that finds the image public clears the mark too.
+func TestAMachineWithCredentialsAlsoClearsAPrivateMarkAFlakyProbeLeft(t *testing.T) {
+	h := newHarness(t)
+	useRegistry(t, h, "")
+	entry := h.node.digestPath(testDigest)
+
+	_, err := h.client().Ensure(t.Context(), "agent-a", withAuth(goodAuth))
+	require.NoError(t, err)
+	require.Equal(t, StateRunning, h.settle(t, "agent-a").State)
+	require.NoError(t, os.WriteFile(filepath.Join(entry, privateFile), nil, 0o644), "as a failed probe would have left it")
+
+	_, err = h.client().Ensure(t.Context(), "agent-b", withAuth(goodAuth))
+	require.NoError(t, err)
+	require.Equal(t, StateRunning, h.settle(t, "agent-b").State)
+	assert.NoFileExists(t, filepath.Join(entry, privateFile), "a machine that sent credentials still proved the image public, and cleared the mark")
+}
