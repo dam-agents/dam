@@ -889,3 +889,31 @@ async fn a_new_image_with_a_size_the_disk_cannot_take_is_refused_before_the_recr
         "quay.io/x/vm:1"
     );
 }
+
+// TEST_SCENARIO: a recreate interrupted after the old machine was deleted leaves the machine absent, its disk kept and its stored spec at the old size. The create that resumes it adopts that disk, so a larger size asked for then is refused before the create too, and never recorded as applied.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_recreate_does_not_record_a_size_the_kept_disk_lacks() {
+    let h = Harness::new("ungrowable-resume");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).remove("m1");
+    h.fake.ungrowable.store(true, Ordering::SeqCst);
+    let mut resumed = spec(true);
+    resumed.image = "quay.io/x/vm:2".into();
+    resumed.storage_gib += 10;
+    h.server.put("m1", resumed).unwrap();
+    let status = h.settle("m1").await;
+    assert!(
+        status
+            .message
+            .contains(crate::embedded::STORAGE_NOT_GROWABLE),
+        "{status:?}"
+    );
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1")
+            .unwrap()
+            .storage_gib,
+        spec(true).storage_gib
+    );
+}

@@ -391,11 +391,14 @@ impl Server {
             spec,
             self.config.init.as_deref(),
         )?;
+        let applied = read_spec(&self.config.state_dir, id);
+        if grown_storage(applied.as_ref(), spec).is_some() && !self.runtime.storage_growable(id) {
+            anyhow::bail!("{STORAGE_NOT_GROWABLE}");
+        }
         if state == STATE_ABSENT {
             self.create(id, spec)?;
             return write_spec(&self.config.state_dir, id, spec);
         }
-        let applied = read_spec(&self.config.state_dir, id);
         if let Some(applied) = &applied {
             if plan::egress_changed(applied, spec) {
                 if state == STATE_RUNNING {
@@ -407,9 +410,6 @@ impl Server {
                     applied.allow_cidrs.join(" "),
                     spec.allow_cidrs.join(" ")
                 )));
-            }
-            if grown_storage(Some(applied), spec).is_some() && !self.runtime.storage_growable(id) {
-                anyhow::bail!("{STORAGE_NOT_GROWABLE}");
             }
             if image_changed(applied, spec) {
                 return self.recreate(id, spec, state);
