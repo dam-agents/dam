@@ -357,7 +357,8 @@ jobs:
           build api-server packages/api-server/Dockerfile . "$(digest_out api-server)"
           build ui packages/ui/Dockerfile . "$(digest_out ui)"
           # e2e does not run the vm-runner, so a PR only proves it builds.
-          build vm-runner packages/controller/Dockerfile.vm-runner packages/controller type=cacheonly
+          build vm-runner packages/controller/Dockerfile.vm-runner packages/controller type=cacheonly \
+            --build-context vm-runner=packages/vm-runner
           if [ "$PLATFORM_BASE_BUILT" != true ]; then
             build mock packages/e2e/agents/mock/Dockerfile . "type=image,name=$IMAGE_PREFIX/mock:$SHA,push=true" \
               --build-arg "BASE_IMAGE=$IMAGE_PREFIX/platform-base:$PLATFORM_BASE_TAG"
