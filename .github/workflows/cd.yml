@@ -165,8 +165,14 @@ jobs:
             packages/vm-runner/target
           key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
+  # appversion and the merge-* jobs only tag images, and nothing on a PR reads
+  # a tag: e2e pulls by digest, agents build from platform-base's digest, and
+  # publishing and scanning run on main and tags. A PR skips them. Runner slots
+  # are what a PR waits on: run 35789042417 queued its builds for up to 9m44s
+  # while the builds themselves took seconds.
   appversion:
     name: derive app version
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -304,6 +310,7 @@ jobs:
   merge-images:
     name: merge multi-arch manifests
     needs: [changes, build-images, appversion, check]
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -387,7 +394,7 @@ jobs:
   merge-platform-base:
     name: merge multi-arch platform-base manifest
     needs: [build-platform-base, appversion, changes, check]
-    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.platform_base == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -580,7 +587,7 @@ jobs:
   merge-workloads:
     name: merge multi-arch workload manifests
     needs: [build-workloads, appversion, changes]
-    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -664,14 +671,17 @@ jobs:
 
   e2e:
     name: mise e2e
-    needs: [build-images, build-mock]
-    if: >-
-      ${{ !startsWith(github.ref, 'refs/tags/v') &&
-          !cancelled() &&
-          needs.build-images.result == 'success' &&
-          needs.build-mock.result == 'success' }}
+    # No `needs` on the builds: bringing the cluster up takes minutes and needs
+    # no image, so it runs while they build. e2e:ci-images waits for them in
+    # the background, and cluster:install waits for it at the image load. A
+    # failed build still fails this job, there.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The builds' own time now counts against this budget.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     env:
       IS_SANDBOX: "1"
     steps:
@@ -683,27 +693,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: digests-*-amd64
-          path: /tmp/digests
-      - name: Pull built images from registry
+      - name: Fetch this run's images in the background
         env:
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          pids=()
-          for c in controller api-server ui keycloak; do
-            docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" &
-            pids+=($!)
-          done
-          docker pull "$IMAGE_PREFIX/mock:$SHA" &
-          pids+=($!)
-          for pid in "${pids[@]}"; do wait "$pid"; done
-          for c in controller api-server ui keycloak; do
-            docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/digests-$c-amd64")" "platform-$c:latest"
-          done
-          docker tag "$IMAGE_PREFIX/mock:$SHA" "platform-mock:latest"
+          GH_TOKEN: ${{ github.token }}
+        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -714,6 +707,10 @@ jobs:
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
+          CI_IMAGES_STATUS: /tmp/ci-images.status
+      - name: Image fetch log
+        if: ${{ !cancelled() }}
+        run: cat /tmp/ci-images.log
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
