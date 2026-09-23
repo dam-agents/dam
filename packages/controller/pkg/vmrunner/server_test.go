@@ -1587,3 +1587,26 @@ func TestAMachineWhoseStateCannotBeReadAtStartStillCounts(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
 	assert.NoError(t, restarted.roomFor("m2", second), "once smolvm answers, a stopped machine stops holding its memory")
 }
+
+// TEST_SCENARIO: the runner holds one machine as running that has since stopped, and another as stopped that is running after all. Before it refuses a machine it asks smolvm about both: the first stops counting and the second starts. Rechecking only the machines it counts would drop the first and never see the second, and so admit a machine the runner has no memory for.
+func TestARefusalRechecksMachinesTheRunnerHoldsAsStopped(t *testing.T) {
+	h := newHarness(t)
+	h.node.MemoryMiB, h.node.ReserveMiB = 4096, 0
+	first := spec(true)
+	first.MemoryMiB = 2000
+	_, err := h.client().Ensure(t.Context(), "m1", first)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m1"), []byte("stopped"), 0o644))
+
+	hidden := spec(true)
+	hidden.MemoryMiB = 2000
+	require.NoError(t, os.MkdirAll(filepath.Join(h.node.StateDir, "m3"), 0o755))
+	require.NoError(t, h.node.writeSpec("m3", hidden))
+	require.NoError(t, os.WriteFile(filepath.Join(h.state, "m3"), []byte("running"), 0o644))
+
+	wanted := spec(true)
+	wanted.MemoryMiB = 2500
+	assert.ErrorContains(t, h.node.roomFor("m2", wanted), "does not fit",
+		"a running machine the runner held as stopped was not counted before the machine was admitted")
+}
