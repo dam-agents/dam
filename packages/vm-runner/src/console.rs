@@ -46,22 +46,27 @@ pub fn tail_of(path: &Path, limit: u64) -> String {
         }
     }
     let text = String::from_utf8_lossy(&body);
-    let mut kept: Vec<&str> = text
+    let kept: Vec<&str> = text
         .lines()
         .filter(|line| {
             !(line.contains("\"target\":\"smolvm_agent\"")
                 && line.contains("\"message\":\"accepted connection\""))
         })
         .collect();
-    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-    let mut total: usize = kept.iter().map(|line| line.len() + 1).sum();
-    while kept.len() > 1 && total > limit {
-        total -= kept.remove(0).len() + 1;
-    }
     let tail = kept.join("\n");
-    let mut start = tail.len().saturating_sub(limit);
-    while !tail.is_char_boundary(start) {
-        start += 1;
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let mut start = 0;
+    while tail.len() - start > limit {
+        match tail[start..].find('\n') {
+            Some(cut) if cut < limit => start += cut + 1,
+            _ => {
+                start = tail.len() - limit;
+                while !tail.is_char_boundary(start) {
+                    start += 1;
+                }
+                break;
+            }
+        }
     }
     printable(&tail[start..])
 }
@@ -187,6 +192,17 @@ mod tests {
         let tail = tail_of(&log, 4096);
         assert!(!tail.is_empty());
         assert!(tail.ends_with('\u{FFFD}'), "{tail:?}");
+        fs::write(&log, format!("first\n{}\nabc", "x".repeat(6000))).unwrap();
+        let tail = tail_of(&log, 4096);
+        assert_eq!(
+            tail.len(),
+            4096,
+            "an over-limit line keeps its end, as the Go runner keeps it"
+        );
+        assert!(
+            tail.ends_with("\nabc") && tail.starts_with("xxx"),
+            "{tail:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

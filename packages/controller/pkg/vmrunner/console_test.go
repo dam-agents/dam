@@ -79,6 +79,12 @@ func TestALongLastLineKeepsItsEnd(t *testing.T) {
 	assert.Len(t, tail, consoleTailBytes)
 	assert.True(t, strings.HasSuffix(tail, "END"))
 	assert.NotContains(t, tail, "first")
+
+	text = "first\n" + strings.Repeat("x", 6000) + "\nabc"
+	require.NoError(t, os.WriteFile(path, []byte(text), 0o644))
+	tail = tailOf(path, consoleTailBytes)
+	assert.Len(t, tail, consoleTailBytes, "an over-limit line followed by a short one keeps the long line's end")
+	assert.True(t, strings.HasSuffix(tail, "\nabc") && strings.HasPrefix(tail, "xxx"))
 }
 
 // TEST_SCENARIO: the runtime refuses to boot the machine. The failure the Agent is told carries the end of the console after it, with the env value the guest printed replaced, and the whole message stays well inside what a condition may hold.
