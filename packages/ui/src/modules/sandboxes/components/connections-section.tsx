@@ -43,18 +43,17 @@ export function ConnectionsSection({
   };
 
   const granted = useMemo(
-    () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
-      ),
+    () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
     [connectionsQ.data, grantedIds],
   );
-  const { populated: groups, templateById } = useCatalogGroups(granted);
+  const listed = useMemo(() => excludeProviderConnections(granted), [granted]);
+  const { populated: groups, templateById } = useCatalogGroups(listed);
 
   return (
     <section>
       <GrantedConnectionsPanel
         groups={groups}
+        granted={granted}
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}

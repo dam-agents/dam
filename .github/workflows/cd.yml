@@ -235,6 +235,8 @@ jobs:
 
   build-images:
     needs: [changes]
+    # A PR builds in build-images-pr instead.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -304,6 +306,98 @@ jobs:
         with:
           name: digests-${{ matrix.component }}-${{ matrix.arch }}
           path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  build-images-pr:
+    name: build images
+    # One job for a PR's amd64 images, where main runs a matrix job per
+    # component. Most of a PR's builds are registry-cache hits, a few seconds
+    # each, so each matrix job was mostly its own setup and a turn in the
+    # queue for a runner slot. Here the builds run in parallel on one runner.
+    # mock joins them unless platform-base moved: then build-mock builds it on
+    # top of this run's platform-base.
+    needs: [changes]
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+      - name: Build
+        env:
+          SHA: ${{ github.sha }}
+          PLATFORM_BASE_BUILT: ${{ needs.changes.outputs.platform_base }}
+          PLATFORM_BASE_TAG: ${{ needs.changes.outputs.platform_base_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/meta /tmp/logs
+          pids=() names=()
+          # build <name> <dockerfile> <context> <output> [extra args...]
+          build() {
+            local name=$1 file=$2 ctx=$3 out=$4; shift 4
+            docker buildx build --platform linux/amd64 -f "$file" \
+              --cache-from "type=registry,ref=$IMAGE_PREFIX/$name:buildcache-amd64" \
+              --output "$out" --metadata-file "/tmp/meta/$name.json" "$@" "$ctx" \
+              > "/tmp/logs/$name.log" 2>&1 &
+            pids+=($!) names+=("$name")
+          }
+          digest_out() { echo "type=image,name=$IMAGE_PREFIX/$1,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true"; }
+          build controller packages/controller/Dockerfile packages/controller "$(digest_out controller)"
+          build api-server packages/api-server/Dockerfile . "$(digest_out api-server)"
+          build ui packages/ui/Dockerfile . "$(digest_out ui)"
+          # e2e does not run the vm-runner, so a PR only proves it builds.
+          build vm-runner packages/controller/Dockerfile.vm-runner packages/controller type=cacheonly
+          if [ "$PLATFORM_BASE_BUILT" != true ]; then
+            build mock packages/e2e/agents/mock/Dockerfile . "type=image,name=$IMAGE_PREFIX/mock:$SHA,push=true" \
+              --build-arg "BASE_IMAGE=$IMAGE_PREFIX/platform-base:$PLATFORM_BASE_TAG"
+          fi
+          # The keycloak image bakes in the theme JAR, built here while the
+          # other images build.
+          mise run //packages/keycloak-theme:build
+          build keycloak packages/keycloak-theme/Dockerfile . "$(digest_out keycloak)"
+          failed=()
+          for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
+          for n in "${names[@]}"; do
+            echo "::group::$n"; cat "/tmp/logs/$n.log"; echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to build: ${failed[*]}"; exit 1; fi
+          for c in controller api-server ui keycloak; do
+            d="$(jq -r '."containerimage.digest"' "/tmp/meta/$c.json")"
+            mkdir -p "/tmp/digests/$c" && touch "/tmp/digests/$c/${d#sha256:}"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-controller-amd64
+          path: /tmp/digests/controller/*
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-api-server-amd64
+          path: /tmp/digests/api-server/*
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-ui-amd64
+          path: /tmp/digests/ui/*
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-keycloak-amd64
+          path: /tmp/digests/keycloak/*
           retention-days: 1
           if-no-files-found: error
 
@@ -630,7 +724,10 @@ jobs:
   build-mock:
     name: build mock (e2e fixture)
     needs: [build-platform-base, changes]
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
+    # On a PR, build-images-pr builds mock unless platform-base moved.
+    if: >-
+      ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() &&
+          (github.event_name != 'pull_request' || needs.changes.outputs.platform_base == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -696,6 +793,11 @@ jobs:
       - name: Fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
+          # The jobs that make the images e2e loads; see e2e:ci-images.
+          CI_IMAGES_JOBS: >-
+            ${{ github.event_name == 'pull_request'
+                && 'detect stale images|build images|build mock (e2e fixture)'
+                || 'detect stale images|build-images (controller, amd64)|build-images (vm-runner, amd64)|build-images (api-server, amd64)|build-images (ui, amd64)|build-images (keycloak, amd64)|build mock (e2e fixture)' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
