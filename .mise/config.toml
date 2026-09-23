@@ -95,7 +95,10 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -not -perm -u+x -print)
+out=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -not -perm -u+x -print 2>&1) || true
+errors=$(printf '%s\n' "$out" | grep '^find: ' | grep -v ': No such file or directory$' || true)
+[ -z "$errors" ] || { echo "$errors"; exit 1; }
+bad=$(printf '%s\n' "$out" | grep -v '^find: ' || true)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []
