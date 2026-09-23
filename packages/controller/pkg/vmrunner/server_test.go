@@ -679,6 +679,40 @@ func TestANewImageAndALargerDiskAreAppliedOneAfterTheOther(t *testing.T) {
 	assert.Equal(t, 8, h.node.readSpec("m1").StorageGiB)
 }
 
+// TEST_SCENARIO: a recreate is interrupted after its delete, and the next spec also asks for a larger disk. The machine now reads as absent, so an ordinary create runs — and it boots onto the kept disk, which smolvm never grows at start when it is a qcow2. So that create is capped at the size the disk has, the stored spec says so, and the reconcile after it grows the disk in place like any other resize.
+func TestACreateOntoAKeptDiskAsksForNoMoreThanTheDiskHas(t *testing.T) {
+	h := newHarness(t)
+	vms := h.withDataDirs(t)
+	c := h.client()
+	_, err := c.Ensure(t.Context(), "m1", spec(true))
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	kept := filepath.Join(os.Getenv("HOME"), keptDisksDir, "m1")
+	require.NoError(t, os.MkdirAll(kept, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(kept, "storage.qcow2"), []byte("work"), 0o644))
+	require.NoError(t, os.RemoveAll(filepath.Join(vms, "vm-m1")))
+	require.NoError(t, os.Remove(filepath.Join(h.state, "m1")))
+
+	grown := spec(true)
+	grown.Image, grown.StorageGiB = "quay.io/x/vm:2", 8
+	before := len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", grown)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Regexp(t, `machine create -n m1 .*--storage 5 `, h.calls()[before:], "created at the size of the disk it boots onto")
+	assert.Equal(t, 5, h.node.readSpec("m1").StorageGiB)
+	work, err := os.ReadFile(filepath.Join(vms, "vm-m1", "storage.qcow2"))
+	require.NoError(t, err)
+	assert.Equal(t, "work", string(work))
+
+	before = len(h.calls())
+	_, err = c.Ensure(t.Context(), "m1", grown)
+	require.NoError(t, err)
+	h.settle(t, "m1")
+	assert.Contains(t, h.calls()[before:], "--storage 8", "and then grown in place")
+	assert.Equal(t, 8, h.node.readSpec("m1").StorageGiB)
+}
+
 // TEST_SCENARIO: a hibernated agent is upgraded and later woken. Its machine is already stopped, so there is nothing to stop: the wake itself recreates the machine on the new image and starts it on the disk it had.
 func TestAStoppedMachineWakesOnItsNewImage(t *testing.T) {
 	h := newHarness(t)

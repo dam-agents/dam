@@ -171,6 +171,16 @@ func (r *Smolvm) adoptKeptStorage(id string) error {
 	return os.Remove(kept)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a storage disk is waiting for this machine, which means a recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so the create must not ask for more than the disk it will get.
+func (r *Smolvm) HasKeptStorage(id string) bool {
+	kept := r.keptDir(id)
+	if kept == "" {
+		return false
+	}
+	_, err := os.Stat(kept)
+	return err == nil
+}
+
 func (r *Smolvm) DiscardKeptStorage(id string) error {
 	if kept := r.keptDir(id); kept != "" {
 		return os.RemoveAll(kept)
