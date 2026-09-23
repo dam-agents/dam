@@ -1,8 +1,7 @@
-# The Debian agent base, as a `mise oci` config: what platform-base's Dockerfile
-# builds, minus its builder stage (the image task builds agent-runtime on the
-# host and copies it in). The image task stages this file as the build's
-# mise.toml and a harness's image.toml next to it as mise.<harness>.toml, so a
-# harness image is `mise oci build -E <harness>` over the two.
+# The Debian Claude Code image as a `mise oci` config: what the platform-base and
+# claude-code Dockerfiles build together, minus the builder stage (the image
+# task builds agent-runtime on the host and copies it in). The task stages this
+# file as the build's mise.toml.
 #
 # Tool versions follow packages/platform-base/config.toml, except that every
 # tool is baked in: there are no lazy tools, no tool shims and no oc here.
@@ -29,6 +28,8 @@ kubectl = "latest"
 # /etc/rancher/k3s/config.yaml put their data on the vm Backend's disk, and
 # AGENTS.md says how to start them.
 k3s = "latest"
+# The harness; the claude CLI rides along inside it.
+"npm:@agentclientprotocol/claude-agent-acp" = "0.75.1"
 
 # gws from its release rather than npm: mise's npm backend skips install scripts,
 # and the npm package fetches its binary in one, so it would only download
@@ -76,7 +77,7 @@ from = "docker.io/library/debian:trixie-slim"
 mount_point = "/usr/local/share/mise"
 user = "65532"
 workdir = "/app"
-entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/debian-entrypoint"]
+entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 cmd = ["node", "dist/server.js"]
 
 [oci.env]
@@ -88,6 +89,13 @@ SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
+PLATFORM_HARNESS = "claude-code"
+CLAUDE_CODE_EXECUTABLE = "/usr/local/share/tool-bin/claude"
+DISABLE_TELEMETRY = "1"
+DISABLE_ERROR_REPORTING = "1"
+DISABLE_FEEDBACK_COMMAND = "1"
+DISABLE_FEEDBACK_SURVEY = "1"
+DISABLE_AUTOUPDATER = "1"
 
 [oci.labels]
-"org.opencontainers.image.description" = "Experimental Debian agent base built with mise oci"
+"org.opencontainers.image.description" = "Experimental Debian Claude Code agent image built with mise oci"

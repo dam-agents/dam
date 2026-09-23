@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-#MISE description="Experimental: build a Debian agent image with `mise oci` instead of a Dockerfile (claude-code). Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-claude-code-debian:latest)"
+#MISE description="Experimental: build the Debian Claude Code image with `mise oci` instead of a Dockerfile. Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-claude-code-debian:latest)"
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
 pkg=packages/mise-oci
-image=claude-code
 from=""
 load=""
 for a in "$@"; do
   case "$a" in
     --from=*) from="${a#--from=}" ;;
-    --load) load=default ;;
+    --load) load="platform-claude-code-debian:latest" ;;
     --load=*) load="${a#--load=}" ;;
-    -*) echo "unknown option: $a" >&2; exit 2 ;;
-    *) image="$a" ;;
+    *) echo "unknown argument: $a" >&2; exit 2 ;;
   esac
 done
-[ -f "$pkg/$image/image.toml" ] || { echo "no such image: $image" >&2; exit 2; }
-[ "$load" = default ] && load="platform-$image-debian:latest"
 
 # `mise oci build` packages the host's own installs and runs the host's apt-get
 # for [bootstrap.packages], so the host must be Linux of the image's arch and
@@ -26,14 +22,14 @@ done
 command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
 
 # node's postinstall hook edits its install, and mise's layer cache is keyed by
-# tool, version, path and owner only, so both are keyed by the configs: a
-# changed hook starts from fresh installs instead of a stale layer.
-key="$(cat "$pkg/debian-base/image.toml" "$pkg/$image/image.toml" | sha256sum | cut -c1-16)"
+# tool, version, path and owner only, so both are keyed by the config: a changed
+# hook starts from fresh installs instead of a stale layer.
+key="$(sha256sum "$pkg/image.toml" | cut -c1-16)"
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
 work="$state/$key"
 stage="$work/stage"
 runtime="$work/runtime"
-out="$state/out/$image"
+out="$state/out/claude-code"
 
 # agent-runtime and driver-sdk, built with the repo's own toolchain the way
 # platform-base's builder stage builds them.
@@ -47,8 +43,8 @@ cp packages/agent-runtime/package.json "$runtime/package.json"
 
 # From here on mise runs for the image, not for the repo: the project and task
 # context mise hands this task is dropped (settings the caller exported stay),
-# the staged configs sit outside the repo so its root config is not a parent of
-# theirs, and the ceiling stops the walk up.
+# the staged config sits outside the repo so its root config is not a parent,
+# and the ceiling stops the walk up.
 unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT
 while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^MISE_TASK_')
 mkdir -p "$work"/{data,cache,config,state}
@@ -58,24 +54,60 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
 rm -rf "$stage"
-mkdir -p "$stage/rootfs"
-cp "$pkg/debian-base/image.toml" "$stage/mise.toml"
-cp "$pkg/$image/image.toml" "$stage/mise.$image.toml"
+mkdir -p "$stage"
+cp "$pkg/image.toml" "$stage/mise.toml"
 mise trust -q "$stage"
-mise -C "$stage" -E "$image" install
+mise -C "$stage" install
 
-# Rewrites a host install path to where the same file sits inside the image.
+# The COPY payload of both Dockerfiles, in one tree. Later copies win: this
+# package's rootfs replaces platform-base's AGENTS.md, and claude-code's harness
+# scripts and manifest replace the base's. Every file ends up owned by the
+# build's --owner (the agent), which is what the empty directories are for: the
+# agent writes into them at runtime.
+r="$stage/rootfs"
+b=packages/platform-base
+c=packages/agents/claude-code
+mkdir -p "$r"
+cp -a "$b/rootfs/." "$r/"
+mv "$r/usr/local/bin/dam-run.mjs" "$r/usr/local/bin/dam-run"
+cp -a "$pkg/rootfs/." "$r/"
+install -d "$r"/{home/agent,etc/logrotate.d,etc/ssl/certs,etc/claude-code,etc/profile.d} \
+  "$r"/usr/local/share/{ca-certificates,tool-bin,dam-skills} \
+  "$r"/usr/local/lib/platform-python "$r"/app/working-dir/.agents/skills
+cp -a "$b/skills/." "$r/app/working-dir/.agents/skills/"
+cp -a "$b/dam-skills/." "$c/dam-skills/." "$r/usr/local/share/dam-skills/"
+install -m 644 "$b/skills-manifest.json" "$r/usr/local/share/dam-skill-manifest.json"
+install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$r/usr/local/lib/platform-python/"
+cp -a "$runtime/package.json" "$runtime/node_modules" "$r/app/"
+cp -a packages/agent-runtime/dist "$r/app/dist"
+install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$r/usr/local/lib/driver-sdk.mjs"
+
+ln -sfn /etc/AGENTS.md "$r/etc/claude-code/CLAUDE.md"
+install -m 644 "$c/managed-settings.json" "$r/etc/claude-code/managed-settings.json"
+for f in model-gateway.mjs report-background-work.mjs model-gateway.sh sync-otel-settings.mjs harness-history-lib.mjs; do
+  install -m 644 "$c/$f" "$r/usr/local/lib/$f"
+done
+install -m 755 "$c/pod-service.sh" "$r/usr/local/bin/pod-service"
+install -m 644 "$c/model-gateway-login.sh" "$r/etc/profile.d/model-gateway.sh"
+install -m 755 "$c/harness-chat.sh" "$r/usr/local/bin/harness-chat"
+install -m 755 "$c/harness-terminal.sh" "$r/usr/local/bin/harness-terminal"
+install -m 644 "$c/runtime-manifest.yaml" "$r/app/runtime-manifest.yaml"
+ln -sfn ../.agents/skills "$r/app/working-dir/.claude/skills"
+cp -a "$c/workspace/." "$r/app/working-dir/"
+
+# The two tool-bin links the harness scripts and manifest name, resolved on the
+# host and pointed at where the adapter's install sits inside the image.
 in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
-export -f in_image
-export ROOTFS="$stage/rootfs" RUNTIME="$runtime" STAGE="$stage"
-"$pkg/debian-base/stage.sh"
-"$pkg/$image/stage.sh"
+acp="$(mise -C "$stage" where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp"
+cli="$(echo "$acp"/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"
+test -x "$cli"
+ln -sfn "$(in_image "$acp")" "$r/usr/local/share/tool-bin/claude-agent-acp-lib"
+ln -sfn "$(in_image "$cli")" "$r/usr/local/share/tool-bin/claude"
 
 copies=()
-for d in "$ROOTFS"/*; do copies+=(--copy "$d:/${d##*/}"); done
+for d in "$r"/*; do copies+=(--copy "$d:/${d##*/}"); done
 rm -rf "$out"
-mise -C "$stage" -E "$image" oci build -o "$out" --owner 65532:0 \
-  ${from:+--from "$from"} "${copies[@]}"
+mise -C "$stage" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"} "${copies[@]}"
 echo "OCI layout: $out"
 
 if [ -n "$load" ]; then
