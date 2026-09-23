@@ -242,7 +242,7 @@ fn spec(running: bool) -> MachineSpec {
         allow_cidrs: vec!["10.0.0.1/32".into()],
         revision: "r1".into(),
         running,
-        pull_auth: String::new(),
+        pull_auths: Vec::new(),
     }
 }
 
@@ -791,7 +791,7 @@ if [ -n "$DOCKER_CONFIG" ]; then
 fi
 case "$1" in
   digest) case "$auth" in *c2VjcmV0*) echo sha256:x; exit 0;; esac; echo UNAUTHORIZED >&2; exit 1;;
-  config) printf '{"config":{"Cmd":["serve"]}}'; exit 0;;
+  config) case "$auth" in *c2VjcmV0*) printf '{"config":{"Cmd":["serve"]}}'; exit 0;; esac; echo UNAUTHORIZED >&2; exit 1;;
 esac
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "##;
@@ -800,7 +800,7 @@ const CREDENTIAL: &str = r#"{"auths":{"quay.io":{"auth":"c2VjcmV0"}}}"#;
 
 fn with_credential(running: bool) -> MachineSpec {
     MachineSpec {
-        pull_auth: CREDENTIAL.into(),
+        pull_auths: vec![CREDENTIAL.into()],
         ..spec(running)
     }
 }
@@ -857,6 +857,31 @@ async fn a_registry_credential_reaches_crane_alone() {
     let entry = cache_path(&h.dir.join("images"), "quay.io/x/vm:1");
     assert!(entry.join(PRIVATE_FILE).exists());
     assert!(!entry.join(ROOTFS_DIR).join(PRIVATE_FILE).exists());
+}
+
+const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
+
+// TEST_SCENARIO: a pod lists several pull Secrets and the kubelet tries each, so when an Agent's own credential for a registry has gone stale, the install default for that registry still pulls. The runner tries them in the order they were sent: the stale one is refused, the next one reads the config, and the layers are fetched with the one that worked.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stale_credential_does_not_hide_a_good_one_listed_after_it() {
+    let h = Harness::new("pull-auth-fallback");
+    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    let spec = MachineSpec {
+        pull_auths: vec![STALE.into(), CREDENTIAL.into()],
+        ..spec(true)
+    };
+    h.server.put("m1", spec).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let log = fs::read_to_string(h.dir.join("auth.log")).unwrap();
+    let with = |op: &str| -> Vec<String> {
+        log.lines()
+            .filter(|l| l.starts_with(&format!("{op} ")))
+            .map(|l| l.splitn(4, ' ').nth(3).unwrap_or_default().to_string())
+            .collect()
+    };
+    assert_eq!(with("config"), [STALE, CREDENTIAL], "{log}");
+    assert_eq!(with("export"), [CREDENTIAL], "{log}");
 }
 
 // TEST_SCENARIO: an anonymous probe that failed at fetch time — a registry briefly unreachable, a rate limit — marks a public image private. The next machine without credentials asks again, and an anonymous read that succeeds clears the marker, so the image goes back to booting from the cache with the registry down.

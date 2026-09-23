@@ -364,8 +364,8 @@ impl Server {
         restart: bool,
         unhealthy: bool,
     ) -> anyhow::Result<()> {
-        let auth = std::mem::take(&mut spec.pull_auth);
-        let result = self.ensure_inner(id, &mut spec, &auth, restart, unhealthy);
+        let auths = std::mem::take(&mut spec.pull_auths);
+        let result = self.ensure_inner(id, &mut spec, &auths, restart, unhealthy);
         self.publish_holders();
         result
     }
@@ -374,7 +374,7 @@ impl Server {
         &self,
         id: &str,
         spec: &mut MachineSpec,
-        auth: &str,
+        auths: &[String],
         restart: bool,
         unhealthy: bool,
     ) -> anyhow::Result<()> {
@@ -393,7 +393,7 @@ impl Server {
             self.config.init.as_deref(),
         )?;
         if state == STATE_ABSENT {
-            self.create(id, spec, auth)?;
+            self.create(id, spec, auths)?;
             return write_spec(&self.config.state_dir, id, spec);
         }
         let applied = read_spec(&self.config.state_dir, id);
@@ -452,7 +452,7 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: creates and boots a machine. What it boots is decided in order: the unpacked tree in the cache when its launch record is there, a fresh fetch into the cache, an archive an earlier release left, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
-    fn create(&self, id: &str, spec: &MachineSpec, auth: &str) -> anyhow::Result<()> {
+    fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
         let port = {
             let _ports = locked(&self.ports);
             state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
@@ -465,7 +465,7 @@ impl Server {
         let archive = PathBuf::from(format!("{}.tar", base.display()));
         let mut launch = read_launch(&base)?;
         if launch.is_some() {
-            self.cache.may_reuse(&image, auth)?;
+            self.cache.may_reuse(&image, auths)?;
         }
         let mut cached: Option<PathBuf> = None;
         if launch.is_none() {
@@ -473,7 +473,7 @@ impl Server {
             if !self.config.crane.is_empty() {
                 match self.cache.fetch(
                     &image,
-                    auth,
+                    auths,
                     &self.images_in_use(Some(id)),
                     &self.images_in_use(None),
                 ) {
@@ -495,7 +495,7 @@ impl Server {
         }
         let launch = match launch {
             Some(launch) => launch,
-            None => fetch::launch_from_registry(&self.config.crane, &image, auth, &self.lifetime)?,
+            None => fetch::launch_from_registry(&self.config.crane, &image, auths, &self.lifetime)?,
         };
         if let Some(cached) = cached.filter(|path| path.exists()) {
             image = cached.to_string_lossy().into_owned();

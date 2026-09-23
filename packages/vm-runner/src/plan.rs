@@ -576,7 +576,7 @@ mod tests {
     fn a_registry_credential_is_never_a_reason_to_restart() {
         let applied = running_spec();
         let desired = MachineSpec {
-            pull_auth: "{\"auths\":{}}".into(),
+            pull_auths: vec!["{\"auths\":{}}".into()],
             ..running_spec()
         };
         assert!(!needs_restart(&applied, &desired));
@@ -597,7 +597,7 @@ mod tests {
             allow_cidrs: vec!["10.0.0.7/32".into()],
             revision: "1".into(),
             running: true,
-            pull_auth: String::new(),
+            pull_auths: Vec::new(),
         }
     }
 

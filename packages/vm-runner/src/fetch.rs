@@ -87,7 +87,7 @@ pub fn first_lines(out: &str) -> String {
 pub fn launch_from_registry(
     crane: &str,
     reference: &str,
-    auth: &str,
+    auths: &[String],
     cancel: &CancellationToken,
 ) -> anyhow::Result<ImageLaunch> {
     if crane.is_empty() {
@@ -95,30 +95,41 @@ pub fn launch_from_registry(
             "{IMAGE_LAUNCH_UNKNOWN}: {reference} names no cached image and this runner cannot read one from the registry"
         );
     }
-    let config = read_config(crane, reference, auth, cancel)?;
+    let (config, _) = read_config(crane, reference, auths, cancel)?;
     launch_from_config(&config)
         .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these docker configs the registry accepts, tried in the order a pod lists its pull Secrets: the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read anonymously. The config that worked is returned too, empty for a read without one, so the layers are fetched with the same credential. A credential that fails is never quoted.
 pub fn read_config(
     crane: &str,
     reference: &str,
-    auth: &str,
+    auths: &[String],
     cancel: &CancellationToken,
-) -> anyhow::Result<Vec<u8>> {
-    let credentials = DockerConfig::new(auth)?;
-    command::output(
-        credentials.apply(Command::new(crane).arg("config").arg(reference)),
-        Instant::now() + PULL_TIMEOUT,
-        cancel,
-    )
-    .map(|out| out.stdout)
-    .map_err(|e| {
-        unusable(format!(
-            "reading the config of {reference}: {}",
-            first_lines(&format!("{e:#}"))
-        ))
-    })
+) -> anyhow::Result<(Vec<u8>, String)> {
+    let anonymous = [String::new()];
+    let candidates = if auths.is_empty() {
+        &anonymous[..]
+    } else {
+        auths
+    };
+    let mut last = None;
+    for auth in candidates {
+        let credentials = DockerConfig::new(auth)?;
+        match command::output(
+            credentials.apply(Command::new(crane).arg("config").arg(reference)),
+            Instant::now() + PULL_TIMEOUT,
+            cancel,
+        ) {
+            Ok(out) => return Ok((out.stdout, auth.clone())),
+            Err(e) => last = Some(e),
+        }
+    }
+    let detail = last.map(|e| format!("{e:#}")).unwrap_or_default();
+    Err(unusable(format!(
+        "reading the config of {reference}: {}",
+        first_lines(&detail)
+    )))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the runner's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
@@ -295,7 +306,7 @@ mod tests {
     #[test]
     fn a_runner_that_cannot_fetch_refuses_an_uncached_image() {
         let err =
-            launch_from_registry("", "quay.io/x/vm:1", "", &CancellationToken::new()).unwrap_err();
+            launch_from_registry("", "quay.io/x/vm:1", &[], &CancellationToken::new()).unwrap_err();
         assert!(err.to_string().starts_with(IMAGE_LAUNCH_UNKNOWN), "{err}");
         assert_eq!(failure_reason(&err), REASON_BOOT_FAILED);
     }

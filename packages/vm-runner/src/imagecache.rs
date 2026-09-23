@@ -51,11 +51,11 @@ impl ImageCache {
         cache::publish_holders(&self.dir, &self.owner, &held);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image and unpacks it once for every machine of it to boot, then trims the cache to its budget. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auth` is the docker config to fetch with, empty for none. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image and unpacks it once for every machine of it to boot, then trims the cache to its budget. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auths` are the docker configs to fetch with, tried in order, and none for an anonymous fetch; the layers come with the one that read the config. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
     pub fn fetch(
         &self,
         reference: &str,
-        auth: &str,
+        auths: &[String],
         busy: &BTreeSet<PathBuf>,
         own: &BTreeSet<PathBuf>,
     ) -> anyhow::Result<()> {
@@ -64,8 +64,8 @@ impl ImageCache {
         let scratch = Scratch::new(&self.dir)?;
         fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
         let started = Instant::now();
-        let config =
-            fetch::read_config(&self.crane, reference, auth, &self.lifetime).inspect_err(|_| {
+        let (config, used) = fetch::read_config(&self.crane, reference, auths, &self.lifetime)
+            .inspect_err(|_| {
                 tracing::warn!(
                     image = reference,
                     duration_ms = elapsed_ms(started),
@@ -78,14 +78,14 @@ impl ImageCache {
             &self.crane,
             reference,
             &scratch.path().join(ROOTFS_DIR),
-            auth,
+            &used,
             &self.lifetime,
         )?;
         fs::write(
             scratch.path().join(LAUNCH_FILE),
             serde_json::to_vec(&launch)?,
         )?;
-        if !auth.is_empty() && !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
+        if !used.is_empty() && !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
             fs::write(scratch.path().join(PRIVATE_FILE), "")?;
         }
         tracing::info!(
@@ -99,8 +99,8 @@ impl ImageCache {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one its own credentials must still read the image — or no credentials, when it has none. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down.
-    pub fn may_reuse(&self, reference: &str, auth: &str) -> anyhow::Result<()> {
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, one of its own credentials, tried in the order they were sent, must still read the image — or an anonymous read must, when it has none. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down.
+    pub fn may_reuse(&self, reference: &str, auths: &[String]) -> anyhow::Result<()> {
         match fs::symlink_metadata(self.entry(reference).join(PRIVATE_FILE)) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
@@ -111,7 +111,7 @@ impl ImageCache {
                 "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
             )));
         }
-        if auth.is_empty() {
+        if auths.is_empty() {
             if !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
                 return Err(unusable(format!(
                     "{reference} is cached from a private registry, and this machine has no pull credentials that could read its manifest"
@@ -120,7 +120,10 @@ impl ImageCache {
             self.mark_public(reference);
             return Ok(());
         }
-        if !fetch::readable(&self.crane, reference, auth, &self.lifetime) {
+        if !auths
+            .iter()
+            .any(|auth| fetch::readable(&self.crane, reference, auth, &self.lifetime))
+        {
             return Err(unusable(format!(
                 "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
             )));

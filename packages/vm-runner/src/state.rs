@@ -87,7 +87,7 @@ pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Res
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let mut stored = spec.clone();
     stored.running = false;
-    stored.pull_auth.clear();
+    stored.pull_auths.clear();
     files::write(
         &dir.join(SPEC_FILE),
         &serde_json::to_vec(&stored)?,
@@ -375,7 +375,7 @@ mod tests {
             "agent-a",
             &MachineSpec {
                 image: "quay.io/x/vm:1".into(),
-                pull_auth: "{\"auths\":{\"quay.io\":{\"auth\":\"c2VjcmV0\"}}}".into(),
+                pull_auths: vec!["{\"auths\":{\"quay.io\":{\"auth\":\"c2VjcmV0\"}}}".into()],
                 ..Default::default()
             },
         )
@@ -390,7 +390,7 @@ mod tests {
         let writes_spec = gosource::function_body(&go, "(s *Server) writeSpec")
             .expect("server.go still has a writeSpec");
         assert!(
-            writes_spec.contains("spec.PullAuth = \"\""),
+            writes_spec.contains("spec.PullAuths = nil"),
             "the Go runner no longer clears the credential before it stores a spec: {writes_spec}"
         );
     }
