@@ -23,6 +23,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
@@ -234,6 +235,72 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	var requeued []time.Duration
 	r.WithRequeue(func(_ string, after time.Duration) { requeued = append(requeued, after) })
 	return r, node, &requeued
+}
+
+// TEST_SCENARIO: a private image on the vm backend is fetched by the runner, not by the kubelet, so the pull Secrets a pod would list have to reach the runner. They are the Agent's own imagePullSecretRef first and the install default after it, one document each, so the runner can fall back from a stale Agent credential to the default for the same registry as the kubelet would. They travel on the machine spec and nowhere else: not in the guest's environment.
+func TestAVMAgentsPullSecretsReachTheRunnerInPodOrder(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.ImagePullSecretRef = "my-agent-pull"
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.AgentBase.ImagePullSecrets = []string{"install-pull"}
+	for name, body := range map[string]string{
+		"my-agent-pull": `{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`,
+		"install-pull":  `{"auths":{"quay.io":{"auth":"ZGVmYXVsdA=="}}}`,
+	} {
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
+			Type:       corev1.SecretTypeDockerConfigJson,
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(body)},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	spec := node.spec("my-agent")
+	require.Len(t, spec.PullAuths, 2)
+	assert.Contains(t, spec.PullAuths[0], "YWdlbnQ=", "the Agent's own Secret is tried first")
+	assert.Contains(t, spec.PullAuths[1], "ZGVmYXVsdA==", "and the default for the same registry is kept to fall back to")
+	for k, v := range spec.Env {
+		assert.NotContains(t, v, "YWdlbnQ=", "the credential is not in the guest's environment (%s)", k)
+	}
+}
+
+// TEST_SCENARIO: a booting machine is reconciled every half second, and every reconcile sends the pull credentials. Reading the Secrets each time would put several API reads a second behind every booting agent. The credentials are kept for the length of the health poll, so a burst of reconciles reads each Secret once.
+func TestAStartingMachinesPollDoesNotReadThePullSecretsEachTime(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.ImagePullSecretRef = "my-agent-pull"
+	r, node, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	_, err := client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-pull", Namespace: "test-agents"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`)},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	reads := 0
+	client.PrependReactor("get", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.(k8stesting.GetAction).GetName() == "my-agent-pull" {
+			reads++
+		}
+		return false, nil, nil
+	})
+
+	for range 5 {
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+	}
+
+	assert.Equal(t, 1, reads, "five reconciles, one read of the pull Secret")
+	assert.Len(t, node.spec("my-agent").PullAuths, 1, "and every reconcile still sent the credential")
+}
+
+// TEST_SCENARIO: an Agent with no pull Secret, on an install with no default, fetches anonymously. That was the only behaviour before, and it must stay the same, with no empty credential document on the wire.
+func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
 // TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.

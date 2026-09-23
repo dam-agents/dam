@@ -18,6 +18,17 @@ type MachineSpec struct {
 	AllowCIDRs []string          `json:"allowCidrs,omitempty"`
 	Revision   string            `json:"revision,omitempty"`
 	Running    bool              `json:"running"`
+	// UNIT_BOUNDARY_DESCRIPTION: the docker configs the runner fetches this
+	// UNIT_BOUNDARY_DESCRIPTION: machine's image with, one per pull Secret a
+	// UNIT_BOUNDARY_DESCRIPTION: pod would list and in that order. The runner
+	// UNIT_BOUNDARY_DESCRIPTION: tries them in turn as the kubelet does, so a
+	// UNIT_BOUNDARY_DESCRIPTION: stale first credential still falls back to the
+	// UNIT_BOUNDARY_DESCRIPTION: next. They are credentials in transit and
+	// UNIT_BOUNDARY_DESCRIPTION: nothing more: the runner hands them to crane
+	// UNIT_BOUNDARY_DESCRIPTION: alone, clears them before the spec is stored
+	// UNIT_BOUNDARY_DESCRIPTION: or passed to smolvm, and never logs them, so
+	// UNIT_BOUNDARY_DESCRIPTION: they never reach spec.json or the guest.
+	PullAuths []string `json:"pullAuths,omitempty"`
 }
 
 type MachineStatus struct {

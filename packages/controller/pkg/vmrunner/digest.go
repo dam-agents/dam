@@ -119,7 +119,7 @@ func (s *Server) knownDigest(ref string) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within fresh is taken from the index. Otherwise the registry is asked, and the answer is written to the index for every process on the directory. If the registry cannot answer, the last digest the tag resolved to is used, so a registry outage boots what was cached before. An empty answer means the tag was never resolved here and cannot be resolved now. The caller then falls back to the first format.
-func (s *Server) resolveDigest(ref string, fresh time.Duration) string {
+func (s *Server) resolveDigest(ref string, fresh time.Duration, auths []string) string {
 	if digest := pinnedDigest(ref); digest != "" {
 		return digest
 	}
@@ -132,10 +132,9 @@ func (s *Server) resolveDigest(ref string, fresh time.Duration) string {
 	}
 	ctx, cancel := context.WithTimeout(s.lifetime(), resolveTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, s.Crane, "digest", ref).Output()
-	digest := strings.TrimSpace(string(out))
+	digest, err := s.craneDigest(ctx, ref, auths)
 	logged := strings.NewReplacer("\n", " ", "\r", " ").Replace(ref)
-	if err != nil || !imageDigest.MatchString(digest) {
+	if err != nil {
 		if known != "" {
 			slog.Warn("image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to", "image", logged, "digest", known)
 		}
@@ -147,8 +146,34 @@ func (s *Server) resolveDigest(ref string, fresh time.Duration) string {
 	return digest
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the tree a machine of this digest boots, fetched into the digest root if it is not there. The fetch names the digest and not the tag, so the tree is the image the digest names even if the tag moves while the fetch runs. No answer, with no error, means this format cannot serve the create: no digest was known, or there is no crane to fetch with. The caller then tries the first format.
-func (s *Server) digestImage(forMachine, ref, digest string) (string, *ImageLaunch, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the digest a registry gives for this reference, asked with each of the machine's pull credentials in the order a pod lists them, or with none when it has none. A tag of a private image resolves only for a credential that can read it, so without this a private image would never get a digest and would never reach the digest root.
+func (s *Server) craneDigest(ctx context.Context, ref string, auths []string) (string, error) {
+	candidates := auths
+	if len(candidates) == 0 {
+		candidates = []string{""}
+	}
+	last := errors.New("the registry named no digest")
+	for _, auth := range candidates {
+		env, done, err := dockerConfig(auth)
+		if err != nil {
+			return "", err
+		}
+		resolve := exec.CommandContext(ctx, s.Crane, "digest", ref)
+		resolve.Env = env
+		out, err := resolve.Output()
+		done()
+		if digest := strings.TrimSpace(string(out)); err == nil && imageDigest.MatchString(digest) {
+			return digest, nil
+		}
+		if err != nil {
+			last = err
+		}
+	}
+	return "", last
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the tree a machine of this digest boots, fetched into the digest root if it is not there. The fetch names the digest and not the tag, so the tree is the image the digest names even if the tag moves while the fetch runs. A cached entry marked private is reused only once this machine's own credentials read that digest, because the reference index is shared and hands one owner's resolution to every owner naming the same tag. No answer, with no error, means this format cannot serve the create: no digest was known, or there is no crane to fetch with. The caller then tries the first format.
+func (s *Server) digestImage(forMachine, ref, digest string, auths []string) (string, *ImageLaunch, error) {
 	if digest == "" {
 		return "", nil, nil
 	}
@@ -158,8 +183,13 @@ func (s *Server) digestImage(forMachine, ref, digest string) (string, *ImageLaun
 		return "", nil, err
 	}
 	s.metrics.lookup(launch != nil)
+	if launch != nil {
+		if err := s.mayReuse(repository(ref)+"@"+digest, entry, auths); err != nil {
+			return "", nil, err
+		}
+	}
 	if launch == nil && s.Crane != "" {
-		if err := s.cacheImage(repository(ref)+"@"+digest, entry, forMachine); err != nil {
+		if err := s.cacheImage(repository(ref)+"@"+digest, entry, forMachine, auths); err != nil {
 			return "", nil, err
 		}
 		if launch, err = readLaunch(entry); err != nil {
