@@ -32,9 +32,10 @@ import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
+  avatarName?: string;
 }
 
-export function SandboxHomeHeader({ agent, display }: Props) {
+export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -84,7 +85,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
     <PageHeader
       leading={
         <AgentAvatar
-          name={agent.name}
+          name={avatarName ?? agent.name}
           size={44}
           sleeping={isAsleep(display.state)}
           stopped={agent.stopRequested}
