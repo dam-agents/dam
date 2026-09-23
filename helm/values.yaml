@@ -331,10 +331,25 @@ virtualization:
   # It is not in the boot path. With it down, a cached image still boots (the
   # runner reads the tree from the directory) and a miss is still the runner's
   # own to fetch — which is also the only path a custom agent image can take,
-  # since nothing can know about one at deploy time. Fetches are anonymous
-  # here exactly as they are on the runner: no pull secret reaches either, so
-  # a private harness image is not preloaded, and fails on demand exactly as
-  # it does today.
+  # since nothing can know about one at deploy time.
+  #
+  # Pull secrets: a runner fetches with the same Secrets an agent pod would
+  # list — the Agent's own `imagePullSecretRef` first, then
+  # `controller.agent.base.imagePullSecrets` — trying each in turn as the
+  # kubelet does, for that fetch only. They are never stored with the machine
+  # and never reach the guest. This service fetches with
+  # `controller.agent.base.imagePullSecrets` alone, which it reads through a
+  # Role limited to getting those Secrets by name in `agentNamespace`. So a
+  # private harness image is preloaded when the install default can read it.
+  # A per-template `imagePullSecret` is not used here yet, so an image that
+  # only such a Secret can read is still fetched on demand by the runner.
+  #
+  # An entry that an anonymous read could not have fetched is marked private.
+  # A runner boots a machine from a private entry only after that machine's
+  # own credentials read the image's manifest, so naming a reference is not
+  # enough to borrow another owner's private image from this shared
+  # directory. The check needs the registry to be reachable. Public entries
+  # skip it and still boot with the registry down.
   #
   # Size `budget` to hold the preloaded set with room to spare: those images
   # are pinned, so a budget below their total leaves the cache permanently
@@ -1328,6 +1343,9 @@ controller:
   agent:
     base:
       # Cluster details (immutable per-agent)
+      # Install-wide default pull secrets, listed after an Agent's own
+      # `imagePullSecretRef`. On the vm backend the runner fetches with them
+      # instead of the kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
       # storageClass for workspace volumes; empty = cluster default. Any
       # ordinary RWO-capable class works — workspace volumes are always

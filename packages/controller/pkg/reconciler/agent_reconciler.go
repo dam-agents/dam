@@ -49,6 +49,8 @@ type AgentReconciler struct {
 	vmRunning      sync.Map
 	runnerResized  sync.Map
 	resizeNotices  sync.Map
+	pullAuthMu     sync.Mutex
+	pullAuthMemo   map[string]pullAuthMemo
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
