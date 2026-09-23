@@ -20,6 +20,7 @@ interface Props {
   group: CatalogProviderGroup;
   templateById: Map<string, ConnectionTemplateView>;
   sandbox?: SandboxGrantControls;
+  grantBlockedReason?: (connection: ConnectionView) => string | undefined;
   onNew: () => void;
   onDelete: (id: string, name: string) => void;
   deletingId: string | null;
@@ -33,6 +34,7 @@ export function CatalogProviderCard({
   group,
   templateById,
   sandbox,
+  grantBlockedReason,
   onNew,
   onDelete,
   deletingId,
@@ -83,6 +85,7 @@ export function CatalogProviderCard({
                 sandbox && {
                   granted: sandbox.grantedIds.has(c.id),
                   onToggle: (on) => sandbox.onToggleGrant(c.id, on),
+                  blockedReason: grantBlockedReason?.(c),
                 }
               }
               onDelete={() => onDelete(c.id, c.name)}

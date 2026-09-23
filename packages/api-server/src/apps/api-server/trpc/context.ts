@@ -168,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             await connections.validateProviderConnection(
               sel.providerConnectionId,
             );
+          await connections.validateGrantSet(sel.connectionIds);
           return {
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
           };

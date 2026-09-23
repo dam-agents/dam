@@ -104,12 +104,14 @@ export function ConnectionsSetupSection({
 }) {
   const connectionsQ = useAppConnections();
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
+  const granted = useMemo(
+    () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
+    [connectionsQ.data, grantedIds],
+  );
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter(
-        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
-      ),
-    [connectionsQ.data, grantedIds, excludeIds],
+      excludeProviderConnections(granted).filter((c) => !excludeIds?.has(c.id)),
+    [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
 
@@ -117,6 +119,7 @@ export function ConnectionsSetupSection({
     <section className="mb-8">
       <GrantedConnectionsPanel
         groups={groups}
+        granted={granted}
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={onOpenCatalog}
