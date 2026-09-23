@@ -169,7 +169,7 @@ function samplePath(d: string): Point[] {
         i++;
         break;
       default:
-        i++;
+        throw new Error(`Unsupported path command "${command}" in "${d}"`);
     }
   }
   return points;

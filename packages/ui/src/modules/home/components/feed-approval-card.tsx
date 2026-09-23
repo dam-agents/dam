@@ -19,6 +19,7 @@ import { approvalDetail, approvalHeadline } from "../lib/approval-copy.js";
 interface Props {
   approval: ApprovalView;
   agentName: string;
+  avatarName: string | undefined;
   meta: string;
   onDismiss: () => void;
   resolvedLabel?: string | null;
@@ -28,6 +29,7 @@ interface Props {
 export function FeedApprovalCard({
   approval,
   agentName,
+  avatarName,
   meta,
   onDismiss,
   resolvedLabel = null,
@@ -58,7 +60,9 @@ export function FeedApprovalCard({
             {!resolved && (
               <span className="size-2 shrink-0 rounded-full bg-warning" />
             )}
-            <AgentAvatar name={agentName} size={20} />
+            {avatarName !== undefined && (
+              <AgentAvatar name={avatarName} size={20} />
+            )}
             <span className="truncate">{agentName}</span>
           </div>
           <p className="text-[15px] leading-snug font-semibold text-foreground">

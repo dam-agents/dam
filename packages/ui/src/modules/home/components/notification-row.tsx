@@ -62,14 +62,12 @@ function rowIcon(kind: RowKind, size = 16) {
 
 function RowIdentity({
   kind,
-  agentName,
-  avatars,
+  avatarName,
 }: {
   kind: RowKind;
-  agentName: string;
-  avatars: boolean;
+  avatarName: string | undefined;
 }) {
-  if (!avatars) {
+  if (avatarName === undefined) {
     return (
       <div
         className={cn(
@@ -83,7 +81,7 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <LazyRobotHead seed={agentName} size={46} className="-m-[3px]" />
+      <LazyRobotHead seed={avatarName} size={46} className="-m-[3px]" />
       {kind !== "agent" && (
         <span
           className={cn(
@@ -101,6 +99,7 @@ function RowIdentity({
 export function NotificationRow({
   item,
   agentName,
+  avatarName,
   agents,
   meta,
   artifacts,
@@ -110,6 +109,7 @@ export function NotificationRow({
 }: {
   item: Extract<FeedItem, { kind: "unread" | "in-progress" }>;
   agentName: string;
+  avatarName: string | undefined;
   agents: readonly AgentView[];
   meta: string;
   artifacts: readonly ArtifactTouched[];
@@ -120,7 +120,7 @@ export function NotificationRow({
   const kind = rowKind(item, agents);
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
-  const avatars = useAgentAvatars();
+  const avatars = useAgentAvatars() && avatarName !== undefined;
 
   return (
     <div
@@ -140,7 +140,10 @@ export function NotificationRow({
       )}
     >
       <div className="relative shrink-0 pt-0.5">
-        <RowIdentity kind={kind} agentName={agentName} avatars={avatars} />
+        <RowIdentity
+          kind={kind}
+          avatarName={avatars ? avatarName : undefined}
+        />
         {running && (
           <span
             className={cn(
