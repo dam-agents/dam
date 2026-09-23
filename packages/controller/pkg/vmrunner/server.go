@@ -348,6 +348,9 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		return err
 	}
 	if state == StateAbsent {
+		if applied := s.readSpec(id); applied != nil && s.Runtime.HasKeptStorage(id) {
+			spec.StorageGiB = min(spec.StorageGiB, applied.StorageGiB)
+		}
 		if err := s.create(id, spec); err != nil {
 			return err
 		}
