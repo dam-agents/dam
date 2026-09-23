@@ -45,7 +45,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
 }
 
 function harness(claimed: JobRow[][]) {
-  const events: { agentId: string; payload: unknown }[] = [];
+  const events: { agentId: string; id: string; payload: unknown }[] = [];
   const woken: string[] = [];
   const released: number[] = [];
   let call = 0;
@@ -60,7 +60,8 @@ function harness(claimed: JobRow[][]) {
       undeliveredFor: async () => [],
     } as never,
     bump: async (agentId, list) => {
-      for (const e of list) events.push({ agentId, payload: e.payload });
+      for (const e of list)
+        events.push({ agentId, id: e.id, payload: e.payload });
       return 1;
     },
     enqueue: async () => {},
@@ -87,6 +88,27 @@ describe("waking an agent with a finished job", () => {
     expect(task(events[0]?.payload)).toContain("exit 0");
     expect(task(events[0]?.payload)).toContain("all good");
     expect(woken).toEqual(["agent-1"]);
+  });
+
+  /**
+   * TEST_SCENARIO: The agent-runtime reads an event id as a dedupe key, a
+   * colon, and the epoch milliseconds the event fired at. An id with no
+   * timestamp after its last colon is settled without running, so a turn with
+   * a bare UUID id reached the agent and was dropped while the Job still read
+   * as delivered and woken. The id must be per-agent and end in a timestamp,
+   * the same shape every other event producer writes.
+   */
+  it("gives the turn an id the agent-runtime can read a timestamp from", async () => {
+    const before = Date.now();
+    const { deliver, events } = harness([[job()]]);
+    await deliver("agent-1");
+    const id = events[0]?.id ?? "";
+    const cut = id.lastIndexOf(":");
+    expect(id.slice(0, cut)).toBe("satellite-outcome:agent-1");
+    const ts = Number(id.slice(cut + 1));
+    expect(Number.isInteger(ts)).toBe(true);
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(ts).toBeLessThanOrEqual(Date.now());
   });
 
   it("carries why a job ended and what it printed, not one or the other", async () => {

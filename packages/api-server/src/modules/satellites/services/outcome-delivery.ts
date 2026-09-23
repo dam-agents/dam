@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { EventKind } from "agent-runtime-api";
 import { INLINE_OUTPUT_LIMIT, formatJobRef } from "api-server-api";
 import type { JobRow } from "../domain/types.js";
@@ -96,7 +95,7 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
     try {
       await deps.bump(agentId, [
         {
-          id: randomUUID(),
+          id: `satellite-outcome:${agentId}:${Date.now()}`,
           kind: "satellite-outcome",
           payload: {
             task,
