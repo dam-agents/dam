@@ -2,8 +2,10 @@ import { TRPCError } from "@trpc/server";
 import type {
   SchedulesService,
   ScheduleCreateCronInput,
+  ScheduleCreateOnceInput,
   ScheduleCreateRRuleInput,
   ScheduleSpec,
+  ScheduleUpdateOnceInput,
   ScheduleUpdateRRuleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
@@ -15,8 +17,25 @@ import {
   validateRRule,
   validateTimezone,
 } from "../domain/recurrences.js";
+import { resolveOnceMoment } from "../domain/once.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
+
+function badRequest(message: string): TRPCError {
+  return new TRPCError({ code: "BAD_REQUEST", message });
+}
+
+function resolveMoment(
+  at: string | undefined,
+  timezone: string,
+  now: Date,
+): Date {
+  try {
+    return resolveOnceMoment(at, timezone, now);
+  } catch (e) {
+    throw badRequest(e instanceof Error ? e.message : "invalid time");
+  }
+}
 
 function asBadRequest(fn: () => void): void {
   try {
@@ -35,7 +54,9 @@ export function createSchedulesService(deps: {
   owner: string;
   agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
+  now?: () => Date;
 }): SchedulesService {
+  const now = deps.now ?? (() => new Date());
   const binding = deps.agentBinding;
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
@@ -148,6 +169,72 @@ export function createSchedulesService(deps: {
       return schedule;
     },
 
+    async createOnce(input: ScheduleCreateOnceInput, createdBy = "user") {
+      asBadRequest(() => validateTimezone(input.timezone));
+      const at = resolveMoment(input.at, input.timezone, now());
+      await ensureAgent(input.agentId);
+      const spec: ScheduleSpec = {
+        version: SPEC_VERSION,
+        type: "once",
+        at: at.toISOString(),
+        timezone: input.timezone,
+        task: input.task,
+        enabled: true,
+        createdBy,
+      };
+      const schedule = await deps.repo.create({
+        agentId: input.agentId,
+        owner: deps.owner,
+        name: input.name,
+        spec,
+      });
+      await deps.runner.sync(schedule.id);
+      emit({
+        type: EventType.ScheduleCreated,
+        scheduleId: schedule.id,
+        agentId: input.agentId,
+        ownerSub: deps.owner,
+      });
+      securityLog("info", "schedule.create", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: createdBy === "agent" ? "agent" : "user",
+        agentId: input.agentId,
+        target: schedule.id,
+        result: "success",
+        detail: { createdBy, type: "once", at: spec.at },
+      });
+      return (await deps.repo.get(schedule.id, deps.owner)) ?? schedule;
+    },
+
+    async updateOnce(input: ScheduleUpdateOnceInput) {
+      asBadRequest(() => validateTimezone(input.timezone));
+      const current = await deps.repo.get(input.id, deps.owner);
+      if (!current) return null;
+      if (current.spec.type !== "once")
+        throw badRequest("not a one-time schedule");
+      if (current.status?.lastRun)
+        throw badRequest("a one-time schedule cannot be edited once it fired");
+      const at = resolveMoment(input.at, input.timezone, now());
+      const spec: ScheduleSpec = {
+        ...current.spec,
+        at: at.toISOString(),
+        timezone: input.timezone,
+        task: input.task,
+      };
+      await deps.repo.updateName(input.id, deps.owner, input.name);
+      const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
+      if (!updated) return null;
+      await deps.runner.sync(updated.id);
+      emit({
+        type: EventType.ScheduleUpdated,
+        scheduleId: updated.id,
+        agentId: updated.agentId,
+        ownerSub: deps.owner,
+      });
+      return deps.repo.get(updated.id, deps.owner);
+    },
+
     async updateRRule(input: ScheduleUpdateRRuleInput) {
       asBadRequest(() => validateTimezone(input.timezone));
       asBadRequest(() => validateRRule(input.rrule));
@@ -156,6 +243,8 @@ export function createSchedulesService(deps: {
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
+      if (current.spec.type === "once")
+        throw badRequest("a one-time schedule is edited with updateOnce");
       const spec: ScheduleSpec = {
         ...current.spec,
         type: "rrule",
@@ -206,6 +295,9 @@ export function createSchedulesService(deps: {
     },
 
     async toggle(id) {
+      const current = await deps.repo.get(id, deps.owner);
+      if (current?.spec.type === "once")
+        throw badRequest("a one-time schedule cannot be paused; delete it");
       const next = await deps.repo.toggle(id, deps.owner);
       if (!next) return null;
       if (next.spec.enabled) {

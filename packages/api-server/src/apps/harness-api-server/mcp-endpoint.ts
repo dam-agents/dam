@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -840,9 +841,17 @@ export function createMcpSession(
                 {
                   id: sched.id,
                   name: sched.name,
-                  ...(sched.spec.type === "rrule"
-                    ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
-                    : { cron: sched.spec.cron }),
+                  ...match(sched.spec)
+                    .with({ type: "rrule" }, (spec) => ({
+                      rrule: spec.rrule,
+                      timezone: spec.timezone,
+                    }))
+                    .with({ type: "cron" }, (spec) => ({ cron: spec.cron }))
+                    .with({ type: "once" }, (spec) => ({
+                      at: spec.at,
+                      timezone: spec.timezone,
+                    }))
+                    .exhaustive(),
                   enabled: sched.spec.enabled,
                 },
                 null,

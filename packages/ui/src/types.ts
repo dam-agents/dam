@@ -175,9 +175,10 @@ export interface Schedule {
   id: string;
   name: string;
   agentId: string;
-  type: "cron" | "rrule";
+  type: "cron" | "rrule" | "once";
   cron: string | null;
   rrule: string | null;
+  at: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;
