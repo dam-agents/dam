@@ -584,7 +584,7 @@ jobs:
   merge-workloads:
     name: merge multi-arch workload manifests
     needs: [build-workloads, appversion, changes]
-    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
