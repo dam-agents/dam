@@ -57,6 +57,7 @@ function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
 }
 
 const SLEEP_STROKE = 4.2;
+const DASH_HEIGHT = 5.5;
 
 function closedEye(cx: number, cy: number, halfWidth: number, color: string) {
   return el("path", {
@@ -130,10 +131,16 @@ function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
         .map((bug, i) => {
           const [cx, cy] = bugEyeCenter(head, i, bug.r);
           return sleeping
-            ? el("path", {
-                d: `M${num(cx - bug.r)},${num(cy)} A${num(bug.r)},${num(bug.r)} 0 0 0 ${num(cx + bug.r)},${num(cy)} Z`,
+            ? rect(
+                {
+                  x: cx - bug.r,
+                  y: cy - DASH_HEIGHT / 2,
+                  width: bug.r * 2,
+                  height: DASH_HEIGHT,
+                  rx: DASH_HEIGHT / 2,
+                },
                 fill,
-              })
+              )
             : el("circle", { cx, cy, r: bug.r, fill });
         })
         .join("");
