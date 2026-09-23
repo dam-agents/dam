@@ -500,6 +500,15 @@ else
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
+  # CI brings the cluster up while this run's images are still building, and
+  # e2e:ci-images pulls them in the background; this is where they are first
+  # needed.
+  if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+    echo "Waiting for this run's images (e2e:ci-images)..."
+    until [ -s "$CI_IMAGES_STATUS" ]; do sleep 5; done
+    [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; exit 1; }
+  fi
+
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
   PLATFORM_IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest)
