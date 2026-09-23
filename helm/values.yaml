@@ -302,10 +302,11 @@ virtualization:
     # it empty means no policy at all, and that is the weakest point of this
     # design: a machine's egress allowlist is enforced by smolvm inside the
     # very process an escaped guest would own, so with no kernel gate behind
-    # it such a guest reaches the platform's datastores and every other
-    # owner's gateway. Set this and the runner is confined to DNS, the paired
-    # gateways, and these CIDRs. It cannot default to closed because the
-    # runner also pulls agent images, so the registry has to be named.
+    # it such a guest reaches the platform's datastores (each gateway's own
+    # ingress policy still keeps it off other owners' gateways). Set this and
+    # the runner is confined to DNS, its owner's gateways, and these CIDRs.
+    # It cannot default to closed because the runner also pulls agent images,
+    # so the registry has to be named.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
     # allows everything and confines nothing — pair it with the cluster's own
     # ranges in egressExceptCidrs, or name the registry directly:
@@ -322,8 +323,9 @@ virtualization:
     # a policy whose exception falls outside its own block, so a narrow entry
     # simply keeps none. This is what actually keeps an escaped guest away from
     # the platform's datastores, which are reached by pod and Service
-    # addresses. It does not separate one owner's gateways from another's:
-    # gateway pods carry no owner label, so the rule admits them as a class.
+    # addresses. Gateways are not reached through these ranges: the policy
+    # admits the owner's own gateway pods by label, and each gateway admits
+    # only its paired agent and its owner's runner.
     # There is no default read from the cluster: no portable API names the pod
     # range (many network plugins never record it on the node), and excepting
     # only the Service range would read as confined while pods stay reachable.

@@ -17,7 +17,7 @@ Three rules carry the security model:
    `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
-   *kernel* by a per-pair NetworkPolicy;
+   *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
    gateway pod's SPIFFE principal.
@@ -62,7 +62,7 @@ flowchart LR
 
   api-server -->|write K8s Secrets<br/>agent-platform.ai/owner=sub| gatewaypod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| gatewaypod
-  controller -->|render agent + paired gateway<br/>+ per-pair agent egress NetworkPolicy<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
+  controller -->|render agent + paired gateway<br/>+ per-pair NetworkPolicies<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
 
   agent-runtime -->|HTTPS_PROXY=&lt;agent&gt;-gateway| envoy
   envoy -->|ext_authz Check| api-server
@@ -73,11 +73,9 @@ The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
-- **Per-pair agent egress NetworkPolicy** is the sole gate on the
-  agent → paired gateway hop. The agent pod opts out of ambient mesh, so the kernel sees real
-  destination IPs rather than HBONE tunnelled to ztunnel; the policy
-  admits exactly DNS and the paired gateway pod's Envoy port. HBONE
-  15008 is not admitted — the agent never speaks it.
+- **Per-pair NetworkPolicies** gate the agent → paired gateway hop
+  at both ends. The agent pod opts out of ambient mesh, so the kernel
+  sees real destination IPs rather than HBONE tunnelled to ztunnel.
 - **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
@@ -654,9 +652,12 @@ differ:
   `automountServiceAccountToken`
   stays false on both pods; the gateway's SPIFFE cert is independent
   of SA-token mounts.
-- **Agent → paired gateway** is gated at the kernel by the per-pair
-  `<id>-agent-egress` NetworkPolicy. One egress rule: the paired
-  gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy port.
+- **Agent → paired gateway** is gated at the kernel at both ends.
+  The per-pair `<id>-agent-egress` NetworkPolicy has one egress rule:
+  the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
+  proxy port. The gateway injects credentials for any caller, so
+  `<id>-gateway-ingress` admits that port only from the paired agent
+  pod and, for a vm Agent, the owner's VM runner.
   DNS is not admitted — the agent addresses its gateway by ClusterIP,
   and name resolution for external hosts happens in the gateway, so
   anything in the pod that tries to resolve names directly fails

@@ -121,6 +121,8 @@ type Server struct {
 	slowBoots  map[string]slowBoot
 	secrets    map[string][]string
 	metrics    *metrics
+	// UNIT_BOUNDARY_DESCRIPTION: machines this runner last saw running, with the memory each was started with. Admission reads this instead of asking smolvm about every other machine on every PUT. It is kept true by every start and stop this runner makes, by every state it reads from smolvm, and, on a restarted runner, by one read of each machine in Start.
+	running map[string]int
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the lifetime every operation of this runner hangs off. Background when Start has not run, which is the Preloader: it drives this cache code with no runner behind it. Nothing here bounds a pass of its own — its interval bounds the gap between passes, not a pass — so a fetch it starts ends at the pull timeout and at nothing else.
@@ -141,7 +143,7 @@ func (s *Server) Start() error {
 	s.locks, s.pending, s.failures, s.listeners = map[string]*sync.Mutex{}, map[string]string{}, map[string]failure{}, map[string]net.Listener{}
 	s.gens, s.drift, s.health = map[string]uint64{}, map[string]string{}, map[string]health{}
 	s.restarts, s.committing, s.seq = map[string]int32{}, map[string]int{}, map[string]uint64{}
-	s.lastState, s.startedAt = map[string]cachedState{}, map[string]time.Time{}
+	s.lastState, s.startedAt, s.running = map[string]cachedState{}, map[string]time.Time{}, map[string]int{}
 	s.awaiting, s.slowBoots, s.secrets = map[string]string{}, map[string]slowBoot{}, map[string][]string{}
 	s.metrics = newMetrics(s)
 	ids, err := s.machineIDs()
@@ -149,6 +151,9 @@ func (s *Server) Start() error {
 		return err
 	}
 	for _, id := range ids {
+		if s.Runtime != nil {
+			s.observeAtStart(id)
+		}
 		if p := s.port(id); p != 0 {
 			if err := s.forward(id, p); err != nil {
 				slog.Warn("republishing machine port", "machine", id, "error", err)
@@ -356,8 +361,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	}
 	if !spec.Running {
 		if state == StateRunning {
-			defer s.forgetState(id)
-			return s.Runtime.Stop(id)
+			return s.stop(id)
 		}
 		return nil
 	}
@@ -373,8 +377,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	applied := s.readSpec(id)
 	if applied != nil && egressChanged(*applied, spec) {
 		if state == StateRunning {
-			s.forgetState(id)
-			if err := s.Runtime.Stop(id); err != nil {
+			if err := s.stop(id); err != nil {
 				return err
 			}
 		}
@@ -409,8 +412,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 			s.metrics.unhealthyRestart()
 		}
 		op = StateRestarting
-		s.forgetState(id)
-		if err := s.Runtime.Stop(id); err != nil {
+		if err := s.stop(id); err != nil {
 			return err
 		}
 		state = StateStopped
@@ -420,7 +422,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		if err := s.Runtime.Update(id, spec, applied); err != nil {
 			return err
 		}
-		if err := s.startMachine(id, op); err != nil {
+		if err := s.start(id, spec.MemoryMiB, op); err != nil {
 			return err
 		}
 	}
@@ -483,7 +485,7 @@ func (s *Server) create(id string, spec MachineSpec, auths []string) error {
 	if err := s.forward(id, port); err != nil {
 		return err
 	}
-	return s.startMachine(id, StateCreating)
+	return s.start(id, spec.MemoryMiB, StateCreating)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: platform-init is the machine's entrypoint, and it execs the image's own — so what the image says to run has to be known before the machine is created, on every path that reaches a boot. A cached tree carries it beside the files and an archive carries it inside, but a machine booting straight from a registry reference has neither, and smolvm would read the config itself and launch the image's entrypoint directly, leaving the disk unmounted. One config fetch costs no layers and answers it. An install that disabled the fetch is refused rather than booted without persistence: what it would save is a machine whose work does not survive its first stop.
@@ -1067,6 +1069,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 	delete(s.awaiting, id)
 	delete(s.slowBoots, id)
 	delete(s.secrets, id)
+	delete(s.running, id)
 	if ln := s.listeners[id]; ln != nil {
 		ln.Close()
 		delete(s.listeners, id)
@@ -1164,14 +1167,6 @@ func (s *Server) markStarting(id, op string) {
 	s.mu.Unlock()
 }
 
-func (s *Server) startMachine(id, op string) error {
-	s.markStarting(id, op)
-	started := time.Now()
-	err := s.Runtime.Start(id)
-	s.metrics.start(op, time.Since(started), err)
-	return err
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: asking smolvm for a machine's state costs a process, and the controller asks on every readiness poll — often enough, while a machine starts, that the spawns cost more than the answer is worth. The answer barely moves at that rate, so a reading is reused for a moment. Only the state is reused: whether the guest answers is checked live every time, so a machine that dies is still noticed by the health check rather than waiting out this window.
 func (s *Server) forgetState(id string) {
 	s.mu.Lock()
@@ -1190,10 +1185,62 @@ func (s *Server) machineState(id string) (string, error) {
 	if err != nil {
 		return state, err
 	}
+	s.observe(id, state)
 	s.mu.Lock()
 	s.lastState[id] = cachedState{state: state, at: time.Now()}
 	s.mu.Unlock()
 	return state, nil
+}
+
+func (s *Server) stop(id string) error {
+	s.forgetState(id)
+	defer s.forgetState(id)
+	if err := s.Runtime.Stop(id); err != nil {
+		return err
+	}
+	s.observe(id, StateStopped)
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a start that fails has already killed whatever VMM it left, so the machine stops counting against the runner's memory; the next state read corrects that if it is wrong.
+func (s *Server) start(id string, memoryMiB int, op string) error {
+	s.markStarting(id, op)
+	started := time.Now()
+	err := s.Runtime.Start(id)
+	s.metrics.start(op, time.Since(started), err)
+	if err != nil {
+		s.observe(id, StateStopped)
+		return err
+	}
+	s.mu.Lock()
+	s.running[id] = memoryMiB
+	s.mu.Unlock()
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: records a state read from smolvm. A running machine this runner did not start itself, which is one it found after a restart, is counted at the memory its applied spec names.
+func (s *Server) observe(id, state string) {
+	if state != StateRunning {
+		s.mu.Lock()
+		delete(s.running, id)
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Lock()
+	_, known := s.running[id]
+	s.mu.Unlock()
+	if known {
+		return
+	}
+	memoryMiB := 0
+	if applied := s.readSpec(id); applied != nil {
+		memoryMiB = applied.MemoryMiB
+	}
+	s.mu.Lock()
+	if _, known := s.running[id]; !known {
+		s.running[id] = memoryMiB
+	}
+	s.mu.Unlock()
 }
 
 func (s *Server) status(id string) MachineStatus {
@@ -1431,15 +1478,16 @@ func failureReason(err error) string {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: admission asks smolvm for every other machine's state, one fork each, on every PUT — a runner holding n machines pays n subprocesses per admitted machine. That is fine for the handful an owner runs; past that, keep the applied sizes in the server and read them here instead of asking smolvm.
+// UNIT_BOUNDARY_DESCRIPTION: admission counts what the runner already knows — memory reserved by operations in flight and the machines it last saw running — so a PUT costs no subprocess. A machine can also die on its own, and the runner then still counts it until the next state read. So a refusal is checked once more against smolvm before it is given: the fork per machine is paid only by the PUT that would otherwise be refused.
 func (s *Server) roomFor(id string, spec MachineSpec) error {
 	limit := s.MemoryMiB
 	if limit == 0 {
 		return nil
 	}
-	used, err := s.committedMiB(id)
-	if err != nil {
-		return err
+	used := s.committed(id)
+	if used+spec.MemoryMiB+s.ReserveMiB > limit {
+		s.recheckRunning(id)
+		used = s.committed(id)
 	}
 	if used+spec.MemoryMiB+s.ReserveMiB > limit {
 		return fmt.Errorf("this machine's %d MiB does not fit: the VM runner has %d MiB for machines and %d MiB is already committed; stop another agent or give the runner more memory",
@@ -1448,37 +1496,52 @@ func (s *Server) roomFor(id string, spec MachineSpec) error {
 	return nil
 }
 
-func (s *Server) committedMiB(except string) (int, error) {
-	ids, err := s.machineIDs()
-	if err != nil {
-		return 0, err
-	}
+func (s *Server) committed(except string) int {
 	s.mu.Lock()
-	committing := make(map[string]int, len(s.committing))
-	for k, v := range s.committing {
-		committing[k] = v
+	defer s.mu.Unlock()
+	used := 0
+	for other, mib := range s.committing {
+		if other != except {
+			used += mib
+		}
 	}
-	s.mu.Unlock()
-	for other := range committing {
-		if !slices.Contains(ids, other) {
+	for other, mib := range s.running {
+		if _, inFlight := s.committing[other]; other != except && !inFlight {
+			used += mib
+		}
+	}
+	return used
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be read when the runner starts is counted as running at its applied size. Leaving it out would count its memory as nothing, and admission would then let in a machine that does not fit, which is what admission exists to prevent. Counting it errs the other way, and a refusal rechecks it against smolvm before it is given.
+func (s *Server) observeAtStart(id string) {
+	state, err := s.Runtime.State(id)
+	if err != nil {
+		slog.Warn("could not read a machine's state at start; counting it as running until a read succeeds", "machine", id, "error", err)
+		state = StateRunning
+	}
+	s.observe(id, state)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: asks smolvm about every machine this runner has, not only the ones it counts, so that a machine it holds as stopped but that is running after all is counted before a refusal is given.
+func (s *Server) recheckRunning(except string) {
+	all, _ := s.machineIDs()
+	s.mu.Lock()
+	ids := make([]string, 0, len(all)+len(s.running))
+	for other := range s.running {
+		if _, inFlight := s.committing[other]; other != except && !inFlight {
 			ids = append(ids, other)
 		}
 	}
-	used := 0
-	for _, other := range ids {
-		if other == except {
-			continue
-		}
-		if mib, inFlight := committing[other]; inFlight {
-			used += mib
-			continue
-		}
-		if state, err := s.Runtime.State(other); err != nil || state != StateRunning {
-			continue
-		}
-		if applied := s.readSpec(other); applied != nil {
-			used += applied.MemoryMiB
+	for _, other := range all {
+		_, counted := s.running[other]
+		if _, inFlight := s.committing[other]; other != except && !inFlight && !counted {
+			ids = append(ids, other)
 		}
 	}
-	return used, nil
+	s.mu.Unlock()
+	for _, other := range ids {
+		s.forgetState(other)
+		_, _ = s.machineState(other)
+	}
 }

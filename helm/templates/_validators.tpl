@@ -96,9 +96,11 @@ first evicted — taking every machine with it.
 
 {{/*
 A machine's egress allowlist is enforced by smolvm inside the very process an
-escaped guest would own. The runner's own NetworkPolicy is the only gate behind
-it, and it cannot default to closed because the runner pulls agent images — so
-an install has to say, rather than inherit an open pod by omission.
+escaped guest would own. The runner's own NetworkPolicy is the kernel gate on
+where such a guest may go (each gateway's ingress policy separately decides whose
+credentials it can reach), and it cannot default to closed because the runner
+pulls agent images — so an install has to say, rather than inherit an open pod
+by omission.
 */}}
 {{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
 {{- if .Values.virtualization.enabled -}}

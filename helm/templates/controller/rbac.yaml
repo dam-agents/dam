@@ -73,9 +73,9 @@ rules:
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Per-pair agent egress NetworkPolicy. Mesh AuthorizationPolicy gates
-  # ingress to the gateway pod; this NP closes the symmetric egress hole
-  # at the kernel layer so the agent process cannot bypass HTTPS_PROXY.
+  # Per-pair agent egress and gateway ingress NetworkPolicies, plus each
+  # VM runner's: the kernel gates on who reaches a gateway, so the agent
+  # cannot bypass HTTPS_PROXY and no other pod can borrow its credentials.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
