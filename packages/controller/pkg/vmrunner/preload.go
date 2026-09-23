@@ -22,7 +22,7 @@ func (p *Preloader) cache() *Server {
 	return &Server{ImageDir: p.ImageDir, RunnerID: p.ID, Crane: p.Crane, ImageBudget: p.Budget, Pinned: p.Images}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: claims are published before anything is fetched, because a runner sharing this directory evicts on what it can read here and nothing else. They are published again after each fetch, because a claim is believed only while it is being refreshed and a pass is not quick: every image is allowed a whole pull timeout, so a pass over several of them can outlast the window a runner believes a claim for. Left to the gap between passes alone, this service's own claim would go stale while the very pass that wrote it was still running, and the images it had already preloaded would be evicted by the next runner to want the room. Refreshing between images bounds the gap by one fetch instead of by the whole pass. It sweeps on every pass rather than only after a fetch: the runners tidy the directory only as a side effect of paying for a miss, so on a node whose images are all cached nothing prunes what an owner who has gone left behind.
+// UNIT_BOUNDARY_DESCRIPTION: claims are published before anything is fetched, because a runner sharing this directory evicts on what it can read here and nothing else. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the claim moves with it; the tree of the old digest is then held only by the machines still running it. Claims are published again after each image, because a claim is believed only while it is being refreshed and a pass is not quick: every image is allowed a whole pull timeout, so a pass over several of them can outlast the window a runner believes a claim for. Left to the gap between passes alone, this service's own claim would go stale while the very pass that wrote it was still running, and the images it had already preloaded would be evicted by the next runner to want the room. Refreshing between images bounds the gap by one fetch instead of by the whole pass. It sweeps on every pass rather than only after a fetch: the runners tidy the directory only as a side effect of paying for a miss, so on a node whose images are all cached nothing prunes what an owner who has gone left behind.
 func (p *Preloader) Sweep() {
 	cache := p.cache()
 	cache.publishHolders()
@@ -31,12 +31,16 @@ func (p *Preloader) Sweep() {
 			slog.Warn("image cache: this install names an image the preloader will not fetch", "reason", "the reference is not one a cache entry can be named after")
 			continue
 		}
-		cached := cache.cachePath(ref)
-		if launch, _ := readLaunch(cached); launch != nil {
+		digest := cache.resolveDigest(ref, 0)
+		if digest == "" {
+			slog.Warn("image cache: the registry cannot say which image this install ships under a tag", "image", ref)
 			continue
 		}
-		if err := cache.cacheImage(ref, cached, ""); err != nil {
-			slog.Warn("image cache: preloading an image this install ships", "image", ref, "error", err)
+		cached := cache.digestPath(digest)
+		if launch, _ := readLaunch(cached); launch == nil {
+			if err := cache.cacheImage(repository(ref)+"@"+digest, cached, ""); err != nil {
+				slog.Warn("image cache: preloading an image this install ships", "image", ref, "error", err)
+			}
 		}
 		cache.publishHolders()
 	}
@@ -55,7 +59,7 @@ func (p *Preloader) Run(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: entries this process keeps although no machine of its own is running one, keyed the way eviction keys them. Both shapes are named, because an archive an earlier release cached still boots a machine and evicting it would cost the install the only copy it has.
+// UNIT_BOUNDARY_DESCRIPTION: entries this process keeps although no machine of its own is running one, keyed the way eviction keys them. Three entries are named for each image: the digest entry its reference last resolved to, and the tree and the archive an earlier release named after the reference. The older two are still named because an archive an earlier release cached still boots a machine, and evicting it would cost the install the only copy it has.
 func (s *Server) pinnedImages() map[string]bool {
 	if len(s.Pinned) == 0 {
 		return nil
@@ -67,6 +71,9 @@ func (s *Server) pinnedImages() map[string]bool {
 		}
 		base := s.cachePath(ref)
 		held[base], held[base+".tar"] = true, true
+		if digest := s.knownDigest(ref); digest != "" {
+			held[s.digestPath(digest)] = true
+		}
 	}
 	return held
 }

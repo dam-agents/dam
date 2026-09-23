@@ -138,7 +138,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	podInformer := podFactory.Core().V1().Pods()
 
 	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
-	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient).WithAgentCache(agentInformer.Lister())
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {

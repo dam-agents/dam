@@ -57,7 +57,7 @@ func setupRolloutReconciler(t *testing.T, owners ...string) (*AgentReconciler, m
 func createRolloutRunner(t *testing.T, r *AgentReconciler, owner string) {
 	t.Helper()
 	ctx := context.Background()
-	_, _, err := r.ensureRunner(ctx, owner)
+	_, _, err := r.ensureRunner(ctx, owner, runnerDemand{})
 	require.NoError(t, err)
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	r.config.VM.Runner.Image = runnerV2
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
 
-	_, _, err := r.ensureRunner(ctx, "owner-new")
+	_, _, err := r.ensureRunner(ctx, "owner-new", runnerDemand{})
 	require.NoError(t, err)
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-new"))
 }
