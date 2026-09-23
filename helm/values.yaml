@@ -1839,15 +1839,47 @@ harnessTemplates:
 e2e:
   enabled: false
 
+# -- GitHub hosts the PLATFORM ITSELF reads, as opposed to the ones an agent
+# reaches through a user's connection. Public github.com is always readable and
+# is always read anonymously; this block adds one GitHub Enterprise host
+# (github.ibm.com, ghe.acme.com, …) and the credential to read it with, so a
+# repository that already holds a ready-to-use agent can be offered as a starter
+# kit instead of being rebuilt in-platform.
+#
+# The credential is the INSTALL'S, not a user's: what it reads is refreshed on a
+# cadence with no user in context. It is sent to `enterprise.host` and nowhere
+# else — a URL naming any other host is refused rather than reached with the
+# token — so it wants read-only scope on the repositories it must see.
+#
+# This is not how an AGENT reaches an enterprise repository. An agent's own
+# clone rides the gateway with the `github-enterprise` connection its kit
+# requires, and never sees this token.
+#
+# Leave `enterprise.tokenSecret.name` empty to read no enterprise host at all.
+# An empty `enterprise.host` falls back to the enterprise host the connection
+# presets already name (apiServer.oauthAppDefaults.githubEnterprise.host), so a
+# single-host install spells it once; setting it here does not change what those
+# presets offer users.
+#
+# Read today by the starter-kit catalog reader. Rendered as
+# GITHUB_ENTERPRISE_HOST / GITHUB_ENTERPRISE_TOKEN.
+github:
+  enterprise:
+    host: ""
+    tokenSecret:
+      name: ""
+      key: token
+
 # -- Starter kit catalogs. The api-server reads every catalog listed here, in
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
 # `builtin` is the platform's own catalog, shipped inside this chart
 # (helm/starter-kits) and mounted into the api-server — versioned with the
 # release, no network needed — unless one of its entries names a repository
 # (`id` + `url`), which is resolved over the network on every refresh.
-# `catalogs` adds external ones: each names a
-# public git repository holding catalog.yaml (optionally `/tree/<ref>/<dir>`
-# to name a directory or `#<ref>` to pin). Rendered as STARTER_KITS_CATALOGS.
+# `catalogs` adds external ones: each names a git repository holding
+# catalog.yaml, on public github.com or on the `github.enterprise` host above,
+# with `ref` to pin and `dir` to read a subdirectory — never written into the
+# url. Rendered as STARTER_KITS_CATALOGS.
 starterKits:
   builtin:
     enabled: true
