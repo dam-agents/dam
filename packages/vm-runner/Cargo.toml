@@ -17,6 +17,9 @@ clap = { version = "4", features = ["derive"] }
 # --allow-from is a list of CIDRs the Go runner refuses to start on if any is
 # malformed; parsing them by hand is how an allowlist quietly admits everybody.
 ipnet = "2"
+# kill(2) for a VMM that outlived its stop. Already in the lock by way of
+# smolvm, so this adds an edge and no crate.
+libc = "0.2"
 # Already in the lock by way of smolvm, so this adds a dependency edge and no
 # crate: an archive an earlier release cached still boots a machine, and the
 # config saying how is inside it.

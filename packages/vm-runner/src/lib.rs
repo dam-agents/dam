@@ -2,10 +2,12 @@
 pub mod api;
 pub mod cache;
 pub mod capacity;
+pub mod embedded;
 pub mod files;
 pub mod guest;
 pub mod launch;
 pub mod plan;
+pub mod runtime;
 pub mod share;
 pub mod state;
 
