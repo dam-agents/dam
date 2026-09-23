@@ -4,9 +4,10 @@
 # device grant differs per cluster.
 #
 # The runner itself is the Rust crate in packages/vm-runner, which drives smolvm
-# through its embedding API rather than forking the CLI. It is a second build
-# context, named `vm-runner`: this Dockerfile's own context stays
-# packages/controller for the two Go binaries that ship beside it.
+# through its embedding API rather than forking the CLI, and so is the per-node
+# image cache service beside it. The crate is a second build context, named
+# `vm-runner`: this Dockerfile's own context stays packages/controller for
+# platform-init, the one Go binary that still ships.
 #   docker build --build-context vm-runner=packages/vm-runner \
 #     -f packages/controller/Dockerfile.vm-runner packages/controller
 
@@ -22,7 +23,8 @@ RUN ./.mise/fetch-smolvm
 COPY --from=vm-runner src src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked && cp target/release/vm-runner /vm-runner
+    cargo build --release --locked && \
+    cp target/release/vm-runner /vm-runner && cp target/release/vm-image-cache /vm-image-cache
 
 FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS builder
 
@@ -35,8 +37,6 @@ COPY . .
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -o /vm-image-cache ./cmd/vm-image-cache && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -o /platform-init ./cmd/platform-init
 
@@ -87,7 +87,8 @@ RUN vm-runner --help >/dev/null
 # cache — the runner that fills it on a miss and the service that fills it
 # before anyone misses — built and pinned together, which is what makes them
 # agree on what a cache entry is.
-COPY --from=builder /vm-image-cache /usr/local/bin/vm-image-cache
+COPY --from=rust-builder /vm-image-cache /usr/local/bin/vm-image-cache
+RUN vm-image-cache --help >/dev/null
 
 # platform-init is the entrypoint of every machine, not of this pod: the runner
 # copies it into each machine's share, where the guest runs it before the agent

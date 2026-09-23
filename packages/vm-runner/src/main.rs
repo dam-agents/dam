@@ -10,12 +10,15 @@ use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, state, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the Go runner this replaces defines, kept name-for-name. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
     #[arg(long, default_value = ":4600")]
     listen: String,
+    // UNIT_BOUNDARY_DESCRIPTION: where Prometheus metrics are served, in plain HTTP and without the machine API's token. Empty serves none.
+    #[arg(long = "metrics-listen", default_value = "")]
+    metrics_listen: String,
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
@@ -118,7 +121,7 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
         Some(port) => {
             let port: u16 = port
                 .parse()
-                .map_err(|e| anyhow::anyhow!("--listen {listen}: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("listen address {listen}: {e}"))?;
             std::net::TcpListener::bind(("::", port))
                 .or_else(|_| std::net::TcpListener::bind(("0.0.0.0", port)))?
         }
@@ -229,12 +232,23 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     let listener = bind(&args.listen)?;
     let app = http::router(server.clone(), &token).into_make_service();
     let handle = axum_server::Handle::new();
+    let scrape = if args.metrics_listen.is_empty() {
+        None
+    } else {
+        let listener = bind(&args.metrics_listen)?;
+        let handle = axum_server::Handle::new();
+        let serving = axum_server::from_tcp(listener)
+            .handle(handle.clone())
+            .serve(http::metrics_router(server.clone()).into_make_service());
+        Some((handle, tokio::spawn(serving)))
+    };
     tracing::info!(
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
         tls = !args.tls_cert.is_empty(),
         platform_init = %args.platform_init.display(),
+        metrics = %args.metrics_listen,
         "VM runner serving"
     );
     let serving = {
@@ -272,6 +286,10 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
     if let Err(e) = serving.await {
         tracing::warn!(error = %e, "the machine API did not shut down cleanly");
+    }
+    if let Some((handle, serving)) = scrape {
+        handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
+        let _ = serving.await;
     }
     server.close().await;
     tracing::info!("VM runner stopped");
@@ -392,6 +410,33 @@ mod tests {
         .expect("these are the flags the controller passes");
         assert_eq!(args.allow_from.0.len(), 2);
         assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
+    }
+
+    // TEST_SCENARIO: the controller builds the runner's arguments in code, and a flag this binary does not know is a runner pod that exits on start rather than a failed build. Every flag the controller's Deployment passes is read from that code and must be one this binary defines.
+    #[test]
+    fn every_flag_the_controller_passes_is_known() {
+        use clap::CommandFactory;
+        let path = "../controller/pkg/reconciler/vm_runner.go";
+        let go = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the controller builds the runner's args in {path}: {e}"));
+        let deployment = go
+            .split_once("func (r *AgentReconciler) applyRunnerDeployment(")
+            .expect("vm_runner.go still builds the runner's Deployment")
+            .1;
+        let deployment = deployment.split_once("\n}").unwrap().0;
+        let passed: Vec<&str> = deployment
+            .split("\"--")
+            .skip(1)
+            .filter_map(|rest| rest.split_once('=').map(|(name, _)| name))
+            .collect();
+        assert!(passed.contains(&"metrics-listen"), "{passed:?}");
+        let command = Args::command();
+        for flag in passed {
+            assert!(
+                command.get_arguments().any(|a| a.get_long() == Some(flag)),
+                "the controller passes --{flag}, which this runner does not define"
+            );
+        }
     }
 
     // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary is meant to replace the Go runner under that same ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
