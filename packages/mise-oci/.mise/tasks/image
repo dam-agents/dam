@@ -63,7 +63,8 @@ cp "$pkg/debian-base/host-tools.toml" "$host_tools/mise.toml"
 cp "$pkg/debian-base/image.toml" "$stage/mise.toml"
 cp "$pkg/$image/image.toml" "$stage/mise.$image.toml"
 cp "$pkg/debian-base/python-postinstall.sh" packages/platform-base/drop-pip.sh "$stage/"
-mise trust -q "$host_tools" "$stage"
+mise trust -q "$host_tools"
+mise trust -q "$stage"
 mise -C "$host_tools" install
 mise -C "$stage" -E "$image" install
 

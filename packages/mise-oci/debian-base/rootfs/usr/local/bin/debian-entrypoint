@@ -21,8 +21,10 @@ fi
 
 if [ "$(id -u)" = 0 ]; then
 	# The shared script remaps `agent` to uid 0 in /etc/passwd for a machine
-	# run as root; here the account lives in extrausers.
-	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /var/lib/extrausers/passwd
+	# run as root, and extrausers will not serve a uid 0 entry. Root can write
+	# /etc/passwd, so the account is added there for the script to remap; the
+	# rootfs is fresh on every boot, the grep only guards a re-run.
+	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >> /etc/passwd
 	# Debian's sshd, run as root, refuses to start without its root-owned
 	# privilege-separation directory, and nothing in the image can ship one:
 	# every file a `mise oci` layer adds carries the one build-wide owner.

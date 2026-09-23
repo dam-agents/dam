@@ -24,12 +24,21 @@ rg = "latest"
 gh = "2.101.0"
 uv = "latest"
 python = { version = "3.12", postinstall = 'sh "{{config_root}}/python-postinstall.sh"' }
-"npm:@googleworkspace/cli" = "latest"
 kubectl = "latest"
 oc = "latest"
 # k3s and docker are not here: they come from host-tools.toml. A tool's bin
 # directory lands ahead of everything on the image PATH, and both need the
 # shims in /usr/local/share/tool-shims to run first.
+
+# gws from its release rather than npm: mise's npm backend skips install scripts,
+# and the npm package fetches its binary in one, so it would only download
+# gws on first use.
+[tools."http:gws"]
+version = "0.22.5"
+
+[tools."http:gws".platforms]
+linux-x64 = { url = "https://github.com/googleworkspace/cli/releases/download/v{{version}}/google-workspace-cli-x86_64-unknown-linux-gnu.tar.gz" }
+linux-arm64 = { url = "https://github.com/googleworkspace/cli/releases/download/v{{version}}/google-workspace-cli-aarch64-unknown-linux-gnu.tar.gz" }
 
 # Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
 # scripts included. Fedora's list from platform-base, in Debian names, plus the
