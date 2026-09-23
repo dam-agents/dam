@@ -312,7 +312,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	agentReady := r.podCurrentAndReady(ctx, name)
-	agentPod := r.getPod(ctx, name)
+	agentPod, podReadErr := r.readPod(ctx, name)
 
 	agentFailReason, agentFailMsg := "PodNotReady", ""
 	if !agentReady {
@@ -321,10 +321,10 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, agentRestarts, agentRestartReason)
+	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason)
 }
 
-func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, agentRestarts int32, agentRestartReason string) error {
+func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string) error {
 	name := agent.Name
 	gen := agent.Generation
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
@@ -340,8 +340,10 @@ func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.A
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
-		s.AgentPodRestarts = agentRestarts
-		s.AgentPodRestartReason = agentRestartReason
+		if restartsObserved {
+			s.AgentPodRestarts = agentRestarts
+			s.AgentPodRestartReason = agentRestartReason
+		}
 		s.ObservedGeneration = gen
 	})
 }
@@ -398,11 +400,19 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 }
 
 func (r *AgentReconciler) getPod(ctx context.Context, ssName string) *corev1.Pod {
-	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
-	if err != nil {
-		return nil
-	}
+	pod, _ := r.readPod(ctx, ssName)
 	return pod
+}
+
+func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
+	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pod, nil
 }
 
 func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {

@@ -335,7 +335,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, st.Restarts, restartReason)
+	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, true, st.Restarts, restartReason)
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {
