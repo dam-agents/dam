@@ -300,7 +300,7 @@ func TestIdleChecker_RunLoopSweepsBeforeFirstTick(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond,
 		"the first tick is five minutes away, so only a sweep before it can hibernate this agent")
 
-	assert.Equal(t, 15*time.Second, checker.checkInterval(),
+	assert.Eventually(t, func() bool { return checker.checkInterval() == 15*time.Second }, 2*time.Second, 10*time.Millisecond,
 		"the sweep before the first tick also seeds the cadence from the agent's own timeout")
 
 	cancel()
