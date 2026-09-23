@@ -2,12 +2,16 @@
 pub mod api;
 pub mod cache;
 pub mod capacity;
+pub mod command;
 pub mod embedded;
+pub mod fetch;
 pub mod files;
+pub mod forward;
 pub mod guest;
 pub mod launch;
 pub mod plan;
 pub mod runtime;
+pub mod server;
 pub mod share;
 pub mod state;
 
