@@ -532,9 +532,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # image:resolve reads the commit that last touched platform-base.
-          fetch-depth: 0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+          # On a PR, image:resolve reads the commit that last touched
+          # platform-base.
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
+      - if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -552,6 +554,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KEYCLOAK_THEME_BUILT: "1"
+          CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
           CI_IMAGES_JOBS: >-
@@ -570,6 +573,15 @@ jobs:
       - name: Image fetch log
         if: ${{ !cancelled() }}
         run: cat /tmp/ci-images.log
+      # The vm-runner build e2e:ci-images left running in the background.
+      - name: vm-runner build
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        run: |
+          set -euo pipefail
+          [ -e /tmp/vm-runner-build.log ] || { echo "::error::the vm-runner build never started; see the image fetch log"; exit 1; }
+          for _ in $(seq 180); do [ -s /tmp/vm-runner-build.status ] && break; sleep 10; done
+          cat /tmp/vm-runner-build.log || true
+          [ "$(cat /tmp/vm-runner-build.status 2>/dev/null)" = 0 ]
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

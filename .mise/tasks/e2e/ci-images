@@ -28,8 +28,15 @@ pull_mock=true
 if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   base="$(.mise/tasks/image/resolve resolve platform-base)"
   echo "platform-base: $base"
-  # e2e does not run the vm-runner, so a PR only proves it builds.
-  builds=(controller:load api-server:load ui:load keycloak:load vm-runner:cacheonly) base_arg=()
+  # e2e does not run the vm-runner, so a PR only proves it builds, and the
+  # cluster does not wait for it: a cold build of its Rust stage takes
+  # minutes. The e2e job's last step reads CI_VM_RUNNER_STATUS.
+  (
+    code=0
+    .mise/tasks/image/ci-build amd64 vm-runner:cacheonly || code=$?
+    echo "$code" > "${CI_VM_RUNNER_STATUS:?}"
+  ) > /tmp/vm-runner-build.log 2>&1 &
+  builds=(controller:load api-server:load ui:load keycloak:load) base_arg=()
   if [ "${base%% *}" = REUSE ]; then
     builds+=(mock:load) base_arg=(--base-image "${base#REUSE }") pull_mock=false
   fi
