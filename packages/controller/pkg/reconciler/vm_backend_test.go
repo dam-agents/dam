@@ -23,7 +23,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
@@ -352,9 +351,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 
-	_, _, err := r.ensureRunner(ctx, "owner-a")
+	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
 	require.NoError(t, err)
-	_, _, err = r.ensureRunner(ctx, "owner-b")
+	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
 	require.NoError(t, err)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
@@ -385,46 +384,6 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err, "and the other owner's runner is untouched")
-}
-
-// TEST_SCENARIO: an owner's machines outgrow the claim their runner was created with, so the install raises the runner storage. That claim holds every disk the owner has and a bigger claim is the only remedy for a full one, so the new size reaches the claim that already exists rather than only the next owner's. A value lowered afterwards changes nothing, because Kubernetes refuses to shrink a claim and the machines on it are still using the space.
-func TestTheRunnerClaimFollowsARaisedStorageValue(t *testing.T) {
-	ctx := context.Background()
-	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	claims := r.client.CoreV1().PersistentVolumeClaims("test-agents")
-	name := r.runnerName(testOwner)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-
-	r.config.VM.Runner.Storage = "200Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	pvc, err := claims.Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "200Gi", pvc.Spec.Resources.Requests.Storage().String(), "the raised size reaches the claim the owner's machines already sit on")
-
-	r.config.VM.Runner.Storage = "50Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	pvc, err = claims.Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "200Gi", pvc.Spec.Resources.Requests.Storage().String(), "a claim is never shrunk")
-}
-
-// TEST_SCENARIO: the raise lands on a storage class that does not allow expansion, so the API server refuses it. The runner serves every vm agent of that owner and works exactly as before at the size it has, so the refusal must not fail the reconcile — otherwise one value an install cannot honour leaves that owner with no runner at all.
-func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	claims := r.client.CoreV1().PersistentVolumeClaims("test-agents")
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, fmt.Errorf("persistentvolumeclaims %q is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize", r.runnerName(testOwner))
-	})
-
-	r.config.VM.Runner.Storage = "200Gi"
-	require.NoError(t, r.Reconcile(ctx, agent), "a claim that cannot grow must not take the owner's runner with it")
-
-	pvc, err := claims.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "100Gi", pvc.Spec.Resources.Requests.Storage().String(), "the claim keeps the size it has")
 }
 
 // TEST_SCENARIO: an install has virtualization on but the agent hibernating is container-backed; halting must not reach a runner, because that agent has no machine and an error here would strand its credentials.

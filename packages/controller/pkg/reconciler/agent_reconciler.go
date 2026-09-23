@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	stderrors "errors"
@@ -19,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"log/slog"
 
@@ -42,6 +44,11 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	requeue        func(name string, after time.Duration)
+	podResize      atomic.Int32
+	agentCache     cache.GenericLister
+	vmRunning      sync.Map
+	runnerResized  sync.Map
+	resizeNotices  sync.Map
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
@@ -54,6 +61,11 @@ func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentR
 
 func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
 	r.dynamic = d
+	return r
+}
+
+func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentReconciler {
+	r.agentCache = lister
 	return r
 }
 
@@ -418,6 +430,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	r.deletePVCs(ctx, name)
 	r.deleteMachineEverywhere(ctx, name)
+	r.vmRunning.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)

@@ -70,7 +70,22 @@ fn allow_from(value: &str) -> anyhow::Result<AllowFrom> {
         .map(AllowFrom)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
+fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Option<PathBuf>> {
+    args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("_boot-vm")) {
+        return None;
+    }
+    Some(args.next().map(PathBuf::from))
+}
+
 fn main() -> anyhow::Result<()> {
+    if let Some(config) = boot_config(std::env::args_os()) {
+        let config =
+            config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        smolvm::internal_boot::run(config)?;
+        return Ok(());
+    }
     tracing_subscriber::fmt().json().init();
     let args = Args::parse();
     anyhow::ensure!(
@@ -120,6 +135,31 @@ mod tests {
             err.contains("not-a-cidr"),
             "the refusal has to name the entry: {err}"
         );
+    }
+
+    // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
+    #[test]
+    fn a_boot_process_is_told_apart_from_the_runner() {
+        let args = |list: &[&str]| {
+            list.iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            boot_config(
+                args(&["/proc/self/exe", "_boot-vm", "/vms/abc/boot-config.json"]).into_iter()
+            ),
+            Some(Some(PathBuf::from("/vms/abc/boot-config.json")))
+        );
+        assert_eq!(
+            boot_config(args(&["vm-runner", "_boot-vm"]).into_iter()),
+            Some(None)
+        );
+        assert_eq!(
+            boot_config(args(&["vm-runner", "--memory-mib=1"]).into_iter()),
+            None
+        );
+        assert_eq!(boot_config(args(&["vm-runner"]).into_iter()), None);
     }
 
     // TEST_SCENARIO: clap reads a Vec field as one value per occurrence, so a parser that returns the whole list against a Vec field builds, refuses a bad CIDR correctly, and then panics downcasting a good one. Parsing the flag through the real Args is what tells the two apart — the unit test above passes either way.
