@@ -12,12 +12,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { approvalDetail, approvalHeadline } from "../lib/approval-copy.js";
 
 interface Props {
   approval: ApprovalView;
   agentName: string;
+  avatarName: string | undefined;
   meta: string;
   onDismiss: () => void;
   resolvedLabel?: string | null;
@@ -27,6 +29,7 @@ interface Props {
 export function FeedApprovalCard({
   approval,
   agentName,
+  avatarName,
   meta,
   onDismiss,
   resolvedLabel = null,
@@ -56,6 +59,9 @@ export function FeedApprovalCard({
           <div className="mb-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             {!resolved && (
               <span className="size-2 shrink-0 rounded-full bg-warning" />
+            )}
+            {avatarName !== undefined && (
+              <AgentAvatar name={avatarName} size={20} />
             )}
             <span className="truncate">{agentName}</span>
           </div>

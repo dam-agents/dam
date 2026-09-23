@@ -128,7 +128,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerService(ctx, owner); err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
 	np.OwnerReferences = r.runnerOwnerRef(ctx)
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
@@ -355,7 +355,7 @@ func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	scrape := intstr.FromInt(vmRunnerMetricsPort)
@@ -393,12 +393,12 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
-			Egress: runnerEgress(ns, owner, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs),
 		},
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port alone, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 // UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
 func containedIn(cidr string, except []string) []string {
 	block, err := netip.ParsePrefix(cidr)
@@ -416,12 +416,13 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
-func runnerEgress(agentNS, owner string, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
+func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
 	}
 	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
 	dns := intstr.FromInt(53)
+	proxy := intstr.FromInt(envoyPort)
 	rules := []networkingv1.NetworkPolicyEgressRule{{
 		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
 	}, {
@@ -429,6 +430,7 @@ func runnerEgress(agentNS, owner string, cidrs, except []string) []networkingv1.
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}},
 	}}
 	for _, cidr := range cidrs {
 		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
