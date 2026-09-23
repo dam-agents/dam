@@ -50,7 +50,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if owner == "" {
 		return vmrunner.MachineStatus{}, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
-	runner, ready, err := r.ensureRunner(ctx, owner)
+	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
+	if err != nil {
+		return vmrunner.MachineStatus{}, fmt.Errorf("sizing the owner's VM runner: %w", err)
+	}
+	runner, ready, err := r.ensureRunner(ctx, owner, demand)
 	if err != nil {
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
@@ -94,11 +98,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
-	cpu, mem := r.limitsOf(spec)
+	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
-		MemoryMiB:  max(int(mem.Value()>>20), 1),
+		MemoryMiB:  r.machineMemoryMiB(spec),
 		StorageGiB: storageGiB,
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),

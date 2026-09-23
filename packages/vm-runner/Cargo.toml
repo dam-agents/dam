@@ -17,13 +17,22 @@ clap = { version = "4", features = ["derive"] }
 # --allow-from is a list of CIDRs the Go runner refuses to start on if any is
 # malformed; parsing them by hand is how an allowlist quietly admits everybody.
 ipnet = "2"
+# kill(2) for a VMM that outlived its stop. Already in the lock by way of
+# smolvm, so this adds an edge and no crate.
+libc = "0.2"
 # Already in the lock by way of smolvm, so this adds a dependency edge and no
 # crate: an archive an earlier release cached still boots a machine, and the
 # config saying how is inside it.
 tar = "0.4"
+# Already in the lock by way of smolvm: the cache index names a reference by
+# its SHA-256, and the Go runner has to find the file this crate writes.
+sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time", "sync"] }
+# CancellationToken and TaskTracker: the runner's lifetime, and the barrier
+# closing it waits on. Already in the lock by way of smolvm.
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
