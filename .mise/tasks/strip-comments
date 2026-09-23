@@ -1,18 +1,23 @@
 #!/usr/bin/env node
 //MISE description="Untyped code comments: `-- --check` reports them (the check:comment-types gate); default is a dry run of stripping them, `-- --write` rewrites, `-- --verbose` lists each removal, [paths...] narrow the scan"
 
-/* UNIT_BOUNDARY_DESCRIPTION: The comment gate for TS/JS/Go sources. `-- --check`
- * reports every comment without a registered type prefix (check:comment-types);
- * the default dry run lists what stripping would remove and `-- --write`
- * rewrites the files. Only typed comments and tool directives (PRESERVE_TS,
- * PRESERVE_GO) survive. Exempt: files whose header marks them generated, cgo
- * preambles, and packages/controller/api/ (its doc comments compile into the
- * CRD descriptions). Files come from `git ls-files`, falling back from the
- * NUL-safe `-z --` form to the plain form the locki sandbox's git bridge
- * admits; extensionless Node task files under .mise/tasks are selected by
- * shebang. A multi-line block comment is replaced by a newline, because ASI
- * treats a comment containing a line break as one, and every stripped file is
- * re-tokenized to prove its token stream is unchanged. */
+/* UNIT_BOUNDARY_DESCRIPTION: The comment gate for TS/JS/Go/Rust sources.
+ * `-- --check` reports every comment without a registered type prefix
+ * (check:comment-types); the default dry run lists what stripping would remove
+ * and `-- --write` rewrites the files. Only typed comments and tool directives
+ * (PRESERVE_TS, PRESERVE_GO, PRESERVE_RUST) survive. Exempt: files whose header
+ * marks them generated, cgo preambles, and packages/controller/api/ (its doc
+ * comments compile into the CRD descriptions). Files come from `git ls-files`,
+ * falling back from the NUL-safe `-z --` form to the plain form the locki
+ * sandbox's git bridge admits; extensionless Node task files under .mise/tasks
+ * are selected by shebang. A multi-line block comment is replaced by a newline,
+ * because ASI treats a comment containing a line break as one, and every
+ * stripped TS/JS or Rust file is re-tokenized to prove its token stream is
+ * unchanged. Rust has no parser in this repo's Node toolchain, so lexRust is a
+ * lexer of its own: it has to tell a comment from the same characters inside a
+ * string, raw string or char literal, and a char literal from a lifetime, or
+ * the strip deletes code. A Rust file it cannot lex fails the check rather than
+ * passing unread. */
 import { execFileSync } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -26,9 +31,11 @@ const ts = loadTypescript();
 
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 const GO_EXTENSION = '.go';
+const RUST_EXTENSION = '.rs';
 
 const COMMENT_TYPES = ['TEST_OVERVIEW', 'TEST_SCENARIO', 'UNIT_BOUNDARY_DESCRIPTION'];
 const TYPED_COMMENT = new RegExp(`^(?:\\/\\/|\\/\\*+)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
+const TYPED_RUST_COMMENT = new RegExp(`^(?:\\/\\/[/!]?|\\/\\*[*!]?)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
 
 const PRESERVE_TS = [
   TYPED_COMMENT,
@@ -57,6 +64,7 @@ const PRESERVE_GO = [
   /^\/\/sys/,
   /^\/\/nolint/,
 ];
+const PRESERVE_RUST = [TYPED_RUST_COMMENT, /^\/[/*]\s*SAFETY:/];
 
 const GENERATED_MARKERS = [/Code generated .*DO NOT EDIT/i, /@generated/, /DO NOT EDIT/];
 
@@ -104,7 +112,7 @@ function listFiles(scopes) {
     .filter(Boolean)
     .filter((f) => {
       const ext = path.extname(f);
-      return TS_EXTENSIONS.has(ext) || ext === GO_EXTENSION || isNodeTaskFile(f);
+      return TS_EXTENSIONS.has(ext) || ext === GO_EXTENSION || ext === RUST_EXTENSION || isNodeTaskFile(f);
     })
     .filter((f) => !/\.gen\.[cm]?[jt]sx?$/.test(f))
     .filter((f) => !f.startsWith('packages/controller/api/'));
@@ -205,6 +213,112 @@ function collectGoComments(text) {
   return ranges;
 }
 
+const RUST_IDENT_START = /[\p{L}_]/u;
+const RUST_IDENT_CONTINUE = /[\p{L}\p{N}_]/u;
+
+function lexRust(text) {
+  const tokens = [];
+  const comments = [];
+  const n = text.length;
+  let i = 0;
+  const fail = (what, at) => {
+    throw new Error(`unterminated ${what} at line ${text.slice(0, at).split('\n').length}`);
+  };
+  const skipQuoted = (start, quote) => {
+    let j = start;
+    while (j < n && text[j] !== quote) j += text[j] === '\\' ? 2 : 1;
+    if (j >= n) fail(quote === '"' ? 'string' : 'char literal', start);
+    return j + 1;
+  };
+
+  if (text.startsWith('#!') && !/^#!\s*\[/.test(text)) {
+    const end = text.indexOf('\n');
+    i = end === -1 ? n : end;
+  }
+
+  while (i < n) {
+    const c = text[i];
+    const start = i;
+    if (/\s/.test(c)) {
+      i++;
+    } else if (c === '/' && text[i + 1] === '/') {
+      const end = text.indexOf('\n', i);
+      i = end === -1 ? n : end;
+      comments.push({ pos: start, end: i, kind: 'line' });
+    } else if (c === '/' && text[i + 1] === '*') {
+      let depth = 0;
+      while (i < n) {
+        if (text[i] === '/' && text[i + 1] === '*') {
+          depth++;
+          i += 2;
+        } else if (text[i] === '*' && text[i + 1] === '/') {
+          depth--;
+          i += 2;
+          if (depth === 0) break;
+        } else {
+          i++;
+        }
+      }
+      if (depth !== 0) fail('block comment', start);
+      comments.push({ pos: start, end: i, kind: 'block' });
+    } else if (c === '"') {
+      i = skipQuoted(i + 1, '"');
+      tokens.push(text.slice(start, i));
+    } else if (c === "'") {
+      const next = text.codePointAt(i + 1);
+      const width = next > 0xffff ? 2 : 1;
+      if (text[i + 1] === '\\') {
+        i = skipQuoted(i + 1, "'");
+      } else if (next !== undefined && text[i + 1] !== '\n' && text[i + 1 + width] === "'") {
+        i += width + 2;
+      } else if (next !== undefined && RUST_IDENT_START.test(String.fromCodePoint(next))) {
+        i += 1 + width;
+        while (i < n && RUST_IDENT_CONTINUE.test(text[i])) i++;
+      } else {
+        fail('char literal', start);
+      }
+      tokens.push(text.slice(start, i));
+    } else if (/[0-9]/.test(c)) {
+      while (i < n && /[0-9a-zA-Z_]/.test(text[i])) i++;
+      if (text[i] === '.' && /[0-9]/.test(text[i + 1] ?? '')) {
+        i++;
+        while (i < n && /[0-9a-zA-Z_]/.test(text[i])) i++;
+      }
+      if (/^[0-9][0-9_]*(\.[0-9_]+)?[eE]$/.test(text.slice(start, i)) && /[+-]/.test(text[i] ?? '')) {
+        i++;
+        while (i < n && /[0-9a-zA-Z_]/.test(text[i])) i++;
+      }
+      tokens.push(text.slice(start, i));
+    } else if (RUST_IDENT_START.test(String.fromCodePoint(text.codePointAt(i)))) {
+      i += text.codePointAt(i) > 0xffff ? 2 : 1;
+      while (i < n && RUST_IDENT_CONTINUE.test(String.fromCodePoint(text.codePointAt(i)))) {
+        i += text.codePointAt(i) > 0xffff ? 2 : 1;
+      }
+      const word = text.slice(start, i);
+      const raw = /^#*"/.exec(text.slice(i, i + 256));
+      if ((word === 'r' || word === 'br' || word === 'cr') && raw) {
+        const hashes = raw[0].length - 1;
+        const close = `"${'#'.repeat(hashes)}`;
+        const end = text.indexOf(close, i + raw[0].length);
+        if (end === -1) fail('raw string', start);
+        i = end + close.length;
+      } else if (word === 'r' && text[i] === '#' && RUST_IDENT_START.test(text[i + 1] ?? '')) {
+        i++;
+        while (i < n && RUST_IDENT_CONTINUE.test(text[i])) i++;
+      } else if ((word === 'b' || word === 'c') && text[i] === '"') {
+        i = skipQuoted(i + 1, '"');
+      } else if (word === 'b' && text[i] === "'") {
+        i = skipQuoted(i + 1, "'");
+      }
+      tokens.push(text.slice(start, i));
+    } else {
+      i++;
+      tokens.push(c);
+    }
+  }
+  return { tokens, comments };
+}
+
 function removeRanges(text, ranges, { newlineForMultilineBlock }) {
   let result = text;
   for (const r of [...ranges].sort((a, b) => b.pos - a.pos)) {
@@ -265,11 +379,36 @@ function processGoFile(file, text) {
   return { removed: removable.length, text: stripped, comments: removable };
 }
 
-function firstContentLine(commentText) {
+function processRustFile(file, text) {
+  let lexed;
+  try {
+    lexed = lexRust(text);
+  } catch (e) {
+    return { removed: 0, text, skippedReason: `${e.message}, left untouched` };
+  }
+  const removable = lexed.comments.filter((r) => !shouldPreserve(text.slice(r.pos, r.end), PRESERVE_RUST));
+  if (removable.length === 0) return { removed: 0, text };
+
+  const stripped = removeRanges(text, removable, { newlineForMultilineBlock: true });
+
+  let after;
+  try {
+    after = lexRust(stripped).tokens;
+  } catch {
+    after = null;
+  }
+  const before = lexed.tokens;
+  if (!after || before.length !== after.length || before.some((t, i) => t !== after[i])) {
+    return { removed: 0, text, skippedReason: 'token stream changed after strip, left untouched' };
+  }
+  return { removed: removable.length, text: stripped, comments: removable };
+}
+
+function firstContentLine(commentText, { rust = false } = {}) {
   const inner = commentText
-    .replace(/^\/\*+/, '')
+    .replace(rust ? /^\/\*[*!]?/ : /^\/\*+/, '')
     .replace(/\*+\/$/, '')
-    .replace(/^\/\//, '');
+    .replace(rust ? /^\/\/[/!]?/ : /^\/\//, '');
   for (const raw of inner.split('\n')) {
     const line = raw.replace(/^\s*\*\s?/, '').trim();
     if (line !== '') return line;
@@ -294,9 +433,18 @@ for (const file of listFiles(scopes)) {
 
   let comments;
   let preserve;
+  const rust = file.endsWith(RUST_EXTENSION);
   if (file.endsWith('.go')) {
     comments = collectGoComments(text);
     preserve = PRESERVE_GO;
+  } else if (rust) {
+    try {
+      comments = lexRust(text).comments;
+    } catch (e) {
+      violations.push({ file, line: 1, problem: 'not lexable', preview: e.message });
+      continue;
+    }
+    preserve = PRESERVE_RUST;
   } else {
     const sf = parseTs(file, text);
     comments = collectTsComments(sf, text).map((r) => ({
@@ -310,10 +458,11 @@ for (const file of listFiles(scopes)) {
   for (const c of comments) {
     const commentText = text.slice(c.pos, c.end);
     if (shouldPreserve(commentText, preserve)) continue;
-    const problem = violationFor(firstContentLine(commentText));
+    const content = firstContentLine(commentText, { rust });
+    const problem = violationFor(content);
     if (problem) {
       const line = text.slice(0, c.pos).split('\n').length;
-      violations.push({ file, line, problem, preview: firstContentLine(commentText).slice(0, 70) });
+      violations.push({ file, line, problem, preview: content.slice(0, 70) });
     }
   }
 }
@@ -355,7 +504,11 @@ for (const file of files) {
     continue;
   }
 
-  const result = file.endsWith('.go') ? processGoFile(file, text) : processTsFile(file, text);
+  const result = file.endsWith('.go')
+    ? processGoFile(file, text)
+    : file.endsWith(RUST_EXTENSION)
+      ? processRustFile(file, text)
+      : processTsFile(file, text);
 
   if (result.skippedReason) {
     skipped.push(`${file} (${result.skippedReason})`);
