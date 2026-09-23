@@ -29,6 +29,8 @@ const (
 	vmmExitWait = 10 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: expanding both templates takes seconds on a healthy pod; this is far enough above that to never cut one short, and it exists so a decompressor that hangs cannot hold the goroutine for the life of the runner.
 	warmTimeout = 5 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image.
+	keptDisksDir = "kept-disks"
 )
 
 var errImageLaunchUnknown = errors.New("this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it")
@@ -142,6 +144,91 @@ func (r *Smolvm) Delete(id string) error {
 	return r.run(nil, "machine", "delete", "-n", id, "-f")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm cannot change a machine's image — `machine update` has no flag for it — so a new image means a new machine. A delete removes the machine's whole data directory, and the storage disk inside it is everything the agent keeps across a stop, so the disk is moved out first. It goes to a directory under HOME: HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes. Nothing in smolvm reads that directory, so nothing in smolvm can remove it. The disk is moved only after the VMM has let go of it, because a VMM that is still exiting may still be writing to it.
+func (r *Smolvm) DeleteKeepingStorage(id string) error {
+	if dir := r.vmDir(id); dir != "" {
+		if r.keptDir(id) == "" {
+			return fmt.Errorf("HOME is not set, so there is nowhere to keep the storage disk of %s across the new image", id)
+		}
+		if !vmmGone("/proc", dir, vmmExitWait) {
+			return fmt.Errorf("machine %s still has a VMM holding its disks, so its storage disk cannot be kept across the new image", id)
+		}
+		if err := moveStorage(dir, r.keptDir(id)); err != nil {
+			return fmt.Errorf("keeping the storage disk of %s: %w", id, err)
+		}
+	}
+	return r.Delete(id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: puts a kept storage disk back before any boot, into the directory the recreated machine will open. smolvm names that directory by a hash of the machine's name, so it is the same directory the old machine had, and a start opens the disk it finds there and grows it to the requested size instead of seeding a new one. Every start does this, not only the start after a recreate: a runner killed between the delete and the start leaves the disk kept, and the next start must boot onto it and not onto an empty disk.
+func (r *Smolvm) adoptKeptStorage(id string) error {
+	kept := r.keptDir(id)
+	if kept == "" {
+		return nil
+	}
+	if _, err := os.Stat(kept); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(r.lifetime(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, r.Bin, "machine", "data-dir", "-n", id).Output()
+	if err != nil {
+		return fmt.Errorf("smolvm machine data-dir %s: %w", id, err)
+	}
+	dir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(dir) {
+		return fmt.Errorf("smolvm machine data-dir %s: %q is not a directory path", id, dir)
+	}
+	if err := moveStorage(kept, dir); err != nil {
+		return fmt.Errorf("restoring the storage disk of %s: %w", id, err)
+	}
+	return os.Remove(kept)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a storage disk is waiting for this machine, which means a recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so the create must not ask for more than the disk it will get.
+func (r *Smolvm) HasKeptStorage(id string) bool {
+	kept := r.keptDir(id)
+	if kept == "" {
+		return false
+	}
+	_, err := os.Stat(kept)
+	return err == nil
+}
+
+func (r *Smolvm) DiscardKeptStorage(id string) error {
+	if kept := r.keptDir(id); kept != "" {
+		return os.RemoveAll(kept)
+	}
+	return nil
+}
+
+func (r *Smolvm) keptDir(id string) string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, keptDisksDir, id)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk. smolvm writes it as a raw file, or as a qcow2 file backed by its shared disk template when the size is the default. The marker says the filesystem is already made, and without it smolvm formats the disk again. The template a qcow2 file points at is outside the data directory, so moving the file does not break it. A file that is not there is not an error, so a move that stopped half way can be run again.
+var storageFiles = []string{"storage.raw", "storage.qcow2", "storage.formatted"}
+
+func moveStorage(from, to string) error {
+	for _, f := range storageFiles {
+		source := filepath.Join(from, f)
+		if _, err := os.Stat(source); errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err := os.MkdirAll(to, 0o700); err != nil {
+			return err
+		}
+		if err := os.Rename(source, filepath.Join(to, f)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a machine's root is a throwaway overlay, and this is what makes that true rather than nearly true. Kept, it is a tier nobody declared: it survives an ordinary stop and start, so software installed outside the declared paths looks persistent, and is then thrown away by the first boot that has to discard a corrupt one — weeks later, silently, with no way to tell afterwards which of the two a machine did. Discarded every time, the rule is the same sentence as the container backend's: a declared path, or gone. It runs on the way down, so a hibernated fleet does not hold an overlay each on its owner's disk, and again on the way up, because a machine that died with its runner never got the stop and would otherwise wake onto a stale root.
 func discardOverlay(id, dir string) {
 	if dir == "" {
@@ -159,6 +246,9 @@ func discardOverlay(id, dir string) {
 }
 
 func (r *Smolvm) Start(id string) error {
+	if err := r.adoptKeptStorage(id); err != nil {
+		return err
+	}
 	dir := r.vmDir(id)
 	if dir != "" {
 		_ = r.runReporting(false, nil, "machine", "stop", "-n", id)
