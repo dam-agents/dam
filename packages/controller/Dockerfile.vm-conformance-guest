@@ -1,0 +1,21 @@
+# The guest the machine API conformance suite boots on a live VM runner: one
+# static binary that answers the runner's health check according to what its
+# disk held at boot. Built only for `mise run cluster:vm-conformance`; nothing
+# publishes it.
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS builder
+
+ENV GOTOOLCHAIN=auto
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+ARG TARGETOS TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -o /vm-conformance-guest ./cmd/vm-conformance-guest
+
+FROM scratch
+COPY --from=builder /vm-conformance-guest /vm-conformance-guest
+ENTRYPOINT ["/vm-conformance-guest"]

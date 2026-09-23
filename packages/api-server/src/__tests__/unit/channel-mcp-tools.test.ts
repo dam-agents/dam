@@ -32,9 +32,21 @@ async function mcpHarness(opts?: {
   thread?: ThreadResult | { error: string };
 }) {
   const replies: ChannelReply[] = [];
+  const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
   const channelManager = {
+    postMessage: vi.fn(
+      async (
+        _agentId: string,
+        _type: ChannelType,
+        text: string,
+        options: Record<string, unknown>,
+      ) => {
+        posts.push({ text, options });
+        return { ok: true as const };
+      },
+    ),
     reply: vi.fn(
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
         replies.push(args);
@@ -80,8 +92,70 @@ async function mcpHarness(opts?: {
   const client = new Client({ name: "test-harness", version: "1.0.0" });
   await client.connect(clientTransport);
 
-  return { client, replies, reactionQueries, threadQueries, channelManager };
+  return {
+    client,
+    posts,
+    replies,
+    reactionQueries,
+    threadQueries,
+    channelManager,
+  };
 }
+
+describe("outbound MCP tools — Slack unfurls (#3499)", () => {
+  it("advertises optional unfurl controls for new messages and replies", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+
+    for (const name of ["send_channel_message", "reply"]) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      const properties = tool?.inputSchema.properties as
+        | Record<string, { type?: string }>
+        | undefined;
+      expect(properties?.unfurlLinks).toMatchObject({ type: "boolean" });
+      expect(properties?.unfurlMedia).toMatchObject({ type: "boolean" });
+      expect(tool?.inputSchema.required ?? []).not.toContain("unfurlLinks");
+      expect(tool?.inputSchema.required ?? []).not.toContain("unfurlMedia");
+    }
+  });
+
+  it("passes explicit unfurl controls through without changing omitted defaults", async () => {
+    const { client, posts, replies } = await mcpHarness();
+
+    await client.callTool({
+      name: "send_channel_message",
+      arguments: {
+        channel: "slack",
+        text: "links without cards",
+        unfurlLinks: false,
+        unfurlMedia: false,
+      },
+    });
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "media without cards",
+        threadTs: "1.1",
+        unfurlMedia: false,
+      },
+    });
+    await client.callTool({
+      name: "reply",
+      arguments: { text: "Slack default previews", threadTs: "1.2" },
+    });
+
+    expect(posts).toEqual([
+      {
+        text: "links without cards",
+        options: { unfurlLinks: false, unfurlMedia: false },
+      },
+    ]);
+    expect(replies).toEqual([
+      { text: "media without cards", threadTs: "1.1", unfurlMedia: false },
+      { text: "Slack default previews", threadTs: "1.2" },
+    ]);
+  });
+});
 
 describe("reply MCP tool — broadcast to channel (#2973)", () => {
   beforeEach(() => {
