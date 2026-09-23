@@ -219,7 +219,8 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    server.background(move |cancel| templates::warm(&install, &home, &cancel));
+    let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
+    server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
     let reaper = runtime.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
