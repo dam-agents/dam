@@ -32,6 +32,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
+import { AgentAvatar, isAsleep } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -98,6 +99,13 @@ export function AgentRow({
       {...clickableProps(onSelect)}
       className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
+      <AgentAvatar
+        name={agent.name}
+        size={64}
+        sleeping={isAsleep(display.state)}
+        stopped={agent.stopRequested}
+        className="mr-2 self-start"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           {}
