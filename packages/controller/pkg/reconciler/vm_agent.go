@@ -51,7 +51,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if owner == "" {
 		return vmrunner.MachineStatus{}, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
-	runner, ready, err := r.ensureRunner(ctx, owner)
+	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
+	if err != nil {
+		return vmrunner.MachineStatus{}, fmt.Errorf("sizing the owner's VM runner: %w", err)
+	}
+	runner, ready, err := r.ensureRunner(ctx, owner, demand)
 	if err != nil {
 		return vmrunner.MachineStatus{}, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
@@ -95,24 +99,23 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, fmt.Errorf("reading envoy leaf Secret: %w", err)
 	}
 
-	pullAuth, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace),
-		append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
+	pullAuths, err := r.pullAuths(ctx, append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
 	if err != nil {
 		return vmrunner.MachineStatus{}, err
 	}
 
-	cpu, mem := r.limitsOf(spec)
+	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
 		Image:      spec.Image,
 		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
-		MemoryMiB:  max(int(mem.Value()>>20), 1),
+		MemoryMiB:  r.machineMemoryMiB(spec),
 		StorageGiB: storageGiB,
 		Env:        env,
 		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
-		PullAuth:   pullAuth,
+		PullAuths:  pullAuths,
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
@@ -126,6 +129,38 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		r.dropSupersededEndpointSlice(ctx, name)
 	}
 	return st, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a starting machine is reconciled every half second, and every reconcile sends the pull credentials again, so reading the Secrets each time would be several API reads a second for every agent that is booting, multiplied by a whole fleet on a roll. The documents are kept per list of Secret names for as long as the health poll, which is also about how soon a rotated Secret reaches the next fetch. A read that fails is not kept, so the next reconcile tries again. Entries past that age are dropped on the way, so an Agent that is gone leaves nothing behind.
+func (r *AgentReconciler) pullAuths(ctx context.Context, names []string) ([]string, error) {
+	key := strings.Join(names, "\x00")
+	r.pullAuthMu.Lock()
+	for k, memo := range r.pullAuthMemo {
+		if time.Since(memo.at) > vmHealthPoll {
+			delete(r.pullAuthMemo, k)
+		}
+	}
+	memo, ok := r.pullAuthMemo[key]
+	r.pullAuthMu.Unlock()
+	if ok {
+		return memo.docs, nil
+	}
+	docs, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace), names)
+	if err != nil {
+		return nil, err
+	}
+	r.pullAuthMu.Lock()
+	if r.pullAuthMemo == nil {
+		r.pullAuthMemo = map[string]pullAuthMemo{}
+	}
+	r.pullAuthMemo[key] = pullAuthMemo{docs: docs, at: time.Now()}
+	r.pullAuthMu.Unlock()
+	return docs, nil
+}
+
+type pullAuthMemo struct {
+	docs []string
+	at   time.Time
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an earlier release wrote this Service's endpoint by hand, under the agent's own name. Kubernetes now keeps one of its own for the same Service, and two slices naming one Service are unioned — so a leftover that once read ready, pointing at an address its machine no longer answers on, would take a share of the traffic and nothing would repair it. Delete is enough: the generated slice carries a suffixed name, so only the hand-written one matches. Remove this once no cluster has reconciled a vm agent under the old mechanism.

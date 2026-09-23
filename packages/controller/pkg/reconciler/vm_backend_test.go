@@ -237,15 +237,15 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	return r, node, &requeued
 }
 
-// TEST_SCENARIO: a private image on the vm backend is fetched by the runner, not by the kubelet, so the pull Secrets a pod would list have to reach the runner. They are the Agent's own imagePullSecretRef first and the install default after it, and the Agent's credential wins for a registry both name. They travel as one merged docker config on the machine spec, and nowhere else: not in the guest's environment.
-func TestAVMAgentsPullSecretsReachTheRunnerMergedAgentFirst(t *testing.T) {
+// TEST_SCENARIO: a private image on the vm backend is fetched by the runner, not by the kubelet, so the pull Secrets a pod would list have to reach the runner. They are the Agent's own imagePullSecretRef first and the install default after it, one document each, so the runner can fall back from a stale Agent credential to the default for the same registry as the kubelet would. They travel on the machine spec and nowhere else: not in the guest's environment.
+func TestAVMAgentsPullSecretsReachTheRunnerInPodOrder(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.ImagePullSecretRef = "my-agent-pull"
 	r, node, _ := setupVMReconciler(t, agent)
 	r.config.AgentBase.ImagePullSecrets = []string{"install-pull"}
 	for name, body := range map[string]string{
 		"my-agent-pull": `{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`,
-		"install-pull":  `{"auths":{"quay.io":{"auth":"ZGVmYXVsdA=="},"ghcr.io":{"auth":"Z2hjcg=="}}}`,
+		"install-pull":  `{"auths":{"quay.io":{"auth":"ZGVmYXVsdA=="}}}`,
 	} {
 		_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
@@ -258,15 +258,39 @@ func TestAVMAgentsPullSecretsReachTheRunnerMergedAgentFirst(t *testing.T) {
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	spec := node.spec("my-agent")
-	var doc struct {
-		Auths map[string]map[string]string `json:"auths"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(spec.PullAuth), &doc))
-	assert.Equal(t, "YWdlbnQ=", doc.Auths["quay.io"]["auth"], "the Agent's own Secret wins for its registry")
-	assert.Equal(t, "Z2hjcg==", doc.Auths["ghcr.io"]["auth"], "and the install default covers the rest")
+	require.Len(t, spec.PullAuths, 2)
+	assert.Contains(t, spec.PullAuths[0], "YWdlbnQ=", "the Agent's own Secret is tried first")
+	assert.Contains(t, spec.PullAuths[1], "ZGVmYXVsdA==", "and the default for the same registry is kept to fall back to")
 	for k, v := range spec.Env {
 		assert.NotContains(t, v, "YWdlbnQ=", "the credential is not in the guest's environment (%s)", k)
 	}
+}
+
+// TEST_SCENARIO: a booting machine is reconciled every half second, and every reconcile sends the pull credentials. Reading the Secrets each time would put several API reads a second behind every booting agent. The credentials are kept for the length of the health poll, so a burst of reconciles reads each Secret once.
+func TestAStartingMachinesPollDoesNotReadThePullSecretsEachTime(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.ImagePullSecretRef = "my-agent-pull"
+	r, node, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	_, err := client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-pull", Namespace: "test-agents"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"YWdlbnQ="}}}`)},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	reads := 0
+	client.PrependReactor("get", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.(k8stesting.GetAction).GetName() == "my-agent-pull" {
+			reads++
+		}
+		return false, nil, nil
+	})
+
+	for range 5 {
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+	}
+
+	assert.Equal(t, 1, reads, "five reconciles, one read of the pull Secret")
+	assert.Len(t, node.spec("my-agent").PullAuths, 1, "and every reconcile still sent the credential")
 }
 
 // TEST_SCENARIO: an Agent with no pull Secret, on an install with no default, fetches anonymously. That was the only behaviour before, and it must stay the same, with no empty credential document on the wire.
@@ -276,7 +300,7 @@ func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
-	assert.Empty(t, node.spec("my-agent").PullAuth)
+	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
 // TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and the reconciler polls for that itself since no pod event will come.
@@ -394,9 +418,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 
-	_, _, err := r.ensureRunner(ctx, "owner-a")
+	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
 	require.NoError(t, err)
-	_, _, err = r.ensureRunner(ctx, "owner-b")
+	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
 	require.NoError(t, err)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
@@ -427,46 +451,6 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, b, metav1.GetOptions{})
 	require.NoError(t, err, "and the other owner's runner is untouched")
-}
-
-// TEST_SCENARIO: an owner's machines outgrow the claim their runner was created with, so the install raises the runner storage. That claim holds every disk the owner has and a bigger claim is the only remedy for a full one, so the new size reaches the claim that already exists rather than only the next owner's. A value lowered afterwards changes nothing, because Kubernetes refuses to shrink a claim and the machines on it are still using the space.
-func TestTheRunnerClaimFollowsARaisedStorageValue(t *testing.T) {
-	ctx := context.Background()
-	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	claims := r.client.CoreV1().PersistentVolumeClaims("test-agents")
-	name := r.runnerName(testOwner)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-
-	r.config.VM.Runner.Storage = "200Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	pvc, err := claims.Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "200Gi", pvc.Spec.Resources.Requests.Storage().String(), "the raised size reaches the claim the owner's machines already sit on")
-
-	r.config.VM.Runner.Storage = "50Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	pvc, err = claims.Get(ctx, name, metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "200Gi", pvc.Spec.Resources.Requests.Storage().String(), "a claim is never shrunk")
-}
-
-// TEST_SCENARIO: the raise lands on a storage class that does not allow expansion, so the API server refuses it. The runner serves every vm agent of that owner and works exactly as before at the size it has, so the refusal must not fail the reconcile — otherwise one value an install cannot honour leaves that owner with no runner at all.
-func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	claims := r.client.CoreV1().PersistentVolumeClaims("test-agents")
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, fmt.Errorf("persistentvolumeclaims %q is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize", r.runnerName(testOwner))
-	})
-
-	r.config.VM.Runner.Storage = "200Gi"
-	require.NoError(t, r.Reconcile(ctx, agent), "a claim that cannot grow must not take the owner's runner with it")
-
-	pvc, err := claims.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "100Gi", pvc.Spec.Resources.Requests.Storage().String(), "the claim keeps the size it has")
 }
 
 // TEST_SCENARIO: an install has virtualization on but the agent hibernating is container-backed; halting must not reach a runner, because that agent has no machine and an error here would strand its credentials.

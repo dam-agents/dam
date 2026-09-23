@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-22
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -337,27 +337,23 @@ above. It does not ride the Envoy path at all:
 
 - **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
   It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
-  `imagePullSecrets`, read at pod creation for the pull. A vm
-  Agent has no pod, so the controller merges the same Secrets in the same
-  order and hands them to the owner's runner for that fetch alone; the
-  runner never stores them and no guest sees them
+  `imagePullSecrets`. A vm Agent has no pod, so its runner tries the same
+  Secrets in the same order for that fetch alone, never storing them
   ([persistence](persistence.md#the-machine-image-cache)). Either way the
-  gateway and the agent never hold the bytes — a property of *where the
-  Secret is consumed* rather than of Envoy injection.
+  agent never holds the bytes — because of *where the Secret is
+  consumed*, not Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
   owner-scoped and reusable across every Agent that owner runs; a pull
   credential is agent-scoped — one Secret per Agent (still carrying the
   creator's `agent-platform.ai/owner` for tenancy), created with the Agent and
-  torn down with it. There is no cross-agent reuse.
+  torn down with it.
 - **Per-agent precedence over the install-wide default.** An operator may
   configure a default pull secret for every agent. An Agent's own
   pull-secret ref is listed *first*, ahead of that default, which is kept
   as a fallback — override, not replace.
 
 The api-server builds the Secret from structured registry input and
-writes it before the Agent record, rolling it back if
-that create fails. Teardown is a delete-time cleanup hook with a
-label-scoped orphan sweep as backstop; lifetime detail lives on
+writes it before the Agent record, rolling it back if that create fails; its teardown lives on
 [persistence](persistence.md). The credential is validated only at pull
 time — a bad credential surfaces as an image-pull failure (a vm Agent's
 image reads unavailable), not a create-time error.
@@ -646,6 +642,9 @@ differ:
   scope the OpenShift SCC grant that permits uid 0 to exactly this
   workload — an ops-side, out-of-band binding. The pod joins no mesh and
   mounts no credentials.
+- **Image cache ServiceAccount** — a token, only with default pull
+  secrets set, and a Role that gets just those
+  ([persistence](persistence.md#the-machine-image-cache)).
 - **Per-Agent ServiceAccount** in the agent namespace, name ==
   Agent ID. Both pods of the long-lived pair run as this SA, but
   only the *gateway* pod is a mesh participant — istiod stamps it with

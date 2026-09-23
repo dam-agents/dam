@@ -26,7 +26,7 @@ func main() {
 	crane := flag.String("crane", "crane", "crane binary, used to fetch an image and read what it says to run")
 	images := flag.String("images", "", "comma-separated image references to fetch and keep: the harness images this install ships, which are the ones known before any agent asks for one")
 	every := flag.Duration("interval", 5*time.Minute, "how often the claims are refreshed, a failed fetch retried and the directory swept")
-	pullSecrets := flag.String("pull-secrets", "", "comma-separated kubernetes.io/dockerconfigjson Secrets to fetch with, earlier ones winning for a registry they share: the install's default agent pull Secrets; empty fetches anonymously")
+	pullSecrets := flag.String("pull-secrets", "", "comma-separated kubernetes.io/dockerconfigjson Secrets to fetch with, tried in order as the kubelet does: the install's default agent pull Secrets; empty fetches anonymously")
 	pullSecretNamespace := flag.String("pull-secret-namespace", "", "the namespace --pull-secrets live in, which is where agents run")
 	flag.Parse()
 
@@ -66,18 +66,18 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	auth, err := pullAuth(ctx, *pullSecretNamespace, secrets)
+	auths, err := pullAuths(ctx, *pullSecretNamespace, secrets)
 	if err != nil {
 		slog.Error("reading the install's pull Secrets", "error", err)
 		os.Exit(1)
 	}
 	slog.Info("VM image cache serving", "imageDir", *imageDir, "images", len(refs), "pullSecrets", len(secrets), "interval", every.String())
 	(&vmrunner.Preloader{
-		ImageDir: *imageDir, Images: refs, ID: *cacheID, Budget: size.Value(), Crane: *crane, Every: *every, PullAuth: auth,
+		ImageDir: *imageDir, Images: refs, ID: *cacheID, Budget: size.Value(), Crane: *crane, Every: *every, PullAuths: auths,
 	}).Run(ctx)
 }
 
-func pullAuth(ctx context.Context, namespace string, secrets []string) (func() string, error) {
+func pullAuths(ctx context.Context, namespace string, secrets []string) (func() []string, error) {
 	if len(secrets) == 0 {
 		return nil, nil
 	}
@@ -92,14 +92,14 @@ func pullAuth(ctx context.Context, namespace string, secrets []string) (func() s
 	if err != nil {
 		return nil, err
 	}
-	return func() string {
+	return func() []string {
 		read, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		doc, err := pullauth.Resolve(read, client.CoreV1().Secrets(namespace), secrets)
+		docs, err := pullauth.Resolve(read, client.CoreV1().Secrets(namespace), secrets)
 		if err != nil {
 			slog.Warn("image cache: reading the install's pull Secrets, fetching anonymously this pass", "error", err)
-			return ""
+			return nil
 		}
-		return doc
+		return docs
 	}, nil
 }

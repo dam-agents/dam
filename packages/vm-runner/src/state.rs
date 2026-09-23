@@ -13,6 +13,9 @@ pub const SPEC_FILE: &str = "spec.json";
 // UNIT_BOUNDARY_DESCRIPTION: the published port, kept as a file rather than in memory because the allocator reads every machine's to find a free one, and a runner that forgot them would hand out a port another machine is already published on.
 pub const PORT_FILE: &str = "port";
 
+// UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so eviction reads this file to know which digest entry the machine holds.
+pub const IMAGE_DIGEST_FILE: &str = "image-digest";
+
 // UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so the two runners write one machine's state the same way whatever umask each was started under.
 pub const PORT_MODE: u32 = 0o644;
 
@@ -170,6 +173,16 @@ mod tests {
                 PORT_MODE
             )),
             "allocatePort no longer writes the port file {PORT_MODE:o}: {allocates_port}"
+        );
+    }
+
+    // TEST_SCENARIO: a machine's recorded digest is what keeps its tree held once its tag has moved, and a rollout runs both runners over one state directory. A record named differently is a machine the other runner reads as holding nothing under the digest root, so it evicts that machine's rootfs.
+    #[test]
+    fn the_go_runner_records_a_machines_digest_under_the_same_name() {
+        let go = gosource::read("digest.go");
+        assert_eq!(
+            gosource::const_value(&go, "imageDigestFile").as_deref(),
+            Some(IMAGE_DIGEST_FILE)
         );
     }
 

@@ -340,8 +340,8 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		return fmt.Errorf("invalid machine id %q", id)
 	}
 	defer s.publishHolders()
-	auth := spec.PullAuth
-	spec.PullAuth = ""
+	auths := spec.PullAuths
+	spec.PullAuths = nil
 	state, err := s.machineState(id)
 	if err != nil {
 		return err
@@ -357,7 +357,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 		return err
 	}
 	if state == StateAbsent {
-		if err := s.create(id, spec, auth); err != nil {
+		if err := s.create(id, spec, auths); err != nil {
 			return err
 		}
 		return s.writeSpec(id, spec)
@@ -417,7 +417,7 @@ func (s *Server) ensure(id string, spec MachineSpec, restart, unhealthy bool) er
 	return s.writeSpec(id, spec)
 }
 
-func (s *Server) create(id string, spec MachineSpec, auth string) error {
+func (s *Server) create(id string, spec MachineSpec, auths []string) error {
 	port, err := s.allocatePort(id)
 	if err != nil {
 		return err
@@ -429,45 +429,24 @@ func (s *Server) create(id string, spec MachineSpec, auth string) error {
 	if strings.Contains(image, "..") {
 		return fmt.Errorf("invalid image reference %q", image)
 	}
-	base := s.cachePath(image)
-	launch, err := readLaunch(base)
-	if err != nil {
-		return err
-	}
-	if launch != nil {
-		if err := s.mayReuse(image, base, auth); err != nil {
+	digest := s.resolveDigest(image, refFresh, auths)
+	cached, launch, fetchErr := s.digestImage(id, image, digest, auths)
+	if launch == nil {
+		if cached, launch, err = s.legacyImage(image); err != nil {
 			return err
 		}
-	}
-	cached := ""
-	// UNIT_BOUNDARY_DESCRIPTION: an archive an earlier release cached still boots, but it boots the slow way — unpacked again into every machine's own disk, which is the thirty seconds and the gigabyte the shared tree exists to stop paying. Holding it would mean an install that already ran an image never gets the faster path for it, however long it keeps running that image, so the tree is built once and the archive kept only for the case that cannot: no crane to fetch with, or a fetch that failed while the archive on disk would still have started a machine.
-	if launch == nil {
-		archived := false
-		if _, err := os.Stat(base + ".tar"); err == nil {
-			archived = true
-		}
-		if s.Crane != "" {
-			if err := s.cacheImage(image, base, id, auth); err != nil {
-				if !archived {
-					return err
-				}
-				slog.Warn("image cache: keeping the archive after a failed unpack", "image", image, "error", err)
-			} else if launch, err = readLaunch(base); err != nil {
-				return err
-			}
-		}
-		if launch == nil && archived {
-			cached = base + ".tar"
-			if launch, err = launchFromArchive(cached); err != nil {
-				return fmt.Errorf("%w: %w", errImageUnusable, err)
-			}
+		if launch != nil {
+			digest = ""
 		}
 	}
-	if launch != nil && cached == "" {
-		cached = filepath.Join(base, rootfsDir)
+	if launch == nil && fetchErr != nil {
+		return fetchErr
 	}
 	if launch == nil {
-		if launch, err = s.launchFromRegistry(image, auth); err != nil {
+		if digest != "" {
+			image = repository(image) + "@" + digest
+		}
+		if launch, err = s.launchFromRegistry(image, auths); err != nil {
 			return err
 		}
 	}
@@ -476,6 +455,9 @@ func (s *Server) create(id string, spec MachineSpec, auth string) error {
 		if _, err := os.Stat(cached); err == nil {
 			image = cached
 		}
+	}
+	if err := s.recordDigest(id, digest); err != nil {
+		return err
 	}
 	dir, err := s.machineDir(id)
 	if err != nil {
@@ -493,23 +475,17 @@ func (s *Server) create(id string, spec MachineSpec, auth string) error {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: platform-init is the machine's entrypoint, and it execs the image's own — so what the image says to run has to be known before the machine is created, on every path that reaches a boot. A cached tree carries it beside the files and an archive carries it inside, but a machine booting straight from a registry reference has neither, and smolvm would read the config itself and launch the image's entrypoint directly, leaving the disk unmounted. One config fetch costs no layers and answers it. An install that disabled the fetch is refused rather than booted without persistence: what it would save is a machine whose work does not survive its first stop.
-func (s *Server) launchFromRegistry(ref, auth string) (*ImageLaunch, error) {
+func (s *Server) launchFromRegistry(ref string, auths []string) (*ImageLaunch, error) {
 	if s.Crane == "" {
 		return nil, fmt.Errorf("%w: %s names no cached image and this runner cannot read one from the registry", errImageLaunchUnknown, ref)
 	}
 	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
-	env, done, err := dockerConfig(auth)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	read := exec.CommandContext(ctx, s.Crane, "config", ref)
-	read.Env = env
-	config, err := read.Output()
+	config, _, done, _, err := s.readConfig(ctx, ref, auths)
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
+	done()
 	launch, err := launchFromConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
@@ -529,7 +505,7 @@ func firstLines(out string) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine may reach only its gateway, so the guest cannot pull its own image — the runner fetches it here instead, onto the cache it shares with any runner mounting the same directory, so the handful of images nearly every owner runs is fetched once per cache rather than once per machine. It is unpacked once too: smolvm mounts a tree as a read-only lower layer every machine of that image shares, where an archive is unpacked again into each machine's own disk — seconds of boot and a gigabyte of disk per machine, for bytes that are identical. A tree alone is not enough to boot, because it carries files and not the entrypoint, environment and working directory the image names, so those are read with it and written beside it; without that record smolvm launches nothing and the guest comes up with no harness in it.
-func (s *Server) cacheImage(ref, cached, forMachine, auth string) error {
+func (s *Server) cacheImage(ref, cached, forMachine string, auths []string) error {
 	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
 		return err
 	}
@@ -544,19 +520,13 @@ func (s *Server) cacheImage(ref, cached, forMachine, auth string) error {
 
 	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
-	env, done, err := dockerConfig(auth)
-	if err != nil {
-		return err
-	}
-	defer done()
 	started := time.Now()
-	read := exec.CommandContext(ctx, s.Crane, "config", ref)
-	read.Env = env
-	config, err := read.Output()
+	config, env, done, used, err := s.readConfig(ctx, ref, auths)
 	if err != nil {
 		slog.Warn("image config fetch failed", "image", ref, "duration_ms", time.Since(started).Milliseconds())
 		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
 	}
+	defer done()
 	launch, err := launchFromConfig(config)
 	if err != nil {
 		return fmt.Errorf("%w: reading the config of %s: %w", errImageUnusable, ref, err)
@@ -571,7 +541,7 @@ func (s *Server) cacheImage(ref, cached, forMachine, auth string) error {
 	if err := os.WriteFile(filepath.Join(tmp, launchFile), encoded, 0o644); err != nil {
 		return err
 	}
-	if auth != "" && !s.readable(ctx, ref, anonymous) {
+	if used != "" && !s.readable(ctx, ref, anonymous) {
 		if err := os.WriteFile(filepath.Join(tmp, privateFile), nil, 0o644); err != nil {
 			return err
 		}
@@ -580,7 +550,7 @@ func (s *Server) cacheImage(ref, cached, forMachine, auth string) error {
 	if err := s.claim(tmp, cached, forMachine); err != nil {
 		return err
 	}
-	s.evictImages(filepath.Dir(cached), cached, s.ImageBudget)
+	s.evictImages(s.ImageDir, cached, s.ImageBudget)
 	return nil
 }
 
@@ -627,6 +597,30 @@ func dockerConfig(auth string) ([]string, func(), error) {
 	return append(os.Environ(), "DOCKER_CONFIG="+dir), done, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these credentials the registry accepts, tried in the order a pod lists its pull Secrets — the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read the way it always was. The environment that worked is returned, still live, so the layers are fetched with the same credential; done removes it. used is the document that worked, empty for a read without one. A credential that fails is only ever named by its position, never quoted.
+func (s *Server) readConfig(ctx context.Context, ref string, auths []string) ([]byte, []string, func(), string, error) {
+	candidates := auths
+	if len(candidates) == 0 {
+		candidates = []string{""}
+	}
+	var last error
+	for _, auth := range candidates {
+		env, done, err := dockerConfig(auth)
+		if err != nil {
+			return nil, nil, nil, "", err
+		}
+		read := exec.CommandContext(ctx, s.Crane, "config", ref)
+		read.Env = env
+		config, err := read.Output()
+		if err == nil {
+			return config, env, done, auth, nil
+		}
+		done()
+		last = err
+	}
+	return nil, nil, nil, "", last
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest. It is the cheapest proof of access a registry gives: one request and no layers.
 func (s *Server) readable(ctx context.Context, ref, auth string) bool {
 	env, done, err := dockerConfig(auth)
@@ -639,8 +633,8 @@ func (s *Server) readable(ctx context.Context, ref, auth string) bool {
 	return probe.Run() == nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw. So before a machine reuses one, its own credentials must still read the image, or no credentials when it has none. This fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. Public entries skip the check and still boot with the registry down, as before.
-func (s *Server) mayReuse(ref, cached, auth string) error {
+// UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw. So before a machine reuses one, one of its own credentials, tried in the order they were sent, must still read the image; with none, an anonymous read must. This fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. Public entries skip the check and still boot with the registry down, as before. The mark is only as good as the probe that wrote it: a timeout or a rate limit at fetch time marks a public image private, and a complete entry is never fetched again, so nothing else would ever correct it. An anonymous read that succeeds here is proof the image is public, so it clears the mark; a removal that fails is left for the next such read.
+func (s *Server) mayReuse(ref, cached string, auths []string) error {
 	if _, err := os.Stat(filepath.Join(cached, privateFile)); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	} else if err != nil {
@@ -649,13 +643,17 @@ func (s *Server) mayReuse(ref, cached, auth string) error {
 	if s.Crane == "" {
 		return fmt.Errorf("%w: %s is cached from a private registry, and this runner has no crane to check this machine may read it", errImageUnusable, ref)
 	}
-	if auth == "" {
-		auth = anonymous
+	candidates := auths
+	if len(candidates) == 0 {
+		candidates = []string{anonymous}
 	}
 	ctx, cancel := context.WithTimeout(s.lifetime(), pullTimeout)
 	defer cancel()
-	if !s.readable(ctx, ref, auth) {
+	if !slices.ContainsFunc(candidates, func(auth string) bool { return s.readable(ctx, ref, auth) }) {
 		return fmt.Errorf("%w: %s is cached from a private registry, and this machine's pull credentials cannot read its manifest", errImageUnusable, ref)
+	}
+	if len(auths) == 0 {
+		_ = os.Remove(filepath.Join(cached, privateFile))
 	}
 	return nil
 }
@@ -797,6 +795,9 @@ func (s *Server) imagesInUse(except string) map[string]bool {
 		if id == except {
 			continue
 		}
+		if digest := s.recordedDigest(id); digest != "" {
+			inUse[s.digestPath(digest)] = true
+		}
 		spec := s.readSpec(id)
 		if spec == nil || spec.Image == "" {
 			continue
@@ -823,7 +824,9 @@ func (s *Server) publishHolders() {
 	}
 	names := make([]string, 0, len(held))
 	for path := range held {
-		names = append(names, filepath.Base(path))
+		if name, err := filepath.Rel(s.ImageDir, path); err == nil && !strings.HasPrefix(name, "..") {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	path := filepath.Join(dir, s.RunnerID)
@@ -896,6 +899,8 @@ func prunePartialUnpacks(dir string) {
 
 func (s *Server) evictImages(dir, keep string, budget int64) {
 	prunePartialUnpacks(dir)
+	prunePartialUnpacks(filepath.Join(dir, digestRoot))
+	defer pruneRefs(dir)
 	if budget <= 0 {
 		return
 	}
@@ -932,6 +937,17 @@ func (s *Server) evictImages(dir, keep string, budget int64) {
 		default:
 			continue
 		}
+		used += size
+		all = append(all, archive{path, size, info.ModTime()})
+	}
+	digests, _ := os.ReadDir(filepath.Join(dir, digestRoot))
+	for _, e := range digests {
+		info, err := e.Info()
+		if err != nil || !e.IsDir() || !digestEntry.MatchString(e.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, digestRoot, e.Name())
+		size := dirSize(path)
 		used += size
 		all = append(all, archive{path, size, info.ModTime()})
 	}
@@ -1331,7 +1347,7 @@ func (s *Server) readSpec(id string) *MachineSpec {
 
 func (s *Server) writeSpec(id string, spec MachineSpec) error {
 	spec.Running = false
-	spec.PullAuth = ""
+	spec.PullAuths = nil
 	b, err := json.Marshal(spec)
 	if err != nil {
 		return err
