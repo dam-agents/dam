@@ -570,16 +570,17 @@ export function ChatView() {
           <ArrowLeft size={14} />
         </Button>
         <div className="flex items-center gap-3 min-w-0">
-          <span
-            aria-hidden
-            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-          />
-          {agentView && (
+          {avatarsEnabled && agentView ? (
             <AgentAvatar
               name={agentView.name}
-              size={28}
+              size={40}
               sleeping={isAsleep(agentDisplay?.state)}
               stopped={agentView.stopRequested}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
             />
           )}
           <h1 className="text-sm font-bold text-foreground truncate">
