@@ -59,6 +59,41 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a gateway injects its owner's credentials into whatever reaches its proxy port, so the only callers it may admit are the ones it serves — its paired agent pod, and for a vm agent the owner's VM runner, which dials it on each machine's behalf. Without this, each caller's own egress policy is the only gate, so any pod whose egress reaches the gateway — a runner a guest has escaped into, or any other pod in the namespace — gets another owner's credentials injected. HBONE 15008 is not admitted: nothing dials a gateway over the mesh.
+func BuildGatewayIngressNetworkPolicy(pairKey, owner string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
+	envoyPort := intstr.FromInt(cfg.EnvoyPort)
+	tcp := corev1.ProtocolTCP
+	from := []networkingv1.NetworkPolicyPeer{{
+		PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent}},
+	}}
+	if vm && owner != "" {
+		from = append(from, networkingv1.NetworkPolicyPeer{
+			PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
+		})
+	}
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pairKey + "-gateway-ingress",
+			Namespace: cfg.Namespace,
+			Labels: map[string]string{
+				LabelAgent:                     pairKey,
+				LabelPair:                      pairKey,
+				LabelRole:                      RoleGateway,
+				"agent-platform.ai/managed-by": "platform-controller",
+			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleGateway}},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				From:  from,
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
+			}},
+		},
+	}
+}
+
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {
 	cli := client.NetworkingV1().NetworkPolicies(desired.Namespace)
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -75,7 +110,7 @@ func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desire
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("applying agent egress NetworkPolicy: %w", err)
+		return fmt.Errorf("applying NetworkPolicy %s: %w", desired.Name, err)
 	}
 	return nil
 }

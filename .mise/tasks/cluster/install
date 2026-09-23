@@ -474,9 +474,10 @@ else
     # a shared image builds and loads once.
     comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
     # The backend is chosen per agent at create, not declared by a template, so
-    # any agent image may be asked to boot as a microVM — every one of them is
-    # staged for the VM runners when the install supports them, once per image.
-    if [ -n "${VIRT_ENABLED:-}" ] && [ -d "packages/agents/$comp" ]; then
+    # any agent image may be asked to boot as a microVM — every one of them,
+    # e2e fixtures included, is staged for the VM runners when the install
+    # supports them, once per image.
+    if [ -n "${VIRT_ENABLED:-}" ] && { [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; }; then
       case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac
     fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
