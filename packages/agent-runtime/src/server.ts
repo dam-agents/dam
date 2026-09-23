@@ -89,7 +89,7 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const manifestPath = config.PLATFORM_DEV
-  ? join(__dir, "../../platform-base/rootfs/app/runtime-manifest.yaml")
+  ? join(__dir, "../../platform-base/runtime-manifest.yaml")
   : join(__dir, "../runtime-manifest.yaml");
 const runtimeManifest = loadManifest(manifestPath);
 

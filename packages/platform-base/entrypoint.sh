@@ -10,23 +10,12 @@
 # REQUESTS_CA_BUNDLE aimed at the merged bundle this extraction rewrites (set in
 # the Dockerfile). Runs as the non-root agent user; the trust dirs are made
 # writable at build time (see Dockerfile).
-#
-# The same script boots the experimental Debian image (packages/mise-oci). Each
-# Debian branch below is chosen by what the image has, never by a flag: an
-# extrausers account file, and update-ca-certificates in place of p11-kit.
 set -eu
 
 # sshd would otherwise drop an `agent` login to uid 65532, into a home the
 # root-run harness owns: nothing writable, none of the injected environment. Only
 # a machine runs this image as root; a container is the agent user already.
 if [ "$(id -u)" = 0 ]; then
-	# Debian keeps `agent` in extrausers, which will not serve a uid 0 entry,
-	# so the account is copied into /etc/passwd for the remap. Its sshd also
-	# refuses to run as root without the privilege-separation directory.
-	if [ -f /var/lib/extrausers/passwd ]; then
-		grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
-		install -d -m 0755 /run/sshd
-	fi
 	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 fi
 
@@ -82,13 +71,7 @@ if [ -s "$mitm_ca" ]; then
 	[ -n "$cache" ] && key=$(trust_cache_key "$trust_source")
 
 	trusted=no
-	if command -v update-ca-certificates >/dev/null 2>&1; then
-		# Debian has no p11-kit `trust`: update-ca-certificates rewrites the one
-		# bundle its clients read. That took about 1.5s where p11-kit took 3.5s,
-		# so the vm Backend cache is not used here.
-		cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
-			update-ca-certificates >/dev/null 2>&1 && trusted=extract
-	elif cp "$mitm_ca" "$anchor"; then
+	if cp "$mitm_ca" "$anchor"; then
 		# A cache is used only when it was produced from exactly this CA and
 		# this trust source, and still carries the bundle every TLS client
 		# here reads. Anything else falls through to a full extraction.

@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const agentsDir = join(here, "../../../../agents");
 const baseManifest = join(
   here,
-  "../../../../platform-base/rootfs/app/runtime-manifest.yaml",
+  "../../../../platform-base/runtime-manifest.yaml",
 );
 
 const mk = (drivers: Record<string, unknown>) =>

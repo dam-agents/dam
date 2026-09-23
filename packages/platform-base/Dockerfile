@@ -225,20 +225,20 @@ RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
     ls /usr/local/share/lazy-tools
 
 COPY --chmod=755 packages/platform-base/drop-pip.sh /usr/local/bin/drop-pip
-COPY --chmod=755 packages/platform-base/rootfs/usr/local/bin/harness-chat /usr/local/bin/harness-chat
-COPY --chmod=755 packages/platform-base/rootfs/usr/local/bin/harness-terminal /usr/local/bin/harness-terminal
-COPY --chmod=755 packages/platform-base/rootfs/usr/local/bin/dam-run.mjs /usr/local/bin/dam-run
-COPY --chmod=755 packages/platform-base/rootfs/usr/local/bin/agent-entrypoint /usr/local/bin/agent-entrypoint
+COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
+COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
+COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
+COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY --chown=65532:0 packages/platform-base/skills/ /app/working-dir/.agents/skills/
 # Staged outside /app/working-dir so the first-boot seed never installs it into
 # a sandbox's skill paths; it is invoked in place — a schedule task or slash
 # command references the absolute staged path (see #3286).
 COPY --chown=65532:0 packages/platform-base/dam-skills/ /usr/local/share/dam-skills/
 COPY --chown=65532:0 packages/platform-base/skills-manifest.json /usr/local/share/dam-skill-manifest.json
-COPY --chown=65532:0 packages/platform-base/rootfs/app/working-dir/.claude.json /app/working-dir/.claude.json
-COPY --chown=65532:0 packages/platform-base/rootfs/app/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
-COPY --chown=65532:0 packages/platform-base/rootfs/app/runtime-manifest.yaml /app/runtime-manifest.yaml
-COPY --chown=65532:0 packages/platform-base/rootfs/etc/AGENTS.md /etc/AGENTS.md
+COPY --chown=65532:0 packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
+COPY --chown=65532:0 packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
+COPY --chown=65532:0 packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
+COPY --chown=65532:0 packages/platform-base/AGENTS.md /etc/AGENTS.md
 
 COPY --from=builder --chown=65532:0 /deploy/package.json ./
 COPY --from=builder --chown=65532:0 /deploy/node_modules ./node_modules
