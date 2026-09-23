@@ -1,12 +1,14 @@
 # Harness configuration
 
-Last verified: 2026-09-10
+Last verified: 2026-09-23
 
 ## Overview
 
 How an owner's model, mode, and config-defaults choices reach the harness's own configuration file, where the model list behind those choices comes from, and what the Config panel shows while the agent is stopped.
 
 The choices travel as a `harness-config` Event over the [runtime channel](runtime-delivery.md) — that page owns delivery and capability gating; this one owns what the event means and everything built on it.
+
+These are the agent's defaults: writing them restarts the one harness process every session shares. A single session can run on another model without that — a harness that can switch a live session's model over ACP says so in its manifest, the runtime advertises it with its capabilities, and a [one-time schedule](schedules.md#one-time-schedules) uses it to pick the model its fresh session runs on, from the same model catalog the Config panel offers.
 
 ## The event
 
