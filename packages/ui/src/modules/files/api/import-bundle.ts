@@ -105,11 +105,13 @@ function readAll(
 const MAX_TAR_NAME_BYTES = 100;
 const MAX_TAR_PREFIX_BYTES = 155;
 const TAR_ENCODER = new TextEncoder();
+const TAR_TYPE_FILE = 0x30;
+const TAR_TYPE_PAX = 0x78;
 
 type UstarPath = { name: string; prefix: string };
 
-function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
-  if (enc.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
+function splitUstarPath(path: string): UstarPath | null {
+  if (TAR_ENCODER.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
     return { name: path, prefix: "" };
   }
   let slash = path.lastIndexOf("/");
@@ -117,8 +119,8 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
     const namePart = path.slice(slash + 1);
     const prefixPart = path.slice(0, slash);
     if (
-      enc.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES &&
-      enc.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
+      TAR_ENCODER.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES &&
+      TAR_ENCODER.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
     ) {
       return { name: namePart, prefix: prefixPart };
     }
@@ -128,29 +130,54 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
 }
 
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
-  const splits: UstarPath[] = entries.map((ent) => {
-    const split = splitUstarPath(ent.path, TAR_ENCODER);
-    if (!split) {
-      throw new Error(
-        `path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`,
+  const tarParts: BlobPart[] = [];
+  for (const [index, ent] of entries.entries()) {
+    const split = splitUstarPath(ent.path);
+    if (split) {
+      tarParts.push(tarHeader(split, ent.file.size, TAR_TYPE_FILE));
+    } else {
+      const record = paxRecord("path", ent.path);
+      tarParts.push(
+        tarHeader(
+          { name: "PaxHeader", prefix: "" },
+          record.byteLength,
+          TAR_TYPE_PAX,
+        ),
+      );
+      tarParts.push(record.buffer as ArrayBuffer);
+      pushPadding(tarParts, record.byteLength);
+      tarParts.push(
+        tarHeader(
+          { name: `PaxFallback/${index}`, prefix: "" },
+          ent.file.size,
+          TAR_TYPE_FILE,
+        ),
       );
     }
-    return split;
-  });
-
-  const tarParts: BlobPart[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    const ent = entries[i];
-    tarParts.push(tarHeader(splits[i], ent.file.size).buffer as ArrayBuffer);
     tarParts.push(ent.file);
-    const pad = (512 - (ent.file.size % 512)) % 512;
-    if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
+    pushPadding(tarParts, ent.file.size);
   }
   tarParts.push(new Uint8Array(1024).buffer as ArrayBuffer);
   return new Blob(tarParts, { type: "application/x-tar" });
 }
 
-function tarHeader(path: UstarPath, size: number): Uint8Array {
+function pushPadding(tarParts: BlobPart[], size: number) {
+  const pad = (512 - (size % 512)) % 512;
+  if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
+}
+
+function paxRecord(key: string, value: string): Uint8Array {
+  const body = TAR_ENCODER.encode(` ${key}=${value}\n`);
+  let digits = 1;
+  while (String(body.byteLength + digits).length > digits) digits++;
+  const length = TAR_ENCODER.encode(String(body.byteLength + digits));
+  const record = new Uint8Array(length.byteLength + body.byteLength);
+  record.set(length, 0);
+  record.set(body, length.byteLength);
+  return record;
+}
+
+function tarHeader(path: UstarPath, size: number, type: number): ArrayBuffer {
   const buf = new Uint8Array(512);
   writeStr(buf, 0, path.name, 100);
   writeOct(buf, 100, 0o666, 8);
@@ -159,7 +186,7 @@ function tarHeader(path: UstarPath, size: number): Uint8Array {
   writeOct(buf, 124, size, 12);
   writeOct(buf, 136, Math.floor(Date.now() / 1000), 12);
   for (let i = 148; i < 156; i++) buf[i] = 0x20;
-  buf[156] = 0x30;
+  buf[156] = type;
   writeStr(buf, 257, "ustar", 6);
   buf[263] = 0x30;
   buf[264] = 0x30;
@@ -168,7 +195,7 @@ function tarHeader(path: UstarPath, size: number): Uint8Array {
   for (let i = 0; i < 512; i++) sum += buf[i];
   writeOct(buf, 148, sum, 7);
   buf[155] = 0x20;
-  return buf;
+  return buf.buffer;
 }
 
 function writeStr(buf: Uint8Array, off: number, s: string, len: number) {
