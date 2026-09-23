@@ -15,6 +15,7 @@ pub mod launch;
 pub mod metrics;
 pub mod plan;
 pub mod preload;
+pub mod pullauth;
 pub mod runtime;
 pub mod server;
 pub mod share;

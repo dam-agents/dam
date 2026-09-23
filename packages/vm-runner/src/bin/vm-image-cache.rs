@@ -4,8 +4,9 @@ use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use vm_runner::imagecache::ImageCache;
 use vm_runner::preload::{parse_duration, parse_quantity, Preloader};
+use vm_runner::pullauth::PullSecrets;
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the Go image cache service defines, kept name-for-name, because the chart's DaemonSet sets them: image-dir, cache-id, image-budget, interval and images.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the Go image cache service defines, kept name-for-name, because the chart's DaemonSet sets them: image-dir, cache-id, image-budget, interval and images, and pull-secrets with pull-secret-namespace when the install names default agent pull Secrets.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-image-cache",
@@ -25,6 +26,12 @@ struct Args {
     images: String,
     #[arg(long, default_value = "5m")]
     interval: String,
+    // UNIT_BOUNDARY_DESCRIPTION: comma-separated kubernetes.io/dockerconfigjson Secrets to fetch with, tried in order as the kubelet does: the install's default agent pull Secrets. Empty fetches anonymously.
+    #[arg(long = "pull-secrets", default_value = "")]
+    pull_secrets: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the namespace --pull-secrets live in, which is where agents run.
+    #[arg(long = "pull-secret-namespace", default_value = "")]
+    pull_secret_namespace: String,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner believes a claim for thirty minutes, and this service refreshes its claims once per pass, so an interval approaching that window lets its pins lapse between two of its own passes. Fifteen minutes is the Go service's ceiling.
@@ -60,12 +67,32 @@ fn main() -> anyhow::Result<()> {
         .filter(|r| !r.is_empty())
         .map(str::to_string)
         .collect();
+    let secrets: Vec<String> = args
+        .pull_secrets
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let pull_secrets = if secrets.is_empty() {
+        None
+    } else {
+        anyhow::ensure!(
+            !args.pull_secret_namespace.is_empty(),
+            "--pull-secret-namespace is required with --pull-secrets"
+        );
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        Some(PullSecrets::in_cluster(
+            &args.pull_secret_namespace,
+            secrets.clone(),
+        )?)
+    };
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(async move {
             let lifetime = CancellationToken::new();
-            tracing::info!(image_dir = %args.image_dir.display(), images = images.len(), interval = %args.interval, "VM image cache serving");
+            tracing::info!(image_dir = %args.image_dir.display(), images = images.len(), pull_secrets = secrets.len(), interval = %args.interval, "VM image cache serving");
             let preloader = Preloader {
                 cache: ImageCache {
                     dir: args.image_dir,
@@ -76,6 +103,7 @@ fn main() -> anyhow::Result<()> {
                     lifetime: lifetime.clone(),
                 },
                 every,
+                pull_secrets,
             };
             let running = tokio::spawn(preloader.run());
             let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

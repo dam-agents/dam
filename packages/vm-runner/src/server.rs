@@ -397,7 +397,8 @@ impl Server {
         restart: bool,
         unhealthy: bool,
     ) -> anyhow::Result<()> {
-        let result = self.ensure_inner(id, &mut spec, restart, unhealthy);
+        let auths = std::mem::take(&mut spec.pull_auths);
+        let result = self.ensure_inner(id, &mut spec, &auths, restart, unhealthy);
         self.publish_holders();
         result
     }
@@ -406,6 +407,7 @@ impl Server {
         &self,
         id: &str,
         spec: &mut MachineSpec,
+        auths: &[String],
         restart: bool,
         unhealthy: bool,
     ) -> anyhow::Result<()> {
@@ -432,7 +434,7 @@ impl Server {
                     spec.storage_gib = spec.storage_gib.min(applied.storage_gib);
                 }
             }
-            self.create(id, spec)?;
+            self.create(id, spec, auths)?;
             return write_spec(&self.config.state_dir, id, spec);
         }
         if let Some(applied) = &applied {
@@ -453,7 +455,7 @@ impl Server {
         }
         if let Some(applied) = &applied {
             if image_changed(applied, spec) {
-                return self.recreate(id, spec, state);
+                return self.recreate(id, spec, state, auths);
             }
         }
         let port = state::port(&self.config.state_dir, id);
@@ -484,14 +486,20 @@ impl Server {
         write_spec(&self.config.state_dir, id, spec)
     }
 
-    fn create(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-        let (port, image, launch) = self.resolve(id, spec)?;
+    fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
+        let (port, image, launch) = self.resolve(id, spec, auths)?;
         self.boot(id, spec, port, &image, &launch)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: moves a machine to a new image. The new image is fetched and its launch read while the old machine still runs, so the agent is down for the stop, the recreate and the boot and not for a pull, and a pull that fails leaves the old machine as it was. The port file is kept, so the recreated machine publishes on the port its Service already maps to. The old image stays held while this runs, because the stored spec names it until the new machine has booted; it is rewritten only after that, and the holders published after it release the old image.
-    fn recreate(&self, id: &str, spec: &MachineSpec, state: &str) -> anyhow::Result<()> {
-        let (port, image, launch) = self.resolve(id, spec)?;
+    fn recreate(
+        &self,
+        id: &str,
+        spec: &MachineSpec,
+        state: &str,
+        auths: &[String],
+    ) -> anyhow::Result<()> {
+        let (port, image, launch) = self.resolve(id, spec, auths)?;
         self.forget_state(id);
         if state == STATE_RUNNING {
             self.runtime.stop(id)?;
@@ -502,7 +510,12 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots, and on which port. What it boots is decided in order: the unpacked tree in the cache when its launch record is there, a fresh fetch into the cache, an archive an earlier release left, and last the registry reference itself with its launch read from the registry. A tree with no launch record is never booted from, because it would boot with nothing running in it.
-    fn resolve(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<(u16, String, ImageLaunch)> {
+    fn resolve(
+        &self,
+        id: &str,
+        spec: &MachineSpec,
+        auths: &[String],
+    ) -> anyhow::Result<(u16, String, ImageLaunch)> {
         let port = {
             let _ports = locked(&self.ports);
             state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
@@ -515,6 +528,9 @@ impl Server {
         let archive = PathBuf::from(format!("{}.tar", base.display()));
         let mut launch = read_launch(&base)?;
         self.metrics.lookup(launch.is_some());
+        if launch.is_some() {
+            self.cache.may_reuse(&image, auths)?;
+        }
         let mut cached: Option<PathBuf> = None;
         if launch.is_none() {
             let archived = archive.exists();
@@ -522,6 +538,7 @@ impl Server {
                 let started = Instant::now();
                 let fetched = self.cache.fetch(
                     &image,
+                    auths,
                     &self.images_in_use(Some(id)),
                     &self.images_in_use(None),
                 );
@@ -553,7 +570,7 @@ impl Server {
         }
         let launch = match launch {
             Some(launch) => launch,
-            None => fetch::launch_from_registry(&self.config.crane, &image, &self.lifetime)?,
+            None => fetch::launch_from_registry(&self.config.crane, &image, auths, &self.lifetime)?,
         };
         if let Some(cached) = cached.filter(|path| path.exists()) {
             image = cached.to_string_lossy().into_owned();

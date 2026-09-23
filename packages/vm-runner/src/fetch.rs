@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
@@ -86,6 +87,7 @@ pub fn first_lines(out: &str) -> String {
 pub fn launch_from_registry(
     crane: &str,
     reference: &str,
+    auths: &[String],
     cancel: &CancellationToken,
 ) -> anyhow::Result<ImageLaunch> {
     if crane.is_empty() {
@@ -93,28 +95,41 @@ pub fn launch_from_registry(
             "{IMAGE_LAUNCH_UNKNOWN}: {reference} names no cached image and this runner cannot read one from the registry"
         );
     }
-    let config = read_config(crane, reference, cancel)?;
+    let (config, _) = read_config(crane, reference, auths, cancel)?;
     launch_from_config(&config)
         .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these docker configs the registry accepts, tried in the order a pod lists its pull Secrets: the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read anonymously. The config that worked is returned too, empty for a read without one, so the layers are fetched with the same credential. A credential that fails is never quoted.
 pub fn read_config(
     crane: &str,
     reference: &str,
+    auths: &[String],
     cancel: &CancellationToken,
-) -> anyhow::Result<Vec<u8>> {
-    command::output(
-        Command::new(crane).arg("config").arg(reference),
-        Instant::now() + PULL_TIMEOUT,
-        cancel,
-    )
-    .map(|out| out.stdout)
-    .map_err(|e| {
-        unusable(format!(
-            "reading the config of {reference}: {}",
-            first_lines(&format!("{e:#}"))
-        ))
-    })
+) -> anyhow::Result<(Vec<u8>, String)> {
+    let anonymous = [String::new()];
+    let candidates = if auths.is_empty() {
+        &anonymous[..]
+    } else {
+        auths
+    };
+    let mut last = None;
+    for auth in candidates {
+        let credentials = DockerConfig::new(auth)?;
+        match command::output(
+            credentials.apply(Command::new(crane).arg("config").arg(reference)),
+            Instant::now() + PULL_TIMEOUT,
+            cancel,
+        ) {
+            Ok(out) => return Ok((out.stdout, auth.clone())),
+            Err(e) => last = Some(e),
+        }
+    }
+    let detail = last.map(|e| format!("{e:#}")).unwrap_or_default();
+    Err(unusable(format!(
+        "reading the config of {reference}: {}",
+        first_lines(&detail)
+    )))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the runner's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
@@ -122,10 +137,12 @@ pub fn unpack(
     crane: &str,
     reference: &str,
     rootfs: &Path,
+    auth: &str,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
+    let credentials = DockerConfig::new(auth)?;
     let result = command::pipeline(
-        Command::new(crane).arg("export").arg(reference).arg("-"),
+        credentials.apply(Command::new(crane).arg("export").arg(reference).arg("-")),
         Command::new("tar").arg("-x").arg("-C").arg(rootfs),
         Instant::now() + PULL_TIMEOUT,
         cancel,
@@ -143,10 +160,104 @@ pub fn unpack(
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a docker config that names no registry. A probe run with it is a truly anonymous read, whatever the runner's own environment holds.
+pub const ANONYMOUS: &str = "{}";
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget the Go runner gives a tag resolution, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
+pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is private and the check that lets a machine reuse one, get RESOLVE_TIMEOUT.
+pub fn readable(crane: &str, reference: &str, auth: &str, cancel: &CancellationToken) -> bool {
+    let Ok(credentials) = DockerConfig::new(auth) else {
+        return false;
+    };
+    command::output(
+        credentials.apply(Command::new(crane).arg("digest").arg(reference)),
+        Instant::now() + RESOLVE_TIMEOUT,
+        cancel,
+    )
+    .is_ok()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: crane reads registry credentials from $DOCKER_CONFIG/config.json, so a fetch with credentials gets a directory of its own: 0700 under the runner's temporary directory, never on the image cache or the state volume, and removed when this is dropped, so the credential is on disk only while crane runs. Only crane is given it — smolvm, the guest and the stored spec never see it. No credentials leaves crane's environment as it is.
+pub struct DockerConfig(Option<PathBuf>);
+
+impl DockerConfig {
+    pub fn new(auth: &str) -> anyhow::Result<Self> {
+        use std::io::Write;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        if auth.is_empty() {
+            return Ok(Self(None));
+        }
+        let dir = scratch_name(&std::env::temp_dir());
+        fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        let this = Self(Some(dir.clone()));
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(dir.join("config.json"))?
+            .write_all(auth.as_bytes())?;
+        Ok(this)
+    }
+
+    pub fn apply<'a>(&self, command: &'a mut Command) -> &'a mut Command {
+        match &self.0 {
+            Some(dir) => command.env("DOCKER_CONFIG", dir),
+            None => command,
+        }
+    }
+}
+
+impl Drop for DockerConfig {
+    fn drop(&mut self) {
+        if let Some(dir) = &self.0 {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+fn scratch_name(parent: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    parent.join(format!(
+        "crane-auth-{}-{nanos:x}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gosource;
+
+    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and both runners share the cache, so they must give up on a silent registry after the same time. The Go runner's budget is the tag-resolution one, and it asks the anonymous read first in the reuse check.
+    #[test]
+    fn a_manifest_read_gets_the_go_runners_resolve_budget() {
+        let digest = gosource::read("digest.go");
+        assert!(
+            digest
+                .lines()
+                .any(|line| line.trim() == "resolveTimeout = time.Minute"),
+            "the Go runner no longer gives a manifest read a minute"
+        );
+        assert_eq!(RESOLVE_TIMEOUT, Duration::from_secs(60));
+
+        let server = gosource::read("server.go");
+        let reuse = gosource::function_body(&server, "(s *Server) mayReuse")
+            .expect("server.go has mayReuse");
+        let anonymous = reuse.find("s.readable(ref, anonymous)");
+        let credentials = reuse.find("s.readable(ref, auth)");
+        assert!(
+            matches!((anonymous, credentials), (Some(a), Some(c)) if a < c),
+            "the Go runner no longer reads a private entry anonymously before it tries a machine's credentials: {reuse}"
+        );
+    }
 
     // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, and text from smolvm is sorted by the Go runner's rules, word for word.
     #[test]
@@ -221,7 +332,7 @@ mod tests {
     #[test]
     fn a_runner_that_cannot_fetch_refuses_an_uncached_image() {
         let err =
-            launch_from_registry("", "quay.io/x/vm:1", &CancellationToken::new()).unwrap_err();
+            launch_from_registry("", "quay.io/x/vm:1", &[], &CancellationToken::new()).unwrap_err();
         assert!(err.to_string().starts_with(IMAGE_LAUNCH_UNKNOWN), "{err}");
         assert_eq!(failure_reason(&err), REASON_BOOT_FAILED);
     }
