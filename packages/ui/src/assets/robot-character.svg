@@ -1,0 +1,30 @@
+<svg viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Blue left teardrop (pointed at top, bulb at bottom) -->
+  <path d="M36 90 C22 112 14 138 16 154 C18 168 26 176 36 176 C46 176 54 168 56 154 C58 138 50 112 36 90Z" fill="#6CB4EE" />
+
+  <!-- Blue right teardrop -->
+  <path d="M204 90 C190 112 182 138 184 154 C186 168 194 176 204 176 C214 176 222 168 224 154 C226 138 218 112 204 90Z" fill="#6CB4EE" />
+
+  <!-- Orange hat (semicircle dome) -->
+  <path d="M96 80 A24 24 0 0 1 144 80 Z" fill="#F0A030" />
+
+  <!-- Head (lighter pink, hexagonal with rounded chin) -->
+  <path d="M96 80 L144 80 L170 126 L156 174 C144 192 120 198 120 198 C120 198 96 192 84 174 L70 126 Z" fill="#E88BA0" />
+
+  <!-- Lower face (darker pink) -->
+  <path d="M79 156 Q120 146 161 156 L156 174 C144 192 120 198 120 198 C120 198 96 192 84 174 Z" fill="#D4567A" />
+
+  <!-- White mouth divider -->
+  <path d="M79 156 Q120 146 161 156" stroke="white" stroke-width="3.5" stroke-linecap="round" fill="none" />
+
+  <!-- Left eye -->
+  <circle cx="104" cy="118" r="22" fill="white" />
+  <circle cx="110" cy="124" r="11" fill="#2D3748" />
+
+  <!-- Right eye -->
+  <circle cx="136" cy="118" r="22" fill="white" />
+  <circle cx="130" cy="124" r="11" fill="#2D3748" />
+
+  <!-- Gray bottom connector -->
+  <rect x="106" y="200" width="28" height="12" rx="5" fill="#8E9AAB" />
+</svg>

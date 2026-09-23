@@ -12,6 +12,7 @@ import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { AvatarSheetView } from "./modules/avatar-sheet/avatar-sheet-view.js";
 import { FlowBoardView } from "./modules/flow-board/flow-board-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
@@ -106,6 +107,14 @@ function MainApp() {
     return (
       <>
         <FlowBoardView />
+        <DialogOverlay />
+      </>
+    );
+
+  if (view === "avatar-sheet")
+    return (
+      <>
+        <AvatarSheetView />
         <DialogOverlay />
       </>
     );

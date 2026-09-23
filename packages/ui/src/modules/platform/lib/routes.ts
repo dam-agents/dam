@@ -39,7 +39,8 @@ export type Route =
   | { view: "artifacts" }
   | { view: "packs" }
   | { view: "setup-workbench" }
-  | { view: "flow-board" };
+  | { view: "flow-board" }
+  | { view: "avatar-sheet" };
 
 export type View = Route["view"];
 
@@ -104,6 +105,7 @@ export function parseRoute(path: string): Route {
   if (path === "/packs") return { view: "packs" };
   if (path === "/setup-workbench") return { view: "setup-workbench" };
   if (path === "/flow-board") return { view: "flow-board" };
+  if (path === "/avatar-sheet") return { view: "avatar-sheet" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -180,6 +182,8 @@ export function routeToPath(route: Route): string {
       return "/setup-workbench";
     case "flow-board":
       return "/flow-board";
+    case "avatar-sheet":
+      return "/avatar-sheet";
     default: {
       const unhandled: never = route;
       return unhandled;
