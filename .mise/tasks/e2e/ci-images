@@ -22,9 +22,9 @@ set -e
 # sets it: the job names differ between a PR, which builds in one job, and
 # every other run, which builds one job per arch. `detect stale images` is
 # always on it: when it fails, the jobs that need it never start under their
-# names, and nothing else would end the wait. `skipped` counts as done, since a PR skips whichever
-# mock build it does not need; an image a skipped job did not make fails the
-# pull below instead.
+# names, and nothing else would end the wait. `skipped` counts as done, since
+# a PR skips whichever mock build it does not need; an image a skipped job did
+# not make fails the pull below instead.
 : "${CI_IMAGES_JOBS:?}"
 LOADED="controller api-server ui keycloak"
 IFS='|' read -r -a JOBS <<< "$CI_IMAGES_JOBS"
