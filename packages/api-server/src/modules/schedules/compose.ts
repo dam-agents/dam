@@ -2,6 +2,8 @@ import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { SchedulesService } from "api-server-api";
+import { OnceResult } from "api-server-api";
+import { emit, EventType } from "../../events.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { AgentActivityStamp } from "../agents/index.js";
 import {
@@ -23,11 +25,14 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
 
+const ONCE_RETENTION_DAYS = 30;
+
 export interface SchedulesBoot {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runner: SchedulerRunner;
   worker: RunningWorker;
+  retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -77,6 +82,22 @@ export function composeSchedulesAtBoot(
     queue,
     runner,
     worker,
+    async retentionTick() {
+      const pruned = await repo.deleteFinishedOnceOlderThan(
+        ONCE_RETENTION_DAYS,
+        OnceResult.Delivering,
+      );
+      for (const row of pruned) {
+        await queue.cancel(row.id);
+        emit({
+          type: EventType.ScheduleDeleted,
+          scheduleId: row.id,
+          agentId: row.agentId,
+          ownerSub: row.owner,
+        });
+      }
+      if (pruned.length > 0) log(`pruned ${pruned.length} one-time schedules`);
+    },
     async close() {
       await worker.close();
       await queue.close();

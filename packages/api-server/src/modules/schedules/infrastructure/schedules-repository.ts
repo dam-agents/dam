@@ -4,6 +4,8 @@ import {
   asc,
   eq,
   inArray,
+  lt,
+  ne,
   sql,
   type Db,
   schedules as schedulesTable,
@@ -64,6 +66,11 @@ export interface SchedulesRepository {
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
+  replaceResult(id: string, expected: string, next: string): Promise<boolean>;
+  deleteFinishedOnceOlderThan(
+    days: number,
+    keepResult: string,
+  ): Promise<{ id: string; agentId: string; owner: string }[]>;
 }
 
 interface InternalRow {
@@ -304,6 +311,40 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
+    },
+
+    async deleteFinishedOnceOlderThan(days, keepResult) {
+      return db
+        .delete(schedulesTable)
+        .where(
+          and(
+            sql`${schedulesTable.spec}->>'type' = 'once'`,
+            lt(
+              schedulesTable.lastFiredAt,
+              sql`now() - make_interval(days => ${days})`,
+            ),
+            ne(schedulesTable.lastFiredResult, keepResult),
+          ),
+        )
+        .returning({
+          id: schedulesTable.id,
+          agentId: schedulesTable.agentId,
+          owner: schedulesTable.owner,
+        });
+    },
+
+    async replaceResult(id, expected, next): Promise<boolean> {
+      const rows = await db
+        .update(schedulesTable)
+        .set({ lastFiredResult: next, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schedulesTable.id, id),
+            eq(schedulesTable.lastFiredResult, expected),
+          ),
+        )
+        .returning({ id: schedulesTable.id });
+      return rows.length > 0;
     },
 
     async setNextRun(id, nextRun): Promise<void> {

@@ -47,6 +47,10 @@ import {
   type ContributionsProgress,
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
+import {
+  createEventLifecycleNotifier,
+  type EventLifecycleListener,
+} from "./services/event-lifecycle.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/workspace-event.js";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
@@ -74,6 +78,10 @@ export interface RuntimeDeliveryComposition {
     kind: WorkspaceMutationKind,
   ): Promise<boolean>;
   registerEventOutcomeHandler(kind: string, handler: EventOutcomeHandler): void;
+  registerEventLifecycleListener(
+    kind: string,
+    listener: EventLifecycleListener,
+  ): void;
 }
 
 export interface ContributionsStatus {
@@ -114,6 +122,12 @@ export function composeRuntimeDelivery(
   });
   const queue = createStateQueue(opts.bullConnection);
 
+  const lifecycleListeners = new Map<string, EventLifecycleListener>();
+  const notifyLifecycle = createEventLifecycleNotifier(
+    (kind) => lifecycleListeners.get(kind),
+    log,
+  );
+
   const handler = createWorkerHandler({
     outboxRepo,
     agentsRuntimeRepo,
@@ -122,6 +136,7 @@ export function composeRuntimeDelivery(
     snapshotWriter: opts.snapshotWriter,
     clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.namespace),
     resolveOwner: opts.resolveOwner,
+    notifyLifecycle,
     log,
   });
   const worker = startStateWorker({
@@ -135,6 +150,7 @@ export function composeRuntimeDelivery(
     outboxRepo,
     queue,
     agentRunningPort: opts.agentRunningPort,
+    notifyLifecycle,
     log,
   });
 
@@ -174,6 +190,9 @@ export function composeRuntimeDelivery(
   return {
     registerEventOutcomeHandler: (kind, handler) => {
       eventOutcomeHandlers.set(kind, handler);
+    },
+    registerEventLifecycleListener: (kind, listener) => {
+      lifecycleListeners.set(kind, listener);
     },
     outboxRepo,
     agentsRuntimeRepo,

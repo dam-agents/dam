@@ -12,7 +12,10 @@ import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import { onceExpiry, onceFireAt } from "../domain/once.js";
 import { statusForVerdict } from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import type {
+  EventLifecycleTransition,
+  RuntimeMutator,
+} from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -28,6 +31,10 @@ export interface SchedulerRunner {
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
   restoreAll(): Promise<void>;
+  recordDelivery(
+    scheduleId: string,
+    transition: EventLifecycleTransition,
+  ): Promise<void>;
   reportFire(input: {
     scheduleId: string;
     eventId: string;
@@ -305,6 +312,21 @@ export function createSchedulerRunner(
       } catch (err) {
         log(`report: emit failed: ${(err as Error).message}`);
       }
+    },
+
+    async recordDelivery(scheduleId, transition): Promise<void> {
+      const sched = await deps.repo.getById(scheduleId);
+      if (sched?.spec.type !== "once") return;
+      const outcome = match(transition)
+        .with("settled", () => OnceResult.Success)
+        .with("expired", () => OnceResult.Missed)
+        .exhaustive();
+      const changed = await deps.repo.replaceResult(
+        scheduleId,
+        OnceResult.Delivering,
+        outcome,
+      );
+      if (changed) await emitChanged(sched.agentId, scheduleId);
     },
 
     async restoreAll(): Promise<void> {

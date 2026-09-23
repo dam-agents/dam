@@ -996,6 +996,14 @@ export async function bootstrap() {
       });
     },
   );
+  runtimeDelivery.registerEventLifecycleListener(
+    "trigger",
+    async (event, transition) => {
+      const { scheduleId } = event.payload as Partial<TriggerEventPayload>;
+      if (!scheduleId) return;
+      await schedulesBoot.runner.recordDelivery(scheduleId, transition);
+    },
+  );
 
   const artifactLibraryForSystem = (owner: string) =>
     composeArtifactLibraryForOwner({
@@ -1196,6 +1204,11 @@ export async function bootstrap() {
   });
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
+  );
+  await periodicJobs.register(
+    "schedules-once-retention",
+    24 * 60 * 60 * 1000,
+    () => schedulesBoot.retentionTick(),
   );
 
   const { readSpec: harnessReadTemplateSpec } =
