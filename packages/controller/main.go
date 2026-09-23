@@ -143,6 +143,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
+		agentReconciler.CheckVMInstall(ctx)
+		go runVMPreflight(ctx, agentReconciler, 5*time.Minute)
 	}
 	go idleChecker.RunLoop(ctx)
 
@@ -333,6 +335,19 @@ func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 	return nil
 }
 
+func runVMPreflight(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.CheckVMInstall(ctx)
+		}
+	}
+}
+
 func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
 	sweep := func() {
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
@@ -340,6 +355,7 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 		r.ReconcileOrphanPVCs(sctx)
 		r.ReconcileOrphanLeafSecrets(sctx)
 		r.ReconcileOrphanMachines(sctx)
+		r.ReconcileRunnerRollout(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}

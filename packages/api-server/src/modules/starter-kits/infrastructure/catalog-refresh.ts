@@ -7,11 +7,8 @@ import type {
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import {
-  type CatalogSource,
-  createGithubCatalogSource,
-  relPathEscapes,
-} from "./catalog-source.js";
+import { type CatalogSource, relPathEscapes } from "./catalog-source.js";
+import type { GitHosts } from "./git-hosts.js";
 import type { RefResolver } from "./git-ref-resolver.js";
 import type {
   ResolvedCatalogRepository,
@@ -26,6 +23,7 @@ export interface NamedCatalog {
   source: CatalogSource;
   gitUrl?: string;
   ref?: string;
+  entryHosts: GitHosts;
 }
 
 export interface CatalogRefreshDeps {
@@ -38,7 +36,7 @@ export interface CatalogRefreshDeps {
     ref: string,
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
-  sourceForEntry?: (gitUrl: string, ref: string) => CatalogSource;
+  sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
 }
 
 export interface CatalogRefresh {
@@ -60,6 +58,18 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       return "rejected";
     }
 
+    if (entry.url && !named.entryHosts.locate(entry.url)) {
+      getLogger().warn(
+        {
+          catalog: named.name,
+          url: entry.url,
+          mayRead: named.entryHosts.readableHosts,
+        },
+        "starter kits: the entry names a host this catalog may not aim at; the entry is withdrawn",
+      );
+      return "rejected";
+    }
+
     const gitUrl = entry.url ?? named.gitUrl;
     let version = deps.appVersion;
     let source = named.source;
@@ -77,10 +87,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         return resolution.status === "absent" ? "rejected" : "unreadable";
       }
       version = resolution.sha;
-      source = (deps.sourceForEntry ?? createGithubCatalogSource)(
-        gitUrl,
-        resolution.sha,
-      );
+      source = deps.sourceForEntry(gitUrl, resolution.sha);
     }
 
     const kitPath = path.posix.join(entry.path, KIT_FILE);
@@ -107,6 +114,18 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     const kit = parsed.data;
 
     const seedUrl = kit.seed?.self ? gitUrl : kit.seed?.url;
+    if (seedUrl && !named.entryHosts.locate(seedUrl)) {
+      getLogger().warn(
+        {
+          catalog: named.name,
+          id: kit.id,
+          seedUrl,
+          mayRead: named.entryHosts.readableHosts,
+        },
+        "starter kits: the kit's seed names a host this catalog may not aim at; the kit is withdrawn",
+      );
+      return "rejected";
+    }
     let seedRef: string | undefined;
     if (seedUrl) {
       if (seedUrl === gitUrl && kit.seed?.ref === undefined) {

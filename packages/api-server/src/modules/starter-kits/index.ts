@@ -14,7 +14,16 @@ export {
   type ResolvedCatalogRepository,
 } from "./infrastructure/resolved-catalog-repository.js";
 export { parseCatalogSeeds } from "./infrastructure/catalog-seeds.js";
-export { createCatalogSourceFromLocator } from "./infrastructure/catalog-source.js";
+export {
+  createCatalogSourceFromLocator,
+  createGitCatalogSource,
+} from "./infrastructure/catalog-source.js";
+export {
+  catalogEntryHosts,
+  createGitHosts,
+  type EnterpriseHost,
+  type GitHosts,
+} from "./infrastructure/git-hosts.js";
 export {
   createOnboardingMarker,
   type OnboardingMarker,
