@@ -30,7 +30,11 @@ function DetailCard({
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
   const nextRun =
-    enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
+    enabled && status?.nextRun
+      ? timeUntil(status.nextRun)
+      : schedule.type === "once"
+        ? "—"
+        : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 

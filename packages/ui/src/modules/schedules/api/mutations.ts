@@ -60,6 +60,44 @@ export function useUpdateSchedule() {
   });
 }
 
+export interface CreateOnceScheduleInput {
+  agentId: string;
+  name: string;
+  task: string;
+  timezone: string;
+  at?: string;
+}
+
+export function useCreateOnceSchedule() {
+  return useMutation({
+    mutationFn: (input: CreateOnceScheduleInput) =>
+      api.schedules.createOnce.mutate(input),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to create one-time task",
+    },
+  });
+}
+
+export interface UpdateOnceScheduleInput {
+  id: string;
+  name: string;
+  task: string;
+  timezone: string;
+  at: string;
+}
+
+export function useUpdateOnceSchedule() {
+  return useMutation({
+    mutationFn: (input: UpdateOnceScheduleInput) =>
+      api.schedules.updateOnce.mutate(input),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to update one-time task",
+    },
+  });
+}
+
 export function useToggleSchedule() {
   return useMutation({
     ...trpc.schedules.toggle.mutationOptions(),

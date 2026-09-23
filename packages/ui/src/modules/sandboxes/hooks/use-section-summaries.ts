@@ -27,6 +27,7 @@ import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
+import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 
@@ -150,7 +151,7 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;
-    const running = schedules.filter((s) => s.enabled).length;
+    const running = schedules.filter(isUpcoming).length;
     if (running === 0) return "No schedules";
     return `${running} Schedule${running === 1 ? "" : "s"} running`;
   }, [agent, schedules]);
