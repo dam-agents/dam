@@ -124,7 +124,12 @@ export const ChatMessage = memo(function ChatMessage({
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <div className="flex items-center gap-1.5 mb-0.5">
+      <div
+        className={cn(
+          "flex gap-1.5 mb-0.5",
+          avatarAgentName === undefined ? "items-baseline" : "items-center",
+        )}
+      >
         {isAssistant && avatarAgentName !== undefined && (
           <LazyRobotHead name={avatarAgentName} size={20} />
         )}

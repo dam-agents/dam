@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   clearance,
   HEAD_GEOMETRY,
+  samplePath,
 } from "../../modules/agents/lib/avatar/geometry.js";
 import {
   bugEyeCenter,
@@ -251,5 +252,20 @@ describe("face layout", () => {
         -4,
       );
     }
+  });
+});
+
+describe("head outline sampling", () => {
+  // TEST_SCENARIO: A head drawn with a second subpath after closing the first must keep every segment, or the outline that every eye and visor is fitted against comes out short.
+  it("keeps the commands that follow a close", () => {
+    const points = samplePath("M0,0 L10,0 L10,10 Z M20,20 L30,20");
+    expect(points).toContainEqual([20, 20]);
+    expect(points).toContainEqual([30, 20]);
+  });
+
+  // TEST_SCENARIO: A head drawn with a command the sampler cannot trace, such as an arc, must fail loudly rather than yield an outline that places features outside the head.
+  it("refuses a command it cannot trace, even right after a close", () => {
+    expect(() => samplePath("M0,0 L10,0 Z A5,5 0 0 1 20,20")).toThrow(/A/);
+    expect(() => samplePath("M0,0 L10,0 Z 5,5")).toThrow();
   });
 });

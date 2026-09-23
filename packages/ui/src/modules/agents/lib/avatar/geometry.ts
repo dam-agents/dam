@@ -106,7 +106,7 @@ const SHAPES: Record<HeadShape, Omit<HeadGeometry, "outline">> = {
 
 const CURVE_STEPS = 12;
 
-function samplePath(d: string): Point[] {
+export function samplePath(d: string): Point[] {
   const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+/g) ?? [];
   const points: Point[] = [];
   let i = 0;
@@ -166,7 +166,7 @@ function samplePath(d: string): Point[] {
         break;
       }
       case "Z":
-        i++;
+        command = "";
         break;
       default:
         throw new Error(`Unsupported path command "${command}" in "${d}"`);
