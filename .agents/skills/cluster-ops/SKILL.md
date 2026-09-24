@@ -5,6 +5,8 @@ description: Operate the local k3s dev cluster (lima) and the Playwright e2e sui
 
 # Cluster operations
 
+In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](../ccweb/SKILL.md) first: the cluster there needs `IS_SANDBOX=1`, a k3s launcher, and pulled rather than built images.
+
 ## Cluster lifecycle (k3s via lima)
 
 `mise tasks` lists every `cluster:*` task with its description. The ones you'll reach for most:
