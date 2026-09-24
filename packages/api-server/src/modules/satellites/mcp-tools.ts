@@ -150,6 +150,7 @@ export function registerSatelliteTools(
               ? outcomeContent(settled)
               : json({
                   ...started,
+                  status: settled.status,
                   note: `still running — call ${scopedName(name, "wait")} with job ${started.sequence}, or get on with something else and you will be woken when it finishes.`,
                 });
           }),

@@ -39,6 +39,13 @@ export interface WorkerTransport {
   drain(satellite: string): Promise<void>;
 }
 
+export class SatelliteRemovedError extends Error {
+  constructor(satellite: string) {
+    super(`${satellite} is no longer registered on the platform`);
+    this.name = "SatelliteRemovedError";
+  }
+}
+
 export interface WorkerLog {
   line(text: string): void;
 }
@@ -62,6 +69,8 @@ export function createWorker(deps: {
   const reporting = new Set<Promise<void>>();
   let draining = false;
   let stopped = false;
+  const slotWaiters = new Set<() => void>();
+  let cancelPoll: Promise<void> | null = null;
 
   const report = (input: Parameters<WorkerTransport["report"]>[0]): void => {
     const sent = transport
@@ -109,7 +118,40 @@ export function createWorker(deps: {
           },
         });
       })
-      .finally(() => running.delete(item.sequence));
+      .finally(() => {
+        running.delete(item.sequence);
+        for (const wake of slotWaiters) wake();
+        slotWaiters.clear();
+      });
+  }
+
+  function slotFreed(): Promise<void> {
+    return new Promise((resolve) => {
+      if (running.size < deps.maxConcurrent) resolve();
+      else slotWaiters.add(resolve);
+    });
+  }
+
+  function handle(items: WorkItem[]): number {
+    let started = 0;
+    for (const item of items)
+      if (item.kind === "cancel") {
+        log.line(`CANCEL ${name}#${item.sequence}`);
+        backend.cancel(item.sequence);
+      } else {
+        startJob(item);
+        started++;
+      }
+    return started;
+  }
+
+  function stopClaiming(err: unknown): boolean {
+    if (!(err instanceof SatelliteRemovedError)) return false;
+    log.line(
+      `${name} was removed on the platform — no longer claiming work; start it again to register it anew`,
+    );
+    draining = true;
+    return true;
   }
 
   function announce(prefix: string): void {
@@ -147,24 +189,32 @@ export function createWorker(deps: {
             continue;
           }
           const capacity = deps.maxConcurrent - running.size;
+          if (capacity <= 0) {
+            cancelPoll ??= transport
+              .claim({ satellite: name, capacity: 0, waitMs: CLAIM_WAIT_MS })
+              .then((items) => void handle(items))
+              .catch(async (err: unknown) => {
+                if (stopClaiming(err)) return;
+                log.line(`claim failed, retrying: ${String(err)}`);
+                await new Promise((r) => setTimeout(r, 2000));
+              })
+              .finally(() => {
+                cancelPoll = null;
+              });
+            await Promise.race([cancelPoll, slotFreed()]);
+            continue;
+          }
           try {
             const items = await transport.claim({
               satellite: name,
-              capacity: Math.max(capacity, 0),
+              capacity,
               waitMs: CLAIM_WAIT_MS,
             });
-            let started = 0;
-            for (const item of items)
-              if (item.kind === "cancel") {
-                log.line(`CANCEL ${name}#${item.sequence}`);
-                backend.cancel(item.sequence);
-              } else {
-                startJob(item);
-                started++;
-              }
+            const started = handle(items);
             if (started === 0 && !stopped && !draining)
               await new Promise((r) => setTimeout(r, IDLE_MS));
           } catch (err) {
+            if (stopClaiming(err)) continue;
             log.line(`claim failed, retrying: ${String(err)}`);
             await new Promise((r) => setTimeout(r, 2000));
           }

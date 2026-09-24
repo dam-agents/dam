@@ -92,7 +92,7 @@ export function buildListCommand(deps: ManageDeps): Command {
     }
     const table = rows.map((row) => [
       row.name,
-      row.draining ? "draining" : row.online ? "online" : "offline",
+      !row.online ? "offline" : row.draining ? "draining" : "online",
       row.host ?? "—",
       String(row.tools.length),
       String(row.activeJobs),

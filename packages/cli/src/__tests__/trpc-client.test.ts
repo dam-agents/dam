@@ -44,6 +44,53 @@ describe("shared trpc-client adapter", () => {
     expect(captured[0]!.headers.get("authorization")).toBe("Bearer AT-1");
   });
 
+  /**
+   * TEST_SCENARIO: A satellite claim is a long poll: the server holds it open
+   * until there is work or its wait runs out. A batch is answered only when
+   * every call in it is, so a claim batched with anything holds that call for
+   * the whole poll — a worker's fresh claim sat behind an open one for 25
+   * seconds while a queued job waited. Claims go out one per request.
+   */
+  it("never batches a satellite claim, which holds its request open", async () => {
+    const paths: string[] = [];
+    const fetchSpy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(new Request(input as RequestInfo, init).url);
+      const path = url.pathname.replace(/^.*\/api\/trpc\//, "");
+      paths.push(path);
+      const body = url.searchParams.has("batch")
+        ? path.split(",").map(() => ({ result: { data: null } }))
+        : { result: { data: null } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const trpc = createTrpcClient({
+      host: HOST,
+      tokenProvider: fakeTokenProvider(async () => ok("AT-1")),
+      fetch: fetchSpy,
+    });
+
+    await Promise.all([
+      trpc.satellites.claim.mutate({
+        satellite: "box",
+        capacity: 0,
+        waitMs: 0,
+      }),
+      trpc.satellites.claim.mutate({
+        satellite: "box",
+        capacity: 1,
+        waitMs: 0,
+      }),
+      trpc.satellites.heartbeat.mutate({ satellite: "box", running: [] }),
+    ]);
+
+    expect(paths.filter((p) => p === "satellites.claim")).toHaveLength(2);
+    expect(
+      paths.some((p) => p.includes(",") && p.includes("satellites.claim")),
+    ).toBe(false);
+  });
+
   it("aborts before the wire when tokenProvider returns not-logged-in — no HTTP request fires", async () => {
     const captured: Request[] = [];
     const fetchSpy = vi.fn(mockFetch(captured));
