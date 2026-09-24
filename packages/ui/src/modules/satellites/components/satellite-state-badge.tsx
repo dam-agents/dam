@@ -16,15 +16,9 @@ export function SatelliteStateBadge({
           : `Offline · seen ${timeAgo(satellite.lastSeenAt)}`}
       </Badge>
     );
-  if (satellite.draining)
-    return (
-      <Badge variant="warning" className="shrink-0 font-normal">
-        Shutting down
-      </Badge>
-    );
   return (
-    <Badge variant="success" className="shrink-0 font-normal">
-      Online
+    <Badge variant="warning" className="shrink-0 font-normal">
+      Shutting down
     </Badge>
   );
 }

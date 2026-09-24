@@ -28,6 +28,7 @@ import { harnessName } from "../../lib/fixtures.js";
 
 const SATELLITE = "e2e-satellite";
 const AGENT_NAME = "e2e-satellite-agent";
+const CREATED_AGENT_NAME = "e2e-satellite-created";
 
 const MANIFEST = {
   name: SATELLITE,
@@ -64,10 +65,11 @@ async function removeIfPresent(api: ApiClient): Promise<void> {
  */
 test.afterAll(async () => {
   const api = createApiClient(await getAccessToken());
-  const found = (await api.agents.list.query().catch(() => [])).find(
-    (a) => a.name === AGENT_NAME,
-  );
-  if (found) await api.agents.delete.mutate({ id: found.id }).catch(() => {});
+  const agents = await api.agents.list.query().catch(() => []);
+  for (const found of agents.filter((a) =>
+    [AGENT_NAME, CREATED_AGENT_NAME].includes(a.name),
+  ))
+    await api.agents.delete.mutate({ id: found.id }).catch(() => {});
 });
 
 test.describe("satellites", () => {
@@ -184,9 +186,11 @@ test.describe("satellites", () => {
       host: "e2e-host",
     });
     await page.reload();
-    const card = page.getByTestId("connection-group-satellites");
-    await expect(card.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
-    await expect(card.getByText("Online")).toBeVisible();
+    const row = page
+      .getByTestId("connection-group-satellites")
+      .getByTestId(`satellite-${SATELLITE}`);
+    await expect(row).toBeVisible();
+    await expect(row).not.toContainText(/Offline|Shutting down/);
 
     await ensureAgentExists(api, AGENT_NAME, harnessName);
     const agentId = await waitForAgentRunning(api, AGENT_NAME);
@@ -203,6 +207,58 @@ test.describe("satellites", () => {
           ?.grantedAgentIds.includes(agentId),
       )
       .toBe(true);
+
+    await api.satellites.remove.mutate(SATELLITE);
+  });
+
+  /**
+   * TEST_SCENARIO: A satellite is per user, so nothing stops it being picked
+   * before the agent exists. The new-agent form offers the same catalogue tab;
+   * the pick is held in the draft and granted once the agent is created,
+   * because a grant needs an agent id.
+   */
+  test("a satellite picked on the new-agent form is granted once the agent exists", async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const api = createApiClient(await getAccessToken());
+    await acceptTerms(api);
+    await removeIfPresent(api);
+    await api.satellites.connect.mutate({
+      manifest: MANIFEST,
+      host: "e2e-host",
+    });
+
+    await page.goto(`${baseUrl}/agents/new`);
+    await page.getByTestId(`template-card-${harnessName}`).click();
+    await page.getByPlaceholder("my-agent").fill(CREATED_AGENT_NAME);
+
+    await page.getByTestId("provider-select").click();
+    await page.getByTestId("provider-option-openai").click();
+    const dialog = page.getByRole("dialog");
+    if (
+      await dialog.waitFor({ timeout: 2_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
+      await dialog.getByRole("button", { name: "Save" }).click();
+      await expect(dialog).toBeHidden();
+    }
+
+    await page.getByTestId("open-connection-catalog").first().click();
+    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
+    await page.getByTestId("catalog-close").click();
+    await expect(page.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
+    await page.getByRole("button", { name: /create coding agent/i }).click();
+
+    const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME);
+    expect(
+      (await api.satellites.list.query()).find((s) => s.name === SATELLITE)
+        ?.grantedAgentIds,
+    ).toContain(agentId);
 
     await api.satellites.remove.mutate(SATELLITE);
   });

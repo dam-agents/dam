@@ -1,4 +1,4 @@
-import { OverflowMenuHorizontal } from "@carbon/icons-react";
+import { OverflowMenuHorizontal, Satellite } from "@carbon/icons-react";
 import type { SatelliteView } from "api-server-api";
 import { useState } from "react";
 
@@ -42,18 +42,26 @@ export function SatelliteRow({
   return (
     <div className="rounded-lg border border-border" data-testid={rowId}>
       <div className="flex items-center gap-2 px-4 py-3">
-        <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
-          <p className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground">
+        <div className="flex min-w-[160px] flex-1 items-center gap-2">
+          <Satellite size={16} className="shrink-0 text-foreground/80" />
+          <p
+            className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground"
+            title={satellite.description ?? undefined}
+          >
             {satellite.name}
           </p>
-          <SatelliteStateBadge satellite={satellite} />
           <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
             <span className="truncate">{tag}</span>
           </Badge>
+          {(!satellite.online || satellite.draining) && (
+            <SatelliteStateBadge satellite={satellite} />
+          )}
         </div>
-        {grant && !grant.actionHidden && (
-          <RowGrantAction rowId={rowId} grant={grant} />
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
+          {grant && !grant.actionHidden && (
+            <RowGrantAction rowId={rowId} grant={grant} />
+          )}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -86,11 +94,6 @@ export function SatelliteRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {satellite.description && (
-        <p className="-mt-1 px-4 pb-3 text-sm text-muted-foreground">
-          {satellite.description}
-        </p>
-      )}
       {toolsShown && <SatelliteTools tools={satellite.tools} />}
     </div>
   );

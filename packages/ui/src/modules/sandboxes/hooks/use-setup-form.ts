@@ -11,6 +11,7 @@ export const setupFormSchema = z.object({
   name: z.string(),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
+  satelliteNames: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
   customImage: z.string().default(""),
   skipSeed: z.boolean().default(false),
@@ -37,6 +38,7 @@ export interface SetupFormState {
   form: SetupForm;
   update: (patch: Partial<SetupForm>) => void;
   toggleConnection: (id: string, granted: boolean) => void;
+  toggleSatellite: (name: string, granted: boolean) => void;
   reset: () => void;
 }
 
@@ -109,6 +111,22 @@ export function useSetupForm(
     [key],
   );
 
+  const toggleSatellite = useCallback(
+    (name: string, granted: boolean) => {
+      setForm((prev) => {
+        const next = {
+          ...prev,
+          satelliteNames: granted
+            ? [...new Set([...prev.satelliteNames, name])]
+            : prev.satelliteNames.filter((x) => x !== name),
+        };
+        save(key, next);
+        return next;
+      });
+    },
+    [key],
+  );
+
   const setName = useCallback((name: string) => update({ name }), [update]);
   usePrefilledSandboxName(namePrefix, form.name, setName);
 
@@ -145,5 +163,5 @@ export function useSetupForm(
     });
   }, [key, returnPath]);
 
-  return { form, update, toggleConnection, reset };
+  return { form, update, toggleConnection, toggleSatellite, reset };
 }
