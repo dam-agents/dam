@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-09-23
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -30,7 +30,7 @@ A task meant to happen once — a check-back, a retry after a transient failure,
 What a single occurrence changes follows from it having **no next occurrence to make up for a lost one**:
 
 - **It never re-arms.** Completion is derived from the row — it fired and has no next run — rather than stored, so it cannot disagree with the fire that produced it. A completed one leaves the list of what will still happen and stays as history beside the Session it opened, then is pruned 30 days after it fired, a failed fire included. Cancelling is deleting; it can be edited only until it fires; deleting one already on its way does not recall the event.
-- **Its result is recorded by delivery, not by commit.** A recurring fire writes its result when the event commits, and a fire lost after that is paid back by the next one. A one-time fire has no next one, so it reads *delivering* until its event settles on the pod (then *success*) or expires undelivered (then *missed*). Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the pod, so a runtime too old to know the kind still resolves.
+- **Its result is recorded by delivery, not by commit.** A recurring fire writes its result when the event commits, and a fire lost after that is paid back by the next one. A one-time fire has no next one, so it writes *delivering* in the transaction that commits its event — a settle can never land before it — and reads it until its event settles on the pod (then *success*) or expires undelivered (then *missed*). Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the pod, so a runtime too old to know the kind still resolves.
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence. One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately. The onboarding hold does not apply either — the hold guards a cadence, and skipping a single occurrence would lose the task outright. A hard stop is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work. That session can run on a **model of its own** rather than the agent's default — a routine check-back on a cheap model, a hard one-off on a strong one — where the harness can switch a session's model ([harness-config](harness-config.md)); the choice is refused at creation where it cannot, and a harness that still refuses the switch when the task fires fails the task with its reason rather than running it on a model nobody chose. A task that continues its scheduling session keeps that session's model.

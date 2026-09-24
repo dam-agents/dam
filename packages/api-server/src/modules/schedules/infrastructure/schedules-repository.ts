@@ -8,6 +8,7 @@ import {
   ne,
   sql,
   type Db,
+  type DbTx,
   schedules as schedulesTable,
 } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
@@ -62,7 +63,13 @@ export interface SchedulesRepository {
   listAgentIds(): Promise<string[]>;
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  recordFire(
+    id: string,
+    result: string,
+    nextRun: Date | null,
+    tx?: Db | DbTx,
+  ): Promise<void>;
+  transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -270,8 +277,8 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
       return this.updateSpec(id, owner, spec);
     },
 
-    async recordFire(id, result, nextRun): Promise<void> {
-      await db
+    async recordFire(id, result, nextRun, tx): Promise<void> {
+      await (tx ?? db)
         .update(schedulesTable)
         .set({
           lastFiredAt: new Date(),
@@ -280,6 +287,10 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
+    },
+
+    transaction(fn) {
+      return db.transaction(fn);
     },
 
     async applyStatusPatch(id, patch): Promise<void> {

@@ -208,10 +208,20 @@ export function createSchedulerRunner(
       }
     };
 
+    const event = { id: eventId, kind: "trigger" as const, payload, expiresAt };
+    const once = sched.spec.type === "once";
     try {
-      await deps.runtimeMutator.bump(sched.agentId, [
-        { id: eventId, kind: "trigger", payload, expiresAt },
-      ]);
+      if (once)
+        await deps.repo.transaction(async (tx) => {
+          await deps.repo.recordFire(
+            scheduleId,
+            OnceResult.Delivering,
+            null,
+            tx,
+          );
+          await deps.runtimeMutator.bump(sched.agentId, [event], tx);
+        });
+      else await deps.runtimeMutator.bump(sched.agentId, [event]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       const stamp = await deps.wakeAgent(sched.agentId);
       if (stamp && sched.spec.precheck && deps.activityStamps)
@@ -236,12 +246,7 @@ export function createSchedulerRunner(
 
     const next = afterFire(sched);
     if (sched.spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else
-      await deps.repo.recordFire(
-        scheduleId,
-        sched.spec.type === "once" ? OnceResult.Delivering : "success",
-        next,
-      );
+    else if (!once) await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     await emitFired("success");
   }
@@ -334,6 +339,10 @@ export function createSchedulerRunner(
         outcome,
       );
       if (changed) await emitChanged(sched.agentId, scheduleId);
+      else
+        log(
+          `delivery: one-time schedule ${scheduleId} is at ${sched.status?.lastResult ?? "no result"}, not ${OnceResult.Delivering}; ${outcome} dropped`,
+        );
     },
 
     async recordOnceFailure(scheduleId, reason): Promise<void> {

@@ -45,6 +45,21 @@ function makeSchedule(
   };
 }
 
+const ONCE_SCHEDULE: Schedule = {
+  id: SCHEDULE_ID,
+  agentId: AGENT_ID,
+  name: "once",
+  spec: {
+    version: "1",
+    type: "once",
+    at: "2026-06-12T10:30:00.000Z",
+    timezone: "UTC",
+    task: "do the thing",
+    enabled: true,
+    createdBy: "agent",
+  },
+};
+
 function makeDeps(opts?: {
   wakeError?: Error;
   storedNextRun?: string;
@@ -52,6 +67,7 @@ function makeDeps(opts?: {
   precheck?: string;
   lastRun?: string;
   onboardingPending?: boolean;
+  once?: boolean;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -66,6 +82,7 @@ function makeDeps(opts?: {
 
   const repo = {
     async getById(id: string) {
+      if (id === SCHEDULE_ID && opts?.once) return ONCE_SCHEDULE;
       return id === SCHEDULE_ID
         ? makeSchedule(
             opts?.storedNextRun,
@@ -78,8 +95,20 @@ function makeDeps(opts?: {
     async getOwnerById() {
       return "owner-sub";
     },
-    async recordFire(_id: string, result: string, nextRun: Date | null) {
+    async recordFire(
+      _id: string,
+      result: string,
+      nextRun: Date | null,
+      tx?: unknown,
+    ) {
+      if (tx) calls.push(`record:${result}`);
       fires.push({ result, nextRun });
+    },
+    async transaction<T>(fn: (tx: unknown) => Promise<T>) {
+      calls.push("begin");
+      const out = await fn({});
+      calls.push("commit");
+      return out;
     },
     async setNextRun() {},
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
@@ -197,6 +226,26 @@ describe("scheduler-runner fire", () => {
     ]);
     expect(fires).toHaveLength(1);
     expect(fires[0]!.result).toBe("success");
+  });
+
+  // TEST_SCENARIO: the delivery worker can settle the event before the fire returns; delivering must already be there for the settle listener to replace.
+  it("records a one-time fire as delivering in the transaction that commits its event", async () => {
+    const { runner, calls, fires } = makeDeps({ once: true });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([
+      "begin",
+      "record:delivering",
+      `bump:${AGENT_ID}`,
+      "commit",
+      `enqueue:${AGENT_ID}`,
+      `wake:${AGENT_ID}`,
+    ]);
+    expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
   });
 
   // TEST_SCENARIO: a redelivered fire must mint the same event id — BullMQ is at-least-once, and only a fireAt-derived id lets the agent dedup the rerun.
