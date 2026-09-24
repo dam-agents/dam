@@ -12,8 +12,7 @@
 #   .nothing_to_do == true  -> the agent ends the run immediately.
 #   otherwise               -> the agent processes the arrays per CLAUDE.md + docs/.
 #
-# Requires: bash, jq, git, sed/grep/cut/tr, GNU date (Linux pod). Deliberately awk-free —
-# awk is not available in the pod.
+# Requires: bash, jq, git, sed/grep/cut/tr, GNU date (Linux pod).
 
 set -u
 export LC_ALL=C

@@ -81,7 +81,6 @@ reader byte-identically, so what the verifier accepts is exactly what a run sees
 
 ```bash
 CONFIG="$HOME/work/CONFIG.md"
-# awk is not available in the pod — sed/grep/cut only
 cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
         | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'; }
 ```

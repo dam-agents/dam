@@ -18,9 +18,8 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
   for disposable git plumbing, never for anything authoritative.
 - The **chat UI (direct agent session / ACP)** is the operator surface — the only place
   behavior changes may come from.
-- Pod tooling: `bash`, `git`, `gh`, `jq`, `sed`/`grep`/`cut`/`tr`, GNU `date` are
-  available. **`awk` is not** — generated scripts must be awk-free. When a script may
-  also run on macOS during development, guard date parsing:
+- Pod tooling: `bash`, `git`, `gh`, `jq`, `awk`, `sed`/`grep`/`cut`/`tr`, GNU `date` are
+  available. When a script may also run on macOS during development, guard date parsing:
   `date -d "$iso" +%s 2>/dev/null || date -j -f '%Y-%m-%dT%H:%M:%SZ' "$iso" +%s`.
 - **`jq` and `gh` on `PATH` are `mise` shims** — every exec re-resolves the toolchain
   (~250 ms against ~17 ms for the real binary). A pre-flight execs `jq` dozens of times

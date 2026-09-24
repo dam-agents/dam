@@ -147,7 +147,7 @@ re-registered — the changelog's upgrade block says so).
 2. Read-only dry run per mode against the real integration where reachable
    (`preflight.sh <mode> | jq .`): valid JSON, decisions match observable reality,
    `nothing_to_do` on a quiet target.
-3. Pod-compatibility sweep: no `awk`, GNU-date-first with BSD fallback where the script
+3. Pod-compatibility sweep: GNU-date-first with BSD fallback where the script
    might also run on macOS during development (`references/platform-dam.md`).
 4. Source `scripts/lib/toolpath.sh` first when the script execs a shimmed CLI in a loop —
    on the pod `jq`/`gh` are `mise` shims and each exec costs ~250 ms
