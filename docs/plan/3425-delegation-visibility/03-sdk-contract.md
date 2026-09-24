@@ -30,18 +30,29 @@ Apply `/typescript-engineering`.
    lines exactly as they are (`spawned`, `done`, `failed`); they are now the contract, so
    name the format once in a comment-free constant and use it for all three.
 4. **Skill text.** `packages/agents/claude-code/workspace/.agents/skills/dam-invoke/SKILL.md`
-   `spawn(opts)` table: `label` is now also shown in the UI, so recommend a short
-   meaningful one.
+   `spawn(opts)` table: say the label is recorded with the delegation.
 5. Rebuild the bundle: `mise run //packages/driver-sdk:build`. The image build copies
    `dist/driver-sdk.mjs` into every harness image (`packages/platform-base/Dockerfile`).
+
+## Outcome of step 1
+
+Verified 2026-09-24 on the dev cluster. After the README fan-out, the driver's Claude Code
+session file holds the Bash tool result with all four lines intact:
+`[invoke] spawned six -> agent-…`, `[invoke] spawned eight -> agent-…` and the two `done`
+lines. That file is what the history provider replays, so the recogniser in the README
+stands unchanged. The skill's own documentation text also appears in the transcript with
+`[invoke] spawned ... -> agent-xxx\``, which the anchored regex rejects because of the
+trailing backtick; the read path drops any id that was never spawned in any case. Claude
+Code shortens Bash output only past roughly 30k characters, far above a fan-out's
+progress lines, so no summary line was needed.
 
 ## Acceptance criteria
 
 - [ ] Step 1's finding is written into this file; the README recogniser matches what replay
       actually contains.
 - [ ] A spawn with `label: "six"` produces a row with `label = 'six'`.
-- [ ] A spawn without a label produces a row whose label is the template id, since the SDK
-      falls back to it for the tag.
+- [ ] A spawn without a label produces a row with a null label; the SDK only prints the
+      template id as its progress tag.
 - [ ] `mise run check` and `mise run test` pass (driver-sdk and api-server-api suites).
 
 ## Smoke test
