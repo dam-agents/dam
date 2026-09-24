@@ -37,6 +37,7 @@ function runningRow(id: string): InvocationRow {
     errorReason: null,
     expiresAt: new Date(Date.now() + 60 * 60_000),
     completedAt: null,
+    reapedAt: null,
     experimentSpanId: null,
   };
 }
@@ -50,6 +51,7 @@ function makeSweep(
   const repo = {
     listExpiredRunning: async () => [],
     listRunning: async () => rows,
+    listTerminalUnreaped: async () => [],
     fail: async (id: string, reason: string) => {
       failed.push({ id, reason });
     },
@@ -58,12 +60,11 @@ function makeSweep(
 
   const sweep = createInvocationLivenessSweep({
     repo,
-    agentsFor: () =>
-      ({
-        delete: async (id: string) => {
-          deleted.push(id);
-        },
-      }) as never,
+    reaper: {
+      reap: async (row) => {
+        deleted.push(row.id);
+      },
+    },
     readTargetRestart,
     batchSize: 10,
   });

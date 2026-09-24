@@ -16,3 +16,4 @@ export {
 } from "./services/invocations-service.js";
 export { createTargetAdmission } from "./services/target-admission.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
+export { REPORT_GRACE_MS } from "./services/target-reaper.js";

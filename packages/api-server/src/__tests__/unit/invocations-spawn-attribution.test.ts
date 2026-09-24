@@ -32,6 +32,8 @@ function makeService(opts: {
     countRunningByDriver: async () => new Map(),
     failAllRunningByExperiment: async () => [],
     listRootDriverIds: async () => [],
+    listTerminalUnreaped: async () => [],
+    markReaped: async () => {},
     listByRoot: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
@@ -49,6 +51,7 @@ function makeService(opts: {
       delete: async () => {},
     } as never,
     driverResolution: { resolveRoot: opts.resolveRoot },
+    reaper: { reap: async () => {} },
     runtimeMutator: {
       bump: async () => 0,
       enqueueAfterCommit: async () => {},

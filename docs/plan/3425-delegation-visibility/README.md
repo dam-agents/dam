@@ -213,6 +213,27 @@ Alternatives drawn and rejected: children as sessions in the sidebar opening in 
 column (loses the driver's context while comparing children), and the conversation inline
 under the card (fine for short children, breaks for long transcripts).
 
+### Open question: the harness reports telemetry in two shapes
+
+Measured on the dev cluster, 2026-09-24, across fifteen Invocation targets of one driver, all
+on harness version 2.1.257 with identical export configuration. Each target produced **either**
+ten to eleven log records and a single span, **or** no log records and seven to fifteen spans
+named `claude_code.llm_request`, `claude_code.tool`, `claude_code.interaction`. Never both, and
+which one a target got varied between two children of the same fan-out spawned in the same
+second. Nothing was lost in transit: a hand-made record posted from inside a pod landed in the
+store, the collector refused nothing, and the counts did not change hours later.
+
+Every cost and call figure in the product reads one thing, log records whose body is
+`claude_code.api_request`, so a turn in the span shape reads as zero calls and zero cost. That
+is the per-reply line, the sessions sidebar, the Usage page and this feature's per-child read
+alike. `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` is enabled, so the likeliest switch is a gate the
+harness evaluates per process and we do not control.
+
+This is a platform-level gap, not one this feature introduces, and it is not slice 10's to
+fix. Resolve it in this feature before it ships, because a card that silently reads zero is
+worse than one that reads nothing. Not yet investigated: whether the shape can be pinned from
+the environment, and what a reader that understands both shapes costs.
+
 ### Follow-ups this design surfaced
 
 - **Telemetry stays one element.** The per-reply `TurnTelemetry` line is the platform's
@@ -233,7 +254,7 @@ under the card (fine for short children, breaks for long transcripts).
 | 03 | ✅ Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
 | 04 | ✅ Delegation read path | `invocations.tree` | 02 |
 | 05 | ✅ Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |
-| 06 | Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
+| 06 | ✅ Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
 | 07 | Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
 | 10 | A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
 | 08 | Capture the child conversation at teardown | Capture inside the reap path, store via the artifact store, key on the record, cleanup, docs | 07, 10 |
