@@ -32,6 +32,12 @@ To point Codex at an OpenAI-compatible proxy or self-hosted endpoint, add `OPENA
 
 The harness scripts translate `OPENAI_BASE_URL` into Codex's `-c openai_base_url=...` config override. Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
 
+### Model selection
+
+The Config panel lists the models the granted endpoint serves (`<OPENAI_BASE_URL>/v1/models`) and writes the pick, plus the reasoning effort, into `~/.codex/config.toml`. Codex's own `/model` picker still shows its built-in OpenAI catalog, which an OpenAI-compatible endpoint need not serve.
+
+A `model` set in `~/.codex/config.toml` wins over the provider's `OPENAI_MODEL` pin. It can come from the Config panel, `/model`, or a hand-edit. The harness scripts pass the pin as `-c model=...` only when the file sets none.
+
 ## Harness scripts
 
 | Script | Runs | Purpose |

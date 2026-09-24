@@ -13,3 +13,44 @@ drivers:
     keyPath: mcp_servers
     urlKey: url
     headersKey: http_headers
+
+  # Codex's built-in model list names OpenAI's own models, which an
+  # OpenAI-compatible endpoint need not serve, so the list is discovered from
+  # the endpoint the agent was granted. A `model` in config.toml outranks the
+  # provider's OPENAI_MODEL pin: the harness scripts pass the pin only when the
+  # file sets none. No redirectEnv — the OpenAI preset names api.openai.com
+  # through the same variable, where Codex's own default is the better answer.
+  harness-config:
+    file: "$HOME/.codex/config.toml"
+    format: toml
+    keys:
+      model: model
+      configOptions:
+        effort: model_reasoning_effort
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: effort
+          name: Effort
+          description: Reasoning effort level
+          category: thought_level
+          choices:
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+    modelDiscovery:
+      urlEnv:
+        - OPENAI_BASE_URL
+      pinEnv:
+        - OPENAI_MODEL
