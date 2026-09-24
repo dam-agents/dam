@@ -45,7 +45,7 @@ export function GrantedConnectionsPanel({
         data-testid="open-connection-catalog"
       >
         <Add size={16} />
-        Add Connection
+        New
       </Button>
     </div>
   );

@@ -13,6 +13,7 @@ export interface SatelliteBackend {
     tool: string;
     args: Record<string, unknown>;
   }): Promise<CallOutcome>;
+  describeCall(tool: string, args: Record<string, unknown>): string;
   cancel(sequence: number): void;
   killAll(): void;
   close(): Promise<void>;
@@ -25,6 +26,7 @@ export type CallOutcome =
       exitCode: number | null;
       output: string;
       truncated: boolean;
+      blocked?: true;
     }
   | { status: "cancelled"; output: string; truncated: boolean }
   | {

@@ -26,6 +26,7 @@ function refused(text: string): Promise<CallOutcome> {
     exitCode: null,
     output: text,
     truncated: false,
+    blocked: true,
   });
 }
 
@@ -139,7 +140,6 @@ function resolveCommand(
  */
 export function createCommandBackend(
   surface: CommandSurface,
-  log: { line: (text: string) => void },
 ): SatelliteBackend {
   const running = new Map<number, RunningJob>();
 
@@ -159,20 +159,17 @@ export function createCommandBackend(
     const argv = cmd as string[];
 
     const command = resolveCommand(surface, argv);
-    if (typeof command === "string") {
-      log.line(`REFUSED #${sequence}: ${command}`);
+    if (typeof command === "string")
       return refused(`refused locally: ${command}`);
-    }
 
     if (command.maxConcurrent !== undefined) {
       const active = [...running.values()].filter(
         (entry) => entry.command === command,
       ).length;
-      if (active >= command.maxConcurrent) {
-        const limit = `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`;
-        log.line(`REFUSED #${sequence}: ${limit}`);
-        return refused(limit);
-      }
+      if (active >= command.maxConcurrent)
+        return refused(
+          `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`,
+        );
     }
 
     return spawnCommand(sequence, argv, command);
@@ -186,8 +183,6 @@ export function createCommandBackend(
     const [program, ...args] = argv;
     const cwd = command.cwd ?? surface.cwd;
     const timeoutMs = command.timeoutMs ?? surface.timeoutMs;
-    const startedAt = Date.now();
-    log.line(`START #${sequence}: ${argv.join(" ")}`);
 
     let output = "";
     let truncated = false;
@@ -234,22 +229,19 @@ export function createCommandBackend(
       };
 
       child.on("error", (err) => {
-        log.line(`FAILED #${sequence}: ${err.message}`);
         finish({
           status: "done",
           isError: true,
           exitCode: null,
-          output: `could not start the command: ${err.message}`,
-          truncated: false,
+          output: [output, `could not start the command: ${err.message}`]
+            .filter((part) => part !== "")
+            .join("\n"),
+          truncated,
         });
       });
 
-      child.on("close", (code, signal) => {
-        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+      child.on("close", (code) => {
         if (entry.killedAs !== null) {
-          log.line(
-            `${entry.killedAs.toUpperCase()} #${sequence} after ${elapsed}s`,
-          );
           finish(
             entry.killedAs === "cancel"
               ? { status: "cancelled", output, truncated }
@@ -266,8 +258,6 @@ export function createCommandBackend(
           return;
         }
         const exitCode = code ?? 1;
-        log.line(`EXIT #${sequence}: code ${exitCode} in ${elapsed}s`);
-        if (signal !== null) log.line(`#${sequence} ended on ${signal}`);
         finish({
           status: "done",
           isError: exitCode !== 0,
@@ -284,10 +274,11 @@ export function createCommandBackend(
       return [runTool(surface)];
     },
     call,
+    describeCall: (_tool, args) =>
+      Array.isArray(args.cmd) ? args.cmd.join(" ") : JSON.stringify(args),
     cancel(sequence: number): void {
       const entry = running.get(sequence);
       if (entry === undefined) return;
-      log.line(`CANCEL #${sequence}`);
       entry.killedAs = "cancel";
       signalGroup(entry, "SIGTERM");
     },

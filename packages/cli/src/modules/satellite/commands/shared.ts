@@ -1,4 +1,4 @@
-import { hostname } from "node:os";
+import { hostname, userInfo } from "node:os";
 import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -30,9 +30,21 @@ export interface CommonConnectOpts {
   server?: string;
 }
 
-export function connectOptions(command: Command): Command {
-  return command
-    .requiredOption("--name <name>", "satellite name, as agents will see it")
+export function connectOptions(
+  command: Command,
+  naming: { defaultName?: string } = {},
+): Command {
+  const withName =
+    naming.defaultName === undefined
+      ? command.requiredOption(
+          "--name <name>",
+          "satellite name, as agents will see it",
+        )
+      : command.option(
+          "--name <name>",
+          `satellite name, as agents will see it (default: ${naming.defaultName})`,
+        );
+  return withName
     .option("--description <text>", "what this machine is, shown to the agent")
     .option(
       "--max-concurrent <n>",
@@ -43,6 +55,21 @@ export function connectOptions(command: Command): Command {
       "--server <url>",
       "override the configured server URL for this call",
     );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name a shell Satellite takes when the user
+ * gives none: who is serving it, and from which machine. It is folded into the
+ * name contract — lowercase, with anything outside it turned into a dash — so
+ * an unusual login or hostname still connects instead of failing on a name the
+ * user never typed.
+ */
+export function defaultSatelliteName(): string {
+  const raw = `${userInfo().username}@${hostname()}`.toLowerCase();
+  return raw
+    .replace(/[^a-z0-9.@-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .slice(0, 64);
 }
 
 export const log = {
@@ -89,8 +116,21 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: What the user does next once the machine is
+ * connected. A connected Satellite reaches no agent until someone adds it to
+ * one in the UI, and nothing in the terminal would otherwise say so, so the
+ * worker prints the path through the agent's settings right after it connects.
+ */
+export function uiGuide(host: string, name: string): string[] {
+  return [
+    `to give an agent these tools, open ${host} and go to`,
+    `  the agent's Settings → Connections → + New → Satellites → "${name}" → Add to agent`,
+  ];
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: Runs a worker until it is told to stop, which is
- * the whole of what `mcp` and `commands` share once each has built its backend.
+ * the whole of what `mcp` and `shell` share once each has built its backend.
  * The first interrupt drains so running jobs still report their outcome; the
  * second kills them, because a user who interrupts twice is not waiting.
  */
@@ -113,6 +153,7 @@ export async function serve(
     transport: transportFor(deps.createTrpc(host)),
     log,
     host: hostname(),
+    guide: uiGuide(host, identity.name),
   });
 
   const onInterrupt = (): void => {
