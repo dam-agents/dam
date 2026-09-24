@@ -255,8 +255,8 @@ the environment, and what a reader that understands both shapes costs.
 | 04 | ✅ Delegation read path | `invocations.tree` | 02 |
 | 05 | ✅ Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |
 | 06 | ✅ Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
-| 07 | Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
-| 10 | A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
+| 07 | ✅ Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
+| 10 | ✅ A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
 | 08 | Capture the child conversation at teardown | Capture inside the reap path, store via the artifact store, key on the record, cleanup, docs | 07, 10 |
 | 09 | Read-only child view | `invocations.transcript`; docked panel rendering stored frames | 01, 06, 08 |
 

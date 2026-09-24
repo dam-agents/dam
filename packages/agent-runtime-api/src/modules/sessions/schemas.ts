@@ -29,6 +29,15 @@ export const podSessionSchema = z.object({
   running: z.boolean(),
 });
 
+export const sessionHistoryInputSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+export const sessionHistorySchema = z.object({
+  frames: z.array(z.string()),
+  truncated: z.boolean(),
+});
+
 export const podSessionNoticeSchema = z.object({
   topic: z.literal("sessions"),
 });

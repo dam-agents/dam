@@ -10,6 +10,7 @@ export type {
   PodSessionMode,
   PodSessionType,
   SessionDirectoryEntry,
+  SessionHistory,
   SessionsService,
 } from "./modules/sessions/types.js";
 export {
