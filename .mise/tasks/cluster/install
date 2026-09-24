@@ -63,15 +63,18 @@ fi
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-  # Keyed on the kubeconfig, which k3s writes only once it is actually
-  # serving — not on /var/lib/rancher/k3s, which the provision scripts create
-  # early. An install interrupted mid-provision leaves that directory behind,
-  # and skipping on it wedged every later run: no k3s, no service, and a
-  # 120s wait ending in a misleading "stat k3s.yaml: no such file". The
-  # provision scripts are idempotent, so re-running over a partial state heals
-  # it.
-  if [ ! -f "$KUBECONFIG" ]; then
-    if command -v systemctl >/dev/null 2>&1 || [ -x /sbin/openrc-run ]; then
+  # A running systemd, not an installed systemctl: containers often ship the
+  # binary with something else as PID 1, and the k3s installer then fails
+  # to enable a unit nothing will ever start.
+  if [ -d /run/systemd/system ] || [ -x /sbin/openrc-run ]; then
+    # Keyed on the kubeconfig, which k3s writes only once it is actually
+    # serving — not on /var/lib/rancher/k3s, which the provision scripts create
+    # early. An install interrupted mid-provision leaves that directory behind,
+    # and skipping on it wedged every later run: no k3s, no service, and a
+    # 120s wait ending in a misleading "stat k3s.yaml: no such file". The
+    # provision scripts are idempotent, so re-running over a partial state heals
+    # it.
+    if [ ! -f "$KUBECONFIG" ]; then
       echo "Provisioning k3s on host (sandbox mode)..."
       # Lima provision scripts may shell out to apt-get; stub it so the loop
       # below doesn't fail on a non-Debian host. Idempotent.
@@ -86,10 +89,50 @@ SHIM
       for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
         yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
       done
-    else
-      echo "Starting k3s as a plain process (no supervisor to install it under)..."
-      setsid k3s server >>"${K3S_LOG:-$HOME/.k3s.log}" 2>&1 &
     fi
+  elif ! pgrep -x k3s-server >/dev/null; then
+    # With no supervisor nothing restarts k3s, so a kubeconfig left by an
+    # earlier run says nothing about whether it is serving: key on the process.
+    echo "Starting k3s as a plain process (no supervisor to install it under)..."
+    # Same pinned version as the provision script, so a plain process runs
+    # the k3s the VM would; checksum-verified against the release's list.
+    if ! command -v k3s >/dev/null 2>&1; then
+      K3S_VERSION=$(yq '.provision[].script' "$LIMA_TEMPLATE" | sed -n 's/.*INSTALL_K3S_VERSION="\([^"]*\)".*/\1/p' | head -1)
+      case "$(uname -m)" in
+        x86_64) K3S_ASSET=k3s K3S_SUMS=sha256sum-amd64.txt ;;
+        aarch64|arm64) K3S_ASSET=k3s-arm64 K3S_SUMS=sha256sum-arm64.txt ;;
+        *) echo "FATAL: no k3s release asset for $(uname -m)" >&2; exit 1 ;;
+      esac
+      echo "Installing k3s $K3S_VERSION..."
+      K3S_URL="https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION/+/%2B}"
+      K3S_TMP=$(mktemp -d)
+      curl -fsSL --retry 3 --retry-all-errors -o "$K3S_TMP/$K3S_ASSET" "$K3S_URL/$K3S_ASSET"
+      curl -fsSL --retry 3 --retry-all-errors -o "$K3S_TMP/sums" "$K3S_URL/$K3S_SUMS"
+      (cd "$K3S_TMP" && grep " $K3S_ASSET\$" sums | sha256sum -c --quiet -)
+      sudo install -m 0755 "$K3S_TMP/$K3S_ASSET" /usr/local/bin/k3s
+      rm -rf "$K3S_TMP"
+      for tool in kubectl crictl ctr; do
+        command -v "$tool" >/dev/null 2>&1 || sudo ln -sf /usr/local/bin/k3s "/usr/local/bin/$tool"
+      done
+    fi
+    # istio-cni mounts the netns directory with mount propagation, which a
+    # private root refuses. systemd makes / shared at boot; with no systemd,
+    # nothing has.
+    case "$(findmnt -no PROPAGATION /)" in
+      *shared*) ;;
+      *) sudo mount --make-rshared / ;;
+    esac
+    # k3s exempts the pod and service ranges from the proxy, not the node's
+    # own address; behind a proxy the API server's calls to the kubelet
+    # (logs, exec, port-forward) would go out through it and fail.
+    if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then
+      NODE_IPS=$(hostname -I 2>/dev/null | xargs | tr ' ' ',')
+      export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$NODE_IPS" no_proxy="${no_proxy:+$no_proxy,}$NODE_IPS"
+    fi
+    # K3S_LAUNCHER prefixes the command on hosts where k3s needs a wrapper to
+    # run at all (see the ccweb skill). Unquoted on purpose: it may carry args.
+    setsid ${K3S_LAUNCHER:-} k3s server --write-kubeconfig-mode 644 --https-listen-port 16443 \
+      >>"${K3S_LOG:-$HOME/.k3s.log}" 2>&1 &
   fi
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
@@ -149,7 +192,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     echo "Configuring k3s container log rotation (issue #244)..."
     sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
-    if command -v systemctl >/dev/null 2>&1; then
+    if [ -d /run/systemd/system ]; then
       sudo systemctl restart k3s
       kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
     else
@@ -281,13 +324,30 @@ istio_install_if_missing istio-base istio/base
 istio_install_if_missing istiod istio/istiod \
   --set profile=ambient \
   --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h
+# A node kernel without IPv6 (no /proc/net/if_inet6 — some container
+# sandboxes) fails ztunnel's dual-stack bind with EAFNOSUPPORT, so it
+# crash-loops; install the dataplane IPv4-only there. Probed on the node,
+# never on a lima host (macOS has no /proc at all).
+if [ -n "${IS_SANDBOX:-}" ]; then
+  NODE_IPV6_PROBE=(test -e /proc/net/if_inet6)
+else
+  NODE_IPV6_PROBE=(limactl shell "$LIMA_INSTANCE" test -e /proc/net/if_inet6)
+fi
+ISTIO_CNI_IPV4_ONLY=()
+ZTUNNEL_IPV4_ONLY=()
+if ! "${NODE_IPV6_PROBE[@]}"; then
+  echo "  node kernel has no IPv6 — installing the mesh dataplane IPv4-only"
+  ISTIO_CNI_IPV4_ONLY=(--set ambient.ipv6=false)
+  ZTUNNEL_IPV4_ONLY=(--set env.IPV6_ENABLED=false)
+fi
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
 istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
-  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d
+  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
+  ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"}
 # ztunnel proxies every mesh hop, including the experiment SDK's status polls
 # from a driver to the api-server harness. Its chart default requests only
 # 200m, so a bursting agent pod (a nous worker boots with a large upstream
@@ -296,7 +356,8 @@ istio_install_if_missing istio-cni istio/cni \
 # synthesized 503 with no retry anywhere in the path. Guarantee it a core.
 istio_install_if_missing ztunnel istio/ztunnel \
   --set resources.requests.cpu=1 \
-  --set resources.requests.memory=512Mi
+  --set resources.requests.memory=512Mi \
+  ${ZTUNNEL_IPV4_ONLY[@]+"${ZTUNNEL_IPV4_ONLY[@]}"}
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 

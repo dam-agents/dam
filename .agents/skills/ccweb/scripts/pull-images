@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Pull the published images a local install needs and tag them the way
+# cluster:install expects (platform-<component>:latest), for hosts where
+# `docker build` cannot run: RUN steps there do not trust the agent proxy's CA.
+# Run from the repo root, then install with SKIP_IMAGE_BUILD=1.
+#
+# Usage: pull-images [agent-component ...]    (default agent: mock, the e2e harness)
+#
+# api-server, ui and controller are built on every main commit and tagged with
+# its sha, so they come from the newest first-parent main commit at or behind
+# HEAD's merge base that has all three. keycloak and the agents are tagged by
+# source sha; `image:resolve` names the reusable ref. A component whose source
+# HEAD changed resolves to BUILD, and this script says so rather than pulling
+# something stale.
+set -euo pipefail
+
+PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
+AGENTS=("$@")
+[ ${#AGENTS[@]} -gt 0 ] || AGENTS=(mock)
+
+pull_tag() {
+  docker pull -q "$1" >/dev/null
+  docker tag "$1" "$2"
+  echo "  $2 <- $1"
+}
+
+git fetch -q origin main 2>/dev/null || true
+BASE=$(git merge-base HEAD origin/main)
+SHA=""
+for candidate in $(git rev-list --first-parent -n 30 "$BASE"); do
+  if mise exec -- crane digest "$PREFIX/api-server:$candidate" >/dev/null 2>&1 \
+    && mise exec -- crane digest "$PREFIX/ui:$candidate" >/dev/null 2>&1 \
+    && mise exec -- crane digest "$PREFIX/controller:$candidate" >/dev/null 2>&1; then
+    SHA=$candidate
+    break
+  fi
+done
+[ -n "$SHA" ] || { echo "no main commit in the last 30 has published api-server/ui/controller images" >&2; exit 1; }
+[ "$SHA" = "$(git rev-parse HEAD)" ] || echo "note: HEAD is not $SHA; api-server/ui/controller images predate your changes (see the ccweb skill's overlay recipe)"
+for c in api-server ui controller; do pull_tag "$PREFIX/$c:$SHA" "platform-$c:latest"; done
+
+for c in keycloak "${AGENTS[@]}"; do
+  decision=$(mise run -q image:resolve -- resolve "$c" 2>/dev/null | tail -1)
+  case "$decision" in
+    "REUSE "*) pull_tag "${decision#REUSE }" "platform-$c:latest" ;;
+    *) echo "  platform-$c:latest: no reusable image (source changed or unpublished) — $decision" >&2 ;;
+  esac
+done
