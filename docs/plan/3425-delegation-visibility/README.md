@@ -31,10 +31,11 @@ platform remembers the delegation:
   `[invoke] spawned <label> -> <id>` lines. The UI recognises that chip, extracts the child
   ids, and renders the Delegation block in place of the raw text. Replay of the driver's
   history restores it for free. No session attribution is needed on the server.
-- **Cost is read live from telemetry**, grouped by the trusted `platform.invocation.id`
-  the child's gateway already stamps ([observability](../../architecture/observability.md)
-  § Trusted attribution). It ages out with the telemetry store's 30-day retention, like
-  every other cost view. Page: [metrics](../../architecture/metrics.md).
+- **Telemetry is read live**, grouped by the trusted `platform.invocation.id` the child's
+  gateway already stamps ([observability](../../architecture/observability.md) § Trusted
+  attribution), and shown with the same `TurnTelemetry` line every assistant reply already
+  carries when the `agent-telemetry` feature is on. It ages out with the telemetry store's
+  30-day retention. Page: [metrics](../../architecture/metrics.md).
 - **The child's conversation is captured at teardown into object storage** through the
   existing artifact store, and the record keeps the key. A finished child opens read-only
   from the stored frames.
@@ -64,9 +65,10 @@ own session, telemetry or image, so nothing in this plan applies to it. This pla
 - **The stored conversation is ACP frames, not a rendered document.** One `session/update`
   JSON-RPC frame per line, the exact shape the runtime's history providers already produce
   and the UI's `applyUpdate` reducer already folds. No new format.
-- **A running child opens live, a finished child opens stored.** While the child Agent
-  exists the block opens its chat like the experiments dock does today. Once it is gone the
-  block opens the stored frames read-only.
+- **A running child opens live, a finished child opens stored.** Both open the same docked
+  panel. While the child Agent exists the panel attaches to its session passively, the way
+  the UI already lists another agent's sessions without engaging it, and shows the working
+  dots a streaming reply shows. Once the child is gone the panel renders the stored frames.
 - **Fan-out recognition rides the SDK's stderr lines, not a new tool.** The recogniser is a
   line regex on the chip content. The SDK gains a `label` on the spawn request so the record
   can show the same name the driver printed.
@@ -116,15 +118,18 @@ invocations.transcript({ driverAgentId: string; id: string })
   -> { frames: string[] }                  // session/update JSON-RPC lines
 ```
 
-**tRPC, `metrics` namespace** (slice 05):
+**tRPC, `telemetry` namespace** (slice 05):
 
 ```ts
-metrics.invocationSpend({ driverAgentId: string; ids: string[] })
-  -> { byInvocation: Record<string, { costUsd: number; inputTokens: number;
-                                       outputTokens: number; calls: number }> }
+telemetry.invocationTurns({ driverAgentId: string; ids: string[] })
+  -> { available: true; turns: Record<string, TurnSummary> }
+   | { available: false; reason: string }
 ```
 
-Window is the telemetry retention; an id with no rows is absent from the map.
+One `TurnSummary` per child that has rows, covering its whole run, in the shape
+`telemetry.turns` already returns, so the UI renders it with the existing `TurnTelemetry`
+component. `telemetry.turn` gains an optional `invocationId` so the line's detail
+(waterfall, spans, logs) opens for a child too.
 
 **Spawn request** (slice 03) gains `label?: string (1..120)` in
 `spawnInvocationRequestSchema`; the SDK sends its `tag`.
@@ -155,18 +160,23 @@ miniature, so it reads as an agent and not as another tool call:
 - **Identity tile**: a 26px rounded square, accent-light background, `Bot` icon in accent.
   22px for a grandchild.
 - **Two lines**: the title at 14px medium in the foreground colour, one line, truncated; a
-  12px muted subtitle "Temporary agent · <template> · <cpu> CPU · <memory> · <duration> ·
-  <cost>". Duration appears once the child ends; cost only when telemetry has rows. A
-  failed child replaces the subtitle with the reason in danger: "Deadline exceeded after
-  10m. No result reported."
+  12px muted subtitle "Temporary agent · <template> · <cpu> CPU · <memory>". A failed
+  child replaces the subtitle with the reason in danger: "Deadline exceeded after 10m. No
+  result reported."
+- **Telemetry line**, under the header and aligned with the title: the existing
+  `TurnTelemetry` component fed with the child's `TurnSummary`, so it reads
+  "1m 12s · 12 calls · 4.1k tokens · $0.02" in mono, with its chevron opening the same
+  waterfall and record detail a reply's line opens. Rendered only when the
+  `agent-telemetry` feature is on and the child has rows; absent otherwise, with no
+  placeholder. A running child's line updates live like a streaming reply's.
 - **State pill** at the right, the `sm` Badge with StatusBadge colours: `success`
   "Working", `warning` "Waiting for room", `danger` "Failed", and `accent` with a check
   mark for "Done". No status dot anywhere.
 - **Fold**, under a hairline: Prompt in a bounded `pre`, Result as pretty JSON in a bounded
   `pre`, the deadline while running or after a failure, and one outline button. "Open
   conversation" for a finished child with a captured transcript; "Open chat" for a running
-  child, which opens the child agent's live chat like the experiments dock does; disabled
-  with the tooltip "Conversation was not captured" for a finished child without one.
+  child, which opens the same panel over the child's live session; disabled with the tooltip
+  "Conversation was not captured" for a finished child without one.
 - **Grandchildren** nest as smaller cards inside their parent's fold.
 
 **Title rule.** The title is the `label` the driver passed to `spawn`. Without one the SDK
@@ -180,18 +190,24 @@ prototype hit this once.
 
 ### The child conversation: docked panel
 
-Opening a finished child docks a fourth panel in the right column of `chat-view.tsx`, next
-to the file, artifact and experiment panels, with the same 48px header and resize handle.
+Opening a child docks a fourth panel in the right column of `chat-view.tsx`, next to the
+file, artifact and experiment panels, with the same 48px header and resize handle. The
+panel has three states: **live** for a working child (passive attach to its session, working
+dots while it thinks, footer "Live, read-only. The agent runs unattended and reports when
+done."), **waiting** for a child with no room yet (the prompt and "Waiting for room. The
+agent starts when the driver's budget frees up; the prompt is queued."), and **stored** for
+a finished child (the captured frames).
 
 - **Header**: a 22px identity tile, the child's title truncated with the full text on hover,
   the same state pill as the card, close.
-- **Facts line** under the header: "temporary agent of <driver>", duration, cost.
+- **Facts line** under the header: "temporary agent of <driver>" and the same
+  `TurnTelemetry` line as the card, gated the same way.
 - **Body**: the stored frames folded through `applyUpdate` and rendered with `ChatMessage`,
   so the child's prompt, its text and its `report_result` tool call look exactly as in any
   chat. The platform-authored prompt is labelled with the driver's name, not "You".
-- **Footer**: a lock icon, "Read-only. The agent was released when it reported.", and a
-  primary button "Continue in new session". The button is the follow-up below and ships
-  hidden until that issue lands.
+- **Footer**, stored state only: a lock icon, "Read-only. The agent was released when it
+  reported.", and a primary button "Continue in new session". The button is the follow-up
+  below and ships hidden until that issue lands.
 
 Alternatives drawn and rejected: children as sessions in the sidebar opening in the centre
 column (loses the driver's context while comparing children), and the conversation inline
@@ -199,11 +215,11 @@ under the card (fine for short children, breaks for long transcripts).
 
 ### Follow-ups this design surfaced
 
-- **A shared cost element.** A child shows its cost while the run and the session around it
-  show none; cost today lives only in the sessions sidebar behind a feature flag. One small
-  cost element that any container can carry (sub-agent, run, session, agent) is the right
-  shape. Slice 05 builds the child read so that element can reuse it, and adds cost nowhere
-  else. Not part of #3425.
+- **Telemetry stays one element.** The per-reply `TurnTelemetry` line is the platform's
+  telemetry element, gated by the `agent-telemetry` feature; sessions add a cost figure in
+  the sidebar under `session-costs`. A child shows the same line and nothing else, so cost
+  never appears in a shape of its own. If a run-level or session-level summary is wanted
+  later, it is the same component over a wider window. Not part of #3425.
 - **Continue in new session.** The revive step ADR-093 defers. The design settles its shape:
   not a resurrected child, but a new regular session of the driver seeded with the child's
   transcript. To be filed as its own issue once slice 09 lands.
@@ -216,7 +232,7 @@ under the card (fine for short children, breaks for long transcripts).
 | 02 | Durable delegation record | Drop the ten-minute row delete; add the missing columns; cleanup follows the root driver; docs | — |
 | 03 | Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
 | 04 | Delegation read path | `invocations.tree` | 02 |
-| 05 | Cost per node from telemetry | `metrics.invocationSpend` | 04 |
+| 05 | Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |
 | 06 | Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
 | 07 | Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
 | 08 | Capture the child conversation at teardown | Capture before every reap, store via the artifact store, key on the record, cleanup, docs | 02, 07 |

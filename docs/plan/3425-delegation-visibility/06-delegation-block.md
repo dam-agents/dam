@@ -1,6 +1,6 @@
 # 06 — Delegation block in chat
 
-**Depends on:** 01-design-pass, 03-sdk-contract, 04-read-path, 05-cost-per-node
+**Depends on:** 01-design-pass, 03-sdk-contract, 04-read-path, 05-telemetry-per-node
 **Part of:** Delegation visibility — see [README](./README.md)
 
 ## Context
@@ -29,21 +29,24 @@ Apply `/react-ui-engineering`. Follow the README `## Design` section.
 3. **Queries** — `packages/ui/src/modules/invocations/api/queries.ts`:
    `useDelegationTree(driverAgentId, ids)` on `trpc.invocations.tree.queryOptions`, with
    `refetchInterval` of 5 s while any returned node is `running` and off otherwise;
-   `useInvocationSpend(driverAgentId, ids, enabled)` on `trpc.metrics.invocationSpend`,
-   with the same `isMetricsUnavailable` guard `modules/metrics/api/queries.ts` uses so a
-   missing telemetry backend disables it permanently and hides the column.
+   `useInvocationTurns(driverAgentId, ids, enabled)` on `trpc.telemetry.invocationTurns`,
+   enabled only when `useFeatures().data?.["agent-telemetry"]` is true, exactly as
+   `chat-view.tsx:281-301` gates the per-reply line; poll at the same cadence as
+   `useTurns` while any child runs.
 4. **Block** — `packages/ui/src/modules/invocations/components/delegation-block.tsx`,
    built on `ActivityBlock` like `ToolChip` is. Collapsed header: count, aggregate status,
    aggregate cost. Body: one `DelegationNodeRow` per node, recursive for `children`, with
    the status dot cascade mirrored from `experiment-dock-panel.tsx:241-290` (waiting for
    room comes from the agents list state `over_budget`, as there), label, duration from
-   `createdAt`/`completedAt`, cost, status text. A row expands to show prompt, result
-   (pretty JSON) and error. The raw script text stays reachable in a collapsed "script"
+   `createdAt`/`completedAt`, status text. Under each header render `TurnTelemetry`
+   from `modules/telemetry/components/turn-telemetry.tsx` with the child's `TurnSummary`
+   when one exists; pass the child id so its detail query scopes to the child. A row
+   expands to show prompt, result (pretty JSON) and error. The raw script text stays reachable in a collapsed "script"
    section at the bottom so nothing the chip showed is lost. While the tree query has not
    answered, fall back to rendering the ids from the recogniser as pending rows.
-5. **Open control** — a running node's control calls `selectAgent(id)` (the child Agent
-   exists; this is what the experiments dock does). A finished node's control is present but
-   disabled until slice 09 wires it.
+5. **Open control** — one button, "Open conversation", on every node. It is present but
+   disabled until slice 09 wires the panel; slice 09 enables it for running, waiting and
+   captured children.
 6. Keep the block free of `formatUsdCents`/`durationSegments` reimplementations: reuse
    `modules/metrics/lib/format.ts`.
 
@@ -54,9 +57,10 @@ Apply `/react-ui-engineering`. Follow the README `## Design` section.
 - [ ] Rows appear while the children run and refresh to done with results without a page
       reload; the refresh stops once all are terminal.
 - [ ] A grandchild is nested under its parent row.
-- [ ] Cost shows once telemetry has rows; the column is absent when metrics are unavailable.
+- [ ] With `agent-telemetry` on, each child shows the same telemetry line a reply shows,
+      and its chevron opens the child's waterfall; with the feature off nothing renders.
 - [ ] Reloading the page and reopening the session restores the block with the same data.
-- [ ] A running node opens the child's chat; a finished node's open control is disabled.
+- [ ] Every node shows the disabled "Open conversation" control until slice 09.
 - [ ] `mise run check` and `mise run test` pass (including the recogniser test).
 
 ## Smoke test
