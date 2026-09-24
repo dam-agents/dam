@@ -35,7 +35,7 @@ conductor (#2784) would have baked loop shapes into the platform so every new
 shape (tournament, retry-with-backoff, dynamic fan-out) meant a platform
 change. Loops-as-code (#2821) put the shape in an ordinary script; this
 subsystem adds the piece that pivot dropped — observability. The **experiment
-SDK** (stdlib-only Python, baked into platform-base) is an instrumentation
+SDK** (stdlib-only Python, baked into every agent image) is an instrumentation
 layer: declaring the skeleton costs a handful of lines around code the driver
 would write anyway, and everything the platform learns arrives as reported
 data over the same waypoint-attributed per-agent HTTP surface the driver

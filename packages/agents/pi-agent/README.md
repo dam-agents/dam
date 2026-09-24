@@ -2,6 +2,8 @@
 
 Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from [`packages/mise-oci`](../../mise-oci/), as its `pi-agent` config environment ([`harness.pi-agent.toml`](../../mise-oci/image/mise/conf.d/harness.pi-agent.toml)). Its files live at their image paths under [`packages/mise-oci/image/harness/pi-agent/`](../../mise-oci/image/harness/pi-agent/).
+
 ## Stack
 
 | Component | Package | Purpose |
@@ -9,19 +11,25 @@ Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) wi
 | Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
 | Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
 
-Default model: `openai / gpt-5.4-mini`. Change in `workspace/.pi/agent/settings.json`.
+Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/settings.json).
 
 ## File layout
 
 ```
-workspace/
-  .pi/agent/
-    settings.json        ← pi config (→ ~/.pi/agent/)
-  work/
-    .pi/
-      APPEND_SYSTEM.md   ← appended to the system prompt (project-scoped)
-  .pi/agent/extensions/pi-dynamic-providers/
-    index.ts             ← auto-discovered by pi on startup; registers any of {rits, openai-proxy} whose env vars are set
+usr/local/bin/
+  harness-chat           ← chat-mode entrypoint (pi-acp)
+  harness-terminal       ← terminal-mode entrypoint (pi)
+app/
+  runtime-manifest.yaml  ← runtime driver config
+  working-dir/           ← seeds /home/agent/ on first boot
+    .pi/agent/
+      settings.json      ← pi config (→ ~/.pi/agent/)
+      auth.json          ← placeholder credentials
+      extensions/pi-dynamic-providers/
+        index.ts         ← auto-discovered by pi on startup; registers any of {rits, openai-proxy} whose env vars are set
+    work/
+      .pi/
+        APPEND_SYSTEM.md ← appended to the system prompt (project-scoped)
 ```
 
 ## Providers and models
@@ -34,17 +42,18 @@ On the platform the actual credential never lives in pod env. The pod carries a 
 
 Three steps to enable any pi built-in provider:
 
-1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to `Dockerfile`, the agent template, or per-instance via the Configure Agent UI:
+1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to the harness config (`[oci.env]` in [`harness.pi-agent.toml`](../../mise-oci/image/mise/conf.d/harness.pi-agent.toml)), the agent template, or per-instance via the Configure Agent UI:
 
-   ```dockerfile
-   ENV OPENAI_API_KEY=dummy-placeholder
+   ```toml
+   [oci.env]
+   OPENAI_API_KEY = "dummy-placeholder"
    ```
 
    The literal value pi sends on the wire is rewritten by the Envoy sidecar before the request leaves the pod.
 
 2. **Create a generic secret on the platform** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
 
-3. **Select the model** in [`settings.json`](workspace/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
+3. **Select the model** in [`settings.json`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
 
 #### Provider env vars and host patterns
 
@@ -90,7 +99,7 @@ These providers have additional configuration shapes (per-resource URLs, AWS cre
 
 ### Custom OpenAI-compatible servers (models.json)
 
-For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's built-in list, register the provider in `~/.pi/agent/models.json` (seed via `workspace/.pi/agent/models.json`):
+For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's built-in list, register the provider in `~/.pi/agent/models.json` (seed via `app/working-dir/.pi/agent/models.json`):
 
 ```json
 {
@@ -119,7 +128,7 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
-The [`pi-dynamic-providers`](workspace/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|
@@ -152,9 +161,9 @@ Pi system prompt conventions:
 | `~/.pi/agent/APPEND_SYSTEM.md` | global | appended to the system prompt |
 | `.pi/APPEND_SYSTEM.md` | project (cwd) | appended to the system prompt |
 
-> **`workspace/`** seeds `/home/agent/` on first boot.  
-> **`workspace/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
-> **`workspace/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
+> **`app/working-dir/`** seeds `/home/agent/` on first boot.  
+> **`app/working-dir/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
+> **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
 ## Memory scopes
 
@@ -200,7 +209,7 @@ Create an agent from the **pi-agent** template in the Platform UI, open a sessio
 
 ## Upgrading existing instances
 
-The init seeder runs once (guarded by `/home/agent/.initialized`). After an image rebuild, existing instances won't pick up workspace changes automatically. Options:
+The init seeder runs once (guarded by `/home/agent/.initialized`). After an image rebuild, existing instances won't pick up `app/working-dir/` changes automatically. Options:
 
 - Create a fresh instance (gets the new seed)
 - Delete `.initialized` on the pod and restart: `mise run cluster:shell -- rm /home/agent/.initialized`

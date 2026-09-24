@@ -1,13 +1,15 @@
 # Bob Agent
 
-Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the platform-base image, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
+Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the shared Debian agent base, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
+
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from [`packages/mise-oci`](../../mise-oci/), as its `bob` config environment ([`harness.bob.toml`](../../mise-oci/image/mise/conf.d/harness.bob.toml)). Its files live at their image paths under [`packages/mise-oci/image/harness/bob/`](../../mise-oci/image/harness/bob/).
 
 ## Stack
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` 2.0.3 (installed from the `bob-shell` COS bucket tarball) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
-| Settings bootstrap | `bob-settings.mjs` | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
+| Harness | `bobshell` 2.0.3 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
+| Settings bootstrap | [`bob-settings.mjs`](../../mise-oci/image/harness/bob/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
 ## ACP
@@ -33,7 +35,7 @@ Consequences for the platform:
 
 The one ACP capability Bob does not implement is `session/set_model` — model selection goes through settings (below), modes through `session/set_mode`.
 
-MCP servers still arrive the platform way, as a runtime-channel contribution written to `~/.bob/settings/mcp.json` (see [`runtime-manifest.yaml`](runtime-manifest.yaml)), not through `session/new.mcpServers`.
+MCP servers still arrive the platform way, as a runtime-channel contribution written to `~/.bob/settings/mcp.json` (see [`runtime-manifest.yaml`](../../mise-oci/image/harness/bob/app/runtime-manifest.yaml)), not through `session/new.mcpServers`.
 
 ## Authentication
 
@@ -144,8 +146,8 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
-| `harness-terminal.sh` | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
+| [`harness-chat`](../../mise-oci/image/harness/bob/usr/local/bin/harness-chat) | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
+| [`harness-terminal`](../../mise-oci/image/harness/bob/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
 
 ## Session history
 
