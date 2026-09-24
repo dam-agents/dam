@@ -379,6 +379,13 @@
       "when": 1790100808010,
       "tag": "0053_big_husk",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790251401588,
+      "tag": "0054_bump_agents_holding_reserved_mcp_entries",
+      "breakpoints": true
     }
   ]
 }
