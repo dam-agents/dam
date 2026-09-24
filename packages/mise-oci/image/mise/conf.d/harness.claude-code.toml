@@ -1,4 +1,4 @@
-# Claude Code: `mise oci build -E claude`. Mirrors packages/agents/claude-code.
+# Claude Code: `mise oci build -E claude-code`. Mirrors packages/agents/claude-code.
 
 [tools]
 # The ACP adapter; the claude CLI rides along inside it, and the image task
@@ -17,13 +17,13 @@ DISABLE_FEEDBACK_SURVEY = "1"
 DISABLE_AUTOUPDATER = "1"
 
 [[oci.copy]]
-host = "../../harness/claude/app"
+host = "../../harness/claude-code/app"
 image = "/app"
 
 [[oci.copy]]
-host = "../../harness/claude/etc"
+host = "../../harness/claude-code/etc"
 image = "/etc"
 
 [[oci.copy]]
-host = "../../harness/claude/usr"
+host = "../../harness/claude-code/usr"
 image = "/usr"

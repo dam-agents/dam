@@ -1,23 +1,29 @@
 #!/bin/sh
-# The Debian image's own entrypoint. The image runs only as a vm Backend
-# machine: booted as root, after platform-init has mounted the agent's home from
-# the storage disk and bound the platform MITM CA into /etc/platform/ca.
+# The Debian agent images' entrypoint, derived from platform-base's. It runs on
+# both backends: as the non-root agent user in a container, and as root on a
+# vm Backend machine, after platform-init has mounted the agent's home from the
+# storage disk and bound the platform MITM CA into /etc/platform/ca.
 set -eu
 
 home="${HOME:-/home/agent}"
 
-# The harness runs as root, so an `agent` SSH login is root under that name:
-# it lands in the harness's home with its environment, not in an unprivileged
-# account that could write none of it. Debian's sshd refuses to run as root
-# without its privilege-separation directory.
-grep -q '^agent:' /etc/passwd || echo 'agent:x:0:0:Agent User:/home/agent:/bin/bash' >>/etc/passwd
-install -d -m 0755 /run/sshd
+# sshd would otherwise drop an `agent` login to uid 65532, into a home the
+# root-run harness owns: nothing writable, none of the injected environment.
+# Only a machine runs the image as root. extrausers will not serve a uid 0
+# entry, so there the account is copied into /etc/passwd and remapped, and sshd
+# gets the privilege-separation directory it refuses to run as root without.
+if [ "$(id -u)" = 0 ]; then
+	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
+	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+	install -d -m 0755 /run/sshd
+fi
 
 # The agent reaches the internet only through its Envoy gateway, which for some
 # hosts returns a certificate signed by the MITM CA. The CA joins the system
 # bundle rather than replacing it; SSL_CERT_FILE and REQUESTS_CA_BUNDLE point
-# Python there, and Node gets the CA through NODE_EXTRA_CA_CERTS. No CA file
-# means the gateway intercepts nothing.
+# Python there, and Node gets the CA through NODE_EXTRA_CA_CERTS. The trust
+# directories are agent-owned in the image, so this works without root. No CA
+# file means the gateway intercepts nothing.
 mitm_ca=/etc/platform/ca/ca.crt
 if [ -s "$mitm_ca" ]; then
 	t0=$(date +%s%N)
@@ -37,6 +43,21 @@ if [ ! -f "$home/.initialized" ]; then
 	echo "agent-entrypoint: seeded home from image workspace"
 fi
 mkdir -p "$home/work"
+
+# Container Backend only: $HOME is a network volume there, so ~/.cache points at
+# pod-local /tmp (an emptyDir) instead. A machine's $HOME is local disk and its
+# /tmp does not survive a stop, so the vm Backend keeps ~/.cache where it is.
+# `ln -sfn` keeps the swap idempotent when an owner pod and a fork pod boot the
+# volume together.
+mkdir -p /tmp/agent-cache
+if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
+	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
+		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
+	else
+		rm -f "$home/.cache.tmp"
+		echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
+	fi
+fi
 
 # Maven Resolver reads proxies only from settings.xml, so without this every
 # `mvn` dependency fetch bypasses the egress gateway. A user-managed file wins.

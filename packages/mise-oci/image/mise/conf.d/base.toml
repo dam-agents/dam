@@ -5,8 +5,8 @@
 # build/, outside the repo.
 #
 # It started from platform-base and diverges from it on purpose: every tool is
-# baked in, with no lazy installs, tool shims, oc or gws, and it runs only as a
-# vm Backend machine, which boots it as root.
+# baked in, with no lazy installs, tool shims, oc or gws. It runs on both
+# backends: as the agent user (65532) in a container, as root on a machine.
 
 [settings]
 experimental = true
@@ -41,8 +41,8 @@ linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/dock
 linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/docker-{{version}}.tgz" }
 
 # Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
-# scripts included. Fedora's list from platform-base, in Debian names, plus
-# libatomic, which node 26 links against.
+# scripts included. Fedora's list from platform-base, in Debian names, plus the
+# NSS module the agent account needs and libatomic, which node 26 links against.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
@@ -52,6 +52,7 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 "apt:git" = "latest"
 "apt:iptables" = "latest"
 "apt:libatomic1" = "latest"
+"apt:libnss-extrausers" = "latest"
 "apt:openssh-server" = "latest"
 "apt:openssl" = "latest"
 "apt:patch" = "latest"
@@ -65,6 +66,7 @@ from = "docker.io/library/debian:trixie-slim"
 # The same MISE_DATA_DIR platform-base uses, so paths the shared scripts and
 # manifests name keep resolving.
 mount_point = "/usr/local/share/mise"
+user = "65532"
 workdir = "/app"
 entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 cmd = ["node", "dist/server.js"]
@@ -96,6 +98,10 @@ image = "/etc"
 [[oci.copy]]
 host = "../../rootfs/usr"
 image = "/usr"
+
+[[oci.copy]]
+host = "../../rootfs/var"
+image = "/var"
 
 # What the image task builds on the host: agent-runtime, driver-sdk, the empty
 # directories git cannot keep, and any tool-bin links a harness needs.
