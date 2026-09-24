@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DAM prototype — Delegation visibility (#3425)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens from packages/ui/src/App.css (:root and .dark), read 2026-09-21. */
+  :root{
+    --background:#ffffff; --foreground:#121619; --card:#ffffff; --muted:#f2f4f8; --muted-foreground:#4d5358;
+    --placeholder:#94989b; --border:#dde1e6; --hairline:#ecedf0; --primary:#000000; --primary-foreground:#ffffff;
+    --accent:#0f62fe; --accent-hover:#0353e9; --accent-light:#edf5ff; --success:#24a148; --success-light:#defbe6;
+    --warning:#ff832b; --warning-fg:#b45309; --danger:#dc2626; --danger-light:#fef2f2;
+    --dot-run:#10b981; --dot-wait:#f59e0b; --dot-fail:#ef4444;
+    --font-sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif; --font-mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  html.dark{
+    --background:#161616; --foreground:#fafaf9; --card:#161616; --muted:#262626; --muted-foreground:#a8a29e;
+    --placeholder:#6e6a68; --border:#393939; --hairline:#2a2a2a; --primary:#ffffff; --primary-foreground:#161616;
+    --accent:#4589ff; --accent-hover:#78a9ff; --accent-light:#0f1f3a; --success:#34d399; --success-light:#0f2a1f;
+    --warning:#fbbf24; --warning-fg:#fbbf24; --danger:#f87171; --danger-light:#3a1515;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--font-sans);font-size:14px;line-height:1.55;background:var(--background);color:var(--foreground);-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .meta{font-size:11px;line-height:1.5;color:var(--muted-foreground)}
+  .truncate{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  svg{flex-shrink:0}
+
+  /* ── review chrome ── */
+  .proto-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--muted)}
+  .proto-bar h1{font-size:14px;font-weight:600;margin:0 16px 0 0}
+  .toggle{display:inline-flex;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:4px}
+  .toggle button{font-size:12.5px;font-weight:500;color:var(--muted-foreground);border-radius:7px;padding:6px 12px}
+  .toggle button.on{background:var(--primary);color:var(--primary-foreground)}
+  .lead{font-size:11px;font-weight:600;color:var(--placeholder);align-self:center;padding:0 8px 0 6px;text-transform:uppercase;letter-spacing:.05em}
+
+  /* ── app shell (chat-view.tsx) ── */
+  .app{display:flex;height:calc(100vh - 57px);overflow:hidden}
+  .rail{width:56px;flex-shrink:0;display:flex;flex-direction:column;gap:1px;padding:8px 8px;background:var(--card);border-right:1px solid var(--border)}
+  .rail-logo{height:40px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--foreground);margin-bottom:2px}
+  .rail-item{height:34px;width:40px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:color-mix(in srgb,var(--foreground) 80%,transparent)}
+  .rail-item.kit{color:#8a3ffc} html.dark .rail-item.kit{color:#be95ff}
+  .rail-spacer{flex:1}
+  .rail svg{width:16px;height:16px}
+
+  .view{flex:1;display:flex;flex-direction:column;min-width:0}
+  .hdr{display:flex;align-items:center;gap:12px;padding:0 24px;height:70px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .hdr .dot{width:8px;height:8px;border-radius:999px;background:var(--success)}
+  .hdr h2{font-size:14px;font-weight:700;margin:0}
+  .hdr .right{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground)}
+  .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;color:var(--muted-foreground)}
+  .iconbtn:hover{background:var(--muted);color:var(--foreground)}
+  .iconbtn[disabled]{opacity:.35;cursor:default}
+  .iconbtn[disabled]:hover{background:none;color:var(--muted-foreground)}
+
+  .body{display:flex;flex:1;min-height:0}
+  .side{width:272px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .sec{display:flex;flex-direction:column;min-height:0;flex:1}
+  .sec + .sec{border-top:1px solid var(--border)}
+  .sec-h{display:flex;align-items:center;gap:4px;height:44px;padding:0 8px 0 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .sec-h .sec-chev{color:var(--muted-foreground);margin-right:4px}
+  .sec-h .t{font-size:14px;font-weight:500;flex:1}
+  .sec-h .xs{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--muted-foreground);padding:4px 8px;border-radius:6px}
+  .sec-h .xs.outline{border:1px solid var(--border);color:var(--foreground);padding:4px 10px}
+  .sess{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--foreground)}
+  .sess.active{background:var(--muted)}
+  .sess .when{font-size:11px;color:var(--muted-foreground)}
+  .side .grow{flex:1;overflow:auto}
+  .ftree{padding:6px 0}
+  .frow{display:flex;align-items:center;gap:8px;height:34px;padding:0 16px;font-size:14px;color:var(--foreground)}
+  .frow svg{color:var(--muted-foreground)}
+  .frow svg:first-child{color:var(--muted-foreground)}
+  .model{max-width:840px;margin:0 auto;padding:10px 12px 12px;font-size:14px;color:var(--muted-foreground)}
+
+  .center{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  .scroll{flex:1;overflow-y:auto}
+  .col{max-width:813px;margin:0 auto;width:100%;padding:32px 32px;display:flex;flex-direction:column;gap:32px}
+  .msg{display:flex;flex-direction:column;gap:4px}
+  .msg.user{align-items:flex-end}
+  .msg .who{display:flex;gap:6px;font-size:11px;color:var(--muted-foreground)}
+  .msg .who b{font-weight:500}
+  .bubble{border:1px solid var(--border);background:var(--card);border-radius:12px;padding:12px 16px;font-size:14px;max-width:100%}
+  .assist{display:flex;flex-direction:column;gap:16px;width:100%}
+  .assist p{margin:0}
+
+  /* ActivityBlock (activity-block.tsx) */
+  .act{border-left:2px solid var(--border);padding-left:12px;color:var(--muted-foreground);font-size:14px}
+  .act-h{display:flex;align-items:center;gap:6px;min-height:27px;padding:2px 0;width:100%;text-align:left}
+  .act-h:hover{color:var(--foreground)}
+  .act-h .chev{transition:transform .12s}
+  .act.open > .act-h .chev{transform:rotate(90deg)}
+  .act-b{display:none;margin-top:4px}
+  .act.open > .act-b{display:block}
+  .pre{margin:4px 0;border:1px solid var(--hairline);background:color-mix(in srgb,var(--muted) 40%,transparent);border-radius:4px;padding:8px;font-family:var(--font-mono);font-size:11px;line-height:1.5;color:var(--foreground);opacity:.9;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto}
+
+  /* ── Delegation block: each child is an agent card (tile + name + subtitle + StatusBadge) ── */
+  .deleg > .act-h .flask{color:var(--accent)}
+  .deleg .act-h .sum{margin-left:6px}
+  .sub{border:1px solid var(--border);border-left-width:1px;border-radius:8px;background:var(--card);padding:0 12px;margin-top:8px;color:var(--muted-foreground)}
+  .sub > .act-h{min-height:52px;gap:10px;align-items:center}
+  .tile{width:26px;height:26px;border-radius:6px;background:var(--accent-light);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+  .sub .sub .tile{width:22px;height:22px}
+  .ident{display:flex;flex-direction:column;flex:1;min-width:0;gap:1px}
+  .ident .label{color:var(--foreground);font-size:14px;font-weight:500;line-height:1.4;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ident .subtitle{font-size:12px;line-height:1.4;color:var(--muted-foreground);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ident .subtitle.err{color:var(--danger)}
+  .pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:500;line-height:1.4;white-space:nowrap;flex-shrink:0}
+  .pill.success{background:var(--success-light);color:#15803d} html.dark .pill.success{color:var(--success)}
+  .pill.warning{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning-fg)}
+  .pill.danger{background:var(--danger-light);color:var(--danger)}
+  .pill.accent{background:var(--accent-light);color:var(--accent)}
+  .tel{display:inline-flex;align-items:center;gap:6px;margin:-4px 0 6px 58px;padding:2px 0;font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:11px;color:color-mix(in srgb,var(--muted-foreground) 70%,transparent)}
+  .tel:hover{color:var(--foreground)}
+  .tel .err{color:var(--danger)}
+  .tel.turn{margin:0;font-size:11px}
+  body[data-tel="off"] .tel{display:none}
+  .sub > .act-b{border-top:1px solid var(--hairline);margin:0 -12px;padding:10px 12px 6px}
+  .sub .sub{margin:8px 0 2px}
+  .fold{display:flex;flex-direction:column;gap:10px;padding:0 0 4px}
+  .fold .k{font-size:11px;color:var(--placeholder);margin-bottom:2px}
+  .fold .kv{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted-foreground)}
+  .fold .val{font-size:13px}
+  .err{color:var(--danger)}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;font-size:12.5px;font-weight:500;border:1px solid var(--border);background:var(--card);color:var(--foreground)}
+  .btn:hover{background:var(--muted)}
+  .btn.primary{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+  .btn.primary:hover{background:var(--primary);opacity:.9}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .btn[disabled]:hover{background:var(--card)}
+  .foot{display:flex;align-items:center;gap:6px;padding:8px 0 2px;margin-top:8px;border-top:1px solid var(--hairline);width:100%;text-align:left}
+  .tip-wrap{position:relative;display:inline-flex}
+  .tip{position:absolute;bottom:calc(100% + 6px);left:0;background:var(--foreground);color:var(--background);font-size:11px;padding:4px 8px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .1s}
+  .tip-wrap:hover .tip{opacity:1}
+
+  /* the State toggle picks one of three row sets */
+  [data-st]{display:none}
+  body[data-state="running"] [data-st="running"],body[data-state="done"] [data-st="done"],body[data-state="failed"] [data-st="failed"]{display:contents}
+  body[data-state="done"] p[data-st="done"],body[data-state="failed"] p[data-st="failed"]{display:block}
+
+  /* composer (chat-input.tsx) */
+  .composer-wrap{padding:12px 32px 0}
+  .composer{max-width:840px;margin:0 auto;border:1px solid var(--border);border-radius:12px;background:var(--background);display:flex;align-items:flex-end;gap:4px;padding:0 8px;min-height:56px}
+  .composer .ph{flex:1;padding:17px 8px 17px 0;font-size:14px;line-height:22px;color:var(--placeholder)}
+  .composer .iconbtn{width:40px;height:40px;margin-bottom:8px}
+
+  /* right dock (chat-view.tsx right column) */
+  .dock{width:440px;flex-shrink:0;border-left:1px solid var(--border);display:none;flex-direction:column;background:var(--background)}
+  .dock.show{display:flex}
+  .dock [data-conv]{display:none}
+  .dock[data-conv="done"] [data-conv="done"],.dock[data-conv="working"] [data-conv="working"],.dock[data-conv="waiting"] [data-conv="waiting"]{display:flex}
+  .dots{display:inline-flex;align-items:center;gap:2px;color:var(--accent);padding:4px 0}
+  .dots span{width:5px;height:5px;border-radius:999px;background:currentColor;animation:dot-jump .9s ease-in-out infinite}
+  .dots span:nth-child(2){animation-delay:.15s}
+  .dots span:nth-child(3){animation-delay:.3s}
+  @keyframes dot-jump{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+  .dock-h{display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .dock-h .t{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+  .dock-h .t .truncate{display:block}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:1px 10px;font-size:12px;letter-spacing:.3px;background:var(--muted);color:var(--muted-foreground)}
+  .dock .col{padding:24px 20px;gap:24px}
+  .ro{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--muted-foreground);line-height:1.45}
+  .facts{display:flex;flex-wrap:wrap;gap:4px 16px;padding:10px 20px;border-bottom:1px solid var(--hairline);font-size:12px;color:var(--muted-foreground)}
+</style>
+</head>
+<body data-state="done" data-tel="on">
+
+<div class="proto-bar">
+  <h1>Delegation visibility · #3425</h1>
+  <div class="toggle" id="state-toggle">
+    <span class="lead">State</span>
+    <button data-state="running">Running</button>
+    <button class="on" data-state="done">Done</button>
+    <button data-state="failed">Failed</button>
+  </div>
+  <div class="toggle" id="tel-toggle">
+    <span class="lead">Telemetry</span>
+    <button class="on" data-tel="on">On</button>
+    <button data-tel="off">Off</button>
+  </div>
+  <div class="toggle" id="theme-toggle">
+    <button class="on" data-theme="light">Light</button>
+    <button data-theme="dark">Dark</button>
+  </div>
+</div>
+
+<div class="app">
+  <nav class="rail" aria-label="Primary">
+    <div class="rail-logo">DAM</div>
+    <button class="rail-item" aria-label="Home"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M16.61 2.21a1 1 0 0 0-1.24 0L1 13.42l1.24 1.58L4 13.62V26a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V13.63L29.76 15 31 13.43ZM18 26h-4v-8h4Zm2 0v-8a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v8H6V12.06l10-7.79 10 7.8V26Z"/></svg></button>
+    <button class="rail-item" aria-label="Artifacts"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M11.17 6l3.42 3.41.58.59H28v16H4V6h7.17m0-2H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2H16l-3.41-3.41A2 2 0 0 0 11.17 4Z"/></svg></button>
+    <button class="rail-item kit" aria-label="Starter Kits"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M26 10h-2.6a4 4 0 0 0 .6-2 4 4 0 0 0-7.1-2.5L16 7.2l-.9-1.7A4 4 0 0 0 8 8a4 4 0 0 0 .6 2H6a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2M12 6a2 2 0 0 1 2 2v2h-2a2 2 0 0 1 0-4m8 0a2 2 0 0 1 0 4h-2V8a2 2 0 0 1 2-2M6 12h9v4H6Zm2 6h7v8H8Zm16 8h-7v-8h7Zm2-10h-9v-4h9Z"/></svg></button>
+    <div class="rail-spacer"></div>
+    <button class="rail-item" aria-label="Documentation"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M16 2a14 14 0 1 0 14 14A14 14 0 0 0 16 2m0 26a12 12 0 1 1 12-12 12 12 0 0 1-12 12"/><circle cx="16" cy="23.5" r="1.5"/><path d="M17 8h-1.5a4.5 4.5 0 0 0-4.5 4.5v.5h2v-.5a2.5 2.5 0 0 1 2.5-2.5H17a2.5 2.5 0 0 1 0 5h-2v4.5h2V17a4.5 4.5 0 0 0 0-9"/></svg></button>
+    <button class="rail-item" aria-label="Settings"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M27 16.76v-1.53l1.92-1.68A2 2 0 0 0 29.3 11l-2.36-4a2 2 0 0 0-1.73-1 2 2 0 0 0-.64.1l-2.43.82a11 11 0 0 0-1.31-.75l-.51-2.52a2 2 0 0 0-2-1.61h-4.68a2 2 0 0 0-2 1.61l-.51 2.52a12 12 0 0 0-1.32.75l-2.38-.86A2 2 0 0 0 6.79 6a2 2 0 0 0-1.73 1L2.7 11a2 2 0 0 0 .41 2.51L5 15.24v1.53l-1.89 1.68A2 2 0 0 0 2.7 21l2.36 4a2 2 0 0 0 1.73 1 2 2 0 0 0 .64-.1l2.43-.82a11 11 0 0 0 1.31.75l.51 2.52a2 2 0 0 0 2 1.61h4.72a2 2 0 0 0 2-1.61l.51-2.52a12 12 0 0 0 1.32-.75l2.42.82a2 2 0 0 0 .64.1 2 2 0 0 0 1.73-1l2.28-4a2 2 0 0 0-.41-2.51ZM16 22a6 6 0 1 1 6-6 6 6 0 0 1-6 6"/></svg></button>
+  </nav>
+
+  <div class="view">
+    <header class="hdr">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>research-driver</h2>
+      <button class="iconbtn" aria-label="Agent actions"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><circle cx="16" cy="8" r="2"/><circle cx="16" cy="16" r="2"/><circle cx="16" cy="24" r="2"/></svg></button>
+      <div class="right"><button class="iconbtn" aria-label="Notifications"><svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M28.7 20.3 26 17.6V13a10 10 0 0 0-9-9.9V1h-2v2.1A10 10 0 0 0 6 13v4.6l-2.7 2.7A1 1 0 0 0 3 21v3a1 1 0 0 0 1 1h7v.8a5.1 5.1 0 0 0 4.5 5.2A5 5 0 0 0 21 26v-1h7a1 1 0 0 0 1-1v-3a1 1 0 0 0-.3-.7M19 26a3 3 0 0 1-6 0v-1h6Zm8-3H5v-1.6l2.7-2.7A1 1 0 0 0 8 18v-5a8 8 0 0 1 16 0v5a1 1 0 0 0 .3.7l2.7 2.7Z"/></svg></button></div>
+    </header>
+
+    <div class="body">
+      <aside class="side">
+        <div class="sec">
+          <div class="sec-h"><svg class="sec-chev" width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 22 6 12l1.4-1.4 8.6 8.6 8.6-8.6L26 12z"/></svg><span class="t">Sessions</span><button class="xs"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M18 28h-4a2 2 0 0 1-2-2v-7.59L4.59 11A2 2 0 0 1 4 9.59V6a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2v3.59a2 2 0 0 1-.59 1.41L20 18.41V26a2 2 0 0 1-2 2M6 6v3.59l8 8V26h4v-8.41l8-8V6Z"/></svg> All</button><button class="xs outline"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V8h-2v7H8v2h7v7h2v-7h7v-2z"/></svg> New</button></div>
+          <div class="grow">
+            <div class="sess active"><span class="truncate">Compare two computations</span><span class="when">just now</span></div>
+            <div class="sess"><span class="truncate">Weekly digest</span><span class="when">2 days ago</span></div>
+            <div class="sess"><span class="truncate">Repo triage</span><span class="when">Sep 12</span></div>
+          </div>
+        </div>
+        <div class="sec" style="flex:0 0 auto">
+          <div class="sec-h"><svg class="sec-chev" width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 22 6 12l1.4-1.4 8.6 8.6 8.6-8.6L26 12z"/></svg><span class="t">Files</span><button class="xs outline"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V8h-2v7H8v2h7v7h2v-7h7v-2z"/></svg> Add</button></div>
+          <div class="ftree"><div class="frow"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M11.17 6l3.42 3.41.58.59H28v16H4V6h7.17m0-2H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2H16l-3.41-3.41A2 2 0 0 0 11.17 4Z"/></svg><span class="truncate">.agents</span></div><div class="frow"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M11.17 6l3.42 3.41.58.59H28v16H4V6h7.17m0-2H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2H16l-3.41-3.41A2 2 0 0 0 11.17 4Z"/></svg><span class="truncate">.claude</span></div><div class="frow"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M11.17 6l3.42 3.41.58.59H28v16H4V6h7.17m0-2H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2H16l-3.41-3.41A2 2 0 0 0 11.17 4Z"/></svg><span class="truncate">.platform</span></div><div class="frow"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M11.17 6l3.42 3.41.58.59H28v16H4V6h7.17m0-2H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2H16l-3.41-3.41A2 2 0 0 0 11.17 4Z"/></svg><span class="truncate">work</span></div></div>
+        </div>
+        <div class="sec" style="flex:0 0 auto">
+          <div class="sec-h"><svg class="sec-chev" width="16" height="16" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 22 6 12l1.4-1.4 8.6 8.6 8.6-8.6L26 12z"/></svg><span class="t">Artifacts</span></div>
+          <p class="meta" style="padding:16px;font-size:12px">No artifacts yet</p>
+        </div>
+      </aside>
+
+      <div class="center">
+        <div class="scroll">
+          <div class="col">
+            <div class="msg user">
+              <div class="who"><b>You</b><span>just now</span></div>
+              <div class="bubble">Compute 6 × 7 and 8 × 9 in two separate temporary agents and report both results.</div>
+            </div>
+
+            <div class="msg">
+              <div class="who"><b>Agent</b><span>just now</span></div>
+              <div class="assist">
+                <p>I will fan both computations out to fresh agents and report what comes back.</p>
+
+                <div class="act">
+                  <button class="act-h" aria-expanded="false" data-toggle>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                    <span class="truncate">Write ~/spawn.mjs</span>
+                  </button>
+                  <div class="act-b"><div class="pre">import { spawn, listImages, listConnections } from "/usr/local/lib/driver-sdk.mjs";
+const [six, eight] = await Promise.all([
+  spawn({ template, connections: [model.id], label: "six", prompt: "Compute 6 * 7 …", schema: "integer", ttlMs: 600000 }),
+  spawn({ template, connections: [model.id], label: "eight", prompt: "Compute 8 * 9 …", schema: "integer", ttlMs: 600000 }),
+]);
+console.log(six, eight);</div></div>
+                </div>
+
+                <!-- ── Delegation block ── -->
+                <div class="act deleg open">
+                  <button class="act-h" aria-expanded="true" data-toggle>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                    <svg class="flask" width="14" height="14" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg>
+                    <span class="truncate">Delegated to 2 temporary agents</span>
+                    <span class="sum meta" data-st="running">2 working</span>
+                    <span class="sum meta err" data-st="failed">1 failed</span>
+                  </button>
+                  <div class="act-b">
+<div data-st="running">
+<div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill success">Working</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>34s · 3 calls · 1.2k tokens · &lt;$0.01</span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open="live"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
+  </div></div>
+</div>
+<div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill warning">Waiting for room</span>
+  </button>
+  
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open="live"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
+  </div></div>
+</div>
+</div>
+<div data-st="done">
+<div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">42</div></div><div><button class="btn" data-open="six"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
+  </div></div>
+</div>
+<div class="act sub open">
+  <button class="act-h" aria-expanded="true" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>58s · 9 calls · 3.6k tokens · $0.02</span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">72</div></div><div><button class="btn" data-open="eight"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div><div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Verify that 72 is 8 * 9. Report true or false.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>21s · 4 calls · 1.1k tokens · &lt;$0.01</span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Verify that 72 is 8 * 9. Report true or false.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">true</div></div><div><button class="btn" data-open="check"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
+  </div></div>
+</div>
+  </div></div>
+</div>
+</div>
+<div data-st="failed">
+<div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
+    <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">42</div></div><div><button class="btn" data-open="six"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
+  </div></div>
+</div>
+<div class="act sub">
+  <button class="act-h" aria-expanded="false" data-toggle>
+    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+    <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+    <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle err">Deadline exceeded after 10m. No result reported.</span></span>
+    <span class="pill danger">Failed</span>
+  </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>10m 00s · 41 calls · 88k tokens · $0.31 <span class="err">2 err</span></span></button>
+  <div class="act-b"><div class="fold">
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div class="kv"><span>Temporary agent · claude-code · 1 CPU · 1 Gi</span></div><div><span class="tip-wrap"><button class="btn" disabled><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button><span class="tip">Conversation was not captured</span></span></div>
+  </div></div>
+</div>
+</div>
+                    <button class="foot meta" aria-expanded="false">
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                      <span>Script</span><span aria-hidden="true">·</span><span class="mono">node ~/spawn.mjs</span>
+                    </button>
+                  </div>
+                </div>
+
+                <p data-st="done">Both came back: <span class="mono">42</span> and <span class="mono">72</span>.</p>
+                <p data-st="failed">One result came back: <span class="mono">42</span>. The second agent hit its deadline; I can retry it with more time.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer">
+            <button class="iconbtn" aria-label="Attach"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M17 15V8h-2v7H8v2h7v7h2v-7h7v-2z"/></svg></button>
+            <span class="ph">Message...</span>
+            <button class="iconbtn" aria-label="Send"><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M27.45 15.11l-22-11a1 1 0 0 0-1.08.12 1 1 0 0 0-.33 1.09L7 16 4 26.68a1 1 0 0 0 1 1.32 1 1 0 0 0 .45-.11l22-11a1 1 0 0 0 0-1.78m-20.9 10L8.76 17H18v-2H8.76L6.55 6.89 24.76 16Z"/></svg></button>
+          </div>
+          <div class="model">opus</div>
+        </div>
+      </div>
+
+      <aside class="dock" data-dock data-conv="done">
+        <div class="dock-h">
+          <span class="tile" aria-hidden="true" style="width:22px;height:22px"><svg width="13" height="13" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
+          <span class="t"><span class="truncate" data-child-name title="Compute 6 * 7 and report the result as a single integer.">Compute 6 * 7 and report the result as a single integer.</span></span>
+          <span class="pill accent" data-child-pill><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
+          <button class="iconbtn" aria-label="Close" data-close-dock><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4 22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6Z"/></svg></button>
+        </div>
+        <div class="facts"><span>temporary agent of research-driver</span><button class="tel turn" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button></div>
+        <div class="scroll">
+          <div class="col" data-conv="done">
+            <div class="msg user">
+              <div class="who"><b>research-driver</b><span>14:02</span></div>
+              <div class="bubble">Compute 6 * 7 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
+            </div>
+            <div class="msg">
+              <div class="who"><b>Agent</b><span>14:03</span></div>
+              <div class="assist">
+                <p>6 × 7 = 42. Reporting the result.</p>
+                <div class="act open">
+                  <button class="act-h" aria-expanded="true" data-toggle>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                    <span class="truncate">report_result</span>
+                  </button>
+                  <div class="act-b"><div class="pre">{ "result": 42 }
+→ accepted</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col" data-conv="working">
+            <div class="msg user">
+              <div class="who"><b>research-driver</b><span>14:02</span></div>
+              <div class="bubble">Compute 6 * 7 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
+            </div>
+            <div class="msg">
+              <div class="who"><b>Agent</b><span>now</span></div>
+              <div class="assist">
+                <div class="act open">
+                  <button class="act-h" aria-expanded="true" data-toggle>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                    <span class="truncate">Bash: node -e "console.log(6*7)"</span>
+                  </button>
+                  <div class="act-b"><div class="pre">42</div></div>
+                </div>
+                <span class="dots" role="status" aria-label="Working"><span></span><span></span><span></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="col" data-conv="waiting">
+            <div class="msg user">
+              <div class="who"><b>research-driver</b><span>14:02</span></div>
+              <div class="bubble">Compute 8 * 9 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
+            </div>
+            <p class="meta" style="font-size:12px">Waiting for room. The agent starts when the driver's budget frees up; the prompt is queued.</p>
+          </div>
+        </div>
+        <div class="ro" data-conv="done">
+          <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M24 14h-2V8a6 6 0 0 0-12 0v6H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V16a2 2 0 0 0-2-2M12 8a4 4 0 0 1 8 0v6h-8Zm12 20H8V16h16Z"/></svg>
+          <span style="flex:1;min-width:0">Read-only. The agent was released when it reported.</span>
+          <button class="btn primary" style="height:32px;padding:0 12px;flex-shrink:0">Continue in new session</button>
+        </div>
+        <div class="ro" data-conv="working">
+          <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1 0 12 12A12 12 0 0 0 16 4m0 22a10 10 0 1 1 10-10 10 10 0 0 1-10 10"/><path d="M15 8h2v9h-2zm0 11h2v2h-2z"/></svg>
+          <span style="flex:1;min-width:0">Live, read-only. The agent runs unattended and reports when done.</span>
+        </div>
+        <div class="ro" data-conv="waiting">
+          <span style="flex:1;min-width:0">Read-only. Nothing has run yet.</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('#state-toggle button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#state-toggle button').forEach((x) => x.classList.toggle('on', x === b));
+    document.body.dataset.state = b.dataset.state;
+  }));
+  document.querySelectorAll('#tel-toggle button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#tel-toggle button').forEach((x) => x.classList.toggle('on', x === b));
+    document.body.dataset.tel = b.dataset.tel;
+  }));
+  document.querySelectorAll('#theme-toggle button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#theme-toggle button').forEach((x) => x.classList.toggle('on', x === b));
+    document.documentElement.classList.toggle('dark', b.dataset.theme === 'dark');
+  }));
+
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-toggle]');
+    if (toggle) { const act = toggle.closest('.act'); act.classList.toggle('open'); toggle.setAttribute('aria-expanded', act.classList.contains('open')); return; }
+
+    const row = e.target.closest('[data-row]');
+    if (row) {
+      const item = row.closest('.item');
+      const wasOpen = item.classList.contains('expanded');
+      item.parentElement.querySelectorAll('.item.expanded').forEach((x) => x.classList.remove('expanded'));
+      if (!wasOpen && item.nextElementSibling?.children.length) item.classList.add('expanded');
+      return;
+    }
+
+    const open = e.target.closest('[data-open]');
+    if (open && !open.disabled) {
+      const box = open.closest('.sub');
+      const name = document.querySelector('[data-child-name]');
+      name.textContent = box.querySelector('.label').textContent;
+      name.title = name.textContent;
+      const pill = box.querySelector(':scope > .act-h .pill').cloneNode(true);
+      pill.setAttribute('data-child-pill', '');
+      document.querySelector('[data-child-pill]').replaceWith(pill);
+      const cardTel = box.querySelector(':scope > .tel span');
+      const dockTel = document.querySelector('.dock .tel');
+      dockTel.style.display = cardTel ? '' : 'none';
+      if (cardTel) dockTel.querySelector('span').innerHTML = cardTel.innerHTML;
+      const dock = document.querySelector('[data-dock]');
+      dock.dataset.conv = pill.classList.contains('success') ? 'working' : pill.classList.contains('warning') ? 'waiting' : 'done';
+      dock.classList.add('show');
+      return;
+    }
+    if (e.target.closest('[data-close-dock]')) { document.querySelector('[data-dock]').classList.remove('show'); }
+  });
+</script>
+</body>
+</html>

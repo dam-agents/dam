@@ -32,6 +32,8 @@ export {
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
   invocationViewSchema,
+  invocationsTreeInputSchema,
+  INVOCATIONS_TREE_MAX_IDS,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
@@ -43,6 +45,8 @@ export type {
   InvocationStatus,
   InvocationTarget,
   InvocationsQueryService,
+  InvocationsTreeInput,
+  DelegationNode,
 } from "./modules/invocations/types.js";
 
 export type {
@@ -817,6 +821,8 @@ export {
 export {
   telemetryTurnsInputSchema,
   telemetryTurnInputSchema,
+  telemetryInvocationTurnsInputSchema,
+  TELEMETRY_MAX_INVOCATION_IDS,
   telemetryLogsInputSchema,
   telemetryExportQuerySchema,
   telemetryExportSignalSchema,
@@ -839,6 +845,7 @@ export type {
   TelemetryService,
   TelemetryTurnsQuery,
   TelemetryTurnQuery,
+  TelemetryInvocationTurnsQuery,
   TelemetryLogsQuery,
   TelemetryExportQuery,
   TelemetryExportSignal,
@@ -852,8 +859,10 @@ export type {
   TelemetryTurns,
   TelemetryTurn,
   TelemetryLogs,
+  TelemetryInvocationTurns,
   TelemetryTurnsResult,
   TelemetryTurnResult,
+  TelemetryInvocationTurnsResult,
   TelemetryLogsResult,
 } from "./modules/telemetry/types.js";
 

@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type {
   telemetryExportQuerySchema,
   telemetryExportSignalSchema,
+  telemetryInvocationTurnsInputSchema,
   telemetryLogsInputSchema,
   telemetryTurnInputSchema,
   telemetryTurnsInputSchema,
@@ -10,6 +11,9 @@ import type {
 export type TelemetryTurnsQuery = z.infer<typeof telemetryTurnsInputSchema>;
 export type TelemetryTurnQuery = z.infer<typeof telemetryTurnInputSchema>;
 export type TelemetryLogsQuery = z.infer<typeof telemetryLogsInputSchema>;
+export type TelemetryInvocationTurnsQuery = z.infer<
+  typeof telemetryInvocationTurnsInputSchema
+>;
 export type TelemetryExportQuery = z.infer<typeof telemetryExportQuerySchema>;
 export type TelemetryExportSignal = z.infer<typeof telemetryExportSignalSchema>;
 
@@ -102,12 +106,23 @@ export interface TelemetryLogs {
   truncated: boolean;
 }
 
+export interface TelemetryInvocationTurns {
+  available: true;
+  turns: Record<string, TurnSummary>;
+}
+
 export type TelemetryTurnsResult = TelemetryTurns | TelemetryUnavailable;
+export type TelemetryInvocationTurnsResult =
+  | TelemetryInvocationTurns
+  | TelemetryUnavailable;
 export type TelemetryTurnResult = TelemetryTurn | TelemetryUnavailable;
 export type TelemetryLogsResult = TelemetryLogs | TelemetryUnavailable;
 
 export interface TelemetryService {
   turns(query: TelemetryTurnsQuery): Promise<TelemetryTurnsResult>;
   turn(query: TelemetryTurnQuery): Promise<TelemetryTurnResult>;
+  invocationTurns(
+    query: TelemetryInvocationTurnsQuery,
+  ): Promise<TelemetryInvocationTurnsResult>;
   logs(query: TelemetryLogsQuery): Promise<TelemetryLogsResult>;
 }

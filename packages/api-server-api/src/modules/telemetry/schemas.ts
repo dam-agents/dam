@@ -53,7 +53,8 @@ export const telemetryTurnsInputSchema = z.object({
 export const telemetryTurnInputSchema = z
   .object({
     agentId: z.string().min(1),
-    sessionId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    invocationId: z.string().min(1).optional(),
     promptId: z.string().min(1).max(200).optional(),
     from: z.string().datetime(),
     to: z.string().datetime(),
@@ -78,7 +79,11 @@ export const telemetryTurnInputSchema = z
       message: `a turn window may not exceed ${TELEMETRY_MAX_TRACE_HOURS} hours`,
       path: ["to"],
     },
-  );
+  )
+  .refine((q) => q.sessionId !== undefined || q.invocationId !== undefined, {
+    message: "a turn is addressed by its session or by an invocation",
+    path: ["sessionId"],
+  });
 
 export const telemetryLogsInputSchema = z.object({
   agentId: z.string().min(1).optional(),
@@ -102,4 +107,11 @@ export const telemetryExportQuerySchema = z.object({
   sessionId: z.string().min(1).optional(),
   signal: telemetryExportSignalSchema.default("logs"),
   sinceHours,
+});
+
+export const TELEMETRY_MAX_INVOCATION_IDS = 200;
+
+export const telemetryInvocationTurnsInputSchema = z.object({
+  driverAgentId: z.string().min(1),
+  ids: z.array(z.string().min(1)).min(1).max(TELEMETRY_MAX_INVOCATION_IDS),
 });

@@ -22,6 +22,9 @@ const readGuards = {
 
 function windowClauses(w: TelemetryWindow): string[] {
   return [
+    ...(w.invocationIds === undefined
+      ? []
+      : [`${INVOCATION} IN {invocationIds:Array(String)}`]),
     ...(w.hours === undefined
       ? []
       : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
@@ -65,6 +68,7 @@ export const ownedLogs = (f: TelemetryLogFilter): string =>
 
 const windowParams = (agentIds: readonly string[], w: TelemetryWindow) => ({
   agentIds,
+  ...(w.invocationIds === undefined ? {} : { invocationIds: w.invocationIds }),
   ...(w.hours === undefined ? {} : { hours: w.hours }),
   ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
   ...(w.toIso === undefined ? {} : { toIso: w.toIso }),

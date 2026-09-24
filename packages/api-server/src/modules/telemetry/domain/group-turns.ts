@@ -280,3 +280,21 @@ export function groupIntoTurns(
   ];
   return groups.sort((a, b) => at(a.startedAt) - at(b.startedAt));
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an Invocation target's whole run read as one turn
+ * — the target answers a single prompt, so the sum over every record and span
+ * it produced is the number its card shows, whatever prompt ids it stamped.
+ */
+export function summariseRun(
+  turnId: string,
+  logs: readonly UnattachedLog[],
+  spans: readonly TelemetrySpan[],
+): TurnGroup | null {
+  const items = [...logs.map(logItem), ...spans.map(spanItem)];
+  if (items.length === 0) return null;
+  return {
+    ...summarise(items, { promptId: null, groupedBy: "time" }),
+    turnId,
+  };
+}
