@@ -20,8 +20,7 @@
 # fails; the exit status names the failures.
 #
 # By path, like image:resolve. image.toml agents build with
-# //packages/agents:image and need mise, node, pnpm, crane and the workspace's
-# dependencies.
+# //packages/agents:image and need mise, node, pnpm and crane.
 set -uo pipefail
 
 serial=false base=""
@@ -37,6 +36,7 @@ arch="${1:?usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<
 : "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}"
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
+export AGENT_OCI_OUT=/tmp/ci-build/oci
 
 # spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
 spec() {
@@ -65,7 +65,7 @@ output_for() {
 
 # The digest lands where buildx's metadata would.
 build_mise() {
-  local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci/out/$1" ref
+  local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1" ref
   packages/agents/.mise/tasks/image --build $([ "$kind" = load ] || echo --no-load) "$c" || return 1
   case "$kind" in
     cacheonly | load) ;;

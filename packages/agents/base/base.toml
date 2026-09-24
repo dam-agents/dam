@@ -1,12 +1,6 @@
 # Shared by every `mise oci` agent image; each agent's image.toml is a config
 # environment over it. Staged by //packages/agents:image as mise/conf.d/base.toml.
 
-[settings]
-experimental = true
-minimum_release_age = "7d"
-npm.package_manager = "npm"
-python.compile = false
-
 [tools]
 node = "26"
 pnpm = "12.3.4"
@@ -63,38 +57,3 @@ SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
-
-# Relative to mise/conf.d/. A copy cannot target /, hence one per directory;
-# an agent's copies come later and win.
-[[oci.copy]]
-host = "../../base/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../base/rootfs/etc"
-image = "/etc"
-
-[[oci.copy]]
-host = "../../base/rootfs/usr"
-image = "/usr"
-
-[[oci.copy]]
-host = "../../base/rootfs/var"
-image = "/var"
-
-# Built on the host by the image task.
-[[oci.copy]]
-host = "../../build/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../build/etc"
-image = "/etc"
-
-[[oci.copy]]
-host = "../../build/home"
-image = "/home"
-
-[[oci.copy]]
-host = "../../build/usr"
-image = "/usr"

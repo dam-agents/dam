@@ -2,7 +2,7 @@
 
 Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the shared Debian agent base, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [`packages/agents`](../README.md)), as its `bob` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)), as its `bob` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 

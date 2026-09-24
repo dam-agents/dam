@@ -6,15 +6,3 @@
 PLATFORM_HARNESS = "codex"
 # Satisfies the CLI's startup check; the real credential is injected on the wire.
 OPENAI_API_KEY = "dummy-placeholder"
-
-[[oci.copy]]
-host = "../../codex/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../codex/rootfs/etc"
-image = "/etc"
-
-[[oci.copy]]
-host = "../../codex/rootfs/usr"
-image = "/usr"

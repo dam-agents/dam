@@ -1,7 +1,0 @@
-[[oci.copy]]
-host = "../../mock/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../mock/rootfs/usr"
-image = "/usr"

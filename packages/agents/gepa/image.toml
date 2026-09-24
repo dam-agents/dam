@@ -10,11 +10,3 @@ uvx_args = "--with gepa==0.1.4 --with tqdm>=4.66.1 --with cloudpickle>=3.0.0 --w
 [oci.env]
 GEPA_VENV = "/usr/local/share/mise/installs/pipx-litellm/1.91.5/litellm"
 GEPA_OUTPUT_ROOT = "/home/agent/work/gepa-runs"
-
-[[oci.copy]]
-host = "../../gepa/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../gepa/rootfs/etc"
-image = "/etc"

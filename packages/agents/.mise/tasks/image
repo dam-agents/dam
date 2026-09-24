@@ -55,8 +55,10 @@ state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
 work="$state/build"
 stage="$work/stage"
 runtime="$work/runtime"
+oci_out="${AGENT_OCI_OUT:-$state/out}"
 
 build_runtime() {
+  pnpm install --frozen-lockfile
   pnpm --filter agent-runtime exec tsup
   pnpm --filter driver-sdk exec tsup
   rm -rf "$runtime"
@@ -68,7 +70,7 @@ build_runtime() {
 
 # Subshell: it leaves the repo's mise context and directory.
 build_mise() (
-  harness=$1 out="$state/out/$1" envs=$1
+  harness=$1 out="$oci_out/$1" envs=$1
   # A workload is an environment over claude-code's.
   case "$workloads" in *" $1 "*) envs="claude-code,$1" ;; esac
 
@@ -87,9 +89,10 @@ build_mise() (
   mkdir -p "$stage/mise/conf.d"
   cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
   cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
-  for f in "$agents/base/base.toml" "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do
-    d="${f%/*}"; a="${d##*/}"
-    [ "$a" = base ] || cp "$f" "$stage/mise/conf.d/harness.$a.toml"
+  cp "$agents/base/rootfs/etc/mise/conf.d/settings.toml" "$stage/mise/conf.d/settings.toml"
+  for a in base ${envs//,/ }; do
+    d="$(dir_of "$a")"
+    [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
     mkdir -p "$stage/$a"
     # pi's extension ships as source; node_modules holds its dev dependencies.
     tar -C "$d" --exclude=node_modules --exclude=.mise -cf - . | tar -C "$stage/$a" -xf -
@@ -105,6 +108,19 @@ build_mise() (
     pnpm --filter mock-agent exec tsup
     install -D -m 644 packages/e2e/agents/mock/dist/main.js "$stage/mock/rootfs/app/mock-agent.js"
   fi
+  # A copy cannot target /, hence one per top-level directory; the agent's
+  # come after base's and win.
+  copies() {
+    local d
+    for d in "$stage/$2"/*/; do
+      [ -d "$d" ] || continue
+      d="${d%/}"
+      printf '\n[[oci.copy]]\nhost = "../../%s"\nimage = "/%s"\n' "${d#"$stage"/}" "${d##*/}"
+    done >> "$stage/mise/conf.d/$1"
+  }
+  copies base.toml base/rootfs
+  copies base.toml build
+  for a in ${envs//,/ }; do copies "harness.$a.toml" "$a/rootfs"; done
 
   # Not -C: mise reads .miserc.toml from the working directory only.
   cd "$stage"
@@ -112,6 +128,11 @@ build_mise() (
   # mise oci relocates #! lines, not the launcher uv writes for a long one.
   { grep -rlZ "^'''exec' '$MISE_DATA_DIR/" "$MISE_DATA_DIR"/installs/pipx-*/*/*/bin 2>/dev/null || true; } |
     xargs -0r sed -i "s|'$MISE_DATA_DIR/|'/usr/local/share/mise/|"
+  # A *_VENV path spells its tool's version; a bump that misses it fails here.
+  sed -n 's/^[A-Z_]*_VENV = "\(.*\)"$/\1/p' mise/conf.d/harness.*.toml |
+    while read -r v; do
+      [ -x "$MISE_DATA_DIR${v#/usr/local/share/mise}/bin/python" ] || { echo "$v is not a venv: does its path match the tool's version?" >&2; exit 1; }
+    done
 
   # The apt bootstrap needs root. out/ is made first, as this user, so the
   # next build can remove it.
@@ -143,12 +164,11 @@ build_in_vm() {
     export PATH="$HOME/.local/bin:$PATH"
     cd ~/platform-src
     mise trust -q
-    mise exec node pnpm -- pnpm install --frozen-lockfile
-    mise exec node pnpm -- packages/agents/.mise/tasks/image --build --no-load "$@"' _ "$@"
+    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm -- packages/agents/.mise/tasks/image --build --no-load "$@"' _ "$@"
 }
 layout() {
-  if [ "$(uname -s)" = Linux ]; then tar -C "$state/out/$1" -c .
-  else limactl shell --workdir / "$vm" sh -c 'tar -C ~/.cache/platform-agent-oci/out/"$1" -c .' _ "$1"; fi
+  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c .
+  else limactl shell --workdir / "$vm" sh -c 'tar -C ~/platform-agent-oci/"$1" -c .' _ "$1"; fi
 }
 
 todo=()

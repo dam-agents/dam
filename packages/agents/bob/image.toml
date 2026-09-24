@@ -10,11 +10,3 @@ rename_exe = "bob"
 
 [oci.env]
 PLATFORM_HARNESS = "bob"
-
-[[oci.copy]]
-host = "../../bob/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../bob/rootfs/usr"
-image = "/usr"

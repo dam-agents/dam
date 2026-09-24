@@ -11,15 +11,3 @@ DISABLE_ERROR_REPORTING = "1"
 DISABLE_FEEDBACK_COMMAND = "1"
 DISABLE_FEEDBACK_SURVEY = "1"
 DISABLE_AUTOUPDATER = "1"
-
-[[oci.copy]]
-host = "../../claude-code/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../claude-code/rootfs/etc"
-image = "/etc"
-
-[[oci.copy]]
-host = "../../claude-code/rootfs/usr"
-image = "/usr"

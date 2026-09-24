@@ -14,11 +14,3 @@ postinstall = '"$MISE_TOOL_INSTALL_PATH/shinka-evolve/bin/python" -c "import shi
 [oci.env]
 SHINKA_VENV = "/usr/local/share/mise/installs/pipx-shinka-evolve/0.0.7/shinka-evolve"
 SHINKA_OUTPUT_ROOT = "/home/agent/work/shinka-runs"
-
-[[oci.copy]]
-host = "../../shinkaevolve/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../shinkaevolve/rootfs/etc"
-image = "/etc"

@@ -13,15 +13,3 @@ NOUS_ALLOW_AUTO_APPROVE = "1"
 NOUS_CAMPAIGN_PARENT = "/home/agent/nous-campaigns"
 NO_PROXY = "127.0.0.1,localhost,::1"
 no_proxy = "127.0.0.1,localhost,::1"
-
-[[oci.copy]]
-host = "../../nous/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../nous/rootfs/etc"
-image = "/etc"
-
-[[oci.copy]]
-host = "../../nous/rootfs/usr"
-image = "/usr"

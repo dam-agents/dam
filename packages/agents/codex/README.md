@@ -2,7 +2,7 @@
 
 Platform agent running [OpenAI Codex CLI](https://github.com/openai/codex) via the [codex-acp](https://github.com/zed-industries/codex-acp) ACP adapter.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [`packages/agents`](../README.md)), as its `codex` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)), as its `codex` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 

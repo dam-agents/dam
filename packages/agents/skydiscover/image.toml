@@ -11,11 +11,3 @@ postinstall = '"$MISE_TOOL_INSTALL_PATH/skydiscover/bin/python" {{config_root}}/
 [oci.env]
 SKYDISCOVER_VENV = "/usr/local/share/mise/installs/pipx-skydiscover-ai-skydiscover/e221cde39a787351df7e52c656ad3f00add402fe/skydiscover"
 SKYDISCOVER_OUTPUT_ROOT = "/home/agent/work/skydiscover-runs"
-
-[[oci.copy]]
-host = "../../skydiscover/rootfs/app"
-image = "/app"
-
-[[oci.copy]]
-host = "../../skydiscover/rootfs/etc"
-image = "/etc"

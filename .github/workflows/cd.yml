@@ -263,9 +263,6 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      # Not `mise deps install`: it installs the repo's whole toolchain first.
-      - name: Install workspace dependencies
-        run: mise exec node pnpm -- pnpm install --frozen-lockfile
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -344,8 +341,6 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      - name: Install workspace dependencies
-        run: mise exec node pnpm -- pnpm install --frozen-lockfile
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -412,9 +407,6 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      # Not `mise deps install`: it installs the repo's whole toolchain first.
-      - name: Install workspace dependencies
-        run: mise exec node pnpm -- pnpm install --frozen-lockfile
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:sha
 
@@ -458,7 +450,7 @@ jobs:
       # the same task, which is then a cache hit.
       - if: github.event_name == 'pull_request'
         run: mise run //packages/keycloak-theme:build
-      # For the mock's mise build.
+      # Before the background build: its pnpm install would race e2e:install's.
       - if: github.event_name == 'pull_request'
         run: mise deps install --only pnpm
       - name: Build or fetch this run's images in the background
