@@ -16,6 +16,8 @@ pub trait Runtime: Send + Sync {
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
+    fn image_present(&self, id: &str) -> anyhow::Result<bool>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()

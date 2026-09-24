@@ -215,6 +215,9 @@ mod tests {
         fn delete(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
+        fn image_present(&self, _: &str) -> anyhow::Result<bool> {
+            Ok(true)
+        }
     }
 
     struct Api(Router, PathBuf);
