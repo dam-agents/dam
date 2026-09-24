@@ -36,4 +36,4 @@ On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-
 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
-- An agent's own `mise use -g`, `npm i -g` and `pip install` work. A tool pin persisted in the home from an older image does not shadow the baked tool, because the baked install directories come first on `PATH`.
+- An agent's own `mise use -g`, `npm i -g` and `pip install` work, but install into the image and last until the agent restarts; only `pip install --user` lands in the home. mise reads no config from the home, so a tool pin an older image persisted there is inert.

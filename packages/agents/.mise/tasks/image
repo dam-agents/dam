@@ -141,7 +141,9 @@ build_mise() (
   sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
   ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out"
   [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
-  mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out"
+  # The owned-layer cache grows with every distinct layer; remove $state/owned
+  # to reclaim it.
+  mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
   echo "OCI layout: $out"
 )
 
@@ -152,8 +154,8 @@ vm="${LIMA_INSTANCE:-platform-k3s}"
 build_in_vm() {
   limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
   git ls-files -z --cached --others --exclude-standard |
-    while IFS= read -r -d '' f; do [ -e "$f" ] && printf '%s\0' "$f"; done |
-    tar --null -T - -cf - |
+    while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
+    COPYFILE_DISABLE=1 tar --null -T - -cf - |
     limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
   # The tools CI's build-agents job sets up, not the repo's whole toolchain.
   limactl shell --workdir / "$vm" sh -c '
