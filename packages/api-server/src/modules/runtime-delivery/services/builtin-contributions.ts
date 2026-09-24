@@ -1,6 +1,11 @@
-import { SHARED_KB_TEMPLATE_ID, type Contribution } from "api-server-api";
+import {
+  KB_AGGREGATE_MCP_SERVER,
+  PLATFORM_OUTBOUND_MCP_SERVER,
+  SHARED_KB_TEMPLATE_ID,
+  type Contribution,
+} from "api-server-api";
 
-export const KB_AGGREGATE_MCP_ENTRY_NAME = "knowledge-bases";
+export const KB_AGGREGATE_MCP_ENTRY_NAME = KB_AGGREGATE_MCP_SERVER;
 export { SHARED_KB_TEMPLATE_ID };
 
 export interface BuiltinContributionOpts {
@@ -25,7 +30,7 @@ export function createBuiltinContributions(
       return [
         {
           kind: "mcp-entry",
-          name: "platform-outbound",
+          name: PLATFORM_OUTBOUND_MCP_SERVER,
           url: `${agentPath}/mcp`,
         },
         ...(contributionOpts.sharedKnowledgeBases
