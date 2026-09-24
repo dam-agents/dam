@@ -1,3 +1,3 @@
-# The vm Backend root is an overlay, which overlayfs refuses as an upperdir, so
-# the data dir is on the machine disk.
-data-dir: /workspace/k3s
+# The machine root is an overlay, which overlayfs refuses as an upperdir, and
+# the home is the one guest path on the storage disk.
+data-dir: /home/agent/.local/share/k3s

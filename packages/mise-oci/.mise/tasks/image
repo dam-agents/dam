@@ -55,13 +55,13 @@ cp "$pkg/image.toml" "$stage/mise.toml"
 mise trust -q "$stage"
 mise -C "$stage" install
 
-# rootfs/ is the image's own payload at its image paths. The directories the
-# agent writes into at runtime are made here, since git keeps no empty ones;
-# every added file ends up owned by the build's --owner, the agent.
+# rootfs/ is the image's own payload at its image paths; git keeps no empty
+# directories, so the two the image needs are made here. /etc/logrotate.d is
+# where service installers drop their rotation config, and trixie-slim has none.
 r="$stage/rootfs"
 mkdir -p "$r"
 cp -a "$pkg/rootfs/." "$r/"
-install -d "$r"/{home/agent,etc/logrotate.d,etc/ssl/certs} "$r"/usr/local/share/{ca-certificates,tool-bin}
+install -d "$r"/{home/agent,etc/logrotate.d} "$r/usr/local/share/tool-bin"
 cp -a "$runtime/package.json" "$runtime/node_modules" "$r/app/"
 cp -a packages/agent-runtime/dist "$r/app/dist"
 install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$r/usr/local/lib/driver-sdk.mjs"
@@ -78,7 +78,7 @@ ln -sfn "$(in_image "$cli")" "$r/usr/local/share/tool-bin/claude"
 copies=()
 for d in "$r"/*; do copies+=(--copy "$d:/${d##*/}"); done
 rm -rf "$out"
-mise -C "$stage" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"} "${copies[@]}"
+mise -C "$stage" oci build -o "$out" ${from:+--from "$from"} "${copies[@]}"
 echo "OCI layout: $out"
 
 if [ -n "$load" ]; then
