@@ -9,7 +9,10 @@ import {
   type SlackDisconnected,
   type AgentDeleted,
 } from "../../../events.js";
-import type { SlackWorker } from "../infrastructure/slack.js";
+import type {
+  DeleteAgentPostResult,
+  SlackWorker,
+} from "../infrastructure/slack.js";
 import type {
   SlackConversationName,
   SlackConversationRef,
@@ -207,6 +210,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  deleteSlackPost(
+    instanceName: string,
+    postRef: string,
+    reason: string | null,
+  ): Promise<DeleteAgentPostResult>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -222,6 +230,7 @@ export const channelRpcRequestSchema = z.object({
     "resolveConversationNames",
     "slackConversationStanding",
     "readThread",
+    "deleteSlackPost",
   ]),
   args: z.array(z.unknown()),
 });
@@ -244,6 +253,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
+  deleteSlackPost: z.tuple([z.string(), z.string(), z.string().nullable()]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -308,6 +318,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
       hasMore: z.boolean(),
       cursor: z.string().optional(),
     }),
+    z.object({ error: z.string() }),
+  ]),
+  deleteSlackPost: z.union([
+    z.object({ ok: z.literal(true), agentWillBeTold: z.boolean() }),
     z.object({ error: z.string() }),
   ]),
 };
@@ -537,6 +551,14 @@ export function createChannelManager(deps: {
       deps.slackWorker
         ? deps.slackWorker.conversationStanding(slackChannelId, teamId)
         : Promise.reject(new Error("slack worker not available")),
+    deleteSlackPost: (
+      instanceName: string,
+      postRef: string,
+      reason: string | null,
+    ): Promise<DeleteAgentPostResult> =>
+      slackWorker
+        ? slackWorker.deleteAgentPost(instanceName, postRef, reason)
+        : Promise.resolve({ error: "slack worker not available" }),
     readThread: (
       instanceName: string,
       channelType: ChannelType,
@@ -727,6 +749,14 @@ export function createChannelManager(deps: {
         "readThread",
         [instanceName, channelType, query],
         () => localHandlers.readThread(instanceName, channelType, query),
+      );
+    },
+
+    deleteSlackPost(instanceName, postRef, reason) {
+      return dispatchResult(
+        "deleteSlackPost",
+        [instanceName, postRef, reason],
+        () => localHandlers.deleteSlackPost(instanceName, postRef, reason),
       );
     },
   };

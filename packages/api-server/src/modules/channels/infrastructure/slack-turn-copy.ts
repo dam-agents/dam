@@ -321,3 +321,32 @@ export function ambientGuidance(
     "</reading-along>",
   ].join("\n");
 }
+
+const DELETED_POST_CHARS = 1500;
+
+function unescapeSlackText(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+export function postDeletedNotice(post: {
+  text: string | null;
+  withFiles: boolean;
+  reason: string | null;
+}): string {
+  const chars = Array.from(unescapeSlackText(post.text ?? ""));
+  const truncated = chars.length > DELETED_POST_CHARS;
+  const quoted = chars.slice(0, DELETED_POST_CHARS).join("");
+  const cut = truncated ? " (shortened for brevity)" : "";
+  const reason = post.reason
+    ? ` with stated reason: "${escapeFrameText(post.reason)}"`
+    : "";
+  return (
+    `<notice>Your Slack message "${escapeFrameText(quoted)}${truncated ? "…" : ""}"${cut}` +
+    `${post.withFiles ? " and its attachments" : ""} has been ` +
+    `deleted by your owner${reason}. Do not reply to this message, this is ` +
+    "a notice only.</notice>"
+  );
+}

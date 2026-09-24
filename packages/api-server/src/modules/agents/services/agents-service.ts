@@ -324,6 +324,11 @@ export interface SlackBindingPort {
     slackChannelId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
+  deletePost(
+    agentId: string,
+    postRef: string,
+    reason: string | null,
+  ): Promise<{ ok: true; agentWillBeTold: boolean } | { error: string }>;
 }
 
 export function executeSlackBind(deps: {
@@ -1361,6 +1366,17 @@ export function createAgentsService(deps: {
         },
         binding,
       })(agentId, conversationId);
+    },
+
+    async deleteSlackPost(agentId, postRef, reason) {
+      const binding = deps.slackBinding;
+      if (!binding) return err({ type: "SlackUnavailable" as const });
+      if (!(await deps.repo.get(agentId, deps.owner)))
+        return err({ type: "AgentNotFound" as const });
+      const res = await binding.deletePost(agentId, postRef, reason);
+      if ("error" in res)
+        return err({ type: "DeleteRefused" as const, message: res.error });
+      return ok({ agentWillBeTold: res.agentWillBeTold });
     },
 
     async bindTelegramChat(agentId, flowId) {

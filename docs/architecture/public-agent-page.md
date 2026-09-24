@@ -1,6 +1,6 @@
 # Public Agent Page
 
-Last verified: 2026-09-15
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -8,7 +8,7 @@ The **Public Agent Page** is the one Platform surface that renders for a visitor
 
 So the page is built as a **conversion surface, not an error page**. For most people in a shared conversation it is the first and only Platform screen they will ever see, so it names the Agent, names its owner, says what the install is, and invites the reader to create an Agent of their own. Treating it as an error state is the mistake it was created to fix.
 
-It is reached from two places: the Agent Footer under every Slack post, and the authenticated chat route, which redirects here when a signed-in visitor turns out not to be able to read the Agent. That second path is what closes the boundary for signed-in non-owners, who would otherwise still hit the dead end. It has to leave the app by full navigation rather than an in-app route change: the public entry is chosen from the path during bootstrap, so a history push would keep rendering the authenticated tree and never reach this page. Two consequences follow from it being a navigation and not a route change. The surface it leaves stays rendered until the browser lands, so it is covered while that happens — an Agent the visitor cannot read must never present an interactive chat. And a **delete the visitor started is remembered and never redirects**: an Agent that is gone and an Agent that is someone else's read the same to the app, so without that, deleting your own Agent would throw you out onto its public page.
+It is reached from two places: the Agent Footer under every Slack post, and the authenticated chat route, which redirects here when a signed-in visitor turns out not to be able to read the Agent — including one who followed the footer's owner-only Delete link. A visitor with no account who follows that link meets the login instead, since the chat route is not public. That second path is what closes the boundary for signed-in non-owners, who would otherwise still hit the dead end. It has to leave the app by full navigation rather than an in-app route change: the public entry is chosen from the path during bootstrap, so a history push would keep rendering the authenticated tree and never reach this page. Two consequences follow from it being a navigation and not a route change. The surface it leaves stays rendered until the browser lands, so it is covered while that happens — an Agent the visitor cannot read must never present an interactive chat. And a **delete the visitor started is remembered and never redirects**: an Agent that is gone and an Agent that is someone else's read the same to the app, so without that, deleting your own Agent would throw you out onto its public page.
 
 ## Trust boundary
 

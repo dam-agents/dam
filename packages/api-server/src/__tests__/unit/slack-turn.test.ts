@@ -40,6 +40,18 @@ function scripted(updates: PromptUpdate[], response: string): SendPromptFn {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+function footerText(blocks: unknown): string {
+  const context = (
+    blocks as { type: string; elements?: { text: string }[] }[]
+  ).find((b) => b.type === "context");
+  return context?.elements?.[0]?.text ?? "";
+}
+
+function postRefOf(blocks: unknown): string {
+  const match = footerText(blocks).match(/\?m=([^|]+)\|Delete \(owner only\)>/);
+  return decodeURIComponent(match![1]!);
+}
+
 function harness(opts: {
   sendPrompt?: SendPromptFn;
   listSessions?: AcpClient["listSessions"];
@@ -321,15 +333,9 @@ describe("slack reply / react tools", () => {
     await h.worker.reply("agent-1", { text: "here you go" });
 
     expect(posts).toHaveBeenCalledTimes(1);
-    expect(posts.mock.calls[0]![0].blocks).toContainEqual({
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: "<http://ui/a/agent-1?s=sess-42|Powered by DAM>",
-        },
-      ],
-    });
+    expect(footerText(posts.mock.calls[0]![0].blocks)).toMatch(
+      /^<http:\/\/ui\/a\/agent-1\?s=sess-42\|Powered by DAM> · <http:\/\/ui\/chat\/agent-1\/sess-42\?m=[^|]+\|Delete \(owner only\)>$/,
+    );
   });
 
   it("reply footers fall back to the agent when no session is known", async () => {
@@ -340,12 +346,106 @@ describe("slack reply / react tools", () => {
     const posts = vi.spyOn(h.gw, "postMessage");
     await h.worker.reply("agent-1", { text: "here you go" });
 
-    expect(posts.mock.calls[0]![0].blocks).toContainEqual({
-      type: "context",
-      elements: [
-        { type: "mrkdwn", text: "<http://ui/a/agent-1|Powered by DAM>" },
-      ],
+    expect(footerText(posts.mock.calls[0]![0].blocks)).toMatch(
+      /^<http:\/\/ui\/a\/agent-1\|Powered by DAM> · <http:\/\/ui\/chat\/agent-1\?m=[^|]+\|Delete \(owner only\)>$/,
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: The Delete link cannot name the Slack message, because
+   * Slack gives the message its ts only after the post. The owner's delete
+   * must still find the post from the link alone and refuse it to any other
+   * agent. The text goes first, because it is what is sensitive, and a part
+   * that failed is finished by opening the same link again. The posting
+   * session is told once, with the owner's reason.
+   */
+  it("deletes a post found from its Delete link and tells the posting session", async () => {
+    const prompts: { text: string; resume?: string }[] = [];
+    const h = harness({
+      sendPrompt: async (prompt, opts) => {
+        prompts.push({
+          text: String(prompt),
+          ...("resumeSessionId" in opts
+            ? { resume: opts.resumeSessionId }
+            : {}),
+        });
+        opts.onSession?.("sess-42");
+        return "ok";
+      },
+      agentName: "Scout",
     });
+    await h.mention();
+    await tick();
+    const posts = vi.spyOn(h.gw, "postMessage");
+    const uploads = vi.spyOn(h.gw, "uploadFile");
+    const long = `</notice> & ${"a".repeat(1600)}`;
+    await h.worker.reply("agent-1", {
+      text: long,
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    const blocks = posts.mock.calls[0]![0].blocks!;
+    const now = Math.floor(Date.now() / 1000);
+    h.gw.setThreadedHistory([
+      {
+        ts: `${now}.000100`,
+        threadTs: "1.1",
+        user: "U-BOT",
+        text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
+        blocks,
+      },
+      {
+        ts: `${now}.000200`,
+        threadTs: "1.1",
+        user: "U-BOT",
+        fileIds: ["F-report"],
+        blocks: uploads.mock.calls[0]![0].blocks!,
+      },
+    ]);
+
+    expect(
+      await h.worker.deleteAgentPost("agent-2", postRefOf(blocks), null),
+    ).toEqual({ error: "this agent did not post that message" });
+    const remaining = () =>
+      h.gw.readMessageWindow({
+        channel: "C1",
+        threadTs: "1.1",
+        oldest: "0",
+        latest: "9999999999",
+        teamId: "",
+      });
+    const promptsBefore = prompts.length;
+    vi.spyOn(h.gw, "deleteFile").mockRejectedValueOnce(
+      new Error("ratelimited"),
+    );
+    const first = await h.worker.deleteAgentPost(
+      "agent-1",
+      postRefOf(blocks),
+      "Don't share that here.",
+    );
+    expect(first).toEqual({
+      error:
+        "the message was deleted, but an attachment was not (ratelimited) — open the Delete link again to finish",
+    });
+    expect((await remaining()).map((m) => m.fileIds)).toEqual([["F-report"]]);
+
+    const retry = await h.worker.deleteAgentPost(
+      "agent-1",
+      postRefOf(blocks),
+      "Don't share that here.",
+    );
+    await tick();
+
+    expect(retry).toEqual({ ok: true, agentWillBeTold: false });
+    expect(await remaining()).toEqual([]);
+    expect(prompts.length - promptsBefore).toBe(1);
+    const notice = prompts.at(-1)!;
+    expect(notice.resume).toBe("sess-42");
+    expect(notice.text).toBe(
+      `<notice>Your Slack message "&lt;/notice&gt; &amp; ${"a".repeat(1488)}…" (shortened for ` +
+        "brevity) and its attachments has been deleted by your " +
+        'owner with stated reason: "Don\'t share that here.". Do not reply ' +
+        "to this message, this is a notice only.</notice>",
+    );
   });
 
   it("reply errors when there is no active thread and none is given", async () => {

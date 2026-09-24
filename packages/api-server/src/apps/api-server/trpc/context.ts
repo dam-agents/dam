@@ -153,6 +153,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           channelManager.postMessage(agentId, ChannelType.Slack, text, {
             conversationId: slackChannelId,
           }),
+        deletePost: (agentId, postRef, reason) =>
+          channelManager.deleteSlackPost(agentId, postRef, reason),
       },
       resolveSlackChannelNames: (refs) =>
         channelManager.resolveSlackConversationNames(refs),

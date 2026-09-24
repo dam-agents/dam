@@ -167,6 +167,15 @@ export type UnbindTelegramChatResult =
   | { ok: true; value: null }
   | { ok: false; error: UnbindTelegramChatError };
 
+export type DeleteSlackPostError =
+  | { type: "AgentNotFound" }
+  | { type: "SlackUnavailable" }
+  | { type: "DeleteRefused"; message: string };
+
+export type DeleteSlackPostResult =
+  | { ok: true; value: { agentWillBeTold: boolean } }
+  | { ok: false; error: DeleteSlackPostError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -215,4 +224,9 @@ export interface AgentsService {
     agentId: string,
     conversationId: string,
   ) => Promise<UnbindTelegramChatResult>;
+  deleteSlackPost: (
+    agentId: string,
+    postRef: string,
+    reason: string | null,
+  ) => Promise<DeleteSlackPostResult>;
 }

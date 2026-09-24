@@ -185,6 +185,26 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
+    async readMessageWindow(args) {
+      return history.filter((m) => {
+        const at = Number(m.ts);
+        const inThread = args.threadTs
+          ? m.ts === args.threadTs || m.threadTs === args.threadTs
+          : !hiddenInThread(m);
+        return (
+          inThread && at >= Number(args.oldest) && at <= Number(args.latest)
+        );
+      });
+    },
+
+    async deleteMessage(_channel, ts) {
+      history = history.filter((m) => m.ts !== ts);
+    },
+
+    async deleteFile(fileId) {
+      history = history.filter((m) => !m.fileIds?.includes(fileId));
+    },
+
     async postEphemeral(args) {
       outbound.push({
         kind: "ephemeral",

@@ -19,9 +19,12 @@ import type {
 } from "./slack-gateway.js";
 
 type BoltApp = InstanceType<typeof App>;
+
+const MESSAGE_WINDOW_PAGE = 200;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type FilesUploadV2Args = Parameters<BoltApp["client"]["files"]["uploadV2"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
 >[0];
@@ -67,6 +70,7 @@ function toSlackMessage(m: {
   reply_count?: number;
   latest_reply?: string;
   subtype?: string;
+  files?: { id?: string; mode?: string }[];
 }): SlackMessage {
   return {
     ts: m.ts,
@@ -78,6 +82,13 @@ function toSlackMessage(m: {
     ...(m.reply_count ? { replyCount: m.reply_count } : {}),
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
+    ...(m.files?.length
+      ? {
+          fileIds: m.files.flatMap((f) =>
+            f.id && f.mode !== "tombstone" ? [f.id] : [],
+          ),
+        }
+      : {}),
   };
 }
 
@@ -346,6 +357,55 @@ export function createBoltSlackGateway(
       });
     },
 
+    async readMessageWindow(args) {
+      if (!app) throw new Error("slack app not started");
+      const client = app.client;
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      const messages: SlackMessage[] = [];
+      let cursor: string | undefined;
+      do {
+        const window = {
+          token,
+          channel: args.channel,
+          oldest: args.oldest,
+          latest: args.latest,
+          inclusive: true,
+          limit: MESSAGE_WINDOW_PAGE,
+          ...(cursor ? { cursor } : {}),
+        };
+        const res = args.threadTs
+          ? await client.conversations.replies({ ...window, ts: args.threadTs })
+          : await client.conversations.history(window);
+        messages.push(...(res.messages ?? []).map(toSlackMessage));
+        cursor = res.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return messages;
+    },
+
+    async deleteMessage(channel, ts, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.chat.delete({ token, channel, ts });
+      } catch (err) {
+        if (!formatError(err).includes("message_not_found")) throw err;
+      }
+    },
+
+    async deleteFile(fileId, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.files.delete({ token, file: fileId });
+      } catch (err) {
+        const message = formatError(err);
+        if (!/file_not_found|file_deleted/.test(message)) throw err;
+      }
+    },
+
     async startStream(args): Promise<{ ts: string }> {
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(args.teamId);
@@ -506,10 +566,12 @@ export function createBoltSlackGateway(
         file: args.file,
         filename: args.filename,
         title: args.title,
-        initial_comment: args.initialComment,
+        ...(args.blocks ? { blocks: args.blocks } : {}),
       };
       await app.client.files.uploadV2(
-        args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
+        (args.threadTs
+          ? { ...upload, thread_ts: args.threadTs }
+          : upload) as FilesUploadV2Args,
       );
     },
 
