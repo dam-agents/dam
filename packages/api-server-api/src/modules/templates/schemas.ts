@@ -38,6 +38,7 @@ export const harnessFamilySchema = z.enum([
   "codex",
   "pi",
   "bob",
+  "mock",
 ]);
 
 export const templateSpecSchema = z

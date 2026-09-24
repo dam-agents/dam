@@ -136,11 +136,27 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     maxFiles: config.kbShareMaxFiles,
   };
 
+  const composeSkills = (owner: string) =>
+    composeSkillsModule({
+      agentStateCache: deps.agentStateCache,
+      surface: "mcp",
+      api,
+      namespace: config.namespace,
+      owner,
+      db,
+      seedSources,
+      brandName: config.brand.name,
+      runtimeMutator,
+      templatesRepo,
+      runtimeProgress,
+    });
+
   const invocationsServiceFor = (owner: string) =>
     composeInvocationsForOwner({
       db,
       owner,
       agents: agentsServiceFor(owner),
+      skills: composeSkills(owner),
       runtimeMutator,
       wakeAgent,
       targetAdmission: createTargetAdmission({
@@ -187,20 +203,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     publishLimits,
   });
 
-  const composeSkills = (owner: string) =>
-    composeSkillsModule({
-      agentStateCache: deps.agentStateCache,
-      surface: "mcp",
-      api,
-      namespace: config.namespace,
-      owner,
-      db,
-      seedSources,
-      brandName: config.brand.name,
-      runtimeMutator,
-      templatesRepo,
-      runtimeProgress,
-    });
   const experimentsServiceFor = (owner: string) =>
     composeExperimentsForOwner({
       db,

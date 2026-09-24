@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE sources=["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+uv run --frozen --group dev ruff check src tests "$@"

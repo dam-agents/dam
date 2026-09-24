@@ -255,6 +255,7 @@ const HARNESS_LABEL: Record<HarnessFamily, string> = {
   codex: "Codex",
   pi: "Pi",
   bob: "Bob",
+  mock: "Mock",
 };
 
 function harnessFamilyLabel(

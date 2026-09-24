@@ -1,5 +1,9 @@
 import type { Db } from "db";
-import type { AgentsService, InvocationsQueryService } from "api-server-api";
+import type {
+  AgentsService,
+  InvocationsQueryService,
+  SkillsService,
+} from "api-server-api";
 import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
@@ -16,6 +20,7 @@ import {
   type DriverResolution,
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
+import { createSetupFailure } from "./services/setup-failure.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -26,6 +31,7 @@ export function composeInvocationsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   targetAdmission?: TargetAdmission;
+  skills?: Pick<SkillsService, "applyEntries">;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
@@ -37,6 +43,7 @@ export function composeInvocationsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
+    ...(opts.skills ? { skills: opts.skills } : {}),
     isExperimentRunning: async (experimentId, driverAgentId) => {
       const row = await experimentsRepo.get(experimentId, opts.owner);
       return row?.status === "running" && row.driverAgentId === driverAgentId;
@@ -77,6 +84,16 @@ export function createInvocationsCleanupHook(opts: {
   agentsFor: (owner: string) => AgentsService;
 }): (agentId: string) => Promise<void> {
   return createDriverCascade({
+    repo: createInvocationsRepository(opts.db),
+    agentsFor: opts.agentsFor,
+  });
+}
+
+export function createInvocationSetupFailure(opts: {
+  db: Db;
+  agentsFor: (owner: string) => AgentsService;
+}): (agentId: string, step: string, reason: string) => Promise<void> {
+  return createSetupFailure({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
   });

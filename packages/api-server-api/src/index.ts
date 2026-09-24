@@ -72,6 +72,11 @@ export {
   agentCreateInputSchema,
   agentKindSchema,
 } from "./modules/agents/schemas.js";
+export type {
+  AgentSetup,
+  AgentSetupResources,
+  AgentSetupSeed,
+} from "./modules/agents/setup.js";
 export { isProtectedAgentEnvName } from "./modules/agents/types.js";
 export { toAgentView } from "./modules/agents/view.js";
 export type {
