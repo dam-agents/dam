@@ -189,6 +189,37 @@ describe("shipped agent manifests resolve", () => {
     });
   });
 
+  it("codex writes MCP servers and harness-config into its own config.toml", () => {
+    const r = resolveDrivers(
+      loadManifest(join(agentsDir, "codex/runtime-manifest.yaml")),
+    );
+    expect(r["mcp-entry"]).toEqual({
+      impl: "mcp-entry",
+      path: "$HOME/.codex/config.toml",
+      format: "toml",
+      keyPath: "mcp_servers",
+      urlKey: "url",
+      headersKey: "http_headers",
+    });
+    expect(r["harness-config"]).toMatchObject({
+      impl: "harness-config",
+      file: "$HOME/.codex/config.toml",
+      format: "toml",
+      keys: {
+        model: "model",
+        configOptions: { effort: "model_reasoning_effort" },
+      },
+      modelDiscovery: {
+        urlEnv: ["OPENAI_BASE_URL"],
+        pinEnv: ["OPENAI_MODEL"],
+      },
+    });
+    expect(r["harness-config"]).not.toHaveProperty(
+      "modelDiscovery.redirectEnv",
+    );
+    expect("env" in r && "skill-ref" in r && "trigger" in r).toBe(true);
+  });
+
   it("platform-base is all defaults (no harness-config)", () => {
     const r = resolveDrivers(loadManifest(baseManifest));
     expect("harness-config" in r).toBe(false);
