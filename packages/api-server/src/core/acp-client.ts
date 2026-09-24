@@ -14,6 +14,7 @@ import type {
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
+import { isPlatformMcpTool } from "./platform-mcp.js";
 import { securityLog } from "./security-log.js";
 
 const PING_INTERVAL_MS = 30_000;
@@ -248,6 +249,21 @@ function rejectOptionId(
   return refusal?.optionId ?? null;
 }
 
+function allowOnceOptionId(
+  options: readonly AcpPermissionOption[],
+): string | null {
+  const once = options.find((option) => option.kind === "allow_once");
+  return once?.optionId ?? null;
+}
+
+function permissionToolName(toolCall: unknown): string | null {
+  if (!toolCall || typeof toolCall !== "object") return null;
+  const { name, title } = toolCall as { name?: unknown; title?: unknown };
+  if (typeof name === "string" && name !== "") return name;
+  if (typeof title === "string" && title !== "") return title;
+  return null;
+}
+
 async function withAcpConnection<T>(
   url: string,
   agentId: string,
@@ -301,6 +317,25 @@ async function withAcpConnection<T>(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
+        const toolName = permissionToolName(params.toolCall);
+        const sessionId = params.sessionId ?? null;
+        const allowId = isPlatformMcpTool(toolName)
+          ? allowOnceOptionId(params.options ?? [])
+          : null;
+        if (allowId) {
+          securityLog("info", "approval.platform_tool_allow", {
+            category: "approval",
+            actor: null,
+            actorKind: "agent",
+            agentId,
+            decision: "allow",
+            reason: "platform-mcp-surface",
+            detail: { toolName, sessionId },
+          });
+          return {
+            outcome: { outcome: "selected" as const, optionId: allowId },
+          };
+        }
         const optionId = rejectOptionId(params.options ?? []);
         securityLog("warn", "approval.unattended_deny", {
           category: "approval",
@@ -309,10 +344,7 @@ async function withAcpConnection<T>(
           agentId,
           decision: "deny",
           reason: "unattended-channel-turn",
-          detail: {
-            toolName: params.toolCall?.title ?? null,
-            sessionId: params.sessionId ?? null,
-          },
+          detail: { toolName, sessionId },
         });
         return optionId
           ? { outcome: { outcome: "selected" as const, optionId } }
