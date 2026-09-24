@@ -72,6 +72,7 @@ export interface SpawnInput {
   connections: string[];
   prompt: string;
   schema: unknown;
+  label?: string;
   ttlMs?: number;
   size?: { cpu?: string; memory?: string };
   experimentSpanId?: string;
@@ -159,13 +160,21 @@ export function createInvocationsService(deps: {
       }
 
       const targetId = generateK8sName("agent");
-      const expiresAt = new Date(
-        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
-      );
+      const ttlMs = resolveInvocationTtlMs(input.ttlMs);
+      const expiresAt = new Date(now().getTime() + ttlMs);
       await deps.repo.insert({
         id: targetId,
         driverAgentId: input.driverAgentId,
+        rootDriverId: rootId,
         owner: deps.owner,
+        label: input.label ?? null,
+        prompt: input.prompt,
+        templateId: input.templateId ?? null,
+        image: input.image ?? null,
+        connections: input.connections,
+        cpu: input.size?.cpu ?? null,
+        memory: input.size?.memory ?? null,
+        ttlMs,
         resultSchema: input.schema,
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,

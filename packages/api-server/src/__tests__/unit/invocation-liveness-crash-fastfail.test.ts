@@ -20,6 +20,16 @@ function runningRow(id: string): InvocationRow {
   return {
     id,
     driverAgentId: "driver-1",
+    rootDriverId: "driver-1",
+    label: null,
+    prompt: "",
+    templateId: null,
+    image: null,
+    connections: [],
+    cpu: null,
+    memory: null,
+    ttlMs: null,
+    createdAt: new Date(),
     owner: "owner-1",
     resultSchema: null,
     result: null,
@@ -40,7 +50,6 @@ function makeSweep(
   const repo = {
     listExpiredRunning: async () => [],
     listRunning: async () => rows,
-    listAgedTerminal: async () => [],
     fail: async (id: string, reason: string) => {
       failed.push({ id, reason });
     },

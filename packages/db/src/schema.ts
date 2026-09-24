@@ -845,7 +845,16 @@ export const invocations = pgTable(
   {
     id: text("id").primaryKey(),
     driverAgentId: text("driver_agent_id").notNull(),
+    rootDriverId: text("root_driver_id").notNull(),
     owner: text("owner").notNull(),
+    label: text("label"),
+    prompt: text("prompt").notNull().default(""),
+    templateId: text("template_id"),
+    image: text("image"),
+    connections: jsonb("connections").$type<string[]>().notNull().default([]),
+    cpu: text("cpu"),
+    memory: text("memory"),
+    ttlMs: integer("ttl_ms"),
     resultSchema: jsonb("result_schema").notNull(),
     result: jsonb("result"),
     status: text("status").notNull().default("running"),
@@ -859,6 +868,7 @@ export const invocations = pgTable(
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
+    index("invocations_root_driver_idx").on(table.rootDriverId),
     index("invocations_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),
