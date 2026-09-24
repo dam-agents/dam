@@ -162,7 +162,7 @@ describe("the guide printed once connected", () => {
     const text = uiGuide("http://localhost:5555", "jan@lab").join("\n");
     expect(text).toContain("http://localhost:5555");
     expect(text).toContain(
-      'Settings → Connections → + New → Satellites → select "jan@lab"',
+      'Settings → Connections → + New → Satellites → "jan@lab" → Add to agent',
     );
   });
 });

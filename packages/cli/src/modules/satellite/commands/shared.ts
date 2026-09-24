@@ -124,7 +124,7 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
 export function uiGuide(host: string, name: string): string[] {
   return [
     `to give an agent these tools, open ${host} and go to`,
-    `  the agent's Settings → Connections → + New → Satellites → select "${name}"`,
+    `  the agent's Settings → Connections → + New → Satellites → "${name}" → Add to agent`,
   ];
 }
 
