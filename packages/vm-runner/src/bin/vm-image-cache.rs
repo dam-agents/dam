@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use anyhow::Context;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use vm_runner::cacheapi;
@@ -27,6 +28,38 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: the projected volume of the install's default agent pull Secrets, one directory per Secret in list order. Empty preloads anonymously.
     #[arg(long = "pull-secret-dir", default_value = "")]
     pull_secret_dir: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the SELinux context to put on the cache directory before anything is written there, on a host that confines its containers: the directory the kubelet creates for a hostPath carries the host's own label, which a confined runner may not read, and every tree unpacked below it inherits the label this sets. Empty leaves the label alone.
+    #[arg(long = "selinux-label", default_value = "")]
+    selinux_label: String,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sets a directory's SELinux context, as chcon would. Only Linux has one, and this binary serves only from the runner image.
+fn relabel(dir: &Path, context: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes())?;
+        // SAFETY: both names are NUL-terminated and live for the call, and the value pointer and length describe one live byte slice.
+        let rc = unsafe {
+            libc::setxattr(
+                path.as_ptr(),
+                c"security.selinux".as_ptr(),
+                context.as_ptr().cast(),
+                context.len(),
+                0,
+            )
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (dir, context);
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -45,8 +78,16 @@ fn main() -> anyhow::Result<()> {
     anyhow::ensure!(!every.is_zero(), "--interval must be positive");
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::create_dir_all(&args.image_dir)?;
-        std::fs::set_permissions(&args.image_dir, std::fs::Permissions::from_mode(0o755))?;
+        let dir = args.image_dir.display();
+        std::fs::create_dir_all(&args.image_dir)
+            .with_context(|| format!("creating the cache directory {dir}"))?;
+        if !args.selinux_label.is_empty() {
+            relabel(&args.image_dir, &args.selinux_label).with_context(|| {
+                format!("labelling the cache directory {dir} {}", args.selinux_label)
+            })?;
+        }
+        std::fs::set_permissions(&args.image_dir, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("setting the mode of the cache directory {dir}"))?;
     }
     let images: Vec<String> = args
         .images
@@ -104,7 +145,7 @@ fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    // TEST_SCENARIO: the chart's DaemonSet sets this binary's flags in a template, and a flag the binary does not know is a pod that exits on start on every node. Every `--flag` the template can pass is read from the template itself and must be one this binary defines, and the socket it names must be the one the controller tells every runner to dial.
+    // TEST_SCENARIO: the chart's DaemonSet sets this binary's flags in a template, and a flag the binary does not know is a pod that exits on start on every node. Every `--flag` the template can pass is read from the template itself and must be one this binary defines, the socket it names must be the one the controller tells every runner to dial, and the label it sets on OpenShift must be a whole SELinux context, since setxattr refuses a partial one.
     #[test]
     fn every_flag_the_chart_passes_is_known() {
         use clap::CommandFactory;
@@ -118,9 +159,25 @@ mod tests {
             .filter_map(|rest| rest.split_once('='))
             .collect();
         let names: Vec<&str> = passed.iter().map(|(name, _)| *name).collect();
-        for expected in ["image-dir", "socket", "images", "pull-secret-dir"] {
+        for expected in [
+            "image-dir",
+            "socket",
+            "images",
+            "pull-secret-dir",
+            "selinux-label",
+        ] {
             assert!(names.contains(&expected), "{names:?}");
         }
+        let label = passed
+            .iter()
+            .find(|(name, _)| *name == "selinux-label")
+            .map(|(_, value)| *value)
+            .unwrap();
+        assert_eq!(
+            label.split(':').count(),
+            4,
+            "an SELinux context is user:role:type:level, got {label:?}"
+        );
         let command = Args::command();
         for flag in &names {
             assert!(
