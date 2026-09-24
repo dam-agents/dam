@@ -52,18 +52,30 @@ export function composeInvocationsQueryForOwner(opts: {
   owner: string;
 }): InvocationsQueryService {
   const repo = createInvocationsRepository(opts.db);
+  async function ownedRowsOfRoot(driverAgentId: string) {
+    const driverRow = await repo.get(driverAgentId);
+    const root = driverRow?.rootDriverId ?? driverAgentId;
+    const rows = await repo.listByRoot(root, DELEGATION_TREE_ROW_LIMIT);
+    if (rows.length === DELEGATION_TREE_ROW_LIMIT) {
+      process.stderr.write(
+        `[invocations] delegation tree for ${root} hit the ${DELEGATION_TREE_ROW_LIMIT}-row limit\n`,
+      );
+    }
+    return rows.filter((r) => r.owner === opts.owner);
+  }
   return {
     listTargets: () => repo.listTargetsByOwner(opts.owner),
     async tree({ driverAgentId, ids }) {
-      const driverRow = await repo.get(driverAgentId);
-      const root = driverRow?.rootDriverId ?? driverAgentId;
-      const rows = await repo.listByRoot(root, DELEGATION_TREE_ROW_LIMIT);
-      if (rows.length === DELEGATION_TREE_ROW_LIMIT) {
-        process.stderr.write(
-          `[invocations] delegation tree for ${root} hit the ${DELEGATION_TREE_ROW_LIMIT}-row limit\n`,
-        );
-      }
-      const owned = rows.filter((r) => r.owner === opts.owner);
+      const owned = await ownedRowsOfRoot(driverAgentId);
+      return { nodes: buildDelegationTree(owned, ids) };
+    },
+    async running({ driverAgentId }) {
+      const owned = await ownedRowsOfRoot(driverAgentId);
+      const ids = owned
+        .filter(
+          (r) => r.driverAgentId === driverAgentId && r.status === "running",
+        )
+        .map((r) => r.id);
       return { nodes: buildDelegationTree(owned, ids) };
     },
   };
