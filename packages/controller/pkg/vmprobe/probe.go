@@ -1,4 +1,4 @@
-// UNIT_BOUNDARY_DESCRIPTION: the guest the machine API conformance suite boots. The suite sees a machine only through the machine API, whose one signal from inside the guest is Ready — the runner's own GET of /healthz on the guest's agent port. So this guest turns what the suite needs to know into that signal: it reads what its disk held at boot, and answers /healthz with 200 only if that matches what its environment says to expect. A runner that lost the disk across a stop, or kept it across a delete, then has a machine that never becomes ready. It also reports a boot id on /boot, so a caller that can reach the published port can tell a restarted guest from the one it had.
+// UNIT_BOUNDARY_DESCRIPTION: the guest the machine API conformance suite boots. The suite sees a machine only through the machine API, whose one signal from inside the guest is Ready — the runner's own GET of /healthz on the guest's agent port. So this guest turns what the suite needs to know into that signal: it reads what its disk held at boot, and answers /healthz with 200 only if that matches what its environment says to expect. A runner that lost the disk across a stop, or kept it across a delete, then has a machine that never becomes ready. It also reports a boot id on /boot, so a caller that can reach the published port can tell a restarted guest from the one it had, and its working directory on /cwd, so the suite can hold platform-init to starting the image's command where its WORKDIR says.
 package vmprobe
 
 import (
@@ -24,6 +24,7 @@ const (
 	EnvDir         = "CONFORMANCE_DIR"
 	MarkerFile     = ".conformance-marker"
 	BootPath       = "/boot"
+	WorkDirPath    = "/cwd"
 )
 
 type Guest struct {
@@ -85,6 +86,10 @@ func (g Guest) Boot() (http.Handler, error) {
 	})
 	mux.HandleFunc("GET "+BootPath, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(boot))
+	})
+	mux.HandleFunc("GET "+WorkDirPath, func(w http.ResponseWriter, _ *http.Request) {
+		cwd, _ := os.Getwd()
+		_, _ = w.Write([]byte(cwd))
 	})
 	return mux, nil
 }

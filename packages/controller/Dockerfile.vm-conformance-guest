@@ -19,4 +19,6 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM scratch
 COPY --from=builder /etc/passwd /etc/group /etc/
 COPY --from=builder /vm-conformance-guest /vm-conformance-guest
+# The suite asserts the guest starts here (vmconformance.guestWorkDir).
+WORKDIR /conformance
 ENTRYPOINT ["/vm-conformance-guest"]
