@@ -7,11 +7,10 @@ import {
 import { HEAD_GEOMETRY, type HeadGeometry } from "./geometry.js";
 import {
   AVATAR_CENTER,
-  AVATAR_VIEWBOX,
   bandEdges,
   beltEdges,
   type Box,
-  bugEyeCenter,
+  antennaCenter,
   capCurve,
   capEdge,
   chinCurve,
@@ -25,7 +24,7 @@ import {
   wingPath,
   winkLayout,
 } from "./layout.js";
-import { type AvatarTraits, avatarTraits, type Look } from "./traits.js";
+import { type AvatarTraits, avatarTraits, type EyeSpec } from "./traits.js";
 
 type Attrs = Record<string, string | number>;
 
@@ -48,19 +47,66 @@ function rect(box: Box, fill: string): string {
   return el("rect", { ...box, fill });
 }
 
-function pupil(cx: number, cy: number, r: number, ratio: number, look: Look) {
-  const size = r * ratio;
-  const reach = r - size - Math.max(r * 0.16, 1.2);
-  return el("circle", {
-    cx: cx + look.dx * reach,
-    cy: cy + look.dy * reach,
-    r: size,
-    fill: AVATAR_INK,
-  });
+const EYE_SHAPES = {
+  square: { aspect: 1, rounding: 0.4, pupilAspect: 1, pupilRounding: 0.4 },
+  goat: { aspect: 0.6, rounding: 0.8, pupilAspect: 0.32, pupilRounding: 1 },
+} as const;
+
+function roundedBox(
+  cx: number,
+  cy: number,
+  halfWidth: number,
+  halfHeight: number,
+  rounding: number,
+  fill: string,
+) {
+  return rect(
+    {
+      x: cx - halfWidth,
+      y: cy - halfHeight,
+      width: halfWidth * 2,
+      height: halfHeight * 2,
+      rx: halfHeight * rounding,
+    },
+    fill,
+  );
+}
+
+function eyeHalfSize(e: EyeSpec): [number, number] {
+  if (!e.shape) return [e.r, e.r];
+  const { aspect, rounding } = EYE_SHAPES[e.shape];
+  const corner = rounding * aspect;
+  const halfWidth = e.r / (Math.hypot(1 - corner, aspect - corner) + corner);
+  return [halfWidth, halfWidth * aspect];
+}
+
+function sclera(e: EyeSpec) {
+  if (!e.shape)
+    return el("circle", { cx: e.x, cy: e.y, r: e.r, fill: AVATAR_SCLERA });
+  const [w, h] = eyeHalfSize(e);
+  return roundedBox(
+    e.x,
+    e.y,
+    w,
+    h,
+    EYE_SHAPES[e.shape].rounding,
+    AVATAR_SCLERA,
+  );
+}
+
+function pupil(e: EyeSpec) {
+  const shape = e.shape && EYE_SHAPES[e.shape];
+  const [w, h] = eyeHalfSize(e);
+  const pw = w * e.pupil;
+  const ph = shape ? pw * shape.pupilAspect : pw;
+  const cx = e.x + e.look.dx * (w - pw - Math.max(w * 0.16, 1.2));
+  const cy = e.y + e.look.dy * (h - ph - Math.max(h * 0.16, 1.2));
+  return shape
+    ? roundedBox(cx, cy, pw, ph, shape.pupilRounding, AVATAR_INK)
+    : el("circle", { cx, cy, r: pw, fill: AVATAR_INK });
 }
 
 const SLEEP_STROKE = 4.2;
-const DASH_HEIGHT = 5.5;
 const SIREN_RADIUS = 11;
 const EAR_RADIUS = 10;
 const SOFT_CORNER = 4;
@@ -135,7 +181,7 @@ function sides(t: AvatarTraits, head: HeadGeometry): string {
   }
 }
 
-function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
+function top(t: AvatarTraits, head: HeadGeometry): string {
   const clear = head.top - AVATAR_GAP;
   const fill = t.colors.ornament;
   switch (t.top) {
@@ -177,22 +223,11 @@ function top(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
         rx: 2.5,
         fill,
       });
-    case "bug-eyes":
-      return t.bugEyes
-        .map((bug, i) => {
-          const [cx, cy] = bugEyeCenter(head, i, bug.r);
-          return sleeping
-            ? rect(
-                {
-                  x: cx - bug.r,
-                  y: cy - DASH_HEIGHT / 2,
-                  width: bug.r * 2,
-                  height: DASH_HEIGHT,
-                  rx: DASH_HEIGHT / 2,
-                },
-                fill,
-              )
-            : el("circle", { cx, cy, r: bug.r, fill });
+    case "antennas":
+      return t.antennas
+        .map((antenna, i) => {
+          const [cx, cy] = antennaCenter(head, i, antenna.r);
+          return el("circle", { cx, cy, r: antenna.r, fill });
         })
         .join("");
   }
@@ -367,19 +402,13 @@ function eyePatch(t: AvatarTraits, head: HeadGeometry): string {
 
 function face(t: AvatarTraits, head: HeadGeometry, sleeping: boolean): string {
   switch (t.face) {
-    case "blank":
-      return "";
     case "eyes": {
       const open = placeEyes(t, head).filter((_, i) => i !== t.patch);
       const eyes = sleeping
         ? open.map((e) =>
             closedEye(e.x, e.y - e.r * 0.3, e.r * 0.8, AVATAR_INK),
           )
-        : open.map(
-            (e) =>
-              el("circle", { cx: e.x, cy: e.y, r: e.r, fill: AVATAR_SCLERA }) +
-              (e.pupil > 0 ? pupil(e.x, e.y, e.r, e.pupil, e.look) : ""),
-          );
+        : open.map((e) => sclera(e) + (e.pupil > 0 ? pupil(e) : ""));
       return eyes.join("") + eyePatch(t, head);
     }
     case "visor":
@@ -503,7 +532,84 @@ function gapLines(t: AvatarTraits, head: HeadGeometry): string {
   );
 }
 
-export function avatarSvg(seed: string, sleeping = false): string {
+type Bounds = [x0: number, y0: number, x1: number, y1: number];
+
+function centered(halfWidth: number, y0: number, y1: number): Bounds {
+  return [AVATAR_CENTER - halfWidth, y0, AVATAR_CENTER + halfWidth, y1];
+}
+
+function figureBounds(t: AvatarTraits, head: HeadGeometry): Bounds {
+  const xs = head.outline.map(([x]) => x);
+  const ys = head.outline.map(([, y]) => y);
+  const parts: Bounds[] = [
+    [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+  ];
+  const clear = head.top - AVATAR_GAP;
+  switch (t.top) {
+    case "hat": {
+      const { brim, crown } = hatLayout(head);
+      parts.push([brim.x, crown.y, brim.x + brim.width, clear]);
+      break;
+    }
+    case "crown":
+      parts.push(centered(15.75, clear - 12, clear));
+      break;
+    case "siren":
+      parts.push(
+        centered(SIREN_RADIUS, clear - SIREN_RADIUS - SOFT_CORNER / 2, clear),
+      );
+      break;
+    case "bolt":
+      parts.push(centered(8, clear - 7, clear));
+      break;
+    case "antennas":
+      t.antennas.forEach(({ r }, i) => {
+        const [cx, cy] = antennaCenter(head, i, r);
+        parts.push([cx - r, cy - r, cx + r, cy + r]);
+      });
+      break;
+  }
+  const below = head.bottom + AVATAR_GAP;
+  const stacked = below + 11 + AVATAR_GAP;
+  switch (t.bottom) {
+    case "neck":
+      parts.push(centered(11, below, below + 7));
+      break;
+    case "stand":
+      parts.push(centered(16, below, stacked));
+      break;
+    case "wheels":
+      parts.push(centered(17, below, below + 10));
+      break;
+    case "stripes":
+      parts.push(centered(Math.min(21, head.halfWidth - 2), below, stacked));
+      break;
+  }
+  const inner = head.halfWidth + AVATAR_GAP;
+  const wingRadius = Math.min(8, (AVATAR_CENTER - inner - 4.5) / 2);
+  const middle = (head.top + head.bottom) / 2;
+  const side = {
+    none: null,
+    block: centered(inner + 8.5, 39, 61),
+    round: centered(inner + EAR_RADIUS + SOFT_CORNER / 2, 40, 60),
+    fins: centered(inner + FIN_REACH, 33, 66),
+    double: centered(inner + 7, 38, 58 + AVATAR_GAP),
+    wings: centered(
+      inner + 2.5 + wingRadius * 2 + SOFT_CORNER / 2,
+      head.top + 10,
+      middle + 18,
+    ),
+  }[t.sides];
+  if (side) parts.push(side);
+  return [
+    Math.min(...parts.map((b) => b[0])),
+    Math.min(...parts.map((b) => b[1])),
+    Math.max(...parts.map((b) => b[2])),
+    Math.max(...parts.map((b) => b[3])),
+  ];
+}
+
+export function avatarSvg(seed: string, sleeping = false, margin = 0): string {
   const t = avatarTraits(seed);
   const head = HEAD_GEOMETRY[t.head];
   const defs =
@@ -522,7 +628,7 @@ export function avatarSvg(seed: string, sleeping = false): string {
         gapLines(t, head),
     );
   const figure =
-    top(t, head, sleeping) +
+    top(t, head) +
     bottom(t, head) +
     sides(t, head) +
     el("path", { d: head.path, fill: t.colors.head }) +
@@ -531,9 +637,14 @@ export function avatarSvg(seed: string, sleeping = false): string {
       { "clip-path": "url(#h)" },
       overlays(t, head) + face(t, head, sleeping) + mouth(t, sleeping),
     );
+  const [x0, y0, x1, y1] = figureBounds(t, head);
+  const size = Math.max(x1 - x0, y1 - y0) / (1 - 2 * margin);
+  const viewBox = [(x0 + x1 - size) / 2, (y0 + y1 - size) / 2, size, size]
+    .map(num)
+    .join(" ");
   return el(
     "svg",
-    { xmlns: "http://www.w3.org/2000/svg", viewBox: AVATAR_VIEWBOX },
+    { xmlns: "http://www.w3.org/2000/svg", viewBox },
     el("defs", {}, defs) + el("g", { mask: "url(#g)" }, figure),
   );
 }

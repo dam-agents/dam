@@ -1,6 +1,6 @@
 // TEST_OVERVIEW: Each avatar is built once per agent name as an SVG string and cached, so a long chat or agent list renders a single cached image per name instead of rebuilding the figure. The markup must be well formed and deterministic.
 import { avatarDataUri, avatarSvg } from "api-server-api/avatar/svg";
-import { AVATAR_SCLERA, avatarTraits } from "api-server-api/avatar/traits";
+import { AVATAR_SCLERA } from "api-server-api/avatar/traits";
 import { describe, expect, it } from "vitest";
 
 const NAMES = Array.from({ length: 500 }, (_, i) => `agent-${i}`);
@@ -34,16 +34,14 @@ describe("avatarSvg", () => {
 });
 
 describe("sleeping avatar", () => {
-  // TEST_SCENARIO: A hibernating agent keeps its own figure with its eyes closed. Open sclera eyes never show, and the sleeping markup is as well formed as the awake one.
+  // TEST_SCENARIO: A hibernating agent keeps its own figure with its eyes closed, and every figure has a face to close. Open sclera eyes never show, and the sleeping markup is as well formed as the awake one.
   it("closes the eyes of a hibernating agent", () => {
     for (const name of NAMES) {
       const awake = avatarSvg(name);
       const asleep = avatarSvg(name, true);
       expect(asleep, name).not.toMatch(/NaN|undefined|Infinity/);
       expect(asleep, name).not.toContain(AVATAR_SCLERA);
-      const t = avatarTraits(name);
-      if (t.face !== "blank" || t.top === "bug-eyes")
-        expect(asleep, name).not.toBe(awake);
+      expect(asleep, name).not.toBe(awake);
     }
   });
 
