@@ -99,16 +99,6 @@ these; cite them when a user's wish conflicts (e.g. "just cron it in-process" �
   operator-only (`gh auth login --hostname <host>`) — report and stop, never work around
   it. Content the agent produces for a target stays on that target's host, whatever would
   render better elsewhere.
-- **GraphQL is proxied exactly like REST.** The gateway injects the credential per
-  *host*, not per path: one `api.github.com` filter chain carrying
-  `Authorization: Bearer <token>` covers `POST /graphql` and `GET /repos/...` alike, so
-  the `gh` subcommands that ride GraphQL (`gh pr list --json`, `gh issue list --json`,
-  `gh pr view`) work on the pod — `docs/architecture/agent-skills.md` → **Credential
-  injection on the wire**, confirmed on a dev install. Pick whichever surface answers in
-  one call: a `--json` list that GraphQL serves in a single round trip beats the same
-  data assembled from N REST calls, while REST is the shorter reach for a narrow write
-  (`gh api -X DELETE "repos/$REPO/issues/<n>/labels/<label>"`). A subcommand that does
-  fail on the pod fails for some other reason — reproduce it before writing a cause down.
 - One REST list call sees ~100 items (`per_page=100`) — usually the single batched call a
   pre-flight needs.
 - The agent acts as the account behind the token — the deployment checklist demands a
