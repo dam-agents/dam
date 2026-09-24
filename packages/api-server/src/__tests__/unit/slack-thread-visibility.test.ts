@@ -16,6 +16,8 @@ const HUMAN_REPLY_TS = "1758104000.000000";
 const LUNCH_TS = "1758108900.000000";
 const MENTION_TS = "1758108960.000000";
 
+const LONG_PARENT_TS = "1758200000.000000";
+
 const ASK = "can someone look at the staging deploy";
 const AGENT_REPLY = "on it — rolling back the migration";
 const HUMAN_REPLY = "thanks, confirmed fixed";
@@ -191,6 +193,74 @@ describe("slack thread visibility from a channel turn", () => {
     expect(early).toMatchObject({
       conversationId: BOUND,
       threadTs: "50.000000",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: A thread longer than one window, walked to its first reply.
+   * A thread that ran long is the one whose conclusion rests on what came
+   * before it, so the whole of it has to be reachable. The walk is asserted end
+   * to end — every reply once, in order, no gap where one window meets the next
+   * — because a paging bug drops messages silently and a reader cannot tell
+   * from the answer that it did. A handle belonging to another thread is
+   * refused in the same breath: satisfying one answers with a window that looks
+   * ordinary and is not, which is the same silent wrong answer from the other
+   * direction.
+   */
+  it("walks a thread longer than one window back to its first reply", async () => {
+    const h = harness();
+    const replies = Array.from({ length: 60 }, (_, i) => ({
+      ts: `${1758200001 + i}.000000`,
+      user: "U777",
+      text: `reply ${i}`,
+      threadTs: LONG_PARENT_TS,
+    }));
+    h.gw.setThreadedHistory([
+      {
+        ts: LONG_PARENT_TS,
+        user: "U999",
+        text: ASK,
+        threadTs: LONG_PARENT_TS,
+        replyCount: replies.length,
+        latestReplyTs: replies.at(-1)!.ts,
+      },
+      ...replies,
+    ]);
+
+    await h.worker.connect();
+    await h.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: MENTION_TS,
+      text: "hey agent",
+    });
+
+    const windows: { messages: string[]; hasMore: boolean; cursor?: string }[] =
+      [];
+    let cursor: string | undefined;
+    do {
+      const window = await h.worker.readThread("agent-1", {
+        threadTs: LONG_PARENT_TS,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      if ("error" in window) throw new Error(window.error);
+      windows.push(window);
+      cursor = window.cursor;
+    } while (cursor !== undefined && windows.length <= replies.length);
+
+    const opener = `U999 [${formatSlackTs(LONG_PARENT_TS)}]: ${ASK}`;
+    expect(windows.map((w) => w.messages[0])).toEqual([opener, opener]);
+    expect(windows.map((w) => w.hasMore)).toEqual([true, false]);
+    expect([...windows].reverse().flatMap((w) => w.messages.slice(1))).toEqual(
+      replies.map((r) => `U777 [${formatSlackTs(r.ts)}]: ${r.text}`),
+    );
+
+    const foreign = await h.worker.readThread("agent-1", {
+      threadTs: LONG_PARENT_TS,
+      cursor: `50.000000:${replies[30]!.ts}`,
+    });
+    expect(foreign).toMatchObject({
+      error: expect.stringContaining("not one this thread handed you"),
     });
   });
 });
