@@ -1,6 +1,6 @@
-# Bob: this agent's config environment, `mise oci build -E bob`, staged as
-# mise/conf.d/harness.bob.toml over base/base.toml. The copies name this
-# directory's rootfs/ as the oci task stages it, harness/bob/.
+# Bob: this agent's config environment, `mise oci build -E bob`. The oci
+# task stages it as mise/conf.d/harness.bob.toml over base/base.toml, with
+# this directory's rootfs/ at the same path, so copies climb out of conf.d.
 
 # Bob ships as a self-contained npm tarball outside the registry. Its release
 # is taken as-is: dist/bob.js needs no dependencies, so `npm install -g` would
@@ -18,9 +18,9 @@ rename_exe = "bob"
 PLATFORM_HARNESS = "bob"
 
 [[oci.copy]]
-host = "../../harness/bob/app"
+host = "../../bob/rootfs/app"
 image = "/app"
 
 [[oci.copy]]
-host = "../../harness/bob/usr"
+host = "../../bob/rootfs/usr"
 image = "/usr"

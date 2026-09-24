@@ -150,7 +150,7 @@ describe("sessionHistory declaration", () => {
 describe("shipped agent manifests resolve", () => {
   it("claude-code declares harness-config and inherits the built-ins", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "claude-code/runtime-manifest.yaml")),
+      loadManifest(join(agentsDir, "claude-code/rootfs/app/runtime-manifest.yaml")),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",
@@ -161,7 +161,7 @@ describe("shipped agent manifests resolve", () => {
 
   it("pi-agent declares harness-config with modelDiscovery", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "pi-agent/runtime-manifest.yaml")),
+      loadManifest(join(agentsDir, "pi-agent/rootfs/app/runtime-manifest.yaml")),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",
@@ -171,7 +171,7 @@ describe("shipped agent manifests resolve", () => {
 
   it("bob declares harness-config over keys Bob itself ignores", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "bob/runtime-manifest.yaml")),
+      loadManifest(join(agentsDir, "bob/rootfs/app/runtime-manifest.yaml")),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",

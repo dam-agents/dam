@@ -57,27 +57,27 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
   MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
-# The stage is a mise project in the layout mise reads: base/ becomes its root
-# config and rootfs, and every agent with an image.toml adds its config
-# environment (mise/conf.d/harness.<agent>.toml) and its tree (harness/<agent>).
-# The fragments' copy paths are relative to mise/conf.d/ in this layout. In the
-# repo the files keep names mise would not load, since each agent directory is
-# a config root. build/ beside them is what the host builds; git keeps no
-# empty directories, so the ones the image needs are made there too. Every
-# file the build adds is owned by --owner, the agent, which is what makes the
-# home, the trust store and the mise data dir writable in a container.
-# node_modules is left out: pnpm links the pi extension's dev dependencies into
-# its tree, and the image ships the extension's source only.
+# The stage mirrors packages/agents: base/ and every agent with an image.toml
+# keep their directories, and what mise loads by name goes where it looks for
+# it — base/miserc.toml as .miserc.toml, base/base.toml and each image.toml as
+# conf.d fragments. In the repo those files cannot carry mise's own names,
+# because every agent directory is a mise config root. build/ beside them is
+# what the host builds; git keeps no empty directories, so the ones the image
+# needs are made there too. Every file the build adds is owned by --owner, the
+# agent, which is what makes the home, the trust store and the mise data dir
+# writable in a container. node_modules is left out: pnpm links the pi
+# extension's dev dependencies into its tree, and the image ships the
+# extension's source only.
 rm -rf "$stage"
-mkdir -p "$stage/mise/conf.d" "$stage/harness"
+mkdir -p "$stage/mise/conf.d"
 cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
 cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
-cp -a "$agents/base/rootfs" "$stage/rootfs"
-for f in "$agents"/*/image.toml; do
-  a="$(basename "$(dirname "$f")")"
-  cp "$f" "$stage/mise/conf.d/harness.$a.toml"
-  mkdir -p "$stage/harness/$a"
-  tar -C "$agents/$a/rootfs" --exclude=node_modules -cf - . | tar -C "$stage/harness/$a" -xf -
+for d in "$agents/base" "$agents"/*/image.toml; do
+  [ -d "$d" ] || d="$(dirname "$d")"
+  a="$(basename "$d")"
+  [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
+  mkdir -p "$stage/$a/rootfs"
+  tar -C "$d/rootfs" --exclude=node_modules -cf - . | tar -C "$stage/$a/rootfs" -xf -
 done
 b="$stage/build"
 install -d "$b"/{app/working-dir/.agents/skills,app/working-dir/.claude,home/agent,etc/logrotate.d,etc/ssl/certs} \
@@ -126,7 +126,10 @@ fi
 # mise's apt bootstrap runs apt-get and dpkg against the host's own apt and
 # debconf caches too, so the build needs root; a CI runner has passwordless
 # sudo. What it writes as root is handed back, so the next build can reuse it.
+# out/ is made here, as this user: the build under sudo would create it as
+# root, and nothing could then remove a layout from it.
 rm -rf "$out"
+mkdir -p "$(dirname "$out")"
 if [ "$(id -u)" = 0 ]; then
   mise -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
 else

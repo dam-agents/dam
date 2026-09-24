@@ -1,6 +1,6 @@
-# Pi: this agent's config environment, `mise oci build -E pi-agent`, staged as
-# mise/conf.d/harness.pi-agent.toml over base/base.toml. The copies name this
-# directory's rootfs/ as the oci task stages it, harness/pi-agent/.
+# Pi: this agent's config environment, `mise oci build -E pi-agent`. The oci
+# task stages it as mise/conf.d/harness.pi-agent.toml over base/base.toml, with
+# this directory's rootfs/ at the same path, so copies climb out of conf.d.
 
 [tools]
 "npm:@earendil-works/pi-coding-agent" = "0.85.1"
@@ -12,9 +12,9 @@ PLATFORM_HARNESS = "pi"
 PI_SKIP_VERSION_CHECK = "1"
 
 [[oci.copy]]
-host = "../../harness/pi-agent/app"
+host = "../../pi-agent/rootfs/app"
 image = "/app"
 
 [[oci.copy]]
-host = "../../harness/pi-agent/usr"
+host = "../../pi-agent/rootfs/usr"
 image = "/usr"

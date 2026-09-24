@@ -2,7 +2,7 @@
 
 Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from [`packages/agents/base`](../base/), as its `pi-agent` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [`packages/agents`](../README.md)), as its `pi-agent` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 

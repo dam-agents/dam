@@ -1,6 +1,6 @@
-# Codex: this agent's config environment, `mise oci build -E codex`, staged as
-# mise/conf.d/harness.codex.toml over base/base.toml. The copies name this
-# directory's rootfs/ as the oci task stages it, harness/codex/.
+# Codex: this agent's config environment, `mise oci build -E codex`. The oci
+# task stages it as mise/conf.d/harness.codex.toml over base/base.toml, with
+# this directory's rootfs/ at the same path, so copies climb out of conf.d.
 
 [tools]
 "npm:@openai/codex" = "0.153.4"
@@ -12,9 +12,9 @@ PLATFORM_HARNESS = "codex"
 OPENAI_API_KEY = "dummy-placeholder"
 
 [[oci.copy]]
-host = "../../harness/codex/etc"
+host = "../../codex/rootfs/etc"
 image = "/etc"
 
 [[oci.copy]]
-host = "../../harness/codex/usr"
+host = "../../codex/rootfs/usr"
 image = "/usr"
