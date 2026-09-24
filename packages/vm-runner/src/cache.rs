@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
@@ -111,12 +112,19 @@ pub fn dir_size(path: &Path) -> u64 {
 
 // UNIT_BOUNDARY_DESCRIPTION: publishes what this process holds, as names relative to the image directory, one per line, sorted. An entry of the first format is a bare name and one under the digest root carries the root, so a reader that joins a name to the directory finds either. Written to a `.new` file and renamed, because a reader that caught a partial write would read a shorter claim than the truth and evict what it did not see. Failure is reported and not returned: a runner that cannot publish still runs its machines, and the cost is that another may evict an image it holds.
 pub fn publish_holders(image_dir: &Path, runner_id: &str, held: &BTreeSet<PathBuf>) {
+    // UNIT_BOUNDARY_DESCRIPTION: an image directory mounted read-only fails every publish the same way, on every operation; the failure is said once, and again only after a publish succeeded in between.
+    static UNPUBLISHED: AtomicBool = AtomicBool::new(false);
+    let unpublished = |e: std::io::Error| {
+        if !UNPUBLISHED.swap(true, Ordering::Relaxed) {
+            tracing::warn!(error = %e, "image cache: cannot publish this runner's claims");
+        }
+    };
     if runner_id.is_empty() {
         return;
     }
     let dir = image_dir.join(HOLDERS_DIR);
     if let Err(e) = fs::create_dir_all(&dir) {
-        tracing::warn!(error = %e, "image cache: cannot publish this runner's claims");
+        unpublished(e);
         return;
     }
     let mut names: Vec<String> = held
@@ -129,12 +137,15 @@ pub fn publish_holders(image_dir: &Path, runner_id: &str, held: &BTreeSet<PathBu
     let path = dir.join(runner_id);
     let staged = dir.join(format!("{runner_id}.new"));
     if let Err(e) = fs::write(&staged, names.join("\n")) {
-        tracing::warn!(error = %e, "image cache: cannot publish this runner's claims");
+        unpublished(e);
         return;
     }
-    if let Err(e) = fs::rename(&staged, &path) {
-        let _ = fs::remove_file(&staged);
-        tracing::warn!(error = %e, "image cache: cannot publish this runner's claims");
+    match fs::rename(&staged, &path) {
+        Ok(()) => UNPUBLISHED.store(false, Ordering::Relaxed),
+        Err(e) => {
+            let _ = fs::remove_file(&staged);
+            unpublished(e);
+        }
     }
 }
 

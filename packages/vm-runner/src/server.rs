@@ -897,11 +897,12 @@ impl Server {
             self.watch_boot(id, &mut status, no_failure);
         }
         if status.state == STATE_RUNNING {
-            locked(&self.inner)
-                .health
-                .entry(id.to_string())
-                .or_default()
-                .observed_running(status.ready, SystemTime::now());
+            let now = SystemTime::now();
+            let mut inner = locked(&self.inner);
+            let booting = inner.started_at.contains_key(id);
+            let health = inner.health.entry(id.to_string()).or_default();
+            health.observed_running(status.ready, now);
+            status.ready = status.ready || (!booting && health.within_grace(now));
         }
         status
     }

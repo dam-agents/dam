@@ -11,6 +11,9 @@ use crate::state::is_image_ref;
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. Both halves of the condition matter and neither means anything alone: a machine that has never answered is still booting, and one that answered a moment ago is simply between checks.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Only quiet longer than this reaches the controller as unready; quiet longer than UNHEALTHY_RESTART restarts.
+pub const READY_GRACE: Duration = Duration::from_secs(10);
+
 // UNIT_BOUNDARY_DESCRIPTION: what the runner is about to do to a machine, and whether it is doing it because the guest stopped answering rather than because its shape changed. The two produce the same operation and must be told apart afterwards: one is a restart the controller asked for, the other is a machine the runner gave up on, and only the second is worth counting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Plan {
@@ -41,6 +44,15 @@ impl Health {
     // UNIT_BOUNDARY_DESCRIPTION: clears the quiet mark, and only that, because an operation is now running against this machine and the silence it has been keeping belongs to the machine that operation is replacing. `ever_ready` survives: a machine that has answered once is still one that can be given up on. Without this an unhealthy restart is a loop — the restart begins, the guest is not ready yet, the old quiet mark still stands, and the very next decision gives up on it again.
     pub fn operation_started(&mut self) {
         self.quiet_since = None;
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether a machine that has answered is still reported ready: quiet, but for no longer than READY_GRACE. Asked only of a boot that has answered — before that a miss is the boot still running, not a guest gone quiet, and a restart's new guest must not be ready on the old one's answers.
+    pub fn within_grace(&self, now: SystemTime) -> bool {
+        self.ever_ready
+            && self.quiet_since.is_some_and(|since| {
+                now.duration_since(since)
+                    .is_ok_and(|quiet| quiet <= READY_GRACE)
+            })
     }
 
     pub fn dead_for_long(&self, now: SystemTime) -> bool {
