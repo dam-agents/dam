@@ -24,3 +24,4 @@ run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
 [tasks.test]
 extends = "ts:test"
 run = "pnpm exec vitest run --config vitest.unit.config.ts"
+sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/vocabulary.json"]
