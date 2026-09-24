@@ -32,6 +32,8 @@ export {
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
   invocationViewSchema,
+  invocationsTreeInputSchema,
+  INVOCATIONS_TREE_MAX_IDS,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
@@ -43,6 +45,8 @@ export type {
   InvocationStatus,
   InvocationTarget,
   InvocationsQueryService,
+  InvocationsTreeInput,
+  DelegationNode,
 } from "./modules/invocations/types.js";
 
 export type {

@@ -229,7 +229,7 @@ under the card (fine for short children, breaks for long transcripts).
 |----|-------|-------|------------|
 | 01 | ✅ Design pass | Mockups of the Delegation block and the child view; agreed component spec written back here | — |
 | 02 | ✅ Durable delegation record | Drop the ten-minute row delete; add the missing columns; cleanup follows the root driver; docs | — |
-| 03 | Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
+| 03 | ✅ Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
 | 04 | Delegation read path | `invocations.tree` | 02 |
 | 05 | Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |
 | 06 | Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
