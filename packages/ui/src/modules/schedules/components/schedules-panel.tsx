@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -11,6 +12,7 @@ import type { Schedule } from "../../../types.js";
 import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
+import { isPastOnce } from "../lib/once-schedule.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
@@ -29,12 +31,32 @@ export function SchedulesPanel({
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
+  const upcoming = schedules.filter((s) => !isPastOnce(s));
+  const past = schedules
+    .filter(isPastOnce)
+    .sort((a, b) =>
+      (b.status?.lastRun ?? "").localeCompare(a.status?.lastRun ?? ""),
+    );
+  const [pastOpen, setPastOpen] = useState(false);
 
   const [form, setForm] = useState<FormState>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
 
   const closeForm = () => setForm(null);
+
+  const card = (schedule: Schedule) => (
+    <ScheduleCard
+      key={schedule.id}
+      schedule={schedule}
+      isExpanded={expandedId === schedule.id}
+      onToggleExpanded={() =>
+        setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
+      }
+      onEdit={() => setForm({ mode: "edit", schedule })}
+      onViewResults={() => setResultsFor(schedule)}
+    />
+  );
 
   const skillNote = (
     <PlatformSkillNote
@@ -72,22 +94,21 @@ export function SchedulesPanel({
             </Button>
           </div>
           {skillNote}
-          <Inset className="flex flex-col gap-3">
-            {schedules.map((schedule) => (
-              <ScheduleCard
-                key={schedule.id}
-                schedule={schedule}
-                isExpanded={expandedId === schedule.id}
-                onToggleExpanded={() =>
-                  setExpandedId((prev) =>
-                    prev === schedule.id ? null : schedule.id,
-                  )
-                }
-                onEdit={() => setForm({ mode: "edit", schedule })}
-                onViewResults={() => setResultsFor(schedule)}
-              />
-            ))}
-          </Inset>
+          <Inset className="flex flex-col gap-3">{upcoming.map(card)}</Inset>
+          {past.length > 0 && (
+            <div className="mt-6">
+              <DisclosureToggle
+                open={pastOpen}
+                onToggle={() => setPastOpen((open) => !open)}
+                className="mb-3"
+              >
+                <SectionLabel>{`Past one-time tasks (${past.length})`}</SectionLabel>
+              </DisclosureToggle>
+              {pastOpen && (
+                <Inset className="flex flex-col gap-3">{past.map(card)}</Inset>
+              )}
+            </div>
+          )}
         </>
       )}
 

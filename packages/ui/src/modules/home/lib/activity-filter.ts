@@ -63,7 +63,11 @@ export function channelTypeFor(
 ): ChannelType {
   if (item.kind === "approval") return "chat";
   const { session } = item;
-  if (session.scheduleId || session.type === SessionType.ScheduleCron)
+  if (
+    session.scheduleId ||
+    session.type === SessionType.ScheduleCron ||
+    session.type === SessionType.ScheduleOnce
+  )
     return "schedule";
   if (session.mode === SessionMode.Terminal) return "terminal";
   if (session.type === SessionType.ChannelSlack) return "slack";

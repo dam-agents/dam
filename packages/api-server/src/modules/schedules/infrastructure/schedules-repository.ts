@@ -4,8 +4,11 @@ import {
   asc,
   eq,
   inArray,
+  lt,
+  ne,
   sql,
   type Db,
+  type DbTx,
   schedules as schedulesTable,
 } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
@@ -60,10 +63,26 @@ export interface SchedulesRepository {
   listAgentIds(): Promise<string[]>;
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  recordFire(
+    id: string,
+    result: string,
+    nextRun: Date | null,
+    tx?: Db | DbTx,
+  ): Promise<void>;
+  transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
+  replaceResult(id: string, expected: string, next: string): Promise<boolean>;
+  countAgentOnce(
+    agentId: string,
+    openResult: string,
+    createdSince: Date,
+  ): Promise<{ open: number; recent: number }>;
+  deleteFinishedOnceOlderThan(
+    days: number,
+    keepResult: string,
+  ): Promise<{ id: string; agentId: string; owner: string }[]>;
 }
 
 interface InternalRow {
@@ -258,8 +277,8 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
       return this.updateSpec(id, owner, spec);
     },
 
-    async recordFire(id, result, nextRun): Promise<void> {
-      await db
+    async recordFire(id, result, nextRun, tx): Promise<void> {
+      await (tx ?? db)
         .update(schedulesTable)
         .set({
           lastFiredAt: new Date(),
@@ -268,6 +287,10 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
+    },
+
+    transaction(fn) {
+      return db.transaction(fn);
     },
 
     async applyStatusPatch(id, patch): Promise<void> {
@@ -304,6 +327,60 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
+    },
+
+    async deleteFinishedOnceOlderThan(days, keepResult) {
+      return db
+        .delete(schedulesTable)
+        .where(
+          and(
+            sql`${schedulesTable.spec}->>'type' = 'once'`,
+            lt(
+              schedulesTable.lastFiredAt,
+              sql`now() - make_interval(days => ${days})`,
+            ),
+            ne(schedulesTable.lastFiredResult, keepResult),
+          ),
+        )
+        .returning({
+          id: schedulesTable.id,
+          agentId: schedulesTable.agentId,
+          owner: schedulesTable.owner,
+        });
+    },
+
+    async countAgentOnce(agentId, openResult, createdSince) {
+      const rows = await db
+        .select({
+          open: sql<number>`count(*) filter (where ${schedulesTable.lastFiredResult} is null or ${schedulesTable.lastFiredResult} = ${openResult})`,
+          recent: sql<number>`count(*) filter (where ${schedulesTable.createdAt} > ${createdSince.toISOString()}::timestamptz)`,
+        })
+        .from(schedulesTable)
+        .where(
+          and(
+            eq(schedulesTable.agentId, agentId),
+            sql`${schedulesTable.spec}->>'type' = 'once'`,
+            sql`${schedulesTable.spec}->>'createdBy' = 'agent'`,
+          ),
+        );
+      return {
+        open: Number(rows[0]?.open ?? 0),
+        recent: Number(rows[0]?.recent ?? 0),
+      };
+    },
+
+    async replaceResult(id, expected, next): Promise<boolean> {
+      const rows = await db
+        .update(schedulesTable)
+        .set({ lastFiredResult: next, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schedulesTable.id, id),
+            eq(schedulesTable.lastFiredResult, expected),
+          ),
+        )
+        .returning({ id: schedulesTable.id });
+      return rows.length > 0;
     },
 
     async setNextRun(id, nextRun): Promise<void> {

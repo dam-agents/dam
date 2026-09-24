@@ -1,3 +1,5 @@
+import { SESSION_REF_HEADER } from "agent-runtime-api";
+import { match } from "ts-pattern";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,6 +15,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  onceState,
   precheckSchema,
   quietWindowSchema,
   type SchedulesService,
@@ -129,6 +132,7 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  sessionRef?: string;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -783,10 +787,12 @@ export function createMcpSession(
 
   server.tool(
     "list_schedules",
-    "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
+    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
     {},
     async () => {
-      const list = await schedules.list(agentId);
+      const list = (await schedules.list(agentId)).map((s) =>
+        s.spec.type === "once" ? { ...s, state: onceState(s.status) } : s,
+      );
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(list, null, 2) },
@@ -797,7 +803,7 @@ export function createMcpSession(
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
+    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. For work that should happen exactly once — a check-back, a retry, a hand-off to a fresh session — use `schedule_once` instead. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
     {
       name: z
         .string()
@@ -897,9 +903,17 @@ export function createMcpSession(
                 {
                   id: sched.id,
                   name: sched.name,
-                  ...(sched.spec.type === "rrule"
-                    ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
-                    : { cron: sched.spec.cron }),
+                  ...match(sched.spec)
+                    .with({ type: "rrule" }, (spec) => ({
+                      rrule: spec.rrule,
+                      timezone: spec.timezone,
+                    }))
+                    .with({ type: "cron" }, (spec) => ({ cron: spec.cron }))
+                    .with({ type: "once" }, (spec) => ({
+                      at: spec.at,
+                      timezone: spec.timezone,
+                    }))
+                    .exhaustive(),
                   enabled: sched.spec.enabled,
                 },
                 null,
@@ -918,6 +932,98 @@ export function createMcpSession(
           ],
           isError: true,
         };
+      }
+    },
+  );
+
+  server.tool(
+    "schedule_once",
+    "Run a task EXACTLY ONCE on this agent: at a given local time, or immediately when `at` is omitted. By default it runs in a fresh session of its own; `inSession` can instead continue THIS session when it is due (a check-back that keeps your context), or run fresh and report its result back into THIS session as a new turn when it finishes. PREFER THIS over `create_schedule` for anything that should happen once — checking back on something still in flight, retrying after a transient failure, handing a task to a fresh session now — so no recurring schedule is left behind to delete. The moment is always absolute: work out the local date and time from the current time yourself, then check the resolved instant this tool returns. It shows up in the host UI as a one-time task, and the user can cancel it there (or you can, with `delete_schedule`). The number of one-time schedules you may hold and create per hour is limited.",
+    {
+      name: z
+        .string()
+        .min(1)
+        .describe("Human-readable name shown in the host UI"),
+      task: z
+        .string()
+        .min(1)
+        .describe("Prompt the new session will receive when it runs"),
+      at: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+        .optional()
+        .describe(
+          "Local wall-clock time in `timezone`, as YYYY-MM-DDTHH:mm, e.g. '2026-10-05T08:30'. Omit to run immediately.",
+        ),
+      timezone: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "IANA timezone `at` is expressed in, e.g. 'Europe/Prague'. Required with `at`.",
+        ),
+      inSession: z
+        .enum(["fresh", "continue", "report"])
+        .optional()
+        .describe(
+          "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
+        ),
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit for the agent's default. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+        ),
+    },
+    async ({ name, task, at, timezone, inSession, model }) => {
+      if (at !== undefined && !timezone)
+        return errorResult("`at` requires `timezone`.");
+      const zone = timezone ?? "UTC";
+      const mode = inSession ?? "fresh";
+      if (mode !== "fresh" && !deps.sessionRef)
+        return errorResult(
+          `inSession "${mode}" needs to know which session is calling, and this harness does not identify it; use "fresh".`,
+        );
+      try {
+        const sched = await schedules.createOnce(
+          {
+            name,
+            agentId,
+            task,
+            timezone: zone,
+            ...(at ? { at } : {}),
+            ...(model ? { model } : {}),
+          },
+          "agent",
+          mode !== "fresh" && deps.sessionRef
+            ? { sessionRef: deps.sessionRef, mode }
+            : undefined,
+        );
+        const fireAt =
+          sched.spec.type === "once" ? sched.spec.at : sched.status?.nextRun;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  id: sched.id,
+                  name: sched.name,
+                  fireAt,
+                  fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
+                  timezone: zone,
+                  inSession: mode,
+                  model: model ?? null,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
       }
     },
   );
@@ -1051,6 +1157,20 @@ export function createMcpSession(
   return { transport, server };
 }
 
+function localTime(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const f = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${f.year}-${f.month}-${f.day}T${f.hour}:${f.minute}`;
+}
+
 export interface MountMcpDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
@@ -1106,7 +1226,9 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         },
       ),
     ]);
+    const sessionRef = c.req.header(SESSION_REF_HEADER);
     const session = createMcpSession(agentId, {
+      ...(sessionRef ? { sessionRef } : {}),
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

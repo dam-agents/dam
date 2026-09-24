@@ -34,6 +34,10 @@ export function validateHasVisibleOccurrence(
 }
 
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
+  if (spec.type === "once") {
+    const at = new Date(spec.at);
+    return at > from ? at : null;
+  }
   if (spec.type === "cron") {
     try {
       const cron = CronExpressionParser.parse(spec.cron, {
@@ -74,6 +78,12 @@ export function triggerExpiry(
     return new Date(byTtl);
   }
   return new Date(Math.min(byTtl, next.getTime()));
+}
+
+export function localToInstant(local: string, tz: string): Date {
+  const wall = new Date(`${local}:00Z`);
+  if (Number.isNaN(wall.getTime())) throw new Error(`invalid time: ${local}`);
+  return toInstant(wall, tz);
 }
 
 function toWallClock(instant: Date, tz: string): Date {

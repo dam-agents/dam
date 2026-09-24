@@ -1,6 +1,7 @@
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
+import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import type { useAgentRows } from "./use-agent-rows.js";
 
 type AgentRows = ReturnType<typeof useAgentRows>;
@@ -12,7 +13,9 @@ export function useSandboxRowActions({
   const showConfirm = useStore((s) => s.showConfirm);
 
   const stopSandbox = async (agent: AgentView) => {
-    const schedules = await fetchSchedulesForAgent(agent.id);
+    const schedules = (await fetchSchedulesForAgent(agent.id)).filter(
+      isUpcoming,
+    );
     const scheduleNote =
       schedules.length > 0 ? (
         <>

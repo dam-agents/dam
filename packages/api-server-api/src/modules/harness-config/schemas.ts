@@ -18,6 +18,7 @@ export const harnessConfigStatusInputSchema = z.object({
 export const harnessConfigStatusSchema = z.object({
   supported: z.boolean(),
   catalog: harnessConfigCatalog.nullable(),
+  sessionModel: z.boolean(),
 });
 
 export const harnessConfigSettledSchema = z.object({

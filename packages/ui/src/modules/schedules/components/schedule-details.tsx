@@ -30,7 +30,11 @@ function DetailCard({
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
   const nextRun =
-    enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
+    enabled && status?.nextRun
+      ? timeUntil(status.nextRun)
+      : schedule.type === "once"
+        ? "—"
+        : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
@@ -90,9 +94,15 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
-        <DetailCard label="Session mode">
-          <span className="capitalize">{sessionMode ?? "fresh"}</span>
-        </DetailCard>
+        {schedule.type === "once" ? (
+          <DetailCard label="Model">
+            {schedule.model ?? "Agent default"}
+          </DetailCard>
+        ) : (
+          <DetailCard label="Session mode">
+            <span className="capitalize">{sessionMode ?? "fresh"}</span>
+          </DetailCard>
+        )}
       </div>
     </div>
   );

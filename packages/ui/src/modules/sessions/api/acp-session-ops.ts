@@ -101,6 +101,7 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   channel_slack: SessionType.ChannelSlack,
   channel_telegram: SessionType.ChannelTelegram,
   schedule_cron: SessionType.ScheduleCron,
+  schedule_once: SessionType.ScheduleOnce,
   experiment_execute: SessionType.ExperimentExecute,
   cli_run: SessionType.CliRun,
 };

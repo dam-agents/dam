@@ -7,6 +7,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   scheduleCreateCronInputSchema,
+  scheduleCreateOnceInputSchema,
   scheduleCreateRRuleInputSchema,
   scheduleDeleteInputSchema,
   scheduleGetInputSchema,
@@ -14,9 +15,14 @@ import {
   scheduleListInputSchema,
   scheduleResetSessionInputSchema,
   scheduleToggleInputSchema,
+  scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
-import type { Schedule } from "./types.js";
+import type { OnceSessionChoice, Schedule, ScheduleSpecOnce } from "./types.js";
+
+function onceSessionChoice(spec: ScheduleSpecOnce): OnceSessionChoice {
+  return spec.origin?.mode ?? "fresh";
+}
 
 function toView(sched: Schedule) {
   const base = {
@@ -31,22 +37,42 @@ function toView(sched: Schedule) {
     createdBy: sched.spec.createdBy,
     status: sched.status ?? null,
   };
-  if (sched.spec.type === "rrule") {
-    return {
-      ...base,
-      cron: null,
-      rrule: sched.spec.rrule,
-      timezone: sched.spec.timezone,
-      quietHours: sched.spec.quietHours ?? [],
-    };
+  const spec = sched.spec;
+  switch (spec.type) {
+    case "cron":
+      return {
+        ...base,
+        cron: spec.cron,
+        rrule: null,
+        inSession: null,
+        model: null,
+        at: null,
+        timezone: null,
+        quietHours: [],
+      };
+    case "rrule":
+      return {
+        ...base,
+        cron: null,
+        rrule: spec.rrule,
+        inSession: null,
+        model: null,
+        at: null,
+        timezone: spec.timezone,
+        quietHours: spec.quietHours ?? [],
+      };
+    case "once":
+      return {
+        ...base,
+        cron: null,
+        rrule: null,
+        inSession: onceSessionChoice(spec),
+        model: spec.model ?? null,
+        at: spec.at,
+        timezone: spec.timezone,
+        quietHours: [],
+      };
   }
-  return {
-    ...base,
-    cron: sched.spec.cron,
-    rrule: null,
-    timezone: null,
-    quietHours: [],
-  };
 }
 
 export const schedulesRouter = t.router({
@@ -92,6 +118,21 @@ export const schedulesRouter = t.router({
     .input(scheduleUpdateRRuleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.updateRRule(input);
+      if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(sched);
+    }),
+
+  createOnce: manageAgentsProcedure
+    .input(scheduleCreateOnceInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const sched = await ctx.schedules.createOnce(input);
+      return toView(sched);
+    }),
+
+  updateOnce: manageAgentsProcedure
+    .input(scheduleUpdateOnceInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const sched = await ctx.schedules.updateOnce(input);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),

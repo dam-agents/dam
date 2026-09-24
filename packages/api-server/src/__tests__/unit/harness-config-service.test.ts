@@ -88,15 +88,15 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null });
+    ).toEqual({ supported: true, catalog: null, sessionModel: false });
     expect(
       await makeService({
         capabilities: { harnessConfig: false },
       }).service.status("a1"),
-    ).toEqual({ supported: false, catalog: null });
+    ).toEqual({ supported: false, catalog: null, sessionModel: false });
     expect(
       await makeService({ capabilities: null }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null });
+    ).toEqual({ supported: true, catalog: null, sessionModel: false });
   });
 
   it("status returns the option catalog advertised on hello", async () => {
@@ -114,7 +114,7 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true, harnessConfigCatalog: catalog },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog });
+    ).toEqual({ supported: true, catalog, sessionModel: false });
   });
 
   it("rejects status for an agent the caller doesn't own", async () => {

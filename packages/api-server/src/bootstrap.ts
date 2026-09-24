@@ -91,7 +91,10 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
-import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
+import {
+  createHarnessConfigSnapshotWriter,
+  sessionModelChoices,
+} from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
@@ -1051,6 +1054,15 @@ export async function bootstrap() {
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    agentOnceLimits: {
+      maxOpen: config.onceScheduleAgentMaxOpen,
+      maxPerHour: config.onceScheduleAgentMaxPerHour,
+    },
+    sessionModelChoices: async (agentId) =>
+      sessionModelChoices(
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+      ),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -1070,7 +1082,15 @@ export async function bootstrap() {
     async (event, input) => {
       const { scheduleId, precheck } =
         event.payload as Partial<TriggerEventPayload>;
-      if (!scheduleId || !precheck) return;
+      if (!scheduleId) return;
+      if (!precheck) {
+        if (input.outcome === "failed")
+          await schedulesBoot.runner.recordOnceFailure(
+            scheduleId,
+            input.detail ?? "the one-time task could not start",
+          );
+        return;
+      }
       await schedulesBoot.runner.reportFire({
         scheduleId,
         eventId: input.eventId,
@@ -1078,6 +1098,14 @@ export async function bootstrap() {
         outcome: input.outcome,
         ...(input.detail ? { detail: input.detail } : {}),
       });
+    },
+  );
+  runtimeDelivery.registerEventLifecycleListener(
+    "trigger",
+    async (event, transition) => {
+      const { scheduleId } = event.payload as Partial<TriggerEventPayload>;
+      if (!scheduleId) return;
+      await schedulesBoot.runner.recordDelivery(scheduleId, transition);
     },
   );
 
@@ -1285,6 +1313,11 @@ export async function bootstrap() {
   });
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
+  );
+  await periodicJobs.register(
+    "schedules-once-retention",
+    24 * 60 * 60 * 1000,
+    () => schedulesBoot.retentionTick(),
   );
 
   const { readSpec: harnessReadTemplateSpec } =

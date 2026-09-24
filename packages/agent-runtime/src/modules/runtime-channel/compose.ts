@@ -67,6 +67,7 @@ export interface ComposeRuntimeChannelOpts {
   apiServerUrl: string;
   agentId: string;
   triggerDriver: TriggerSessionDriver;
+  findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
@@ -117,6 +118,9 @@ export async function composeRuntimeChannel(
       }),
       log,
       reporter,
+      ...(opts.findSessionByRef
+        ? { findSessionByRef: opts.findSessionByRef }
+        : {}),
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -199,6 +203,7 @@ export async function composeRuntimeChannel(
         events: eventKinds as never,
         harnessConfig: harnessConfigPlugin.supported,
         harnessConfigCatalog: harnessConfigPlugin.catalog,
+        sessionModel: harnessConfigPlugin.sessionModel,
         kbPublish: 2,
         liveUpdates: true,
       };

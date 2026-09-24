@@ -48,6 +48,15 @@ export interface PendingEventRow {
 
 export const DEFAULT_MAX_APPLY_ATTEMPTS = 8;
 
+const pendingEventColumns = {
+  id: runtimeEvents.id,
+  agentId: runtimeEvents.agentId,
+  kind: runtimeEvents.kind,
+  payload: runtimeEvents.payload,
+  version: runtimeEvents.version,
+  expiresAt: runtimeEvents.expiresAt,
+};
+
 export interface EventGiveUp {
   id: string;
   kind: RuntimeEventKind;
@@ -58,6 +67,7 @@ export interface ApplyTransitions {
   recovered: string[];
   gaveUp: DriverFailure[];
   eventsGaveUp: EventGiveUp[];
+  settledEvents: PendingEventRow[];
   droppedKindsChanged: boolean;
 }
 
@@ -104,7 +114,7 @@ export interface OutboxRepo {
     agentId: string,
     kinds: RuntimeEventKind[],
   ): Promise<number>;
-  deleteExpiredEvents(): Promise<number>;
+  deleteExpiredEvents(): Promise<PendingEventRow[]>;
   deleteForAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
   insertEvent(
@@ -250,6 +260,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             recovered: [],
             gaveUp: [],
             eventsGaveUp: [],
+            settledEvents: [],
             droppedKindsChanged: false,
           };
         }
@@ -265,8 +276,9 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           result.droppedContributionKinds,
         );
 
+        let settledEvents: PendingEventRow[] = [];
         if (result.settledEventIds.length > 0) {
-          await tx
+          settledEvents = (await tx
             .update(runtimeEvents)
             .set({ dispatchedAt: new Date() })
             .where(
@@ -275,7 +287,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
                 inArray(runtimeEvents.id, result.settledEventIds),
                 isNull(runtimeEvents.dispatchedAt),
               ),
-            );
+            )
+            .returning(pendingEventColumns)) as PendingEventRow[];
           await tx
             .update(runtimeEvents)
             .set({ error: null })
@@ -344,6 +357,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             recovered: [],
             gaveUp: [],
             eventsGaveUp,
+            settledEvents,
             droppedKindsChanged: false,
           };
         }
@@ -368,6 +382,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             recovered,
             gaveUp,
             eventsGaveUp,
+            settledEvents,
             droppedKindsChanged,
           };
         }
@@ -389,6 +404,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           recovered,
           gaveUp: [],
           eventsGaveUp,
+          settledEvents,
           droppedKindsChanged,
         };
       });
@@ -535,7 +551,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return [...new Set([...outbox, ...events].map((r) => r.agentId))];
     },
 
-    async deleteExpiredEvents(): Promise<number> {
+    async deleteExpiredEvents(): Promise<PendingEventRow[]> {
       const result = (await db
         .delete(runtimeEvents)
         .where(
@@ -544,8 +560,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             lt(runtimeEvents.expiresAt, sql`now()` as unknown as Date),
           ),
         )
-        .returning({ id: runtimeEvents.id })) as { id: string }[];
-      return result.length;
+        .returning(pendingEventColumns)) as PendingEventRow[];
+      return result;
     },
 
     async insertEvent(input, tx = db): Promise<void> {

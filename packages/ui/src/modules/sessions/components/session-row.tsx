@@ -119,7 +119,10 @@ export function SessionRow({
       ? "font-semibold text-foreground"
       : "font-normal text-foreground";
 
-  const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const scheduled =
+    s.type === SessionType.ScheduleCron ||
+    s.type === SessionType.ScheduleOnce ||
+    !!s.scheduleId;
   const agents = useAgentsList();
   const agent = agents.find((a) => a.id === s.agentId);
   const onboarding =

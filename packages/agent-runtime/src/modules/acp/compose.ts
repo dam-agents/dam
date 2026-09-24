@@ -12,6 +12,10 @@ import {
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
+import {
+  createPlatformMcpEntryStore,
+  type PlatformMcpEntryStore,
+} from "./infrastructure/platform-mcp-entry-store.js";
 import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
 import {
   createActiveTurnStore,
@@ -24,7 +28,9 @@ import {
 import {
   createAcpRuntime,
   type AcpRuntime,
+  type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
+import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
   type BackgroundWorkRegistry,
@@ -89,8 +95,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: SessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  platformMcpEntry: PlatformMcpEntryStore;
 } {
   const sessionChanges = createSessionChanges();
+  const platformMcpEntry = createPlatformMcpEntryStore(opts.stateBackend);
+  let reportTurn: (report: ReportableTurn) => void = () => {};
   const sessionMetadata = notifyingSessionMetadataStore(
     createSessionMetadataStore(opts.stateBackend),
     sessionChanges,
@@ -108,6 +117,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     undeliveredPrompts,
     activeTurns,
     runResults: createRunResultStore(opts.stateBackend),
+    sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
+    onReportableTurnEnded: (report) => reportTurn(report),
     spawnAgent: () =>
       createChildAgentProcess({
         command: opts.command,
@@ -131,6 +142,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
       : {}),
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
+  reportTurn = createOnceReporter({
+    driver: triggerDriver,
+    findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
+    log: (msg) => opts.log?.(msg),
+  });
   const sessions = createSessionsService({
     openCaller: () =>
       createInProcessCaller((channel) =>
@@ -149,5 +165,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    platformMcpEntry,
   };
 }

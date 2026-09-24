@@ -59,6 +59,35 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   precheck: precheckSchema.nullable().optional(),
 });
 
+const localDateTimeSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
+    "YYYY-MM-DDTHH:mm required",
+  );
+
+export const scheduleCreateOnceInputSchema = z
+  .object({
+    name: z.string().min(1),
+    agentId: z.string().min(1),
+    at: localDateTimeSchema.optional(),
+    timezone: z.string().min(1),
+    task: z.string().min(1),
+    model: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const scheduleUpdateOnceInputSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    at: localDateTimeSchema,
+    timezone: z.string().min(1),
+    task: z.string().min(1),
+    model: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const scheduleDeleteInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -107,9 +136,29 @@ const scheduleSpecRRuleSchema = z
   })
   .passthrough();
 
+const scheduleSpecOnceSchema = z
+  .object({
+    version: z.string(),
+    type: z.literal("once"),
+    at: z.string().datetime({ offset: true }),
+    timezone: z.string(),
+    origin: z
+      .object({
+        sessionRef: z.string().min(1),
+        mode: z.enum(["continue", "report"]),
+      })
+      .optional(),
+    model: z.string().optional(),
+    task: z.string().optional(),
+    enabled: z.boolean(),
+    createdBy: scheduleCreatorSchema,
+  })
+  .passthrough();
+
 export const scheduleSpecSchema = z.discriminatedUnion("type", [
   scheduleSpecCronSchema,
   scheduleSpecRRuleSchema,
+  scheduleSpecOnceSchema,
 ]);
 
 export const scheduleStatusSchema = z.object({

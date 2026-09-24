@@ -126,10 +126,26 @@ export const contribution = z.discriminatedUnion("kind", [
 ]);
 export type Contribution = z.infer<typeof contribution>;
 
+export const SESSION_REF_HEADER = "x-platform-session-ref";
+export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
+
+export const onceOriginMode = z.enum(["continue", "report"]);
+export type OnceOriginMode = z.infer<typeof onceOriginMode>;
+
+export const onceOrigin = z.object({
+  sessionRef: z.string().min(1),
+  mode: onceOriginMode,
+  name: z.string().min(1),
+});
+export type OnceOrigin = z.infer<typeof onceOrigin>;
+
 export const triggerEventPayload = z.object({
   scheduleId: z.string().min(1),
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
+  once: z.literal(true).optional(),
+  origin: onceOrigin.optional(),
+  model: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
@@ -318,6 +334,7 @@ export const capabilities = z.object({
   events: z.array(eventKind),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
+  sessionModel: z.boolean().optional(),
   kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
 });

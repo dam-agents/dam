@@ -15,6 +15,7 @@ export interface HarnessConfigChange {
 export interface HarnessConfigStatus {
   supported: boolean;
   catalog: HarnessConfigCatalog | null;
+  sessionModel: boolean;
 }
 
 export interface HarnessConfigSettled {

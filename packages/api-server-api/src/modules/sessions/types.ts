@@ -5,6 +5,7 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
+  ScheduleOnce: "schedule_once",
   ExperimentExecute: "experiment_execute",
   CliRun: "cli_run",
 } as const;
@@ -85,7 +86,11 @@ export function sessionCategoryOf(session: {
     session.type === SessionType.ChannelTelegram
   )
     return "channels";
-  if (session.type === SessionType.ScheduleCron) return "scheduled";
+  if (
+    session.type === SessionType.ScheduleCron ||
+    session.type === SessionType.ScheduleOnce
+  )
+    return "scheduled";
   if (session.type === SessionType.ExperimentExecute) return "experiments";
   if (session.type === SessionType.CliRun) return "runs";
   return "chats";

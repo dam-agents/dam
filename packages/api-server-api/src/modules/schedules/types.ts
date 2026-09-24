@@ -3,7 +3,9 @@ import type {
   precheckVerdictSchema,
   quietWindowSchema,
   scheduleCreateCronInputSchema,
+  scheduleCreateOnceInputSchema,
   scheduleCreateRRuleInputSchema,
+  scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
 
@@ -35,7 +37,31 @@ export interface ScheduleSpecRRule {
   createdBy: ScheduleCreator;
 }
 
-export type ScheduleSpec = ScheduleSpecCron | ScheduleSpecRRule;
+export type OnceSessionChoice = "fresh" | "continue" | "report";
+
+export interface ScheduleOnceOrigin {
+  sessionRef: string;
+  mode: Exclude<OnceSessionChoice, "fresh">;
+}
+
+export interface ScheduleSpecOnce {
+  version: string;
+  type: "once";
+  at: string;
+  timezone: string;
+  origin?: ScheduleOnceOrigin;
+  model?: string;
+  task?: string;
+  precheck?: undefined;
+  sessionMode?: undefined;
+  enabled: boolean;
+  createdBy: ScheduleCreator;
+}
+
+export type ScheduleSpec =
+  | ScheduleSpecCron
+  | ScheduleSpecRRule
+  | ScheduleSpecOnce;
 
 export interface ScheduleStatus {
   lastRun?: string;
@@ -66,6 +92,12 @@ export type ScheduleCreateRRuleInput = z.infer<
 export type ScheduleUpdateRRuleInput = z.infer<
   typeof scheduleUpdateRRuleInputSchema
 >;
+export type ScheduleCreateOnceInput = z.infer<
+  typeof scheduleCreateOnceInputSchema
+>;
+export type ScheduleUpdateOnceInput = z.infer<
+  typeof scheduleUpdateOnceInputSchema
+>;
 
 export interface SchedulesService {
   list: (agentId: string) => Promise<Schedule[]>;
@@ -80,6 +112,12 @@ export interface SchedulesService {
     createdBy?: ScheduleCreator,
   ) => Promise<Schedule>;
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
+  createOnce: (
+    input: ScheduleCreateOnceInput,
+    createdBy?: ScheduleCreator,
+    origin?: ScheduleOnceOrigin,
+  ) => Promise<Schedule>;
+  updateOnce: (input: ScheduleUpdateOnceInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
