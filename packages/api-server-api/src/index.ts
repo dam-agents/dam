@@ -111,6 +111,14 @@ export {
   agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
 export {
+  agentSetupSchema,
+  agentSetupSeedSchema,
+  agentSetupShape,
+  type AgentSetup,
+  type AgentSetupResources,
+  type AgentSetupSeed,
+} from "./modules/agents/setup.js";
+export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";

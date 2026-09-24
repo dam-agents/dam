@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { agentNameSchema } from "../agents/schemas.js";
 import {
-  agentNameSchema,
-  agentSizeSchema,
-  storageQuantitySchema,
-} from "../agents/schemas.js";
+  agentSetupEnvVarSchema,
+  agentSetupInstallSchema,
+  agentSetupResourcesSchema,
+  agentSetupShape,
+  agentSetupSkillSchema,
+} from "../agents/setup.js";
 import {
   isProviderPresetType,
   type ProviderPresetType,
@@ -60,10 +63,7 @@ export const starterKitScheduleSchema = z.union([
   starterKitRRuleScheduleSchema,
 ]);
 
-export const starterKitExternalSkillSchema = z.object({
-  source: z.url(),
-  name: z.string().min(1),
-});
+export const starterKitExternalSkillSchema = agentSetupSkillSchema;
 
 export const starterKitBundledSkillsSchema = z.object({
   path: z.string().min(1),
@@ -74,10 +74,7 @@ export const resolvedSkillSchema = z.object({
   description: z.string(),
 });
 
-export const starterKitEnvVarSchema = z.object({
-  name: z.string().min(1),
-  value: z.string(),
-});
+export const starterKitEnvVarSchema = agentSetupEnvVarSchema;
 
 const providerListSchema = z.array(
   z.custom<ProviderPresetType>(
@@ -96,12 +93,9 @@ export const starterKitKnowledgeBaseSchema = z.object({
   shareRoots: z.array(z.string().min(1)).min(1).max(20),
 });
 
-export const starterKitInstallSchema = z.object({
-  command: z.string().min(1),
-});
+export const starterKitInstallSchema = agentSetupInstallSchema;
 
-export const starterKitResourcesSchema = agentSizeSchema.extend({
-  storage: storageQuantitySchema.optional(),
+export const starterKitResourcesSchema = agentSetupResourcesSchema.extend({
   note: z.string().min(1).optional(),
 });
 
@@ -120,10 +114,10 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
-  backend: z.literal("vm").optional(),
+  backend: agentSetupShape.backend,
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
-  install: starterKitInstallSchema.optional(),
+  install: agentSetupShape.install,
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   providers: providerListSchema.min(1).optional(),
   seed: z
@@ -155,9 +149,9 @@ export const starterKitSchema = z.object({
   connections: z.array(starterKitConnectionRequirementSchema).default([]),
   channels: z.array(starterKitChannelSchema).default([]),
   schedules: z.array(starterKitScheduleSchema).default([]),
-  skills: z.array(starterKitExternalSkillSchema).default([]),
+  skills: agentSetupShape.skills,
   bundledSkills: starterKitBundledSkillsSchema.optional(),
-  env: z.array(starterKitEnvVarSchema).default([]),
+  env: agentSetupShape.env,
   hibernationTimeoutMin: z.number().int().min(0).optional(),
 });
 

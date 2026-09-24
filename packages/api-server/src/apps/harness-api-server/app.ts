@@ -108,11 +108,27 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
 
+  const skillsFor = (owner: string) =>
+    composeSkillsModule({
+      agentStateCache: deps.agentStateCache,
+      surface: "mcp",
+      api,
+      namespace: config.namespace,
+      owner,
+      db,
+      seedSources,
+      brandName: config.brand.name,
+      runtimeMutator,
+      templatesRepo,
+      runtimeProgress,
+    });
+
   const invocationsServiceFor = (owner: string) =>
     composeInvocationsForOwner({
       db,
       owner,
       agents: agentsServiceFor(owner),
+      skills: skillsFor(owner),
       runtimeMutator,
       wakeAgent,
       targetAdmission: createTargetAdmission({
@@ -200,20 +216,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     sessionDirectory,
     kbPublishGate,
-    composeSkills: (owner) =>
-      composeSkillsModule({
-        agentStateCache: deps.agentStateCache,
-        surface: "mcp",
-        api,
-        namespace: config.namespace,
-        owner,
-        db,
-        seedSources,
-        brandName: config.brand.name,
-        runtimeMutator,
-        templatesRepo,
-        runtimeProgress,
-      }),
+    composeSkills: skillsFor,
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({
         boot: schedulesBoot,

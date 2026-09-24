@@ -59,7 +59,8 @@
             "claude-code",
             "codex",
             "pi",
-            "bob"
+            "bob",
+            "mock"
           ]
         },
         "providers": {
@@ -134,7 +135,8 @@
           "claude-code",
           "codex",
           "pi",
-          "bob"
+          "bob",
+          "mock"
         ]
       }
     },

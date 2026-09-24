@@ -68,19 +68,29 @@ async function sentinelExists(path: string): Promise<boolean> {
   }
 }
 
-async function runCommand(
+const TAIL_LINES = 10;
+const TAIL_CHARS = 500;
+
+export async function runCommand(
   command: string,
   cwd: string,
   log: (msg: string) => void,
 ): Promise<void> {
   const argv = ["bash", "-lc", command];
+  const tail: string[] = [];
   const result = await runOnce({
     command: argv,
     cwd,
     timeoutMs: COMMAND_TIMEOUT_MS,
-    onLine: (line) => log(`[workspace-command] ${line}`),
+    onLine: (line) => {
+      log(`[workspace-command] ${line}`);
+      tail.push(line);
+      if (tail.length > TAIL_LINES) tail.shift();
+    },
   });
   if (!result.ok) {
-    throw new Error(describeFailure("workspace command", result.error));
+    const output = tail.join("\n").trim().slice(-TAIL_CHARS);
+    const reason = describeFailure("workspace command", result.error);
+    throw new Error(output ? `${reason}: ${output}` : reason);
   }
 }

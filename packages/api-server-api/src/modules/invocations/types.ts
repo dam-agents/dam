@@ -5,7 +5,7 @@ import type {
   spawnInvocationResponseSchema,
 } from "./schemas.js";
 
-export type SpawnInvocationRequest = z.infer<
+export type SpawnInvocationRequest = z.input<
   typeof spawnInvocationRequestSchema
 >;
 export type SpawnInvocationResponse = z.infer<
