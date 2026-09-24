@@ -24,12 +24,13 @@ struct Updated {
     storage_gib: i32,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.
+// UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state and the image its record names in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.
 #[derive(Default)]
 struct Fake {
     states: Mutex<HashMap<String, State>>,
     calls: Mutex<Vec<String>>,
     created: Mutex<HashMap<String, (String, Option<ImageLaunch>)>>,
+    images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
@@ -65,12 +66,16 @@ impl Runtime for Fake {
             id.to_string(),
             (machine.image.to_string(), machine.launch.cloned()),
         );
+        locked(&self.images).insert(id.to_string(), machine.image.to_string());
         locked(&self.states).insert(id.to_string(), State::Stopped);
         Ok(())
     }
 
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
         self.record(format!("update {id}"));
+        if let Some((image, _)) = update.image {
+            locked(&self.images).insert(id.to_string(), image.to_string());
+        }
         locked(&self.updated).push(Updated {
             image: update.image.map(|(image, _)| image.to_string()),
             allow_cidrs: update.desired.allow_cidrs.clone(),
@@ -100,6 +105,13 @@ impl Runtime for Fake {
         self.record(format!("delete {id}"));
         locked(&self.states).remove(id);
         Ok(())
+    }
+
+    fn image_present(&self, id: &str) -> anyhow::Result<bool> {
+        Ok(locked(&self.images)
+            .get(id)
+            .map(Path::new)
+            .is_none_or(|image| !image.is_absolute() || image.exists()))
     }
 
     fn console_tail(&self, _id: &str) -> String {
@@ -391,6 +403,38 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     assert_eq!(
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
+}
+
+// TEST_SCENARIO: a machine's record names the cache tree it boots by path, read at every start. A tree gone from under a stopped machine — the image directory moved or relaid between runner releases — is resolved again when the machine next starts, its record moved to the new tree and its digest recorded again; without that the machine fails every start until its image changes, which for a hibernated agent is never. The stored spec has not changed, so nothing else may trigger it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_whose_tree_is_gone_resolves_its_image_again() {
+    let h = Harness::new("stale-tree");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    let tree = h.entry("m1");
+    let fetches = h.crane_calls();
+    fs::remove_dir_all(&tree).unwrap();
+    fs::remove_file(h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE)).unwrap();
+
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        ["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
+    assert!(h.crane_calls() > fetches, "the image was not fetched again");
+    assert!(
+        tree.join(ROOTFS_DIR).is_dir(),
+        "the tree was not unpacked again"
+    );
+    assert_eq!(
+        h.fake.last_update().image.map(PathBuf::from),
+        Some(h.entry("m1").join(ROOTFS_DIR)),
+        "the record was not moved to the new tree"
     );
 }
 

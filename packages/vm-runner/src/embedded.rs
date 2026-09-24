@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use smolvm::agent::{state_probe, vm_data_dir, HostMount, PortMapping, VmResources};
 use smolvm::config::{RecordState, VmRecord};
-use smolvm::data::image_source::{classify, resolve, ResolvedImage};
+use smolvm::data::image_source::{classify, packed_layers_dir_for_ref, resolve, ResolvedImage};
 use smolvm::db::SmolvmDb;
 use smolvm::embedded::{EmbeddedRuntime, MachineSpec as SmolvmSpec};
 use smolvm::network::NetworkBackend;
@@ -172,6 +172,18 @@ impl Runtime for Smolvm {
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a `local-dir:` or `local:` reference is mapped back to its host directory the way a start maps it, so this answers exactly what that start would find.
+    fn image_present(&self, id: &str) -> anyhow::Result<bool> {
+        let record = self
+            .record(id)?
+            .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+        Ok(record
+            .image
+            .as_deref()
+            .and_then(packed_layers_dir_for_ref)
+            .is_none_or(|dir| dir.is_dir()))
     }
 
     fn console_tail(&self, id: &str) -> String {

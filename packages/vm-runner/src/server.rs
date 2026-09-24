@@ -562,7 +562,7 @@ impl Server {
         self.start_machine(id, Action::Create)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. The stored spec is what the record holds, so it is written as the record is, before the boot: a boot that fails leaves the next action comparing against the shape the machine really has. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
+    // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. The stored spec is what the record holds, so it is written as the record is, before the boot: a boot that fails leaves the next action comparing against the shape the machine really has. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The image is also resolved again when the record's tree is gone from the host — evicted, or an image directory moved or relaid under a stopped machine — because a start boots the path the record names and would otherwise fail every time until the image changed. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
     fn reshape(
         &self,
         id: &str,
@@ -578,7 +578,7 @@ impl Server {
         )?;
         let applied = read_spec(&self.config.state_dir, id);
         let image = match &applied {
-            Some(applied) if applied.image == spec.image => None,
+            Some(applied) if applied.image == spec.image && self.runtime.image_present(id)? => None,
             _ => Some(self.resolve(spec, auths)?),
         };
         let port = state::port(&self.config.state_dir, id);
