@@ -191,7 +191,7 @@ export function McpCreatePane({
                 <code className="whitespace-nowrap">
                   {cli} satellite --help
                 </code>{" "}
-                to forward it here.
+                to learn how to forward it here.
               </>
             }
           />
