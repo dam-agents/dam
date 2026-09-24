@@ -1,6 +1,4 @@
-# Pi: this agent's config environment, `mise oci build -E pi-agent`. The oci
-# task stages it as mise/conf.d/harness.pi-agent.toml over base/base.toml, with
-# this directory's rootfs/ at the same path, so copies climb out of conf.d.
+# The pi-agent config environment over base/base.toml: mise -E pi-agent.
 
 [tools]
 "npm:@earendil-works/pi-coding-agent" = "0.85.1"

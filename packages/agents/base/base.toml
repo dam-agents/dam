@@ -1,11 +1,5 @@
-# What every agent image built with `mise oci` shares: the config that always
-# loads. Each such agent is a config environment of its own, from its
-# image.toml, and `mise oci build -E <agent>` builds its image. The image task
-# stages this file as mise/conf.d/base.toml, the agents' image.toml files
-# beside it, and agent-runtime built into build/, all outside the repo.
-#
-# Every tool is baked in, with no lazy installs or tool shims. It runs on both
-# backends: as the agent user (65532) in a container, as root on a machine.
+# Shared by every `mise oci` agent image; each agent's image.toml is a config
+# environment over it. Staged by //packages/agents:image as mise/conf.d/base.toml.
 
 [settings]
 experimental = true
@@ -14,7 +8,6 @@ npm.package_manager = "npm"
 python.compile = false
 
 [tools]
-# 26.8.2 and later bundle npm 11.19.1, so no hook edits the install.
 node = "26"
 pnpm = "12.3.4"
 jq = "latest"
@@ -24,13 +17,9 @@ gh = "2.101.0"
 uv = "latest"
 python = "3.12"
 kubectl = "latest"
-# Neither daemon is started for the agent: /etc/docker/daemon.json and
-# /etc/rancher/k3s/config.yaml put their data in the home, the one path on the
-# machine's disk, and AGENTS.md says how to start them.
 k3s = "latest"
 
-# Docker's static bundle (dockerd, containerd 2.x, runc, docker-proxy) rather
-# than Debian's docker.io, which is a release line behind.
+# The static bundle: trixie's docker.io is a release line behind.
 [tools."http:docker"]
 version = "29.8.1"
 
@@ -38,9 +27,7 @@ version = "29.8.1"
 linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
 linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/docker-{{version}}.tgz" }
 
-# Applied by `mise oci build` into a side rootfs with the host's apt-get, maintainer
-# scripts included: the NSS module the agent account needs, libatomic, which
-# node 26 links against, and the usual command-line tools.
+# libatomic1 for node 26, libnss-extrausers for the agent account.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
@@ -60,10 +47,8 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 "apt:zip" = "latest"
 
 [oci]
-# Docker Hub's library image through Google's mirror of it, which CI runners
-# pull without Docker Hub's anonymous rate limit.
+# Google's mirror: no Docker Hub rate limit on CI.
 from = "mirror.gcr.io/library/debian:trixie-slim"
-# The MISE_DATA_DIR the harness scripts and manifests name.
 mount_point = "/usr/local/share/mise"
 user = "65532"
 workdir = "/app"
@@ -71,8 +56,7 @@ entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 cmd = ["node", "dist/server.js"]
 
 [oci.env]
-# Replaces the base image's PATH rather than extending it, and the tool bin
-# directories are prepended to it at build time.
+# mise prepends the tool bin directories.
 PATH = "/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 HOME = "/home/agent"
 SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
@@ -80,12 +64,8 @@ REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
 
-[oci.labels]
-"org.opencontainers.image.description" = "Debian agent image built with mise oci"
-
-# Copy paths are relative to mise/conf.d/, where the image task stages this file. A copy cannot target / itself, so each
-# top-level directory is its own layer; a harness fragment's copies come after
-# these and replace what they share.
+# Relative to mise/conf.d/. A copy cannot target /, hence one per directory;
+# an agent's copies come later and win.
 [[oci.copy]]
 host = "../../base/rootfs/app"
 image = "/app"
@@ -102,8 +82,7 @@ image = "/usr"
 host = "../../base/rootfs/var"
 image = "/var"
 
-# What the image task builds on the host: agent-runtime, driver-sdk, the empty
-# directories git cannot keep, and any tool-bin links a harness needs.
+# Built on the host by the image task.
 [[oci.copy]]
 host = "../../build/app"
 image = "/app"

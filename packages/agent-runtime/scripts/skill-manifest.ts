@@ -15,11 +15,6 @@ const repoRoot = path.resolve(
 );
 const MANIFEST_REL =
   "packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json";
-const PREVIOUS_MANIFEST_RELS = ["packages/platform-base/skills-manifest.json"];
-const PREVIOUS_SKILL_PARENTS = [
-  "packages/platform-base/skills",
-  "packages/platform-base/dam-skills",
-];
 const manifestFile = path.join(repoRoot, MANIFEST_REL);
 
 function git(args: string[]): string {
@@ -44,16 +39,15 @@ function appendOnlyBaseRev(): string {
 }
 
 function baselineManifest(baseRev: string): ShippedSkillManifest | undefined {
-  const rel = [MANIFEST_REL, ...PREVIOUS_MANIFEST_RELS].find(
-    (r) => git(["ls-tree", baseRev, "--", r]).trim() !== "",
-  );
-  if (rel === undefined) return undefined;
+  if (git(["ls-tree", baseRev, "--", MANIFEST_REL]).trim() === "") {
+    return undefined;
+  }
   const parsed = parseShippedSkillManifest(
-    JSON.parse(git(["show", `${baseRev}:${rel}`])),
+    JSON.parse(git(["show", `${baseRev}:${MANIFEST_REL}`])),
   );
   if (!parsed.ok) {
     console.error(
-      `baseline ${rel} at ${baseRev.slice(0, 12)} failed schema validation: ${parsed.error.reason}`,
+      `baseline ${MANIFEST_REL} at ${baseRev.slice(0, 12)} failed schema validation: ${parsed.error.reason}`,
     );
     process.exit(1);
   }
@@ -68,18 +62,17 @@ function gitBuffer(args: string[]): Buffer {
 }
 
 function skillSourceParents(): string[] {
-  const parents: string[] = [];
   const agentsDir = path.join(repoRoot, "packages/agents");
-  for (const ent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-    if (!ent.isDirectory()) continue;
-    parents.push(
-      path.posix.join("packages/agents", ent.name, "workspace/.agents/skills"),
-      path.posix.join("packages/agents", ent.name, "dam-skills"),
-      path.posix.join("packages/agents", ent.name, "rootfs/app/working-dir/.agents/skills"),
-      path.posix.join("packages/agents", ent.name, "rootfs/usr/local/share/dam-skills"),
+  return fs
+    .readdirSync(agentsDir, { withFileTypes: true })
+    .filter((ent) => ent.isDirectory())
+    .flatMap((ent) =>
+      [
+        "workspace/.agents/skills",
+        "rootfs/app/working-dir/.agents/skills",
+        "rootfs/usr/local/share/dam-skills",
+      ].map((sub) => path.posix.join("packages/agents", ent.name, sub)),
     );
-  }
-  return parents;
 }
 
 function currentSkillDirs(): { name: string; absDir: string }[] {
@@ -177,7 +170,7 @@ async function check(): Promise<void> {
 
 function historicalSkillDirs(): string[] {
   const dirs = new Set<string>();
-  for (const parent of [...skillSourceParents(), ...PREVIOUS_SKILL_PARENTS]) {
+  for (const parent of skillSourceParents()) {
     const listing = git([
       "log",
       "--format=",

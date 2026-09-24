@@ -9,8 +9,7 @@
 # With CI_IMAGES_BUILD=1 (a PR) it builds the images on this runner, from the
 # registry buildcache, while the cluster comes up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
-# would pull what it pushed. The mock is built with `mise oci`, so this job
-# installs the workspace's dependencies before starting this.
+# would pull what it pushed.
 #
 # By path, like image:resolve. Needs GH_TOKEN with actions:read,
 # GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_SHA and IMAGE_PREFIX.

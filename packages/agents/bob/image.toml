@@ -1,11 +1,7 @@
-# Bob: this agent's config environment, `mise oci build -E bob`. The oci
-# task stages it as mise/conf.d/harness.bob.toml over base/base.toml, with
-# this directory's rootfs/ at the same path, so copies climb out of conf.d.
+# The bob config environment over base/base.toml: mise -E bob.
 
-# Bob ships as a self-contained npm tarball outside the registry. Its release
-# is taken as-is: dist/bob.js needs no dependencies, so `npm install -g` would
-# only add its optional ones (node-pty, @vscode/ripgrep, officecli), which this
-# image goes without.
+# A self-contained tarball outside the npm registry; dist/bob.js needs no
+# dependencies.
 [tools."http:bob"]
 version = "2.0.3"
 url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-{{version}}.tgz"

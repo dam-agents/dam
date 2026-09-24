@@ -19,10 +19,9 @@
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
-# By path, like image:resolve. The harness images and the e2e mock (image:resolve's
-# MISE_IMAGES) are built by `mise oci` instead of buildx, so a job building them
-# needs mise, node, pnpm, crane and the workspace's dependencies; the workload
-# job does not.
+# By path, like image:resolve. image.toml agents build with
+# //packages/agents:image and need mise, node, pnpm, crane and the workspace's
+# dependencies.
 set -uo pipefail
 
 serial=false base=""
@@ -41,6 +40,7 @@ mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
 
 # spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
 spec() {
+  if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
     controller) echo "packages/controller/Dockerfile packages/controller no" ;;
     # The runner image is built from its crate alone, platform-init included.
@@ -48,7 +48,6 @@ spec() {
     api-server) echo "packages/api-server/Dockerfile . no" ;;
     ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
-    claude-code|codex|pi-agent|bob|mock) echo "mise" ;;
     *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
        echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
   esac
@@ -64,29 +63,21 @@ output_for() {
   esac
 }
 
-# A mise image builds to an OCI layout on the runner; crane then pushes it,
-# since buildx never sees it. The push's digest is written where the buildx
-# metadata file would put it, so the digest step below reads both alike.
+# crane pushes the OCI layout; the digest lands where buildx's metadata would.
 build_mise() {
   local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci/out/$1" ref
-  case "$kind" in
-    load) packages/agents/.mise/tasks/image --build "$c" || return 1 ;;
-    *) packages/agents/.mise/tasks/image --build --no-load "$c" || return 1 ;;
-  esac
+  packages/agents/.mise/tasks/image --build $([ "$kind" = load ] || echo --no-load) "$c" || return 1
   case "$kind" in
     cacheonly | load) ;;
     sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
+    # By digest: an untagged crane reference means :latest.
     digest)
-      # Pushed to its own digest: a reference with neither tag nor digest
-      # means :latest to crane, and this arch's image would take the tag.
       ref="$(jq -r '.manifests[0].digest' "$layout/index.json")" || return 1
       crane push "$layout" "$IMAGE_PREFIX/$c@$ref" || return 1
       jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
       ;;
     *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
   esac
-  # The layout is done with once pushed or proven, and the serial job's later
-  # buildx images need the disk.
   rm -rf "$layout"
 }
 

@@ -12,8 +12,7 @@ ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 
 USER root
-# The base image's HOME is the agent's; root's build steps keep their caches
-# in root's own, out of the image's /home/agent.
+# Root's build caches stay out of the agent's home.
 ENV HOME=/root
 
 # Pinned Nous release. Bump here (or pass --build-arg NOUS_REF=...) to upgrade.

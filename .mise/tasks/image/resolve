@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
 # Decide whether a container image must be built or can be reused from the
-# registry. Single source of truth shared by the per-package `image` mise tasks and
+# registry. Single source of truth shared by `//packages/agents:image` and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.
 #
 # An image is REUSABLE when its effective source (its own paths PLUS its base's,
@@ -14,7 +14,6 @@
 #
 # Usage:
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
-#   mise run image:resolve -- build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
@@ -41,13 +40,9 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # builder-stage test sources; runtime content is identical.
 TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
 
-# The images `mise oci` builds (//packages/agents:image), one config environment
-# each over packages/agents/base: the harnesses and the e2e mock. Their source
-# is the base, agent-runtime and what it builds from, and their own directory;
-# keep in sync with that task.
-MISE_IMAGES="claude-code codex pi-agent bob mock"
+# Source of the images `mise oci` builds (//packages/agents:image), besides
+# their own directory.
 MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
-is_mise_image() { case " $MISE_IMAGES " in *" $1 "*) ;; *) return 1 ;; esac; }
 
 # harness agents; CI's `agents` build/merge matrix
 AGENTS="claude-code codex pi-agent bob"
@@ -91,9 +86,6 @@ base_of() {
   esac
 }
 
-# Local docker tag the `image` tasks build/pull to (mirrors values-local.yaml).
-local_tag() { echo "platform-$1:latest"; }
-
 effective_paths() {
   local base; base="$(base_of "$1")"
   if [ -n "$base" ]; then echo "$(own_paths "$1") $(effective_paths "$base")"; else own_paths "$1"; fi
@@ -115,24 +107,6 @@ resolve() {
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
-}
-
-build_or_reuse() {
-  local comp="$1"; shift
-  [ "${1:-}" = "--" ] && shift
-  [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-  local decision ref lt; lt="$(local_tag "$comp")"
-  decision="$(resolve "$comp")"
-  if [ "${decision%% *}" = REUSE ]; then
-    ref="${decision#REUSE }"
-    echo "↺ reuse $ref -> $lt"
-    if docker pull "$ref" && docker tag "$ref" "$lt"; then return 0; fi
-    echo "  pull failed, building instead" >&2
-  fi
-  echo "⚒ build $lt"
-  # The agent image task builds the mise images itself; the reuse is decided.
-  if is_mise_image "$comp"; then exec packages/agents/.mise/tasks/image --build "$comp"; fi
-  docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
 # Agents and workloads honour RESOLVE_REUSE_AGENTS despite
@@ -195,7 +169,6 @@ self_check() {
   has "$(effective_paths keycloak)" packages/keycloak-theme
   chk "$(effective_paths vm-runner)" packages/vm-runner
   has "$PINNED_TAGS" vm-runner
-  chk "$(local_tag bob)" "platform-bob:latest"
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
   has "$(effective_paths k-search)" packages/agents/claude-code
@@ -226,7 +199,6 @@ self_check() {
 
 case "${1:-}" in
   resolve)        resolve "$2" ;;
-  build-or-reuse) shift; build_or_reuse "$@" ;;
   gha-outputs)    gha_outputs ;;
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
@@ -234,5 +206,5 @@ case "${1:-}" in
   list-components) echo api-server ui controller vm-runner keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
 esac

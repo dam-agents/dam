@@ -1,4 +1,2 @@
-# Staged as the build's .miserc.toml. It opts into environment-specific
-# conf.d fragments, so mise/conf.d/harness.<agent>.toml loads only under
-# `-E <agent>`.
+# Staged as .miserc.toml: harness.<agent>.toml loads only under -E <agent>.
 env_conf_d = true

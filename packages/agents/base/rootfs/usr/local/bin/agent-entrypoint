@@ -1,42 +1,26 @@
 #!/bin/sh
-# The agent images' entrypoint. It runs on
-# both backends: as the non-root agent user in a container, and as root on a
-# vm Backend machine, after platform-init has mounted the agent's home from the
-# storage disk and bound the platform MITM CA into /etc/platform/ca.
+# Runs as the agent in a container, as root on a vm Backend machine.
 set -eu
 
 home="${HOME:-/home/agent}"
 
-# sshd would otherwise drop an `agent` login to uid 65532, into a home the
-# root-run harness owns: nothing writable, none of the injected environment.
-# Only a machine runs the image as root. extrausers will not serve a uid 0
-# entry, so there the account is copied into /etc/passwd and remapped, and sshd
-# gets the privilege-separation directory it refuses to run as root without.
+# On a machine, SSH logins as `agent` must land as root, the harness's user;
+# extrausers serves no uid 0 entry.
 if [ "$(id -u)" = 0 ]; then
 	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
 	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 	install -d -m 0755 /run/sshd
 fi
 
-# The agent reaches the internet only through its Envoy gateway, which for some
-# hosts returns a certificate signed by the MITM CA. The CA joins the system
-# bundle rather than replacing it; SSL_CERT_FILE and REQUESTS_CA_BUNDLE point
-# Python there, and Node gets the CA through NODE_EXTRA_CA_CERTS. The trust
-# directories are agent-owned in the image, so this works without root. No CA
-# file means the gateway intercepts nothing.
+# The gateway's MITM CA joins the system bundle.
 mitm_ca=/etc/platform/ca/ca.crt
 if [ -s "$mitm_ca" ]; then
-	t0=$(date +%s%N)
-	if cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
-		update-ca-certificates >/dev/null 2>&1; then
-		echo "agent-entrypoint: platform CA trusted in $((($(date +%s%N) - t0) / 1000000))ms"
-	else
+	cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
+		update-ca-certificates >/dev/null 2>&1 ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
-	fi
 fi
 
-# /app/working-dir stays the pristine copy the runtime reconciles image skills
-# against, so the home is seeded from it rather than baked at /home/agent.
+# /app/working-dir stays pristine: the runtime reconciles image skills against it.
 if [ ! -f "$home/.initialized" ]; then
 	cp -rn /app/working-dir/. "$home/" 2>/dev/null || true
 	touch "$home/.initialized"
@@ -44,11 +28,7 @@ if [ ! -f "$home/.initialized" ]; then
 fi
 mkdir -p "$home/work"
 
-# Container Backend only: $HOME is a network volume there, so ~/.cache points at
-# pod-local /tmp (an emptyDir) instead. A machine's $HOME is local disk and its
-# /tmp does not survive a stop, so the vm Backend keeps ~/.cache where it is.
-# `ln -sfn` keeps the swap idempotent when an owner pod and a fork pod boot the
-# volume together.
+# In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
 mkdir -p /tmp/agent-cache
 if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
 	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
@@ -59,8 +39,7 @@ if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
 	fi
 fi
 
-# Maven Resolver reads proxies only from settings.xml, so without this every
-# `mvn` dependency fetch bypasses the egress gateway. A user-managed file wins.
+# Maven reads proxies only from settings.xml.
 if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
 	_hp=${HTTPS_PROXY#http://}
 	_m2_proxy() {

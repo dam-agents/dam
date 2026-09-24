@@ -1,6 +1,4 @@
-# Codex: this agent's config environment, `mise oci build -E codex`. The oci
-# task stages it as mise/conf.d/harness.codex.toml over base/base.toml, with
-# this directory's rootfs/ at the same path, so copies climb out of conf.d.
+# The codex config environment over base/base.toml: mise -E codex.
 
 [tools]
 "npm:@openai/codex" = "0.153.4"

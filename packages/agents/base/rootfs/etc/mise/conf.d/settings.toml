@@ -1,6 +1,4 @@
-# Settings for the mise an agent runs inside the image. `mise oci build` writes
-# /etc/mise/config.toml itself with the baked [tools] only, so anything else the
-# runtime mise needs rides in conf.d.
+# The agent's mise: `mise oci` writes /etc/mise/config.toml with [tools] only.
 [settings]
 experimental = true
 minimum_release_age = "7d"

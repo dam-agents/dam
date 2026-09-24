@@ -1,17 +1,13 @@
-# Claude Code: this agent's config environment, `mise oci build -E claude-code`. The oci
-# task stages it as mise/conf.d/harness.claude-code.toml over base/base.toml, with
-# this directory's rootfs/ at the same path, so copies climb out of conf.d.
+# The claude-code config environment over base/base.toml: mise -E claude-code.
 
 [tools]
-# The ACP adapter; the claude CLI rides along inside it, and the image task
-# links it into tool-bin.
+# Carries the claude CLI, which the image task links into tool-bin.
 "npm:@agentclientprotocol/claude-agent-acp" = "0.75.1"
 
 [oci.env]
 PLATFORM_HARNESS = "claude-code"
 CLAUDE_CODE_EXECUTABLE = "/usr/local/share/tool-bin/claude"
-# Claude Code's own telemetry and error reporting, which the gateway would
-# surface for approval; the auto-updater goes too, since the CLI rides the pin.
+# No telemetry for the gateway to hold for approval; the CLI rides the pin.
 DISABLE_TELEMETRY = "1"
 DISABLE_ERROR_REPORTING = "1"
 DISABLE_FEEDBACK_COMMAND = "1"
