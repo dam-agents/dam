@@ -78,9 +78,11 @@ build_mise() {
     cacheonly | load) ;;
     sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
     digest)
-      crane push "$layout" "$IMAGE_PREFIX/$c" --image-refs "/tmp/ci-build/meta/$c.ref" || return 1
-      ref="$(head -1 "/tmp/ci-build/meta/$c.ref")"
-      jq -n --arg d "${ref##*@}" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
+      # Pushed to its own digest: a reference with neither tag nor digest
+      # means :latest to crane, and this arch's image would take the tag.
+      ref="$(jq -r '.manifests[0].digest' "$layout/index.json")" || return 1
+      crane push "$layout" "$IMAGE_PREFIX/$c@$ref" || return 1
+      jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
       ;;
     *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
   esac

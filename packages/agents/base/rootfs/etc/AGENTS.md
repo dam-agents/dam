@@ -6,7 +6,7 @@ Available:
 - usual Linux tools
 - `node` (26), `npm`, `pnpm`
 - `python` (3.12), `pip`, `uv`, `uvx`
-- `gh`, `rg`, `fd`, `jq`, `gws`, `kubectl`
+- `gh`, `rg`, `fd`, `jq`, `kubectl`
 - `mise` to install extra software
 
 Additionally available if running in a root VM:

@@ -63,9 +63,7 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
 # conf.d fragments. In the repo those files cannot carry mise's own names,
 # because every agent directory is a mise config root. build/ beside them is
 # what the host builds; git keeps no empty directories, so the ones the image
-# needs are made there too. Every file the build adds is owned by --owner, the
-# agent, which is what makes the home, the trust store and the mise data dir
-# writable in a container. node_modules is left out: pnpm links the pi
+# needs are made there too. node_modules is left out: pnpm links the pi
 # extension's dev dependencies into its tree, and the image ships the
 # extension's source only.
 rm -rf "$stage"
@@ -103,6 +101,7 @@ install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/p
 # Every mise call for the image runs from inside the stage, not with -C: mise
 # reads .miserc.toml, and with it the env_conf_d opt-in, from the working
 # directory, so under -C every harness fragment would load at once.
+own_layout="$PWD/$agents/base/own-layout.py"
 cd "$stage"
 mise trust -q .
 # The resolved versions are locked first, the way platform-base locks its tools
@@ -131,11 +130,14 @@ fi
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"
 if [ "$(id -u)" = 0 ]; then
-  mise -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
+  mise -E "$harness" oci build -o "$out" ${from:+--from "$from"}
 else
-  sudo --preserve-env env "PATH=$PATH" "$(command -v mise)" -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
+  sudo --preserve-env env "PATH=$PATH" "$(command -v mise)" -E "$harness" oci build -o "$out" ${from:+--from "$from"}
   sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
 fi
+# The layers are built root-owned, and the paths the agent writes are handed to
+# it afterwards: mise stamps one owner on every layer it generates.
+mise -E "$harness" exec -- python3 "$own_layout" "$out"
 echo "OCI layout: $out"
 
 if [ -n "$load" ]; then
