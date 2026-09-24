@@ -84,6 +84,7 @@ export function mountInvocationRoutes(
         connections,
         prompt: body.prompt,
         schema: body.schema,
+        ...(body.label !== undefined ? { label: body.label } : {}),
         ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
         ...(size ? { size } : {}),
         ...(body.experimentSpanId !== undefined

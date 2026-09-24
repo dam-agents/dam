@@ -97,7 +97,7 @@ then resolves with that result. Progress lines (`[invoke] spawned ... -> agent-x
 | `prompt` | What the Invocation should do (required). |
 | `schema` | Result shape it must return (required). Shorthand or raw JSON Schema. |
 | `connections` | Connection ids to grant it. Must be a subset of `listConnections()`. Default none. |
-| `label` | Log label. Defaults to the template/image. |
+| `label` | Log label, printed in the progress lines and recorded with the delegation. Defaults to the template/image. |
 | `memory` | Memory limit, e.g. `"4Gi"`. Raise it for a heavy node. See below. |
 | `cpu` | CPU limit, e.g. `"2"` or `"500m"`. Inherits the template when omitted. |
 | `ttlMs` | Server-side liveness deadline for this node. Default ~60 min, bounded ~1 min..6 h. See below. |

@@ -52,6 +52,13 @@ Follow the README `## Design` section.
    its one session, fold the replayed and streamed updates with the same `applyUpdate`
    reducer, and show `BusyIndicator` while a turn runs. No composer, no engagement. A
    waiting node opens the panel with the prompt and a waiting notice.
+   **Order and fallback.** Build the stored state first; it is the must-have. Then attempt
+   the live state with the existing passive helpers, time-boxed. The known risks are the
+   replay paging details the chat view handles (load token, tail flag) and a socket drop
+   mid-run; a child session is short, so the tail page suffices, and a drop can show a
+   reconnecting line. If the attach does not come clean, ship with the control disabled
+   while a child works and file the live state as a follow-up. The slice ends green either
+   way.
 
 ## Acceptance criteria
 

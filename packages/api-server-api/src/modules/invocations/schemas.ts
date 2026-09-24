@@ -11,6 +11,7 @@ export const spawnInvocationRequestSchema = z
     connections: z.array(z.string().min(1)).optional(),
     prompt: z.string().min(1),
     schema: z.unknown(),
+    label: z.string().min(1).max(120).optional(),
     ttlMs: z
       .number()
       .int()

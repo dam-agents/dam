@@ -71,7 +71,7 @@ own session, telemetry or image, so nothing in this plan applies to it. This pla
   dots a streaming reply shows. Once the child is gone the panel renders the stored frames.
 - **Fan-out recognition rides the SDK's stderr lines, not a new tool.** The recogniser is a
   line regex on the chip content. The SDK gains a `label` on the spawn request so the record
-  can show the same name the driver printed.
+  can be matched against the name the driver printed.
 
 ### The contracts both halves implement against
 
@@ -95,8 +95,7 @@ invocations.tree({ driverAgentId: string; ids: string[] })
 
 interface DelegationNode {
   id: string;                              // child agent id == invocation id
-  title: string;                           // label, else first prompt line, truncated
-  label: string | null;
+  label: string | null;                    // stored, not shown; the UI titles by prompt
   driverAgentId: string;
   status: "running" | "done" | "failed";
   errorReason: string | null;
@@ -132,7 +131,7 @@ component. `telemetry.turn` gains an optional `invocationId` so the line's detai
 (waterfall, spans, logs) opens for a child too.
 
 **Spawn request** (slice 03) gains `label?: string (1..120)` in
-`spawnInvocationRequestSchema`; the SDK sends its `tag`.
+`spawnInvocationRequestSchema`; the SDK sends its `label` option when given.
 
 ## Design
 
@@ -179,10 +178,10 @@ miniature, so it reads as an agent and not as another tool call:
   "Conversation was not captured" for a finished child without one.
 - **Grandchildren** nest as smaller cards inside their parent's fold.
 
-**Title rule.** The title is the `label` the driver passed to `spawn`. Without one the SDK
-falls back to the template id, which would make every row read alike, so the server derives
-the title as: label, else the first line of the prompt, truncated. Slice 04 returns it as
-`title`; slice 03 stores the label.
+**Title rule.** The title is the first line of the prompt the child received, truncated to
+one line by the UI. The `label` the driver passed to `spawn` is a log tag chosen for
+terseness ("six"), so it is stored on the record for cross-referencing the progress lines
+but never shown.
 
 **Nesting pitfall.** A block inside a block must not inherit its parent's open state. Use
 child combinators or scoped state, never a descendant selector on a shared class. The
@@ -228,8 +227,8 @@ under the card (fine for short children, breaks for long transcripts).
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Design pass | Mockups of the Delegation block and the child view; agreed component spec written back here | — |
-| 02 | Durable delegation record | Drop the ten-minute row delete; add the missing columns; cleanup follows the root driver; docs | — |
+| 01 | ✅ Design pass | Mockups of the Delegation block and the child view; agreed component spec written back here | — |
+| 02 | ✅ Durable delegation record | Drop the ten-minute row delete; add the missing columns; cleanup follows the root driver; docs | — |
 | 03 | Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
 | 04 | Delegation read path | `invocations.tree` | 02 |
 | 05 | Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |

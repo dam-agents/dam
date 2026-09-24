@@ -27,8 +27,8 @@ Apply `/typescript-engineering`.
    keep rows whose `owner` matches, build parent → children in memory, and return the
    subtrees for the requested ids in request order. An id not in the set is dropped. Map
    rows to `DelegationNode` in a domain mapper (`domain/delegation-node.ts`); `result` is
-   null while running; `transcriptAvailable` is false until slice 08; `title` is the label,
-   else the prompt's first line cut to 120 characters (README, Design § Title rule).
+   null while running; `transcriptAvailable` is false until slice 08. No derived title: the UI shows the
+   prompt's first line (README, Design § Title rule).
 3. **Context** — `ctx.invocationsQuery` is already composed per owner
    (`packages/api-server/src/apps/api-server/trpc/context.ts:186`); the new method rides it.
 4. **Bound the read.** `listByRoot` is bounded by the root's lifetime, which is fine for a
