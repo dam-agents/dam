@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-09-21
+Last verified: 2026-09-24
 
 ## System context
 
@@ -9,6 +9,7 @@ flowchart LR
   user[browser user]
   slack-user[Slack user]
   cli[dam CLI]
+  satellite[dam satellite worker]
   llm[LLM APIs]
   github[GitHub]
 
@@ -35,6 +36,7 @@ flowchart LR
   slack-user <-->|Slack API| api-server
 
   cli -->|tRPC + WS| api-server
+  satellite -->|polls for tool calls| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api
@@ -56,16 +58,18 @@ The cluster boundary is the trust boundary. Browsers and Slack users reach Platf
 
 Each page is the authoritative, self-contained description of its subsystem — what it looks like today and why it is shaped that way.
 
-- [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner behind the `vm` Backend), the protocols between them, and the K8s resource model.
+- [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner), the protocols between them, and the K8s resource model.
+- [vm-runner](architecture/vm-runner.md) — the `vm` Backend's per-owner machine host; its [image cache](architecture/vm-image-cache.md).
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete.
 - [schedules](architecture/schedules.md) — recurring work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
-- [persistence](architecture/persistence.md) — the storage substrates (Postgres, ConfigMap spec/status, per-Agent PVC, and the per-owner VM runner volume) and what survives each lifecycle event.
-- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
+- [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC, the VM runner volume) and what survives each lifecycle event.
+- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated surface, reached from the Slack Agent Footer: a conversion page that names a channel-bound Agent and its owner, rather than a dead end.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
+- [satellites](architecture/satellites.md) — MCP servers on machines outside the cluster: a polled queue, tools re-exposed to the agent scoped by machine, and the jobs it starts against them.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
 - [agent-skills](architecture/agent-skills.md) — the pod-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs, never from cluster state.

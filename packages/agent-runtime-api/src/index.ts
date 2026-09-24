@@ -182,6 +182,7 @@ export type {
   EventReportInput,
   ExperimentExecuteEventPayload,
   InitializationEventPayload,
+  SatelliteOutcomeEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
   WorkspaceCommandEventPayload,

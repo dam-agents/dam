@@ -214,6 +214,10 @@ spec:
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}
             {{- end }}
+            {{- if .Values.apiServer.imgbbApiKey }}
+            - name: IMGBB_API_KEY
+              value: {{ .Values.apiServer.imgbbApiKey | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotName }}
             - name: TELEGRAM_BOT_USERNAME
               value: {{ .Values.apiServer.telegramBotName | quote }}
@@ -335,6 +339,18 @@ spec:
             - name: STARTER_KITS_CATALOGS
               value: {{ $catalogs | toJson | quote }}
             {{- end }}
+            {{- $ghe := dig "enterprise" dict (.Values.github | default dict) }}
+            {{- $gheSecret := $ghe.tokenSecret | default dict }}
+            {{- $gheHost := $ghe.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}
+            {{- if and $gheHost $gheSecret.name }}
+            - name: GITHUB_ENTERPRISE_HOST
+              value: {{ $gheHost | quote }}
+            - name: GITHUB_ENTERPRISE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $gheSecret.name | quote }}
+                  key: {{ $gheSecret.key | default "token" | quote }}
+            {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_ID
@@ -401,6 +417,14 @@ spec:
             {{- if .Values.apiServer.maxArtifactBytes }}
             - name: MAX_ARTIFACT_BYTES
               value: {{ .Values.apiServer.maxArtifactBytes | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.satelliteMaxConcurrentCeiling }}
+            - name: SATELLITE_MAX_CONCURRENT_CEILING
+              value: {{ .Values.apiServer.satelliteMaxConcurrentCeiling | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.satelliteWaitDeadlineMs }}
+            - name: SATELLITE_WAIT_DEADLINE_MS
+              value: {{ .Values.apiServer.satelliteWaitDeadlineMs | quote }}
             {{- end }}
             {{- if include "platform.objectstorage.enabled" . }}
             # S3-compatible Candidate-artifact store.

@@ -1,6 +1,7 @@
 import * as grpc from "@grpc/grpc-js";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
 import { securityLog } from "../../core/security-log.js";
+import { stripConnectionEgressPrefix } from "api-server-api";
 import {
   AuthorizationService,
   type AuthorizationServer,
@@ -73,7 +74,7 @@ export async function startExtAuthzGrpcApp(
           agentId,
           host,
           method: httpReq?.method?.toUpperCase() || "*",
-          path: httpReq?.path || "*",
+          path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
         });
         callback(null, verdict === "allow" ? ok() : denied("policy denied"));
       } catch (err) {

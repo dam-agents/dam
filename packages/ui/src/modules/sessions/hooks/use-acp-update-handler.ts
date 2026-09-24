@@ -3,11 +3,8 @@ import { useCallback } from "react";
 import { useStore } from "../../../store.js";
 import { applyUpdate } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
-import type { PromptDelivery } from "./use-prompt-delivery.js";
 
-export function useAcpUpdateHandler(
-  delivery: PromptDelivery,
-): () => UpdateHandler {
+export function useAcpUpdateHandler(): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
   const dismissStalePermission = useCallback(
@@ -40,10 +37,9 @@ export function useAcpUpdateHandler(
         useStore.getState().addRunStart(update.at);
       }
 
-      delivery.handleUpdate(update);
       setMessages((prev) =>
         applyUpdate(prev, update, frame?.at, frame?.telemetryPromptId),
       );
     };
-  }, [delivery, dismissStalePermission, setMessages]);
+  }, [dismissStalePermission, setMessages]);
 }

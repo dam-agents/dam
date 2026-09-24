@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { DELIVERY_TIMEOUT_MS } from "platform-ui/use-prompt-delivery";
+import { DELIVERY_TIMEOUT_MS } from "platform-ui/prompt-delivery";
 
 import {
   AGENT_UP,

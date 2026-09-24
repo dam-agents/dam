@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Bring Cargo.lock in line with Cargo.toml after a dependency changes"
+set -euo pipefail
+# cargo fetch resolves and writes the lock without building, and changes no
+# more than the manifest needs — unlike `cargo update`, which re-resolves every
+# dependency to the newest version its requirement allows.
+cargo fetch

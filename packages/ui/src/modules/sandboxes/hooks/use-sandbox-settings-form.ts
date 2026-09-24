@@ -202,6 +202,7 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
+    draftName: watch("name"),
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
     setSize: (patch: { sizeCpuMilli: number; sizeMemoryMi: number }) => {

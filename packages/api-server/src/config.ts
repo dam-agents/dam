@@ -66,6 +66,7 @@ const configSchema = z.object({
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
   telegramBotToken: z.string().nullable().default(null),
+  imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.coerce.boolean().default(false),
@@ -114,6 +115,8 @@ const configSchema = z.object({
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   starterKitsCatalogs: z.string().default(""),
+  githubEnterpriseHost: z.string().default(""),
+  githubEnterpriseToken: z.string().default(""),
   gitReposPath: z.string().default(""),
   maxImportBundleBytes: z.coerce
     .number()
@@ -125,6 +128,8 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(50 * 1024 * 1024),
+  satelliteMaxConcurrentCeiling: z.coerce.number().int().positive().default(64),
+  satelliteWaitDeadlineMs: z.coerce.number().int().positive().default(240_000),
   objectStorageEndpoint: z.url().optional(),
   objectStorageAgentEndpoint: z.url().optional(),
   objectStoragePublicEndpoint: z.url().optional(),
@@ -219,6 +224,7 @@ export function loadConfig(): Config {
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+    imgbbApiKey: process.env.IMGBB_API_KEY,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
@@ -272,9 +278,13 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
+    githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
+    githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
+    satelliteMaxConcurrentCeiling: process.env.SATELLITE_MAX_CONCURRENT_CEILING,
+    satelliteWaitDeadlineMs: process.env.SATELLITE_WAIT_DEADLINE_MS,
     objectStorageEndpoint: process.env.OBJECT_STORAGE_ENDPOINT,
     objectStorageAgentEndpoint:
       process.env.OBJECT_STORAGE_AGENT_ENDPOINT ??

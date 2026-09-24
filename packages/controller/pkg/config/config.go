@@ -50,6 +50,7 @@ type Config struct {
 	EnvoyImage               string
 	EnvoyPort                int
 	EnvoyMitmCAIssuer        string
+	VMRunnerCAIssuer         string
 	EnvoyMitmLeafDuration    time.Duration
 	EnvoyMitmLeafRenewBefore time.Duration
 	OTelEnv                  map[string]string
@@ -248,6 +249,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
+	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
+	}
 	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
 		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
 	}
@@ -261,6 +265,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
+	cfg.VMRunnerCAIssuer = envOrDefault("VM_RUNNER_CA_ISSUER", "platform-vm-runner-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)

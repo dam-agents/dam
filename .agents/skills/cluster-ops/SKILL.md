@@ -5,6 +5,8 @@ description: Operate the local k3s dev cluster (lima) and the Playwright e2e sui
 
 # Cluster operations
 
+In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](../ccweb/SKILL.md) first: the cluster there needs `IS_SANDBOX=1`, a k3s launcher, and pulled rather than built images.
+
 ## Cluster lifecycle (k3s via lima)
 
 `mise tasks` lists every `cluster:*` task with its description. The ones you'll reach for most:
@@ -29,6 +31,13 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 `e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.
 
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is the always-on tier — CI and plain `e2e` / `e2e:loop` run exactly it. **Full** = smoke plus the slow, scenario-heavy specs under `src/tests/full/`, run on demand only: `mise run e2e:loop -- --full` (or `mise run e2e -- --full` for the fresh-cluster path). Conventions for `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), each spec references its motivating ticket in the test title.
+
+## vm backend (KVM only)
+
+The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple silicon M3+, macOS 15+), so nothing in CI exercises it live. Two ways to test it on a host that has it:
+
+- `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` and stages the mock image for the VM runners, which un-skips `smoke/19-vm-agent.spec.ts`. Without it that spec skips itself.
+- `mise run cluster:vm-conformance` runs the machine API conformance suite against a live runner. It needs a runner to exist — create one vm agent first — and it scales the controller to zero for the run (its orphan sweep would delete the suite's machines) and restarts the runner once, which stops every machine on it. `LIMA_INSTANCE=platform-k3s-test` targets the e2e VM. The suite has no fake-VMM run in CI: it needs a real runner, so it runs on a KVM host only.
 
 ## Disk space (two independent VMs)
 

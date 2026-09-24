@@ -4,13 +4,21 @@ import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { HintTooltip } from "@/components/ui/tooltip";
 
+import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
+import { useAgentAvatars } from "../../../agents/hooks/use-agent-avatars.js";
 import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
+import {
+  NO_SATELLITES,
+  useSatellites,
+} from "../../../satellites/api/queries.js";
+import { SatellitesGroupCard } from "../../../satellites/components/satellites-group-card.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
@@ -23,15 +31,26 @@ export function NameSection({
   value: string;
   onChange: (name: string) => void;
 }) {
+  const avatars = useAgentAvatars();
   return (
     <section className="mb-8">
       <FormField label="Name">
-        <Input
-          autoFocus
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="my-agent"
-        />
+        <div className="flex items-center gap-3">
+          <Input
+            autoFocus
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="my-agent"
+          />
+          {avatars && (
+            <HintTooltip
+              label="Agent avatar"
+              content="Agent avatar is generated from its name and can't currently be changed manually."
+            >
+              <AgentAvatar name={value} size={40} />
+            </HintTooltip>
+          )}
+        </div>
       </FormField>
     </section>
   );
@@ -66,10 +85,14 @@ export function ProviderSection({
 export function useSetupConnectionCatalog({
   connectionIds,
   onToggle,
+  satelliteNames,
+  onToggleSatellite,
   oauthReturnView,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
+  satelliteNames: string[];
+  onToggleSatellite: (name: string, granted: boolean) => void;
   oauthReturnView: string;
 }): { openCatalog: () => void; catalogNode: ReactNode } {
   const [open, setOpen] = useState(false);
@@ -81,6 +104,10 @@ export function useSetupConnectionCatalog({
       <ConnectionCatalogModal
         onClose={() => setOpen(false)}
         sandbox={{ grantedIds, onToggleGrant: onToggle }}
+        satelliteGrant={(s) => ({
+          granted: satelliteNames.includes(s.name),
+          onToggle: (on) => onToggleSatellite(s.name, on),
+        })}
         oauthReturnView={oauthReturnView}
       />
     ) : null,
@@ -90,6 +117,8 @@ export function useSetupConnectionCatalog({
 export function ConnectionsSetupSection({
   connectionIds,
   onToggle,
+  satelliteNames,
+  onToggleSatellite,
   onOpenCatalog,
   title,
   leading,
@@ -97,31 +126,61 @@ export function ConnectionsSetupSection({
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
+  satelliteNames: string[];
+  onToggleSatellite: (name: string, granted: boolean) => void;
   onOpenCatalog: () => void;
   title?: string;
   leading?: React.ReactNode;
   excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
+  const { data: satellites = NO_SATELLITES } = useSatellites();
+  const pickedSatellites = useMemo(
+    () => satellites.filter((s) => satelliteNames.includes(s.name)),
+    [satellites, satelliteNames],
+  );
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
+  const granted = useMemo(
+    () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
+    [connectionsQ.data, grantedIds],
+  );
   const staged = useMemo(
     () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter(
-        (c) => grantedIds.has(c.id) && !excludeIds?.has(c.id),
-      ),
-    [connectionsQ.data, grantedIds, excludeIds],
+      excludeProviderConnections(granted).filter((c) => !excludeIds?.has(c.id)),
+    [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
+  const satellitesCard = pickedSatellites.length > 0 && (
+    <SatellitesGroupCard
+      satellites={pickedSatellites}
+      showCount
+      grant={(s) => ({
+        granted: true,
+        onToggle: (on) => onToggleSatellite(s.name, on),
+        actionHidden: true,
+      })}
+    />
+  );
 
   return (
     <section className="mb-8">
       <GrantedConnectionsPanel
         groups={groups}
+        granted={granted}
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={onOpenCatalog}
         {...(title ? { title } : {})}
-        {...(leading ? { leading } : {})}
+        {...(leading || satellitesCard
+          ? {
+              leading: (
+                <>
+                  {leading}
+                  {satellitesCard}
+                </>
+              ),
+            }
+          : {})}
       />
     </section>
   );

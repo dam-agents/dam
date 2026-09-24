@@ -27,6 +27,7 @@ import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createInitializationPlugin } from "./drivers/initialization-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createExperimentExecutePlugin } from "./drivers/experiment-execute-plugin.js";
+import { createSatelliteOutcomePlugin } from "./drivers/satellite-outcome-plugin.js";
 import { createDispatcher, type ContextEnv } from "./dispatcher.js";
 import { createEventDispatcher } from "./event-dispatcher.js";
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
@@ -130,6 +131,9 @@ export async function composeRuntimeChannel(
     createExperimentExecutePlugin({ driver: opts.triggerDriver }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
+  registry.register(
+    createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
+  );
 
   const harnessConfigRaw = resolved["harness-config"];
   const harnessConfigPlugin = createHarnessConfigPlugin({

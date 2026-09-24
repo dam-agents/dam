@@ -1,5 +1,5 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { PromptBlock } from "api-server-api";
+import type { AgentState, PromptBlock } from "api-server-api";
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -20,6 +20,7 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
+import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { resolvePromptTarget } from "../lib/prompt-target.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
 import {
@@ -32,7 +33,6 @@ import type {
   LiveSession,
   StartedSession,
 } from "./use-acp-connection.js";
-import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export type PromptInitiator = "user" | "system";
 
@@ -45,6 +45,7 @@ export interface SendPromptOptions {
 
 export interface UseAcpPromptOptions {
   selectedAgent: string | null;
+  agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;
   beginSession: () => Promise<StartedSession>;
   engagedSessionIdRef: React.MutableRefObject<string | null>;
@@ -63,6 +64,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 } {
   const {
     selectedAgent,
+    agentRunState,
     ensureConnection,
     beginSession,
     engagedSessionIdRef,
@@ -239,7 +241,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           "Not delivered — the agent never confirmed it received this message.",
         );
       };
-      delivery.beginSend(promptId, failDelivery);
+      delivery.beginSend(promptId, failDelivery, {
+        waking: agentRunState !== "running",
+      });
 
       let started: StartedSession | null = null;
       let detached = false;
@@ -334,6 +338,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     },
     [
       selectedAgent,
+      agentRunState,
       ensureConnection,
       beginSession,
       canKeepConnection,

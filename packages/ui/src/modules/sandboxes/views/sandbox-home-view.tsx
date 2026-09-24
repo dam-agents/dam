@@ -76,7 +76,11 @@ export function SandboxHomeView() {
         />
       }
     >
-      <SandboxHomeHeader agent={agent} display={display} />
+      <SandboxHomeHeader
+        agent={agent}
+        display={display}
+        avatarName={f.draftName?.trim() || agent.name}
+      />
       {section === "setup" ? (
         <SandboxSetupSection f={f} />
       ) : section === "channels" ? (

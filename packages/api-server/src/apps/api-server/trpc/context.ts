@@ -83,6 +83,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     reposService,
     connectionsBoot,
     apiKeysModule,
+    satellitesBoot,
     liveEvents,
   } = boot;
 
@@ -167,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             await connections.validateProviderConnection(
               sel.providerConnectionId,
             );
+          await connections.validateGrantSet(sel.connectionIds);
           return {
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
           };
@@ -304,6 +306,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownerSub: user.sub,
       surface,
     });
+    const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
       ownerSub: user.sub,
@@ -389,6 +392,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       usage: composeUsageForOwner(user.sub),
       e2e,
       apiKeys,
+      satellites,
+      satelliteWorker: satellitesBoot.workerOps,
       budgets,
       user,
       e2eEnabled: config.e2eEnabled,

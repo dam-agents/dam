@@ -75,6 +75,7 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import type { AgentIconUrl } from "./agent-avatar-icons.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -94,6 +95,7 @@ import type {
   SlackChannelInfo,
   SlackChannelMessageEvent,
   SlackGateway,
+  SlackPostMessage,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -121,6 +123,7 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 import {
+  aboveBoundary,
   isAfterTs,
   lastOwnPostTs,
   laterTs,
@@ -167,8 +170,10 @@ function framePrompt(opts: {
   const parts: string[] = [opts.contract];
   if (opts.guidance) parts.push(opts.guidance);
   if (opts.context && opts.context.length > 0) {
-    if (opts.contextLegend) parts.push(opts.contextLegend);
-    parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
+    const legend = opts.contextLegend ? [opts.contextLegend, ""] : [];
+    parts.push(
+      ["<context>", ...legend, ...opts.context, "</context>"].join("\n"),
+    );
   }
   parts.push(opts.text);
   const delivered = opts.files ?? [];
@@ -632,17 +637,17 @@ async function resolveAuthorNames(
   );
 }
 
-async function getContextMessages(
-  gateway: SlackGateway,
-  channel: string,
-  ts: string,
-  readingAgentId: string,
-  threadTs: string | undefined,
-  bot: { userId: string | null; label: string },
-  resolveAgentName: (agentId: string) => Promise<string>,
-  catchUp: CatchUpSelection | null,
-  teamId: SlackWorkspace,
-): Promise<{
+async function getContextMessages(read: {
+  gateway: SlackGateway;
+  channel: string;
+  teamId: SlackWorkspace;
+  threadTs: string | undefined;
+  readingAgentId: string;
+  carried: readonly string[];
+  bot: { userId: string | null; label: string };
+  resolveAgentName: (agentId: string) => Promise<string>;
+  catchUp: CatchUpSelection | null;
+}): Promise<{
   lines: string[];
   offeredThreads: string[];
   hasThreadMarker: boolean;
@@ -651,32 +656,33 @@ async function getContextMessages(
   readNewestTs: string | null;
   readHasMore: boolean;
 }> {
-  const read = await readConversation(
-    gateway,
-    channel,
+  const { bot, catchUp, threadTs } = read;
+  const conversation = await readConversation(
+    read.gateway,
+    read.channel,
     threadTs,
     catchUp?.since,
-    teamId,
+    read.teamId,
   );
-  const raw = read.messages;
 
-  const all = raw.map((message) => ({
+  const all = conversation.messages.map((message) => ({
     ts: message.ts,
     authorAgentId: parseAgentFooter(message)?.agentId ?? null,
     message,
   }));
+  const carried = new Set(read.carried);
   const selected = catchUp
     ? selectUnseen(all, catchUp)
-    : all.filter((e) => e.ts !== ts);
+    : all.filter((e) => e.ts === undefined || !carried.has(e.ts));
   const entries = selected.map((e) => ({
     message: e.message,
     footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
   }));
 
-  const names = await resolveAuthorNames(entries, resolveAgentName);
+  const names = await resolveAuthorNames(entries, read.resolveAgentName);
 
   const showThreadMarkers = threadTs === undefined;
-  const lines = labelMessages(entries, names, readingAgentId, bot, {
+  const lines = labelMessages(entries, names, read.readingAgentId, bot, {
     showThreadMarkers,
   });
   const offered = showThreadMarkers
@@ -695,7 +701,7 @@ async function getContextMessages(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
     readNewestTs: newestTs(all),
-    readHasMore: read.hasMore,
+    readHasMore: conversation.hasMore,
   };
 }
 
@@ -1027,6 +1033,7 @@ export function createSlackWorker(
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
+  agentIcon: AgentIconUrl | null = null,
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1333,6 +1340,71 @@ export function createSlackWorker(
     return entry.ts;
   }
 
+  const seenAbove = new Map<string, { tss: string[]; expiresAt: number }>();
+
+  function replaceSeenAbove(
+    instanceName: string,
+    threadKey: string,
+    tss: string[],
+  ): void {
+    const key = threadSeenKey(instanceName, threadKey);
+    if (tss.length === 0) {
+      seenAbove.delete(key);
+      return;
+    }
+    const now = Date.now();
+    if (seenAbove.size > 5_000) {
+      for (const [stale, entry] of seenAbove) {
+        if (entry.expiresAt <= now) seenAbove.delete(stale);
+      }
+    }
+    seenAbove.set(key, { tss, expiresAt: now + THREAD_SEEN_TTL_MS });
+  }
+
+  function readSeenAbove(instanceName: string, threadKey: string): string[] {
+    const entry = seenAbove.get(threadSeenKey(instanceName, threadKey));
+    if (!entry) return [];
+    if (entry.expiresAt <= Date.now()) return [];
+    return entry.tss;
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: What a delivered turn adds to the seen record.
+   * The boundary is a single point, so it may only reach a time below which
+   * every message was shown or carried: the batch, held back further by a read
+   * that hit its cap. A message steered into the turn sits above that point
+   * and is recorded one by one instead, because the messages between the batch
+   * and the steered one were shown to nobody and must stay unseen.
+   */
+  function commitSeenBoundary(turn: {
+    instanceName: string;
+    threadKey: string;
+    read: { hasMore: boolean; newestReadTs: string | null };
+    deliveredUpTo: string;
+    steeredTs: () => string[];
+  }): void {
+    const boundary = nextBoundary(
+      {
+        hasMore: turn.read.hasMore,
+        newestReadTs: turn.read.newestReadTs,
+        coveredUpTo: turn.deliveredUpTo,
+      },
+      readThreadSeen(turn.instanceName, turn.threadKey),
+    );
+    noteThreadSeen(turn.instanceName, turn.threadKey, boundary);
+    replaceSeenAbove(
+      turn.instanceName,
+      turn.threadKey,
+      aboveBoundary(
+        [
+          ...readSeenAbove(turn.instanceName, turn.threadKey),
+          ...turn.steeredTs(),
+        ],
+        boundary,
+      ),
+    );
+  }
+
   const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
   const offeredThreads = new Map<
     string,
@@ -1383,6 +1455,22 @@ export function createSlackWorker(
         isDefault: binding.isDefault,
       })),
     );
+  }
+
+  async function agentPersona(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<Pick<SlackPostMessage, "username" | "iconUrl">> {
+    const scopes = await grantedScopes(gw, teamId);
+    if (!scopes?.has("chat:write.customize")) return {};
+    const [username, owner] = await Promise.all([
+      resolveAgentName(instanceName),
+      getInstanceOwner(instanceName).catch(() => null),
+    ]);
+    const iconUrl =
+      agentIcon && owner ? await agentIcon(owner, username) : null;
+    return { username, ...(iconUrl ? { iconUrl } : {}) };
   }
 
   async function agentFooter(
@@ -1543,6 +1631,52 @@ export function createSlackWorker(
     }
   }
 
+  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+    return end === "interrupted"
+      ? refs.some((ref) => ref.declined || ref.handedOff)
+      : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+  }
+
+  function watchUndeliveredTurn(turn: {
+    instanceName: string;
+    sessionId: string;
+    threadKey: string;
+    threadTs: string;
+    refs: TurnRef[];
+    anchorRef: TurnRef;
+    sawFailure: boolean;
+    externalActorId?: string;
+    endedAs?: WatchedTurnEnd;
+  }): void {
+    const { instanceName, sessionId, refs, endedAs, ...nudge } = turn;
+    if (!serving) {
+      getLogger().info(
+        { agentId: instanceName, sessionId, threadTs: nudge.threadTs },
+        "slack.turn.recovery_skipped: the replica is standing down; the undelivered turn is not nudged from it",
+      );
+      return;
+    }
+    holdWatchedRefs(instanceName, refs);
+    turnRecovery.watch(
+      {
+        instanceName,
+        sessionId,
+        isDelivered: (end) => deliveredBy(refs, end),
+        onDone: () => releaseWatchedRefs(instanceName, refs),
+        recover: (end, isCancelled) =>
+          runUndeliveredNudge({
+            ...nudge,
+            isCancelled,
+            instanceName,
+            sessionId,
+            verdictRefs: refs,
+            isDelivered: () => deliveredBy(refs, end),
+          }),
+      },
+      ...(endedAs !== undefined ? [{ endedAs }] : []),
+    );
+  }
+
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
@@ -1633,6 +1767,12 @@ export function createSlackWorker(
     const batched = ctx.messages.length > 1;
     const lastMessage = ctx.messages.at(-1)!;
     const eventTs = lastMessage.eventTs;
+    const deliveredUpTo = ctx.messages.reduce(
+      (newest, m) => laterTs(newest, m.eventTs),
+      eventTs,
+    );
+    const steeredTs = (): string[] =>
+      (ctx.siblingRefs?.() ?? []).map((ref) => ref.eventTs);
     const droppedNote = renderWithheldNote(
       (ctx.droppedFiles ?? []).map((name) => ({
         name,
@@ -1661,10 +1801,6 @@ export function createSlackWorker(
     }));
 
     const verdictRefs = () => [...turnRefs, ...(ctx.siblingRefs?.() ?? [])];
-    const deliveredBy = (refs: TurnRef[], end: WatchedTurnEnd) =>
-      end === "interrupted"
-        ? refs.some((ref) => ref.declined || ref.handedOff)
-        : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
     const turnSessionId = () =>
       turnRefs.find((ref) => ref.sessionId !== undefined)?.sessionId;
     const watchTurn = (
@@ -1672,33 +1808,20 @@ export function createSlackWorker(
       refs: TurnRef[],
       sawFailure: boolean,
       endedAs?: WatchedTurnEnd,
-    ) => {
-      holdWatchedRefs(instanceName, refs);
-      turnRecovery.watch(
-        {
-          instanceName,
-          sessionId,
-          isDelivered: (end) => deliveredBy(refs, end),
-          onDone: () => releaseWatchedRefs(instanceName, refs),
-          recover: (end, isCancelled) =>
-            runUndeliveredNudge({
-              isCancelled,
-              instanceName,
-              sessionId,
-              threadKey,
-              threadTs: ctx.threadTs,
-              verdictRefs: refs,
-              anchorRef: turnRefs.at(-1)!,
-              isDelivered: () => deliveredBy(refs, end),
-              sawFailure,
-              ...(ctx.externalActorId
-                ? { externalActorId: ctx.externalActorId }
-                : {}),
-            }),
-        },
-        ...(endedAs !== undefined ? [{ endedAs }] : []),
-      );
-    };
+    ) =>
+      watchUndeliveredTurn({
+        instanceName,
+        sessionId,
+        threadKey,
+        threadTs: ctx.threadTs,
+        refs,
+        anchorRef: turnRefs.at(-1)!,
+        sawFailure,
+        ...(ctx.externalActorId
+          ? { externalActorId: ctx.externalActorId }
+          : {}),
+        ...(endedAs !== undefined ? { endedAs } : {}),
+      });
 
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
@@ -1783,6 +1906,8 @@ export function createSlackWorker(
             ...ctx,
             eventTs,
             threadKey,
+            deliveredUpTo,
+            steeredTs,
             batchTs: ctx.messages.map((m) => m.eventTs),
           });
           return {
@@ -1800,7 +1925,15 @@ export function createSlackWorker(
         buildFreshPrompt: () =>
           buildThreadPrompt(
             gw,
-            { ...ctx, eventTs, text, threadKey },
+            {
+              ...ctx,
+              eventTs,
+              text,
+              threadKey,
+              batchTs: ctx.messages.map((m) => m.eventTs),
+              deliveredUpTo,
+              steeredTs,
+            },
             contract,
             {
               guidance,
@@ -1932,6 +2065,9 @@ export function createSlackWorker(
       text: string;
       hasThread: boolean;
       threadKey: string;
+      batchTs: string[];
+      deliveredUpTo: string;
+      steeredTs: () => string[];
       teamId: SlackWorkspace;
       images: FetchedImage[];
     },
@@ -1950,17 +2086,17 @@ export function createSlackWorker(
       offeredThreads: offeredHere,
       readNewestTs,
       readHasMore,
-    } = await getContextMessages(
-      gw,
-      ctx.channel,
-      ctx.eventTs,
-      ctx.instanceName,
-      ctx.hasThread ? ctx.threadTs : undefined,
+    } = await getContextMessages({
+      gateway: gw,
+      channel: ctx.channel,
+      teamId: ctx.teamId,
+      threadTs: ctx.hasThread ? ctx.threadTs : undefined,
+      readingAgentId: ctx.instanceName,
+      carried: ctx.batchTs,
       bot,
       resolveAgentName,
-      null,
-      ctx.teamId,
-    );
+      catchUp: null,
+    });
     noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
     const preamble = historyPreamble(
       ctx.hasThread
@@ -1989,21 +2125,19 @@ export function createSlackWorker(
         files: delivered?.files ?? [],
       }),
       commit: () =>
-        noteThreadSeen(
-          ctx.instanceName,
-          ctx.threadKey,
-          nextBoundary(
-            {
-              hasMore:
-                ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
-                  ? readHasMore
-                  : false,
-              newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
-            },
-            readThreadSeen(ctx.instanceName, ctx.threadKey),
-          ),
-        ),
+        commitSeenBoundary({
+          instanceName: ctx.instanceName,
+          threadKey: ctx.threadKey,
+          read: {
+            hasMore:
+              ctx.hasThread || isAmbientThreadKey(ctx.threadKey)
+                ? readHasMore
+                : false,
+            newestReadTs: readNewestTs,
+          },
+          deliveredUpTo: ctx.deliveredUpTo,
+          steeredTs: ctx.steeredTs,
+        }),
     };
   }
 
@@ -2058,6 +2192,8 @@ export function createSlackWorker(
       eventTs: string;
       hasThread: boolean;
       threadKey: string;
+      deliveredUpTo: string;
+      steeredTs: () => string[];
       teamId: SlackWorkspace;
       batchTs: string[];
     },
@@ -2083,35 +2219,33 @@ export function createSlackWorker(
         offeredThreads: offeredHere,
         readNewestTs,
         readHasMore,
-      } = await getContextMessages(
-        gw,
-        ctx.channel,
-        ctx.eventTs,
-        ctx.instanceName,
-        conversationTs,
+      } = await getContextMessages({
+        gateway: gw,
+        channel: ctx.channel,
+        teamId: ctx.teamId,
+        threadTs: conversationTs,
+        readingAgentId: ctx.instanceName,
+        carried: ctx.batchTs,
         bot,
         resolveAgentName,
-        {
+        catchUp: {
           readingAgentId: ctx.instanceName,
           since,
-          triggeringTs: ctx.eventTs,
-          batchTs: ctx.batchTs,
+          until: ctx.deliveredUpTo,
+          carried: [
+            ...ctx.batchTs,
+            ...readSeenAbove(ctx.instanceName, threadKey),
+          ],
         },
-        ctx.teamId,
-      );
+      });
       const commit = () =>
-        noteThreadSeen(
-          ctx.instanceName,
+        commitSeenBoundary({
+          instanceName: ctx.instanceName,
           threadKey,
-          nextBoundary(
-            {
-              hasMore: readHasMore,
-              newestReadTs: readNewestTs,
-              triggeringTs: ctx.eventTs,
-            },
-            readThreadSeen(ctx.instanceName, threadKey),
-          ),
-        );
+          read: { hasMore: readHasMore, newestReadTs: readNewestTs },
+          deliveredUpTo: ctx.deliveredUpTo,
+          steeredTs: ctx.steeredTs,
+        });
       if (lines.length === 0) return { frame: {}, commit };
       noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
       return {
@@ -2856,12 +2990,12 @@ export function createSlackWorker(
     return [
       "<new-messages>",
       `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
-      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
       ...(conversation.hasThread
         ? []
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
           ]),
+      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
       "</new-messages>",
     ].join("\n");
   }
@@ -3095,6 +3229,11 @@ export function createSlackWorker(
     if (!gateway) return { posted: false, replyText: null };
     const gw = gateway;
 
+    const deliveredUpTo = args.messages.reduce(
+      (newest, m) => laterTs(newest, m.eventTs),
+      args.eventTs,
+    );
+    const neverSteered = (): string[] => [];
     const multi = args.messages.length > 1;
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
@@ -3177,6 +3316,8 @@ export function createSlackWorker(
             eventTs: args.eventTs,
             hasThread: args.hasThread,
             threadKey: args.threadKey,
+            deliveredUpTo,
+            steeredTs: neverSteered,
             batchTs: args.messages.map((m) => m.eventTs),
           });
           return {
@@ -3203,6 +3344,9 @@ export function createSlackWorker(
               teamId: args.teamId,
               hasThread: args.hasThread,
               threadKey: args.threadKey,
+              batchTs: args.messages.map((m) => m.eventTs),
+              deliveredUpTo,
+              steeredTs: neverSteered,
               images: args.images,
             },
             contract,
@@ -3509,7 +3653,7 @@ export function createSlackWorker(
 
     async stopAll() {
       serving = false;
-      turnRecovery.stop();
+      await turnRecovery.stop();
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;
       gatewayFailed = false;
@@ -3582,7 +3726,8 @@ export function createSlackWorker(
         return { error: "slack bot not running" };
       }
 
-      const { conversationId, attachment } = options ?? {};
+      const { conversationId, attachment, unfurlLinks, unfurlMedia } =
+        options ?? {};
       if (!text && !attachment) {
         return { error: "nothing to send — pass text or an attachment" };
       }
@@ -3595,7 +3740,10 @@ export function createSlackWorker(
         return target;
       }
 
-      const footer = await agentFooter(instanceName);
+      const [footer, persona] = await Promise.all([
+        agentFooter(instanceName),
+        agentPersona(gw, instanceName, target.teamId),
+      ]);
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -3604,7 +3752,10 @@ export function createSlackWorker(
             channel: target.id,
             teamId: target.teamId,
             text,
+            ...persona,
             blocks: [{ type: "markdown", text }, contextBlock],
+            ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+            ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           });
         }
         if (attachment) {
@@ -3817,15 +3968,25 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      const footer = await agentFooter(instanceName, turn?.sessionId);
+      const [footer, persona] = await Promise.all([
+        agentFooter(instanceName, turn?.sessionId),
+        agentPersona(gw, instanceName, target.teamId),
+      ]);
       try {
         await gw.postMessage({
           channel: target.id,
           teamId: target.teamId,
           threadTs,
           text: args.text,
+          ...persona,
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
+          ...(args.unfurlLinks !== undefined
+            ? { unfurlLinks: args.unfurlLinks }
+            : {}),
+          ...(args.unfurlMedia !== undefined
+            ? { unfurlMedia: args.unfurlMedia }
+            : {}),
         });
         if (args.attachment) {
           try {

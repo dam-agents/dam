@@ -263,6 +263,10 @@ func TestReconcile_CreateResources(t *testing.T) {
 	assert.Equal(t, "my-agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 
+	gwNP, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+	require.NoError(t, err, "per-pair gateway ingress NetworkPolicy must be created")
+	assert.Equal(t, "gateway", gwNP.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
+
 	assert.Equal(t, "my-agent", ss.Spec.Template.Spec.ServiceAccountName,
 		"agent pod must run as the per-agent SA")
 	assert.Equal(t, "my-agent", gws.Spec.Template.Spec.ServiceAccountName,
@@ -602,7 +606,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
 
-	r.Delete(ctx, "my-agent")
+	r.Delete(ctx, "my-agent", nil)
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=my-agent",
@@ -650,7 +654,7 @@ func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
 	}
 	r, client := setupReconciler(t, agent, secret)
 
-	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
+	require.NoError(t, r.ensureSecretOwnerReference(context.Background(), EnvoyLeafSecretName("my-agent"), agentOwnerRef(agent)))
 
 	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-agent-envoy-tls", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -673,7 +677,7 @@ func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
 	}
 	r, client := setupReconciler(t, agent, secret)
 
-	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
+	require.NoError(t, r.ensureSecretOwnerReference(context.Background(), EnvoyLeafSecretName("my-agent"), agentOwnerRef(agent)))
 
 	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-agent-envoy-tls", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -719,7 +723,7 @@ func TestReconcileOrphanLeafSecrets(t *testing.T) {
 func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
 	agent := agentCR()
 	r, _ := setupReconciler(t, agent)
-	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
+	assert.NoError(t, r.ensureSecretOwnerReference(context.Background(), EnvoyLeafSecretName("my-agent"), agentOwnerRef(agent)))
 }
 
 func enableWarmPool(r *AgentReconciler, sizes ...config.WarmPoolSize) {

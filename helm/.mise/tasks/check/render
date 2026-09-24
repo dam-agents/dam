@@ -11,20 +11,56 @@ KUBECONFORM=(kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer
 COMMON=(--include-crds --set terms.version=test --set terms.text='Test Terms')
 helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBECONFORM[@]}" "$@"
 # The vm backend renders a whole second set of objects (runner, its policy and
-# credentials, the device plugin) that the default values never reach.
+# credentials, the device plugin) that the default values never reach — and,
+# with the telemetry backend on, the collector's runner scrape and its RBAC.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The node image cache adds one more object nothing else renders: the DaemonSet
-# that preloads the install's harness images, which exists only where the cache
-# is a node directory.
+# that is the only writer of the node directory, which exists only where the
+# cache is a node directory.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set virtualization.runner.scc=hostmount-anyuid \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set agentNamespace=platform-agents \
+  | "${KUBECONFORM[@]}" "$@"
+# With install default pull Secrets the cache service also mounts them as a
+# projected volume, which no other render reaches.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
+  --set 'controller.agent.base.imagePullSecrets[1]=fallback' \
+  --set agentNamespace=platform-agents \
+  | "${KUBECONFORM[@]}" "$@"
+# The runners' serving certificates come from their own CA, so the vm backend
+# renders its issuers, and the controller's right to request Certificates, with
+# the envoyMitm path off.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set controller.envoyMitm.enabled=false \
+  | "${KUBECONFORM[@]}" "$@"
+# Virtualization keys the chart no longer reads fail the render rather than
+# being dropped without a word.
+for removed in 'virtualization.imageCache.preload.enabled=false' \
+  'virtualization.runner.ingressCidrs[0]=10.0.0.0/8' \
+  'virtualization.runner.canaryImage=quay.io/x/vm-runner:canary'; do
+  if helm template platform . "${COMMON[@]}" --set "$removed" >/dev/null 2>&1; then
+    echo "a render setting $removed succeeded, but the chart no longer reads it" >&2
+    exit 1
+  fi
+done
+# An install that reads kits from an enterprise host renders the api-server's
+# catalog credential, which the default values leave out entirely.
+helm template platform . "${COMMON[@]}" \
+  --set github.enterprise.host=github.example.com \
+  --set github.enterprise.tokenSecret.name=kit-catalog-token \
   | "${KUBECONFORM[@]}" "$@"

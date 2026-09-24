@@ -1,5 +1,6 @@
 import type { SpendByAgent } from "api-server-api";
 
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { formatUsd } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SpendBar } from "./spend-bar.js";
@@ -12,6 +13,7 @@ export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
         <SpendBar
           key={row.agentId}
           label={row.agentName || row.agentId}
+          icon={<AgentAvatar name={row.agentName || row.agentId} size={16} />}
           color={seriesColor(i)}
           pct={max > 0 ? (row.costUsd / max) * 100 : 0}
           value={formatUsd(row.costUsd)}

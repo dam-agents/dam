@@ -12,7 +12,8 @@
 # it installs, because it has work to do on every call and not just the first:
 # the flags below are what make a cluster work in a sandbox at all.
 #
-# `--data-dir` is defaulted onto the machine's storage disk: a guest's rootfs is
+# `--data-dir` is defaulted to where dam-runtime-dir says, under HOME, the one
+# path on the machine's storage disk the guest keeps: a guest's rootfs is
 # an overlay, overlayfs refuses an overlay as an upperdir, and k3s's containerd
 # snapshotter fails on exactly that — the default would not work at all on the
 # vm Backend. An explicit --data-dir always wins.
@@ -68,12 +69,8 @@ server | agent)
     # is the command, so set -e stops the shim here instead.
     sock=$(dam-containerd)
     set -- --container-runtime-endpoint "$sock" "$@"
-    for d in /storage /workspace; do
-        if [ -d "$d" ] && [ -w "$d" ]; then
-            set -- --data-dir "$d/k3s" "$@"
-            break
-        fi
-    done
+    dir=$(dam-runtime-dir)
+    [ -z "$dir" ] || set -- --data-dir "$dir/k3s" "$@"
     exec "$real" "$sub" "$@"
     ;;
 esac

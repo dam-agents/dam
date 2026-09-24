@@ -15,6 +15,7 @@ import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
@@ -109,6 +110,7 @@ export function AgentUnavailableOverlay({
       onBack={onBack}
       footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
     >
+      {state === "starting" && <AgentAvatar name={agent.name} size={128} />}
       {Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (

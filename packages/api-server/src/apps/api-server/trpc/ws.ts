@@ -21,11 +21,30 @@ const API_KEY_REAUTH_MS = 5 * 60_000;
 const RECONNECT_NUDGE_BEFORE_MS = 30_000;
 
 const CLOSE_CREDENTIAL_EXPIRED = 4401;
+const DENIAL_HOLD_MS = 1_000;
 
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
   composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A refused context makes tRPC's adapter answer
+ * under a null id, which the client cannot match to a request, and close the
+ * socket on the next tick, so a request that arrives later sees only a bare
+ * close. Holding the refusal until the connection's first request has
+ * reached the adapter lets that request carry the denial code under its own
+ * id; a client that sends nothing is still closed once the hold runs out.
+ */
+function firstRequestOrTimeout(ws: WebSocket, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    ws.once("message", () => {
+      clearTimeout(timer);
+      setImmediate(resolve);
+    });
+  });
 }
 
 export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
@@ -72,6 +91,7 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
         site,
       );
       if (!admitted.ok) {
+        await firstRequestOrTimeout(res, DENIAL_HOLD_MS);
         throw new TRPCError(trpcDenial[admitted.kind]);
       }
       const { user } = admitted.principal;

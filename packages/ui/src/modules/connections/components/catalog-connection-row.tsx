@@ -12,6 +12,7 @@ export interface RowGrantControls {
   granted: boolean;
   onToggle: (on: boolean) => void;
   actionHidden?: boolean;
+  blockedReason?: string;
 }
 
 export interface RowMaintenanceActions {

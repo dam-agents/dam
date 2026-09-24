@@ -73,9 +73,9 @@ rules:
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Per-pair agent egress NetworkPolicy. Mesh AuthorizationPolicy gates
-  # ingress to the gateway pod; this NP closes the symmetric egress hole
-  # at the kernel layer so the agent process cannot bypass HTTPS_PROXY.
+  # Per-pair agent egress and gateway ingress NetworkPolicies, plus each
+  # VM runner's: the kernel gates on who reaches a gateway, so the agent
+  # cannot bypass HTTPS_PROXY and no other pod can borrow its credentials.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -93,6 +93,13 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # The runner pod's memory request follows the machines it holds, changed
+  # in place so the Deployment never recreates the pod (and every machine
+  # with it). Only the resize subresource: it cannot touch anything but a
+  # container's resources. A cluster without it keeps the install's request.
+  - apiGroups: [""]
+    resources: ["pods/resize"]
+    verbs: ["update", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "create", "update", "delete"]
@@ -103,16 +110,6 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if .Values.virtualization.enabled }}
-  # Delete only, and only to clear the endpoint slice an earlier release wrote
-  # by hand for a vm agent: Kubernetes maintains that Service's endpoints now,
-  # and two slices naming one Service are unioned. Creating one is what
-  # OpenShift's restricted endpoints admission refuses; removing one needs no
-  # such grant. Goes when the cleanup in vm_agent.go does.
-  - apiGroups: ["discovery.k8s.io"]
-    resources: ["endpointslices"]
-    verbs: ["delete"]
-{{- end }}
 
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
@@ -141,7 +138,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{- if or .Values.virtualization.enabled (and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -178,6 +175,74 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "platform.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- if and .Values.virtualization.enabled (not $clusterScoped) }}
+---
+# A runner's claim is sized from its owner's demand only on a class that can
+# grow it later; elsewhere it is created at runner.storage. StorageClasses are
+# cluster-scoped, so a namespace-scoped install needs this read-only grant to
+# tell the two apart. Without it every runner claim is created at the ceiling.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+rules:
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "platform.controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.virtualization.enabled }}
+---
+# Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under
+# otherwise namespace-scoped RBAC. Read-only, and only to check that some node
+# advertises the device resources a VM runner asks for; without it the
+# controller logs that it cannot tell, rather than refusing the install.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-vm-nodes-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "platform.controller.serviceAccountName" . }}-vm-nodes-read
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "platform.controller.serviceAccountName" . }}-vm-nodes-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "platform.controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if $clusterScoped }}

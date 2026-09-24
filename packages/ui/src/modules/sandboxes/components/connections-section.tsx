@@ -6,6 +6,8 @@ import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
+import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
+import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 
@@ -25,6 +27,7 @@ export function ConnectionsSection({
   const setConnections = useSetAgentConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
+  const satellites = useAgentSatellites(agentId);
 
   const grantedIds = useMemo(
     () =>
@@ -43,22 +46,33 @@ export function ConnectionsSection({
   };
 
   const granted = useMemo(
-    () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
-      ),
+    () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
     [connectionsQ.data, grantedIds],
   );
-  const { populated: groups, templateById } = useCatalogGroups(granted);
+  const listed = useMemo(() => excludeProviderConnections(granted), [granted]);
+  const { populated: groups, templateById } = useCatalogGroups(listed);
 
   return (
     <section>
       <GrantedConnectionsPanel
         groups={groups}
+        granted={granted}
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}
         inset={inset}
+        leading={
+          satellites.granted.length > 0 && (
+            <SatellitesGroupCard
+              satellites={satellites.granted}
+              showCount
+              grant={(s) => ({
+                ...satellites.grantControls(s),
+                actionHidden: true,
+              })}
+            />
+          )
+        }
       />
       {catalogOpen && (
         <ConnectionCatalogModal
@@ -68,6 +82,7 @@ export function ConnectionsSection({
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
+          satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
         />
       )}

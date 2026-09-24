@@ -20,16 +20,19 @@ import {
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useAgentRunState,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
+import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
-import { usePromptDelivery } from "./use-prompt-delivery.js";
 
 async function classifyResumeFailure(
   agentId: string,
@@ -81,9 +84,9 @@ export function useAcpSession(
     clear: clearEngagement,
   } = useAcpSessionEngagement(selectedAgent);
 
-  const delivery = usePromptDelivery();
+  const [delivery] = useState(createPromptDelivery);
 
-  const makeUpdateHandler = useAcpUpdateHandler(delivery);
+  const makeUpdateHandler = useAcpUpdateHandler();
 
   const {
     ensureLive,
@@ -203,8 +206,10 @@ export function useAcpSession(
     [loadSessionHistory, setMessages],
   );
 
+  const agentRunState = useAgentRunState(selectedAgent);
   const { sendPrompt: promptAgent, stopAgent } = useAcpPrompt({
     selectedAgent,
+    agentRunState,
     ensureConnection: ensureLive,
     beginSession,
     engagedSessionIdRef,
