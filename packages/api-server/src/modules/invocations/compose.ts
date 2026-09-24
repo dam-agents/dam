@@ -82,9 +82,14 @@ export function createInvocationsCleanupHook(opts: {
   });
 }
 
-export function listInvocationAgentIds(db: Db): Promise<string[]> {
+export async function listInvocationAgentIds(db: Db): Promise<string[]> {
+  const repo = createInvocationsRepository(db);
   const olderThan = new Date(Date.now() - INVOCATION_ORPHAN_GRACE_MS);
-  return createInvocationsRepository(db).listRunningAgentIds(olderThan);
+  const [running, roots] = await Promise.all([
+    repo.listRunningAgentIds(olderThan),
+    repo.listRootDriverIds(),
+  ]);
+  return Array.from(new Set([...running, ...roots]));
 }
 
 const INVOCATION_ORPHAN_GRACE_MS = 5 * 60_000;

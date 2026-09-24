@@ -28,13 +28,15 @@ function makeService(opts: {
     listRunningByDriver: async () => [],
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
-    listAgedTerminal: async () => [],
     listByExperiment: async () => [],
     countRunningByDriver: async () => new Map(),
     failAllRunningByExperiment: async () => [],
+    listRootDriverIds: async () => [],
+    listByRoot: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
     },
+    deleteByRoot: async () => 0,
   };
   const service = createInvocationsService({
     owner: "owner-1",

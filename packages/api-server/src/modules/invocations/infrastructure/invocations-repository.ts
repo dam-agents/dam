@@ -4,7 +4,6 @@ import {
   isNotNull,
   like,
   lt,
-  inArray,
   sql,
   type Db,
   invocations as invocationsTable,
@@ -12,28 +11,44 @@ import {
 
 export type InvocationStatus = "running" | "done" | "failed";
 
-export interface InvocationRow {
+export interface InvocationSpec {
+  label: string | null;
+  prompt: string;
+  templateId: string | null;
+  image: string | null;
+  connections: string[];
+  cpu: string | null;
+  memory: string | null;
+  ttlMs: number | null;
+}
+
+export interface InvocationRow extends InvocationSpec {
   id: string;
   driverAgentId: string;
+  rootDriverId: string;
   owner: string;
   resultSchema: unknown;
   result: unknown;
   status: InvocationStatus;
   errorReason: string | null;
+  createdAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
   experimentSpanId: string | null;
 }
 
 export interface InvocationsRepository {
-  insert(input: {
-    id: string;
-    driverAgentId: string;
-    owner: string;
-    resultSchema: unknown;
-    expiresAt: Date;
-    experimentSpanId: string | null;
-  }): Promise<void>;
+  insert(
+    input: InvocationSpec & {
+      id: string;
+      driverAgentId: string;
+      rootDriverId: string;
+      owner: string;
+      resultSchema: unknown;
+      expiresAt: Date;
+      experimentSpanId: string | null;
+    },
+  ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
@@ -41,7 +56,8 @@ export interface InvocationsRepository {
   listRunning(limit: number): Promise<InvocationRow[]>;
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
-  listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
+  listRootDriverIds(): Promise<string[]>;
+  listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
   listByExperiment(
     driverAgentId: string,
     experimentId: string,
@@ -57,17 +73,28 @@ export interface InvocationsRepository {
     reason: string,
   ): Promise<string[]>;
   delete(id: string): Promise<void>;
+  deleteByRoot(rootDriverId: string): Promise<number>;
 }
 
 function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
     driverAgentId: r.driverAgentId,
+    rootDriverId: r.rootDriverId,
     owner: r.owner,
+    label: r.label,
+    prompt: r.prompt,
+    templateId: r.templateId,
+    image: r.image,
+    connections: r.connections,
+    cpu: r.cpu,
+    memory: r.memory,
+    ttlMs: r.ttlMs,
     resultSchema: r.resultSchema,
     result: r.result,
     status: r.status as InvocationStatus,
     errorReason: r.errorReason,
+    createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
     experimentSpanId: r.experimentSpanId,
@@ -80,7 +107,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       await db.insert(invocationsTable).values({
         id: input.id,
         driverAgentId: input.driverAgentId,
+        rootDriverId: input.rootDriverId,
         owner: input.owner,
+        label: input.label,
+        prompt: input.prompt,
+        templateId: input.templateId,
+        image: input.image,
+        connections: input.connections,
+        cpu: input.cpu,
+        memory: input.memory,
+        ttlMs: input.ttlMs,
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
@@ -180,16 +216,19 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return Array.from(ids);
     },
 
-    async listAgedTerminal(before, limit) {
+    async listRootDriverIds() {
+      const rows = await db
+        .selectDistinct({ rootDriverId: invocationsTable.rootDriverId })
+        .from(invocationsTable);
+      return rows.map((r) => r.rootDriverId);
+    },
+
+    async listByRoot(rootDriverId, limit) {
       const rows = await db
         .select()
         .from(invocationsTable)
-        .where(
-          and(
-            inArray(invocationsTable.status, ["done", "failed"]),
-            lt(invocationsTable.completedAt, before),
-          ),
-        )
+        .where(eq(invocationsTable.rootDriverId, rootDriverId))
+        .orderBy(invocationsTable.createdAt)
         .limit(limit);
       return rows.map(toRow);
     },
@@ -230,7 +269,12 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           targetAgentId: invocationsTable.id,
         })
         .from(invocationsTable)
-        .where(eq(invocationsTable.owner, owner));
+        .where(
+          and(
+            eq(invocationsTable.owner, owner),
+            eq(invocationsTable.status, "running"),
+          ),
+        );
       return rows;
     },
 
@@ -254,6 +298,14 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
 
     async delete(id) {
       await db.delete(invocationsTable).where(eq(invocationsTable.id, id));
+    },
+
+    async deleteByRoot(rootDriverId) {
+      const deleted = await db
+        .delete(invocationsTable)
+        .where(eq(invocationsTable.rootDriverId, rootDriverId))
+        .returning({ id: invocationsTable.id });
+      return deleted.length;
     },
   };
 }

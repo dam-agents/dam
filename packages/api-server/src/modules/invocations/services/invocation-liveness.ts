@@ -5,8 +5,6 @@ export interface InvocationLivenessSweep {
   tick(): Promise<void>;
 }
 
-const RESULT_RETENTION_MS = 10 * 60 * 1000;
-
 export interface TargetRestartState {
   podRestarts: number;
   podRestartReason?: string;
@@ -68,21 +66,6 @@ export function createInvocationLivenessSweep(
         } catch (err) {
           process.stderr.write(
             `[invocation-liveness] restart-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
-          );
-        }
-      }
-
-      const rowDeadline = new Date(now().getTime() - RESULT_RETENTION_MS);
-      const aged = await deps.repo.listAgedTerminal(
-        rowDeadline,
-        deps.batchSize,
-      );
-      for (const row of aged) {
-        try {
-          await deps.repo.delete(row.id);
-        } catch (err) {
-          process.stderr.write(
-            `[invocation-liveness] drop ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
           );
         }
       }

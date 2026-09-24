@@ -7,6 +7,7 @@ export function createDriverCascade(deps: {
   agentsFor: (owner: string) => AgentsService;
 }): (agentId: string) => Promise<void> {
   return async (agentId) => {
+    const own = await deps.repo.get(agentId);
     await deps.repo.fail(agentId, "target agent deleted");
     const driven = await deps.repo.listRunningByDriver(agentId);
     for (const row of driven) {
@@ -27,5 +28,6 @@ export function createDriverCascade(deps: {
         );
       }
     }
+    if (own === null) await deps.repo.deleteByRoot(agentId);
   };
 }
