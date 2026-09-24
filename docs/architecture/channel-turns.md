@@ -95,6 +95,8 @@ The footer has two separable parts and **only one is a contract**. The **Agent i
 
 Keeping those apart is an **invariant**, not tidiness. Attribution used to read the Agent's name out of the label, so rewording it into a brand line silently unnamed every Agent in injected history — a copy change breaking a runtime feature, with nothing failing anywhere. Attribution reads the id and resolves a name from it, which is also why the parser still accepts the footer's older link forms (the authenticated chat route and its retired predecessor): history predating the change stays attributable.
 
+An agent post also carries a **Delete link** into the owner's authenticated chat, holding a random token and the post's rough time, because Slack assigns the message id only after posting; on the owner's confirm the platform finds the post by that token, checks the footer is that Agent's own, and deletes it; a file uploaded with the post carries the same footer, so it goes too. The text goes first, and a part that failed is finished by opening the same link again. A reply's session is told with a short notice unless the Agent is stopped; a top-level post names no session, so nobody is told.
+
 ### Threading model
 
 Outbound posts are **fire-and-forget at the thread level**. The agent posts a top-level message; the worker stores no thread-to-session mapping for proactive posts. If a user replies to the resulting thread, the inbound path treats it as a new mention — a fresh session. Continuity from the originating session does not carry over. This is the deliberate trade-off: keep outbound simple and stateless at the cost of session bridging on Slack-side replies.
