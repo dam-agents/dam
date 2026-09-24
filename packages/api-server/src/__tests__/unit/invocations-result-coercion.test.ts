@@ -28,6 +28,8 @@ function makeService(row: InvocationRow) {
     countRunningByDriver: async () => new Map(),
     failAllRunningByExperiment: async () => [],
     listRootDriverIds: async () => [],
+    listTerminalUnreaped: async () => [],
+    markReaped: async () => {},
     listByRoot: async () => [],
     delete: async () => {},
     deleteByRoot: async () => 0,
@@ -39,6 +41,7 @@ function makeService(row: InvocationRow) {
       delete: async () => {},
     } as never,
     driverResolution: { resolveRoot: async (id: string) => id },
+    reaper: { reap: async () => {} },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
   });
@@ -66,6 +69,7 @@ function runningRow(resultSchema: unknown): InvocationRow {
     errorReason: null,
     expiresAt: new Date(Date.now() + 60_000),
     completedAt: null,
+    reapedAt: null,
     experimentSpanId: null,
   };
 }

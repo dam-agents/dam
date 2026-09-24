@@ -863,12 +863,16 @@ export const invocations = pgTable(
       .defaultNow()
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    reapedAt: timestamp("reaped_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     experimentSpanId: text("experiment_span_id"),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
     index("invocations_root_driver_idx").on(table.rootDriverId),
+    index("invocations_unreaped_idx")
+      .on(table.completedAt)
+      .where(sql`${table.reapedAt} IS NULL`),
     index("invocations_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),

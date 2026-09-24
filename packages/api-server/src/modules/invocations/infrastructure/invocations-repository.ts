@@ -1,7 +1,9 @@
 import {
   and,
   eq,
+  inArray,
   isNotNull,
+  isNull,
   like,
   lt,
   sql,
@@ -34,6 +36,7 @@ export interface InvocationRow extends InvocationSpec {
   createdAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
+  reapedAt: Date | null;
   experimentSpanId: string | null;
 }
 
@@ -57,6 +60,8 @@ export interface InvocationsRepository {
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
   listRootDriverIds(): Promise<string[]>;
+  listTerminalUnreaped(before: Date, limit: number): Promise<InvocationRow[]>;
+  markReaped(id: string): Promise<void>;
   listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
   listByExperiment(
     driverAgentId: string,
@@ -97,6 +102,7 @@ function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
+    reapedAt: r.reapedAt,
     experimentSpanId: r.experimentSpanId,
   };
 }
@@ -214,6 +220,28 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         ids.add(r.driverAgentId);
       }
       return Array.from(ids);
+    },
+
+    async listTerminalUnreaped(before, limit) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(
+          and(
+            inArray(invocationsTable.status, ["done", "failed"]),
+            isNull(invocationsTable.reapedAt),
+            lt(invocationsTable.completedAt, before),
+          ),
+        )
+        .limit(limit);
+      return rows.map(toRow);
+    },
+
+    async markReaped(id) {
+      await db
+        .update(invocationsTable)
+        .set({ reapedAt: new Date() })
+        .where(eq(invocationsTable.id, id));
     },
 
     async listRootDriverIds() {

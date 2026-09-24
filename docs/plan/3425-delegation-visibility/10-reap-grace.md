@@ -5,14 +5,17 @@
 
 ## Context
 
-A target is deleted the instant `report_result` lands. The delete stops the child pod and
-its gateway together, and Claude Code exports telemetry in one-second batches through that
-gateway, so whatever is still buffered dies with the pod. Seen on the dev cluster on
-2026-09-24: one fan-out kept every child record, the next kept ten spans for one child and
-nothing for the other. A card that shows no telemetry for a child that did real work is a
-bug the user cannot tell from "telemetry is off". This slice gives a reported target a few
-seconds before it is reaped, through one reap path that slice 08 then extends with the
-conversation capture. The target is still a throwaway and still goes within seconds.
+A target is deleted the instant `report_result` lands, and that delete stops the child pod
+and its gateway together. Slice 08 has to read the child's conversation out of that pod
+before it goes, and today there is no single place to hook that into: the report path, the
+liveness sweep and the driver cascade each delete the target themselves. This slice gives
+them one reap path, and puts a short pause between a target reporting and its deletion so
+nothing in flight is cut off mid-word.
+
+**What this slice does not fix.** It was written believing it would recover the telemetry
+that goes missing on some children. Measurement on 2026-09-24 disproved that: across fifteen
+children the records were never in flight at teardown at all (see the README's open
+question). The pause stays as cheap insurance and as the seam slice 08 needs, not as a cure.
 
 Apply `/typescript-engineering`.
 
@@ -45,8 +48,8 @@ Apply `/typescript-engineering`.
 
 ## Acceptance criteria
 
-- [ ] After a fan-out, both children's `telemetry.invocationTurns` entries hold their
-      `claude_code.api_request` records with cost, across three consecutive runs.
+- [ ] Every path that reaps a target goes through one function, so slice 08 has a single
+      place to insert the capture.
 - [ ] A reported target's pod is gone within roughly ten seconds of its report.
 - [ ] Killing the api-server between a report and the grace still ends with the target
       deleted and `reaped_at` set, by the next sweep tick.
@@ -56,7 +59,8 @@ Apply `/typescript-engineering`.
 
 ## Smoke test
 
-`mise run test` and `mise run check`. On the dev cluster run the README fan-out prompt three
-times and after each call `telemetry.invocationTurns` for the two new ids: every entry has
-`calls > 0`. Watch `mise run cluster:kubectl -- -n platform-agents get pods -w` during one
-run: child pods disappear a few seconds after the driver prints `[invoke] done`.
+`mise run test` and `mise run check`. On the dev cluster run the README fan-out prompt and
+watch `mise run cluster:kubectl -- -n platform-agents get pods -w`: child pods disappear a
+few seconds after the driver prints `[invoke] done`, and the rows carry a `reaped_at` a few
+seconds past their `completed_at`. Verified 2026-09-24: completion and reap were identical
+timestamps before this slice and five to seven seconds apart after it.

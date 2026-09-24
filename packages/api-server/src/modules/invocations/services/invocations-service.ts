@@ -13,6 +13,7 @@ import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import { invocationTargetName } from "../domain/target-name.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
+import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
 import type {
   InvocationsRepository,
   InvocationStatus,
@@ -104,9 +105,12 @@ export function createInvocationsService(deps: {
     driverAgentId: string,
   ) => Promise<boolean>;
   targetAdmission?: TargetAdmission;
+  reaper: TargetReaper;
+  reportGraceMs?: number;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
+  const reportGraceMs = deps.reportGraceMs ?? REPORT_GRACE_MS;
   const ajv = new Ajv({ allErrors: true, strict: false });
 
   function compileSchema(schema: unknown): ValidateFunction {
@@ -254,9 +258,11 @@ export function createInvocationsService(deps: {
       if (!stored) {
         return { ok: false, errors: "invocation is no longer running" };
       }
-      try {
-        await deps.agents.delete(invocationId);
-      } catch {}
+      const timer = setTimeout(
+        () => void deps.reaper.reap({ id: row.id, owner: row.owner }),
+        reportGraceMs,
+      );
+      timer.unref();
       return { ok: true };
     },
   };

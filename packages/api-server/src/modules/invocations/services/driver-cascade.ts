@@ -1,14 +1,17 @@
-import type { AgentsService } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
+import type { TargetReaper } from "./target-reaper.js";
 
 export function createDriverCascade(deps: {
   repo: InvocationsRepository;
-  agentsFor: (owner: string) => AgentsService;
+  reaper: TargetReaper;
 }): (agentId: string) => Promise<void> {
   return async (agentId) => {
     const own = await deps.repo.get(agentId);
-    await deps.repo.fail(agentId, "target agent deleted");
+    if (own) {
+      await deps.repo.fail(agentId, "target agent deleted");
+      await deps.repo.markReaped(agentId);
+    }
     const driven = await deps.repo.listRunningByDriver(agentId);
     for (const row of driven) {
       await deps.repo.fail(row.id, "driver agent deleted");
@@ -20,13 +23,7 @@ export function createDriverCascade(deps: {
         result: "success",
         detail: { driverAgentId: agentId },
       });
-      try {
-        await deps.agentsFor(row.owner).delete(row.id);
-      } catch (err) {
-        process.stderr.write(
-          `[driver-cascade] reap ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
-        );
-      }
+      await deps.reaper.reap(row);
     }
     if (own === null) await deps.repo.deleteByRoot(agentId);
   };
