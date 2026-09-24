@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-09-22
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -93,7 +93,7 @@ Admission decides only what the platform can know from the Snapshot: that the Sa
 
 `--max-concurrent` is clamped to an operator ceiling. Everywhere else the machine's own declaration governs and wins; here the queue is Platform's storage, so a Satellite may ask for less than the ceiling and never for more.
 
-Draining is set by `drain` and cleared by a **claim**, and by nothing else: a draining worker stops claiming, so a claim is the machine saying it serves again, while a heartbeat and a Snapshot push both say nothing about readiness. A heartbeat that cleared it would let a shutting-down machine un-shut itself on its own next beat.
+A machine past the offline window is refused as offline, whether or not it was draining when it left. Draining is set by `drain` and cleared by a **claim**, and by nothing else: a draining worker stops claiming, so a claim is the machine saying it serves again, while a heartbeat and a Snapshot push both say nothing about readiness. A heartbeat that cleared it would let a shutting-down machine un-shut itself on its own next beat.
 
 ## Jobs
 
@@ -101,7 +101,7 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 |---|---|
 | queued | accepted; no worker has claimed it yet |
 | running | claimed, under a lease the worker renews |
-| done | terminal: the tool's result, and its exit code where the tool has one |
+| done | terminal: the tool's result, and its exit code where the tool has one; a call the machine refused is a done Job whose result is an error |
 | interrupted | the worker stopped renewing, or it was killed — the outcome is unknowable |
 | cancelled | terminal after a cancellation or the Satellite's removal |
 
@@ -111,7 +111,7 @@ Draining is set by `drain` and cleared by a **claim**, and by nothing else: a dr
 
 **Jobs are never retried.** A tool call is not assumed idempotent and nothing can judge one safe to repeat.
 
-**Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for.
+**Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for. A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again.
 
 An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it. A Job that reached its TTL without ever starting — queued with nobody claiming — is **settled and told**, not deleted: it holds a place against the Satellite's concurrency until something ends it.
 

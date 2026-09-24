@@ -1,4 +1,10 @@
-import { createTRPCClient, httpBatchLink, type TRPCClient } from "@trpc/client";
+import {
+  createTRPCClient,
+  httpBatchLink,
+  httpLink,
+  splitLink,
+  type TRPCClient,
+} from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import type { AppRouter as AgentRuntimeAppRouter } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
@@ -85,17 +91,31 @@ function wrapFetchWithServerGates(
   }) as typeof fetch;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Calls that hold their request open on the server.
+ * A batch answers only when every call in it has, so a long poll sharing one
+ * with anything else holds that call for the whole poll: a satellite worker's
+ * claim issued beside a still-open claim waited out its 25 seconds before
+ * taking work it was free to run.
+ */
+const LONG_POLLS = new Set(["satellites.claim"]);
+
 export function createTrpcClient(deps: {
   host: string;
   tokenProvider: TokenProvider;
   fetch?: typeof fetch;
 }): TrpcClient {
+  const options = {
+    url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
+    fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
+    headers: buildAuthHeaders(deps),
+  };
   return createTRPCClient<AppRouter>({
     links: [
-      httpBatchLink({
-        url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
-        fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
-        headers: buildAuthHeaders(deps),
+      splitLink({
+        condition: (op) => LONG_POLLS.has(op.path),
+        true: httpLink(options),
+        false: httpBatchLink(options),
       }),
     ],
   });
