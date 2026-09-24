@@ -133,7 +133,7 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-chat",
       agent: decodeSegment(knowledgeBaseChatMatch[1]!),
     };
-  return { view: "home" };
+  return { view: "agents" };
 }
 
 export function routeToPath(route: Route): string {

@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
-import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
@@ -98,7 +97,6 @@ function MainApp() {
         </div>
         <DialogOverlay />
         <ConnectionBanner />
-        <FloatingApprovalsPill />
         <DocsLauncher />
       </>
     );
@@ -113,67 +111,24 @@ function MainApp() {
 
   if (view === "avatar-sheet")
     return (
-      <>
-        <AvatarSheetView />
+      <div className="flex flex-col h-full bg-background relative overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
+          <AvatarSheetView />
+        </main>
         <DialogOverlay />
-      </>
+      </div>
     );
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
-          {view === "sandbox-home" ? (
-            <SandboxHomeView />
-          ) : view === "knowledge-base-config" ? (
-            <KnowledgeBaseConfigView />
-          ) : (
-            <div
-              className={cn(
-                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ||
-                  view === "packs" ||
-                  view === "knowledge-bases"
-                  ? "max-w-[1200px]"
-                  : "max-w-[960px]",
-              )}
-            >
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "agent-new" ? (
-                <AgentSetupView />
-              ) : view === "settings" ? (
-                <SettingsView />
-              ) : view === "agents" ? (
-                <AgentsView />
-              ) : view === "knowledge-bases" ? (
-                <KnowledgeBasesListView />
-              ) : view === "knowledge-base-new" ? (
-                <KnowledgeBaseSetupView />
-              ) : view === "packs" ? (
-                <PacksView />
-              ) : view === "setup-workbench" ? (
-                <SetupWorkbenchView />
-              ) : view === "artifacts" ? (
-                <ArtifactsView />
-              ) : (
-                <HomeView />
-              )}
-            </div>
-          )}
-        </main>
-      </div>
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+          <AgentsView />
+        </div>
+      </main>
       <DialogOverlay />
       <ConnectionBanner />
-      <FloatingApprovalsPill />
       <DocsLauncher />
-      <button
-        onClick={() => useStore.getState().setView("flow-board")}
-        className="fixed bottom-4 right-4 z-50 rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-gray-800 print:hidden"
-      >
-        Design &rarr;
-      </button>
     </div>
   );
 }

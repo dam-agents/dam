@@ -129,6 +129,594 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
   background: var(--accent); color: #fff;
 }
 .color-toggle-bar .label { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+#bees-sheet {
+  display: none;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 16px 80px;
+}
+#bees-sheet .bees-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 28px;
+  margin-bottom: 32px;
+}
+#bees-sheet h1 { font-size: clamp(30px, 4vw, 40px); line-height: 1.15; font-weight: 600; margin: 0 0 14px; letter-spacing: -.01em; }
+#bees-sheet .bees-sub { color: var(--muted); max-width: 68ch; margin: 0 0 16px; font-size: 15px; line-height: 1.6; }
+#bees-sheet .bees-toggle {
+  display: inline-flex; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--line);
+}
+#bees-sheet .bees-toggle button {
+  padding: 6px 16px; border: none; cursor: pointer;
+  font: 14px/1 var(--sans); font-weight: 500;
+  background: transparent; color: var(--muted);
+  transition: background .15s, color .15s;
+}
+#bees-sheet .bees-toggle button.active {
+  background: var(--accent); color: #fff;
+}
+#bees-sheet .bees-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+#bees-sheet .bee-tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#bees-sheet .bee-plate {
+  background: var(--plate);
+  display: grid;
+  place-items: center;
+  padding: 24px 0;
+}
+#bees-sheet .bee-plate svg {
+  width: 112px;
+  height: 112px;
+  display: block;
+}
+#bees-sheet .bee-cap {
+  padding: 10px 14px 14px;
+  font: 13px/1.4 var(--mono);
+  font-weight: 500;
+  color: var(--text);
+}
+#bees-sheet .bee-eye-sleep { opacity: 0; }
+#bees-sheet.sleeping .bee-eye-awake { opacity: 0; }
+#bees-sheet.sleeping .bee-eye-sleep { opacity: 1; }
+#bees-sheet .bee-eye-awake > *,
+#bees-sheet .bee-eye-sleep {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ── Hover animations ── */
+#bees-sheet .bee-plate { cursor: pointer; }
+
+@keyframes bee-blink {
+  0%, 30%, 100% { transform: scaleY(1); }
+  15% { transform: scaleY(0.05); }
+}
+@keyframes bee-look-leye {
+  0%, 100%  { transform: translate(0, 0) scale(1); }
+  25%, 38%  { transform: translate(5px, -3px) scale(1); }
+  58%, 72%  { transform: translate(-5px, -3px) scale(1.15); }
+}
+@keyframes bee-look-reye {
+  0%, 100%  { transform: translate(0, 0) scale(1); }
+  25%, 38%  { transform: translate(5px, -3px) scale(1.15); }
+  58%, 72%  { transform: translate(-5px, -3px) scale(1); }
+}
+@keyframes bee-flutter-l {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(8deg); }
+  55% { transform: rotate(-5deg); }
+  80% { transform: rotate(3deg); }
+}
+@keyframes bee-flutter-r {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-8deg); }
+  55% { transform: rotate(5deg); }
+  80% { transform: rotate(-3deg); }
+}
+@keyframes bee-bob {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-7px); }
+}
+@keyframes bee-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes bee-rock {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(var(--br, 6deg)); }
+  70% { transform: rotate(calc(var(--br, 6deg) * -0.6)); }
+}
+@keyframes bee-twitch {
+  0%, 88%, 100% { transform: rotate(0deg); }
+  92% { transform: rotate(6deg); }
+  96% { transform: rotate(-3deg); }
+}
+
+/* blink icons: signal, stack, bloom, compass, axis, sash */
+:where(#bees-sheet:not(.sleeping)) [data-icon="signal"] .bee-plate:hover .bee-eye-awake > :nth-child(1) { animation: bee-blink 0.9s ease-in-out; }
+:where(#bees-sheet:not(.sleeping)) [data-icon="signal"] .bee-plate:hover .bee-eye-awake > :nth-child(2) { animation: bee-blink 0.9s ease-in-out 0.08s; }
+:where(#bees-sheet:not(.sleeping)) [data-icon="signal"] .bee-plate:hover .bee-eye-awake > :nth-child(3) { animation: bee-blink 0.9s ease-in-out 0.04s; }
+:where(#bees-sheet:not(.sleeping)) [data-icon="signal"] .bee-plate:hover .bee-eye-awake > :nth-child(4) { animation: bee-blink 0.9s ease-in-out 0.12s; }
+
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="stack"], [data-icon="bloom"], [data-icon="compass"], [data-icon="axis"], [data-icon="sash"]) .bee-plate:hover .bee-eye-awake > :nth-child(1) {
+  animation: bee-blink 0.9s ease-in-out;
+}
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="stack"], [data-icon="bloom"], [data-icon="compass"], [data-icon="axis"], [data-icon="sash"]) .bee-plate:hover .bee-eye-awake > :nth-child(2) {
+  animation: bee-blink 0.9s ease-in-out 0.06s;
+}
+
+/* look-around icons (left-eye-first): cross, crown */
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="cross"], [data-icon="crown"]) .bee-plate:hover .bee-eye-awake > :nth-child(1) {
+  animation: bee-look-leye 1.2s ease-in-out;
+}
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="cross"], [data-icon="crown"]) .bee-plate:hover .bee-eye-awake > :nth-child(2) {
+  animation: bee-look-reye 1.2s ease-in-out;
+}
+
+/* look-around icons (right-eye-first): shield, tilt, tower */
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="shield"], [data-icon="tilt"], [data-icon="tower"]) .bee-plate:hover .bee-eye-awake > :nth-child(1) {
+  animation: bee-look-reye 1.2s ease-in-out;
+}
+:where(#bees-sheet:not(.sleeping)) :is([data-icon="shield"], [data-icon="tilt"], [data-icon="tower"]) .bee-plate:hover .bee-eye-awake > :nth-child(2) {
+  animation: bee-look-leye 1.2s ease-in-out;
+}
+
+/* sleeping: collapsed/tired look */
+#bees-sheet.sleeping .bee-plate svg {
+  transform: scaleY(0.88);
+  transform-origin: center bottom;
+  transition: transform 0.3s ease;
+}
+
+@keyframes bee-breathe {
+  0%, 100% { transform: scaleY(0.88); }
+  45% { transform: scaleY(0.95); }
+}
+
+/* sleeping hover: deep breathing, suppress awake piece animations */
+#bees-sheet.sleeping .bee-plate:hover svg {
+  animation: bee-breathe 2.5s ease-in-out infinite;
+}
+#bees-sheet.sleeping .bee-plate:hover svg > path,
+#bees-sheet.sleeping .bee-plate:hover svg > rect {
+  animation: none;
+}
+
+/* sleeping: sporadic piece twitches */
+#bees-sheet.sleeping [data-icon="signal"] svg > path:nth-of-type(1) {
+  transform-origin: 50.1% 64.2%;
+  animation: bee-twitch 4s ease-in-out infinite 1.5s;
+}
+#bees-sheet.sleeping [data-icon="shield"] svg > path:nth-of-type(2) {
+  transform-origin: 72.0% 49.7%;
+  animation: bee-twitch 5s ease-in-out infinite 0.5s;
+}
+#bees-sheet.sleeping [data-icon="tower"] svg > path:nth-of-type(1) {
+  transform-origin: 28.1% 31.1%;
+  animation: bee-twitch 4s ease-in-out infinite 3.2s;
+}
+#bees-sheet.sleeping [data-icon="bloom"] svg > path:nth-of-type(3) {
+  transform-origin: 46.6% 44.1%;
+  animation: bee-twitch 4.5s ease-in-out infinite 1s;
+}
+#bees-sheet.sleeping [data-icon="tilt"] svg > path:nth-of-type(2) {
+  transform-origin: 68.8% 31.4%;
+  animation: bee-twitch 3.5s ease-in-out infinite 4s;
+}
+
+/* ── Agent Cards Section ── */
+#agent-cards-sheet {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 60px 48px 80px;
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  color: #121619;
+}
+#agent-cards-sheet .cards-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+#agent-cards-sheet .cards-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+#agent-cards-sheet .cards-header p {
+  font-size: 15px;
+  color: #4d5358;
+  margin: 0;
+}
+#agent-cards-sheet .cards-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+#agent-cards-sheet .cards-col h3 {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4d5358;
+  margin: 0 0 16px;
+}
+#agent-cards-sheet .cards-col-sleeping h3 { color: #4d5358; }
+#agent-cards-sheet .cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* exact match: CARD_SURFACE = "rounded-lg bg-card text-card-foreground border"
+   + "group cursor-pointer transition-colors hover:bg-muted/40" */
+#agent-cards-sheet .agent-card {
+  border-radius: 8px;
+  background: #ffffff;
+  color: #121619;
+  border: 1px solid #dde1e6;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+#agent-cards-sheet .agent-card:hover {
+  background-color: rgba(242, 244, 248, 0.4);
+}
+
+/* exact match: "flex items-start gap-4 p-5" */
+#agent-cards-sheet .agent-card-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+}
+
+/* bee icon slot: added as leftmost element */
+#agent-cards-sheet .card-bee {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-self: center;
+}
+#agent-cards-sheet .card-bee svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* exact match: "min-w-0 flex-1" */
+#agent-cards-sheet .card-content {
+  min-width: 0;
+  flex: 1 1 0%;
+}
+
+/* exact match: "min-w-0 truncate text-base font-semibold text-foreground
+   transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary" */
+#agent-cards-sheet .card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: #121619;
+  margin: 0;
+  transition: color 0.15s;
+}
+#agent-cards-sheet .agent-card:hover .card-name {
+  color: #000000;
+}
+
+/* exact match: "mt-0.5 truncate text-sm text-muted-foreground" */
+#agent-cards-sheet .card-sub {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #4d5358;
+}
+
+/* exact match: "flex shrink-0 items-center gap-1.5" */
+#agent-cards-sheet .card-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* badge base: "inline-flex items-center rounded-full border transition-colors"
+   + size default: "px-2.5 py-0.5 text-xs tracking-[0.338px]" */
+#agent-cards-sheet .card-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  padding: 2px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  font-weight: 500;
+  letter-spacing: 0.338px;
+  white-space: nowrap;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+/* variant="success": "bg-success-light text-green-700" */
+#agent-cards-sheet .badge-working {
+  background: #defbe6;
+  color: #15803d;
+}
+/* BLUE_BADGE (idle): "bg-blue-50 text-blue-600" */
+#agent-cards-sheet .badge-idle {
+  background: #eff6ff;
+  color: #2563eb;
+}
+/* variant="muted": "bg-muted text-muted-foreground" */
+#agent-cards-sheet .badge-hibernating {
+  background: #f2f4f8;
+  color: #4d5358;
+}
+
+/* ghost icon button: "hover:bg-muted hover:text-foreground" + size="icon" "h-10 w-10" */
+#agent-cards-sheet .btn-ghost-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #121619;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.15s, color 0.15s;
+}
+#agent-cards-sheet .btn-ghost-icon:hover {
+  background: #f2f4f8;
+  color: #121619;
+}
+#agent-cards-sheet .btn-ghost-icon svg {
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+/* sleeping bee icons inside cards */
+#agent-cards-sheet .cards-col-sleeping .card-bee svg {
+  transform: scaleY(0.88);
+  transform-origin: center bottom;
+}
+#agent-cards-sheet .cards-col-sleeping .card-bee .bee-eye-awake { opacity: 0; }
+#agent-cards-sheet .cards-col-sleeping .card-bee .bee-eye-sleep { opacity: 1; }
+/* awake bee icons inside cards */
+#agent-cards-sheet .cards-col-awake .card-bee .bee-eye-sleep { opacity: 0; }
+#agent-cards-sheet .cards-col-awake .card-bee .bee-eye-awake { opacity: 1; }
+
+/* card hover: awake bees bob */
+#agent-cards-sheet .cards-col-awake .agent-card:hover .card-bee svg {
+  animation: bee-bob 1.2s ease-in-out;
+}
+/* card hover: sleeping bees breathe */
+#agent-cards-sheet .cards-col-sleeping .agent-card:hover .card-bee svg {
+  animation: bee-breathe 2.5s ease-in-out infinite;
+}
+
+/* ── signal (viewBox 112×112): wings pivot from sharp tips, bar pulses ── */
+[data-icon="signal"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 50.1% 64.2%;
+  animation: bee-flutter-l 0.6s ease-in-out;
+}
+[data-icon="signal"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 40.4% 15.1%;
+  animation: bee-flutter-r 0.6s ease-in-out 0.05s;
+}
+[data-icon="signal"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-box: fill-box; transform-origin: center;
+  animation: bee-pulse 0.5s ease-in-out 0.1s;
+}
+
+/* ── cross (viewBox 125×125): 4 quarters pivot from inner corners ── */
+[data-icon="cross"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 12.3% 56.2%;
+  animation: bee-flutter-l 0.5s ease-in-out;
+}
+[data-icon="cross"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 12.6% 43.7%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.06s;
+}
+[data-icon="cross"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 87.3% 43.7%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.12s;
+}
+[data-icon="cross"] .bee-plate:hover svg > path:nth-of-type(4) {
+  transform-origin: 87.3% 56.2%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.18s;
+}
+
+/* ── stack: 3 bars stagger-bounce ── */
+[data-icon="stack"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  animation: bee-bob 0.45s ease-in-out;
+}
+[data-icon="stack"] .bee-plate:hover svg > rect:nth-of-type(2) {
+  animation: bee-bob 0.45s ease-in-out 0.1s;
+}
+[data-icon="stack"] .bee-plate:hover svg > rect:nth-of-type(3) {
+  animation: bee-bob 0.45s ease-in-out 0.2s;
+}
+
+/* ── crown (viewBox 125×125): points pivot from sharp inner tips, bars bob ── */
+[data-icon="crown"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 62.6% 15.7%;
+  animation: bee-flutter-l 0.5s ease-in-out;
+}
+[data-icon="crown"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 37.5% 15.7%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.06s;
+}
+[data-icon="crown"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  animation: bee-bob 0.4s ease-in-out 0.08s;
+}
+[data-icon="crown"] .bee-plate:hover svg > rect:nth-of-type(2) {
+  animation: bee-bob 0.4s ease-in-out 0.16s;
+}
+
+/* ── bloom (viewBox 125×125): 4 petals pivot from sharp inner tips ── */
+[data-icon="bloom"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 56.0% 47.2%;
+  animation: bee-flutter-r 0.5s ease-in-out;
+}
+[data-icon="bloom"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 52.4% 43.6%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.07s;
+}
+[data-icon="bloom"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 46.6% 44.1%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.14s;
+}
+[data-icon="bloom"] .bee-plate:hover svg > path:nth-of-type(4) {
+  transform-origin: 43.0% 47.6%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.21s;
+}
+[data-icon="bloom"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  animation: bee-bob 0.4s ease-in-out 0.12s;
+}
+
+/* ── shield (viewBox 125×125): wings pivot from where they meet the body, bars bob ── */
+[data-icon="shield"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 28.2% 49.9%;
+  animation: bee-flutter-l 0.55s ease-in-out;
+}
+[data-icon="shield"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 72.0% 49.7%;
+  animation: bee-flutter-r 0.55s ease-in-out 0.05s;
+}
+[data-icon="shield"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  animation: bee-bob 0.4s ease-in-out 0.04s;
+}
+[data-icon="shield"] .bee-plate:hover svg > rect:nth-of-type(2) {
+  animation: bee-bob 0.4s ease-in-out 0.12s;
+}
+[data-icon="shield"] .bee-plate:hover svg > rect:nth-of-type(3) {
+  animation: bee-bob 0.4s ease-in-out 0.2s;
+}
+
+/* ── compass (viewBox 125×125): 8 arms pivot from sharp inner tips ── */
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 62.6% 53.1%;
+  animation: bee-flutter-r 0.55s ease-in-out;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 62.5% 46.8%;
+  animation: bee-flutter-l 0.55s ease-in-out 0.05s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 37.5% 53.1%;
+  animation: bee-flutter-l 0.55s ease-in-out 0.1s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(4) {
+  transform-origin: 37.5% 46.8%;
+  animation: bee-flutter-r 0.55s ease-in-out 0.15s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(5) {
+  transform-origin: 46.9% 62.5%;
+  animation: bee-flutter-l 0.55s ease-in-out 0.2s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(6) {
+  transform-origin: 53.2% 62.5%;
+  animation: bee-flutter-r 0.55s ease-in-out 0.25s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(7) {
+  transform-origin: 46.9% 37.4%;
+  animation: bee-flutter-r 0.55s ease-in-out 0.3s;
+}
+[data-icon="compass"] .bee-plate:hover svg > path:nth-of-type(8) {
+  transform-origin: 53.2% 37.4%;
+  animation: bee-flutter-l 0.55s ease-in-out 0.35s;
+}
+
+/* ── axis (viewBox 125×125): 4 arms pivot from sharp inner tips, bar pulses ── */
+[data-icon="axis"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 62.6% 53.1%;
+  animation: bee-flutter-r 0.5s ease-in-out;
+}
+[data-icon="axis"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 62.6% 46.8%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.06s;
+}
+[data-icon="axis"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 37.5% 53.1%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.12s;
+}
+[data-icon="axis"] .bee-plate:hover svg > path:nth-of-type(4) {
+  transform-origin: 37.5% 46.8%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.18s;
+}
+[data-icon="axis"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  transform-box: fill-box; transform-origin: center;
+  animation: bee-pulse 0.5s ease-in-out 0.08s;
+}
+
+/* ── tilt (viewBox 125×125): slash rocks, wings pivot from sharp tips ── */
+[data-icon="tilt"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-box: fill-box; transform-origin: center;
+  --br: 5deg;
+  animation: bee-rock 0.55s ease-in-out;
+}
+[data-icon="tilt"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 68.8% 31.4%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.06s;
+}
+[data-icon="tilt"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 43.4% 31.2%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.12s;
+}
+
+/* ── sash (viewBox 125×125): slashes rock, wings pivot from sharp tips ── */
+[data-icon="sash"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-box: fill-box; transform-origin: center;
+  --br: 5deg;
+  animation: bee-rock 0.5s ease-in-out;
+}
+[data-icon="sash"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-box: fill-box; transform-origin: center;
+  --br: -5deg;
+  animation: bee-rock 0.5s ease-in-out 0.06s;
+}
+[data-icon="sash"] .bee-plate:hover svg > path:nth-of-type(3) {
+  transform-origin: 28.2% 43.8%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.1s;
+}
+[data-icon="sash"] .bee-plate:hover svg > path:nth-of-type(4) {
+  transform-origin: 71.9% 56.2%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.16s;
+}
+
+/* ── tower (viewBox 125×125): bars bob, wings pivot from sharp tips ── */
+[data-icon="tower"] .bee-plate:hover svg > rect:nth-of-type(1) {
+  animation: bee-bob 0.45s ease-in-out;
+}
+[data-icon="tower"] .bee-plate:hover svg > rect:nth-of-type(2) {
+  animation: bee-bob 0.45s ease-in-out 0.1s;
+}
+[data-icon="tower"] .bee-plate:hover svg > path:nth-of-type(1) {
+  transform-origin: 28.1% 31.1%;
+  animation: bee-flutter-l 0.5s ease-in-out 0.05s;
+}
+[data-icon="tower"] .bee-plate:hover svg > path:nth-of-type(2) {
+  transform-origin: 71.9% 31.3%;
+  animation: bee-flutter-r 0.5s ease-in-out 0.1s;
+}
 </style>
 </head>
 <body>
@@ -307,6 +895,10 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <figure class="tile">
         <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C30%20Q22%2C23%2029%2C23%20L71%2C23%20Q78%2C23%2078%2C30%20L78%2C48%20Q78%2C55%2072.59091621832336%2C59.4431759635201%20L55.40908378167664%2C73.5568240364799%20Q50%2C78%2044.59091621832336%2C73.5568240364799%20L27.409083781676642%2C59.4431759635201%20Q22%2C55%2022%2C48%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C30%20Q22%2C23%2029%2C23%20L71%2C23%20Q78%2C23%2078%2C30%20L78%2C48%20Q78%2C55%2072.59091621832336%2C59.4431759635201%20L55.40908378167664%2C73.5568240364799%20Q50%2C78%2044.59091621832336%2C73.5568240364799%20L27.409083781676642%2C59.4431759635201%20Q22%2C55%2022%2C48%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="head: "shield"" width="96" height="96"></div>
         <figcaption><code>head: "shield"</code><span class="freq">10.6%</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M34%2C22%20Q22%2C22%2022%2C34%20V48%20C22%2C65%2034%2C77%2050%2C77%20C66%2C77%2078%2C65%2078%2C48%20V34%20Q78%2C22%2066%2C22%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M34%2C22%20Q22%2C22%2022%2C34%20V48%20C22%2C65%2034%2C77%2050%2C77%20C66%2C77%2078%2C65%2078%2C48%20V34%20Q78%2C22%2066%2C22%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="head: "cup"" width="96" height="96"></div>
+        <figcaption><code>head: "cup"</code></figcaption>
       </figure></div>
   </section>
 
@@ -322,6 +914,10 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <figure class="tile">
         <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Crect%20x%3D%2229%22%20y%3D%2212.3%22%20width%3D%2242%22%20height%3D%226.5%22%20rx%3D%223.25%22%20fill%3D%22%23ffa133%22%2F%3E%3Crect%20x%3D%2238%22%20y%3D%22-3%22%20width%3D%2224%22%20height%3D%2212.1%22%20rx%3D%224%22%20fill%3D%22%23c28efb%22%2F%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="top: "hat"" width="96" height="96"></div>
         <figcaption><code>top: "hat"</code><span class="freq">16.8%</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Crect%20x%3D%2229%22%20y%3D%2212.3%22%20width%3D%2242%22%20height%3D%226.5%22%20rx%3D%223.25%22%20fill%3D%22%23c28efb%22%2F%3E%3Crect%20x%3D%2238%22%20y%3D%22-3%22%20width%3D%2224%22%20height%3D%2212.1%22%20rx%3D%224%22%20fill%3D%22%23c28efb%22%2F%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="top: "hat"" width="96" height="96"></div>
+        <figcaption><code>top: "hat"</code><span class="note">single color</span></figcaption>
       </figure>
       <figure class="tile">
         <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Crect%20x%3D%2242%22%20y%3D%2211.8%22%20width%3D%2216%22%20height%3D%227%22%20rx%3D%222.5%22%20fill%3D%22%23c28efb%22%2F%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="top: "bolt"" width="96" height="96"></div>
@@ -436,6 +1032,14 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <figure class="tile">
         <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2240%22%20cy%3D%2241%22%20r%3D%226%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2240.38%22%20cy%3D%2243%22%20r%3D%222.76%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2241%22%20r%3D%226%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2260.38%22%20cy%3D%2243%22%20r%3D%222.76%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2240%22%20cy%3D%2257%22%20r%3D%226%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2240.38%22%20cy%3D%2259%22%20r%3D%222.76%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2257%22%20r%3D%226%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2260.38%22%20cy%3D%2259%22%20r%3D%222.76%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="derp: "quad"" width="96" height="96"></div>
         <figcaption><code>derp: "quad"</code><span class="freq">4.7%</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2238%22%20cy%3D%2238%22%20r%3D%2210%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2239.3%22%20cy%3D%2239.6%22%20r%3D%225%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2238%22%20cy%3D%2258%22%20r%3D%2210%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2239.3%22%20cy%3D%2259.6%22%20r%3D%225%22%20fill%3D%22%234a5160%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="derp: "flounder"" width="96" height="96"></div>
+        <figcaption><code>derp: "flounder"</code><span class="freq">Carbon only</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2251%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Cpath%20d%3D%22M28%2C48%20C28%2C36%2047%2C36%2047%2C48%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2251%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Cpath%20d%3D%22M53%2C48%20C53%2C36%2072%2C36%2072%2C48%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="derp: "bored"" width="96" height="96"></div>
+        <figcaption><code>derp: "bored"</code><span class="freq">Carbon only</span></figcaption>
       </figure></div>
   </section>
 
@@ -567,6 +1171,14 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <figure class="tile">
         <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Cpath%20d%3D%22M42%2C66%20Q46%2C71%2050%2C66%20Q54%2C71%2058%2C66%22%20fill%3D%22none%22%20stroke%3D%22%234a5160%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="mouth: "cat"" width="96" height="96"></div>
         <figcaption><code>mouth: "cat"</code><span class="freq">4.7%</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Cpath%20d%3D%22M44%2C68%20L50%2C63%20L56%2C68%22%20fill%3D%22none%22%20stroke%3D%22%234a5160%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="mouth: "caret"" width="96" height="96"></div>
+        <figcaption><code>mouth: "caret"</code><span class="freq">Carbon only</span></figcaption>
+      </figure>
+      <figure class="tile" data-carbon-only style="display:none">
+        <div class="plate"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%20-4%20100%20100%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22h%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%2F%3E%3C%2FclipPath%3E%3Cmask%20id%3D%22g%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20x%3D%22-10%22%20y%3D%22-10%22%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22white%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Cg%20mask%3D%22url(%23g)%22%3E%3Cpath%20d%3D%22M22%2C44%20Q22%2C22%2044%2C22%20L56%2C22%20Q78%2C22%2078%2C44%20L78%2C54%20Q78%2C76%2056%2C76%20L44%2C76%20Q22%2C76%2022%2C54%20Z%22%20fill%3D%22%2307bfde%22%2F%3E%3Cg%20clip-path%3D%22url(%23h)%22%3E%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Ccircle%20cx%3D%2262.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2263.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E%3Cpath%20d%3D%22M40%2C66%20Q43%2C62%2046%2C66%20Q49%2C70%2052%2C66%20Q55%2C62%2058%2C66%22%20fill%3D%22none%22%20stroke%3D%22%234a5160%22%20stroke-width%3D%223.5%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E" alt="mouth: "wavy"" width="96" height="96"></div>
+        <figcaption><code>mouth: "wavy"</code><span class="freq">Carbon only</span></figcaption>
       </figure></div>
   </section>
 
@@ -778,35 +1390,309 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
   </main>
 </div>
 
+<div id="bees-sheet">
+  <div class="bees-header">
+    <p class="eyebrow" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px;">Design reference · Icon exploration</p>
+    <h1>Bees — Icon Ideas</h1>
+    <p class="bees-sub">A set of icon candidates for the new system. Each icon is built from filled dots and geometric body shapes. Toggle between awake and sleeping states to see both variants.</p>
+    <div class="bees-toggle">
+      <button class="active" data-state="awake">Awake</button>
+      <button data-state="sleeping">Sleeping</button>
+    </div>
+  </div>
+  <div class="bees-grid">
+
+    <div class="bee-tile" data-icon="signal"><div class="bee-plate">
+      <svg viewBox="0 0 112 112" overflow="visible" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M35.2472 110.716C31.934 112.073 28.062 112.153 24.5092 110.636C20.9565 109.119 18.3219 106.325 16.9647 102.972C16.2861 101.255 15.9268 99.4991 15.9268 97.7427C15.9268 95.9064 16.2861 94.0303 17.0446 92.234C18.4417 88.9208 21.1162 86.1265 24.6689 84.6894L56.0845 71.9156L42.9115 103.172C41.3946 106.724 38.6003 109.359 35.2472 110.716Z" fill="black"/>
+        <path d="M77.4808 27.3992L45.227 16.9406L75.445 1.53224C78.878 -0.224153 82.75 -0.423744 86.143 0.693963C88.0192 1.29273 89.6558 2.25077 91.053 3.44831C92.3703 4.60594 93.488 6.00307 94.3263 7.63971C95.9629 10.8332 96.3621 14.6653 95.1645 18.3378C93.967 22.0102 91.3723 24.8843 88.1789 26.521C84.9854 28.1576 81.1533 28.5568 77.4808 27.3593V27.3992Z" fill="black"/>
+        <g class="bee-eye-awake">
+          <path d="M15.9672 53.8554C15.9672 49.4245 12.4145 45.8718 7.98362 45.8718C3.55271 45.8718 0 49.4245 0 53.8554C0 58.2864 3.55271 61.8391 7.98362 61.8391C12.4145 61.8391 15.9672 58.2864 15.9672 53.8554Z" fill="black"/>
+          <path d="M15.9673 29.9984C15.9673 25.6473 12.4545 22.0946 8.06354 22.0946C3.67255 22.0946 0.199677 25.6473 0.199677 29.9984C0.199677 34.3495 3.71247 37.9022 8.10346 37.9022C12.4945 37.9022 16.0072 34.3894 16.0072 29.9984H15.9673Z" fill="black"/>
+          <path d="M111.851 77.8105C111.851 73.3796 108.298 69.8269 103.867 69.8269C99.4361 69.8269 95.8834 73.3796 95.8834 77.8105C95.8834 82.2414 99.4361 85.7941 103.867 85.7941C108.298 85.7941 111.851 82.2414 111.851 77.8105Z" fill="black"/>
+          <path d="M111.851 53.9497C111.851 49.5986 108.338 46.0459 103.947 46.0459C99.5558 46.0459 96.043 49.5587 96.043 53.9497C96.043 58.3407 99.5558 61.8535 103.947 61.8535C108.338 61.8535 111.851 58.3407 111.851 53.9497Z" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M0,53.86 A7.98,7.98 0 0 0 15.97,53.86" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M0.2,30 A7.9,7.9 0 0 0 16.01,30" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M95.88,77.81 A7.98,7.98 0 0 0 111.85,77.81" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M96.04,53.95 A7.9,7.9 0 0 0 111.85,53.95" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M87.9395 71.7953V55.8281L23.9508 31.9969V47.9642L87.9395 71.7953Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">signal</div></div>
+
+    <div class="bee-tile" data-icon="cross"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="50.7812" cy="62.3438" r="7.8125" fill="black"/>
+          <circle cx="74.2188" cy="62.3438" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M42.97,62.34 A7.81,7.81 0 0 0 58.59,62.34" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M66.41,62.34 A7.81,7.81 0 0 0 82.03,62.34" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M15.4297 97.7734V70.2344L34.8828 89.6875C37.1094 91.9141 38.2031 94.8438 38.2031 97.7344C38.2031 99.3359 37.8906 100.82 37.3047 102.227C36.7578 103.516 35.9375 104.766 34.8828 105.82C32.8125 107.891 29.9609 109.141 26.8359 109.141C23.7109 109.141 20.8594 107.852 18.7891 105.781C16.7187 103.711 15.4297 100.859 15.4297 97.7344V97.7734Z" fill="black"/>
+        <path d="M35.2344 35.1562L15.7812 54.6094V27.0703C15.7812 23.9453 17.0703 21.0937 19.1406 19.0234C20.2734 17.8906 21.5625 17.0703 22.9688 16.4844C24.2969 15.9375 25.7031 15.6641 27.2266 15.6641C30.1562 15.6641 33.0469 16.7969 35.2734 18.9844C37.5 21.1719 38.5938 24.1406 38.5938 27.0312C38.5938 29.9219 37.5 32.8516 35.2734 35.0781L35.2344 35.1562Z" fill="black"/>
+        <path d="M109.18 27.1094V54.6484L89.7266 35.1953C87.5 32.9688 86.4062 30.0391 86.4062 27.1484C86.4062 25.5469 86.7187 24.0625 87.3047 22.6562C87.8516 21.3672 88.6719 20.1172 89.7266 19.0625C91.7969 16.9922 94.6484 15.7422 97.7734 15.7422C100.898 15.7422 103.75 17.0312 105.82 19.1016C107.891 21.1719 109.18 24.0234 109.18 27.1484V27.1094Z" fill="black"/>
+        <path d="M89.7266 89.7266L109.18 70.2734V97.8125C109.18 100.938 107.891 103.789 105.82 105.859C104.687 106.992 103.398 107.813 101.992 108.398C100.664 108.945 99.2578 109.219 97.7344 109.219C94.8047 109.219 91.9141 108.086 89.6875 105.898C87.4609 103.711 86.3672 100.742 86.3672 97.8516C86.3672 94.9609 87.4609 92.0313 89.6875 89.8047L89.7266 89.7266Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">cross</div></div>
+
+    <div class="bee-tile" data-icon="stack"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="74.2568" cy="23.3612" r="7.8125" fill="black"/>
+          <circle cx="50.9377" cy="23.4357" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M66.44,23.36 A7.81,7.81 0 0 0 82.07,23.36" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M43.13,23.44 A7.77,7.77 0 0 0 58.67,23.44" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <rect x="27.1876" y="38.9404" width="70.547" height="15.625" fill="black"/>
+        <rect x="27.1875" y="62.5" width="70.547" height="15.625" fill="black"/>
+        <rect x="27.2257" y="86.0596" width="70.547" height="15.625" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">stack</div></div>
+
+    <div class="bee-tile" data-icon="crown"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="50.7814" cy="42.7817" r="7.8125" fill="black"/>
+          <circle cx="74.2185" cy="42.7817" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M42.97,42.78 A7.81,7.81 0 0 0 58.59,42.78" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M66.41,42.78 A7.81,7.81 0 0 0 82.03,42.78" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M113.789 23.0151C115.859 25.0854 117.148 27.937 117.148 31.062C117.148 34.187 115.859 37.0386 113.789 39.1089C112.734 40.1636 111.523 40.9839 110.195 41.5308C108.828 42.1167 107.305 42.4292 105.703 42.4292C102.773 42.4292 99.8828 41.2964 97.6562 39.1089L78.2031 19.6558H105.742C108.867 19.6558 111.719 20.9448 113.789 23.0151Z" fill="black"/>
+        <path d="M19.2969 19.6558H46.836L27.3829 39.1089C25.1563 41.3354 22.2266 42.4292 19.336 42.4292C17.7344 42.4292 16.2501 42.1167 14.8438 41.5308C13.5547 40.9839 12.3047 40.1636 11.2501 39.1089C9.17975 37.0386 7.89069 34.187 7.89069 31.062C7.89069 27.937 9.17975 25.0854 11.2501 23.0151C13.3204 20.9448 16.1719 19.6558 19.2969 19.6558Z" fill="black"/>
+        <rect x="35.1561" y="66.1349" width="54.688" height="15.625" fill="black"/>
+        <rect x="35.1561" y="89.6942" width="54.688" height="15.625" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">crown</div></div>
+
+    <div class="bee-tile" data-icon="bloom"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="73.8673" cy="78.5464" r="7.8125" fill="black"/>
+          <circle cx="50.4296" cy="78.5464" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M66.05,78.55 A7.82,7.82 0 0 0 81.68,78.55" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M42.62,78.55 A7.81,7.81 0 0 0 58.24,78.55" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M97.5389 59.0156H69.9999L89.453 39.5625C91.6796 37.3359 94.6092 36.2422 97.4999 36.2422C99.1014 36.2422 100.586 36.5547 101.992 37.1406C103.281 37.6875 104.531 38.5078 105.586 39.5625C107.656 41.6328 108.945 44.4844 108.945 47.6094C108.945 50.7344 107.656 53.5859 105.586 55.6563C103.516 57.7266 100.664 59.0156 97.5389 59.0156Z" fill="black"/>
+        <path d="M85.0001 35.0703L65.547 54.5234V26.9844C65.547 23.8594 66.8361 21.0078 68.9064 18.9375C70.0392 17.8047 71.3282 16.9844 72.7345 16.3984C74.0626 15.8516 75.4689 15.5781 76.9923 15.5781C79.922 15.5781 82.8126 16.7109 85.0392 18.8984C87.2657 21.0859 88.3595 24.0547 88.3595 26.9453C88.3595 29.8359 87.2657 32.7656 85.0392 34.9922L85.0001 35.0703Z" fill="black"/>
+        <path d="M58.2421 27.5332V55.0723L38.7889 35.6191C36.5624 33.3926 35.4686 30.4629 35.4686 27.5723C35.4686 25.9707 35.7811 24.4863 36.3671 23.0801C36.9139 21.791 37.7343 20.541 38.7889 19.4863C40.8593 17.416 43.7108 16.166 46.8358 16.166C49.9608 16.166 52.8124 17.4551 54.8827 19.5254C56.953 21.5957 58.2421 24.4473 58.2421 27.5723V27.5332Z" fill="black"/>
+        <path d="M34.2969 40.0706L53.7501 59.5237H26.211C23.086 59.5237 20.2344 58.2346 18.1641 56.1643C17.0313 55.0315 16.211 53.7424 15.6641 52.3752C15.1172 51.0471 14.8438 49.6409 14.8438 48.1174C14.8438 45.1877 15.9376 42.2971 18.1641 40.0706C20.3907 37.844 23.3204 36.7502 26.211 36.7502C29.1016 36.7502 32.0313 37.844 34.2579 40.0706H34.2969Z" fill="black"/>
+        <rect x="35.1562" y="94.1724" width="54.336" height="15.625" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">bloom</div></div>
+
+    <div class="bee-tile" data-icon="shield"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="74.4144" cy="31.0586" r="7.8125" fill="black"/>
+          <circle cx="51.055" cy="31.1355" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M66.6,31.06 A7.82,7.82 0 0 0 82.23,31.06" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M43.24,31.14 A7.77,7.77 0 0 0 58.79,31.14" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <rect x="43.1644" y="46.8004" width="39.101" height="15.625" fill="black"/>
+        <rect x="43.1253" y="70.238" width="39.101" height="15.625" fill="black"/>
+        <rect x="43.1253" y="93.6758" width="39.101" height="15.625" fill="black"/>
+        <path d="M7.73483 29.1436C7.73483 25.6279 9.06296 22.1123 11.7583 19.417C14.4536 16.7217 17.9692 15.3936 21.4848 15.3936C23.2817 15.3936 25.0395 15.7451 26.602 16.3701C28.2817 17.0342 29.8442 18.0498 31.2114 19.417C33.7114 21.917 35.2348 25.3545 35.2348 29.1436V62.3467L11.7583 38.8701C9.06296 36.1748 7.73483 32.6592 7.73483 29.1436Z" fill="black"/>
+        <path d="M113.243 38.8706L90.0005 62.1128V29.2222C90.0005 25.4722 91.5239 22.0737 93.9848 19.6128C95.313 18.2847 96.8755 17.269 98.5161 16.605C100.079 15.98 101.797 15.6284 103.594 15.6284C107.071 15.6284 110.547 16.9565 113.204 19.6128C115.86 22.269 117.188 25.7456 117.188 29.2222C117.188 32.6987 115.86 36.1753 113.204 38.8315L113.243 38.8706Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">shield</div></div>
+
+    <div class="bee-tile" data-icon="compass"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="62.5385" cy="62.5066" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M54.73,62.51 A7.81,7.81 0 0 0 70.35,62.51" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M113.788 69.6951C115.859 71.7654 117.148 74.6169 117.148 77.7419C117.148 80.8669 115.859 83.7185 113.788 85.7888C112.734 86.8435 111.523 87.6638 110.195 88.2107C108.827 88.7966 107.304 89.1091 105.702 89.1091C102.773 89.1091 99.8821 87.9763 97.6556 85.7888L78.2025 66.3357H105.742C108.867 66.3357 111.718 67.6248 113.788 69.6951Z" fill="black"/>
+        <path d="M105.703 58.52H78.1637L97.6168 39.0669C99.8434 36.8403 102.773 35.7466 105.664 35.7466C107.265 35.7466 108.75 36.0591 110.156 36.645C111.445 37.1919 112.695 38.0122 113.75 39.0669C115.82 41.1372 117.109 43.9888 117.109 47.1138C117.109 50.2388 115.82 53.0903 113.75 55.1606C111.679 57.231 108.828 58.52 105.703 58.52Z" fill="black"/>
+        <path d="M19.3356 66.374H46.8746L27.4215 85.8271C25.1949 88.0537 22.2653 89.1475 19.3746 89.1475C17.7731 89.1475 16.2887 88.835 14.8824 88.249C13.5934 87.7022 12.3434 86.8818 11.2887 85.8271C9.21838 83.7568 7.92932 80.9053 7.92932 77.7803C7.92932 74.6553 9.21838 71.8037 11.2887 69.7334C13.359 67.6631 16.2106 66.374 19.3356 66.374Z" fill="black"/>
+        <path d="M11.2887 55.1606C9.21838 53.0903 7.92932 50.2388 7.92932 47.1138C7.92932 43.9888 9.21838 41.1372 11.2887 39.0669C12.3434 38.0122 13.5543 37.1919 14.8824 36.645C16.2496 36.0591 17.7731 35.7466 19.3746 35.7466C22.3043 35.7466 25.1949 36.8794 27.4215 39.0669L46.8746 58.52H19.3356C16.2106 58.52 13.359 57.231 11.2887 55.1606Z" fill="black"/>
+        <path d="M55.2729 113.675C53.2026 115.746 50.3511 117.035 47.2261 117.035C44.1011 117.035 41.2495 115.746 39.1792 113.675C38.1245 112.621 37.3042 111.41 36.7573 110.082C36.1714 108.714 35.8589 107.191 35.8589 105.589C35.8589 102.66 36.9526 99.7692 39.1792 97.5426L58.6323 78.0895V105.629C58.6323 108.754 57.3433 111.605 55.2729 113.675Z" fill="black"/>
+        <path d="M66.445 105.629V78.0895L85.8981 97.5426C88.1247 99.7692 89.2184 102.699 89.2184 105.589C89.2184 107.191 88.9059 108.675 88.32 110.082C87.7731 111.371 86.9528 112.621 85.8981 113.675C83.8278 115.746 80.9763 116.996 77.8513 116.996C74.7263 116.996 71.8747 115.707 69.8044 113.636C67.7341 111.566 66.445 108.714 66.445 105.589V105.629Z" fill="black"/>
+        <path d="M58.5932 19.2605V46.7996L39.1401 27.3464C36.9135 25.1199 35.8198 22.1902 35.8198 19.2996C35.8198 17.698 36.1323 16.2136 36.7182 14.8074C37.2651 13.5183 38.0854 12.2683 39.1401 11.2136C41.2104 9.14331 44.0619 7.89331 47.1869 7.89331C50.3119 7.89331 53.1635 9.18237 55.2338 11.2527C57.3041 13.323 58.5932 16.1746 58.5932 19.2996V19.2605Z" fill="black"/>
+        <path d="M69.8044 11.1743C71.8747 9.104 74.7263 7.81494 77.8513 7.81494C80.9763 7.81494 83.8278 9.104 85.8981 11.1743C86.9528 12.229 87.7731 13.4399 88.32 14.7681C88.9059 16.1353 89.2184 17.6587 89.2184 19.2603C89.2184 22.1899 88.1247 25.0806 85.8981 27.3071L66.445 46.7603V19.2212C66.445 16.0962 67.7341 13.2446 69.8044 11.1743Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">compass</div></div>
+
+    <div class="bee-tile" data-icon="axis"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="74.2185" cy="19.537" r="7.8125" fill="black"/>
+          <circle cx="50.9759" cy="19.6111" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M66.41,19.54 A7.81,7.81 0 0 0 82.03,19.54" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M43.16,19.61 A7.78,7.78 0 0 0 58.71,19.61" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <rect x="54.6876" y="35.1641" width="15.625" height="78.125" fill="black"/>
+        <path d="M113.789 69.6975C115.859 71.7678 117.148 74.6194 117.148 77.7444C117.148 80.8694 115.859 83.7209 113.789 85.7913C112.734 86.8459 111.523 87.6663 110.195 88.2131C108.828 88.7991 107.305 89.1116 105.703 89.1116C102.773 89.1116 99.8828 87.9788 97.6563 85.7913L78.2031 66.3381H105.742C108.867 66.3381 111.719 67.6272 113.789 69.6975Z" fill="black"/>
+        <path d="M105.742 58.5166H78.2031L97.6563 39.0635C99.8828 36.8369 102.813 35.7432 105.703 35.7432C107.305 35.7432 108.789 36.0557 110.195 36.6416C111.484 37.1885 112.734 38.0088 113.789 39.0635C115.859 41.1338 117.148 43.9854 117.148 47.1104C117.148 50.2354 115.859 53.0869 113.789 55.1572C111.719 57.2275 108.867 58.5166 105.742 58.5166Z" fill="black"/>
+        <path d="M19.3754 66.3647H46.9144L27.4613 85.8179C25.2347 88.0444 22.3051 89.1382 19.4144 89.1382C17.8129 89.1382 16.3285 88.8257 14.9222 88.2397C13.6332 87.6929 12.3832 86.8726 11.3285 85.8179C9.25818 83.7476 7.96912 80.896 7.96912 77.771C7.96912 74.646 9.25818 71.7944 11.3285 69.7241C13.3988 67.6538 16.2504 66.3647 19.3754 66.3647Z" fill="black"/>
+        <path d="M11.3285 55.1572C9.25818 53.0869 7.96912 50.2354 7.96912 47.1104C7.96912 43.9854 9.25818 41.1338 11.3285 39.0635C12.3832 38.0088 13.5941 37.1885 14.9222 36.6416C16.2894 36.0557 17.8129 35.7432 19.4144 35.7432C22.3441 35.7432 25.2347 36.876 27.4613 39.0635L46.9144 58.5166H19.3754C16.2504 58.5166 13.3988 57.2275 11.3285 55.1572Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">axis</div></div>
+
+    <div class="bee-tile" data-icon="tilt"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="85.9106" cy="23.3539" r="7.8125" fill="black"/>
+          <circle cx="62.5966" cy="23.4293" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M78.1,23.35 A7.81,7.81 0 0 0 93.72,23.35" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M54.78,23.43 A7.77,7.77 0 0 0 70.33,23.43" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M39.1662 109.413H23.5461L62.5964 39.1006H78.2165L39.1662 109.413Z" fill="black"/>
+        <path d="M113.206 72.1072C113.206 75.5837 111.878 79.0603 109.223 81.7166C106.567 84.3728 103.092 85.7009 99.6162 85.7009C97.8199 85.7009 96.1017 85.3494 94.5397 84.7244C92.8996 84.0603 91.3376 83.0447 90.0099 81.7166C87.5497 79.2556 86.0267 75.8572 86.0267 72.1072V39.2556L109.262 62.4978C111.917 65.1541 113.245 68.6306 113.245 72.1072H113.206Z" fill="black"/>
+        <path d="M21.3993 39.0548H54.2406L31.0056 62.297C28.3502 64.9533 24.8748 66.2814 21.3993 66.2814C19.4858 66.2814 17.6895 65.8908 16.0494 65.1876C14.4874 64.5236 13.0425 63.547 11.7539 62.297C9.29368 59.8361 7.77072 56.4376 7.77072 52.6876C7.77072 48.9376 9.29368 45.5392 11.7539 43.0782C14.214 40.6173 17.6114 39.0939 21.3602 39.0939L21.3993 39.0548Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">tilt</div></div>
+
+    <div class="bee-tile" data-icon="sash"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="81.9935" cy="23.3691" r="7.8125" fill="black"/>
+          <circle cx="58.6725" cy="23.4431" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M74.18,23.37 A7.81,7.81 0 0 0 89.81,23.37" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M50.86,23.44 A7.77,7.77 0 0 0 66.41,23.44" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <path d="M66.4066 109.383H50.8207L74.1801 39.0701H89.766L66.4066 109.383Z" fill="black"/>
+        <path d="M42.9694 109.383H27.3835L50.7429 39.0701H66.3288L42.9694 109.383Z" fill="black"/>
+        <path d="M7.73486 21.5692C7.73486 18.0536 9.06299 14.538 11.7583 11.8427C14.4536 9.14734 17.9692 7.81921 21.4849 7.81921C23.2817 7.81921 25.0396 8.17078 26.6021 8.79578C28.2817 9.45984 29.8442 10.4755 31.2114 11.8427C33.7114 14.3427 35.2349 17.7802 35.2349 21.5692V54.7723L11.7583 31.2958C9.06299 28.6005 7.73486 25.0848 7.73486 21.5692Z" fill="black"/>
+        <path d="M117.344 103.477C117.344 106.992 116.016 110.508 113.321 113.203C110.625 115.899 107.11 117.227 103.594 117.227C101.797 117.227 100.039 116.875 98.4769 116.25C96.7972 115.586 95.2347 114.57 93.8676 113.203C91.3676 110.703 89.8441 107.266 89.8441 103.477V70.2736L113.321 93.7501C116.016 96.4454 117.344 99.9611 117.344 103.477Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">sash</div></div>
+
+    <div class="bee-tile" data-icon="tower"><div class="bee-plate">
+      <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g class="bee-eye-awake">
+          <circle cx="74.0241" cy="23.3693" r="7.8125" fill="black"/>
+          <circle cx="50.6654" cy="23.4447" r="7.8125" fill="black"/>
+        </g>
+        <g class="bee-eye-sleep">
+          <path d="M66.21,23.37 A7.82,7.82 0 0 0 81.84,23.37" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+          <path d="M42.85,23.44 A7.77,7.77 0 0 0 58.40,23.44" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+        </g>
+        <rect x="43.008" y="39.0702" width="15.625" height="70.313" fill="black"/>
+        <rect x="66.4457" y="39.0702" width="15.625" height="70.313" fill="black"/>
+        <path d="M31.0949 81.8462C28.5949 84.3462 25.1574 85.8696 21.3684 85.8696C17.5793 85.8696 14.1418 84.3462 11.6418 81.8462C10.3527 80.5571 9.37617 79.1118 8.71211 77.5103C8.00899 75.8696 7.61836 74.0337 7.61836 72.1196C7.61836 68.604 8.94649 65.0884 11.6418 62.3931L35.1184 38.9165V72.1196C35.1184 75.9087 33.5949 79.3462 31.0949 81.8462Z" fill="black"/>
+        <path d="M117.07 71.9218C117.07 75.3983 115.742 78.8749 113.086 81.5311C110.43 84.1874 106.953 85.5155 103.476 85.5155C101.68 85.5155 99.9608 85.1639 98.3983 84.5389C96.7577 83.8749 95.1952 82.8593 93.8671 81.5311C91.4062 79.0702 89.8827 75.6718 89.8827 71.9218V39.0702L113.125 62.3124C115.781 64.9686 117.109 68.4452 117.109 71.9218H117.07Z" fill="black"/>
+      </svg>
+    </div><div class="bee-cap">tower</div></div>
+
+  </div>
+</div>
+
+<div id="agent-cards-sheet">
+  <div class="cards-header">
+    <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#0f62fe;font-weight:600;margin:0 0 8px;">Design reference · Agent cards</p>
+    <h2>Bees on Agent Cards</h2>
+    <p>Exact cards from the home page. Hover to see animations.</p>
+  </div>
+
+  <div class="cards-columns" style="grid-template-columns:1fr;max-width:560px;margin:0 auto;">
+    <div class="cards-col cards-col-awake">
+      <h3>Working</h3>
+      <div class="cards-list">
+        <div class="agent-card" data-icon="signal">
+          <div class="agent-card-inner">
+          <div class="card-bee bee-awake" data-icon="signal">
+            <svg viewBox="0 0 112 112" overflow="visible" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M35.2472 110.716C31.934 112.073 28.062 112.153 24.5092 110.636C20.9565 109.119 18.3219 106.325 16.9647 102.972C16.2861 101.255 15.9268 99.4991 15.9268 97.7427C15.9268 95.9064 16.2861 94.0303 17.0446 92.234C18.4417 88.9208 21.1162 86.1265 24.6689 84.6894L56.0845 71.9156L42.9115 103.172C41.3946 106.724 38.6003 109.359 35.2472 110.716Z" fill="black"/>
+              <path d="M77.4808 27.3992L45.227 16.9406L75.445 1.53224C78.878 -0.224153 82.75 -0.423744 86.143 0.693963C88.0192 1.29273 89.6558 2.25077 91.053 3.44831C92.3703 4.60594 93.488 6.00307 94.3263 7.63971C95.9629 10.8332 96.3621 14.6653 95.1645 18.3378C93.967 22.0102 91.3723 24.8843 88.1789 26.521C84.9854 28.1576 81.1533 28.5568 77.4808 27.3593V27.3992Z" fill="black"/>
+              <g class="bee-eye-awake bee-eyes">
+                <path d="M15.9672 53.8554C15.9672 49.4245 12.4145 45.8718 7.98362 45.8718C3.55271 45.8718 0 49.4245 0 53.8554C0 58.2864 3.55271 61.8391 7.98362 61.8391C12.4145 61.8391 15.9672 58.2864 15.9672 53.8554Z" fill="black"/>
+                <path d="M15.9673 29.9984C15.9673 25.6473 12.4545 22.0946 8.06354 22.0946C3.67255 22.0946 0.199677 25.6473 0.199677 29.9984C0.199677 34.3495 3.71247 37.9022 8.10346 37.9022C12.4945 37.9022 16.0072 34.3894 16.0072 29.9984H15.9673Z" fill="black"/>
+                <path d="M111.851 77.8105C111.851 73.3796 108.298 69.8269 103.867 69.8269C99.4361 69.8269 95.8834 73.3796 95.8834 77.8105C95.8834 82.2414 99.4361 85.7941 103.867 85.7941C108.298 85.7941 111.851 82.2414 111.851 77.8105Z" fill="black"/>
+                <path d="M111.851 53.9497C111.851 49.5986 108.338 46.0459 103.947 46.0459C99.5558 46.0459 96.043 49.5587 96.043 53.9497C96.043 58.3407 99.5558 61.8535 103.947 61.8535C108.338 61.8535 111.851 58.3407 111.851 53.9497Z" fill="black"/>
+              </g>
+              <path d="M87.9395 71.7953V55.8281L23.9508 31.9969V47.9642L87.9395 71.7953Z" fill="black"/>
+            </svg>
+          </div>
+          <div class="card-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <p class="card-name">Signal Agent</p>
+            </div>
+            <p class="card-sub">2 CPU · 2 Gi</p>
+          </div>
+          <div class="card-actions">
+            <span class="card-badge badge-working">Working</span>
+            <button class="btn-ghost-icon" aria-label="More options">
+              <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><circle cx="16" cy="8" r="2"/><circle cx="16" cy="16" r="2"/><circle cx="16" cy="24" r="2"/></svg>
+            </button>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards-col cards-col-sleeping" style="margin-top:32px;">
+      <h3>Hibernating</h3>
+      <div class="cards-list">
+        <div class="agent-card" data-icon="shield">
+          <div class="agent-card-inner">
+          <div class="card-bee bee-sleeping" data-icon="shield">
+            <svg viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g class="bee-eye-sleep" style="opacity:1;">
+                <path d="M66.6,31.06 A7.82,7.82 0 0 0 82.23,31.06" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+                <path d="M43.24,31.14 A7.77,7.77 0 0 0 58.79,31.14" fill="none" stroke="#a2a9b0" stroke-width="5"/>
+              </g>
+              <rect x="43.1644" y="46.8004" width="39.101" height="15.625" fill="#a2a9b0"/>
+              <rect x="43.1253" y="70.238" width="39.101" height="15.625" fill="#a2a9b0"/>
+              <rect x="43.1253" y="93.6758" width="39.101" height="15.625" fill="#a2a9b0"/>
+              <path d="M7.73483 29.1436C7.73483 25.6279 9.06296 22.1123 11.7583 19.417C14.4536 16.7217 17.9692 15.3936 21.4848 15.3936C23.2817 15.3936 25.0395 15.7451 26.602 16.3701C28.2817 17.0342 29.8442 18.0498 31.2114 19.417C33.7114 21.917 35.2348 25.3545 35.2348 29.1436V62.3467L11.7583 38.8701C9.06296 36.1748 7.73483 32.6592 7.73483 29.1436Z" fill="#a2a9b0"/>
+              <path d="M113.243 38.8706L90.0005 62.1128V29.2222C90.0005 25.4722 91.5239 22.0737 93.9848 19.6128C95.313 18.2847 96.8755 17.269 98.5161 16.605C100.079 15.98 101.797 15.6284 103.594 15.6284C107.071 15.6284 110.547 16.9565 113.204 19.6128C115.86 22.269 117.188 25.7456 117.188 29.2222C117.188 32.6987 115.86 36.1753 113.204 38.8315L113.243 38.8706Z" fill="#a2a9b0"/>
+            </svg>
+          </div>
+          <div class="card-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <p class="card-name">Shield Agent</p>
+            </div>
+            <p class="card-sub">2 CPU · 2 Gi</p>
+          </div>
+          <div class="card-actions">
+            <span class="card-badge badge-hibernating">Hibernating</span>
+            <button class="btn-ghost-icon" aria-label="More options">
+              <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><circle cx="16" cy="8" r="2"/><circle cx="16" cy="16" r="2"/><circle cx="16" cy="24" r="2"/></svg>
+            </button>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
-  // All three OKLCH tones per hue → one Carbon base color
   const MAP = {
-    // rose → Red 50
     "#fc7b9d": "#fa4d56", "#d64875": "#fa4d56", "#ffc6d2": "#fa4d56",
-    // coral → Orange 50
     "#ff8466": "#eb6200", "#db512e": "#eb6200", "#feccbf": "#eb6200",
-    // amber → Yellow 30
     "#ffa133": "#f1c21b", "#cd7c07": "#f1c21b", "#fee1c6": "#f1c21b",
-    // yellow → Yellow 30
     "#ebc831": "#f1c21b", "#be9f0a": "#f1c21b", "#fae8a2": "#f1c21b",
-    // lime → Green 30
     "#a3cb4c": "#6fdc8c", "#7ba206": "#6fdc8c", "#d9f2b0": "#6fdc8c",
-    // green → Green 40
     "#40c97e": "#42be65", "#019e5a": "#42be65", "#a9ebbf": "#42be65",
-    // teal → Teal 40
     "#04c5b6": "#08bdba", "#0a978b": "#08bdba", "#8febdf": "#08bdba",
-    // sky → Cyan 50
     "#07bfde": "#1192e8", "#0b93ab": "#1192e8", "#8fe7fd": "#1192e8",
-    // blue → Blue 50
     "#52b3fe": "#4589ff", "#0689d7": "#4589ff", "#b6ddfe": "#4589ff",
-    // violet → Blue 60
     "#93a3ff": "#0f62fe", "#6774ed": "#0f62fe", "#ccd5ff": "#0f62fe",
-    // purple → Purple 50
     "#c28efb": "#a56eff", "#9d60d8": "#a56eff", "#e2ccfe": "#a56eff",
-    // magenta → Magenta 50
     "#e781d2": "#ee5396", "#c151ad": "#ee5396", "#fec2ef": "#ee5396",
-    // fixed
     "#4a5160": "#4d5358",
     "#fffdf8": "#f2f4f8",
     "#8b93a3": "#878d96"
@@ -829,6 +1715,17 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
     "#878d96": "Cool Gray 50"
   };
 
+  const CARBON_HIDE = {
+    '#derp': ['triple', 'trio-row', 'tiny', 'quad'],
+    '#face': ['blank', 'dots', 'shades'],
+    '#head': ['hexagon', 'octagon', 'shield'],
+    '#top': ['hat', 'bug-eyes']
+  };
+
+  const MASK_OPEN = '%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%3E';
+  const MASK_SELF = '%3Cg%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%223.2%22%20clip-path%3D%22url(%23h)%22%2F%3E';
+  const MASK_CLOSE = '%3C%2Fg%3E%3C%2Fmask%3E';
+
   const REV = {};
   for (const [ok, cb] of Object.entries(MAP)) REV[cb] = ok;
 
@@ -845,20 +1742,15 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       }
       if (changed) el.setAttribute('style', s);
     });
-
     document.querySelectorAll('code.hex').forEach(el => {
       const txt = el.textContent.toLowerCase();
-      if (from[txt]) {
-        el.textContent = from[txt];
-      }
+      if (from[txt]) el.textContent = from[txt];
     });
-
     document.querySelectorAll('img[src^="data:image/svg"]').forEach(img => {
       let src = img.getAttribute('src');
       let changed = false;
       for (const [f, t] of Object.entries(from)) {
-        const encF = encHex(f);
-        const encT = encHex(t);
+        const encF = encHex(f), encT = encHex(t);
         if (src.includes(encF)) { src = src.split(encF).join(encT); changed = true; }
         if (src.includes(f)) { src = src.split(f).join(t); changed = true; }
       }
@@ -866,10 +1758,448 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
     });
   }
 
+  function toggleSections(carbonMode) {
+    ['banding', 'bottom'].forEach(id => {
+      const sec = document.getElementById(id);
+      if (sec) sec.style.display = carbonMode ? 'none' : '';
+    });
+    document.querySelectorAll('nav a[href="#banding"], nav a[href="#bottom"]').forEach(a => {
+      const li = a.closest('li');
+      if (li) li.style.display = carbonMode ? 'none' : '';
+    });
+    document.querySelectorAll('#slots .table-wrap tr').forEach(tr => {
+      const th = tr.querySelector('th');
+      if (th && (th.textContent.includes('chin') || th.textContent.includes('band') || th.textContent.includes('bottom') || th.textContent.includes('neck'))) {
+        tr.style.display = carbonMode ? 'none' : '';
+      }
+    });
+  }
+
+  function toggleFigures(carbonMode) {
+    for (const [sectionSel, names] of Object.entries(CARBON_HIDE)) {
+      const sec = document.querySelector(sectionSel);
+      if (!sec) continue;
+      sec.querySelectorAll('figure.tile').forEach(fig => {
+        const code = fig.querySelector('figcaption code');
+        if (!code) return;
+        const text = code.textContent;
+        if (names.some(n => text.includes('"' + n + '"'))) {
+          fig.style.display = carbonMode ? 'none' : '';
+        }
+      });
+    }
+    document.querySelectorAll('[data-carbon-only]').forEach(el => {
+      el.style.display = carbonMode ? '' : 'none';
+    });
+  }
+
+  function toggleMaskContent(carbonMode) {
+    document.querySelectorAll('img[src^="data:image/svg"]').forEach(img => {
+      if (carbonMode) {
+        const src = img.getAttribute('src');
+        const openIdx = src.indexOf(MASK_OPEN);
+        if (openIdx === -1) return;
+        const closeIdx = src.indexOf(MASK_CLOSE, openIdx);
+        if (closeIdx === -1) return;
+        const between = src.substring(openIdx + MASK_OPEN.length, closeIdx);
+        if (between.length === 0) return;
+        img.dataset.origMaskSrc = src;
+        img.setAttribute('src',
+          src.substring(0, openIdx) + MASK_SELF + '%3C%2Fmask%3E' +
+          src.substring(closeIdx + MASK_CLOSE.length)
+        );
+      } else if (img.dataset.origMaskSrc) {
+        img.setAttribute('src', img.dataset.origMaskSrc);
+        delete img.dataset.origMaskSrc;
+      }
+    });
+  }
+
+  const C_HEADS = {
+    circle:   { d:'M22,49 A28,28 0 1,0 78,49 A28,28 0 1,0 22,49 Z', ey:47 },
+    squircle: { d:'M22,44 Q22,22 44,22 L56,22 Q78,22 78,44 L78,54 Q78,76 56,76 L44,76 Q22,76 22,54 Z', ey:48 },
+    egg:      { d:'M21,46 C21,30 34,20 50,20 C66,20 79,30 79,46 C79,60 72,76 60,76 H40 C28,76 21,60 21,46 Z', ey:48 },
+    box:      { d:'M24,22 H76 Q78,22 78,24 V74 Q78,76 76,76 H24 Q22,76 22,74 V24 Q22,22 24,22 Z', ey:48 },
+    bell:     { d:'M22,64 V50 C22,33 34,21 50,21 C66,21 78,33 78,50 V64 Q78,76 66,76 H34 Q22,76 22,64 Z', ey:48 },
+    capsule:  { d:'M30,42 Q30,22 50,22 Q70,22 70,42 L70,58 Q70,78 50,78 Q30,78 30,58 Z', ey:50 },
+    cup:      { d:'M34,22 Q22,22 22,34 V48 C22,65 34,77 50,77 C66,77 78,65 78,48 V34 Q78,22 66,22 Z', ey:48 }
+  };
+  function buildAvatar(o) {
+    const INK='#4d5358', SC='#f2f4f8';
+    const h=C_HEADS[o.head], ey=h.ey;
+    let top='';
+    if (o.top==='crown') {
+      const ty=(o.topY||9.8);
+      top=`<rect x="34.25" y="${ty}" width="7.5" height="8" rx="3.75" fill="${o.orn}"/><rect x="46.25" y="${ty-4}" width="7.5" height="12" rx="3.75" fill="${o.orn}"/><rect x="58.25" y="${ty}" width="7.5" height="8" rx="3.75" fill="${o.orn}"/>`;
+    } else if (o.top==='bolt') {
+      top=`<rect x="42" y="${o.topY||11.8}" width="16" height="7" rx="2.5" fill="${o.orn}"/>`;
+    } else if (o.top==='siren') {
+      top=`<path d="M41,${o.topY||16.8} A9,9 0 0 1 59,${o.topY||16.8} Z" fill="${o.orn}" stroke="${o.orn}" stroke-width="4" stroke-linejoin="round"/>`;
+    } else if (o.top==='cap') {
+      top=`<path d="M0,0 H100 V${o.topY||34} Q50,${(o.topY||34)+7} 0,${o.topY||34} Z" clip-path="url(#h)" fill="${o.orn}"/>`;
+    } else if (o.top==='hat') {
+      const ty=(o.topY||12.3);
+      top=`<rect x="29" y="${ty}" width="42" height="6.5" rx="3.25" fill="${o.orn}"/><rect x="38" y="${ty-15.3}" width="24" height="12.1" rx="4" fill="${o.orn}"/>`;
+    }
+    let sides='';
+    if (o.sides==='round') {
+      sides=`<path d="M16.8,42 A8,8 0 0 0 16.8,58 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/><path d="M83.2,42 A8,8 0 0 1 83.2,58 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/>`;
+    } else if (o.sides==='fins') {
+      sides=`<path d="M16.8,35 L10.3,43 V57 L16.8,64 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/><path d="M83.2,35 L89.7,43 V57 L83.2,64 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/>`;
+    } else if (o.sides==='pills') {
+      sides=`<rect x="11.8" y="38" width="7" height="10" rx="3.5" fill="${o.sd}"/><rect x="11.8" y="51.2" width="7" height="10" rx="3.5" fill="${o.sd}"/><rect x="81.2" y="38" width="7" height="10" rx="3.5" fill="${o.sd}"/><rect x="81.2" y="51.2" width="7" height="10" rx="3.5" fill="${o.sd}"/>`;
+    } else if (o.sides==='wings') {
+      sides=`<path d="M16.3,34 L16.3,57 A7.15,7.15 0 1 1 3.26,52.95 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/><path d="M83.7,34 L83.7,57 A7.15,7.15 0 1 0 96.74,52.95 Z" fill="${o.sd}" stroke="${o.sd}" stroke-width="4" stroke-linejoin="round"/>`;
+    }
+    let face='';
+    if (o.face==='eyes') {
+      face=`<circle cx="37.5" cy="${ey}" r="9.5" fill="${SC}"/><circle cx="38.76" cy="${ey+1.62}" r="4.37" fill="${INK}"/><circle cx="62.5" cy="${ey}" r="9.5" fill="${SC}"/><circle cx="63.76" cy="${ey+1.62}" r="4.37" fill="${INK}"/>`;
+    } else if (o.face==='wink') {
+      face=`<circle cx="37.5" cy="${ey}" r="9.5" fill="${SC}"/><circle cx="38.76" cy="${ey+1.62}" r="4.37" fill="${INK}"/><rect x="55" y="${ey-3.35}" width="14" height="5.5" rx="2.75" fill="${INK}"/>`;
+    } else if (o.face==='visor') {
+      face=`<rect x="30" y="${ey-13.3}" width="40" height="20" rx="10" fill="${INK}"/><circle cx="40" cy="${ey-3.3}" r="5" fill="${o.glow||'#ffffff'}"/><circle cx="60" cy="${ey-3.3}" r="5" fill="${o.glow||'#ffffff'}"/>`;
+    } else if (o.face==='happy') {
+      face=`<path d="M30,${ey-2} Q37.5,${ey-7} 45,${ey-2}" fill="none" stroke="${o.glow||'#ffffff'}" stroke-width="5"/><path d="M55,${ey-2} Q62.5,${ey-7} 70,${ey-2}" fill="none" stroke="${o.glow||'#ffffff'}" stroke-width="5"/>`;
+    }
+    let mouth='';
+    if (o.mouth==='smile') mouth=`<path d="M43,${ey+17} Q50,${ey+24} 57,${ey+17}" fill="none" stroke="${INK}" stroke-width="4.5"/>`;
+    else if (o.mouth==='grin') mouth=`<path d="M43.5,${ey+18} H56.5 Q56.5,${ey+22} 50,${ey+22} Q43.5,${ey+22} 43.5,${ey+18} Z" fill="${INK}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`;
+    else if (o.mouth==='cat') mouth=`<path d="M42,${ey+18} Q46,${ey+23} 50,${ey+18} Q54,${ey+23} 58,${ey+18}" fill="none" stroke="${INK}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    else if (o.mouth==='caret') mouth=`<path d="M44,${ey+18} L50,${ey+13} L56,${ey+18}" fill="none" stroke="${INK}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    else if (o.mouth==='wavy') mouth=`<path d="M40,${ey+18} Q43,${ey+14} 46,${ey+18} Q49,${ey+22} 52,${ey+18} Q55,${ey+14} 58,${ey+18}" fill="none" stroke="${INK}" stroke-width="3.5"/>`;
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -4 100 100"><defs><clipPath id="h"><path d="${h.d}"/></clipPath><mask id="g" maskUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120"><rect x="-10" y="-10" width="120" height="120" fill="white"/><g fill="none" stroke="black" stroke-width="3.2" clip-path="url(#h)"/></mask></defs><g mask="url(#g)">${top}${sides}<path d="${h.d}" fill="${o.hc}"/><g clip-path="url(#h)">${face}${mouth}</g></g></svg>`;
+    return 'data:image/svg+xml,'+encodeURIComponent(svg);
+  }
+  const CARBON_EX = [
+    { name:'Atlas',   head:'squircle', top:'crown', face:'eyes',  sides:'round', mouth:'smile', hc:'#1192e8', orn:'#fa4d56', sd:'#6fdc8c', note:'squircle \xb7 crown \xb7 smile' },
+    { name:'Cipher',  head:'circle',   top:'bolt',  face:'wink',  sides:'fins',  mouth:null,    hc:'#a56eff', orn:'#f1c21b', sd:'#eb6200', note:'circle \xb7 bolt \xb7 wink' },
+    { name:'Relay',   head:'egg',      top:'siren', face:'eyes',  sides:'pills', mouth:'grin',  hc:'#ee5396', orn:'#08bdba', sd:'#4589ff', topY:8.8, note:'egg \xb7 siren \xb7 grin' },
+    { name:'Vault',   head:'box',      top:'cap',   face:'visor', sides:null,    mouth:null,    hc:'#f1c21b', orn:'#0f62fe', sd:null,      glow:'#ffffff', topY:34, note:'box \xb7 cap \xb7 visor' },
+    { name:'Petal',   head:'bell',     top:'hat',   face:'happy', sides:'round', mouth:'cat',   hc:'#42be65', orn:'#ee5396', sd:'#1192e8', topY:11.3, note:'bell \xb7 hat \xb7 happy' },
+    { name:'Drift',   head:'capsule',  top:null,    face:'eyes',  sides:'pills', mouth:'caret', hc:'#08bdba', orn:null,      sd:'#eb6200', note:'capsule \xb7 caret' },
+    { name:'Ember',   head:'cup',      top:'crown', face:'wink',  sides:'round', mouth:'wavy',  hc:'#fa4d56', orn:'#f1c21b', sd:'#4589ff', note:'cup \xb7 crown \xb7 wavy' },
+    { name:'Prism',   head:'squircle', top:'siren', face:'eyes',  sides:'fins',  mouth:null,    hc:'#0f62fe', orn:'#42be65', sd:'#a56eff', note:'squircle \xb7 siren' }
+  ];
+
+  const origFaceSrcs = (function() {
+    const m = {};
+    document.querySelectorAll('#face figure.tile').forEach(f => {
+      const c = f.querySelector('figcaption code');
+      if (c) { const t = c.textContent; if (t.includes('visor') || t.includes('happy') || t.includes('wink')) m[t] = f.querySelector('img')?.getAttribute('src'); }
+    });
+    return m;
+  })();
+
+  const OKLCH_LIGHT = ['#ffc6d2','#feccbf','#fee1c6','#fae8a2','#d9f2b0','#a9ebbf','#8febdf','#8fe7fd','#b6ddfe','#ccd5ff','#e2ccfe','#fec2ef'];
+
+  const origStatesSrcs = (function() {
+    const m = {};
+    document.querySelectorAll('#states .state-row').forEach(row => {
+      const label = row.querySelector('.state-label code');
+      if (!label) return;
+      const t = label.textContent;
+      if (t.includes('visor') || t.includes('wink')) m[t] = [...row.querySelectorAll('figure.tile img')].map(i => i.getAttribute('src'));
+    });
+    return m;
+  })();
+
+  const origBuildMouthSrc = (function() {
+    const figs = document.querySelectorAll('#build figure.tile');
+    for (const f of figs) { const c = f.querySelector('figcaption code'); if (c && c.textContent.includes('mouth')) return f.querySelector('img')?.getAttribute('src'); }
+    return null;
+  })();
+  const origRecolorSrcs = [...document.querySelectorAll('#recolor figure.tile img')].map(i => i.getAttribute('src'));
+
+  let carbonExGrid = null;
+  function toggleExamples(carbonMode) {
+    const sec = document.getElementById('examples');
+    if (!sec) return;
+    const grid = sec.querySelector('.grid');
+    if (!grid) return;
+    if (carbonMode) {
+      if (!grid.dataset.origHtml) grid.dataset.origHtml = grid.innerHTML;
+      if (!carbonExGrid) {
+        carbonExGrid = '';
+        CARBON_EX.forEach(ex => {
+          const uri = buildAvatar(ex);
+          carbonExGrid += `<figure class="tile"><div class="plate"><img src="${uri}" alt="${ex.name}" width="96" height="96"></div><figcaption><code>${ex.name}</code><span class="note">${ex.note}</span></figcaption></figure>`;
+        });
+      }
+      grid.innerHTML = carbonExGrid;
+      const lede = sec.querySelector('.lede');
+      if (lede) {
+        if (!lede.dataset.orig) lede.dataset.orig = lede.innerHTML;
+        lede.innerHTML = 'Eight agent names, randomly mixed from the Carbon part set. No banding or bottom pieces.';
+      }
+    } else {
+      if (grid.dataset.origHtml) {
+        grid.innerHTML = grid.dataset.origHtml;
+        delete grid.dataset.origHtml;
+      }
+      const lede = sec.querySelector('.lede');
+      if (lede && lede.dataset.orig) {
+        lede.innerHTML = lede.dataset.orig;
+        delete lede.dataset.orig;
+      }
+    }
+  }
+
+  function toggleCarbonText(carbonMode) {
+    const al = document.querySelector('#anatomy .lede');
+    if (al) {
+      if (carbonMode) {
+        if (!al.dataset.orig) al.dataset.orig = al.textContent;
+        al.textContent = al.textContent.replace('eight', 'six');
+      } else if (al.dataset.orig) {
+        al.textContent = al.dataset.orig; delete al.dataset.orig;
+      }
+    }
+    document.querySelectorAll('#anatomy .parts li').forEach(li => {
+      const code = li.querySelector('code');
+      if (!code) return;
+      const t = code.textContent;
+      if (t === 'banding' || t === 'bottom') li.style.display = carbonMode ? 'none' : '';
+      if (t === 'head') {
+        const span = li.querySelector('span');
+        if (span) {
+          if (carbonMode) {
+            if (!span.dataset.orig) span.dataset.orig = span.textContent;
+            span.textContent = span.textContent.replace('9 shapes', '7 shapes');
+          } else if (span.dataset.orig) { span.textContent = span.dataset.orig; delete span.dataset.orig; }
+        }
+      }
+      if (t === 'derp') {
+        const span = li.querySelector('span');
+        if (span) {
+          if (carbonMode) {
+            if (!span.dataset.orig) span.dataset.orig = span.textContent;
+            span.textContent = span.textContent.replace('11 layouts', '9 layouts');
+          } else if (span.dataset.orig) { span.textContent = span.dataset.orig; delete span.dataset.orig; }
+        }
+      }
+      if (t === 'face') {
+        const span = li.querySelector('span');
+        if (span) {
+          if (carbonMode) {
+            if (!span.dataset.orig) span.dataset.orig = span.textContent;
+            span.textContent = span.textContent.replace('shades', 'happy');
+          } else if (span.dataset.orig) { span.textContent = span.dataset.orig; delete span.dataset.orig; }
+        }
+      }
+      if (t === 'mouth') {
+        const span = li.querySelector('span');
+        if (span) {
+          if (carbonMode) {
+            if (!span.dataset.orig) span.dataset.orig = span.textContent;
+            span.textContent = 'Drawn on some faces where the head has room below the eyes.';
+          } else if (span.dataset.orig) { span.textContent = span.dataset.orig; delete span.dataset.orig; }
+        }
+      }
+      if (t === 'top') {
+        const span = li.querySelector('span');
+        if (span) {
+          if (carbonMode) {
+            if (!span.dataset.orig) span.dataset.orig = span.textContent;
+            span.textContent = span.textContent.replace('bug eyes, ', '');
+          } else if (span.dataset.orig) { span.textContent = span.dataset.orig; delete span.dataset.orig; }
+        }
+      }
+    });
+    const tl = document.querySelector('#top .lede');
+    if (tl) {
+      if (carbonMode) {
+        if (!tl.dataset.orig) tl.dataset.orig = tl.innerHTML;
+        tl.innerHTML = tl.innerHTML.replace(' <code>"bug-eyes"</code> changes which faces are likely, favouring <code>"blank"</code>.', '');
+      } else if (tl.dataset.orig) { tl.innerHTML = tl.dataset.orig; delete tl.dataset.orig; }
+    }
+    document.querySelectorAll('#top figure.tile .note').forEach(note => {
+      if (note.textContent.includes('face: "blank"')) {
+        if (carbonMode) {
+          if (!note.dataset.orig) note.dataset.orig = note.textContent;
+          note.textContent = 'shown with face: "eyes"';
+        } else if (note.dataset.orig) { note.textContent = note.dataset.orig; delete note.dataset.orig; }
+      }
+    });
+    document.querySelectorAll('#top .lede').forEach(p => {
+      if (p.textContent.includes('Bug eyes come')) p.style.display = carbonMode ? 'none' : '';
+    });
+    document.querySelectorAll('#top .grid').forEach(g => {
+      const fc = g.querySelector('figcaption code');
+      if (fc && fc.textContent.includes('bugEyes')) g.style.display = carbonMode ? 'none' : '';
+    });
+    const pl = document.querySelector('#patch .lede');
+    if (pl) {
+      if (carbonMode) {
+        if (!pl.dataset.orig) pl.dataset.orig = pl.innerHTML;
+        pl.innerHTML = pl.innerHTML.replace(', tiny', '');
+      } else if (pl.dataset.orig) { pl.innerHTML = pl.dataset.orig; delete pl.dataset.orig; }
+    }
+    const fl = document.querySelector('#face .lede');
+    if (fl) {
+      if (carbonMode) {
+        if (!fl.dataset.orig) fl.dataset.orig = fl.innerHTML;
+        fl.innerHTML = fl.innerHTML
+          .replace('Visor, happy and shades draw', 'Visor and happy draw')
+          .replace('. If a face doesn\'t fit, the generator removes banding first, then the top.',
+          '. If a face doesn\'t fit, the top is removed.');
+      } else if (fl.dataset.orig) { fl.innerHTML = fl.dataset.orig; delete fl.dataset.orig; }
+    }
+    function glowToWhite(origSrc) {
+      let src = origSrc;
+      for (const lc of OKLCH_LIGHT) src = src.split(encHex(lc)).join('%23ffffff');
+      const mi = src.indexOf(MASK_OPEN);
+      if (mi !== -1) {
+        const me = src.indexOf(MASK_CLOSE, mi);
+        if (me !== -1) src = src.slice(0, mi) + MASK_SELF + '%3C%2Fmask%3E' + src.slice(me + MASK_CLOSE.length);
+      }
+      for (const [ok, cb] of Object.entries(MAP)) {
+        if (OKLCH_LIGHT.includes(ok)) continue;
+        src = src.split(encHex(ok)).join(encHex(cb));
+      }
+      return src;
+    }
+    function winkToWhite(origSrc) {
+      let src = origSrc;
+      src = src.replace(
+        /%3Ccircle%20cx%3D%2238%22%20cy%3D%2248%22%20r%3D%226%22%20fill%3D%22%234a5160%22%2F%3E/,
+        '%3Ccircle%20cx%3D%2237.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2238.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E');
+      src = src.replace(
+        /%3Ccircle%20cx%3D%2241%22%20cy%3D%2248%22%20r%3D%226%22%20fill%3D%22%234a5160%22%2F%3E/,
+        '%3Ccircle%20cx%3D%2240.5%22%20cy%3D%2248%22%20r%3D%229.5%22%20fill%3D%22%23fffdf8%22%2F%3E%3Ccircle%20cx%3D%2241.76%22%20cy%3D%2249.62%22%20r%3D%224.37%22%20fill%3D%22%234a5160%22%2F%3E');
+      for (const [ok, cb] of Object.entries(MAP)) src = src.split(encHex(ok)).join(encHex(cb));
+      return src;
+    }
+    document.querySelectorAll('#face figure.tile').forEach(f => {
+      const c = f.querySelector('figcaption code');
+      if (!c) return;
+      const t = c.textContent;
+      if (t.includes('visor') || t.includes('happy')) {
+        const img = f.querySelector('img');
+        if (!img) return;
+        if (carbonMode && origFaceSrcs[t]) img.setAttribute('src', glowToWhite(origFaceSrcs[t]));
+        else if (origFaceSrcs[t]) img.setAttribute('src', origFaceSrcs[t]);
+      }
+      if (t.includes('wink')) {
+        const img = f.querySelector('img');
+        if (!img) return;
+        if (carbonMode && origFaceSrcs[t]) img.setAttribute('src', winkToWhite(origFaceSrcs[t]));
+        else if (origFaceSrcs[t]) img.setAttribute('src', origFaceSrcs[t]);
+      }
+    });
+    document.querySelectorAll('#states .state-row').forEach(row => {
+      const label = row.querySelector('.state-label code');
+      if (!label) return;
+      const t = label.textContent;
+      if (t.includes('visor')) {
+        const srcs = origStatesSrcs[t] || [];
+        row.querySelectorAll('figure.tile img').forEach((img, i) => {
+          if (carbonMode && srcs[i]) img.setAttribute('src', glowToWhite(srcs[i]));
+          else if (srcs[i]) img.setAttribute('src', srcs[i]);
+        });
+      }
+      if (t.includes('wink')) {
+        const srcs = origStatesSrcs[t] || [];
+        row.querySelectorAll('figure.tile img').forEach((img, i) => {
+          if (carbonMode && srcs[i]) img.setAttribute('src', winkToWhite(srcs[i]));
+          else if (srcs[i]) img.setAttribute('src', srcs[i]);
+        });
+      }
+    });
+    const ml = document.querySelector('#mouth .lede');
+    if (ml) {
+      if (carbonMode) {
+        if (!ml.dataset.orig) ml.dataset.orig = ml.innerHTML;
+        ml.innerHTML = 'Picked with equal odds, but drawn only when the face is eyes, happy or wink and the head has room. That\'s why <code>"none"</code> dominates.';
+      } else if (ml.dataset.orig) { ml.innerHTML = ml.dataset.orig; delete ml.dataset.orig; }
+    }
+    document.querySelectorAll('#rules .rules li').forEach(li => {
+      if (li.textContent.includes('Bug eyes')) {
+        li.style.display = carbonMode ? 'none' : '';
+      }
+      if (li.textContent.includes('Mouths need space')) {
+        if (carbonMode) {
+          if (!li.dataset.orig) li.dataset.orig = li.innerHTML;
+          li.innerHTML = '<b>Mouths need space.</b> A mouth appears only with eyes, happy or wink faces, and on heads tall enough below the eyes.';
+        } else if (li.dataset.orig) { li.innerHTML = li.dataset.orig; delete li.dataset.orig; }
+      }
+      if (li.textContent.includes('Faces come first')) {
+        if (carbonMode) {
+          if (!li.dataset.orig) li.dataset.orig = li.innerHTML;
+          li.innerHTML = '<b>Faces come first.</b> If the chosen face doesn\'t fit inside the head, the top is removed.';
+        } else if (li.dataset.orig) { li.innerHTML = li.dataset.orig; delete li.dataset.orig; }
+      }
+    });
+    const inkP = document.querySelector('#palette .fixed-row p');
+    if (inkP && inkP.textContent.includes('wink/dots')) {
+      if (carbonMode) {
+        if (!inkP.dataset.orig) inkP.dataset.orig = inkP.textContent;
+        inkP.textContent = 'Pupils, mouths, wink marks, visor lenses, eye patch';
+      } else if (inkP.dataset.orig) { inkP.textContent = inkP.dataset.orig; delete inkP.dataset.orig; }
+    }
+    document.querySelectorAll('#slots .table-wrap td').forEach(td => {
+      if (td.textContent.includes('shades glint')) {
+        if (carbonMode) {
+          if (!td.dataset.orig) td.dataset.orig = td.textContent;
+          td.textContent = td.textContent.replace(', shades glint', '');
+        } else if (td.dataset.orig) { td.textContent = td.dataset.orig; delete td.dataset.orig; }
+      }
+      if (td.textContent.includes('bug-eyes')) {
+        if (carbonMode) {
+          if (!td.dataset.orig) td.dataset.orig = td.textContent;
+          td.textContent = td.textContent.replace(', bug-eyes', '');
+        } else if (td.dataset.orig) { td.textContent = td.dataset.orig; delete td.dataset.orig; }
+      }
+    });
+    document.querySelectorAll('#build figure.tile').forEach(fig => {
+      const code = fig.querySelector('figcaption code');
+      if (code && code.textContent.includes('bottom')) fig.style.display = carbonMode ? 'none' : '';
+      if (code && code.textContent.includes('mouth')) {
+        const img = fig.querySelector('img');
+        if (img) {
+          if (carbonMode) img.setAttribute('src', buildAvatar({head:'circle', top:'crown', face:'eyes', sides:'fins', mouth:'smile', hc:'#42be65', orn:'#eb6200', sd:'#0f62fe'}));
+          else if (origBuildMouthSrc) img.setAttribute('src', origBuildMouthSrc);
+        }
+      }
+    });
+    const rcColors = [
+      {hc:'#42be65', orn:'#eb6200', sd:'#0f62fe'},
+      {hc:'#fa4d56', orn:'#f1c21b', sd:'#08bdba'},
+      {hc:'#4589ff', orn:'#ee5396', sd:'#eb6200'},
+      {hc:'#f1c21b', orn:'#08bdba', sd:'#a56eff'}
+    ];
+    document.querySelectorAll('#recolor figure.tile img').forEach((img, i) => {
+      if (carbonMode) img.setAttribute('src', buildAvatar({head:'circle', top:'crown', face:'eyes', sides:'fins', mouth:'smile', ...rcColors[i]}));
+      else if (origRecolorSrcs[i]) img.setAttribute('src', origRecolorSrcs[i]);
+    });
+    const sc = document.querySelector('#states .callout');
+    if (sc) {
+      if (carbonMode) {
+        if (!sc.dataset.orig) sc.dataset.orig = sc.innerHTML;
+        sc.innerHTML = sc.innerHTML.replace(' Bug eyes turn into short dashes.', '');
+      } else if (sc.dataset.orig) { sc.innerHTML = sc.dataset.orig; delete sc.dataset.orig; }
+    }
+    document.querySelectorAll('#knobs tr').forEach(tr => {
+      if (tr.textContent.includes('BANDING_WEIGHTS')) tr.style.display = carbonMode ? 'none' : '';
+    });
+    const kgap = document.querySelector('#knobs');
+    if (kgap) {
+      kgap.querySelectorAll('tr').forEach(tr => {
+        if (tr.textContent.includes('bands)')) {
+          const td = tr.querySelector('td:last-child');
+          if (td) {
+            if (carbonMode) {
+              if (!td.dataset.orig) td.dataset.orig = td.textContent;
+              td.textContent = td.textContent.replace(', bands', '');
+            } else if (td.dataset.orig) { td.textContent = td.dataset.orig; delete td.dataset.orig; }
+          }
+        }
+      });
+    }
+  }
+
   function togglePaletteTable(carbonMode) {
     const table = document.querySelector('#palette .table-wrap table');
     if (!table) return;
-    // In Carbon mode: hide shade+light columns (index 2 and 3)
     table.querySelectorAll('tr').forEach(tr => {
       const cells = tr.querySelectorAll('th, td');
       if (cells.length >= 4) {
@@ -877,12 +2207,10 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
         cells[3].style.display = carbonMode ? 'none' : '';
       }
     });
-    // Update header
     const headers = table.querySelectorAll('thead th');
     if (headers.length >= 2) {
       headers[1].textContent = carbonMode ? 'Carbon swatch' : 'base · L 0.74 C 0.16';
     }
-    // Add/remove Carbon labels in the base column
     table.querySelectorAll('tbody tr').forEach(tr => {
       const baseCell = tr.querySelectorAll('td')[0];
       if (!baseCell) return;
@@ -906,22 +2234,65 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
 
   function setMode(newMode) {
     if (newMode === mode) return;
-    if (newMode === "carbon") {
-      swapColors(MAP);
-    } else {
-      swapColors(REV);
+    const shell = document.querySelector('.shell');
+    const beesSheet = document.getElementById('bees-sheet');
+    const wasAvatar = (mode === 'oklch' || mode === 'carbon');
+    const isAvatar = (newMode === 'oklch' || newMode === 'carbon');
+
+    if (wasAvatar && isAvatar) {
+      if (newMode === 'carbon') { swapColors(MAP); toggleMaskContent(true); }
+      else { toggleMaskContent(false); swapColors(REV); }
     }
+    if (wasAvatar && !isAvatar) {
+      if (mode === 'carbon') { toggleMaskContent(false); swapColors(REV); }
+    }
+    if (!wasAvatar && isAvatar) {
+      if (newMode === 'carbon') { swapColors(MAP); toggleMaskContent(true); }
+    }
+
     mode = newMode;
-    document.querySelectorAll('.color-toggle-bar button').forEach(b => {
+    document.querySelectorAll('.color-toggle-bar button[data-mode]').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
-    togglePaletteTable(mode === 'carbon');
-    const sub = document.getElementById('palette-subtitle');
-    if (sub) {
-      sub.textContent = mode === 'carbon'
-        ? 'IBM Carbon Design System colors — one base swatch per avatar hue, no shade or light tones.'
-        : 'Twelve hues, 30° apart around the OKLCH color wheel, each in three tones. Tones share lightness and chroma across all hues, so every hue looks equally bright; yellows get a small lightness lift. An avatar picks three hues (primary, secondary, tertiary) that sit at least 60° apart.';
+
+    if (mode === 'bees') {
+      if (shell) shell.style.display = 'none';
+      if (beesSheet) beesSheet.style.display = 'block';
+    } else {
+      if (shell) shell.style.display = '';
+      if (beesSheet) beesSheet.style.display = 'none';
+      togglePaletteTable(mode === 'carbon');
+      toggleSections(mode === 'carbon');
+      toggleFigures(mode === 'carbon');
+      toggleExamples(mode === 'carbon');
+      toggleCarbonText(mode === 'carbon');
+      const sub = document.getElementById('palette-subtitle');
+      if (sub) {
+        sub.textContent = mode === 'carbon'
+          ? 'IBM Carbon Design System colors — one base swatch per avatar hue, no shade or light tones.'
+          : 'Twelve hues, 30° apart around the OKLCH color wheel, each in three tones. Tones share lightness and chroma across all hues, so every hue looks equally bright; yellows get a small lightness lift. An avatar picks three hues (primary, secondary, tertiary) that sit at least 60° apart.';
+      }
     }
+  }
+
+  function initBeesToggle() {
+    const sheet = document.getElementById('bees-sheet');
+    if (!sheet) return;
+    const COOL_GRAY_40 = '#a2a9b0';
+    sheet.querySelectorAll('.bees-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sleeping = btn.dataset.state === 'sleeping';
+        sheet.classList.toggle('sleeping', sleeping);
+        sheet.querySelectorAll('.bees-toggle button').forEach(b => {
+          b.classList.toggle('active', b.dataset.state === btn.dataset.state);
+        });
+        const fromFill = sleeping ? 'black' : COOL_GRAY_40;
+        const toFill = sleeping ? COOL_GRAY_40 : 'black';
+        sheet.querySelectorAll('.bee-plate svg [fill="' + fromFill + '"]').forEach(el => {
+          el.setAttribute('fill', toFill);
+        });
+      });
+    });
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -932,10 +2303,11 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <div class="pill">
         <button data-mode="oklch" class="active">OKLCH (original)</button>
         <button data-mode="carbon">Carbon</button>
+        <button data-mode="bees">Bees</button>
       </div>
     `;
     document.body.insertBefore(bar, document.body.firstChild);
-    bar.querySelectorAll('button').forEach(b => {
+    bar.querySelectorAll('button[data-mode]').forEach(b => {
       b.addEventListener('click', () => setMode(b.dataset.mode));
     });
     const paletteSec = document.getElementById('palette');
@@ -943,6 +2315,7 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       const lede = paletteSec.querySelector('.lede');
       if (lede) lede.id = 'palette-subtitle';
     }
+    initBeesToggle();
   });
 })();
 </script>

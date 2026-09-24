@@ -1,10 +1,13 @@
+import { useMemo } from "react";
+
 import { Button } from "@/components/ui/button";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import { OutdatedTemplatesBanner } from "../components/outdated-templates-banner.js";
+import { ComputeWidget } from "../../home/components/compute-widget.js";
+import { SpendWidget } from "../../home/components/spend-widget.js";
 import { SandboxList } from "../components/sandbox-list.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
@@ -21,18 +24,27 @@ export function AgentsView() {
     suspend,
   });
 
+  const runningAgents = useMemo(
+    () => visible.filter((a) => a.state === "running"),
+    [visible],
+  );
+  const workingAgentIds = useMemo(
+    () =>
+      new Set(
+        visible
+          .filter((a) => a.state === "running" && a.size?.cpu)
+          .map((a) => a.id),
+      ),
+    [visible],
+  );
+
   const setView = useStore((s) => s.setView);
   const createAgent = () => setView("agent-new");
 
   return (
     <div>
       <PageHeader
-        title="Agents"
-        description={
-          visible.length > 0
-            ? "Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
-            : undefined
-        }
+        title="Home"
         actions={
           visible.length > 0 ? (
             <Button onClick={createAgent}>Create agent</Button>
@@ -40,9 +52,17 @@ export function AgentsView() {
         }
       />
 
-      {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
+      {initialLoaded && visible.length > 0 && (
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ComputeWidget
+            runningAgents={runningAgents}
+            workingAgentIds={workingAgentIds}
+          />
+          <SpendWidget />
+        </div>
+      )}
 
-      {initialLoaded && <OutdatedTemplatesBanner agents={visible} />}
+      {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && visible.length === 0 && (
         <PageEmptyState
