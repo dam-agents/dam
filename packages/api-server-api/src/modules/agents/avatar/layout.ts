@@ -3,7 +3,6 @@ import { clearance, type HeadGeometry, type Point } from "./geometry.js";
 import type { AvatarTraits, EyeSpec } from "./traits.js";
 
 export const AVATAR_CENTER = 50;
-export const AVATAR_VIEWBOX = "0 -4 100 100";
 export const EDGE_MARGIN = 4;
 export const GAP_MARGIN = 4;
 export const MOUTH_Y = 65;
@@ -273,15 +272,15 @@ export function hatLayout(head: HeadGeometry): { brim: Box; crown: Box } {
   };
 }
 
-export const BUG_EYE_SPREAD = 11;
+export const ANTENNA_SPREAD = 11;
 
-export function bugEyeCenter(
+export function antennaCenter(
   head: HeadGeometry,
   index: number,
   r: number,
 ): [number, number] {
   return [
-    AVATAR_CENTER + (index === 0 ? -BUG_EYE_SPREAD : BUG_EYE_SPREAD),
+    AVATAR_CENTER + (index === 0 ? -ANTENNA_SPREAD : ANTENNA_SPREAD),
     head.top - AVATAR_GAP - 1 - r,
   ];
 }
