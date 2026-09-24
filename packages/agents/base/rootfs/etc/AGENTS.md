@@ -7,8 +7,8 @@ Available:
 - `node` (26), `npm`, `pnpm`
 - `python` (3.12), `pip`, `uv`, `uvx`
 - `gh`, `rg`, `fd`, `jq`, `kubectl`
-- `agent-browser` and Playwright (`playwright`, `npx playwright`), sharing one bundled Chromium; a project's own Playwright of another version needs its own `playwright install`
-- `mise` to install extra software
+- `agent-browser` and Playwright (`playwright`, `npx playwright`), sharing one bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs
+- `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
 
 Additionally available if running in a root VM:
 - `docker`: start the daemon with `(umask 022; dockerd >/var/log/dockerd.log 2>&1 &)`, stops on restart; images are kept in `~/.local/share/docker`

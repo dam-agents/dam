@@ -57,7 +57,12 @@ def own(path, cache):
     memo = os.path.join(cache, f"{os.path.basename(path)}.{rules}.json")
     if os.path.exists(memo):
         with open(memo) as f:
-            return json.load(f)
+            done = json.load(f)
+        # Touched on use, so a cache prune can drop what no build reads.
+        os.utime(memo)
+        if done:
+            os.utime(os.path.join(cache, done["digest"].split(":", 1)[1]))
+        return done
     with tarfile.open(path, "r|*") as tar:
         right = all((m.uid, m.gid) == owner(m.name) and not dropped(m.name) for m in tar)
     done = None
