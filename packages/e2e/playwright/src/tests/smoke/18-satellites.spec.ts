@@ -196,7 +196,7 @@ test.describe("satellites", () => {
     const agentId = await waitForAgentRunning(api, AGENT_NAME);
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await page.getByTestId("open-connection-catalog").first().click();
-    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId("catalog-tab-mcp").click();
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
     await expect(page.getByText("In this agent")).toBeVisible();
 
@@ -248,7 +248,7 @@ test.describe("satellites", () => {
     }
 
     await page.getByTestId("open-connection-catalog").first().click();
-    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId("catalog-tab-mcp").click();
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
     await page.getByTestId("catalog-close").click();
     await expect(page.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();

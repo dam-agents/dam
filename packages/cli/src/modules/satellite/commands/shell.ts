@@ -7,11 +7,11 @@ import {
 } from "../services/command-backend.js";
 import {
   connectOptions,
-  defaultSatelliteName,
   fail,
   log,
   readStdin,
   serve,
+  shellDefaultName,
   type CommonConnectOpts,
   type ConnectDeps,
 } from "./shared.js";
@@ -31,7 +31,7 @@ export function buildShellCommand(deps: ConnectDeps): Command {
         "[patterns]",
         "one usage line per permitted command; read from stdin when omitted",
       ),
-    { defaultName: defaultSatelliteName() },
+    "the one permitted command, or user@hostname",
   )
     .option("--cwd <dir>", "working directory commands run in")
     .option("--timeout <duration>", "kill a job after this long, e.g. 30m")
@@ -49,7 +49,8 @@ export function buildShellCommand(deps: ConnectDeps): Command {
         '  dam satellite shell "./run.sh [--thing] *  # run a thing"\n\n' +
         "The text is the whole allowlist and the platform can never widen it.\n" +
         "Changing it means restarting: there is no file to re-read.\n" +
-        "Without --name the satellite is called user@hostname.\n" +
+        "Without --name the satellite is named after the permitted command when\n" +
+        "there is one (run above), or called user@hostname.\n" +
         "First interrupt drains, second kills running jobs.\n",
     )
     .action(async (patterns: string | undefined, opts: Opts) => {
@@ -60,7 +61,7 @@ export function buildShellCommand(deps: ConnectDeps): Command {
         );
 
       const surface = parseCommandSurface(text, {
-        name: opts.name ?? defaultSatelliteName(),
+        name: opts.name ?? shellDefaultName(text),
         ...(opts.description === undefined
           ? {}
           : { description: opts.description }),

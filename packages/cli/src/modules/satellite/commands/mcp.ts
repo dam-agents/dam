@@ -7,6 +7,7 @@ import {
 import {
   connectOptions,
   fail,
+  mcpDefaultName,
   serve,
   type CommonConnectOpts,
   type ConnectDeps,
@@ -80,6 +81,7 @@ export function buildMcpCommand(deps: ConnectDeps): Command {
         "Expose an MCP server on this machine — started here, or already running — offering its tools to an agent",
       )
       .argument("[command...]", "the stdio MCP server to start"),
+    "the server's command or host",
   )
     .option("--cwd <dir>", "working directory for the started MCP server")
     .option(
@@ -98,9 +100,11 @@ export function buildMcpCommand(deps: ConnectDeps): Command {
         "their schemas, and the server decides what each call may do. A started\n" +
         "server inherits this shell's environment.\n\n" +
         "  dam satellite mcp --name build-farm -- npx -y @acme/build-mcp\n" +
-        "  dam satellite mcp --name build-farm --url localhost:8080\n\n" +
+        "  dam satellite mcp --url localhost:8080\n\n" +
         "A --url without a scheme or path means http://HOST:PORT/mcp. Streamable\n" +
-        "HTTP is tried first, then SSE.\n\n" +
+        "HTTP is tried first, then SSE.\n" +
+        "Without --name the satellite is named after the server it starts\n" +
+        "(build-mcp above) or the host it forwards to (localhost).\n\n" +
         "First interrupt drains, second kills running jobs.\n",
     )
     .action(async (command: string[], opts: Opts) => {
@@ -127,7 +131,7 @@ export function buildMcpCommand(deps: ConnectDeps): Command {
         opts,
         backend,
         {
-          name: opts.name!,
+          name: opts.name ?? mcpDefaultName(spec),
           ...(opts.description === undefined
             ? {}
             : { description: opts.description }),

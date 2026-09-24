@@ -1,4 +1,5 @@
 import { hostname, userInfo } from "node:os";
+import { basename } from "node:path";
 import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -11,6 +12,7 @@ import {
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { SatelliteBackend } from "../services/backend.js";
+import type { McpServerSpec } from "../services/mcp-backend.js";
 import {
   createWorker,
   SatelliteRemovedError,
@@ -30,21 +32,12 @@ export interface CommonConnectOpts {
   server?: string;
 }
 
-export function connectOptions(
-  command: Command,
-  naming: { defaultName?: string } = {},
-): Command {
-  const withName =
-    naming.defaultName === undefined
-      ? command.requiredOption(
-          "--name <name>",
-          "satellite name, as agents will see it",
-        )
-      : command.option(
-          "--name <name>",
-          `satellite name, as agents will see it (default: ${naming.defaultName})`,
-        );
-  return withName
+export function connectOptions(command: Command, defaultHint: string): Command {
+  return command
+    .option(
+      "--name <name>",
+      `satellite name, as agents will see it (default: ${defaultHint})`,
+    )
     .option("--description <text>", "what this machine is, shown to the agent")
     .option(
       "--max-concurrent <n>",
@@ -58,18 +51,105 @@ export function connectOptions(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The name a shell Satellite takes when the user
- * gives none: who is serving it, and from which machine. It is folded into the
- * name contract — lowercase, with anything outside it turned into a dash — so
- * an unusual login or hostname still connects instead of failing on a name the
- * user never typed.
+ * UNIT_BOUNDARY_DESCRIPTION: Folds any text into the name contract — lowercase,
+ * with anything outside it turned into a dash — so an unusual login, hostname
+ * or command still connects instead of failing on a name the user never typed.
  */
-export function defaultSatelliteName(): string {
-  const raw = `${userInfo().username}@${hostname()}`.toLowerCase();
+function asSatelliteName(raw: string): string {
   return raw
+    .toLowerCase()
     .replace(/[^a-z0-9.@-]+/g, "-")
     .replace(/^[^a-z0-9]+/, "")
     .slice(0, 64);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name a Satellite takes when nothing about what
+ * it serves suggests one: who is serving it, and from which machine.
+ */
+export function defaultSatelliteName(): string {
+  return asSatelliteName(`${userInfo().username}@${hostname()}`);
+}
+
+const RUNNERS = new Set([
+  "npx",
+  "pnpx",
+  "pnx",
+  "bunx",
+  "uvx",
+  "pipx",
+  "npm",
+  "pnpm",
+  "yarn",
+  "bun",
+  "uv",
+  "deno",
+  "node",
+  "python",
+  "python3",
+]);
+const RUNNER_VERBS = new Set(["dlx", "exec", "run", "tool", "x"]);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a command line is "for", as a Satellite name.
+ * A package runner or interpreter (`npx -y @acme/tool`, `uvx mcp-server-git`,
+ * `python -m …`) names the thing it launches, not itself, so the first word
+ * after it and its flags is taken; a scope, a version and a path or extension
+ * are dropped so `@acme/tool@1.2` and `./bin/tool.sh` both become `tool`.
+ * NOTE: A runner flag that takes a value (`npx -p pkg cmd`) is not understood;
+ * the value is taken as the name. Pass --name for those.
+ */
+function programName(argv: readonly string[]): string | undefined {
+  let at = 0;
+  if (argv[0] !== undefined && RUNNERS.has(basename(argv[0]))) {
+    at = 1;
+    while (
+      argv[at] !== undefined &&
+      (argv[at]!.startsWith("-") || RUNNER_VERBS.has(argv[at]!))
+    )
+      at += 1;
+  }
+  const word = argv[at];
+  if (word === undefined) return undefined;
+  const bare = basename(
+    word
+      .replace(/^[a-z]+:/, "")
+      .replace(/^@[^/]+\//, "")
+      .replace(/(.)@[^@/]*$/, "$1"),
+  );
+  const name = asSatelliteName(bare.replace(/(.)\.[a-z0-9]+$/i, "$1"));
+  return name === "" ? undefined : name;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name an MCP Satellite takes when the user
+ * gives none: the host it forwards to, or the server it starts.
+ */
+export function mcpDefaultName(spec: McpServerSpec): string {
+  if (spec.kind === "url") return asSatelliteName(spec.url.hostname);
+  return programName([spec.command, ...spec.args]) ?? defaultSatelliteName();
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name a shell Satellite takes when the user
+ * gives none: the one command it permits, when every pattern starts with the
+ * same one, else who serves it from where. It reads the first word of each
+ * pattern line rather than the parsed surface so the name is settled before
+ * the surface, which carries it, is parsed.
+ */
+export function shellDefaultName(patterns: string): string {
+  const programs = new Set(
+    patterns
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "" && !line.startsWith("#"))
+      .map((line) => line.split(/\s+/)[0]!),
+  );
+  const [only] = programs;
+  return (
+    (programs.size === 1 ? programName([only!]) : undefined) ??
+    defaultSatelliteName()
+  );
 }
 
 export const log = {
@@ -123,8 +203,8 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
  */
 export function uiGuide(host: string, name: string): string[] {
   return [
-    `to give an agent these tools, open ${host} and go to`,
-    `  the agent's Settings → Connections → + New → Satellites → "${name}" → Add to agent`,
+    `to give an agent these tools, open ${host}, pick the agent and go to`,
+    `  Configure agent → Connections → + New → MCP servers → "${name}" → Add to agent`,
   ];
 }
 
