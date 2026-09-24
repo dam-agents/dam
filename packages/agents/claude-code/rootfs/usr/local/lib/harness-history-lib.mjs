@@ -1,5 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function adapterDir() {
@@ -9,7 +9,8 @@ function adapterDir() {
     .map((dir) => join(dir, "claude-agent-acp"))
     .find((candidate) => existsSync(candidate));
   if (!bin) throw new Error("claude-agent-acp not found on PATH");
-  return dirname(dirname(realpathSync(bin)));
+  const shim = readFileSync(bin, "utf8").match(/^# aube-bin-shim v\d+ target=(\S+)$/m);
+  return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
 }
 
 const ADAPTER_DIR = adapterDir();

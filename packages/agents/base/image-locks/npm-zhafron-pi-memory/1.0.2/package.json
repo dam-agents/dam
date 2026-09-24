@@ -1,0 +1,7 @@
+{
+  "name": "mise-npm-install",
+  "private": true,
+  "dependencies": {
+    "@zhafron/pi-memory": "1.0.2"
+  }
+}

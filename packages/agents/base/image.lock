@@ -122,41 +122,49 @@ url = "https://nodejs.org/dist/v26.9.0/node-v26.9.0-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
 version = "0.75.1"
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.75.1", digest = "sha256:cf4f2df6b37ff9e2606347b9ec138aeb2c3b00273f4c0c5257094b1ef9df173c" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.75.1"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
 version = "0.85.1"
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/0.85.1", digest = "sha256:5752d661db85ebfd04ad930e6622879d7f411af548c8051fdbd03a7037fc8b48" }
 backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["0.85.1"]
 
 [[tools."npm:@openai/codex"]]
 version = "0.153.4"
+aube = { path = ".mise/locks/npm-openai-codex/0.153.4", digest = "sha256:dfc57655e9da491a3c9ced0d6c2ff749011b09f72a5f04880ca09ecdb60db0d6" }
 backend = "npm:@openai/codex"
 specifiers = ["0.153.4"]
 
 [[tools."npm:@zed-industries/codex-acp"]]
 version = "0.16.0"
+aube = { path = ".mise/locks/npm-zed-industries-codex-acp/0.16.0", digest = "sha256:c7f37cd0e6525a9748d3c7d3825889653c18848ec6dc8498ca72c57b4feb12ba" }
 backend = "npm:@zed-industries/codex-acp"
 specifiers = ["0.16.0"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"
+aube = { path = ".mise/locks/npm-zhafron-pi-memory/1.0.2", digest = "sha256:0dbbb549242b631b6fafcb2e57e7707f8d5c3405716ca3a723c3ecbc4525080a" }
 backend = "npm:@zhafron/pi-memory"
 specifiers = ["1.0.2"]
 
 [[tools."npm:agent-browser"]]
 version = "0.38.1"
+aube = { path = ".mise/locks/npm-agent-browser/0.38.1", digest = "sha256:71da2d3eacd2d671de6b4f1621c8eb49c1288cf86a6b33f55654a8ad3d0f8321" }
 backend = "npm:agent-browser"
 specifiers = ["0.38.1"]
 
 [[tools."npm:pi-acp"]]
 version = "0.0.33"
+aube = { path = ".mise/locks/npm-pi-acp/0.0.33", digest = "sha256:9d1c89d9047c069145fa6f940db9d2416b6dd5f3df9975044dc488bfc5daf829" }
 backend = "npm:pi-acp"
 specifiers = ["0.0.33"]
 
 [[tools."npm:playwright"]]
 version = "1.63.0"
+aube = { path = ".mise/locks/npm-playwright/1.63.0", digest = "sha256:923502d4bfc680e227e6fcd3869f0c080d099393de9bd820854e11e964c4fe1e" }
 backend = "npm:playwright"
 specifiers = ["1.63.0"]
 

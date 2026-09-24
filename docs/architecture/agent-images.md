@@ -21,7 +21,7 @@ One task, [`//packages/agents:image`](../../packages/agents/.mise/tasks/image), 
 
 - **Linux of the image's architecture only.** `mise oci` packages the build host's own tool installs and runs its `apt-get` into a side rootfs, under root. On macOS the task builds in the cluster tasks' Lima VM from a copy of the working tree and loads the result into the host's docker. Loading an OCI layout needs Docker's containerd image store (the default from Docker 29).
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
-- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it. There are no build-arg overrides.
+- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it. There are no build-arg overrides.
 
 ## Ownership and the two Backends
 

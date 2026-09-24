@@ -1,0 +1,91 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@zed-industries/codex-acp':
+        specifier: 0.16.0
+        version: 0.16.0
+
+packages:
+
+  '@zed-industries/codex-acp-darwin-arm64@0.16.0':
+    resolution: {integrity: sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==}
+    cpu: [arm64]
+    os: [darwin]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp-darwin-x64@0.16.0':
+    resolution: {integrity: sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==}
+    cpu: [x64]
+    os: [darwin]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp-linux-arm64@0.16.0':
+    resolution: {integrity: sha512-8HaZGWVPVs1N6yqImLCKlnlcYTYc9BMCEhaVJk0ON9lyofhK9mOBBAHQndKC4Scqq5JLUHQIOyb8+jwHUe3hSQ==}
+    cpu: [arm64]
+    os: [linux]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp-linux-x64@0.16.0':
+    resolution: {integrity: sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==}
+    cpu: [x64]
+    os: [linux]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp-win32-arm64@0.16.0':
+    resolution: {integrity: sha512-4V3pDJvEyNkgVqWqlm0bLYEZ8liGXXp8InuHzCy5cgr+SFur6BuasA29tisN8NUrLus/ZvMhXCrOsNKurYAWQw==}
+    cpu: [arm64]
+    os: [win32]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp-win32-x64@0.16.0':
+    resolution: {integrity: sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==}
+    cpu: [x64]
+    os: [win32]
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+  '@zed-industries/codex-acp@0.16.0':
+    resolution: {integrity: sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==}
+    deprecated: This package has been replaced by @agentclientprotocol/codex-acp. Please migrate to continue receiving updates.
+    hasBin: true
+
+snapshots:
+
+  '@zed-industries/codex-acp-darwin-arm64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp-darwin-x64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp-linux-arm64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp-linux-x64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp-win32-arm64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp-win32-x64@0.16.0':
+    optional: true
+
+  '@zed-industries/codex-acp@0.16.0':
+    optionalDependencies:
+      '@zed-industries/codex-acp-darwin-arm64': 0.16.0
+      '@zed-industries/codex-acp-darwin-x64': 0.16.0
+      '@zed-industries/codex-acp-linux-arm64': 0.16.0
+      '@zed-industries/codex-acp-linux-x64': 0.16.0
+      '@zed-industries/codex-acp-win32-arm64': 0.16.0
+      '@zed-industries/codex-acp-win32-x64': 0.16.0
