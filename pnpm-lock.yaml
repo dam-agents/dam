@@ -615,8 +615,6 @@ importers:
         specifier: ^6.4.3
         version: 6.4.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0)
 
-  packages/platform-base: {}
-
   packages/ui:
     dependencies:
       '@agentclientprotocol/sdk':

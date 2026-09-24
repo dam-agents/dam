@@ -28,7 +28,10 @@ const retiredFile =
 
 const shippedSkill = "platform-schedules";
 const shippedOldRev = "1c6470c46e71";
-const shippedFile = "packages/platform-base/skills/platform-schedules/SKILL.md";
+const shippedOldFile =
+  "packages/platform-base/skills/platform-schedules/SKILL.md";
+const shippedFile =
+  "packages/agents/base/rootfs/app/working-dir/.agents/skills/platform-schedules/SKILL.md";
 
 const tickEnv = "E2E_RECONCILE_TICK";
 const reconcileGraceMs = 8_000;
@@ -91,7 +94,7 @@ test("image skills are platform-managed while untouched (#3460)", async () => {
   await acceptTerms(api);
 
   const retiredBytes = shippedBytesAt(retiredRev, retiredFile);
-  const oldShippedBytes = shippedBytesAt(shippedOldRev, shippedFile);
+  const oldShippedBytes = shippedBytesAt(shippedOldRev, shippedOldFile);
   const currentShippedBytes = readFileSync(join(repoRoot, shippedFile), "utf8");
   expect(oldShippedBytes).not.toBe(currentShippedBytes);
 

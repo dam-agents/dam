@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build (or reuse from the registry) the agent images — all of them, or the ones named as arguments. Bases first (platform-base, then claude-code), the rest in parallel. --dry-run prints the plan."
+#MISE description="Build (or reuse from the registry) the agent images — all of them, or the ones named as arguments. claude-code first when anything requested builds on it, the rest in parallel. --dry-run prints the plan."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
@@ -42,14 +42,10 @@ for a in "${agents[@]}"; do
 done
 
 if [ "$dry" = true ]; then
-  echo "stage 0 (serial):   platform-base"
   echo "stage 1 (serial):   ${stage1[*]:-—}"
   echo "stage 2 (parallel): ${stage2[*]:-—}"
   exit 0
 fi
-
-# Not a header dependency, so --dry-run stays a dry run.
-mise run //packages/platform-base:image
 
 for a in ${stage1[@]+"${stage1[@]}"}; do build "$a" & wait "$!"; done
 

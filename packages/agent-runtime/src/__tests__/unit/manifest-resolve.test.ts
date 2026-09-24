@@ -11,10 +11,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const agentsDir = join(here, "../../../../agents");
-const baseManifest = join(
-  here,
-  "../../../../platform-base/runtime-manifest.yaml",
-);
+const baseManifest = join(agentsDir, "base/rootfs/app/runtime-manifest.yaml");
 
 const mk = (drivers: Record<string, unknown>) =>
   runtimeManifestSchema.parse({ manifestVersion: 1, drivers });
@@ -193,7 +190,7 @@ describe("shipped agent manifests resolve", () => {
     });
   });
 
-  it("platform-base is all defaults (no harness-config)", () => {
+  it("the base manifest is all defaults (no harness-config)", () => {
     const r = resolveDrivers(loadManifest(baseManifest));
     expect("harness-config" in r).toBe(false);
     expect("env" in r && "trigger" in r).toBe(true);

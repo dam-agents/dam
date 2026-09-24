@@ -13,7 +13,13 @@ const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
-const MANIFEST_REL = "packages/platform-base/skills-manifest.json";
+const MANIFEST_REL =
+  "packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json";
+const PREVIOUS_MANIFEST_RELS = ["packages/platform-base/skills-manifest.json"];
+const PREVIOUS_SKILL_PARENTS = [
+  "packages/platform-base/skills",
+  "packages/platform-base/dam-skills",
+];
 const manifestFile = path.join(repoRoot, MANIFEST_REL);
 
 function git(args: string[]): string {
@@ -38,15 +44,16 @@ function appendOnlyBaseRev(): string {
 }
 
 function baselineManifest(baseRev: string): ShippedSkillManifest | undefined {
-  if (git(["ls-tree", baseRev, "--", MANIFEST_REL]).trim() === "") {
-    return undefined;
-  }
+  const rel = [MANIFEST_REL, ...PREVIOUS_MANIFEST_RELS].find(
+    (r) => git(["ls-tree", baseRev, "--", r]).trim() !== "",
+  );
+  if (rel === undefined) return undefined;
   const parsed = parseShippedSkillManifest(
-    JSON.parse(git(["show", `${baseRev}:${MANIFEST_REL}`])),
+    JSON.parse(git(["show", `${baseRev}:${rel}`])),
   );
   if (!parsed.ok) {
     console.error(
-      `baseline ${MANIFEST_REL} at ${baseRev.slice(0, 12)} failed schema validation: ${parsed.error.reason}`,
+      `baseline ${rel} at ${baseRev.slice(0, 12)} failed schema validation: ${parsed.error.reason}`,
     );
     process.exit(1);
   }
@@ -61,10 +68,7 @@ function gitBuffer(args: string[]): Buffer {
 }
 
 function skillSourceParents(): string[] {
-  const parents = [
-    "packages/platform-base/skills",
-    "packages/platform-base/dam-skills",
-  ];
+  const parents: string[] = [];
   const agentsDir = path.join(repoRoot, "packages/agents");
   for (const ent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
     if (!ent.isDirectory()) continue;
@@ -173,7 +177,7 @@ async function check(): Promise<void> {
 
 function historicalSkillDirs(): string[] {
   const dirs = new Set<string>();
-  for (const parent of skillSourceParents()) {
+  for (const parent of [...skillSourceParents(), ...PREVIOUS_SKILL_PARENTS]) {
     const listing = git([
       "log",
       "--format=",

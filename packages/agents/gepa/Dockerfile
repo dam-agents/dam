@@ -6,6 +6,9 @@ ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 
 USER root
+# The base image's HOME is the agent's; root's build steps keep their caches
+# in root's own, out of the image's /home/agent.
+ENV HOME=/root
 
 ARG GEPA_VERSION=0.1.4
 
@@ -48,4 +51,5 @@ ENV GEPA_OUTPUT_ROOT=/home/agent/work/gepa-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+ENV HOME=/home/agent
 USER 65532

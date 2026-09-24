@@ -41,10 +41,8 @@ while IFS=$'\t' read -r name image; do
     AGENT_IMAGES+=("$image")
   elif [ -d "packages/e2e/agents/$comp" ]; then
     # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-    # are not covered by //packages/agents:image — build straight from their Dockerfile, root
-    # context so the platform-base FROM resolves.
-    mise run //packages/platform-base:image
-    docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
+    # are not covered by //packages/agents:image; the oci task builds them.
+    mise run //packages/agents:oci -- "$comp" --load="$image"
     AGENT_IMAGES+=("$image")
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2

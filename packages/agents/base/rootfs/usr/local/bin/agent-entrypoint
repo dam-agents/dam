@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Debian agent images' entrypoint, derived from platform-base's. It runs on
+# The agent images' entrypoint. It runs on
 # both backends: as the non-root agent user in a container, and as root on a
 # vm Backend machine, after platform-init has mounted the agent's home from the
 # storage disk and bound the platform MITM CA into /etc/platform/ca.

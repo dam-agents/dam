@@ -1,7 +1,7 @@
 # Bob runtime manifest. Bob (≥1.0.6) reads MCP servers from
 # $HOME/.bob/settings/mcp.json; the legacy mcp_settings.json is migrated only
-# once, so the driver must write the canonical path. Other drivers match
-# platform-base.
+# once, so the driver must write the canonical path. Other drivers keep the
+# defaults of the base manifest.
 manifestVersion: 1
 
 drivers:

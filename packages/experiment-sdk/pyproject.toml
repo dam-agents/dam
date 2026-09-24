@@ -1,5 +1,5 @@
 # The experiment SDK ships as ONE stdlib-only module (src/experiment_sdk.py)
-# baked into platform-base on PYTHONPATH — this project file exists solely for
+# baked into the agent images on PYTHONPATH — this project file exists solely for
 # the dev tooling (pytest, ruff); nothing here is a runtime dependency.
 [project]
 name = "experiment-sdk"

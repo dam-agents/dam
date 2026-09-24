@@ -7,6 +7,9 @@ ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 
 USER root
+# The base image's HOME is the agent's; root's build steps keep their caches
+# in root's own, out of the image's /home/agent.
+ENV HOME=/root
 
 # Pinned git ref, not a PyPI pin: the 0.1.0 wheel (latest release) predates
 # EvoX's config data files — its code loads search/evox/config/search.yaml,
@@ -78,4 +81,5 @@ ENV SKYDISCOVER_OUTPUT_ROOT=/home/agent/work/skydiscover-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+ENV HOME=/home/agent
 USER 65532

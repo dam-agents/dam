@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-#MISE description="Build a Debian agent image with `mise oci`: an agent whose directory has an image.toml (claude-code, codex, pi-agent, bob). Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-<harness>:latest)"
+#MISE description="Build a Debian agent image with `mise oci`: an agent whose directory has an image.toml (claude-code, codex, pi-agent, bob, and the e2e mock). Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-<harness>:latest)"
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
 agents=packages/agents
+# Where an agent's directory may sit: the harnesses, and the e2e fixture.
+roots="$agents packages/e2e/agents"
 harness=""
 from=""
 load=""
@@ -16,9 +18,11 @@ for a in "$@"; do
     *) harness="$a" ;;
   esac
 done
-[ -n "$harness" ] && [ -f "$agents/$harness/image.toml" ] || {
+images="$(for r in $roots; do ls "$r"/*/image.toml 2>/dev/null || true; done)"
+case $'\n'"$images"$'\n' in *"/$harness/image.toml"$'\n'*) found=true ;; *) found=false ;; esac
+[ -n "$harness" ] && [ "$found" = true ] || {
   echo "usage: oci <agent> [--from=REF] [--load[=TAG]]; agents built this way:" \
-    "$(cd "$agents" && ls -d */image.toml | sed 's|/image.toml$||' | tr '\n' ' ')" >&2
+    "$(printf '%s\n' "$images" | xargs -n1 dirname | xargs -n1 basename | tr '\n' ' ')" >&2
   exit 2
 }
 [ "$load" = default ] && load="platform-$harness:latest"
@@ -35,8 +39,7 @@ stage="$work/stage"
 runtime="$work/runtime"
 out="$state/out/$harness"
 
-# agent-runtime and driver-sdk, built with the repo's own toolchain the way
-# platform-base's builder stage builds them.
+# agent-runtime and driver-sdk, built with the repo's own toolchain.
 pnpm --filter agent-runtime exec tsup
 pnpm --filter driver-sdk exec tsup
 rm -rf "$runtime"
@@ -58,7 +61,7 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
 # The stage mirrors packages/agents: base/ and every agent with an image.toml
-# keep their directories, and what mise loads by name goes where it looks for
+# keep their directories, the e2e mock's beside them, and what mise loads by name goes where it looks for
 # it — base/miserc.toml as .miserc.toml, base/base.toml and each image.toml as
 # conf.d fragments. In the repo those files cannot carry mise's own names,
 # because every agent directory is a mise config root. build/ beside them is
@@ -70,7 +73,7 @@ rm -rf "$stage"
 mkdir -p "$stage/mise/conf.d"
 cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
 cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
-for d in "$agents/base" "$agents"/*/image.toml; do
+for d in "$agents/base" $images; do
   [ -d "$d" ] || d="$(dirname "$d")"
   a="$(basename "$d")"
   [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
@@ -78,25 +81,17 @@ for d in "$agents/base" "$agents"/*/image.toml; do
   tar -C "$d/rootfs" --exclude=node_modules -cf - . | tar -C "$stage/$a/rootfs" -xf -
 done
 b="$stage/build"
-install -d "$b"/{app/working-dir/.agents/skills,app/working-dir/.claude,home/agent,etc/logrotate.d,etc/ssl/certs} \
-  "$b"/usr/local/{bin,lib/platform-python} "$b"/usr/local/share/{ca-certificates,tool-bin,dam-skills}
+install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs} \
+  "$b"/usr/local/lib/platform-python "$b"/usr/local/share/{ca-certificates,tool-bin}
 cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
 cp -a packages/agent-runtime/dist "$b/app/dist"
 install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
-
-# What every harness shares with the Fedora images still built on
-# platform-base (k-search, the e2e mock) comes from there, not from a copy: the
-# skills and the shipped-skill manifest that covers them, the working-dir
-# seed, the default runtime manifest, dam-run and the experiment SDK.
-p=packages/platform-base
-cp -a "$p/skills/." "$b/app/working-dir/.agents/skills/"
-cp -a "$p/dam-skills/." "$b/usr/local/share/dam-skills/"
-install -m 644 "$p/skills-manifest.json" "$b/usr/local/share/dam-skill-manifest.json"
-install -m 644 "$p/working-dir/.claude.json" "$b/app/working-dir/.claude.json"
-install -m 644 "$p/working-dir/.claude/settings.json" "$b/app/working-dir/.claude/settings.json"
-install -m 644 "$p/runtime-manifest.yaml" "$b/app/runtime-manifest.yaml"
-install -m 755 "$p/dam-run.mjs" "$b/usr/local/bin/dam-run"
 install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
+# The mock's harness is one bundled script, built the way agent-runtime is.
+if [ "$harness" = mock ]; then
+  pnpm --filter mock-agent exec tsup
+  install -D -m 644 packages/e2e/agents/mock/dist/main.js "$stage/mock/rootfs/app/mock-agent.js"
+fi
 
 # Every mise call for the image runs from inside the stage, not with -C: mise
 # reads .miserc.toml, and with it the env_conf_d opt-in, from the working
@@ -104,8 +99,8 @@ install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/p
 own_layout="$PWD/$agents/base/own-layout.py"
 cd "$stage"
 mise trust -q .
-# The resolved versions are locked first, the way platform-base locks its tools
-# at build time, so an install under MISE_LOCKED (CI) has URLs and checksums.
+# The resolved versions are locked first, so an install under MISE_LOCKED (CI)
+# has URLs and checksums.
 case "$(uname -m)" in x86_64) platform=linux-x64 ;; aarch64 | arm64) platform=linux-arm64 ;; *) platform="linux-$(uname -m)" ;; esac
 mise -E "$harness" lock --platform "$platform"
 mise -E "$harness" install

@@ -1,5 +1,5 @@
 # OpenEvolve agent — an evolutionary code-optimization workload. Built FROM the
-# claude-code image (not platform-base) on purpose: the agent is Claude Code,
+# claude-code image on purpose: the agent is Claude Code,
 # which shells out to OpenEvolve's `openevolve-run` for the evolution loop.
 # Inheriting the claude-code harness gives it the model gateway and CA trust, so
 # the pod holds no model key, exactly like the Claude Code harness.
@@ -10,6 +10,9 @@ ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 
 USER root
+# The base image's HOME is the agent's; root's build steps keep their caches
+# in root's own, out of the image's /home/agent.
+ENV HOME=/root
 
 # Pinned OpenEvolve release. Bump here (or pass --build-arg OPENEVOLVE_VERSION=...).
 ARG OPENEVOLVE_VERSION=0.2.27
@@ -43,4 +46,5 @@ ENV OPENEVOLVE_OUTPUT_ROOT=/home/agent/work/openevolve-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+ENV HOME=/home/agent
 USER 65532

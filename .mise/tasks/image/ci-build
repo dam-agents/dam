@@ -13,16 +13,16 @@
 #   --serial      build one at a time, for images too large to build side by
 #                 side on one runner's disk; the builder is pruned between
 #                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
-#   --base-image  BASE_IMAGE for the components built on a base (mock, agents,
-#                 workloads)
+#   --base-image  BASE_IMAGE for the components built on a base (the workloads)
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
 # registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
-# By path, like image:resolve. The Debian harness images (image:resolve's
+# By path, like image:resolve. The harness images and the e2e mock (image:resolve's
 # MISE_IMAGES) are built by `mise oci` instead of buildx, so a job building them
-# needs mise, node, pnpm and crane on PATH; the workload job does not.
+# needs mise, node, pnpm, crane and the workspace's dependencies; the workload
+# job does not.
 set -uo pipefail
 
 serial=false base=""
@@ -48,8 +48,7 @@ spec() {
     api-server) echo "packages/api-server/Dockerfile . no" ;;
     ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
-    mock) echo "packages/e2e/agents/mock/Dockerfile . yes" ;;
-    claude-code|codex|pi-agent|bob) echo "mise" ;;
+    claude-code|codex|pi-agent|bob|mock) echo "mise" ;;
     *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
        echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
   esac

@@ -548,12 +548,11 @@ else
       AGENT_IMAGES+=("$image")
     elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-      # are not covered by //packages/agents:image — build straight from their Dockerfile, root
-      # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
-      # the per-agent tasks; in CI the image is already in the daemon.
+      # are not covered by //packages/agents:image; the oci task builds them.
+      # Honors SKIP_IMAGE_BUILD like the per-agent tasks; in CI the image is
+      # already in the daemon.
       if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-        mise run //packages/platform-base:image
-        docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
+        mise run //packages/agents:oci -- "$comp" --load="$image"
       fi
       AGENT_IMAGES+=("$image")
     else

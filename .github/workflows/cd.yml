@@ -101,8 +101,8 @@ jobs:
           key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
-  # a tag: e2e pulls by digest, agents build from platform-base's digest, and
-  # publishing and scanning run on main and tags. A PR skips them. Runner slots
+  # a tag: e2e pulls by digest, and publishing and scanning run on main and
+  # tags. A PR skips them. Runner slots
   # are what a PR waits on: run 35789042417 queued its builds for up to 9m44s
   # while the builds themselves took seconds.
   appversion:
@@ -138,8 +138,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      platform_base: ${{ steps.d.outputs.platform_base }}
-      platform_base_tag: ${{ steps.d.outputs.platform_base_tag }}
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
       workloads: ${{ steps.d.outputs.workloads }}
@@ -242,93 +240,10 @@ jobs:
           CI_MERGE_DEBUG: keycloak
         run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
 
-  build-platform-base:
-    needs: [changes]
-    if: ${{ needs.changes.outputs.platform_base == 'true' }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: packages/platform-base/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          # Registry buildcache only: see build-images.
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || '' }}
-      - name: Export digest
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: digests-platform-base-${{ matrix.arch }}
-          path: /tmp/digests/*
-          retention-days: 1
-          if-no-files-found: error
-
-  merge-platform-base:
-    name: merge multi-arch platform-base manifest
-    needs: [build-platform-base, appversion, changes, check-test]
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.platform_base == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: digests-platform-base-*
-          path: /tmp/digests
-          merge-multiple: true
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/platform-base
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ needs.appversion.outputs.composite }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['platform-base'] }},enable=${{ github.event_name != 'pull_request' }}
-      - name: Create manifest list and push
-        env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/platform-base
-        run: |
-          set -euo pipefail
-          cd /tmp/digests
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$IMAGE@sha256:%s " *)
-
   build-agents:
     # One job per arch builds the agents one after another; see
-    # image:ci-build. Not side by side: k-search alone is about 4 GB
-    # compressed. From build-platform-base's digest, not merge-platform-base's tag:
-    # the tag waits on `check`, which is not what an agent build depends on.
-    # merge-agents keeps the `check` gate on publishing.
-    needs: [build-platform-base, changes]
+    # image:ci-build. merge-agents keeps the `check` gate on publishing.
+    needs: [changes]
     if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 60
@@ -339,21 +254,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - if: needs.changes.outputs.platform_base == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: digests-platform-base-${{ matrix.arch }}
-          path: /tmp/base-digest
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      # The Debian harness images (claude-code, codex, pi-agent, bob) build with
-      # `mise oci`, which needs mise, the repo's node, pnpm and crane, and
-      # agent-runtime's dependencies; see image:ci-build. Only those tools: the
-      # rest of the repo's toolchain is for other jobs.
+      # The harness images build with `mise oci`, which needs mise, the repo's
+      # node, pnpm and crane, and agent-runtime's dependencies; see
+      # image:ci-build. Only those tools: the rest of the repo's toolchain is
+      # for other jobs.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -364,22 +273,16 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
-          BUILT: ${{ needs.changes.outputs.platform_base }}
-          TAG: ${{ needs.changes.outputs.platform_base_tag }}
           PR: ${{ github.event_name == 'pull_request' }}
-          CACHE_TO: ${{ github.event_name != 'pull_request' && '1' || '' }}
           # The mise images lock and verify their tools against GitHub's API.
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$BUILT" = true ]; then base="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/base-digest)"; else base="$IMAGE_PREFIX/platform-base:$TAG"; fi
           # A PR builds its agents only to prove they build: e2e runs the mock,
-          # and nothing reads a PR's agent tags. Exporting is most of the cost —
-          # k-search spent 9 of its 10 minutes compressing, re-timestamping and
-          # pushing layers after a one-minute build — so a PR exports nothing.
+          # and nothing reads a PR's agent tags, so a PR pushes nothing.
           read -r -a agents <<< "$AGENTS"
           [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
-          .mise/tasks/image/ci-build --serial --base-image "$base" "$ARCH" "${agents[@]}"
+          .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -490,48 +393,31 @@ jobs:
 
   build-mock:
     name: build mock (e2e fixture)
-    needs: [build-platform-base, changes]
-    # On a PR, e2e builds mock itself unless platform-base moved.
-    if: >-
-      ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() &&
-          (github.event_name != 'pull_request' || needs.changes.outputs.platform_base == 'true') }}
+    needs: [changes]
+    # On a PR, e2e builds the mock itself.
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - if: needs.changes.outputs.platform_base == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: digests-platform-base-amd64
-          path: /tmp/digests
-      - id: base
-        env:
-          BUILT: ${{ needs.changes.outputs.platform_base }}
-          TAG: ${{ needs.changes.outputs.platform_base_tag }}
-        run: |
-          set -euo pipefail
-          if [ "$BUILT" = true ]; then ref="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/digests)"; else ref="$IMAGE_PREFIX/platform-base:$TAG"; fi
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      # Built with `mise oci`, like the harness images; see build-agents.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          context: .
-          file: packages/e2e/agents/mock/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
-          build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.ref }}
-          # Registry buildcache only: see build-images.
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || '' }}
+          version: ${{ env.MISE_VERSION }}
+          install_args: nodejs pnpm crane
+      - name: Install workspace dependencies
+        run: mise deps install --only pnpm
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .mise/tasks/image/ci-build amd64 mock:sha
 
   e2e:
     name: mise e2e
@@ -553,9 +439,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # On a PR, image:resolve reads the commit that last touched
-          # platform-base.
-          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
       - if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -571,16 +454,21 @@ jobs:
       # the same task, which is then a cache hit.
       - if: github.event_name == 'pull_request'
         run: mise run //packages/keycloak-theme:build
+      # The mock builds with `mise oci`, from the workspace's packages.
+      - if: github.event_name == 'pull_request'
+        run: mise deps install --only pnpm
       - name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
           KEYCLOAK_THEME_BUILT: "1"
           CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
+          # The mock's mise build locks and verifies its tools against GitHub's API.
+          GITHUB_TOKEN: ${{ github.token }}
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
           CI_IMAGES_JOBS: >-
             ${{ github.event_name == 'pull_request'
-                && 'detect stale images|build mock (e2e fixture)'
+                && 'detect stale images'
                 || 'detect stale images|build-images (amd64)|build mock (e2e fixture)' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -951,7 +839,6 @@ jobs:
       [
         trivy-components,
         merge-images,
-        merge-platform-base,
         merge-agents,
         merge-workloads,
       ]

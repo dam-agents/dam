@@ -1,0 +1,6 @@
+# K-Search manifest. Built-in drivers are on by default, so this declares
+# nothing; it replaces the claude-code image's manifest, whose session history
+# and harness-config are Claude Code's.
+manifestVersion: 1
+
+drivers: {}
