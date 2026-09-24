@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { KB_AGGREGATE_MCP_SERVER } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -133,7 +134,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
 
   function buildServer(shares: Map<string, KbShareRow>): McpServer {
     const server = new McpServer(
-      { name: "knowledge-bases", version: "1.0.0" },
+      { name: KB_AGGREGATE_MCP_SERVER, version: "1.0.0" },
       {
         instructions:
           "Read-only access to knowledge bases shared with this agent. Call list_knowledge_bases first to see what is available and how to navigate each one; every other tool takes a `kb` id from that list. These knowledge bases are live snapshots that can change between turns — before you state anything about their contents (counts, whether a document exists, what it says), call the relevant tool again in the current turn rather than reusing output from earlier in the conversation.",

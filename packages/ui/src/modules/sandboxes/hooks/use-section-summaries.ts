@@ -26,6 +26,7 @@ import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js
 import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
+import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -53,6 +54,8 @@ export function useSectionSummaries(agent: AgentView | null): {
   const { data: templates = [] } = useTemplates();
   const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
+  const { data: satellites = NO_SATELLITES } = useSatellites();
+  const agentId = agent?.id;
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
@@ -117,8 +120,23 @@ export function useSectionSummaries(agent: AgentView | null): {
       .map(
         (a) => catalogProviderTitle(templateById.get(a.templateId)) ?? a.name,
       );
-    return formatNameList([...new Set(titles)]) ?? "No connections added";
-  }, [connectionsQuery.data, apps, providerAppIds, templateById]);
+    const satelliteNames = satellites
+      .filter(
+        (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
+      )
+      .map((s) => s.name);
+    return (
+      formatNameList([...new Set(titles), ...satelliteNames]) ??
+      "No connections added"
+    );
+  }, [
+    connectionsQuery.data,
+    apps,
+    providerAppIds,
+    templateById,
+    satellites,
+    agentId,
+  ]);
 
   const skills = useMemo(() => {
     if (configPending) return undefined;

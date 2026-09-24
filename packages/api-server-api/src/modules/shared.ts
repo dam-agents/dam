@@ -23,6 +23,14 @@ export function resourceNameSchema(example: string) {
     );
 }
 
+export const PLATFORM_OUTBOUND_MCP_SERVER = "platform-outbound";
+export const KB_AGGREGATE_MCP_SERVER = "knowledge-bases";
+
+export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
+  PLATFORM_OUTBOUND_MCP_SERVER,
+  KB_AGGREGATE_MCP_SERVER,
+];
+
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export function isValidEnvName(name: string): boolean {

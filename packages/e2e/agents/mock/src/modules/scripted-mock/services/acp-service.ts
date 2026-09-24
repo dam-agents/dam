@@ -17,7 +17,7 @@ import type {
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
-const ASK_DIRECTIVE = /__ASK__\s+(\S+)/;
+const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const ASK_TIMEOUT_MS = 30_000;
 const EXPERIMENT_LAUNCH_DIRECTIVE =
   /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
@@ -149,9 +149,10 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
 
-    const askTool = ASK_DIRECTIVE.exec(promptStr)?.[1];
+    const asked = ASK_DIRECTIVE.exec(promptStr);
+    const askTool = asked?.[1];
     if (askTool) {
-      const outcome = await askPermission(sid, askTool);
+      const outcome = await askPermission(sid, askTool, asked?.[2]);
       const text = `permission ${outcome}`;
       emitText(sid, text);
       await maybeSlackReply(text, slackThreadTs);
@@ -191,7 +192,11 @@ export function startAcpService(deps: AcpServiceDeps): void {
     await deps.slackReply({ text, threadTs });
   }
 
-  function askPermission(sid: string, toolName: string): Promise<string> {
+  function askPermission(
+    sid: string,
+    toolName: string,
+    displayTitle?: string,
+  ): Promise<string> {
     const askId = `ask-${newSessionId()}`;
     return new Promise<string>((resolve) => {
       const settle = (outcome: string) => {
@@ -209,7 +214,11 @@ export function startAcpService(deps: AcpServiceDeps): void {
         method: "session/request_permission",
         params: {
           sessionId: sid,
-          toolCall: { toolCallId: askId, title: toolName },
+          toolCall: {
+            toolCallId: askId,
+            name: toolName,
+            title: displayTitle ?? toolName,
+          },
           options: [
             { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
             { optionId: "reject-once", name: "Reject", kind: "reject_once" },

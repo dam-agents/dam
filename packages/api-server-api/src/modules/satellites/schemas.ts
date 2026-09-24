@@ -8,8 +8,8 @@ export const satelliteNameSchema = z
   .min(1)
   .max(64)
   .regex(
-    /^[a-z0-9][a-z0-9-]*$/,
-    "a satellite name is lowercase letters, digits and dashes",
+    /^[a-z0-9][a-z0-9.@-]*$/,
+    "a satellite name is lowercase letters, digits, dashes, dots and @ — like gpu-box or jan@lab-01",
   );
 
 export const RESERVED_TOOL_NAMES = ["wait", "get", "cancel"] as const;

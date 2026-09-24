@@ -422,7 +422,7 @@ export function createMcpSession(
 
   server.tool(
     "read_thread",
-    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore }, messages being the thread in the same labelled form as your conversation history, oldest first. A long thread comes back as its end rather than its whole: hasMore is then true, and the first line you get is a reply, not the message that opened the thread. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
+    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. A long thread comes back as its end rather than its whole, and hasMore is then true. What you do next depends on the cursor. A cursor means the rest of the thread sits before what you were handed: call again with it to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you — one from another thread or naming a point this thread does not reach is refused rather than answered. No cursor alongside hasMore means the opposite and is the one to watch: the thread is longer than a read can walk, the replies missing are the newest ones, nothing reaches them, and what you hold is a slice from the middle however much it looks like the end, so say so rather than answering as though you had read the conclusion. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       threadTs: z
@@ -430,10 +430,17 @@ export function createMcpSession(
         .describe(
           "Thread to read: the ts from a [thread: ...] tag in your conversation history.",
         ),
+      cursor: z
+        .string()
+        .optional()
+        .describe(
+          "Read further back in the same thread: the cursor a previous read of this same thread returned, copied exactly. Omit it to read the thread's end, which is where to start.",
+        ),
     },
-    async ({ channel, threadTs }) => {
+    async ({ channel, threadTs, cursor }) => {
       const result = await deps.channelManager.readThread(agentId, channel, {
         threadTs,
+        ...(cursor !== undefined ? { cursor } : {}),
       });
       const audit = {
         category: "channel",
@@ -447,7 +454,7 @@ export function createMcpSession(
           ...audit,
           result: "failure",
           reason: result.error,
-          detail: { threadTs },
+          detail: { threadTs, ...(cursor !== undefined ? { cursor } : {}) },
         });
         return errorResult(result.error);
       }
@@ -459,6 +466,7 @@ export function createMcpSession(
           threadTs: result.threadTs,
           messages: result.messages.length,
           hasMore: result.hasMore,
+          ...(cursor !== undefined ? { cursor } : {}),
         },
       });
       return textResult(JSON.stringify(result));

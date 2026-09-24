@@ -44,6 +44,7 @@ import {
   narrowPolicyToTemplate,
   setupProviderPolicy,
 } from "../../sandboxes/lib/setup-policy.js";
+import { useGrantSatellite } from "../../satellites/api/mutations.js";
 import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
 import { BrowseKitsModal } from "../../starter-kits/components/browse-kits-modal.js";
@@ -126,22 +127,29 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         kit: kit.id,
       })
     : routeToPath({ view: "agent-new" });
-  const { form, update, toggleConnection, reset } = useSetupForm(
-    kit ? "starter-kit" : "coding-agent",
-    {
+  const { form, update, toggleConnection, toggleSatellite, reset } =
+    useSetupForm(kit ? "starter-kit" : "coding-agent", {
       namePrefix: kit ? kit.id : AGENT_NAME_PREFIX,
       returnPath,
       scope: kit ? `${kit.catalog}/${kit.id}` : undefined,
-    },
-  );
+    });
   const vmRuntime = useVmRuntime();
   const agentsQ = useAgents();
   const availableChannels = agentsQ.data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
+    satelliteNames: form.satelliteNames,
+    onToggleSatellite: toggleSatellite,
     oauthReturnView: returnPath,
   });
+  const grantSatellite = useGrantSatellite();
+  const grantSatellites = (agentId: string) =>
+    Promise.allSettled(
+      form.satelliteNames.map((satellite) =>
+        grantSatellite.mutateAsync({ satellite, agentId }),
+      ),
+    );
   const apply = useApplyStarterKit();
   const createAgent = useCreateAgent();
   const budget = useBudgetReserved();
@@ -304,6 +312,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         const agent = await createAgent.mutateAsync(
           buildCodingAgentSetupInput(plainDraft),
         );
+        await grantSatellites(agent.id);
         recordBindIntent(
           agent.id,
           offeredBindMessengers(form.channels, availableChannels),
@@ -319,6 +328,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       const result = await apply.mutateAsync(
         buildStarterKitApplyInput(kit, draft, owned, templateById),
       );
+      await grantSatellites(result.agent.id);
       reset();
       const skipped = result.skills?.skipped.length ?? 0;
       if (result.skillsError) {
@@ -579,6 +589,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={toggleConnection}
+        satelliteNames={form.satelliteNames}
+        onToggleSatellite={toggleSatellite}
         onOpenCatalog={openCatalog}
         title="Connections"
         excludeIds={kitOwnedConnectionIds}

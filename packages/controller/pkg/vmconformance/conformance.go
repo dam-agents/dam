@@ -24,6 +24,8 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: far past the memory of any host a runner is given, so a runner that admits machines against its memory at all has to refuse this one.
 	tooMuchMiB = 1 << 26
 	poll       = 200 * time.Millisecond
+	// UNIT_BOUNDARY_DESCRIPTION: the WORKDIR Dockerfile.vm-conformance-guest sets. An image's command resolves relative paths there, so a guest that reports another directory is a runner that lost it on the way to the entrypoint.
+	guestWorkDir = "/conformance"
 )
 
 type Target struct {
@@ -61,6 +63,10 @@ func Run(t *testing.T, target Target) {
 		assert.Equal(t, target.MemoryMiB, st.MemoryMiB)
 		assert.Contains(t, m.list(t), m.id)
 		m.dialHealthy(t, st.Port)
+		if m.target.Published != nil {
+			_, cwd := m.get(t, st.Port, vmprobe.WorkDirPath)
+			assert.Equal(t, guestWorkDir, cwd, "the guest starts in the image's WORKDIR")
+		}
 
 		again := m.ensure(t, m.spec())
 		assert.Equal(t, vmrunner.StateRunning, again.State, "the same spec again is not a new operation")

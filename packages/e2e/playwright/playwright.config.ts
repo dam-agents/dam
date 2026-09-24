@@ -88,7 +88,7 @@ export default defineConfig({
       name: "satellites",
       testMatch: /18-.*\.spec\.ts$/,
       dependencies: ["auth"],
-      use: { ...devices["Desktop Chrome"] },
+      use: { ...devices["Desktop Chrome"], storageState },
     },
     {
       name: "vm-agent",

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-09-22
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -72,7 +72,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md). Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state. An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only. Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
-- **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md). `mcp` and `commands` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran. The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
+- **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md). `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran. The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered task recurrences on an agent, including the Precheck that decides each occurrence, owned by [schedules.md](schedules.md).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 

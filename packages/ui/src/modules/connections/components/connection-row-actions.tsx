@@ -68,7 +68,7 @@ export function ConnectionRowActions({
           </Button>
         )}
         {grant && !grant.actionHidden && (
-          <RowGrantAction connectionId={connection.id} grant={grant} />
+          <RowGrantAction rowId={connection.id} grant={grant} />
         )}
       </div>
       <DropdownMenu>
@@ -133,11 +133,11 @@ export function ConnectionRowActions({
   );
 }
 
-function RowGrantAction({
-  connectionId,
+export function RowGrantAction({
+  rowId,
   grant,
 }: {
-  connectionId: string;
+  rowId: string;
   grant: RowGrantControls;
 }) {
   if (grant.granted)
@@ -157,7 +157,7 @@ function RowGrantAction({
           <Badge
             variant="muted"
             className="h-8 shrink-0 gap-1.5 px-3 text-sm font-normal"
-            data-testid={`catalog-add-blocked-${connectionId}`}
+            data-testid={`catalog-add-blocked-${rowId}`}
           >
             <WarningAlt size={16} className="text-warning" aria-hidden />
             Can&apos;t add
@@ -171,7 +171,7 @@ function RowGrantAction({
       variant="outline"
       className="h-8 shrink-0 px-3 text-sm font-normal"
       onClick={() => grant.onToggle(true)}
-      data-testid={`catalog-add-${connectionId}`}
+      data-testid={`catalog-add-${rowId}`}
     >
       <Add size={16} />
       Add to agent

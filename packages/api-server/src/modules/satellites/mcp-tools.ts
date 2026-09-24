@@ -14,7 +14,9 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * UNIT_BOUNDARY_DESCRIPTION: Re-exposes each granted Satellite's own tools on
  * the platform MCP server, plus the three job verbs that make a long call
  * survivable. Every name is scoped to its Satellite — `gpu_box__run`,
- * `gpu_box__wait` — so the model never has to pass a satellite argument.
+ * `gpu_box__wait` — so the model never has to pass a satellite argument. A
+ * Satellite name may hold `-`, `.` and `@`, none of which a tool name allows,
+ * so each becomes `_`: `jan@lab.local` offers `jan_lab_local__run`.
  *
  * The platform never reads inside a tool's `inputSchema`: only the machine knows
  * what its arguments mean, and it re-checks every call before it runs anything.
@@ -75,7 +77,7 @@ function outcomeContent(outcome: JobOutcome): ToolContent {
 }
 
 export function scopedName(satellite: string, tool: string): string {
-  return `${satellite.replaceAll("-", "_")}__${tool}`;
+  return `${satellite.replace(/[^a-z0-9]/g, "_")}__${tool}`;
 }
 
 function inputSchemaFor(tool: SatelliteTool): z.ZodType {

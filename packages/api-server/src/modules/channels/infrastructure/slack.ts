@@ -124,11 +124,13 @@ import {
 } from "./agent-footer.js";
 import {
   aboveBoundary,
+  formatThreadCursor,
   isAfterTs,
   lastOwnPostTs,
   laterTs,
   newestTs,
   nextBoundary,
+  parseThreadCursor,
   selectUnseen,
   type CatchUpSelection,
 } from "../domain/thread-catch-up.js";
@@ -542,6 +544,13 @@ function renderTurnFiles(attachments: {
 }
 
 const THREAD_LOOKBACK = 50;
+
+const STALE_THREAD_CURSOR =
+  "that cursor is not one this thread handed you — a cursor comes back " +
+  "from a read of this same thread and reaches only backwards inside it, " +
+  "so one from another thread, or naming a point this thread does not " +
+  "reach, is refused rather than answered with some other window. Drop it " +
+  "and read the thread again from its end.";
 
 const CHANNEL_LOOKBACK = 50;
 
@@ -4243,14 +4252,24 @@ export function createSlackWorker(
         };
       }
 
+      const asked =
+        query.cursor !== undefined ? parseThreadCursor(query.cursor) : null;
+      if (query.cursor !== undefined && asked?.threadTs !== query.threadTs)
+        return { error: STALE_THREAD_CURSOR };
+
       try {
         const read = await gw.getThreadTail({
           channel: target.id,
           threadTs: query.threadTs,
           limit: THREAD_LOOKBACK,
           teamId: target.teamId,
+          ...(asked !== null ? { before: asked.before } : {}),
         });
-        if (read.messages.length === 0) {
+        const opened =
+          read.opener !== null && read.messages[0]?.ts !== read.opener.ts
+            ? [read.opener, ...read.messages]
+            : read.messages;
+        if (opened.length === 0) {
           return {
             error:
               "no messages came back for that thread — it may not exist in " +
@@ -4258,22 +4277,37 @@ export function createSlackWorker(
               "no longer be valid",
           };
         }
+        const reached = read.messages.filter(
+          (message) => message.ts !== read.opener?.ts,
+        );
+        if (asked !== null && (read.hasMore || reached.length === 0))
+          return { error: STALE_THREAD_CURSOR };
         const bot = {
           userId: await gw.getBotUserId(target.teamId).catch(() => null),
           label: botHistoryLabel(brand),
         };
-        const entries = read.messages.map((message) => ({
+        const entries = opened.map((message) => ({
           message,
           footer: parseAgentFooter(message),
         }));
         const names = await resolveAuthorNames(entries, resolveAgentName);
+        const earlier =
+          read.hasEarlier && !read.hasMore ? read.messages[0]?.ts : undefined;
         return {
           messages: labelMessages(entries, names, instanceName, bot, {
             showThreadMarkers: false,
           }),
           conversationId: target.id,
           threadTs: query.threadTs,
-          hasMore: read.hasMore || read.messages[0]?.ts !== query.threadTs,
+          hasMore: read.hasEarlier || read.hasMore,
+          ...(earlier !== undefined
+            ? {
+                cursor: formatThreadCursor({
+                  threadTs: query.threadTs,
+                  before: earlier,
+                }),
+              }
+            : {}),
         };
       } catch (err) {
         return { error: formatError(err) };
