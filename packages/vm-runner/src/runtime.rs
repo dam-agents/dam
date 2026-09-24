@@ -3,49 +3,39 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::api::{ImageLaunch, MachineSpec};
+use crate::api::{MachineSpec, State};
 use crate::guest::INIT_PATH;
+use crate::launch::ImageLaunch;
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server plans machines against this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the Go runner's `Smolvm` type restated: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server drives machines through this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
 pub trait Runtime: Send + Sync {
-    // UNIT_BOUNDARY_DESCRIPTION: one of the api states `absent`, `stopped` or `running`. Only those three: whether an operation is in flight is the server's knowledge, not the hypervisor's.
-    fn state(&self, id: &str) -> anyhow::Result<&'static str>;
+    // UNIT_BOUNDARY_DESCRIPTION: `Absent`, `Stopped` or `Running`, and only those: whether an action is in flight is the server's knowledge, not the hypervisor's.
+    fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new size and env to a stopped machine. `applied` is the spec the machine was last written with, which is what says which env keys the controller has since dropped and whether the disk has to grow.
-    fn update(
-        &self,
-        id: &str,
-        desired: &MachineSpec,
-        applied: Option<&MachineSpec>,
-    ) -> anyhow::Result<()>;
+    fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: deletes a stopped machine but moves its storage disk aside first, for the machine recreated under the same name on a new image to boot onto. smolvm cannot change a machine's image, and everything the agent keeps is on that disk. Every create and start puts a kept disk back before anything else, so a runner killed between the delete and the boot never boots onto an empty disk.
-    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: removes a disk kept by an interrupted recreate, for a machine that is being deleted outright.
-    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's storage disk can be grown. A disk the Go runner made at smolvm's default size is a qcow2 overlay over the shipped template, and neither smolvm nor this runner can grow one — so a larger size is refused before the machine is touched, rather than recorded and never applied.
-    fn storage_growable(&self, _id: &str) -> bool {
-        true
-    }
-    // UNIT_BOUNDARY_DESCRIPTION: whether a storage disk kept by a recreate is waiting for this machine, which means the recreate was interrupted after its delete. The create that follows boots onto that disk, and a kept qcow2 disk is never grown at start, so that create must not ask for more than the disk it gets.
-    fn has_kept_storage(&self, _id: &str) -> bool {
-        false
-    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a cached archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
+// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
 pub struct Machine<'a> {
     pub spec: &'a MachineSpec,
     pub image: &'a str,
     pub host_port: u16,
     pub share: &'a Path,
     pub launch: Option<&'a ImageLaunch>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the new shape of a stopped machine, written to its record in place so its disk and port stay. `applied` is the spec it last had, which says which env keys the controller has since dropped and whether the disk must grow. `image` is set when the machine moves to another image: what it boots now, named as for a create, and the launch that image names.
+pub struct Update<'a> {
+    pub desired: &'a MachineSpec,
+    pub applied: Option<&'a MachineSpec>,
+    pub image: Option<(&'a str, &'a ImageLaunch)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the port the guest's agent listens on. The runner publishes it on a loopback port of its own and forwards the machine's published port there.
@@ -72,47 +62,8 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
     "agent.pid",
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine's root overlay in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
+// UNIT_BOUNDARY_DESCRIPTION: the root overlay of smolvm's guest agent in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
 pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
-
-// UNIT_BOUNDARY_DESCRIPTION: where a storage disk waits, under HOME, while its machine is recreated on a new image. HOME is the mount that holds smolvm's data directories, so the move is a rename and not a copy of many gigabytes, and nothing in smolvm reads it, so nothing in smolvm can remove it. The Go runner keeps its disks at the same place, so either runner finishes a recreate the other began.
-pub const KEPT_DISKS_DIR: &str = "kept-disks";
-
-// UNIT_BOUNDARY_DESCRIPTION: the files that make up a storage disk: a raw file, or a qcow2 one backed by the shared template when the Go runner made it at smolvm's default size, and the marker that says its filesystem is made — without which smolvm formats it again. A qcow2 file's template is outside the data directory, so moving the file does not break it.
-pub const STORAGE_FILES: [&str; 3] = ["storage.raw", "storage.qcow2", "storage.formatted"];
-
-pub fn kept_dir(home: &Path, id: &str) -> std::path::PathBuf {
-    home.join(KEPT_DISKS_DIR).join(id)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: moves whichever storage files are there. A file that is not there is not an error, so a move that stopped half way can be run again.
-pub fn move_storage(from: &Path, to: &Path) -> anyhow::Result<()> {
-    for file in STORAGE_FILES {
-        let source = from.join(file);
-        if !source.exists() {
-            continue;
-        }
-        fs::create_dir_all(to)?;
-        fs::rename(&source, to.join(file))?;
-    }
-    Ok(())
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: puts a kept storage disk back into the machine's data directory, which smolvm names by the machine's name and so is the one the old machine had. The kept disk is the agent's and replaces whatever storage files are there, which can only be an empty disk made before the kept one was put back.
-pub fn adopt_kept_storage(kept: &Path, vm_dir: &Path) -> anyhow::Result<()> {
-    if !kept.is_dir() {
-        return Ok(());
-    }
-    for file in STORAGE_FILES {
-        match fs::remove_file(vm_dir.join(file)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        }
-    }
-    move_storage(kept, vm_dir)?;
-    fs::remove_dir(kept)?;
-    Ok(())
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,7 +186,7 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay. A machine keeps HOME and nothing else, and this is what makes that rule exact: a kept overlay would make software installed outside HOME look persistent until the first boot that had to discard a corrupt one. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
+// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
 pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     if !vm_dir.is_dir() {
         return;
@@ -284,7 +235,7 @@ pub fn timed<T>(
     let started = Instant::now();
     let result = run();
     let elapsed = started.elapsed();
-    let duration_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let duration_ms = crate::elapsed_ms(started);
     match result {
         Ok(value) => {
             if elapsed > SLOW_OP {
@@ -305,7 +256,7 @@ pub fn timed<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
+    use crate::testdir::TempDir;
     use std::path::PathBuf;
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {
@@ -374,26 +325,18 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, in the Go runner's words, whether the launch is missing or empty.
+    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, whether the launch is missing or empty, and the refusal reaches the Agent's status, so its wording is pinned.
     #[test]
-    fn a_machine_with_nothing_to_run_is_refused_in_the_go_runners_words() {
-        let go = gosource::read("smolvm.go");
-        let theirs = go
-            .lines()
-            .find_map(|line| {
-                line.strip_prefix("var errImageLaunchUnknown = errors.New(")?
-                    .strip_suffix(')')
-                    .and_then(gosource::unquote)
-            })
-            .expect("smolvm.go still names errImageLaunchUnknown");
-        assert_eq!(IMAGE_LAUNCH_UNKNOWN, theirs);
-
+    fn a_machine_with_nothing_to_run_is_refused() {
         let none = workload(&spec_with_env(&[]), None).unwrap_err().to_string();
         let empty = workload(&spec_with_env(&[]), Some(&launch(&[], &[], &["A=b"], "/")))
             .unwrap_err()
             .to_string();
-        assert_eq!(none, IMAGE_LAUNCH_UNKNOWN);
-        assert_eq!(empty, IMAGE_LAUNCH_UNKNOWN);
+        assert_eq!(
+            none,
+            "this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it"
+        );
+        assert_eq!(empty, none);
     }
 
     // TEST_SCENARIO: an update must drop what the controller stopped sending, or a Secret key removed from an Agent stays in its guest forever. It must also keep what only the image set, which the controller never sent and so never removed.
@@ -443,13 +386,6 @@ mod tests {
             redact("token hunter2 rejected on port", ["hunter2", "on"]),
             "token *** rejected on port"
         );
-        let go = gosource::read("smolvm.go");
-        assert!(
-            gosource::function_body(&go, "redact")
-                .expect("smolvm.go still redacts")
-                .contains("len(v) > 3"),
-            "the Go runner no longer skips the same short values"
-        );
     }
 
     // TEST_SCENARIO: a machine's VMM is found by its directory on the command line. Of three processes only the one naming this machine's directory is its VMM — not one for a machine whose directory name merely starts the same way, and not the runner itself.
@@ -457,11 +393,13 @@ mod tests {
     fn a_vmm_is_found_by_its_machines_directory_and_no_other() {
         let proc = TempDir::new("orphans");
         let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
-        proc.process(
+        process(
+            &proc,
             100,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
         );
-        proc.process(
+        process(
+            &proc,
             101,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc1234/boot-config.json",
         );
@@ -477,7 +415,8 @@ mod tests {
     fn a_start_waits_for_the_vmm_its_stop_left_behind() {
         let proc = TempDir::new("gone");
         let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
-        proc.process(
+        process(
+            &proc,
             100,
             "/proc/self/exe\0_boot-vm\0/home/smolvm/.cache/smolvm/vms/abc123/boot-config.json",
         );
@@ -513,131 +452,37 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the Go runner and this one share a machine's directory during the cutover, so both must clear the same files before a boot and discard the same overlay. The Rust side is a superset only where the Go side is fixed in the same change.
+    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears and what a discard removes is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
     #[test]
-    fn the_go_runner_clears_the_same_files() {
-        let go = gosource::read("smolvm.go");
-        let start = gosource::literals_in(&go, "(r *Smolvm) Start");
-        for file in STALE_RUNTIME_FILES {
-            assert!(
-                start.iter().any(|l| l == file),
-                "the Go runner no longer clears {file}"
-            );
-        }
+    fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
-            start.iter().filter(|l| l.contains('.')).count(),
-            STALE_RUNTIME_FILES.len(),
-            "the Go runner clears a file this runner does not"
+            STALE_RUNTIME_FILES,
+            [
+                "agent.ready",
+                "agent.sock",
+                "control.sock",
+                "vm.lock",
+                "agent.pid",
+            ]
         );
-
-        let discard = gosource::literals_in(&go, "discardOverlay");
-        for file in OVERLAY_FILES {
-            assert!(
-                discard.iter().any(|l| l == file),
-                "the Go runner no longer discards {file}"
-            );
-        }
         assert_eq!(
-            discard.iter().filter(|l| l.starts_with("overlay.")).count(),
-            OVERLAY_FILES.len()
+            OVERLAY_FILES,
+            ["overlay.qcow2", "overlay.raw", "overlay.formatted"]
         );
     }
 
-    // TEST_SCENARIO: the windows and sizes both runners work to. A VMM waited on for a different time, or an archive cap that differs, is one runner refusing what the other accepts.
+    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, a smaller archive cap refuses an image that booted before, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
     #[test]
-    fn the_go_runner_waits_and_caps_the_same() {
-        let go = gosource::read("smolvm.go");
-        assert_eq!(
-            gosource::duration_value(&go, "vmmExitWait"),
-            Some(VMM_EXIT_WAIT)
-        );
-        assert_eq!(gosource::duration_value(&go, "slowOp"), Some(SLOW_OP));
-        assert!(
-            gosource::literals_in(&go, "(r *Smolvm) Create")
-                .iter()
-                .any(|l| l == "16GiB"),
-            "the Go runner no longer caps archives at 16GiB"
-        );
+    fn the_waits_and_caps_are_pinned() {
+        assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
+        assert_eq!(SLOW_OP, Duration::from_secs(2));
         assert_eq!(MAX_IMAGE_BYTES, 16 * 1024 * 1024 * 1024);
-        let server = gosource::read("server.go");
-        assert_eq!(
-            gosource::int_value(&server, "guestAgentPort"),
-            Some(u64::from(GUEST_AGENT_PORT))
-        );
+        assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 
-    // TEST_SCENARIO: a recreate moves the agent's disk out of the data directory and back into the recreated machine's, and the disk that comes back is the one that left, with its formatted marker, so smolvm does not format it again. An empty disk a create made before the kept one returned is replaced by it, and a move interrupted half way can simply be run again.
-    #[test]
-    fn a_kept_storage_disk_comes_back_whole() {
-        let root = TempDir::new("kept");
-        let vm = root.path().join("vm");
-        let kept = kept_dir(root.path(), "m1");
-        fs::create_dir_all(&vm).unwrap();
-        fs::write(vm.join("storage.raw"), "home").unwrap();
-        fs::write(vm.join("storage.formatted"), "1").unwrap();
-        fs::write(vm.join("overlay.raw"), "root").unwrap();
-
-        move_storage(&vm, &kept).unwrap();
-        move_storage(&vm, &kept).unwrap();
-        assert!(!vm.join("storage.raw").exists());
-        assert!(
-            vm.join("overlay.raw").exists(),
-            "the overlay is not the agent's"
-        );
-
-        fs::write(vm.join("storage.raw"), "empty").unwrap();
-        adopt_kept_storage(&kept, &vm).unwrap();
-        assert_eq!(fs::read_to_string(vm.join("storage.raw")).unwrap(), "home");
-        assert!(vm.join("storage.formatted").exists());
-        assert!(!kept.exists());
-        adopt_kept_storage(&kept, &vm).unwrap();
-    }
-
-    // TEST_SCENARIO: a Go runner rolled out mid-recreate leaves its machine's disk where it keeps them, and this runner must find it there and know every file of it — or it boots the recreated machine onto an empty disk and the agent's work is gone.
-    #[test]
-    fn disks_are_kept_where_the_go_runner_keeps_them() {
-        let go = gosource::read("smolvm.go");
-        assert_eq!(
-            gosource::const_value(&go, "keptDisksDir").as_deref(),
-            Some(KEPT_DISKS_DIR)
-        );
-        let files = format!(
-            "var storageFiles = []string{{{}}}",
-            STORAGE_FILES
-                .iter()
-                .map(|f| format!("\"{f}\""))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        assert!(
-            go.lines().any(|line| line.trim() == files),
-            "the Go runner no longer keeps exactly these files: {files}"
-        );
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-runtime-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-        fn process(&self, pid: i32, cmdline: &str) {
-            let dir = self.0.join(pid.to_string());
-            fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("cmdline"), cmdline).unwrap();
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
+    fn process(proc: &TempDir, pid: i32, cmdline: &str) {
+        let dir = proc.path().join(pid.to_string());
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("cmdline"), cmdline).unwrap();
     }
 }

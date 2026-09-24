@@ -153,8 +153,10 @@ istio:
 # runner runs as every machine's entrypoint; the rest of the guest is a root
 # overlay the machine discards each time it stops, so anything installed
 # outside HOME is gone on the next boot. An Agent whose mounts ask to persist
-# a path outside HOME is refused rather than silently losing it. The controller drives its machine API (TLS,
-# bearer token; both minted by the controller); the agent Service resolves to the
+# a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
+# and a bearer token: the controller mints the token, and cert-manager issues
+# the runner's certificate from the runners' own CA (`runnerCA` below), so
+# virtualization needs cert-manager; the agent Service resolves to the
 # machine's port on that pod; the paired gateway pod is unchanged and the
 # machine may reach nothing but it. Off = the create refuses the vm backend
 # and existing vm agents fail reconcile. One runner per owner; per-user fair-use
@@ -188,15 +190,13 @@ virtualization:
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
-    # NAT, CHOWN + FOWNER so it can restore a container image's own
-    # ownership when it unpacks one for its machines to share, and
-    # DAC_OVERRIDE so that unpack can keep writing into the read-only and
-    # foreign-owned directories a faithful rootfs contains — and so the
-    # runner can manage machine directories that a release which briefly
-    # gave each VMM its own uid chowned away from it.
-    # Set this only where that
-    # SCC is off, or where the runner needs a shape it refuses (a hostPath for
-    # `imageArchiveHostPath`). Empty = no extra binding rendered.
+    # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
+    # served even where the image keeps them from root, and — only when the
+    # runner caches images on its own claim — CHOWN + FOWNER so it can
+    # restore each file's owner and mode as it unpacks. Set this only where
+    # that SCC is off, or where the runner needs a shape it refuses: the
+    # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
+    # Empty = no extra binding rendered.
     scc: ""
     # One claim, three directories with three lifetimes: `disks/` holds the
     # machine disks — every vm agent's storage — `machines/` the per-machine
@@ -205,11 +205,6 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
-    # Upgrading onto this layout abandons the machines an earlier release kept
-    # under `smolvm/` and `vm-runner/` on the same claim: those agents are
-    # recreated with empty disks, and the bytes stay until the owner's last vm
-    # agent goes and the claim is deleted with the runner. Delete the runner
-    # PVCs before the upgrade to reclaim them at once.
     # `storage` is the CEILING of one owner's claim, not its size. The claim
     # is sized from demand: the sum of that owner's machine disks, 1Gi of
     # headroom per machine for its root overlay and bookkeeping, and
@@ -218,13 +213,12 @@ virtualization:
     # as the owner adds agents, up to this value and no further, so an
     # owner's disks past it do not fit. Growing needs a class that allows
     # volume expansion; on a class that does not, or one the controller
-    # cannot read, the claim is created at this value instead, as it always
-    # was, because it could not grow later. A refused resize costs a warning
+    # cannot read, the claim is created at this value instead, because it
+    # could not grow later. A refused resize costs a warning
     # in the controller log and leaves that runner at the size it has, rather
     # than failing its reconcile.
     # Kubernetes never shrinks a claim: lowering this, or removing agents,
-    # changes no claim that exists, and claims created at the old fixed size
-    # keep it.
+    # changes no claim that exists.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
@@ -261,28 +255,13 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
-    # Upgrading onto a release that has this rolls every existing runner once,
-    # in the same staged way; one whose pod is unchanged is not restarted.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
-    # A runner image reference (repository:tag) for the canary owners only —
-    # a new smolvm or runner build reaches them first, and everyone else stays
-    # on `image`. Empty = no canary. Owners are chosen by `canary.owners`
-    # (owner labels, as on the Agent) and by `canary.percent`: a stable hash
-    # of the owner puts each one in a bucket of 100, so the same owners are
-    # picked every time and raising the percentage only adds owners. The
-    # canary image rolls in through `rollout` like any other change. To
-    # promote it, set `image` to it and clear `canaryImage`: the canary
-    # owners' pods are then unchanged and do not restart again.
-    canaryImage: ""
-    canary:
-      owners: []
-      percent: 0
     # A directory on the node holding `docker save` archives named after the
     # image reference, mounted read-only into every runner. It is how a
     # cluster with no registry (local dev) gives runners their agent image;
-    # empty means runners pull from the registry as usual.
+    # empty means runners fetch images from the registry.
     imageArchiveHostPath: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever
@@ -293,10 +272,6 @@ virtualization:
     # lives inside the cluster and whose excepts leave that range reachable;
     # it resolves Service names and loses nothing, since nothing is blocked.
     dnsPolicy: Default
-    # Extra sources the runner itself admits on machines' published ports,
-    # on top of the NetworkPolicy that limits them to the api-server and the
-    # controller; empty means the policy is the only gate.
-    ingressCidrs: []
     # Where the runner pod itself may send traffic. REQUIRED when
     # virtualization.enabled — the install fails without it, because leaving
     # it empty means no policy at all, and that is the weakest point of this
@@ -318,7 +293,7 @@ virtualization:
     # On OpenShift the internal registry is a Service address, so excepting the
     # Service range blocks pulls from it: name that registry in egressCidrs and
     # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
-    # below so the runner can resolve it — or stage images on the node instead.
+    # above so the runner can resolve it — or stage images on the node instead.
     egressCidrs: []
     # Subtracted from the entries above that contain them — Kubernetes rejects
     # a policy whose exception falls outside its own block, so a narrow entry
@@ -334,22 +309,51 @@ virtualization:
     # API server's Service address or its own pod address with no exception
     # covering it.
     egressExceptCidrs: []
+  # The CA the controller trusts a runner's serving certificate by. It is the
+  # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
+  # for hostnames taken from users' credential hosts, so a leaf naming a
+  # runner's Service host would let its key pass for that runner to the
+  # controller. Rendered as cluster issuers, like the envoyMitm pair, so the
+  # CA key sits in cert-manager's namespace and not the agent namespace.
+  # Cluster-scoped names collide globally; override them if needed.
+  runnerCA:
+    bootstrapIssuerName: platform-vm-runner-bootstrap
+    issuerName: platform-vm-runner-ca-issuer
+    # Must equal cert-manager's --cluster-resource-namespace flag (default
+    # `cert-manager`).
+    secretNamespace: cert-manager
+    secretName: platform-vm-runner-ca
+    duration: 87600h # 10y
+    renewBefore: 720h # 30d
   # A directory on each node that every runner scheduled there shares. A machine
-  # may reach only its gateway, so the guest cannot pull its own image; the
-  # runner fetches it here on a miss, and the next owner on that node boots the
-  # same image without touching the registry. Empty = each runner caches on its
-  # own claim, which means one pull per owner for the same few images.
+  # may reach only its gateway, so the guest cannot pull its own image; it is
+  # fetched and unpacked here once, and the next owner on that node boots the
+  # same tree without touching the registry. Empty = each runner caches on its
+  # own claim, as that claim's only writer, which means one pull per owner for
+  # the same few images.
   #
   # A host directory rather than a ReadWriteMany claim: RWX is the expensive
   # class to ask an install for, and it buys cluster-wide dedup where per-node
-  # is enough. The runner already holds /dev/kvm and runs as root, so a host
-  # directory is not a privilege it did not have — but on OpenShift it still
-  # needs `runner.scc`, since the chart's own agent SCC refuses hostPath.
+  # is enough. On OpenShift it needs `runner.scc`, since the chart's own agent
+  # SCC refuses hostPath.
   #
-  # Runners on one node evict from this directory independently, so each
-  # publishes which cached images its machines hold and reads the others'
-  # before deleting anything — otherwise one runner reclaiming space takes the
-  # root filesystem out from under another's running guest.
+  # Setting `hostPath` deploys the image cache service: a DaemonSet in
+  # `agentNamespace`, on the runners' nodeSelector and tolerations, that is the
+  # ONLY writer of this directory. Runners mount it read-only and ask the
+  # service, over a Unix socket inside it, for each image a machine boots; the
+  # service resolves the tag, fetches and unpacks it with the pull credentials
+  # the runner forwards for that machine, and evicts. So a guest that escapes
+  # into its runner cannot rewrite a tree another owner's machine boots. It is
+  # in the boot path: with it down, a runner boots only the trees its own
+  # machines already hold and refuses any other image as unavailable.
+  #
+  # Runners hold the trees their machines boot by naming them to the service
+  # every minute; eviction never takes a held tree. An entry fetched with
+  # credentials that an anonymous read cannot reach is served only to a runner
+  # whose forwarded credentials read the image's manifest, so naming a
+  # reference is not enough to borrow another owner's private image. The
+  # service keeps that knowledge in memory, so after it restarts each such
+  # entry is checked against the registry again.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte
@@ -358,72 +362,28 @@ virtualization:
   # with the machine disks, so a share of either would let the images eat
   # space that is not theirs. Keep it well under whichever it sits on.
   #
-  # `preload` is the per-node service that fills this directory before anyone
-  # needs it. A runner exists only once one of its owner's agents needs one,
-  # so without it nothing on the node can fetch an image ahead of the user
-  # waiting for it — and a release pins a new tag, so that wait is paid again
-  # on every node after every deploy. The service is a DaemonSet that fetches
-  # every enabled `harnessTemplates` image at deploy time and claims them the
-  # way a runner claims its machines' images, which is what stops eviction
-  # taking an image nobody is running yet — it is held by nobody and it is the
-  # oldest write, so it would otherwise go first. It also sweeps this
-  # directory on its own schedule: a runner tidies it only as a side effect of
-  # paying for a miss, and a host directory outlives every runner on the node,
-  # so images an owner who has gone left behind are reclaimed by nothing else.
-  #
-  # It only applies where `hostPath` above names a node directory: a runner's
-  # own claim is reachable by nothing but that runner, so there is nowhere
-  # else for the service to put anything.
-  #
-  # It is not in the boot path. With it down, a cached image still boots (the
-  # runner reads the tree from the directory) and a miss is still the runner's
-  # own to fetch — which is also the only path a custom agent image can take,
-  # since nothing can know about one at deploy time.
-  #
-  # Pull secrets: a runner fetches with the same Secrets an agent pod would
-  # list — the Agent's own `imagePullSecretRef` first, then
-  # `controller.agent.base.imagePullSecrets` — trying each in turn as the
-  # kubelet does, for that fetch only. They are never stored with the machine
-  # and never reach the guest. This service fetches with
-  # `controller.agent.base.imagePullSecrets` alone, which it reads through a
-  # Role limited to getting those Secrets by name in `agentNamespace`. So a
-  # private harness image is preloaded when the install default can read it.
-  # A per-template `imagePullSecret` is not used here yet, so an image that
-  # only such a Secret can read is still fetched on demand by the runner.
-  #
-  # An entry that an anonymous read could not have fetched is marked private.
-  # A runner boots a machine from a private entry only after that machine's
-  # own credentials read the image's manifest, so naming a reference is not
-  # enough to borrow another owner's private image from this shared
-  # directory. The check needs the registry to be reachable. Public entries
-  # skip it and still boot with the registry down.
-  #
-  # Size `budget` to hold the preloaded set with room to spare: those images
-  # are pinned, so a budget below their total leaves the cache permanently
-  # over it and saying so in its log.
+  # The service also preloads every enabled `harnessTemplates` image at
+  # deploy time and every `preloadInterval` after, and pins them against
+  # eviction, so the first machine on a node after a deploy does not wait out
+  # the fetch. It preloads with `controller.agent.base.imagePullSecrets`,
+  # mounted into it as a volume, so a private harness image is preloaded when
+  # the install default can read it; one only a per-template Secret reads is
+  # fetched when a machine first needs it. Size `budget` to hold the preloaded
+  # set with room to spare: pins are never evicted, so a budget below their
+  # total leaves the cache permanently over it and saying so in its log.
   imageCache:
     hostPath: ""
     budget: 50Gi
-    preload:
-      enabled: true
-      # How often claims are refreshed, a failed fetch retried and the
-      # directory swept. It is the lease on those claims, so it has to stay
-      # well inside the half hour a runner believes one for.
-      interval: 5m
-      # Placement. Empty falls back to `runner.nodeSelector` /
-      # `runner.tolerations` — preloading is worth nothing on a node no runner
-      # can land on.
-      nodeSelector: {}
-      tolerations: []
-      # Unpacking is I/O rather than CPU, and the tree is streamed rather than
-      # held, so this is small on purpose. Leave the CPU limit unset: a
-      # throttled unpack is the slow first boot this exists to remove.
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          memory: 1Gi
+    preloadInterval: 5m
+    # Unpacking is I/O rather than CPU, and the tree is streamed rather than
+    # held, so this is small on purpose. Leave the CPU limit unset: a
+    # throttled unpack is a slow first boot.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
@@ -466,7 +426,7 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and CHOWN + FOWNER + DAC_OVERRIDE which only
+    # allowedCapabilities, and DAC_OVERRIDE + CHOWN + FOWNER which only
     # the VM runner requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent

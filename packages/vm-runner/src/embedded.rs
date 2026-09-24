@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use smolvm::agent::{state_probe, vm_data_dir, HostMount, PortMapping, VmResources};
@@ -10,21 +10,19 @@ use smolvm::embedded::{EmbeddedRuntime, MachineSpec as SmolvmSpec};
 use smolvm::network::NetworkBackend;
 use smolvm::storage::{expand_disk, Storage, StorageDisk, STORAGE_DISK_FILENAME};
 
-use crate::api::{MachineSpec, STATE_ABSENT, STATE_RUNNING, STATE_STOPPED};
+use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    adopt_kept_storage, clear_for_start, discard_overlay, grown_storage, kept_dir, kill_orphans,
-    move_storage, timed, updated_env, vmm_gone, workload, Machine, Runtime, GUEST_AGENT_PORT,
-    VMM_EXIT_WAIT,
+    clear_for_start, discard_overlay, grown_storage, kill_orphans, timed, updated_env, workload,
+    Machine, Runtime, Update, GUEST_AGENT_PORT,
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — exactly where the smolvm CLI keeps it under the runner's HOME, so machines the Go runner created are machines this one can start, stop and delete. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
+// UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
 pub struct Smolvm {
     runtime: EmbeddedRuntime,
     db: SmolvmDb,
     proc_root: PathBuf,
-    home: Option<PathBuf>,
 }
 
 const USER: &str = "root";
@@ -38,22 +36,7 @@ impl Smolvm {
             runtime: EmbeddedRuntime::new().context("opening the smolvm runtime")?,
             db: SmolvmDb::open().context("opening the smolvm database")?,
             proc_root: PathBuf::from("/proc"),
-            home: std::env::var_os("HOME")
-                .filter(|home| !home.is_empty())
-                .map(PathBuf::from),
         })
-    }
-
-    fn kept(&self, id: &str) -> Option<PathBuf> {
-        self.home.as_deref().map(|home| kept_dir(home, id))
-    }
-
-    fn adopt_kept(&self, id: &str) -> anyhow::Result<()> {
-        match self.kept(id) {
-            Some(kept) => adopt_kept_storage(&kept, &vm_data_dir(id))
-                .with_context(|| format!("restoring the storage disk of {id}")),
-            None => Ok(()),
-        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Called on the runner's own tick.
@@ -68,13 +51,13 @@ impl Smolvm {
 
 impl Runtime for Smolvm {
     // UNIT_BOUNDARY_DESCRIPTION: read the way `smolvm machine status` reads it: a record that says running is only running if its VMM is alive and its agent answers. A VMM whose agent died reads as stopped, so the next start takes it down rather than trusting it.
-    fn state(&self, id: &str) -> anyhow::Result<&'static str> {
+    fn state(&self, id: &str) -> anyhow::Result<State> {
         Ok(match self.record(id)? {
-            None => STATE_ABSENT,
+            None => State::Absent,
             Some(record) if state_probe::resolve_state(id, &record) == RecordState::Running => {
-                STATE_RUNNING
+                State::Running
             }
-            Some(_) => STATE_STOPPED,
+            Some(_) => State::Stopped,
         })
     }
 
@@ -89,21 +72,20 @@ impl Runtime for Smolvm {
                 workload.workdir,
                 Some(USER.to_string()),
             )?;
-            self.adopt_kept(id)?;
-            if let Some(gib) = storage_gib.filter(|_| !has_qcow2_storage(&vm_data_dir(id))) {
+            if let Some(gib) = storage_gib {
                 raw_storage_disk(id, gib)?;
             }
             Ok(())
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped — its guest serves nothing — but its record still says running while the process lives, and smolvm refuses to update a running record. Left there, the server's stop-update-start never gets past the update, and the machine is never restarted. So such a VMM is taken down first, the way a start takes down whatever the last VMM left.
-    fn update(
-        &self,
-        id: &str,
-        desired: &MachineSpec,
-        applied: Option<&MachineSpec>,
-    ) -> anyhow::Result<()> {
+    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped, but its record says running while the process lives, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init boots every image on a fresh root: the root smolvm keeps on the disk for this machine, with the old image's changes in it, is never the one the new image runs on.
+    fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
+        let Update {
+            desired,
+            applied,
+            image,
+        } = *update;
         let secrets: Vec<&str> = desired.env.values().map(String::as_str).collect();
         timed("update", id, &secrets, || {
             let mut record = self
@@ -134,28 +116,42 @@ impl Runtime for Smolvm {
             .validate()?;
             let grown = grown_storage(applied, desired);
             if let Some(gib) = grown {
-                let disk = vm_data_dir(id).join(STORAGE_DISK_FILENAME);
+                let disk = storage_disk_path(id);
                 if disk.exists() {
                     expand_disk::<Storage>(&disk, gib)?;
-                } else if has_qcow2_storage(&vm_data_dir(id)) {
-                    anyhow::bail!("{}", STORAGE_NOT_GROWABLE);
                 }
             }
+            let allowed_cidrs = allowed_cidrs(desired)?;
+            let relaunch = match image {
+                Some((image, launch)) => {
+                    Some((resolved_image(image)?, workload(desired, Some(launch))?))
+                }
+                None => None,
+            };
             self.db.update_vm(id, |r| {
                 r.cpus = cpus;
                 r.mem = mem;
                 if let Some(gib) = grown {
                     r.storage_gb = Some(gib);
                 }
-                r.env = updated_env(&r.env, applied, desired);
+                r.allowed_cidrs = allowed_cidrs;
+                match relaunch {
+                    Some((image, workload)) => {
+                        r.image = Some(image);
+                        r.entrypoint = Vec::new();
+                        r.cmd = workload.command;
+                        r.workdir = workload.workdir;
+                        r.env = workload.env;
+                    }
+                    None => r.env = updated_env(&r.env, applied, desired),
+                }
             })?;
             Ok(())
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
     fn start(&self, id: &str) -> anyhow::Result<()> {
-        self.adopt_kept(id)?;
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let _ = self.runtime.stop_machine(id);
@@ -178,48 +174,15 @@ impl Runtime for Smolvm {
         timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the disk is moved only once no VMM holds it, because a VMM that is still exiting may still be writing to it.
-    fn delete_keeping_storage(&self, id: &str) -> anyhow::Result<()> {
-        let dir = vm_data_dir(id);
-        if dir.is_dir() {
-            let kept = self.kept(id).ok_or_else(|| {
-                anyhow::anyhow!("HOME is not set, so there is nowhere to keep the storage disk of {id} across the new image")
-            })?;
-            if !vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT) {
-                anyhow::bail!("machine {id} still has a VMM holding its disks, so its storage disk cannot be kept across the new image");
-            }
-            move_storage(&dir, &kept)
-                .with_context(|| format!("keeping the storage disk of {id}"))?;
-        }
-        self.delete(id)
-    }
-
-    fn discard_kept_storage(&self, id: &str) -> anyhow::Result<()> {
-        match self.kept(id).map(std::fs::remove_dir_all) {
-            Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-            _ => Ok(()),
-        }
-    }
-
     fn console_tail(&self, id: &str) -> String {
         console::tail_of(
             &vm_data_dir(id).join(console::CONSOLE_LOG),
             console::CONSOLE_TAIL_BYTES,
         )
     }
-
-    // UNIT_BOUNDARY_DESCRIPTION: a disk kept by an interrupted recreate is the one the next boot adopts, so it counts as the machine's disk here too.
-    fn storage_growable(&self, id: &str) -> bool {
-        let kept_qcow2 = self.kept(id).is_some_and(|kept| has_qcow2_storage(&kept));
-        !template_backed_storage(id) && !kept_qcow2
-    }
-
-    fn has_kept_storage(&self, id: &str) -> bool {
-        self.kept(id).is_some_and(|kept| kept.exists())
-    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine, in the shape the Go runner's `machine create` flags produced: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
+// UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
 fn embedded_spec(
     id: &str,
     machine: &Machine<'_>,
@@ -259,6 +222,20 @@ fn embedded_spec(
     Ok((smolvm_spec, workload))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the allowlist as a create records it: none for a spec that names none, and each range in smolvm's own normal form otherwise, so an update writes what a create of the same spec would.
+fn allowed_cidrs(spec: &MachineSpec) -> anyhow::Result<Option<Vec<String>>> {
+    if spec.allow_cidrs.is_empty() {
+        return Ok(None);
+    }
+    let parsed = spec
+        .allow_cidrs
+        .iter()
+        .map(|cidr| smolvm::smolfile::parse_cidr(cidr))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|reason| anyhow::anyhow!("allowCidrs: {reason}"))?;
+    Ok(Some(parsed))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. An archive is staged into smolvm's own cache and named `local:`. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
 fn resolved_image(image: &str) -> anyhow::Result<String> {
     Ok(match resolve(classify(image))? {
@@ -269,30 +246,18 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
 
 // UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing, and smolvm formats it on first boot as it does any other size.
 fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
-    StorageDisk::open_or_create_at(&vm_data_dir(id).join(STORAGE_DISK_FILENAME), gib)?;
+    StorageDisk::open_or_create_at(&storage_disk_path(id), gib)?;
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a larger size is refused for a template-backed disk, in words that reach the Agent's status. The machine keeps running at the size it has.
-pub const STORAGE_NOT_GROWABLE: &str = "this machine's storage disk is an overlay over the disk template an earlier runner shipped, and it cannot be grown; recreate the agent to give it more storage";
-
-pub fn storage_disk_path(id: &str) -> PathBuf {
+fn storage_disk_path(id: &str) -> PathBuf {
     vm_data_dir(id).join(STORAGE_DISK_FILENAME)
-}
-
-pub fn template_backed_storage(id: &str) -> bool {
-    has_qcow2_storage(&vm_data_dir(id))
-}
-
-fn has_qcow2_storage(dir: &Path) -> bool {
-    dir.join(Path::new(STORAGE_DISK_FILENAME).with_extension("qcow2"))
-        .exists()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ImageLaunch;
+    use crate::launch::ImageLaunch;
     use std::fs;
     use std::sync::Mutex;
 
@@ -346,9 +311,9 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is what the Go runner's `machine create` flags said, read back from smolvm's own database rather than from what this code meant to write.
+    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write.
     #[test]
-    fn a_created_machine_is_recorded_the_way_the_go_runner_created_it() {
+    fn a_created_machine_is_recorded_as_its_spec_says() {
         let home = Home::new("create");
         let share = home.path.join("share");
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
@@ -408,7 +373,7 @@ mod tests {
             )]
         );
         assert!(!record.ephemeral, "a machine must survive a stop");
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_STOPPED);
+        assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
     }
 
     // TEST_SCENARIO: a storage disk of smolvm's default size would otherwise be a qcow2 overlay over the template in the runner image, named by its path there — a runner upgrade that ships another template would change the bytes under that agent's home. The create leaves a raw disk behind instead, which smolvm then boots as it is.
@@ -436,7 +401,7 @@ mod tests {
         let disk = storage_disk_path("m1");
         assert!(disk.exists(), "no raw disk was made");
         assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
-        assert!(!template_backed_storage("m1"));
+        assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
@@ -466,7 +431,16 @@ mod tests {
         desired.memory_mib = 4096;
         desired.storage_gib = 30;
         desired.env = [("NEW".to_string(), "x".to_string())].into();
-        smolvm.update("m1", &desired, Some(&applied)).unwrap();
+        smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &desired,
+                    applied: Some(&applied),
+                    image: None,
+                },
+            )
+            .unwrap();
 
         let record = smolvm.db.get_vm("m1").unwrap().unwrap();
         assert_eq!(
@@ -510,7 +484,7 @@ mod tests {
             .to_string();
         assert!(err.starts_with("smolvm machine create: "), "{err}");
         assert!(!err.contains("hunter22"), "{err}");
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_ABSENT);
+        assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
     }
 
     // TEST_SCENARIO: a VMM whose guest agent died is reported stopped, so the server updates it before starting it again. Its record still says running while the process lives, and an update that refused it would leave the machine stuck: never restarted, its VMM never killed. The update takes that VMM down and applies.
@@ -548,11 +522,20 @@ mod tests {
                 r.pid_start_time = smolvm::process::process_start_time(pid);
             })
             .unwrap();
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_STOPPED);
+        assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
 
         let mut desired = spec.clone();
         desired.cpus = 1;
-        smolvm.update("m1", &desired, Some(&spec)).unwrap();
+        smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &desired,
+                    applied: Some(&spec),
+                    image: None,
+                },
+            )
+            .unwrap();
         assert_eq!(smolvm.record("m1").unwrap().unwrap().cpus, 1);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         while vmm.try_wait().unwrap().is_none() {
@@ -588,30 +571,37 @@ mod tests {
             )
             .unwrap();
         smolvm.delete("m1").unwrap();
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_ABSENT);
+        assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
         assert!(!vm_data_dir("m1").exists());
     }
 
-    // TEST_SCENARIO: a new image is a new machine under the same name. The agent's disk leaves the old machine's directory before its delete and is what the recreated machine is created with — the same bytes, grown to the new size, never a fresh empty disk — and nothing is left kept afterwards.
+    // TEST_SCENARIO: a new image and a new allowlist are applied to the same machine. smolvm reads the image, the command it launches, its workdir, env and allowlist from the record at every start, so the update rewrites those fields and nothing else: the record is the one the create wrote, the port is kept, and the storage disk holds the same bytes. The env is rebuilt from the new image's, so a variable only the old image set is gone.
     #[test]
-    fn a_recreated_machine_is_created_on_the_disk_the_old_one_had() {
+    fn a_new_image_and_allowlist_are_written_to_the_same_machine() {
         use std::io::{Read, Write};
-        let home = Home::new("recreate");
+        let home = Home::new("in-place");
         let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
+        let old_tree = home.path.join("images/old/rootfs");
+        let new_tree = home.path.join("images/new/rootfs");
+        for dir in [&share, &old_tree, &new_tree] {
+            fs::create_dir_all(dir).unwrap();
+        }
         let smolvm = Smolvm::open().unwrap();
-        let launch = launch();
         let old = spec();
-        let machine = |spec, image| Machine {
-            spec,
-            image,
-            host_port: 32000,
-            share: &share,
-            launch: Some(&launch),
-        };
+        let old_launch = launch();
         smolvm
-            .create("m1", &machine(&old, "quay.io/x/vm:1"))
+            .create(
+                "m1",
+                &Machine {
+                    spec: &old,
+                    image: old_tree.to_str().unwrap(),
+                    host_port: 32000,
+                    share: &share,
+                    launch: Some(&old_launch),
+                },
+            )
             .unwrap();
+        let created_at = smolvm.record("m1").unwrap().unwrap().created_at;
         fs::OpenOptions::new()
             .write(true)
             .open(storage_disk_path("m1"))
@@ -619,77 +609,69 @@ mod tests {
             .write_all(b"agent home")
             .unwrap();
 
-        smolvm.delete_keeping_storage("m1").unwrap();
-        assert_eq!(smolvm.state("m1").unwrap(), STATE_ABSENT);
-        assert!(kept_dir(&home.path, "m1").join("storage.raw").exists());
-
         let mut new = spec();
         new.image = "quay.io/x/vm:2".into();
-        new.storage_gib = 30;
+        new.allow_cidrs = vec!["10.96.0.9/32".into()];
+        let new_launch = ImageLaunch {
+            entrypoint: vec!["/entry2".into()],
+            cmd: vec!["serve".into()],
+            env: vec!["LANG=C".into()],
+            working_dir: "/srv".into(),
+        };
         smolvm
-            .create("m1", &machine(&new, "quay.io/x/vm:2"))
+            .update(
+                "m1",
+                &Update {
+                    desired: &new,
+                    applied: Some(&old),
+                    image: Some((new_tree.to_str().unwrap(), &new_launch)),
+                },
+            )
             .unwrap();
+
+        let record = smolvm.record("m1").unwrap().unwrap();
+        assert_eq!(record.created_at, created_at, "the machine was recreated");
+        assert_eq!(
+            record.image.as_deref(),
+            Some(format!("local-dir:{}", new_tree.canonicalize().unwrap().display()).as_str())
+        );
+        assert!(record.entrypoint.is_empty());
+        assert_eq!(
+            record.cmd,
+            vec![crate::guest::INIT_PATH, "/entry2", "serve"]
+        );
+        assert_eq!(record.workdir.as_deref(), Some("/srv"));
+        assert_eq!(
+            record.env,
+            vec![
+                ("LANG".to_string(), "C".to_string()),
+                ("TOKEN".to_string(), "hunter22".to_string()),
+            ]
+        );
+        assert_eq!(record.allowed_cidrs, Some(vec!["10.96.0.9/32".to_string()]));
+        assert_eq!(record.ports, vec![(32000, GUEST_AGENT_PORT)]);
         let mut head = [0u8; 10];
         fs::File::open(storage_disk_path("m1"))
             .unwrap()
             .read_exact(&mut head)
             .unwrap();
         assert_eq!(&head, b"agent home");
-        assert_eq!(
-            fs::metadata(storage_disk_path("m1")).unwrap().len(),
-            30 << 30
-        );
-        assert!(!kept_dir(&home.path, "m1").exists());
 
-        smolvm.delete_keeping_storage("m1").unwrap();
-        smolvm.discard_kept_storage("m1").unwrap();
-        assert!(!kept_dir(&home.path, "m1").exists());
-        smolvm.discard_kept_storage("m1").unwrap();
-    }
-
-    // TEST_SCENARIO: a machine the Go runner made has a qcow2 storage disk when it was created at smolvm's default size. It is recognised as such, so the runner can say which agents depend on the shipped template before an upgrade changes it.
-    #[test]
-    fn a_template_backed_disk_is_recognised() {
-        let _home = Home::new("qcow2");
-        let dir = vm_data_dir("old");
-        fs::create_dir_all(&dir).unwrap();
-        assert!(!template_backed_storage("old"));
-        fs::write(dir.join("storage.qcow2"), "x").unwrap();
-        assert!(template_backed_storage("old"));
-    }
-
-    // TEST_SCENARIO: a template-backed disk cannot be grown, by smolvm or by this runner. A resize that asks for more is refused with a reason the Agent shows, and the record keeps the size the disk has, so the next reconcile sees the resize as still to do rather than done.
-    #[test]
-    fn a_template_backed_disk_is_not_recorded_as_grown() {
-        let home = Home::new("qcow2-grow");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
-        let spec = spec();
-        let launch = launch();
+        new.allow_cidrs.clear();
         smolvm
-            .create(
+            .update(
                 "m1",
-                &Machine {
-                    spec: &spec,
-                    image: "quay.io/x/vm:1",
-                    host_port: 32000,
-                    share: &share,
-                    launch: Some(&launch),
+                &Update {
+                    desired: &new,
+                    applied: Some(&new),
+                    image: None,
                 },
             )
             .unwrap();
-        fs::remove_file(storage_disk_path("m1")).unwrap();
-        fs::write(vm_data_dir("m1").join("storage.qcow2"), "x").unwrap();
-        assert!(!smolvm.storage_growable("m1"));
-
-        let mut desired = spec.clone();
-        desired.storage_gib = spec.storage_gib + 10;
-        let err = smolvm.update("m1", &desired, Some(&spec)).unwrap_err();
-        assert!(format!("{err:#}").contains(STORAGE_NOT_GROWABLE), "{err:#}");
         assert_eq!(
-            smolvm.record("m1").unwrap().unwrap().storage_gb,
-            Some(u64::try_from(spec.storage_gib).unwrap())
+            smolvm.record("m1").unwrap().unwrap().allowed_cidrs,
+            None,
+            "an update must write the allowlist a create of the same spec would"
         );
     }
 }

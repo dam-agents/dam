@@ -179,6 +179,7 @@ RUN set -eu; \
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-tool-real /usr/local/bin/dam-tool-real
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-auto-install /usr/local/bin/dam-auto-install
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-containerd /usr/local/bin/dam-containerd
+COPY --chmod=755 packages/platform-base/lazy-tools/dam-runtime-dir /usr/local/bin/dam-runtime-dir
 COPY --chmod=755 packages/platform-base/lazy-tools/dam-lazy-tool /usr/local/bin/dam-lazy-tool
 COPY --chmod=755 packages/platform-base/lazy-tools/docker /usr/local/share/tool-shims/docker
 COPY --chmod=755 packages/platform-base/lazy-tools/k3s /usr/local/share/tool-shims/k3s

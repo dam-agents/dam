@@ -35,7 +35,7 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple silicon M3+, macOS 15+), so nothing in CI exercises it live. Two ways to test it on a host that has it:
 
 - `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` and stages the mock image for the VM runners, which un-skips `smoke/19-vm-agent.spec.ts`. Without it that spec skips itself.
-- `mise run cluster:vm-conformance` runs the machine API conformance suite against a live runner. It needs a runner to exist — create one vm agent first — and it scales the controller to zero for the run (its orphan sweep would delete the suite's machines) and restarts the runner once, which stops every machine on it. `LIMA_INSTANCE=platform-k3s-test` targets the e2e VM. CI runs the same suite over a fake VMM as part of `mise run test`.
+- `mise run cluster:vm-conformance` runs the machine API conformance suite against a live runner. It needs a runner to exist — create one vm agent first — and it scales the controller to zero for the run (its orphan sweep would delete the suite's machines) and restarts the runner once, which stops every machine on it. `LIMA_INSTANCE=platform-k3s-test` targets the e2e VM. The suite has no fake-VMM run in CI: it needs a real runner, so it runs on a KVM host only.
 
 ## Disk space (two independent VMs)
 

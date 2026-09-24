@@ -64,14 +64,13 @@ impl Capacity<'_> {
 mod tests {
     use super::*;
     use crate::api::MachineSpec;
-    use crate::gosource;
     use crate::state::write_spec;
+    use crate::testdir::TempDir;
     use std::fs;
-    use std::path::PathBuf;
 
-    // TEST_SCENARIO: this refusal is not a log line. It is written into the Agent's status by the controller, which passes it through unchanged, so it is what a person reads when their agent will not start — and during a rollout the same cluster answers with both runners. Two wordings for one condition is a support question that starts with which runner answered.
+    // TEST_SCENARIO: this refusal is not a log line. It is written into the Agent's status by the controller, which passes it through unchanged, so it is what a person reads when their agent will not start, and what a runbook quotes. The wording is pinned, with the three numbers in the places the reader expects them.
     #[test]
-    fn the_refusal_reads_exactly_as_the_go_runners_does() {
+    fn the_refusal_reads_as_the_status_shows_it() {
         let dir = TempDir::new("wording");
         let state = dir.path();
 
@@ -84,19 +83,10 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        let go = gosource::read("server.go");
-        let args = gosource::call_args_in(&go, "(s *Server) roomFor", "fmt.Errorf(")
-            .expect("server.go still refuses a machine that does not fit");
-        let format = args
-            .split('"')
-            .nth(1)
-            .expect("the refusal is still a literal in roomFor");
-        let theirs = format
-            .replacen("%d", "2048", 1)
-            .replacen("%d", &(8192 - 1024).to_string(), 1)
-            .replacen("%d", "6000", 1);
-
-        assert_eq!(ours, theirs, "the two runners refuse in different words");
+        assert_eq!(
+            ours,
+            "this machine's 2048 MiB does not fit: the VM runner has 7168 MiB for machines and 6000 MiB is already committed; stop another agent or give the runner more memory"
+        );
     }
 
     // TEST_SCENARIO: the limit comes from the runner's own container, and a runner that was told nothing has no business inventing one — refusing there would idle a node that had room. The check exists to stop the runner being killed for going over a limit it knows about, not to ration on a guess.
@@ -261,26 +251,5 @@ mod tests {
             },
         )
         .unwrap();
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-capacity-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

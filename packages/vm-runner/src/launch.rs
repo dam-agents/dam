@@ -4,13 +4,22 @@ use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::api::ImageLaunch;
+// UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run: its entrypoint, command, env and working directory. It is kept beside an unpacked tree and never crosses the machine API.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ImageLaunch {
+    pub entrypoint: Vec<String>,
+    pub cmd: Vec<String>,
+    pub env: Vec<String>,
+    #[serde(rename = "workingDir")]
+    pub working_dir: String,
+}
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an earlier release cached. The third, a config fetched from the registry when neither exists, needs a registry client and is not ported yet.
+// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an install with no registry staged. The third, a config read from the registry when neither exists, is in the fetch module.
 
-// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree. Read by whichever runner boots a machine from that tree next, which during a rollout is the other implementation, so the name and the field spellings are the Go runner's.
+// UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree, which a machine booted from that tree reads.
 pub const LAUNCH_FILE: &str = "launch.json";
 
 // UNIT_BOUNDARY_DESCRIPTION: the largest entry in an archive that could still be an image config. Layers are megabytes to gigabytes and configs are kilobytes, so this is what keeps a config scan from reading a whole image into memory looking for a JSON object.
@@ -136,51 +145,19 @@ fn clean_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
-    use std::path::PathBuf;
-
-    // TEST_SCENARIO: the launch record is written by one runner and read by whichever one boots a machine from that tree next, which during a rollout is the other implementation. A different file name is a tree whose launch the next runner cannot find, and the fallbacks behind it are a registry fetch per boot or a refusal.
-    #[test]
-    fn the_go_runner_keeps_the_record_under_the_same_name() {
-        let go = gosource::read("server.go");
-        assert_eq!(
-            gosource::const_value(&go, "launchFile").as_deref(),
-            Some(LAUNCH_FILE),
-            "the two runners no longer read one tree's launch record"
-        );
-        assert_eq!(
-            gosource::int_value(&go, "maxImageConfig"),
-            Some(MAX_IMAGE_CONFIG),
-            "the two runners hold a different set of an archive's entries while scanning it"
-        );
-
-        assert_eq!(
-            gosource::int_value("\tmaxImageConfig = 1 << 20", "maxImageConfig"),
-            Some(1 << 20)
-        );
-        assert_eq!(
-            gosource::int_value("\tcapturedOutput = 2000", "capturedOutput"),
-            Some(2000)
-        );
-        assert_eq!(
-            gosource::int_value("\tmaxImageConfig = someCall()", "maxImageConfig"),
-            None,
-            "a size stated in a form this reader does not know must fail the comparison, not pass it"
-        );
-        assert_eq!(gosource::int_value("\tother = 5", "maxImageConfig"), None);
-    }
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: these five names are the OCI image config's own spelling, capitals and all, and nothing on this side would notice one being wrong — a mis-spelled key reads as absent, which for Entrypoint and Cmd together is a refusal to boot and for Env is a machine started without its image's environment.
     #[test]
-    fn the_image_config_is_read_under_the_names_the_go_runner_reads() {
-        let go = gosource::read("server.go");
-        let literals = gosource::literals_in(&go, "launchFromConfig");
-        for key in ["config", "Entrypoint", "Cmd", "Env", "WorkingDir"] {
-            assert!(
-                literals.iter().any(|literal| literal == key),
-                "launchFromConfig no longer reads {key:?}: {literals:?}"
-            );
-        }
+    fn the_image_config_is_read_under_the_oci_spellings() {
+        let launch = launch_from_config(
+            br#"{"config":{"Entrypoint":["/init"],"Cmd":["serve"],"Env":["A=1"],"WorkingDir":"/srv"}}"#,
+        )
+        .unwrap();
+        assert_eq!(launch.entrypoint, ["/init"]);
+        assert_eq!(launch.cmd, ["serve"]);
+        assert_eq!(launch.env, ["A=1"]);
+        assert_eq!(launch.working_dir, "/srv");
     }
 
     // TEST_SCENARIO: a real image config writes JSON null for a list it does not set, and Go's decoder reads that as an empty list. A decoder that refused it would fail on ordinary images, on the boot path, and only once a machine was already being created.
@@ -220,7 +197,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: the archive below, or the registry fetch that is not ported yet.
+    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: a staged archive, or the registry.
     #[test]
     fn a_tree_with_no_record_beside_it_is_nothing_to_say_rather_than_a_failure() {
         let dir = TempDir::new("record");
@@ -249,44 +226,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record read here was written by the other runner's `json.Marshal`, and `api.go` tags entrypoint, cmd and env without `omitempty` — so a list Go left nil is in the file as JSON null rather than left out. Go refuses an image that names neither an entrypoint nor a command, so every record it writes sets one of those two and leaves the other nil. A reader that refuses a null list therefore reads almost every tree the Go runner unpacked as broken, and refuses a machine that runner boots.
-    #[test]
-    fn a_record_the_go_runner_wrote_is_read_rather_than_refused() {
-        let api = gosource::read("api.go");
-        let fields = gosource::struct_fields(&api, "ImageLaunch");
-        assert!(
-            !fields.is_empty(),
-            "no ImageLaunch fields were read out of api.go, so this comparison proves nothing"
-        );
-        for listed in ["entrypoint", "cmd", "env"] {
-            let field = fields
-                .iter()
-                .find(|field| field.json == listed)
-                .unwrap_or_else(|| panic!("api.go no longer writes {listed:?} into the record"));
-            assert!(
-                !field.omitempty,
-                "api.go now leaves an empty {listed:?} out of the record, so a null list is no longer what the Go runner writes and this test's premise is stale"
-            );
-        }
-
-        let dir = TempDir::new("go-record");
-        fs::write(
-            dir.path().join(LAUNCH_FILE),
-            br#"{"entrypoint":["/init"],"cmd":null,"env":null,"workingDir":""}"#,
-        )
-        .unwrap();
-        let launch = read_launch(dir.path())
-            .unwrap()
-            .expect("the record is there");
-        assert_eq!(launch.entrypoint, ["/init"]);
-        assert!(
-            launch.cmd.is_empty(),
-            "a list the Go runner left nil must read back as an empty one"
-        );
-        assert!(launch.env.is_empty());
-    }
-
-    // TEST_SCENARIO: the whole point of the archive path — an archive still boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.
+    // TEST_SCENARIO: an archive staged for an install with no registry boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.
     #[test]
     fn an_archive_yields_the_launch_its_manifest_points_at() {
         let dir = TempDir::new("archive");
@@ -416,26 +356,5 @@ mod tests {
             builder.append(&header, body.as_slice()).unwrap();
         }
         builder.finish().unwrap();
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-launch-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

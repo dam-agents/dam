@@ -1,24 +1,39 @@
 use std::time::{Duration, SystemTime};
 
-use crate::api::{
-    MachineSpec, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING,
-    STATE_STOPPED, STATE_STOPPING,
-};
+use crate::api::{MachineSpec, State};
 use crate::state::is_image_ref;
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner decides to do about one machine, and nothing about carrying it out. The controller sends the same desired shape every reconcile, roughly once a minute, so every decision here is made again and again against a machine that is already in some state — which is why it is separated from the work: a decision that is wrong once is wrong every minute, and the only way to see that is to be able to ask it without a hypervisor.
+// UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent once a minute.
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. Both halves of the condition matter and neither means anything alone: a machine that has never answered is still booting, and one that answered a moment ago is simply between checks. Matched against the Go runner, which restarts on the same rule.
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner is about to do to a machine, and whether it is doing it because the guest stopped answering rather than because its shape changed. The two produce the same operation and must be told apart afterwards: one is a restart the controller asked for, the other is a machine the runner gave up on, and only the second is worth counting.
+// UNIT_BOUNDARY_DESCRIPTION: one step towards the desired spec. Each step is whole: a start or a restart applies every change to the stopped machine — size, env, image and egress allowlist — before it boots, so one step is enough unless a newer spec arrives while it runs. `unhealthy` marks a restart the runner chose because the guest went quiet; only those are counted as the agent's restarts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Plan {
-    pub op: &'static str,
-    pub unhealthy: bool,
+pub enum Action {
+    Create,
+    Start,
+    Restart { unhealthy: bool },
+    Stop,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the health of one machine as the runner has seen it. Read only while the machine reads as running: a restart's old guest answers until the stop lands, and a machine being stopped answers until it dies, so an answer from either says nothing about the machine that is coming up.
+impl Action {
+    // UNIT_BOUNDARY_DESCRIPTION: the state a machine reports while this action runs on it.
+    pub fn state(self) -> State {
+        match self {
+            Action::Create => State::Creating,
+            Action::Start => State::Starting,
+            Action::Restart { .. } => State::Restarting,
+            Action::Stop => State::Stopping,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        self.state().as_str()
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the health of one machine as the runner has seen it, read only while the machine reads as running.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Health {
     pub ever_ready: bool,
@@ -26,7 +41,7 @@ pub struct Health {
 }
 
 impl Health {
-    // UNIT_BOUNDARY_DESCRIPTION: records one observation of a machine that reads as running. An answer resets everything, because a machine that answers now is not a machine that has been quiet — keeping the old quiet mark would restart a machine that recovered on its own.
+    // UNIT_BOUNDARY_DESCRIPTION: an answer resets everything, so a machine that recovered on its own is not restarted for the silence it came out of.
     pub fn observed_running(&mut self, ready: bool, now: SystemTime) {
         if ready {
             *self = Health {
@@ -38,8 +53,8 @@ impl Health {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: clears the quiet mark, and only that, because an operation is now running against this machine and the silence it has been keeping belongs to the machine that operation is replacing. `ever_ready` survives: a machine that has answered once is still one that can be given up on. Without this an unhealthy restart is a loop — the restart begins, the guest is not ready yet, the old quiet mark still stands, and the very next decision gives up on it again.
-    pub fn operation_started(&mut self) {
+    // UNIT_BOUNDARY_DESCRIPTION: an action is starting on the machine, so the silence measured so far belongs to the guest it replaces. Without clearing it, the restart the silence caused would at once qualify for another. `ever_ready` stays, so the new guest can still be given up on later.
+    pub fn action_started(&mut self) {
         self.quiet_since = None;
     }
 
@@ -54,85 +69,46 @@ impl Health {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an answer from the guest may be believed in this state. A machine on its way up is read this way deliberately: the runtime's own start call lingers seconds past the moment the guest begins serving, and those seconds used to be spent telling a person their agent was not ready.
-pub fn reads_ready(state: &str) -> bool {
-    matches!(state, STATE_RUNNING | STATE_CREATING | STATE_STARTING)
+// UNIT_BOUNDARY_DESCRIPTION: whether an answer from the guest may be believed in this state. A machine on its way up is believed, because the runtime's start call returns seconds after the guest begins to serve. A restart's old guest and a stopping one answer until they die, so they are not.
+pub fn reads_ready(state: State) -> bool {
+    matches!(state, State::Running | State::Creating | State::Starting)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what to do about a machine, or nothing when it is already what it should be. `status` reports an operation that is still running as the machine's state, so a stop that arrives mid-boot is planned against that too rather than dropped — the alternative is a machine nobody believes is running and nobody stops.
-pub fn plan(
+// UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, or none when it already is what was asked. `state` is what the runtime reports; an action already in flight is never planned over.
+pub fn step(
     applied: Option<&MachineSpec>,
     desired: &MachineSpec,
-    state: &str,
+    state: State,
     ready: bool,
     dead_for_long: bool,
-) -> Option<Plan> {
-    let doing = |op| {
-        Some(Plan {
-            op,
-            unhealthy: false,
-        })
-    };
-
+) -> Option<Action> {
     if !desired.running {
-        if matches!(state, STATE_ABSENT | STATE_STOPPED | STATE_STOPPING) {
-            return None;
-        }
-        return doing(STATE_STOPPING);
+        return (state == State::Running).then_some(Action::Stop);
     }
-
-    if let Some(applied) = applied {
-        if egress_changed(applied, desired) && state != STATE_ABSENT {
-            // UNIT_BOUNDARY_DESCRIPTION: a machine whose allowlist has moved is stopped and then left alone. It is not restarted here: the next reconcile finds it stopped and starts it against the new allowlist, so the stop and the start are two decisions and the machine is never running on an address nobody checked.
-            if state == STATE_RUNNING {
-                return doing(STATE_STOPPING);
-            }
-            return None;
-        }
-    }
-
     match state {
-        STATE_ABSENT => doing(STATE_CREATING),
-        STATE_STOPPED => doing(STATE_STARTING),
-        STATE_RUNNING => {
-            if applied.is_none_or(|applied| {
-                needs_restart(applied, desired) || image_changed(applied, desired)
-            }) {
-                return doing(STATE_RESTARTING);
-            }
-            if !ready && dead_for_long {
-                return Some(Plan {
-                    op: STATE_RESTARTING,
-                    unhealthy: true,
-                });
-            }
-            None
+        State::Absent => Some(Action::Create),
+        State::Stopped => Some(Action::Start),
+        State::Running if applied.is_none_or(|applied| changed(applied, desired)) => {
+            Some(Action::Restart { unhealthy: false })
         }
+        State::Running if !ready && dead_for_long => Some(Action::Restart { unhealthy: true }),
         _ => None,
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine has to be stopped and started to become what is asked. Storage is the one field compared as an inequality rather than for difference: a disk can be grown and cannot be shrunk, so a smaller request is not drift, it is a request the machine already satisfies.
-pub fn needs_restart(applied: &MachineSpec, desired: &MachineSpec) -> bool {
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one.
+pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
     applied.revision != desired.revision
         || applied.ca_cert != desired.ca_cert
         || applied.cpus != desired.cpus
         || applied.memory_mib != desired.memory_mib
         || applied.storage_gib < desired.storage_gib
         || applied.env != desired.env
+        || applied.image != desired.image
+        || applied.allow_cidrs != desired.allow_cidrs
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a new image restarts the machine like a resize does. It is its own check and not part of `needs_restart` because smolvm cannot apply it in place: the machine is recreated on the new image around the same storage disk. Nothing else has to survive that, because the root is the cached image tree plus an overlay every stop discards, and everything the agent keeps is on the disk.
-pub fn image_changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
-    applied.image != desired.image
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those — a machine still holding an address its gateway no longer owns may be pointing at another owner's gateway, so it is stopped rather than run on.
-pub fn egress_changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
-    applied.allow_cidrs != desired.allow_cidrs
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door rather than part-way through a boot. Only a machine that is meant to run has to be complete: a request that stops one carries no shape, and requiring one would make stopping a machine impossible for a controller that has forgotten what it was.
+// UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
 pub const REQUIRED: &str = "image, cpus, memoryMiB and storageGiB are required";
 
 pub const BAD_IMAGE: &str = "invalid image reference";
@@ -152,133 +128,80 @@ pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    // TEST_SCENARIO: the window a quiet machine is given before the runner gives up on it. Both runners restart on this rule, and during a rollout both are looking at the same machines: a shorter window on one side restarts a machine the other was still waiting for, and the agent loses its turn to a runner that was not even asked.
+    const RESTART: Option<Action> = Some(Action::Restart { unhealthy: false });
+
+    // TEST_SCENARIO: these two strings are the body of a 400 that the controller shows in the Agent's status, so an operator searches for their wording.
     #[test]
-    fn the_go_runner_gives_a_quiet_machine_the_same_window() {
-        let go = gosource::read("server.go");
+    fn the_refusals_keep_their_wording() {
         assert_eq!(
-            gosource::duration_value(&go, "unhealthyRestart"),
-            Some(UNHEALTHY_RESTART),
-            "the two runners no longer agree how long a machine may be quiet"
+            REQUIRED,
+            "image, cpus, memoryMiB and storageGiB are required"
         );
+        assert_eq!(BAD_IMAGE, "invalid image reference");
     }
 
-    // TEST_SCENARIO: these two strings leave the runner as the body of a 400 the controller surfaces. A rollout answers the same request with either runner, so two wordings for one condition is a support question that starts with which runner answered.
-    #[test]
-    fn the_refusals_read_as_the_go_runners_do() {
-        let go = gosource::read("server.go");
-
-        let put = gosource::literals_in(&go, "(s *Server) put");
-        for refusal in [REQUIRED, BAD_IMAGE] {
-            assert!(
-                put.iter().any(|literal| literal == refusal),
-                "put no longer refuses with {refusal:?}, so the two runners answer a bad request differently"
-            );
-        }
-    }
-
-    // TEST_SCENARIO: the reconcile arrives about once a minute with the same desired shape, so the common answer must be silence. A decision that acts on a machine that is already right restarts every agent on the node, once a minute, for as long as nobody notices.
+    // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
     #[test]
     fn a_machine_that_is_already_what_it_should_be_is_left_alone() {
         let applied = running_spec();
         assert_eq!(
-            plan(Some(&applied), &applied, STATE_RUNNING, true, false),
+            step(Some(&applied), &applied, State::Running, true, false),
             None
         );
     }
 
-    // TEST_SCENARIO: the two directions a machine is taken in when it is not where it should be, and the in-between states in which the answer is to wait. An operation already running is reported as the machine's state, so planning over it again is how one machine ends up with two creates.
+    // TEST_SCENARIO: an absent machine is created and a stopped one started. An action already in flight is reported as the machine's state, and planning over it would run two actions on one machine.
     #[test]
     fn a_machine_is_moved_towards_what_was_asked_and_never_twice_at_once() {
         let want = running_spec();
-
         assert_eq!(
-            plan(None, &want, STATE_ABSENT, false, false).map(|p| p.op),
-            Some(STATE_CREATING)
+            step(None, &want, State::Absent, false, false),
+            Some(Action::Create)
         );
         assert_eq!(
-            plan(Some(&want), &want, STATE_STOPPED, false, false).map(|p| p.op),
-            Some(STATE_STARTING)
+            step(Some(&want), &want, State::Stopped, false, false),
+            Some(Action::Start)
         );
-
         for busy in [
-            STATE_CREATING,
-            STATE_STARTING,
-            STATE_RESTARTING,
-            STATE_STOPPING,
+            State::Creating,
+            State::Starting,
+            State::Restarting,
+            State::Stopping,
+            State::Unknown,
         ] {
             assert_eq!(
-                plan(Some(&want), &want, busy, false, false),
+                step(Some(&want), &want, busy, false, false),
                 None,
-                "{busy} is an operation already running and was planned over"
+                "{busy} was planned over"
             );
         }
     }
 
-    // TEST_SCENARIO: a stop has to reach a machine in any state a machine can be caught in, including the middle of its own boot — a create that is still running reports as `creating`, and a stop dropped there leaves a machine nobody believes is running and nobody stops. It must also be silent about a machine that is already down, or the runner stops the same machine every minute.
+    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the runner stops the same machine every minute.
     #[test]
-    fn a_stop_reaches_a_machine_caught_mid_boot_and_leaves_a_stopped_one_alone() {
+    fn a_stop_reaches_a_running_machine_and_leaves_a_stopped_one_alone() {
         let stop = MachineSpec {
             running: false,
             ..running_spec()
         };
-
-        for busy in [
-            STATE_RUNNING,
-            STATE_CREATING,
-            STATE_STARTING,
-            STATE_RESTARTING,
-        ] {
+        assert_eq!(
+            step(Some(&stop), &stop, State::Running, true, false),
+            Some(Action::Stop)
+        );
+        for down in [State::Absent, State::Stopped] {
             assert_eq!(
-                plan(Some(&stop), &stop, busy, false, false).map(|p| p.op),
-                Some(STATE_STOPPING),
-                "a machine in {busy} was left running"
-            );
-        }
-
-        for down in [STATE_ABSENT, STATE_STOPPED, STATE_STOPPING] {
-            assert_eq!(
-                plan(Some(&stop), &stop, down, false, false),
+                step(Some(&stop), &stop, down, false, false),
                 None,
                 "{down} was stopped again"
             );
         }
     }
 
-    // TEST_SCENARIO: the allowlist is the paired gateway's ClusterIP and Kubernetes reuses those, so a machine holding a stale one may be reaching another owner's gateway. It is stopped and then left alone: the next reconcile finds it stopped and starts it against the new allowlist, which keeps the stop and the start two decisions rather than a restart that races its own check.
+    // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image and egress allowlist included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.
     #[test]
-    fn a_machine_whose_allowlist_moved_is_stopped_before_anything_else_is_considered() {
+    fn a_changed_shape_restarts_a_running_machine_and_starts_a_stopped_one() {
         let applied = running_spec();
-        let desired = MachineSpec {
-            allow_cidrs: vec!["10.0.0.9/32".into()],
-            revision: "2".into(),
-            ..running_spec()
-        };
-
-        assert_eq!(
-            plan(Some(&applied), &desired, STATE_RUNNING, true, false).map(|p| p.op),
-            Some(STATE_STOPPING),
-            "a machine kept running on an address its gateway may no longer own"
-        );
-        assert_eq!(
-            plan(Some(&applied), &desired, STATE_STOPPED, false, false),
-            None,
-            "it was started again before the allowlist change was applied"
-        );
-        assert_eq!(
-            plan(Some(&applied), &desired, STATE_ABSENT, false, false).map(|p| p.op),
-            Some(STATE_CREATING),
-            "a machine that does not exist has no stale allowlist to hold"
-        );
-    }
-
-    // TEST_SCENARIO: every field that cannot be changed under a running machine, and the one that can. Storage is compared as an inequality because a disk grows and does not shrink, so a smaller request is a request the machine already satisfies — restarting for it would take an agent down to give it nothing.
-    #[test]
-    fn a_shape_that_cannot_be_changed_in_place_restarts_the_machine() {
-        let applied = running_spec();
-
         let changes = [
             (
                 "revision",
@@ -322,106 +245,76 @@ mod tests {
                     ..running_spec()
                 },
             ),
+            (
+                "image",
+                MachineSpec {
+                    image: "quay.io/x/vm:2".into(),
+                    ..running_spec()
+                },
+            ),
+            (
+                "allowCidrs",
+                MachineSpec {
+                    allow_cidrs: vec!["10.0.0.9/32".into()],
+                    ..running_spec()
+                },
+            ),
         ];
         for (what, desired) in changes {
-            assert!(
-                needs_restart(&applied, &desired),
-                "{what} was applied in place"
+            assert!(changed(&applied, &desired), "{what} was not a change");
+            assert_eq!(
+                step(Some(&applied), &desired, State::Running, true, false),
+                RESTART,
+                "{what}"
             );
             assert_eq!(
-                plan(Some(&applied), &desired, STATE_RUNNING, true, false).map(|p| p.op),
-                Some(STATE_RESTARTING)
+                step(Some(&applied), &desired, State::Stopped, false, false),
+                Some(Action::Start),
+                "a stopped machine with a new {what} was never started"
             );
         }
+    }
 
+    // TEST_SCENARIO: a disk grows and cannot shrink, so a smaller storage request is already met. Restarting for it would take an agent down to give it nothing.
+    #[test]
+    fn a_smaller_disk_is_not_a_change() {
         let smaller = MachineSpec {
             storage_gib: 1,
             ..running_spec()
         };
-        assert!(
-            !needs_restart(&applied, &smaller),
-            "a disk cannot shrink, so a smaller request is already satisfied"
-        );
-
-        let other_image = spec_with_image("quay.io/x/other:1");
-        assert!(
-            !needs_restart(&applied, &other_image),
-            "a new image cannot be applied in place, so it is not an in-place restart"
-        );
+        assert!(!changed(&running_spec(), &smaller));
     }
 
-    // TEST_SCENARIO: a template upgrade gives a vm agent a new harness image. A running machine restarts onto it and a stopped one starts onto it, so an upgrade never waits for the agent to be recreated. During a rollout both runners see the same machines, so the Go runner must make the same decision on the same comparison, or one of them upgrades a machine the other keeps on its old image.
-    #[test]
-    fn a_new_image_restarts_a_running_machine_and_starts_a_stopped_one_on_it() {
-        let applied = running_spec();
-        let upgraded = spec_with_image("quay.io/x/vm:2");
-
-        assert!(image_changed(&applied, &upgraded));
-        assert!(!image_changed(&applied, &applied));
-        assert_eq!(
-            plan(Some(&applied), &upgraded, STATE_RUNNING, true, false),
-            Some(Plan {
-                op: STATE_RESTARTING,
-                unhealthy: false
-            }),
-            "a running machine kept its old image"
-        );
-        assert_eq!(
-            plan(Some(&applied), &upgraded, STATE_STOPPED, false, false).map(|p| p.op),
-            Some(STATE_STARTING)
-        );
-
-        let go = gosource::read("server.go");
-        assert!(
-            gosource::function_body(&go, "imageChanged")
-                .is_some_and(|body| body.contains("applied.Image != desired.Image")),
-            "the Go runner no longer compares images the same way"
-        );
-        assert!(
-            gosource::function_body(&go, "(s *Server) plan")
-                .is_some_and(|body| body.contains("imageChanged(*applied, spec)")),
-            "the Go runner no longer restarts a running machine for a new image"
-        );
-        assert!(
-            gosource::function_body(&go, "createOnlyDrift").is_none(),
-            "the Go runner still reports a new image as fixed at create"
-        );
-    }
-
-    // TEST_SCENARIO: a machine the runner has no spec for is one it cannot prove is right, which is the state a runner is in after it restarts having lost a spec, or after a partial create. Reshaping it is the safe answer — leaving it alone would strand a machine in whatever shape it happens to have, forever.
+    // TEST_SCENARIO: a running machine with no spec on disk cannot be shown to be right — a runner that lost the spec, or a create cut short. It is reshaped rather than trusted, or it keeps whatever shape it has forever.
     #[test]
     fn a_running_machine_with_no_spec_on_disk_is_reshaped_rather_than_trusted() {
         assert_eq!(
-            plan(None, &running_spec(), STATE_RUNNING, true, false).map(|p| p.op),
-            Some(STATE_RESTARTING)
+            step(None, &running_spec(), State::Running, true, false),
+            RESTART
         );
     }
 
-    // TEST_SCENARIO: the machine the runner gives up on. Both halves of the condition carry weight: a machine that never answered is still booting and must be given as long as it needs, and a machine that answered a moment ago is simply between checks. The restart is marked unhealthy because it is the runner's decision rather than the controller's, and only the runner's are worth counting.
+    // TEST_SCENARIO: the machine the runner gives up on. A machine that never answered is still booting, and one that answered a moment ago is between checks. The restart is marked unhealthy because the runner chose it, not the controller.
     #[test]
     fn a_machine_that_answered_once_and_then_went_quiet_is_restarted_and_said_to_be_unhealthy() {
         let want = running_spec();
-
         assert_eq!(
-            plan(Some(&want), &want, STATE_RUNNING, false, true),
-            Some(Plan {
-                op: STATE_RESTARTING,
-                unhealthy: true
-            })
+            step(Some(&want), &want, State::Running, false, true),
+            Some(Action::Restart { unhealthy: true })
         );
         assert_eq!(
-            plan(Some(&want), &want, STATE_RUNNING, false, false),
+            step(Some(&want), &want, State::Running, false, false),
             None,
-            "a machine that has not been quiet for long enough was restarted"
+            "a machine not yet quiet for long enough was restarted"
         );
         assert_eq!(
-            plan(Some(&want), &want, STATE_RUNNING, true, true),
+            step(Some(&want), &want, State::Running, true, true),
             None,
-            "a machine that is answering was restarted for being quiet"
+            "a machine that answers was restarted for being quiet"
         );
     }
 
-    // TEST_SCENARIO: how the quiet window is measured. A machine that has never answered is still booting, however long that takes; one that answers again has its quiet mark cleared, or a machine that recovered on its own would still be restarted for the silence it has already come out of.
+    // TEST_SCENARIO: the quiet window starts at the first silence and ends at the next answer. A machine that never answered is still booting however long it takes.
     #[test]
     fn the_quiet_window_starts_at_the_first_silence_and_ends_at_the_next_answer() {
         let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -429,10 +322,7 @@ mod tests {
 
         let mut never_answered = Health::default();
         never_answered.observed_running(false, start);
-        assert!(
-            !never_answered.dead_for_long(later(UNHEALTHY_RESTART * 10)),
-            "a machine that has never answered is still booting"
-        );
+        assert!(!never_answered.dead_for_long(later(UNHEALTHY_RESTART * 10)));
 
         let mut quiet = Health::default();
         quiet.observed_running(true, start);
@@ -447,13 +337,10 @@ mod tests {
         );
 
         quiet.observed_running(true, later(UNHEALTHY_RESTART));
-        assert!(
-            !quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)),
-            "a machine that came back was restarted for the silence it came out of"
-        );
+        assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)));
     }
 
-    // TEST_SCENARIO: the restart that follows a machine being given up on must not immediately qualify the machine to be given up on again. The operation is running, the guest is not ready yet, and the silence being measured belongs to the guest that is being replaced — so the quiet mark is cleared when the operation starts. Without it the runner restarts a machine every reconcile, forever, and each restart is counted against it.
+    // TEST_SCENARIO: the restart that follows giving up on a machine must not at once qualify it for another. The quiet mark is cleared when the action starts, or the runner restarts the machine on every reconcile, forever.
     #[test]
     fn a_restart_does_not_leave_the_machine_qualifying_for_another_one() {
         let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -464,32 +351,22 @@ mod tests {
         health.observed_running(true, start);
         health.observed_running(false, later(Duration::from_secs(1)));
         let gave_up = later(UNHEALTHY_RESTART + Duration::from_secs(2));
-        assert!(
-            health.dead_for_long(gave_up),
-            "the machine is quiet enough to restart"
-        );
+        assert!(health.dead_for_long(gave_up));
 
-        health.operation_started();
+        health.action_started();
 
-        assert!(
-            !health.dead_for_long(gave_up),
-            "the restart it just asked for would immediately earn another"
-        );
+        assert!(!health.dead_for_long(gave_up));
         assert_eq!(
-            plan(
+            step(
                 Some(&want),
                 &want,
-                STATE_RUNNING,
+                State::Running,
                 false,
                 health.dead_for_long(gave_up)
             ),
-            None,
-            "and the runner would keep restarting it every reconcile"
+            None
         );
-        assert!(
-            health.ever_ready,
-            "a machine that has answered once can still be given up on later"
-        );
+        assert!(health.ever_ready);
 
         health.observed_running(false, later(UNHEALTHY_RESTART * 2));
         assert!(
@@ -498,31 +375,36 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: an answer is only believed from a machine on its way up. A restart's old guest answers until the stop lands and a stopping machine answers until it dies, so believing either would report a machine as ready on the strength of the one that is going away.
+    // TEST_SCENARIO: an answer is believed only from a machine on its way up. A restart's old guest and a stopping one answer until they die.
     #[test]
     fn an_answer_is_believed_only_from_a_machine_on_its_way_up() {
-        for up in [STATE_RUNNING, STATE_CREATING, STATE_STARTING] {
-            assert!(reads_ready(up), "{up} is a machine whose answer counts");
+        for up in [State::Running, State::Creating, State::Starting] {
+            assert!(reads_ready(up), "{up}");
         }
         for going in [
-            STATE_RESTARTING,
-            STATE_STOPPING,
-            STATE_STOPPED,
-            STATE_ABSENT,
-            "unknown",
+            State::Restarting,
+            State::Stopping,
+            State::Stopped,
+            State::Absent,
+            State::Unknown,
         ] {
-            assert!(
-                !reads_ready(going),
-                "{going} would report the guest that is going away as ready"
-            );
+            assert!(!reads_ready(going), "{going}");
         }
     }
 
-    // TEST_SCENARIO: what is refused at the door. A machine that is meant to run needs a complete shape, and an image reference is checked on the way in as well as on the way out — a request is the one place a `..` can still be chosen by somebody. A request that stops a machine carries no shape and must not need one, or a controller that has forgotten a machine cannot stop it.
+    // TEST_SCENARIO: each action is reported, and counted in the metrics, under the state string the controller already knows.
+    #[test]
+    fn an_action_is_reported_as_the_state_the_controller_knows() {
+        assert_eq!(Action::Create.label(), "creating");
+        assert_eq!(Action::Start.label(), "starting");
+        assert_eq!(Action::Restart { unhealthy: true }.label(), "restarting");
+        assert_eq!(Action::Stop.label(), "stopping");
+    }
+
+    // TEST_SCENARIO: what is refused at the door. A machine meant to run needs a whole shape, and an image reference is checked here because a request is where a `..` can be chosen by somebody. A stop needs no shape.
     #[test]
     fn a_request_that_could_not_produce_a_machine_is_refused_at_the_door() {
         assert_eq!(admissible(&running_spec()), Ok(()));
-
         for (what, spec) in [
             (
                 "no image",
@@ -555,48 +437,36 @@ mod tests {
         ] {
             assert_eq!(admissible(&spec), Err(REQUIRED), "{what} was admitted");
         }
-
         for escape in ["../../etc/passwd", "quay.io/x/../../../vm:1", "has space"] {
-            assert_eq!(
-                admissible(&spec_with_image(escape)),
-                Err(BAD_IMAGE),
-                "{escape} was admitted"
-            );
+            let spec = MachineSpec {
+                image: escape.into(),
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Err(BAD_IMAGE), "{escape} was admitted");
         }
-
         let stop = MachineSpec {
             running: false,
             ..Default::default()
         };
-        assert_eq!(
-            admissible(&stop),
-            Ok(()),
-            "a machine could not be stopped without restating what it is"
-        );
+        assert_eq!(admissible(&stop), Ok(()));
         assert_eq!(
             admissible(&MachineSpec {
                 running: false,
                 image: "has space".into(),
                 ..Default::default()
             }),
-            Err(BAD_IMAGE),
-            "a reference is checked whatever the request is for"
+            Err(BAD_IMAGE)
         );
     }
 
-    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one on every reconcile. So the applied spec and the desired one always differ in it. If that difference counted as a change of shape, every machine that pulls with credentials would restart about once a minute.
+    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart once a minute.
     #[test]
     fn a_registry_credential_is_never_a_reason_to_restart() {
-        let applied = running_spec();
         let desired = MachineSpec {
             pull_auths: vec!["{\"auths\":{}}".into()],
             ..running_spec()
         };
-        assert!(!needs_restart(&applied, &desired));
-        assert_eq!(
-            plan(Some(&applied), &desired, STATE_RUNNING, true, false),
-            None
-        );
+        assert!(!changed(&running_spec(), &desired));
     }
 
     fn running_spec() -> MachineSpec {
@@ -611,13 +481,6 @@ mod tests {
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),
-        }
-    }
-
-    fn spec_with_image(image: &str) -> MachineSpec {
-        MachineSpec {
-            image: image.into(),
-            ..running_spec()
         }
     }
 }

@@ -1,0 +1,12 @@
+{
+  "image": "quay.io/x/vm:1",
+  "cpus": 2,
+  "memoryMiB": 2048,
+  "storageGiB": 20,
+  "env": { "A": "b" },
+  "caCert": "-----BEGIN CERTIFICATE-----",
+  "allowCidrs": ["10.0.0.1/32"],
+  "revision": "r1",
+  "running": true,
+  "pullAuths": ["{\"auths\":{}}"]
+}

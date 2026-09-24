@@ -50,6 +50,7 @@ type Config struct {
 	EnvoyImage               string
 	EnvoyPort                int
 	EnvoyMitmCAIssuer        string
+	VMRunnerCAIssuer         string
 	EnvoyMitmLeafDuration    time.Duration
 	EnvoyMitmLeafRenewBefore time.Duration
 	OTelEnv                  map[string]string
@@ -248,9 +249,6 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
-	if p := cfg.VM.Runner.Canary.Percent; p < 0 || p > 100 {
-		return nil, fmt.Errorf("AGENT_VM: runner.canary.percent is %d, it must be between 0 and 100", p)
-	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
 	}
@@ -267,6 +265,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
+	cfg.VMRunnerCAIssuer = envOrDefault("VM_RUNNER_CA_ISSUER", "platform-vm-runner-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)

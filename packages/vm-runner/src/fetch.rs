@@ -5,21 +5,16 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{
-    ImageLaunch, REASON_BOOT_FAILED, REASON_EGRESS_CHANGED, REASON_IMAGE_UNAVAILABLE,
-    REASON_OUT_OF_CAPACITY,
-};
+use crate::api::{REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
-use crate::launch::launch_from_config;
-use crate::runtime::IMAGE_LAUNCH_UNKNOWN;
+use crate::files;
 
-// UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache.
+// UNIT_BOUNDARY_DESCRIPTION: how the runner reads an image from its registry, and how a failure is classified for the controller. A machine may reach only its gateway, so the guest cannot pull its own image: crane runs here instead, once to read what the image says to run and once to stream its filesystem into the cache. Only the cache's one writer runs it.
 
 pub const IMAGE_UNUSABLE: &str = "the image cannot be run";
-pub const EGRESS_CHANGED: &str = "egress allowlist changed";
 
-// UNIT_BOUNDARY_DESCRIPTION: a failure that carries the reason the controller reports it under. The reason is part of the error rather than guessed from its text, except for the failures that come from smolvm, which carry none.
+// UNIT_BOUNDARY_DESCRIPTION: a failure that carries the reason the controller reports it under. The reason is part of the error rather than guessed from its text; a failure that carries none is a boot that failed.
 #[derive(Debug)]
 pub struct Refusal {
     pub reason: &'static str,
@@ -42,30 +37,18 @@ pub fn unusable(detail: impl std::fmt::Display) -> anyhow::Error {
     .into()
 }
 
-pub fn egress_changed(detail: impl std::fmt::Display) -> anyhow::Error {
+pub fn out_of_capacity(detail: impl std::fmt::Display) -> anyhow::Error {
     Refusal {
-        reason: REASON_EGRESS_CHANGED,
-        message: format!("{EGRESS_CHANGED}: {detail}"),
+        reason: REASON_OUT_OF_CAPACITY,
+        message: detail.to_string(),
     }
     .into()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under. A typed refusal says its own; anything else is read from its text by the Go runner's rules, which is how a failure that came out of smolvm is told apart from a boot that simply failed.
+// UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under: a typed refusal's own, and a failed boot for anything else.
 pub fn failure_reason(err: &anyhow::Error) -> &'static str {
-    if let Some(refusal) = err.downcast_ref::<Refusal>() {
-        return refusal.reason;
-    }
-    let message = format!("{err:#}");
-    if message.contains("cannot read archive")
-        || message.contains("--image")
-        || message.contains("pull")
-    {
-        REASON_IMAGE_UNAVAILABLE
-    } else if message.contains("no free machine port") {
-        REASON_OUT_OF_CAPACITY
-    } else {
-        REASON_BOOT_FAILED
-    }
+    err.downcast_ref::<Refusal>()
+        .map_or(REASON_BOOT_FAILED, |refusal| refusal.reason)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a tool that fails per entry reports per entry, and for a whole image that ran to 2.6 MB. That text becomes the Agent's condition message, and the API server rejects a condition message over 32 KiB — so the status write fails, the reconcile never records why, and every retry fetches the image again. The head is kept because the first failure is the one that explains the rest.
@@ -83,21 +66,14 @@ pub fn first_lines(out: &str) -> String {
     format!("{}… (truncated)", &out[..end])
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, read from its registry without fetching a layer. This is the one source left for a machine that boots straight from a reference, and without it smolvm would launch the image's own entrypoint and leave the disk unmounted — so a runner that cannot fetch refuses the machine instead.
-pub fn launch_from_registry(
-    crane: &str,
-    reference: &str,
-    auths: &[String],
-    cancel: &CancellationToken,
-) -> anyhow::Result<ImageLaunch> {
-    if crane.is_empty() {
-        anyhow::bail!(
-            "{IMAGE_LAUNCH_UNKNOWN}: {reference} names no cached image and this runner cannot read one from the registry"
-        );
+// UNIT_BOUNDARY_DESCRIPTION: the docker configs a registry read tries, in the order they were sent, or a single anonymous read when none were sent.
+pub fn in_turn(auths: &[String]) -> &[String] {
+    static ANONYMOUS_ONLY: [String; 1] = [String::new()];
+    if auths.is_empty() {
+        &ANONYMOUS_ONLY
+    } else {
+        auths
     }
-    let (config, _) = read_config(crane, reference, auths, cancel)?;
-    launch_from_config(&config)
-        .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's config, read with the first of these docker configs the registry accepts, tried in the order a pod lists its pull Secrets: the kubelet's own fallback, so a stale credential for a registry does not hide a good one listed after it. With none it is read anonymously. The config that worked is returned too, empty for a read without one, so the layers are fetched with the same credential. A credential that fails is never quoted.
@@ -107,21 +83,15 @@ pub fn read_config(
     auths: &[String],
     cancel: &CancellationToken,
 ) -> anyhow::Result<(Vec<u8>, String)> {
-    let anonymous = [String::new()];
-    let candidates = if auths.is_empty() {
-        &anonymous[..]
-    } else {
-        auths
-    };
     let mut last = None;
-    for auth in candidates {
+    for auth in in_turn(auths) {
         let credentials = DockerConfig::new(auth)?;
         match command::output(
             credentials.apply(Command::new(crane).arg("config").arg(reference)),
             Instant::now() + PULL_TIMEOUT,
             cancel,
         ) {
-            Ok(out) => return Ok((out.stdout, auth.clone())),
+            Ok(out) => return Ok((out, auth.clone())),
             Err(e) => last = Some(e),
         }
     }
@@ -132,7 +102,7 @@ pub fn read_config(
     )))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the runner's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
+// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. tar restores the owners and modes the image was built with, which is what the cache writer's CHOWN, FOWNER and DAC_OVERRIDE capabilities are for.
 pub fn unpack(
     crane: &str,
     reference: &str,
@@ -163,10 +133,10 @@ pub fn unpack(
 // UNIT_BOUNDARY_DESCRIPTION: a docker config that names no registry. A probe run with it is a truly anonymous read, whatever the runner's own environment holds.
 pub const ANONYMOUS: &str = "{}";
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget the Go runner gives a tag resolution, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
+// UNIT_BOUNDARY_DESCRIPTION: how long a manifest read may take: the one-minute budget a tag resolution gets, not the pull timeout. A registry that does not answer a manifest read in a minute is treated as down.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 
-// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is private and the check that lets a machine reuse one, get RESOLVE_TIMEOUT.
+// UNIT_BOUNDARY_DESCRIPTION: whether these credentials can read the image's manifest — the cheapest proof of access a registry gives: one request and no layers. Both probes that ask it, the one that decides a fresh entry is public and the check that lets a caller reuse one that is not, get RESOLVE_TIMEOUT.
 pub fn readable(crane: &str, reference: &str, auth: &str, cancel: &CancellationToken) -> bool {
     let Ok(credentials) = DockerConfig::new(auth) else {
         return false;
@@ -184,20 +154,12 @@ pub struct DockerConfig(Option<PathBuf>);
 
 impl DockerConfig {
     pub fn new(auth: &str) -> anyhow::Result<Self> {
-        use std::io::Write;
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
         if auth.is_empty() {
             return Ok(Self(None));
         }
-        let dir = scratch_name(&std::env::temp_dir());
-        fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        let dir = files::create_unique_dir(&std::env::temp_dir(), "crane-auth-", 0o700)?;
         let this = Self(Some(dir.clone()));
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(dir.join("config.json"))?
-            .write_all(auth.as_bytes())?;
+        files::write(&dir.join("config.json"), auth.as_bytes(), 0o600)?;
         Ok(this)
     }
 
@@ -217,99 +179,34 @@ impl Drop for DockerConfig {
     }
 }
 
-fn scratch_name(parent: &Path) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or_default();
-    parent.join(format!(
-        "crane-auth-{}-{nanos:x}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gosource;
 
-    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and both runners share the cache, so they must give up on a silent registry after the same time. The Go runner's budget is the tag-resolution one, and it asks the anonymous read first in the reuse check.
+    // TEST_SCENARIO: a manifest read decides whether a machine may boot a private entry, and a registry that never answers must not hold that decision open for the pull timeout. The budget is pinned so a change to it is deliberate.
     #[test]
-    fn a_manifest_read_gets_the_go_runners_resolve_budget() {
-        let digest = gosource::read("digest.go");
-        assert!(
-            digest
-                .lines()
-                .any(|line| line.trim() == "resolveTimeout = time.Minute"),
-            "the Go runner no longer gives a manifest read a minute"
-        );
+    fn a_manifest_read_gets_a_minute() {
         assert_eq!(RESOLVE_TIMEOUT, Duration::from_secs(60));
-
-        let server = gosource::read("server.go");
-        let reuse = gosource::function_body(&server, "(s *Server) mayReuse")
-            .expect("server.go has mayReuse");
-        let anonymous = reuse.find("s.readable(ref, anonymous)");
-        let credentials = reuse.find("s.readable(ref, auth)");
-        assert!(
-            matches!((anonymous, credentials), (Some(a), Some(c)) if a < c),
-            "the Go runner no longer reads a private entry anonymously before it tries a machine's credentials: {reuse}"
-        );
     }
 
-    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, and text from smolvm is sorted by the Go runner's rules, word for word.
+    // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, even under added context, and anything untyped is a boot to retry. The typed failures' own wording reaches the Agent's status, so it is pinned too.
     #[test]
-    fn failures_are_reported_under_the_reason_the_go_runner_gives() {
+    fn failures_are_reported_under_the_reason_the_controller_matches() {
+        assert_eq!(IMAGE_UNUSABLE, "the image cannot be run");
         assert_eq!(failure_reason(&unusable("x")), REASON_IMAGE_UNAVAILABLE);
-        assert_eq!(failure_reason(&egress_changed("x")), REASON_EGRESS_CHANGED);
-        for (text, reason) in [
-            (
-                "smolvm machine create: cannot read archive /x.tar",
-                REASON_IMAGE_UNAVAILABLE,
-            ),
-            ("invalid --image value", REASON_IMAGE_UNAVAILABLE),
-            (
-                "start machine: pull failed: unauthorized",
-                REASON_IMAGE_UNAVAILABLE,
-            ),
-            ("no free machine port", REASON_OUT_OF_CAPACITY),
-            (
-                "start machine: guest agent never became ready",
-                REASON_BOOT_FAILED,
-            ),
-        ] {
-            assert_eq!(failure_reason(&anyhow::anyhow!(text)), reason, "{text}");
-        }
-
-        let go = gosource::read("server.go");
-        let literals = gosource::literals_in(&go, "failureReason");
-        for needle in [
-            "cannot read archive",
-            "--image",
-            "pull",
-            "no free machine port",
-        ] {
-            assert!(
-                literals.iter().any(|l| l == needle),
-                "the Go runner no longer matches {needle:?}"
-            );
-        }
-        for (name, ours) in [
-            ("errEgressChanged", EGRESS_CHANGED),
-            ("errImageUnusable", IMAGE_UNUSABLE),
-        ] {
-            let theirs = go
-                .lines()
-                .find_map(|line| {
-                    line.strip_prefix(&format!("var {name} = errors.New("))?
-                        .strip_suffix(')')
-                        .and_then(gosource::unquote)
-                })
-                .unwrap_or_else(|| panic!("server.go no longer declares {name}"));
-            assert_eq!(ours, theirs);
-        }
+        assert_eq!(
+            failure_reason(&out_of_capacity("no free machine port")),
+            REASON_OUT_OF_CAPACITY
+        );
+        assert_eq!(
+            failure_reason(&unusable("x").context("creating the machine")),
+            REASON_IMAGE_UNAVAILABLE
+        );
+        assert_eq!(
+            failure_reason(&anyhow::anyhow!("pull failed: unauthorized")),
+            REASON_BOOT_FAILED,
+            "a reason is never guessed from the text"
+        );
     }
 
     // TEST_SCENARIO: a failure's text is stored in the Agent's condition, which the API server caps at 32 KiB. The head is kept, marked as cut, and a cut never splits a character — a message ending in half of one is rejected as invalid UTF-8 by the same write it was shortened for.
@@ -320,20 +217,5 @@ mod tests {
         let cut = first_lines(&long);
         assert!(cut.ends_with("… (truncated)"));
         assert!(cut.len() <= CAPTURED_OUTPUT + "… (truncated)".len());
-        let go = gosource::read("server.go");
-        assert!(
-            go.lines()
-                .any(|line| line.trim() == format!("const capturedOutput = {CAPTURED_OUTPUT}")),
-            "the Go runner no longer caps captured output at {CAPTURED_OUTPUT}"
-        );
-    }
-
-    // TEST_SCENARIO: a runner installed without crane can still boot images that are cached, but one naming only a registry reference is refused: booting it would run the image's own entrypoint, skip platform-init and lose the agent's home at the first stop.
-    #[test]
-    fn a_runner_that_cannot_fetch_refuses_an_uncached_image() {
-        let err =
-            launch_from_registry("", "quay.io/x/vm:1", &[], &CancellationToken::new()).unwrap_err();
-        assert!(err.to_string().starts_with(IMAGE_LAUNCH_UNKNOWN), "{err}");
-        assert_eq!(failure_reason(&err), REASON_BOOT_FAILED);
     }
 }
