@@ -1,0 +1,24 @@
+# Bob: `mise oci build -E bob`. Mirrors packages/agents/bob.
+
+# Bob ships as a self-contained npm tarball outside the registry. Its release
+# is taken as-is: dist/bob.js needs no dependencies, so `npm install -g` would
+# only add its optional ones (node-pty, @vscode/ripgrep, officecli), which this
+# image goes without.
+[tools."http:bob"]
+version = "2.0.3"
+url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-{{version}}.tgz"
+checksum = "sha256:c0f65ca2ad1166e5506d42781b474637796fd5f64cdd707d4c0eba7bc800da19"
+strip_components = 1
+bin_path = "dist"
+rename_exe = "bob"
+
+[oci.env]
+PLATFORM_HARNESS = "bob"
+
+[[oci.copy]]
+host = "../../harness/bob/app"
+image = "/app"
+
+[[oci.copy]]
+host = "../../harness/bob/usr"
+image = "/usr"

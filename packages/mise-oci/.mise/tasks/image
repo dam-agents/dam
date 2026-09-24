@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
-#MISE description="Experimental: build the Debian Claude Code image with `mise oci` instead of a Dockerfile. Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-claude-code-debian:latest)"
+#MISE description="Experimental: build a Debian agent image with `mise oci` instead of a Dockerfile. Argument: the harness, claude|codex|pi|bob. Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-<harness>-debian:latest)"
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
 pkg=packages/mise-oci
+harness=""
 from=""
 load=""
 for a in "$@"; do
   case "$a" in
     --from=*) from="${a#--from=}" ;;
-    --load) load="platform-claude-code-debian:latest" ;;
+    --load) load=default ;;
     --load=*) load="${a#--load=}" ;;
-    *) echo "unknown argument: $a" >&2; exit 2 ;;
+    -*) echo "unknown option: $a" >&2; exit 2 ;;
+    *) harness="$a" ;;
   esac
 done
+[ -n "$harness" ] && [ -f "$pkg/image/mise/conf.d/harness.$harness.toml" ] || {
+  echo "usage: image <harness> [--from=REF] [--load[=TAG]]; harnesses:" \
+    "$(cd "$pkg/image/mise/conf.d" && ls harness.*.toml | sed 's/^harness\.//; s/\.toml$//' | tr '\n' ' ')" >&2
+  exit 2
+}
+[ "$load" = default ] && load="platform-$harness-debian:latest"
 
 # `mise oci build` packages the host's own installs and runs the host's apt-get
 # for [bootstrap.packages], so the host must be Linux of the image's arch and
@@ -25,7 +33,7 @@ state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
 work="$state/build"
 stage="$work/stage"
 runtime="$work/runtime"
-out="$state/out/claude-code"
+out="$state/out/$harness"
 
 # agent-runtime and driver-sdk, built with the repo's own toolchain the way
 # platform-base's builder stage builds them.
@@ -49,36 +57,39 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
   MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
+# image/ is the whole config: its conf.d fragments name every layer, the
+# rootfs trees included. build/ beside them is what the host builds; git keeps
+# no empty directories, so the ones the image needs are made there too.
 rm -rf "$stage"
 mkdir -p "$stage"
-cp "$pkg/image.toml" "$stage/mise.toml"
-mise trust -q "$stage"
-mise -C "$stage" install
+cp -a "$pkg/image/." "$stage/"
+b="$stage/build"
+install -d "$b"/{app,home/agent,etc/logrotate.d,usr/local/lib,usr/local/share/tool-bin}
+cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
+cp -a packages/agent-runtime/dist "$b/app/dist"
+install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
 
-# rootfs/ is the image's own payload at its image paths; git keeps no empty
-# directories, so the two the image needs are made here. /etc/logrotate.d is
-# where service installers drop their rotation config, and trixie-slim has none.
-r="$stage/rootfs"
-mkdir -p "$r"
-cp -a "$pkg/rootfs/." "$r/"
-install -d "$r"/{home/agent,etc/logrotate.d} "$r/usr/local/share/tool-bin"
-cp -a "$runtime/package.json" "$runtime/node_modules" "$r/app/"
-cp -a packages/agent-runtime/dist "$r/app/dist"
-install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$r/usr/local/lib/driver-sdk.mjs"
+# Every mise call for the image runs from inside the stage, not with -C: mise
+# reads .miserc.toml, and with it the env_conf_d opt-in, from the working
+# directory, so under -C every harness fragment would load at once.
+cd "$stage"
+mise trust -q .
+mise -E "$harness" install
 
-# The two tool-bin links the harness scripts and manifest name, resolved on the
-# host and pointed at where the adapter's install sits inside the image.
-in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
-acp="$(mise -C "$stage" where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp"
-cli="$(echo "$acp"/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"
-test -x "$cli"
-ln -sfn "$(in_image "$acp")" "$r/usr/local/share/tool-bin/claude-agent-acp-lib"
-ln -sfn "$(in_image "$cli")" "$r/usr/local/share/tool-bin/claude"
+# Claude's CLI sits inside the adapter's install under a per-arch directory, so
+# the two tool-bin links its scripts and manifest name are resolved on the host
+# and pointed at where that install sits inside the image.
+if [ "$harness" = claude ]; then
+  in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
+  acp="$(mise -E claude where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp"
+  cli="$(echo "$acp"/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"
+  test -x "$cli"
+  ln -sfn "$(in_image "$acp")" "$b/usr/local/share/tool-bin/claude-agent-acp-lib"
+  ln -sfn "$(in_image "$cli")" "$b/usr/local/share/tool-bin/claude"
+fi
 
-copies=()
-for d in "$r"/*; do copies+=(--copy "$d:/${d##*/}"); done
 rm -rf "$out"
-mise -C "$stage" oci build -o "$out" ${from:+--from "$from"} "${copies[@]}"
+mise -E "$harness" oci build -o "$out" ${from:+--from "$from"}
 echo "OCI layout: $out"
 
 if [ -n "$load" ]; then

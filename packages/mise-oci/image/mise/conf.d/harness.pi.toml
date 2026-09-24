@@ -1,0 +1,18 @@
+# Pi: `mise oci build -E pi`. Mirrors packages/agents/pi-agent.
+
+[tools]
+"npm:@earendil-works/pi-coding-agent" = "0.85.1"
+"npm:pi-acp" = "0.0.33"
+"npm:@zhafron/pi-memory" = "1.0.2"
+
+[oci.env]
+PLATFORM_HARNESS = "pi"
+PI_SKIP_VERSION_CHECK = "1"
+
+[[oci.copy]]
+host = "../../harness/pi/app"
+image = "/app"
+
+[[oci.copy]]
+host = "../../harness/pi/usr"
+image = "/usr"
