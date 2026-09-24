@@ -1,43 +1,35 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
-import { ActivityBlock } from "../../sessions/components/activity-block.js";
 import { useRunningDelegations } from "../api/queries.js";
-import { countByStatus, flattenIds } from "../lib/delegation-state.js";
-import { DelegationHeader } from "./delegation-block.js";
-import { DelegationCards } from "./delegation-cards.js";
+import { DelegationShell } from "./delegation-shell.js";
 
 interface Props {
   driverAgentId: string;
   active: boolean;
+  claimed: ReadonlySet<string>;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a fan-out's tool chip reaches the transcript only
- * when the driver's script exits, after every child has reported, so while the
- * driver is busy the children are shown from the record instead. The block
- * disappears once no child is running; the chip's own block takes over then.
+ * when the driver's script exits, after every child has reported, so until then
+ * nothing in the conversation speaks for the children and this block does it
+ * from the record. It shows only children no chip accounts for yet, so the two
+ * can never describe the same child: the handover happens in the render the
+ * chip lands, not on this block's next poll.
  */
-export function LiveDelegationBlock({ driverAgentId, active }: Props) {
-  const [open, setOpen] = useState(true);
+export function LiveDelegationBlock({ driverAgentId, active, claimed }: Props) {
   const { data } = useRunningDelegations(driverAgentId, active);
-  const nodes = useMemo(() => data?.nodes ?? [], [data]);
+  const nodes = useMemo(
+    () => (data?.nodes ?? []).filter((node) => !claimed.has(node.id)),
+    [data, claimed],
+  );
   if (!active || nodes.length === 0) return null;
-  const total = flattenIds(nodes).length;
-  const counts = countByStatus(nodes);
 
   return (
-    <ActivityBlock
-      open={open}
-      onToggle={() => setOpen((o) => !o)}
-      label={
-        <DelegationHeader
-          text={`Delegating to ${total} temporary agent${total === 1 ? "" : "s"}`}
-          working={counts.running}
-          failed={counts.failed}
-        />
-      }
-    >
-      <DelegationCards nodes={nodes} driverAgentId={driverAgentId} />
-    </ActivityBlock>
+    <DelegationShell
+      verb="Delegating to"
+      nodes={nodes}
+      driverAgentId={driverAgentId}
+    />
   );
 }
