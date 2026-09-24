@@ -543,17 +543,9 @@ else
     fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
     SEEN_COMPONENTS+=("$comp")
-    if [ -d "packages/agents/$comp" ]; then
+    # e2e fixture agents (the scripted mock) live in packages/e2e/agents.
+    if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      AGENT_IMAGES+=("$image")
-    elif [ -d "packages/e2e/agents/$comp" ]; then
-      # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-      # are not covered by //packages/agents:image; the oci task builds them.
-      # Honors SKIP_IMAGE_BUILD like the per-agent tasks; in CI the image is
-      # already in the daemon.
-      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-        mise run //packages/agents:oci -- "$comp" --load="$image"
-      fi
       AGENT_IMAGES+=("$image")
     else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2

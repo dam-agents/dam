@@ -36,7 +36,7 @@ extends = "ts:check:tsc"
 
 Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge. Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root. Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
 
-Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:image [-- <agent>…]`, which orders the bases and builds the rest in parallel. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
+Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:image [-- <agent>…]`, which builds the `mise oci` images one at a time, claude-code first, and the Dockerfile workloads on it in parallel. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
 
 ## Artifact cache
 

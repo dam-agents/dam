@@ -41,12 +41,12 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # builder-stage test sources; runtime content is identical.
 TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
 
-# The images `mise oci` builds (//packages/agents:oci), one config environment
+# The images `mise oci` builds (//packages/agents:image), one config environment
 # each over packages/agents/base: the harnesses and the e2e mock. Their source
 # is the base, agent-runtime and what it builds from, and their own directory;
-# keep in sync with the oci task.
+# keep in sync with that task.
 MISE_IMAGES="claude-code codex pi-agent bob mock"
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 is_mise_image() { case " $MISE_IMAGES " in *" $1 "*) ;; *) return 1 ;; esac; }
 
 # harness agents; CI's `agents` build/merge matrix
@@ -130,10 +130,8 @@ build_or_reuse() {
     echo "  pull failed, building instead" >&2
   fi
   echo "⚒ build $lt"
-  if is_mise_image "$comp"; then
-    mise run //packages/agents:oci -- "$comp" --load="$lt"
-    return
-  fi
+  # The agent image task builds the mise images itself; the reuse is decided.
+  if is_mise_image "$comp"; then exec packages/agents/.mise/tasks/image --build "$comp"; fi
   docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 

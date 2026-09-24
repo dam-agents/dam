@@ -70,8 +70,8 @@ output_for() {
 build_mise() {
   local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci/out/$1" ref
   case "$kind" in
-    load) packages/agents/.mise/tasks/oci "$c" --load || return 1 ;;
-    *) packages/agents/.mise/tasks/oci "$c" || return 1 ;;
+    load) packages/agents/.mise/tasks/image --build "$c" || return 1 ;;
+    *) packages/agents/.mise/tasks/image --build --no-load "$c" || return 1 ;;
   esac
   case "$kind" in
     cacheonly | load) ;;

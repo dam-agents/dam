@@ -1,21 +1,58 @@
 #!/usr/bin/env bash
-#MISE description="Build (or reuse from the registry) the agent images — all of them, or the ones named as arguments. claude-code first when anything requested builds on it, the rest in parallel. --dry-run prints the plan."
+#MISE description="Build (or reuse from the registry) agent images and load them into docker as platform-<agent>:latest: every one in packages/agents, or the ones named (the e2e mock too). An image.toml agent builds with `mise oci` (Linux host of the target arch with apt-get; the lima VM on macOS), a Dockerfile one with docker build, claude-code first when anything named builds on it. Options: --build never reuses, --no-load leaves a mise image's OCI layout unloaded, --from=REF a mise image's base, --dry-run prints the plan."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
 resolve=.mise/tasks/image/resolve
+agents=packages/agents
+# Where an agent's directory may sit: the harnesses and workloads, and the e2e
+# fixture.
+roots="$agents packages/e2e/agents"
 workloads=" $($resolve list-workloads) "
-dry=false; agents=()
-for a in "$@"; do case "$a" in --dry-run) dry=true ;; *) agents+=("$a") ;; esac; done
-if [ ${#agents[@]} -eq 0 ]; then
+dry=false reuse=true load=true from="" named=()
+for a in "$@"; do
+  case "$a" in
+    --dry-run) dry=true ;;
+    --build) reuse=false ;;
+    --no-load) load=false ;;
+    --from=*) from="${a#--from=}" ;;
+    -*) echo "unknown option: $a" >&2; exit 2 ;;
+    *) named+=("$a") ;;
+  esac
+done
+
+dir_of() { local r; for r in $roots; do [ -d "$r/$1" ] && { echo "$r/$1"; return; }; done; return 1; }
+if [ ${#named[@]} -eq 0 ]; then
   # An agent is a directory with a Dockerfile or an image.toml; base/ is the
   # shared config the image.toml agents build on, not an agent.
-  for d in packages/agents/*/; do
+  for d in "$agents"/*/; do
     [ -f "$d/Dockerfile" ] || [ -f "$d/image.toml" ] || continue
-    agents+=("$(basename "$d")")
+    named+=("$(basename "$d")")
   done
 fi
-for a in "${agents[@]}"; do [ -d "packages/agents/$a" ] || { echo "no such agent: $a" >&2; exit 2; }; done
+
+mise_images=() docker_images=()
+for a in "${named[@]}"; do
+  d="$(dir_of "$a")" || { echo "no such agent: $a" >&2; exit 2; }
+  if [ -f "$d/image.toml" ]; then mise_images+=("$a")
+  elif [ -f "$d/Dockerfile" ]; then docker_images+=("$a")
+  else echo "$a has neither an image.toml nor a Dockerfile" >&2; exit 2; fi
+done
+# The workloads build FROM the local claude-code image.
+for a in ${docker_images[@]+"${docker_images[@]}"}; do
+  case "$workloads" in *" $a "*) ;; *) continue ;; esac
+  case " ${mise_images[*]:-} " in *" claude-code "*) ;; *) mise_images=(claude-code ${mise_images[@]+"${mise_images[@]}"}) ;; esac
+done
+if { [ -n "$from" ] || [ "$load" = false ]; } && [ ${#docker_images[@]} -gt 0 ]; then
+  echo "--from and --no-load apply to mise images only: ${docker_images[*]}" >&2; exit 2
+fi
+
+if [ "$dry" = true ]; then
+  echo "mise oci (one at a time): ${mise_images[*]:-—}"
+  echo "docker (in parallel):     ${docker_images[*]:-—}"
+  exit 0
+fi
+[ -z "${SKIP_IMAGE_BUILD:-}" ] || exit 0
 
 # Build-time overrides the Dockerfiles pin defaults for (see each agent's README).
 build_arg_var() {
@@ -25,33 +62,165 @@ build_arg_var() {
   esac
 }
 
-build() {
+state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
+work="$state/build"
+stage="$work/stage"
+runtime="$work/runtime"
+
+# agent-runtime and driver-sdk, built with the repo's own toolchain, once for
+# every mise image this run builds.
+runtime_built=false
+build_runtime() {
+  [ "$runtime_built" = false ] || return 0
+  pnpm --filter agent-runtime exec tsup
+  pnpm --filter driver-sdk exec tsup
+  rm -rf "$runtime"
+  npm_config_inject_workspace_packages=true \
+    pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+  cp packages/agent-runtime/package.json "$runtime/package.json"
+  (cd "$runtime" && pnpm pkg delete devDependencies)
+  runtime_built=true
+}
+
+# One mise image into its OCI layout at out/<agent>, in a subshell: it drops
+# the repo's mise context and changes directory.
+build_mise() (
+  local harness=$1 out="$state/out/$1" images d a b platform own_layout
+  # `mise oci build` packages the host's own installs and runs the host's
+  # apt-get for [bootstrap.packages], so the host must be Linux of the image's
+  # arch and Debian-family.
+  [ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
+  command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
+  images="$(for r in $roots; do ls "$r"/*/image.toml 2>/dev/null || true; done)"
+
+  # From here on mise runs for the image, not for the repo: the project and
+  # task context mise hands this task is dropped (settings the caller exported
+  # stay), the staged config sits outside the repo so its root config is not a
+  # parent, and the ceiling stops the walk up.
+  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT
+  while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep '^MISE_TASK_')
+  mkdir -p "$work"/{data,cache,config,state}
+  export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
+    MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
+  : > "$MISE_GLOBAL_CONFIG_FILE"
+
+  # The stage mirrors packages/agents: base/ and every agent with an
+  # image.toml keep their directories, the e2e mock's beside them, and what
+  # mise loads by name goes where it looks for it — base/miserc.toml as
+  # .miserc.toml, base/base.toml and each image.toml as conf.d fragments. In
+  # the repo those files cannot carry mise's own names, because every agent
+  # directory is a mise config root. build/ beside them is what the host
+  # builds; git keeps no empty directories, so the ones the image needs are
+  # made there too. node_modules is left out: pnpm links the pi extension's
+  # dev dependencies into its tree, and the image ships the extension's source
+  # only.
+  rm -rf "$stage"
+  mkdir -p "$stage/mise/conf.d"
+  cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
+  cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
+  for d in "$agents/base" $images; do
+    [ -d "$d" ] || d="$(dirname "$d")"
+    a="$(basename "$d")"
+    [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
+    mkdir -p "$stage/$a/rootfs"
+    tar -C "$d/rootfs" --exclude=node_modules -cf - . | tar -C "$stage/$a/rootfs" -xf -
+  done
+  b="$stage/build"
+  install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs} \
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/share/{ca-certificates,tool-bin}
+  cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
+  cp -a packages/agent-runtime/dist "$b/app/dist"
+  install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
+  # The mock's harness is one bundled script, built the way agent-runtime is.
+  if [ "$harness" = mock ]; then
+    pnpm --filter mock-agent exec tsup
+    install -D -m 644 packages/e2e/agents/mock/dist/main.js "$stage/mock/rootfs/app/mock-agent.js"
+  fi
+
+  # Every mise call for the image runs from inside the stage, not with -C:
+  # mise reads .miserc.toml, and with it the env_conf_d opt-in, from the
+  # working directory, so under -C every harness fragment would load at once.
+  own_layout="$PWD/$agents/base/own-layout.py"
+  cd "$stage"
+  mise trust -q .
+  # The resolved versions are locked first, so an install under MISE_LOCKED
+  # (CI) has URLs and checksums.
+  case "$(uname -m)" in x86_64) platform=linux-x64 ;; aarch64 | arm64) platform=linux-arm64 ;; *) platform="linux-$(uname -m)" ;; esac
+  mise -E "$harness" lock --platform "$platform"
+  mise -E "$harness" install
+
+  # Claude's CLI sits inside the adapter's install under a per-arch directory,
+  # so the two tool-bin links its scripts and manifest name are resolved on the
+  # host and pointed at where that install sits inside the image.
+  if [ "$harness" = claude-code ]; then
+    in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
+    acp="$(mise -E claude-code where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp"
+    cli="$(echo "$acp"/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"
+    test -x "$cli"
+    ln -sfn "$(in_image "$acp")" "$b/usr/local/share/tool-bin/claude-agent-acp-lib"
+    ln -sfn "$(in_image "$cli")" "$b/usr/local/share/tool-bin/claude"
+  fi
+
+  # mise's apt bootstrap runs apt-get and dpkg against the host's own apt and
+  # debconf caches too, so the build needs root; a CI runner has passwordless
+  # sudo. What it writes as root is handed back, so the next build can reuse
+  # it. out/ is made here, as this user: the build under sudo would create it
+  # as root, and nothing could then remove a layout from it.
+  rm -rf "$out"
+  mkdir -p "$(dirname "$out")"
+  if [ "$(id -u)" = 0 ]; then
+    mise -E "$harness" oci build -o "$out" ${from:+--from "$from"}
+  else
+    sudo --preserve-env env "PATH=$PATH" "$(command -v mise)" -E "$harness" oci build -o "$out" ${from:+--from "$from"}
+    sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
+  fi
+  # The layers are built root-owned, and the paths the agent writes are handed
+  # to it afterwards: mise stamps one owner on every layer it generates.
+  mise -E "$harness" exec -- python3 "$own_layout" "$out"
+  echo "OCI layout: $out"
+)
+
+load_layout() {
+  local a=$1 out="$state/out/$1" id
+  tar -C "$out" -cf "$work/image.tar" .
+  id="$(docker load -i "$work/image.tar" | sed -n 's/^Loaded image ID: //p')"
+  docker tag "$id" "platform-$a:latest"
+  rm -f "$work/image.tar"
+  echo "loaded into docker as platform-$a:latest"
+}
+
+# The mise images one at a time: they share the stage and the host's apt
+# caches.
+for a in ${mise_images[@]+"${mise_images[@]}"}; do
+  if [ "$reuse" = true ]; then
+    decision="$($resolve resolve "$a")"
+    if [ "${decision%% *}" = REUSE ]; then
+      ref="${decision#REUSE }"
+      echo "↺ reuse $ref -> platform-$a:latest"
+      if docker pull "$ref" && docker tag "$ref" "platform-$a:latest"; then continue; fi
+      echo "  pull failed, building instead" >&2
+    fi
+  fi
+  echo "⚒ build platform-$a:latest"
+  build_runtime
+  build_mise "$a"
+  [ "$load" = false ] || load_layout "$a"
+done
+
+build_docker() {
   local a="$1" var args=()
   var="$(build_arg_var "$a")"
   [ -n "$var" ] && [ -n "${!var:-}" ] && args+=(--build-arg "$var=${!var}")
+  [ "$reuse" = true ] || export RESOLVE_NO_REUSE=1
   # ${args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
-  exec "$resolve" build-or-reuse "$a" -- ${args[@]+"${args[@]}"} "packages/agents/$a"
+  exec "$resolve" build-or-reuse "$a" -- ${args[@]+"${args[@]}"} "$(dir_of "$a")"
 }
 
-# Stage 1: claude-code, when requested or when anything requested sits on it.
-stage1=(); stage2=()
-for a in "${agents[@]}"; do
-  case "$workloads" in *" $a "*) needs_cc=true ;; *) needs_cc=false ;; esac
-  if [ "$a" = claude-code ]; then stage1=(claude-code)
-  else stage2+=("$a"); [ "$needs_cc" = true ] && stage1=(claude-code); fi
-done
-
-if [ "$dry" = true ]; then
-  echo "stage 1 (serial):   ${stage1[*]:-—}"
-  echo "stage 2 (parallel): ${stage2[*]:-—}"
-  exit 0
-fi
-
-for a in ${stage1[@]+"${stage1[@]}"}; do build "$a" & wait "$!"; done
-
 pids=(); names=()
-for a in ${stage2[@]+"${stage2[@]}"}; do
-  build "$a" 2>&1 | sed "s/^/[$a] /" &
+for a in ${docker_images[@]+"${docker_images[@]}"}; do
+  (build_docker "$a") 2>&1 | sed "s/^/[$a] /" &
   pids+=("$!"); names+=("$a")
 done
 failed=()

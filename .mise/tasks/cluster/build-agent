@@ -36,13 +36,9 @@ while IFS=$'\t' read -r name image; do
   comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
   case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
   SEEN_COMPONENTS+=("$comp")
-  if [ -d "packages/agents/$comp" ]; then
+  # e2e fixture agents (the scripted mock) live in packages/e2e/agents.
+  if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
     AGENT_TASKS+=("$comp")
-    AGENT_IMAGES+=("$image")
-  elif [ -d "packages/e2e/agents/$comp" ]; then
-    # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-    # are not covered by //packages/agents:image; the oci task builds them.
-    mise run //packages/agents:oci -- "$comp" --load="$image"
     AGENT_IMAGES+=("$image")
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2

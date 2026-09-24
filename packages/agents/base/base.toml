@@ -1,6 +1,6 @@
 # What every agent image built with `mise oci` shares: the config that always
 # loads. Each such agent is a config environment of its own, from its
-# image.toml, and `mise oci build -E <agent>` builds its image. The oci task
+# image.toml, and `mise oci build -E <agent>` builds its image. The image task
 # stages this file as mise/conf.d/base.toml, the agents' image.toml files
 # beside it, and agent-runtime built into build/, all outside the repo.
 #
@@ -83,7 +83,7 @@ PORT = "8080"
 [oci.labels]
 "org.opencontainers.image.description" = "Debian agent image built with mise oci"
 
-# Copy paths are relative to mise/conf.d/, where the oci task stages this file. A copy cannot target / itself, so each
+# Copy paths are relative to mise/conf.d/, where the image task stages this file. A copy cannot target / itself, so each
 # top-level directory is its own layer; a harness fragment's copies come after
 # these and replace what they share.
 [[oci.copy]]

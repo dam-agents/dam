@@ -3,10 +3,12 @@
 The claude-code, codex, pi-agent and bob images, and the e2e mock, are built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) instead of a Dockerfile, on Debian (trixie-slim), over the shared base in [`base/`](base/). They bake in every tool (node 26, python 3.12, docker, k3s and kubectl included), with no lazy installs or tool shims and no `oc` or `gws`. docker and k3s are not started for the agent; [`AGENTS.md`](base/rootfs/etc/AGENTS.md) tells it how to start them. What every image shares (the skills and their shipped-skill manifest, the working-dir seed, the default runtime manifest, dam-run) lives in `base/rootfs/`; only agent-runtime, driver-sdk and the experiment SDK are built or copied from the rest of the repo. The workload images, k-search among them, build `FROM` the claude-code image.
 
 ```sh
-mise run //packages/agents:oci -- claude-code --load       # → platform-claude-code:latest in docker
-mise run //packages/agents:oci -- codex --from=REF --load  # another base image
-mise run //packages/agents:oci -- mock --load              # the e2e mock, from packages/e2e/agents/mock
-mise run //packages/agents:image -- pi-agent               # routes these agents through the task above
+mise run //packages/agents:image -- claude-code          # → platform-claude-code:latest in docker, reused while unchanged
+mise run //packages/agents:image -- --build codex        # always build
+mise run //packages/agents:image -- codex --from=REF     # another base image
+mise run //packages/agents:image -- mock                 # the e2e mock, from packages/e2e/agents/mock
+mise run //packages/agents:image -- nous                 # a workload: claude-code first, then docker build
+mise run //packages/agents:image -- --dry-run            # what every agent would build, and how
 ```
 
 CI builds them in `image:ci-build` (the `build-agents` and `build-mock` jobs, and the e2e job on a PR) and pushes the OCI layout by digest with crane.
@@ -24,7 +26,7 @@ One directory per agent image, named after its component, which is also its `ima
 | `nous/`, `openevolve/`, `shinkaevolve/`, `gepa/`, `skydiscover/`, `k-search/` | Dockerfile | Workloads, `FROM` the claude-code image. k-search replaces its harness and runtime manifest. |
 | [`../e2e/agents/mock/`](../e2e/agents/mock/) | `mise oci` | The e2e mock's `image.toml` and `rootfs/`, beside its source; the task bundles `mock-agent.js` into it. |
 
-The [`oci`](.mise/tasks/oci) task stages a mise project outside the repo that mirrors this directory: `base/` and every agent with an `image.toml` keep their directories, and the files mise loads by name go where it looks for them. `base/miserc.toml` becomes `.miserc.toml`, which opts into `env_conf_d`. `base/base.toml` becomes `mise/conf.d/base.toml`, which always loads. Each `image.toml` becomes `mise/conf.d/harness.<agent>.toml`, which loads only under `-E <agent>`, and its copies come after the shared ones and replace what they share (harness scripts, runtime manifest). In the repo the files keep names mise would not load, because every agent directory is a mise config root. The task also builds agent-runtime and driver-sdk on the host into `build/`, copies the experiment SDK there, links the claude CLI into `tool-bin` for claude-code, and runs `mise lock` for the host platform, `mise install` and `mise -E <agent> oci build` from inside the stage.
+For an `image.toml` agent the [`image`](.mise/tasks/image) task stages a mise project outside the repo that mirrors this directory: `base/` and every agent with an `image.toml` keep their directories, and the files mise loads by name go where it looks for them. `base/miserc.toml` becomes `.miserc.toml`, which opts into `env_conf_d`. `base/base.toml` becomes `mise/conf.d/base.toml`, which always loads. Each `image.toml` becomes `mise/conf.d/harness.<agent>.toml`, which loads only under `-E <agent>`, and its copies come after the shared ones and replace what they share (harness scripts, runtime manifest). In the repo the files keep names mise would not load, because every agent directory is a mise config root. The task also builds agent-runtime and driver-sdk on the host into `build/`, copies the experiment SDK there, links the claude CLI into `tool-bin` for claude-code, and runs `mise lock` for the host platform, `mise install` and `mise -E <agent> oci build` from inside the stage.
 
 ## What Debian and `mise oci` needed
 

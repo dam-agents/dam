@@ -1,5 +1,5 @@
 # The e2e mock: a config environment like the harnesses', `mise oci build -E
-# mock`. The oci task stages it as mise/conf.d/harness.mock.toml over
+# mock`. The image task stages it as mise/conf.d/harness.mock.toml over
 # base/base.toml, with this directory's rootfs/ at mock/rootfs and the bundled
 # mock-agent.js built into it, so copies climb out of conf.d.
 
