@@ -43,8 +43,7 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
       "after",
       "\nSatellites are experimental: the commands work, but the shape of a\n" +
         "manifest, the tools an agent sees and the contract between them may\n" +
-        "change without a deprecation. Turn on the Satellites experimental\n" +
-        "feature to see them in the web UI as well.\n",
+        "change without a deprecation. There is no web UI for them yet.\n",
     );
   parent.addCommand(buildMcpCommand(shared));
   parent.addCommand(buildCommandsCommand(shared));

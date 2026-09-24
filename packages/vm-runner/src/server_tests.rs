@@ -13,7 +13,7 @@ use crate::cache::{archive_path, digest_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::ImageLaunch;
-use crate::plan::UNHEALTHY_RESTART;
+use crate::plan::{READY_GRACE, UNHEALTHY_RESTART};
 use std::path::Path;
 
 // UNIT_BOUNDARY_DESCRIPTION: what one update asked of the fake runtime: the image it moved the machine to, if any, and the allowlist and disk size it wrote.
@@ -1141,11 +1141,39 @@ async fn a_guest_that_never_answers_is_explained() {
     );
     h.server.probe("m1");
     let down = h.server.status("m1");
-    assert!(!down.ready);
+    assert!(
+        down.ready,
+        "one missed probe after the answer is not a guest gone quiet"
+    );
     assert_eq!(
         down.message, "",
         "a missed probe after the answer is not a stuck boot"
     );
+    h.machine("m1", |m| {
+        m.health.quiet_since = Some(SystemTime::now() - READY_GRACE - Duration::from_secs(1))
+    });
+    h.server.probe("m1");
+    assert!(
+        !h.server.status("m1").ready,
+        "quiet past the grace is unready"
+    );
+}
+
+// TEST_SCENARIO: the grace belongs to the boot that answered. A machine that answered and was then restarted is not ready on the old guest's answers: until the new boot answers, a missed probe is a boot still running, and the controller keeps waiting closely for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarted_machine_is_not_ready_on_its_old_answers() {
+    let h = Harness::new("grace-restart");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let up = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    let mut changed = spec(true);
+    changed.revision = "r2".into();
+    h.server.put("m1", changed).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(!status.ready, "{status:?}");
 }
 
 // TEST_SCENARIO: a machine stopped before its guest ever answered has nothing left to wait for. Its stop ends the boot, so the stopped machine carries no stuck-boot note, however long ago it was asked to start.

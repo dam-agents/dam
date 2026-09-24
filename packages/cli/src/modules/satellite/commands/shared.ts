@@ -1,4 +1,5 @@
 import { hostname } from "node:os";
+import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -10,7 +11,11 @@ import {
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { SatelliteBackend } from "../services/backend.js";
-import { createWorker, type WorkerTransport } from "../services/worker.js";
+import {
+  createWorker,
+  SatelliteRemovedError,
+  type WorkerTransport,
+} from "../services/worker.js";
 
 export interface ConnectDeps {
   compatService: CompatService;
@@ -68,7 +73,15 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
   return {
     connect: (manifest, host) =>
       trpc.satellites.connect.mutate({ manifest, host }),
-    claim: (input) => trpc.satellites.claim.mutate(input),
+    claim: (input) =>
+      trpc.satellites.claim.mutate(input).catch((err: unknown) => {
+        if (
+          err instanceof TRPCClientError &&
+          (err.data as { code?: string } | undefined)?.code === "NOT_FOUND"
+        )
+          throw new SatelliteRemovedError(input.satellite);
+        throw err;
+      }),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
     report: (input) => trpc.satellites.report.mutate(input),
     drain: (satellite) => trpc.satellites.drain.mutate(satellite),

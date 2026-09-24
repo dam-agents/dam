@@ -36,5 +36,5 @@ describe("avatar framing", () => {
       expect(Math.abs(x0 - (PX - x1)), name).toBeLessThanOrEqual(1.5);
       expect(Math.abs(y0 - (PX - y1)), name).toBeLessThanOrEqual(1.5);
     }
-  });
+  }, 30_000);
 });

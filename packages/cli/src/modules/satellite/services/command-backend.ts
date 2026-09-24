@@ -10,19 +10,23 @@ import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 export const OUTPUT_CAP_BYTES = MAX_JOB_OUTPUT_BYTES;
 export const RUN_TOOL = "run";
-const MAX_REASON_CHARS = 280;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Clamps a refusal to the wire's own cap. A reason is
- * 280 characters on the contract, and the text that explains one can be longer —
- * a refusal names the pattern it came closest to, and a pattern is allowed 1024.
- * An over-long reason is rejected at the server, and the Job is then left to its
- * lease instead of being told why it never ran.
+ * UNIT_BOUNDARY_DESCRIPTION: A call this machine will not run, answered the way
+ * any MCP server answers a tool call it rejects: a finished call whose result
+ * is an error. The command never started, so the outcome is certain, and
+ * `interrupted` — the outcome is unknowable — would say otherwise. The text
+ * rides as output, which is not held to a reason's 280 characters, so a
+ * refusal can name the pattern it came closest to in full.
  */
-function reason(text: string): string {
-  return text.length > MAX_REASON_CHARS
-    ? `${text.slice(0, MAX_REASON_CHARS - 1)}…`
-    : text;
+function refused(text: string): Promise<CallOutcome> {
+  return Promise.resolve({
+    status: "done",
+    isError: true,
+    exitCode: null,
+    output: text,
+    truncated: false,
+  });
 }
 
 type KillReason = "cancel" | "timeout" | "shutdown";
@@ -147,47 +151,28 @@ export function createCommandBackend(
   }): Promise<CallOutcome> {
     const { sequence, approved } = input;
     if (input.tool !== RUN_TOOL)
-      return Promise.resolve({
-        status: "interrupted",
-        reason: reason(`this satellite has no tool called "${input.tool}"`),
-        output: "",
-        truncated: false,
-      });
+      return refused(`this satellite has no tool called "${input.tool}"`);
 
     const cmd = input.args.cmd;
     if (!Array.isArray(cmd) || cmd.some((a) => typeof a !== "string"))
-      return Promise.resolve({
-        status: "interrupted",
-        reason: reason("cmd must be an array of strings"),
-        output: "",
-        truncated: false,
-      });
+      return refused("cmd must be an array of strings");
     const argv = cmd as string[];
 
     const command = resolveCommand(surface, argv);
     if (typeof command === "string") {
       log.line(`REFUSED #${sequence}: ${command}`);
-      return Promise.resolve({
-        status: "interrupted",
-        reason: reason(`refused locally: ${command}`),
-        output: "",
-        truncated: false,
-      });
+      return refused(`refused locally: ${command}`);
     }
 
     if (command.maxConcurrent !== undefined) {
       const active = [...running.values()].filter(
         (entry) => entry.command === command,
       ).length;
-      if (active >= command.maxConcurrent)
-        return Promise.resolve({
-          status: "interrupted",
-          reason: reason(
-            `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`,
-          ),
-          output: "",
-          truncated: false,
-        });
+      if (active >= command.maxConcurrent) {
+        const limit = `${command.run} already has ${active} running (max ${command.maxConcurrent}) — wait for one to finish`;
+        log.line(`REFUSED #${sequence}: ${limit}`);
+        return refused(limit);
+      }
     }
 
     return spawnCommand(sequence, argv, command);
@@ -251,10 +236,11 @@ export function createCommandBackend(
       child.on("error", (err) => {
         log.line(`FAILED #${sequence}: ${err.message}`);
         finish({
-          status: "interrupted",
-          reason: reason(`could not start the command: ${err.message}`),
-          output,
-          truncated,
+          status: "done",
+          isError: true,
+          exitCode: null,
+          output: `could not start the command: ${err.message}`,
+          truncated: false,
         });
       });
 
