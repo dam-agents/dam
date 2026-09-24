@@ -7,7 +7,12 @@ import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
-import { BEE_NAMES, BeeAvatar } from "../agents/components/bee-avatar.js";
+import {
+  BEE_NAMES,
+  BeeAvatar,
+  type BeeColors,
+} from "../agents/components/bee-avatar.js";
+import { BeePongInline } from "./bee-pong-game.js";
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
 type SheetTab = "bees" | "carbon";
@@ -23,9 +28,13 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function BeeTile({
   name,
   sleeping,
+  idle,
+  colors,
 }: {
   name: (typeof BEE_NAMES)[number];
   sleeping: boolean;
+  idle?: boolean;
+  colors?: BeeColors;
 }) {
   return (
     <div className="group flex flex-col items-center gap-2">
@@ -38,10 +47,14 @@ function BeeTile({
         <BeeAvatar
           beeName={name}
           state={sleeping ? "hibernated" : "running"}
+          colors={colors}
+          idle={idle}
           className="size-16"
         />
       </div>
-      <span className="text-sm text-muted-foreground">{name}</span>
+      <span className="text-sm text-muted-foreground">
+        {BEE_NAMES.indexOf(name) + 1}
+      </span>
     </div>
   );
 }
@@ -64,11 +77,13 @@ function SampleAgentCard({
   subtitle,
   state,
   beeName,
+  colors,
 }: {
   name: string;
   subtitle: string;
   state: CardState;
   beeName: (typeof BEE_NAMES)[number];
+  colors?: BeeColors;
 }) {
   const beeState = state === "hibernated" ? "hibernated" : "running";
   return (
@@ -79,7 +94,7 @@ function SampleAgentCard({
       )}
     >
       <div className="flex items-start gap-4 p-5">
-        <BeeAvatar beeName={beeName} state={beeState} />
+        <BeeAvatar beeName={beeName} state={beeState} colors={colors} idle={state === "idle"} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-base font-semibold text-foreground transition-colors group-hover:text-primary">
             {name}
@@ -157,9 +172,15 @@ function WakeUpPreview() {
         </div>
 
         <div className="flex flex-1 flex-col items-center justify-center">
-          <BeeAvatar beeName="shield" state="running" className="size-14 mb-5" />
+          <div className="relative" style={{ width: 400, height: 120 }}>
+            <BeePongInline
+              className="flex items-center justify-center"
+              areaW={400}
+              areaH={120}
+            />
+          </div>
           <h2
-            className="text-center font-extralight tracking-tighter text-foreground"
+            className="mt-3 text-center font-extralight tracking-tighter text-foreground"
             style={{ fontSize: "clamp(1.5rem, 4vw, 2.5rem)", lineHeight: 1 }}
           >
             packaging-layouts
@@ -189,21 +210,69 @@ function WakeUpPreview() {
   );
 }
 
-function BeeSheet() {
-  const [sleeping, setSleeping] = useState(false);
+const IBM_BEE_COLORS: BeeColors = {
+  wings: "#0e6027",
+  eyes: "#9f1853",
+  body: "#d2a106",
+};
 
+const INDIVIDUAL_COLORS: Record<(typeof BEE_NAMES)[number], BeeColors> = {
+  signal: { eyes: "#009d9a", body: "#009d9a", wings: "#009d9a" },
+  cross: { eyes: "#0072c3", body: "#0072c3", wings: "#0072c3" },
+  crown: { eyes: "#0043ce", body: "#0043ce", wings: "#0043ce" },
+  shield: { eyes: "#8a3ffc", body: "#8a3ffc", wings: "#8a3ffc" },
+  bloom: { eyes: "#24a148", body: "#24a148", wings: "#24a148" },
+  tower: { eyes: "#d02670", body: "#d02670", wings: "#d02670" },
+  tilt: { eyes: "#0f62fe", body: "#0f62fe", wings: "#0f62fe" },
+};
+
+const MULTI_COLORS: Record<(typeof BEE_NAMES)[number], BeeColors> = {
+  signal: { eyes: "#0043ce", body: "#009d9a", wings: "#24a148" },
+  cross: { eyes: "#8a3ffc", body: "#0072c3", wings: "#d02670" },
+  crown: { eyes: "#d02670", body: "#24a148", wings: "#0043ce" },
+  shield: { eyes: "#0072c3", body: "#8a3ffc", wings: "#009d9a" },
+  bloom: { eyes: "#009d9a", body: "#d02670", wings: "#0f62fe" },
+  tower: { eyes: "#24a148", body: "#0043ce", wings: "#0072c3" },
+  tilt: { eyes: "#d02670", body: "#009d9a", wings: "#8a3ffc" },
+};
+
+function BeeSheet() {
   return (
     <>
       <section className="mb-12">
-        <div className="mb-4 flex items-center justify-between">
-          <SectionLabel>All Bees</SectionLabel>
-          <TabPill active={sleeping} onClick={() => setSleeping((v) => !v)}>
-            {sleeping ? "Sleeping" : "Awake"}
-          </TabPill>
-        </div>
+        <SectionLabel>All Agents — Awake</SectionLabel>
         <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
           {BEE_NAMES.map((name) => (
-            <BeeTile key={name} name={name} sleeping={sleeping} />
+            <BeeTile
+              key={name}
+              name={name}
+              sleeping={false}
+              colors={IBM_BEE_COLORS}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>All Agents — Idle</SectionLabel>
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
+          {BEE_NAMES.map((name) => (
+            <BeeTile
+              key={name}
+              name={name}
+              sleeping={false}
+              idle
+              colors={IBM_BEE_COLORS}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>All Agents — Sleeping</SectionLabel>
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
+          {BEE_NAMES.map((name) => (
+            <BeeTile key={name} name={name} sleeping={true} />
           ))}
         </div>
       </section>
@@ -212,46 +281,32 @@ function BeeSheet() {
         <SectionLabel>Bees on Agent Cards</SectionLabel>
         <div className="flex flex-col gap-3">
           <SampleAgentCard
-            name="brand-asset-generator"
+            name="api-gateway"
             subtitle="2 CPU · 2 Gi"
             state="running"
             beeName="signal"
+            colors={IBM_BEE_COLORS}
           />
           <SampleAgentCard
-            name="photo-retouching"
+            name="test-runner"
             subtitle="1 CPU · 1 Gi"
             state="idle"
             beeName="cross"
+            colors={IBM_BEE_COLORS}
           />
           <SampleAgentCard
-            name="brand-guidelines"
+            name="ci-pipeline"
             subtitle="0.25 CPU · 512 Mi"
             state="running"
             beeName="crown"
+            colors={IBM_BEE_COLORS}
           />
           <SampleAgentCard
-            name="packaging-layouts"
+            name="code-review"
             subtitle="2 CPU · 2 Gi"
             state="hibernated"
             beeName="shield"
-          />
-          <SampleAgentCard
-            name="competitor-mood-boards"
-            subtitle="0.25 CPU · 512 Mi"
-            state="hibernated"
-            beeName="bloom"
-          />
-          <SampleAgentCard
-            name="color-palette-testing"
-            subtitle="1 CPU · 1 Gi"
-            state="idle"
-            beeName="tower"
-          />
-          <SampleAgentCard
-            name="hero-image-variants"
-            subtitle="0.5 CPU · 1 Gi"
-            state="running"
-            beeName="tilt"
+            colors={IBM_BEE_COLORS}
           />
         </div>
       </section>
@@ -259,11 +314,62 @@ function BeeSheet() {
       <section className="mb-12">
         <SectionLabel>Waking from Hibernation</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
-          When a hibernated agent is opened, it auto-wakes. This full-page
-          overlay keeps the user waiting while the pod spins up, with rotating
-          tips and a prompt to keep the agent always on.
+          When a hibernated agent is opened, it auto-wakes. The bee icon breaks
+          apart into a mini pong game while the pod spins up — wings become
+          paddles, eyes become the ball, body bars form the net.
         </p>
         <WakeUpPreview />
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Color Pack — IBM Bee</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Green wings, pink eyes, yellow bodies — inspired by the IBM bee.
+        </p>
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
+          {BEE_NAMES.map((name) => (
+            <BeeTile
+              key={name}
+              name={name}
+              sleeping={false}
+              colors={IBM_BEE_COLORS}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Color Pack — Individual</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Each bee gets its own unique Carbon color.
+        </p>
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
+          {BEE_NAMES.map((name) => (
+            <BeeTile
+              key={name}
+              name={name}
+              sleeping={false}
+              colors={INDIVIDUAL_COLORS[name]}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Color Pack — Multi-color</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Each bee uses 3 different Carbon colors across its parts.
+        </p>
+        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
+          {BEE_NAMES.map((name) => (
+            <BeeTile
+              key={name}
+              name={name}
+              sleeping={false}
+              colors={MULTI_COLORS[name]}
+            />
+          ))}
+        </div>
       </section>
     </>
   );
