@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { EventKind } from "agent-runtime-api";
 import { INLINE_OUTPUT_LIMIT, formatJobRef } from "api-server-api";
 import type { JobRow } from "../domain/types.js";
@@ -93,16 +92,15 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       "Carry on with whatever you were asked to do with this result. If nothing was asked, summarize it briefly.",
     ].join("\n");
 
+    const refs = told.map((job) => formatJobRef(job.satellite, job.sequence));
+    const firedAt = Date.now();
     try {
       await deps.bump(agentId, [
         {
-          id: randomUUID(),
+          id: `satellite-outcome:${agentId}:${refs[0]!}:${firedAt}`,
           kind: "satellite-outcome",
-          payload: {
-            task,
-            refs: told.map((job) => formatJobRef(job.satellite, job.sequence)),
-          },
-          expiresAt: new Date(Date.now() + EVENT_TTL_MS),
+          payload: { task, refs },
+          expiresAt: new Date(firedAt + EVENT_TTL_MS),
         },
       ]);
     } catch (err) {
