@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
 export const artifactKindSchema = z.enum([
   "html",
@@ -150,3 +151,32 @@ export const artifactTouchListInputSchema = z.object({
   sessionIds: z.array(z.string().min(1)).min(1).max(50),
   limit: z.number().int().positive().max(200).optional(),
 });
+
+export const artifactApiFailureReasonSchema = z.enum([
+  "invalid-request",
+  "not-allowed",
+  "agent-unreachable",
+  "unsupported-runtime",
+  "app-not-listening",
+  "timeout",
+  "response-too-large",
+  "too-many-requests",
+]);
+
+export const artifactCallAgentApiInputSchema =
+  artifactApiRequestInputSchema.extend({
+    artifactId: z.string().min(1),
+  });
+
+export const artifactCallAgentApiResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    status: z.number().int(),
+    contentType: z.string().nullable(),
+    body: z.string(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    reason: artifactApiFailureReasonSchema,
+  }),
+]);

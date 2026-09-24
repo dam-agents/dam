@@ -3,6 +3,7 @@ import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type {
+  ArtifactCallAgentApiResult,
   ArtifactContent,
   ArtifactCreateInput,
   ArtifactFolder,
@@ -21,6 +22,10 @@ import type {
   LibraryArtifact,
 } from "api-server-api";
 
+import {
+  securityLog,
+  type SecuritySurface,
+} from "../../../core/security-log.js";
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
 import {
   DEFAULT_CONTENT_TYPE,
@@ -41,6 +46,7 @@ import type {
   FolderRow,
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
+import type { AgentApiPodClient } from "../infrastructure/agent-api-pod-client.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -95,6 +101,47 @@ export interface ArtifactLibraryDeps {
   surface: ArtifactSurface;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
+  ensureReady: (agentId: string) => Promise<void>;
+  agentApi: AgentApiPodClient;
+}
+
+type AgentApiAccess =
+  | { allowed: true; agentId: string }
+  | {
+      allowed: false;
+      denial:
+        | "missing"
+        | "not-html"
+        | "not-interactive"
+        | "not-private"
+        | "not-agent-published"
+        | "agent-not-bound";
+    };
+
+function securitySurface(surface: ArtifactSurface): SecuritySurface {
+  return match(surface)
+    .with("ui", () => "ui" as const)
+    .with("cli", () => "cli" as const)
+    .with("mcp", () => "mcp" as const)
+    .with("system", () => "other" as const)
+    .with("other", () => "other" as const)
+    .exhaustive();
+}
+
+function agentApiAccess(
+  row: ArtifactRow | null,
+  agentIds: readonly string[] | "*",
+): AgentApiAccess {
+  if (!row) return { allowed: false, denial: "missing" };
+  if (row.kind !== "html") return { allowed: false, denial: "not-html" };
+  if (!row.interactive) return { allowed: false, denial: "not-interactive" };
+  if (row.visibility !== "private")
+    return { allowed: false, denial: "not-private" };
+  if (row.agentId === null)
+    return { allowed: false, denial: "not-agent-published" };
+  if (agentIds !== "*" && !agentIds.includes(row.agentId))
+    return { allowed: false, denial: "agent-not-bound" };
+  return { allowed: true, agentId: row.agentId };
 }
 
 export function shareUrlFor(shareBaseUrl: string, slug: string): string {
@@ -696,6 +743,33 @@ export function createArtifactLibraryService(
         version: ref.version,
         expiresSeconds: link.expiresSeconds,
       };
+    },
+
+    async callAgentApi(
+      { artifactId, ...request },
+      { agentIds },
+    ): Promise<ArtifactCallAgentApiResult> {
+      const row = await repo.getArtifact(artifactId, owner);
+      const access = agentApiAccess(row, agentIds);
+      if (!access.allowed) {
+        securityLog("warn", "authz.artifact_api_denied", {
+          category: "authz",
+          actor: owner,
+          actorKind: "user",
+          surface: securitySurface(surface),
+          decision: "deny",
+          reason: access.denial,
+          target: artifactId,
+          ...(row?.agentId ? { agentId: row.agentId } : {}),
+        });
+        return { ok: false, reason: "not-allowed" };
+      }
+      try {
+        await deps.ensureReady(access.agentId);
+      } catch {
+        return { ok: false, reason: "agent-unreachable" };
+      }
+      return deps.agentApi.request(access.agentId, request);
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

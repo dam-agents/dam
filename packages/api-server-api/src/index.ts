@@ -255,6 +255,9 @@ export type {
   ArtifactLibraryService,
   ArtifactTouch,
   ArtifactTouchService,
+  ArtifactApiFailureReason,
+  ArtifactCallAgentApiInput,
+  ArtifactCallAgentApiResult,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
@@ -273,6 +276,9 @@ export {
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
   VIEWER_ALLOWLIST_MAX,
+  artifactApiFailureReasonSchema,
+  artifactCallAgentApiInputSchema,
+  artifactCallAgentApiResultSchema,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,

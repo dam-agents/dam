@@ -1,3 +1,10 @@
+import type { z } from "zod";
+import type {
+  artifactApiFailureReasonSchema,
+  artifactCallAgentApiInputSchema,
+  artifactCallAgentApiResultSchema,
+} from "./schemas.js";
+
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
 
 export const ARTIFACT_RESTORE_WINDOW_DAYS = 7;
@@ -155,6 +162,10 @@ export interface ArtifactLibraryService {
   updateFolder(id: string, input: FolderUpdateInput): Promise<ArtifactFolder>;
   deleteFolder(id: string): Promise<void>;
   folderShareUrl(id: string): Promise<string | null>;
+  callAgentApi(
+    input: ArtifactCallAgentApiInput,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<ArtifactCallAgentApiResult>;
 }
 
 export interface ArtifactTouch {
@@ -173,3 +184,13 @@ export interface ArtifactTouchService {
     version: number;
   }): Promise<boolean>;
 }
+
+export type ArtifactApiFailureReason = z.infer<
+  typeof artifactApiFailureReasonSchema
+>;
+export type ArtifactCallAgentApiInput = z.infer<
+  typeof artifactCallAgentApiInputSchema
+>;
+export type ArtifactCallAgentApiResult = z.infer<
+  typeof artifactCallAgentApiResultSchema
+>;
