@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createOutcomeDelivery,
   createOutcomeWakeRetry,
@@ -95,8 +95,7 @@ describe("waking an agent with a finished job", () => {
    * colon, and the epoch milliseconds the event fired at. An id with no
    * timestamp after its last colon is settled without running, so a turn with
    * a bare UUID id reached the agent and was dropped while the Job still read
-   * as delivered and woken. The id must be per-agent and end in a timestamp,
-   * the same shape every other event producer writes.
+   * as delivered and woken. The id must end in a timestamp.
    */
   it("gives the turn an id the agent-runtime can read a timestamp from", async () => {
     const before = Date.now();
@@ -104,11 +103,39 @@ describe("waking an agent with a finished job", () => {
     await deliver("agent-1");
     const id = events[0]?.id ?? "";
     const cut = id.lastIndexOf(":");
-    expect(id.slice(0, cut)).toBe("satellite-outcome:agent-1");
+    expect(id.slice(0, cut)).toBe("satellite-outcome:agent-1:gpu-box#7");
     const ts = Number(id.slice(cut + 1));
     expect(Number.isInteger(ts)).toBe(true);
     expect(ts).toBeGreaterThanOrEqual(before);
     expect(ts).toBeLessThanOrEqual(Date.now());
+  });
+
+  /**
+   * TEST_SCENARIO: Two turns for one agent can be written in the same
+   * millisecond: the lease sweep delivers one turn per expired Job in a loop,
+   * and two Satellites can report at once. The outbox drops an event whose id
+   * already exists, and the runtime skips an event whose timestamp is not
+   * newer than the last run for its key. A key per agent would lose the second
+   * turn either way, with both Jobs recorded as told. The key names the turn's
+   * first Job, which no other turn carries, so neither can drop it.
+   */
+  it("keeps two turns written in the same millisecond apart", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-24T06:00:00.000Z"));
+    try {
+      const { deliver, events } = harness([
+        [job({ satellite: "gpu-box", sequence: 7 })],
+        [job({ satellite: "build-farm", sequence: 3 })],
+      ]);
+      await deliver("agent-1");
+      await deliver("agent-1");
+      const [first, second] = events.map((e) => e.id);
+      const key = (id = "") => id.slice(0, id.lastIndexOf(":"));
+      expect(first).not.toBe(second);
+      expect(key(first)).not.toBe(key(second));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("carries why a job ended and what it printed, not one or the other", async () => {
