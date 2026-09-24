@@ -356,31 +356,6 @@ func TestDemandIsReadWithoutAskingTheCluster(t *testing.T) {
 	assert.Zero(t, actionsOn(r, "get", "statefulsets"), "a peer's decision comes from memory")
 }
 
-// TEST_SCENARIO: a runner whose request already matches its demand is not listed again on every half-second poll. A change of demand is acted on at once, and a runner seen not ready — as a replacement pod is — is looked at again as soon as it is ready.
-func TestAMatchingRequestIsNotListedOnEveryPoll(t *testing.T) {
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
-		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
-	}
-	clusterResizesPods(r, true)
-	runnerPod(t, r, "1Gi", "16Gi")
-	ctx := context.Background()
-
-	r.resizeRunnerPod(ctx, testOwner, 3072)
-	r.resizeRunnerPod(ctx, testOwner, 3072)
-	assert.Equal(t, 1, actionsOn(r, "list", "pods"), "an unchanged demand is not listed again")
-
-	r.resizeRunnerPod(ctx, testOwner, 4096)
-	assert.Equal(t, 2, actionsOn(r, "list", "pods"), "a changed demand is acted on at once")
-	assert.Equal(t, "4608Mi", runnerPodRequest(t, r))
-
-	r.runnerResized.Delete(testOwner)
-	r.resizeRunnerPod(ctx, testOwner, 4096)
-	assert.Equal(t, 3, actionsOn(r, "list", "pods"), "a runner that was not ready is looked at again")
-}
-
 // TEST_SCENARIO: an accepted resize is only a request to the node. When the kubelet reports it pending — infeasible on this node, or deferred until there is room — the controller reports that, once per pod and size, rather than treating the memory as accounted for.
 func TestAPendingResizeIsReportedOnce(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, vmAgentCR())

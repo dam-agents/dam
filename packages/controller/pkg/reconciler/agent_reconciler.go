@@ -44,15 +44,14 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	runnerRollMu   sync.Mutex
-	runnerRollGate runnerRollGate
 	requeue        func(name string, after time.Duration)
+	lifetime       context.Context
 	podResize      atomic.Int32
 	agentCache     cache.GenericLister
 	vmRunning      sync.Map
-	runnerResized  sync.Map
 	resizeNotices  sync.Map
-	pullAuthMu     sync.Mutex
-	pullAuthMemo   map[string]pullAuthMemo
+	machineWatchMu sync.Mutex
+	machineWatches map[string]*machineWatch
 	preflightMu    sync.Mutex
 	preflight      vmPreflightResult
 	preflightDone  bool
@@ -76,7 +75,9 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 	return r
 }
 
-func (r *AgentReconciler) WithRequeue(fn func(name string, after time.Duration)) *AgentReconciler {
+// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue.
+func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name string, after time.Duration)) *AgentReconciler {
+	r.lifetime = lifetime
 	r.requeue = fn
 	return r
 }
@@ -114,7 +115,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
-		if err := r.ensureLeafSecretOwnerReference(ctx, name, ownerRef); err != nil {
+		if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
 			slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
 				"agent", name, "error", err)
 		}
@@ -236,7 +237,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
-		if stderrors.Is(err, errLeafSecretPending) {
+		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
 		}
 		if err != nil {
@@ -416,8 +417,8 @@ func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.P
 	return pod, nil
 }
 
-func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
-	secretName := EnvoyLeafSecretName(agentName)
+// UNIT_BOUNDARY_DESCRIPTION: cert-manager does not own the Secrets it issues, so without this an issued Secret outlives what it was issued for.
+func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secretName string, ownerRef metav1.OwnerReference) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
 		if errors.IsNotFound(err) {

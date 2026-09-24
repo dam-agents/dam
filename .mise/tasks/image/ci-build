@@ -41,8 +41,8 @@ mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
 spec() {
   case "$1" in
     controller) echo "packages/controller/Dockerfile packages/controller no" ;;
-    # The runner is the Rust crate, built from a second named context.
-    vm-runner) echo "packages/controller/Dockerfile.vm-runner packages/controller no vm-runner=packages/vm-runner" ;;
+    # The runner image is built from its crate alone, platform-init included.
+    vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner no" ;;
     api-server) echo "packages/api-server/Dockerfile . no" ;;
     ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;

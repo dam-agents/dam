@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-23
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -335,10 +335,11 @@ above. It does not ride the Envoy path at all:
 
 - **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
   It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
-  `imagePullSecrets`. A vm Agent has no pod, so its runner tries the same
-  Secrets in the same order for that fetch alone, never storing them, and
-  re-checks a private cache entry per machine
-  ([persistence](persistence.md#the-machine-image-cache)). Either way the
+  `imagePullSecrets`. A vm Agent has no pod, so its runner hands those
+  Secrets, in order, to the cache, for that fetch alone, never
+  storing them; a shared cache checks a private entry per boot, not
+  per read ([persistence](vm-image-cache.md)).
+  Either way the
   agent never holds the bytes — because of *where the Secret is
   consumed*, not Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
@@ -641,9 +642,9 @@ differ:
   scope the OpenShift SCC grant that permits uid 0 to exactly this
   workload — an ops-side, out-of-band binding. The pod joins no mesh and
   mounts no credentials.
-- **Image cache ServiceAccount** — a token, only with default pull
-  secrets set, and a Role that gets just those
-  ([persistence](persistence.md#the-machine-image-cache)).
+- **Image cache ServiceAccount** — no token, no Role: it mounts the
+  default pull secrets it preloads with
+  ([persistence](vm-image-cache.md)).
 - **Per-Agent ServiceAccount** in the agent namespace, name ==
   Agent ID. Both pods of the long-lived pair run as this SA, but
   only the *gateway* pod is a mesh participant — istiod stamps it with

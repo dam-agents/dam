@@ -383,27 +383,24 @@ func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
 	assert.Equal(t, "8Gi", cfg.VM.Runner.Resources.Limits.Memory().String())
 }
 
-// TEST_SCENARIO: the canary percentage picks owners by bucket out of 100 and the roll width counts runners, so a value outside either range is a values typo. The controller refuses to start rather than give every owner the canary, or none, without saying so.
+// TEST_SCENARIO: the roll width counts runners, so a negative one is a values typo. The controller refuses to start rather than roll no runner, or every one, without saying so.
 func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	base := map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
 	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
-	for _, bad := range []string{`"canary":{"percent":101}`, `"canary":{"percent":-1}`, `"rollout":{"maxConcurrent":-1}`} {
+	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`} {
 		base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,` + bad + `}}`
 		setEnv(t, base)
 		_, err := LoadFromEnv()
 		assert.Error(t, err, bad)
 	}
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"canaryImage":"vm-runner:2","canary":{"owners":["alice"],"percent":5},"rollout":{"maxConcurrent":2,"settleTimeout":"15m"}}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"settleTimeout":"15m"}}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, "vm-runner:2", cfg.VM.Runner.CanaryImage)
-	assert.Equal(t, []string{"alice"}, cfg.VM.Runner.Canary.Owners)
-	assert.Equal(t, 5, cfg.VM.Runner.Canary.Percent)
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE sources=["src/**/*.rs", "Cargo.toml", "rustfmt.toml"]
+#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "rustfmt.toml"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail

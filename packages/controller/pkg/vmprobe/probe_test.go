@@ -2,6 +2,7 @@
 package vmprobe
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,4 +47,16 @@ func TestExpectingAnEmptyDiskFailsOnAnyMarker(t *testing.T) {
 	code, body := health(t, Guest{Dir: dir, ExpectEmpty: true})
 	assert.Equal(t, http.StatusServiceUnavailable, code)
 	assert.Contains(t, body, "left behind")
+}
+
+// TEST_SCENARIO: a probe that looked anywhere but the persisted home would judge a directory the machine discards at every stop, and would pass a runner that lost the disk. Its default is held to the guest fixture that platform-init's own tests read.
+func TestTheProbeLooksWherePlatformInitMountsTheDisk(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "vm-runner", "contract", "guest.json"))
+	require.NoError(t, err)
+	var guest struct {
+		AgentHome string `json:"agentHome"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &guest))
+	assert.Equal(t, guest.AgentHome, AgentHome)
+	assert.Equal(t, AgentHome, FromEnv(func(string) string { return "" }).Dir)
 }

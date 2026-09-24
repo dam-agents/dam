@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 #MISE raw=true
-#MISE depends=["//packages/controller:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
+#MISE depends=["//packages/controller:image", "//packages/vm-runner:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #
@@ -572,7 +572,16 @@ else
   echo "Restarting pods..."
   kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
   # Runners are created per owner with a hashed name, so restart them by label.
-  [ -n "$VIRT_ENABLED" ] && kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment -l app.kubernetes.io/component=vm-runner
+  # The node image cache DaemonSet runs the same image. Both live in the agent
+  # namespace, and either may not exist yet.
+  if [ -n "$VIRT_ENABLED" ]; then
+    for workload in deployment/vm-runner daemonset/vm-image-cache; do
+      selector="app.kubernetes.io/component=${workload#*/}"
+      if [ -n "$(kubectl --kubeconfig="$KUBECONFIG" -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
+        kubectl --kubeconfig="$KUBECONFIG" -n platform-agents rollout restart "${workload%/*}" -l "$selector"
+      fi
+    done
+  fi
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found

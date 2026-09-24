@@ -29,7 +29,6 @@ export const POD_FAILURE_REASONS = new Set([
   "ContainerTerminated",
   "MachineBootFailed",
   "MachineImageUnavailable",
-  "MachineEgressChanged",
 ]);
 
 const GATEWAY_FAILURE_REASONS = new Set([
@@ -124,8 +123,6 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image is not available to the VM runner";
         case "MachineBootFailed":
           return "the agent's microVM did not boot";
-        case "MachineEgressChanged":
-          return "the agent's sandbox is pinned to a network address its gateway no longer has";
         default:
           return "the agent crashed while starting";
       }

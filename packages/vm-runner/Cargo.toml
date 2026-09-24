@@ -4,38 +4,44 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+# The runner and platform-init, the entrypoint it hands every machine. They are
+# two packages rather than two binaries of one because cargo builds a package's
+# library for each of its binaries, and this library is the runner — smolvm,
+# tokio, the TLS stack — none of which the guest's static binary should carry.
+# smolvm's clone is a workspace of its own and stays out of this one. The root
+# package is a member without being listed; listing "." would name every path
+# below it, the clone included, and override the exclude.
+[workspace]
+members = ["platform-init"]
+default-members = [".", "platform-init"]
+exclude = [".smolvm"]
+
 [dependencies]
-# The same release the runner image installs for its assets — see the version
-# invariant in Dockerfile.vm-runner. `smolvm.pin` names the commit, and nothing
-# else does: a path dependency is recorded in Cargo.lock as a bare version, with
-# no source and no commit, so the lock says nothing about which tree is there.
+# The same release the runner image installs for its assets: `smolvm.pin` names
+# it for both, and it alone names the commit — a path dependency is recorded
+# in Cargo.lock as a bare version, with no source and no commit, so the lock
+# says nothing about which tree is there.
 smolvm = { path = ".smolvm" }
+# The guest contract. The paths this runner writes a machine's share at are
+# the ones platform-init reads it from, because both link the one file.
+platform-init = { path = "platform-init" }
 anyhow = "1"
 axum = "0.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 clap = { version = "4", features = ["derive"] }
-# --allow-from is a list of CIDRs the runner refuses to start on if any is
-# malformed; parsing them by hand is how an allowlist quietly admits everybody.
-ipnet = "2"
 # kill(2) for a VMM that outlived its stop. Already in the lock by way of
 # smolvm, so this adds an edge and no crate.
 libc = "0.2"
 # Already in the lock by way of smolvm, so this adds a dependency edge and no
-# crate: an archive an earlier release cached still boots a machine, and the
+# crate: an archive an install with no registry stages boots a machine, and the
 # config saying how is inside it.
 tar = "0.4"
 # The TLS stack axum-server serves over. smolvm pulls in both of rustls's
 # crypto backends, so rustls cannot choose one itself and the runner installs
 # ring explicitly. Already in the lock by way of smolvm.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-# The image cache service reads the install's pull Secrets from the API
-# server. Both are already in the lock by way of smolvm, with these features.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-base64 = "0.22"
-# Already in the lock by way of smolvm: the cache index names a reference by
-# its SHA-256, the name earlier releases wrote and still find; a kept
-# disk template is named by the SHA-256 of the compressed one it was expanded
-# from.
+# Already in the lock by way of smolvm: a kept disk template is named by the
+# SHA-256 of the compressed one it was expanded from.
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -51,8 +57,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # without binding a socket. Both are already in the lock by way of axum.
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
-# Backdating a file is how the cache's two time windows — a stale claim and an
-# abandoned scratch tree — are tested without waiting out thirty minutes.
+# Backdating a file is how eviction's oldest-write-first order is tested.
 filetime = "0.2"
 
 [lints.clippy]

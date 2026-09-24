@@ -29,13 +29,14 @@ metadata:
 {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 ---
 {{- /*
-The runner needs exactly what the chart's own SCC already grants agents:
-run as uid 0 and add NET_ADMIN, CHOWN, FOWNER and DAC_OVERRIDE, with no privileged
-container and no host volumes. Custom SCCs get no auto-generated ClusterRole, so this binds the
-one agent-scc.yaml renders. An install that sets `runner.scc` as well gets
-both — admission picks the one that admits the pod, preferring the
-narrower. The one shape this SCC refuses is `imageArchiveHostPath`, whose
-hostPath volume needs an SCC that admits one.
+A runner that caches images on its own claim needs exactly what the chart's
+own SCC already grants agents: run as uid 0 and add NET_ADMIN, DAC_OVERRIDE,
+CHOWN and FOWNER, with no privileged container and no host volumes. Custom
+SCCs get no auto-generated ClusterRole, so this binds the one agent-scc.yaml
+renders. An install that sets `runner.scc` as well gets both — admission
+picks the one that admits the pod, preferring the narrower. This SCC refuses
+the hostPath that `imageCache.hostPath` and `imageArchiveHostPath` mount, so
+those runners need `runner.scc`.
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

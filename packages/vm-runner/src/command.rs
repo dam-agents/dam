@@ -8,21 +8,14 @@ use tokio_util::sync::CancellationToken;
 
 // UNIT_BOUNDARY_DESCRIPTION: runs the tools the runner fetches images with — crane, and the tar it pipes into — bounded by a deadline and by the runner's own lifetime. A fetch may take twenty minutes, and a runner that is closing must not leave one running against its image directory: the process is killed and its scratch tree is left to the caller's cleanup, which now gets to run.
 
-// UNIT_BOUNDARY_DESCRIPTION: what a finished command produced. `stderr` is kept for the error message; it is capped by the caller before it reaches an Agent's status.
-#[derive(Debug)]
-pub struct Output {
-    pub stdout: Vec<u8>,
-    pub stderr: String,
-}
-
 const POLL: Duration = Duration::from_millis(50);
 
-// UNIT_BOUNDARY_DESCRIPTION: runs one command to completion and returns its output, or an error naming why it did not finish: it exited non-zero, the deadline passed, or the runner was closed.
+// UNIT_BOUNDARY_DESCRIPTION: runs one command to completion and returns its stdout, or an error naming why it did not finish: it exited non-zero, with its stderr, the deadline passed, or the runner was closed. The caller caps that stderr before it reaches an Agent's status.
 pub fn output(
     command: &mut Command,
     deadline: Instant,
     cancel: &CancellationToken,
-) -> anyhow::Result<Output> {
+) -> anyhow::Result<Vec<u8>> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -37,7 +30,7 @@ pub fn output(
     if !succeeded {
         anyhow::bail!("exit status {}: {}", exit_code(&mut child), stderr.trim());
     }
-    Ok(Output { stdout, stderr })
+    Ok(stdout)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs `producer | consumer` and waits for both. Each side's stderr is kept apart, so a failure names the half that failed. Either side failing fails the pipeline, and a producer that fails first is reported even though the consumer then fails too on the short stream.
@@ -190,8 +183,7 @@ mod tests {
             &CancellationToken::new(),
         )
         .unwrap();
-        assert_eq!(ok.stdout, b"out");
-        assert_eq!(ok.stderr, "err");
+        assert_eq!(ok, b"out");
 
         let failed = output(
             &mut sh("echo denied >&2; exit 3"),
