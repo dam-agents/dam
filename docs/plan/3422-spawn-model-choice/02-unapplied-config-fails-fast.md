@@ -10,8 +10,10 @@ has no effect. The child runs its default model, and the driver records that res
 came from the requested model. This slice closes that gap. The invocation remembers that it
 asked for a config. It fails with a reason once its target has registered without the
 `harnessConfig` capability. The result path refuses a result in the same case, because the
-liveness sweep ticks only every 60 s and a quick child could report before it. Codex is a
-real example of such a harness until slice 03 lands, and this slice's smoke test uses it.
+liveness sweep ticks only every 60 s and a quick child could report before it. All four
+catalogue harnesses have the driver, so the real cases are a raw `image:` spawn and a template
+an operator adds. This slice's smoke test uses a raw spawn of the `platform-mock` image, whose
+manifest declares no `harness-config` driver.
 
 ## Implementation plan
 
@@ -85,12 +87,15 @@ Apply `/typescript-engineering` to every TS change.
 2. Run `mise run cluster:build-apiserver` (the migration runs at api-server start). Then run
    `mise run cluster:build-agent` for the JS SDK change.
 3. In the Claude Code driver pod from slice 01, spawn
-   `template: "codex", model: "gpt-5.5", prompt: "Reply with the number 1.", schema: "integer"`
-   with a model connection that Codex accepts (ibm-litellm or openai) and `ttlMs: 30 * 60_000`.
+   `image: "docker.io/library/platform-mock:latest", model: "haiku", prompt: "Reply with the number 1.", schema: "integer"`
+   with `ttlMs: 30 * 60_000`. (The image is on the cluster already; if the target fails to
+   pull, check the agent's pull policy before blaming this slice.)
 4. Expect the SDK to throw well before the TTL, within about a minute of the target booting.
    The error names the reason. Either path may fire first: the sweep, or a refused
    `report_result` if the child answers fast. Both must end in the same `failed` status and
    reason.
-5. Spawn the same Codex call with no `model`. Expect it to succeed with `1`, unchanged from
-   `main`.
-6. Spawn `template: "claude-code", model: "haiku"`. Expect success, as in slice 01.
+5. Spawn the same raw image with no `model` and `ttlMs: 60_000`. Expect it never to fail with
+   the harness-config reason. The mock may never report, so it ends by `liveness deadline
+   exceeded`, as on `main`.
+6. Spawn `template: "claude-code", model: "haiku"`, and (with the `codex` template enabled)
+   `template: "codex"` with a discovered model. Expect both to succeed, as in slice 01.

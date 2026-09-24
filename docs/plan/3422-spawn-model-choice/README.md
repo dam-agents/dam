@@ -42,9 +42,10 @@ version, so their relative order is undefined. The config event gets its own `bu
 the trigger's `bump`.
 
 **What a spawn does not do.** No person acts, so the spawn emits no `HarnessConfigChanged`
-activity event. It also writes no harness-config snapshot: the target is a temporary agent
-reaped at terminal, and the live read covers it while it runs. It never sends `unset`, because
-a fresh child has nothing to clear.
+activity event. It also writes no declared snapshot: the target is a temporary agent reaped
+at terminal, and the live read covers it while it runs. (The pod's own `hello` and apply reply
+still write confirmed snapshots, as for any agent with the driver; that path is unchanged.) It
+never sends `unset`, because a fresh child has nothing to clear.
 
 **No up-front value check.** The api-server cannot know a template's catalog before a target
 pod boots: the catalog comes on `hello`, and Pi, Bob and Codex discover their model list live
@@ -59,11 +60,14 @@ The liveness sweep fails it once the target has registered without the capabilit
 refuses a result in the same case, because the sweep ticks every 60 s and a quick child could
 report first.
 
-**Codex gets a `harness-config` driver.** It is the only catalogue harness without one. Its
-scripts pass `-c model="$OPENAI_MODEL"` from the connection env, and a `-c` flag outranks the
-config file. So slice 03 also makes a model in the file outrank that env pin. Bob follows the
-same rule (`bob-settings.mjs`: panel value first, `BOB_SHELL_MODEL` second). Codex agents also
-get the model picker in the Config panel, because the UI gates that section on the capability.
+**Codex already has a `harness-config` driver.** Main's #3996 shipped it (after this plan was
+first written, so the planned slice 03 was dropped): `packages/agents/codex/runtime-manifest.yaml`
+maps `model` and `effort` into `~/.codex/config.toml`, and discovers the model list from
+`OPENAI_BASE_URL`. Its harness scripts pass the `OPENAI_MODEL` pin only when the file sets no
+`model`. Every harness with a connection model pin now follows one rule: the pin is a default,
+and a model in the harness's file that the provider offers outranks it (Bob: `bob-settings.mjs`;
+Pi: its `pi-dynamic-providers` extension; Codex: `codex-config-sets-model.sh`). Slice 01 states
+that rule once in `harness-config.md`.
 
 ```mermaid
 sequenceDiagram
@@ -118,14 +122,14 @@ option is given:
 | JS `driver-sdk` `spawn()` | `model`, `mode`, `configOptions` |
 | Python `experiment_sdk.spawn()` | `model=`, `mode=`, `config_options=` |
 
-Values per harness, for the skills (slice 01 writes them; slice 03 adds Codex):
+Values per harness, for the skills (slice 01 writes them):
 
 | Harness | `model` | `mode` | `configOptions` |
 |---|---|---|---|
 | claude-code | `fable`, `opus`, `sonnet`, `haiku` (static catalog) | permission mode. Leave it unset for an unattended child: `default` asks approvals nobody answers | `effort`: `low`, `medium`, `high`, `xhigh` (Haiku takes none) |
 | pi | a name from the provider's model list (live discovery) | thinking level: `off` … `xhigh` | — |
 | bob | a name from the provider's model list (live discovery) | `agent`, `plan`, `ask` | `approvals`: `auto` (`ask` stalls an unattended child) |
-| codex (slice 03) | a name from the provider's model list (live discovery) | — | `effort`: the installed Codex's `model_reasoning_effort` values |
+| codex | a name from the provider's model list (live discovery) | — | `effort`: `minimal`, `low`, `medium`, `high`, `xhigh` |
 
 The catalogues live in each image's `runtime-manifest.yaml` under `packages/agents/`. Take the
 values from there, not from this table, when the two differ.
@@ -134,12 +138,11 @@ values from there, not from this table, when the two differ.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [A spawn sets its child's harness config](./01-spawn-sets-harness-config.md) | Contract field, the two-bump event queue in the service, `/images` harness family, both SDKs, both skills, architecture docs | — |
+| 01 | [A spawn sets its child's harness config](./01-spawn-sets-harness-config.md) | Contract field, the two-bump event queue in the service, `/images` harness family, both SDKs, both skills (all four harnesses), architecture docs incl. the pin-precedence rule | — |
 | 02 | [A child that cannot apply it fails fast](./02-unapplied-config-fails-fast.md) | Store the requested config on the invocation row (migration), fail it in the liveness sweep and in `recordResult`, JS SDK surfaces `errorReason`, docs | 01 |
-| 03 | [Codex honors a harness config](./03-codex-harness-config.md) | Codex `runtime-manifest.yaml`, a model in the file outranks the `OPENAI_MODEL` pin, Dockerfile, Codex README, skills table row | 01 |
 
-03 comes after 02 on purpose. Until 03 lands, Codex is a real "cannot apply" case, and 02's
-smoke test uses it.
+The planned slice 03 (Codex honors a harness config) was dropped: main's #3996 shipped it.
+Its two leftovers (the Codex skill row and the precedence sentence) moved into 01.
 
 ## Conventions & glossary
 
@@ -153,8 +156,7 @@ smoke test uses it.
 - Apply `/typescript-engineering` to all api-server and contract changes (three-layer slice:
   services, domain, infrastructure; ports injected through `compose.ts`; cross-module access
   only through a module's `index.ts`).
-- There are no UI changes. The Codex Config panel section appears on its own through the
-  existing capability gate.
+- There are no UI changes.
 - **Tests:** do not add tests. Keep the existing suite green: the invocations unit tests under
   `packages/api-server/src/__tests__/unit/invocation*.test.ts` build the service and the sweep
   by hand, so a new dependency must be threaded through them. Verification is
@@ -163,7 +165,7 @@ smoke test uses it.
   and run `mise run check:comment-types`.
 - **Docs:** follow [`docs/guidelines/documentation-guidelines.md`](../../guidelines/documentation-guidelines.md).
   Pitch at the level of meaning, not field names. Bump `Last verified:` on each edited page.
-  `runtime-delivery.md` has about 150 chars left under the 40,000-char cap, and
+  `runtime-delivery.md` has about 84 chars left under the 40,000-char cap, and
   `agent-lifecycle.md` about 40. Keep any edit there net-small, or leave those pages alone.
 - **Dev cluster:** use `mise run cluster:build-apiserver` for api-server changes and
   `mise run cluster:build-agent` for image changes (the driver-sdk ships in `platform-base`,
@@ -172,8 +174,10 @@ smoke test uses it.
 
 ## Whole-feature smoke test
 
-On the dev cluster, after all three slices, rebuild everything: `cluster:build-apiserver`,
-then `cluster:build-agent`.
+On the dev cluster, after both slices, rebuild everything: `cluster:build-apiserver`,
+then `cluster:build-agent`. The Codex steps need the `codex` template enabled on the cluster
+(build its image, import it into k3s, add its entry to the harness-templates ConfigMap,
+restart the api-server) and a model connection Codex can reach from the laptop.
 
 1. Create a Claude Code driver agent with a model connection. Open a shell in its pod
    (`dam ssh`, or `mise run cluster:kubectl -- exec`).
@@ -187,13 +191,11 @@ then `cluster:build-agent`.
    Expect three results that name three different models.
 3. On the Usage surface (per-model rollup), the driver's spend now shows the Haiku, Opus and
    Codex model ids.
-4. Negative path: spawn a raw `image:` whose manifest declares no `harness-config` driver,
-   with `model: "haiku"`. The mock agent image, or `platform-base`, qualifies if the cluster
-   carries one. Expect the SDK to throw within about a minute of the target booting, with an
-   `errorReason` that says the target cannot apply the requested harness config.
+4. Negative path: spawn `image: "docker.io/library/platform-mock:latest"` (on the cluster; its
+   manifest declares no `harness-config` driver) with `model: "haiku"`. Expect the SDK to throw
+   within about a minute of the target booting, with an `errorReason` that says the target
+   cannot apply the requested harness config.
 5. Spawn with no `model`. Expect behavior unchanged from `main`.
-6. Open a Codex agent's Config panel. It lists models, and a pick lands in
-   `~/.codex/config.toml` and survives a harness restart.
 
 ## Delivery
 

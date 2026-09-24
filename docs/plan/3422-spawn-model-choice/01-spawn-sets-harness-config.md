@@ -60,7 +60,7 @@ Apply `/typescript-engineering` to every TS change.
      - Add `model`, `mode` and `configOptions` rows to the `spawn(opts)` table.
      - Add a short "Choose the model per spawn" section. It covers: why (compare models, cheap
        models for mechanical steps); the per-harness value table from the README (Claude
-       Code, Pi, Bob; slice 03 adds Codex); that `listImages()` now returns each image's
+       Code, Codex, Pi, Bob); that `listImages()` now returns each image's
        `harness`; that the discovered names are the ones the Config panel lists for any agent
        on the same connection; the warning that `mode` values which ask approvals stall an
        unattended child; and the advice to use a short `ttlMs` when trying a new name.
@@ -76,13 +76,17 @@ Apply `/typescript-engineering` to every TS change.
        for an agent it spawns".
      - In "The event", add that a spawn is a second producer. It carries the driver's choice
        for the child and is queued ahead of the child's first turn, so that turn already runs
-       on it. It is not a person's action, so it records no activity and no snapshot.
+       on it. It is not a person's action, so it records no activity and no declared snapshot.
+     - State once, at the level of meaning, the rule every harness with a connection model
+       pin follows (Bob, Pi, and Codex since main's #3996): the pin is a default, and a model
+       value in the harness's file that the provider offers outranks it. Do not list harness
+       names on the page.
    - `docs/architecture/experiments.md`: in "The worker image is a design-time choice", make
      the worker's model part of the approved envelope, and say that the catalogue names each
      image's harness family.
    - `docs/architecture/runtime-delivery.md`: the `harness-config` line says the choices are
      "a user makes in the Config panel". Extend it with "or a driver makes for an agent it
-     spawns". This page has about 150 chars of headroom, so keep the edit to that clause.
+     spawns". This page has about 84 chars of headroom, so keep the edit to that clause.
 
 ## Acceptance criteria
 
@@ -91,8 +95,8 @@ Apply `/typescript-engineering` to every TS change.
 - [ ] A spawn without `harnessConfig` queues only the trigger, as on `main`.
 - [ ] `harnessConfig: {}`, an empty `model` string, and a non-string option value are rejected
       with `400`.
-- [ ] No `HarnessConfigChanged` activity event and no harness-config snapshot row is written
-      for a target.
+- [ ] The spawn itself writes no declared snapshot and emits no `HarnessConfigChanged`
+      activity event. (The pod's own confirmed reports still write a snapshot, as for any agent.)
 - [ ] Each `GET /images` entry carries `harness` when the template declares one.
 - [ ] Both SDKs send `harnessConfig` only when at least one of its options is given.
 - [ ] Both skills and the three architecture pages describe the choice, and
@@ -117,8 +121,12 @@ Apply `/typescript-engineering` to every TS change.
 5. Repeat with `configOptions: { effort: "low" }` and `model: "opus"`. While the target lives,
    read its agent-runtime log with `mise run cluster:kubectl -- logs <target-pod>`. Expect a
    `[harness-config] … set model, effortLevel` line before the trigger opens its session.
-6. Python path: in the same pod, run
+6. Codex path (needs the `codex` template enabled on the cluster, see the README's
+   whole-feature smoke test): spawn `template: "codex"` with `model` set to a name from a
+   Codex agent's Config panel list, and a model connection Codex can reach. Expect the child
+   to report that model, not the connection's `OPENAI_MODEL` pin.
+7. Python path: in the same pod, run
    `python3 -c 'import experiment_sdk as x; print(x.spawn("Report the exact model id you are running as.", "string", template="claude-code", model="haiku", connections=["<id>"], ttl_ms=600000))'`.
    Expect a Haiku model id.
-7. Rejection: `curl -s -XPOST "${PLATFORM_MCP_URL%/mcp}/invocations" -H 'content-type: application/json' -d '{"templateId":"claude-code","prompt":"x","schema":{},"harnessConfig":{}}'`.
+8. Rejection: `curl -s -XPOST "${PLATFORM_MCP_URL%/mcp}/invocations" -H 'content-type: application/json' -d '{"templateId":"claude-code","prompt":"x","schema":{},"harnessConfig":{}}'`.
    Expect a `400`.
