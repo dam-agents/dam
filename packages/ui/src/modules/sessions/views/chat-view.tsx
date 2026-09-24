@@ -91,6 +91,7 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { fanOutIdsIn } from "../../invocations/lib/fan-out.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
@@ -280,6 +281,7 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const claimedDelegationIds = useMemo(() => fanOutIdsIn(messages), [messages]);
   const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
@@ -799,6 +801,7 @@ export function ChatView() {
                       <LiveDelegationBlock
                         driverAgentId={selectedAgent}
                         active={busy}
+                        claimed={claimedDelegationIds}
                       />
                     )}
                     {telemetryEnabled && sessionTurns.isError && (
