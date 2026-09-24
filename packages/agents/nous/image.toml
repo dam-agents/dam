@@ -4,7 +4,6 @@
 # bridge relies on (upstream issue 296).
 [tools."pipx:AI-native-Systems-Research/agentic-strategy-evolution"]
 version = "v0.4.0"
-uvx_args = "--with setuptools>=83.0.0 --with msgpack>=1.2.1"
 postinstall = '"$MISE_TOOL_INSTALL_PATH/nous/bin/python" {{config_root}}/nous/patch-campaign-schema.py'
 
 [oci.env]

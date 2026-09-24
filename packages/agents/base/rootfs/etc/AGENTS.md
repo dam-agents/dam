@@ -4,7 +4,7 @@ You are running in a cloud VM managed by DAM. The VM may be stopped and restarte
 
 Available:
 - usual Linux tools
-- `node` (26), `npm`, `pnpm`
+- `node` (26) with `npm`/`npx`, and `aube` for pnpm-style projects (also as `pnpm`; `aubx` runs one-off tools, and `aube add -g` installs into the home, so they last across restarts)
 - `python` (3.12), `pip`, `uv`, `uvx`
 - `gh`, `rg`, `fd`, `jq`, `kubectl`
 - `agent-browser` and Playwright (`playwright`, `npx playwright`), sharing one bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs

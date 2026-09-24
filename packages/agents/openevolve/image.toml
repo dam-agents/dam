@@ -1,9 +1,7 @@
 # The openevolve config environment over claude-code's: mise -E claude-code,openevolve.
 
-# The --with floors are CVE fixes the package's own pins do not reach.
 [tools."pipx:openevolve"]
 version = "0.2.27"
-uvx_args = "--with setuptools>=83.0.0 --with msgpack>=1.2.1"
 
 [oci.env]
 OPENEVOLVE_VENV = "/opt/openevolve-venv"

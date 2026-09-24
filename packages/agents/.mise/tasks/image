@@ -106,8 +106,8 @@ stage_project() {
 }
 
 # One lockfile for every image: mise lock only resolves, so any host can run it.
-# The pipx tools stay out: mise cannot lock one with uvx_args, and each is
-# pinned exactly in its image.toml.
+# A pipx tool with uvx_args stays out: mise cannot lock it, and its image.toml
+# pins it exactly.
 lock_mise() (
   all=()
   for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; all+=("${d##*/}"); done
@@ -115,7 +115,10 @@ lock_mise() (
   cd "$stage"
   envs="${all[*]}"
   envs="${envs// /,}"
-  read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r '[keys[] | select(startswith("pipx:") | not)] | join(" ")')"
+  unlockable="$(awk '/^\[tools\./ { t = $0; sub(/^\[tools\./, "", t); sub(/\]$/, "", t); gsub(/"/, "", t) } /^uvx_args/ { print t }' mise/conf.d/harness.*.toml)"
+  read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r --arg skip "$unlockable" '[keys[] | select(. as $k | $skip | split("\n") | index($k) | not)] | join(" ")')"
+  # Python dependency locks run the image's uv.
+  mise -E "$envs" install uv
   mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
   cp mise/mise.lock "$root/$lockfile"
   rm -rf "${root:?}/$deplocks"
@@ -157,7 +160,8 @@ build_mise() (
   cd "$stage"
   mise -E "$envs" install
   # mise oci relocates #! lines, not the launcher uv writes for a long one.
-  { grep -rlZ "^'''exec' '$MISE_DATA_DIR/" "$MISE_DATA_DIR"/installs/pipx-*/*/*/bin 2>/dev/null || true; } |
+  { find "$MISE_DATA_DIR"/installs/pipx-* -path '*/bin/*' -type f -print0 2>/dev/null |
+    xargs -0r grep -lZ "^'''exec' '$MISE_DATA_DIR/" || true; } |
     xargs -0r sed -i "s|'$MISE_DATA_DIR/|'/usr/local/share/mise/|"
   # Playwright's Chromium, which agent-browser finds through
   # PLAYWRIGHT_BROWSERS_PATH; the download is kept between builds.
@@ -167,12 +171,17 @@ build_mise() (
   set -- build/opt/ms-playwright/chromium-[0-9]*/chrome-linux*/chrome
   [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
   ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/chrome
-  # A workload's /opt/<name>-venv link spells its tool's version; a bump that
-  # misses it fails here.
-  for l in */rootfs/opt/*-venv; do
-    [ -L "$l" ] || continue
-    t="$(readlink "$l")"
-    [ -x "$MISE_DATA_DIR/${t#../usr/local/share/mise/}/bin/python" ] || { echo "$l -> $t is not a venv: does it match the tool's version?" >&2; exit 1; }
+  # A workload's venv, at the /opt path its *_VENV names and as /opt/venv. A
+  # locked install's directory carries a hash, so the link is made here.
+  for f in mise/conf.d/harness.*.toml; do
+    name="$(sed -n 's|^[A-Z_]*_VENV = "/opt/\(.*\)"$|\1|p' "$f")"
+    [ -n "$name" ] || continue
+    tool="$(sed -n 's|^\[tools\."\(pipx:[^"]*\)"\]$|\1|p' "$f")"
+    cfg="$(find "$(mise -E "$envs" where "$tool")" -maxdepth 3 -name pyvenv.cfg | head -1)"
+    [ -n "$cfg" ] || { echo "$tool has no venv" >&2; exit 1; }
+    venv="${cfg%/pyvenv.cfg}"
+    ln -s "../usr/local/share/mise/${venv#"$MISE_DATA_DIR"/}" "build/opt/$name"
+    ln -s "$name" build/opt/venv
   done
 
   # The apt bootstrap needs root. out/ is made first, as this user, so the

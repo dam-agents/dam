@@ -1,0 +1,3 @@
+#!/bin/sh
+# aube reads pnpm lockfiles and takes pnpm's commands.
+exec aube "$@"
