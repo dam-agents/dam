@@ -307,6 +307,7 @@ export function createStarterKitsService(
           : {}),
         ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
         ...(kit.backend === "vm" ? { vm: true } : {}),
+        ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),

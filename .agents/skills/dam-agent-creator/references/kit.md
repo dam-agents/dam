@@ -146,6 +146,7 @@ Declare only what the design actually needs; every one of these is optional.
 | `harnesses: [claude-code, …]` | the definition depends on a harness family's conventions (hooks under `scripts/harness/<harness>/`, a command spelling) |
 | `providers: [...]` | the workload needs specific provider presets |
 | `resources: {cpu, memory, storage, note}` | the workload needs more than the install default; `note` says why. Limits only — never requests. `storage` is fixed at create |
+| `egressPreset: none \| trusted \| all` | the agent's web access at create. Omit for the platform default (`trusted`); `none` for a job that needs no network beyond its connections, `all` only when the job browses arbitrary sites |
 | `hibernationTimeoutMin` | a heartbeat finer than the install's idle timeout, so the agent is not paid for round-trip wake-ups |
 | `env: [{name, value}]` | a **fixed** value every deployment shares. Instance values belong in the config dialog, never here |
 | `bundledSkills: {path}` | the design bundles a skill — a scan root (`.agents/skills`); declared for display, the platform installs nothing |

@@ -75,6 +75,14 @@
       "type": "string",
       "const": "vm"
     },
+    "egressPreset": {
+      "type": "string",
+      "enum": [
+        "none",
+        "trusted",
+        "all"
+      ]
+    },
     "resources": {
       "type": "object",
       "properties": {
