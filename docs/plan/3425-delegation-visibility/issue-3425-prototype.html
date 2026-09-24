@@ -114,6 +114,11 @@
   .pill.warning{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning-fg)}
   .pill.danger{background:var(--danger-light);color:var(--danger)}
   .pill.accent{background:var(--accent-light);color:var(--accent)}
+  .tel{display:inline-flex;align-items:center;gap:6px;margin:-4px 0 6px 58px;padding:2px 0;font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:11px;color:color-mix(in srgb,var(--muted-foreground) 70%,transparent)}
+  .tel:hover{color:var(--foreground)}
+  .tel .err{color:var(--danger)}
+  .tel.turn{margin:0;font-size:11px}
+  body[data-tel="off"] .tel{display:none}
   .sub > .act-b{border-top:1px solid var(--hairline);margin:0 -12px;padding:10px 12px 6px}
   .sub .sub{margin:8px 0 2px}
   .fold{display:flex;flex-direction:column;gap:10px;padding:0 0 4px}
@@ -146,6 +151,13 @@
   /* right dock (chat-view.tsx right column) */
   .dock{width:440px;flex-shrink:0;border-left:1px solid var(--border);display:none;flex-direction:column;background:var(--background)}
   .dock.show{display:flex}
+  .dock [data-conv]{display:none}
+  .dock[data-conv="done"] [data-conv="done"],.dock[data-conv="working"] [data-conv="working"],.dock[data-conv="waiting"] [data-conv="waiting"]{display:flex}
+  .dots{display:inline-flex;align-items:center;gap:2px;color:var(--accent);padding:4px 0}
+  .dots span{width:5px;height:5px;border-radius:999px;background:currentColor;animation:dot-jump .9s ease-in-out infinite}
+  .dots span:nth-child(2){animation-delay:.15s}
+  .dots span:nth-child(3){animation-delay:.3s}
+  @keyframes dot-jump{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
   .dock-h{display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0}
   .dock-h .t{font-size:14px;font-weight:500;flex:1;display:flex;align-items:center;gap:8px;min-width:0}
   .dock-h .t .truncate{display:block}
@@ -155,7 +167,7 @@
   .facts{display:flex;flex-wrap:wrap;gap:4px 16px;padding:10px 20px;border-bottom:1px solid var(--hairline);font-size:12px;color:var(--muted-foreground)}
 </style>
 </head>
-<body data-state="done">
+<body data-state="done" data-tel="on">
 
 <div class="proto-bar">
   <h1>Delegation visibility · #3425</h1>
@@ -164,6 +176,11 @@
     <button data-state="running">Running</button>
     <button class="on" data-state="done">Done</button>
     <button data-state="failed">Failed</button>
+  </div>
+  <div class="toggle" id="tel-toggle">
+    <span class="lead">Telemetry</span>
+    <button class="on" data-tel="on">On</button>
+    <button data-tel="off">Off</button>
   </div>
   <div class="toggle" id="theme-toggle">
     <button class="on" data-theme="light">Light</button>
@@ -251,11 +268,12 @@ console.log(six, eight);</div></div>
   <button class="act-h" aria-expanded="false" data-toggle>
     <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
     <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
-    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi · 34s</span></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill success">Working</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>34s · 3 calls · 1.2k tokens · &lt;$0.01</span></button>
   <div class="act-b"><div class="fold">
-<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open-live><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open chat</button></div>
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open="live"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
   </div></div>
 </div>
 <div class="act sub">
@@ -265,8 +283,9 @@ console.log(six, eight);</div></div>
     <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill warning">Waiting for room</span>
   </button>
+  
   <div class="act-b"><div class="fold">
-<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open-live><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open chat</button></div>
+<div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div class="kv"><span>deadline 10m</span></div><div><button class="btn" data-open="live"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
   </div></div>
 </div>
 </div>
@@ -275,9 +294,10 @@ console.log(six, eight);</div></div>
   <button class="act-h" aria-expanded="false" data-toggle>
     <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
     <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
-    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi · 1m 12s · <span class="mono">$0.02</span></span></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button>
   <div class="act-b"><div class="fold">
 <div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">42</div></div><div><button class="btn" data-open="six"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
   </div></div>
@@ -286,17 +306,19 @@ console.log(six, eight);</div></div>
   <button class="act-h" aria-expanded="true" data-toggle>
     <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
     <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
-    <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi · 58s · <span class="mono">$0.02</span></span></span>
+    <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>58s · 9 calls · 3.6k tokens · $0.02</span></button>
   <div class="act-b"><div class="fold">
 <div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">72</div></div><div><button class="btn" data-open="eight"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div><div class="act sub">
   <button class="act-h" aria-expanded="false" data-toggle>
     <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
     <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
-    <span class="ident"><span class="label">Verify that 72 is 8 * 9. Report true or false.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi · 21s · <span class="mono">$0.01</span></span></span>
+    <span class="ident"><span class="label">Verify that 72 is 8 * 9. Report true or false.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>21s · 4 calls · 1.1k tokens · &lt;$0.01</span></button>
   <div class="act-b"><div class="fold">
 <div><div class="k">Prompt</div><div class="pre" style="margin:0">Verify that 72 is 8 * 9. Report true or false.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">true</div></div><div><button class="btn" data-open="check"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
   </div></div>
@@ -309,9 +331,10 @@ console.log(six, eight);</div></div>
   <button class="act-h" aria-expanded="false" data-toggle>
     <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
     <span class="tile" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
-    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi · 1m 12s · <span class="mono">$0.02</span></span></span>
+    <span class="ident"><span class="label">Compute 6 * 7 and report the result as a single integer.</span><span class="subtitle">Temporary agent · claude-code · 1 CPU · 1 Gi</span></span>
     <span class="pill accent"><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button>
   <div class="act-b"><div class="fold">
 <div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 6 * 7 and report the result as a single integer.</div></div><div><div class="k">Result</div><div class="pre mono" style="margin:0">42</div></div><div><button class="btn" data-open="six"><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button></div>
   </div></div>
@@ -323,6 +346,7 @@ console.log(six, eight);</div></div>
     <span class="ident"><span class="label">Compute 8 * 9 and report the result as a single integer.</span><span class="subtitle err">Deadline exceeded after 10m. No result reported.</span></span>
     <span class="pill danger">Failed</span>
   </button>
+  <button class="tel" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>10m 00s · 41 calls · 88k tokens · $0.31 <span class="err">2 err</span></span></button>
   <div class="act-b"><div class="fold">
 <div><div class="k">Prompt</div><div class="pre" style="margin:0">Compute 8 * 9 and report the result as a single integer.</div></div><div class="kv"><span>Temporary agent · claude-code · 1 CPU · 1 Gi</span></div><div><span class="tip-wrap"><button class="btn" disabled><svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M17.74 30 16 29l4-7h6a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9v2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-4.84Z"/><path d="M8 10h16v2H8zm0 6h10v2H8z"/></svg> Open conversation</button><span class="tip">Conversation was not captured</span></span></div>
   </div></div>
@@ -352,16 +376,16 @@ console.log(six, eight);</div></div>
         </div>
       </div>
 
-      <aside class="dock" data-dock>
+      <aside class="dock" data-dock data-conv="done">
         <div class="dock-h">
           <span class="tile" aria-hidden="true" style="width:22px;height:22px"><svg width="13" height="13" viewBox="0 0 32 32" fill="currentColor"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg></span>
           <span class="t"><span class="truncate" data-child-name title="Compute 6 * 7 and report the result as a single integer.">Compute 6 * 7 and report the result as a single integer.</span></span>
           <span class="pill accent" data-child-pill><svg width="11" height="11" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="m13 24-9-9 1.41-1.41L13 21.17 26.59 7.59 28 9Z"/></svg> Done</span>
           <button class="iconbtn" aria-label="Close" data-close-dock><svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor"><path d="M24 9.4 22.6 8 16 14.6 9.4 8 8 9.4l6.6 6.6L8 22.6 9.4 24l6.6-6.6 6.6 6.6 1.4-1.4-6.6-6.6Z"/></svg></button>
         </div>
-        <div class="facts"><span>temporary agent of research-driver</span><span>1m 12s</span><span class="mono">$0.02</span></div>
+        <div class="facts"><span>temporary agent of research-driver</span><button class="tel turn" type="button" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M22 16 12 26l-1.4-1.4 8.6-8.6-8.6-8.6L12 6z"/></svg><span>1m 12s · 12 calls · 4.1k tokens · $0.02</span></button></div>
         <div class="scroll">
-          <div class="col">
+          <div class="col" data-conv="done">
             <div class="msg user">
               <div class="who"><b>research-driver</b><span>14:02</span></div>
               <div class="bubble">Compute 6 * 7 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
@@ -381,11 +405,44 @@ console.log(six, eight);</div></div>
               </div>
             </div>
           </div>
+          <div class="col" data-conv="working">
+            <div class="msg user">
+              <div class="who"><b>research-driver</b><span>14:02</span></div>
+              <div class="bubble">Compute 6 * 7 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
+            </div>
+            <div class="msg">
+              <div class="who"><b>Agent</b><span>now</span></div>
+              <div class="assist">
+                <div class="act open">
+                  <button class="act-h" aria-expanded="true" data-toggle>
+                    <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3l5 5-5 5"/></svg>
+                    <span class="truncate">Bash: node -e "console.log(6*7)"</span>
+                  </button>
+                  <div class="act-b"><div class="pre">42</div></div>
+                </div>
+                <span class="dots" role="status" aria-label="Working"><span></span><span></span><span></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="col" data-conv="waiting">
+            <div class="msg user">
+              <div class="who"><b>research-driver</b><span>14:02</span></div>
+              <div class="bubble">Compute 8 * 9 and report the result as a single integer.<br><span class="meta">You are an autonomous invocation target. Report through the <span class="mono">report_result</span> tool with a result matching the schema <span class="mono">{"type":"integer"}</span>.</span></div>
+            </div>
+            <p class="meta" style="font-size:12px">Waiting for room. The agent starts when the driver's budget frees up; the prompt is queued.</p>
+          </div>
         </div>
-        <div class="ro">
+        <div class="ro" data-conv="done">
           <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M24 14h-2V8a6 6 0 0 0-12 0v6H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V16a2 2 0 0 0-2-2M12 8a4 4 0 0 1 8 0v6h-8Zm12 20H8V16h16Z"/></svg>
           <span style="flex:1;min-width:0">Read-only. The agent was released when it reported.</span>
           <button class="btn primary" style="height:32px;padding:0 12px;flex-shrink:0">Continue in new session</button>
+        </div>
+        <div class="ro" data-conv="working">
+          <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1 0 12 12A12 12 0 0 0 16 4m0 22a10 10 0 1 1 10-10 10 10 0 0 1-10 10"/><path d="M15 8h2v9h-2zm0 11h2v2h-2z"/></svg>
+          <span style="flex:1;min-width:0">Live, read-only. The agent runs unattended and reports when done.</span>
+        </div>
+        <div class="ro" data-conv="waiting">
+          <span style="flex:1;min-width:0">Read-only. Nothing has run yet.</span>
         </div>
       </aside>
     </div>
@@ -396,6 +453,10 @@ console.log(six, eight);</div></div>
   document.querySelectorAll('#state-toggle button').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('#state-toggle button').forEach((x) => x.classList.toggle('on', x === b));
     document.body.dataset.state = b.dataset.state;
+  }));
+  document.querySelectorAll('#tel-toggle button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#tel-toggle button').forEach((x) => x.classList.toggle('on', x === b));
+    document.body.dataset.tel = b.dataset.tel;
   }));
   document.querySelectorAll('#theme-toggle button').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('#theme-toggle button').forEach((x) => x.classList.toggle('on', x === b));
@@ -424,10 +485,15 @@ console.log(six, eight);</div></div>
       const pill = box.querySelector(':scope > .act-h .pill').cloneNode(true);
       pill.setAttribute('data-child-pill', '');
       document.querySelector('[data-child-pill]').replaceWith(pill);
-      document.querySelector('[data-dock]').classList.add('show');
+      const cardTel = box.querySelector(':scope > .tel span');
+      const dockTel = document.querySelector('.dock .tel');
+      dockTel.style.display = cardTel ? '' : 'none';
+      if (cardTel) dockTel.querySelector('span').innerHTML = cardTel.innerHTML;
+      const dock = document.querySelector('[data-dock]');
+      dock.dataset.conv = pill.classList.contains('success') ? 'working' : pill.classList.contains('warning') ? 'waiting' : 'done';
+      dock.classList.add('show');
       return;
     }
-    if (e.target.closest('[data-open-live]')) return;
     if (e.target.closest('[data-close-dock]')) { document.querySelector('[data-dock]').classList.remove('show'); }
   });
 </script>

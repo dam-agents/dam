@@ -33,8 +33,8 @@ Follow the README `## Design` section.
    `_meta.platform.at` per frame, so timestamps come through.
 4. **Panel** — `packages/ui/src/modules/invocations/components/docked-delegation-panel.tsx`,
    a fourth panel in the right column of `modules/sessions/views/chat-view.tsx:850-902`
-   with the `h-12` header row the other docked panels use: label, status dot, duration,
-   cost (from the tree and spend queries slice 06 already holds), a read-only marker, close.
+   with the `h-12` header row the other docked panels use: label, status pill, the child's `TurnTelemetry` line (from the turns query slice 06
+   already holds, gated by `agent-telemetry`), a read-only marker, close.
    Body: `ChatMessage` per folded message with no-op `onRetry`/`onFileClick`/`onDelete` and
    `hasPendingPermission={false}`, plus the thread dividers from
    `modules/sessions/lib/thread-items.ts`. Show a "conversation was cut" notice when
@@ -45,13 +45,20 @@ Follow the README `## Design` section.
    If the design pass chose a sidebar instead, place the same component there and skip the
    dock wiring.
 5. **Wire the open control** from slice 06: a finished node with `transcriptAvailable`
-   opens the panel; a finished node without it shows a disabled control with a tooltip
-   "conversation was not captured". A running node still opens the child's live chat.
+   opens the panel on the stored frames; a finished node without it shows a disabled control
+   with a tooltip "conversation was not captured". A running node opens the same panel in
+   its live state: attach to the child agent over ACP with `passive: true`
+   (`modules/acp/acp.ts`, as `acp-session-ops.ts` does to list sessions), `session/load`
+   its one session, fold the replayed and streamed updates with the same `applyUpdate`
+   reducer, and show `BusyIndicator` while a turn runs. No composer, no engagement. A
+   waiting node opens the panel with the prompt and a waiting notice.
 
 ## Acceptance criteria
 
 - [ ] Clicking a finished child opens the panel with its conversation, ending with the
       `report_result` call, and a read-only marker.
+- [ ] Clicking a running child opens the panel live: its messages stream in and the working
+      dots show while it thinks; the panel never sends a prompt to the child.
 - [ ] The panel is resizable and closable like the file and artifact panels, and closing it
       returns to the driver's chat unchanged.
 - [ ] A child without a stored conversation shows the disabled control with the tooltip.
