@@ -27,6 +27,10 @@ no ADR references.
      passes through.
    - Same place rules as `sendPrompt`: only in the docked preview of the publishing agent's chat,
      latest version, never on shared pages.
+   - The frame is sandboxed without `allow-modals`: `confirm()`, `alert()` and `prompt()` are
+     silently blocked (`confirm()` returns `false`). Confirm destructive actions inline (for
+     example a two-click button) and show errors in the page. Found in the dev-cluster smoke test:
+     an agent-built Close button did nothing because it relied on `confirm()`.
    - Update the skill's `description` frontmatter so it also triggers for "artifact that loads or
      saves data from the agent".
    - Update the `interactive` field description in
