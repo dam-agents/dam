@@ -179,6 +179,31 @@ describe("mcp-entry plugin", () => {
     });
   });
 
+  /**
+   * TEST_SCENARIO: the target can be the harness's own config file, which the
+   * user edits by hand. When it does not parse, the driver must fail and leave
+   * the file as it is. Moving it aside and writing only the MCP entries would
+   * silently drop the user's model, provider and profile settings.
+   */
+  it("fails and leaves an unparseable target untouched", async () => {
+    const target = join(home, ".codex/config.toml");
+    const handler = bind({
+      path: "$HOME/.codex/config.toml",
+      format: "toml",
+      keyPath: "mcp_servers",
+      urlKey: "url",
+      headersKey: "http_headers",
+    });
+    await handler([entry("platform-outbound", "http://hs/mcp")], ctx);
+    const broken = 'model = "gpt-5.5\n[mcp_servers.platform-outbound]\n';
+    writeFileSync(target, broken);
+
+    await expect(
+      handler([entry("platform-outbound", "http://hs/mcp")], ctx),
+    ).rejects.toThrow(/unparseable/);
+    expect(readFileSync(target, "utf8")).toBe(broken);
+  });
+
   it("rejects an `extraFields` key that names the configured headers key", () => {
     expect(() =>
       bind({ headersKey: "http_headers", extraFields: { http_headers: "" } }),

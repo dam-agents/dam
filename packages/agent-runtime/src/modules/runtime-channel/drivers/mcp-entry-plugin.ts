@@ -116,6 +116,7 @@ export function createMcpEntryPlugin(): Plugin {
         await fileOps.apply(desired as Map<string, FileDesired[] | null>, {
           agentHome: ctx.agentHome,
           log: ctx.log,
+          onUnparseable: "throw",
         });
         stateStore.setInstalled(names);
       };
