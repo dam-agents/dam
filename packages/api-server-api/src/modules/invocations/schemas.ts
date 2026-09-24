@@ -41,3 +41,10 @@ export const invocationViewSchema = z.object({
   result: z.unknown(),
   errorReason: z.string().optional(),
 });
+
+export const INVOCATIONS_TREE_MAX_IDS = 200;
+
+export const invocationsTreeInputSchema = z.object({
+  driverAgentId: z.string().min(1),
+  ids: z.array(z.string().min(1)).min(1).max(INVOCATIONS_TREE_MAX_IDS),
+});

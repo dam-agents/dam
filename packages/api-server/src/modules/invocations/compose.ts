@@ -2,6 +2,7 @@ import type { Db } from "db";
 import type { AgentsService, InvocationsQueryService } from "api-server-api";
 import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
+import { buildDelegationTree } from "./domain/delegation-tree.js";
 import {
   createInvocationsService,
   type InvocationsService,
@@ -44,6 +45,8 @@ export function composeInvocationsForOwner(opts: {
   });
 }
 
+const DELEGATION_TREE_ROW_LIMIT = 2000;
+
 export function composeInvocationsQueryForOwner(opts: {
   db: Db;
   owner: string;
@@ -51,6 +54,18 @@ export function composeInvocationsQueryForOwner(opts: {
   const repo = createInvocationsRepository(opts.db);
   return {
     listTargets: () => repo.listTargetsByOwner(opts.owner),
+    async tree({ driverAgentId, ids }) {
+      const driverRow = await repo.get(driverAgentId);
+      const root = driverRow?.rootDriverId ?? driverAgentId;
+      const rows = await repo.listByRoot(root, DELEGATION_TREE_ROW_LIMIT);
+      if (rows.length === DELEGATION_TREE_ROW_LIMIT) {
+        process.stderr.write(
+          `[invocations] delegation tree for ${root} hit the ${DELEGATION_TREE_ROW_LIMIT}-row limit\n`,
+        );
+      }
+      const owned = rows.filter((r) => r.owner === opts.owner);
+      return { nodes: buildDelegationTree(owned, ids) };
+    },
   };
 }
 
