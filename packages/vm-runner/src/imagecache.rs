@@ -1,309 +1,113 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
+use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{
-    self, cache_path, digest_path, pinned_digest, ref_path, RefRecord, PARTIAL_PREFIX,
+    self, digest_path, entry_digest, pinned_digest, repository, Entry, PARTIAL_PREFIX,
 };
 use crate::command;
-use crate::fetch::{self, unusable, DockerConfig, ANONYMOUS};
-use crate::launch::{launch_from_config, read_launch, LAUNCH_FILE};
+use crate::fetch::{
+    self, first_lines, out_of_capacity, unusable, DockerConfig, ANONYMOUS, RESOLVE_TIMEOUT,
+};
+use crate::files;
+use crate::launch::{launch_from_config, read_launch, ImageLaunch, LAUNCH_FILE};
 use crate::state::is_image_ref;
+use crate::{elapsed_ms, locked};
 
-// UNIT_BOUNDARY_DESCRIPTION: one process's hand in the image cache — a runner, or the preloader that fills a node directory before any runner exists. The cache is a protocol between every process that mounts the directory, so this is its one implementation: how an image is fetched and unpacked, how a finished unpack is claimed, what this process tells the others it holds, and what it may evict. Whatever a process holds of its own is passed in by the caller, because only the caller knows: a runner reads its machines' specs, the preloader holds nothing but its pins.
+// UNIT_BOUNDARY_DESCRIPTION: the one writer of an image cache directory: the node's image cache service, or the runner that owns its claim. It resolves a reference to a digest, fetches and unpacks that digest once for every machine of it, and evicts inside a budget. Everything it has to remember between requests — what a tag resolved to, which entries anyone may boot, which entries machines are running, what each entry weighs — is in this process's memory, because no other process writes the directory and so none has to read it.
 pub struct ImageCache {
-    pub dir: PathBuf,
-    pub owner: String,
-    pub budget: i64,
-    pub crane: String,
-    pub pinned: Vec<String>,
-    pub lifetime: CancellationToken,
+    config: CacheConfig,
+    opened: Instant,
+    memory: Mutex<Memory>,
+    measuring: Mutex<()>,
+    fetching: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 pub const ROOTFS_DIR: &str = "rootfs";
 
-// UNIT_BOUNDARY_DESCRIPTION: a resolution is a manifest HEAD and nothing else. A registry that has not answered in a minute is treated as down, so a create falls back to the last digest the tag resolved to rather than waiting out the pull timeout.
-pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: how long a tag's resolution is trusted without asking the registry again.
+pub const REF_FRESH: Duration = Duration::from_secs(10 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a cache entry that only a fetch with credentials could read. It sits beside the launch, outside the tree the guest sees. An entry without it was readable with no credentials at all, so any machine may boot from it; an entry with it is reused only by a machine whose own credentials still read the image's manifest, because a cache on a node directory is shared by every owner's runner there. Without the check one owner's credentials would fetch the image and another owner could boot it by naming the same reference.
-pub const PRIVATE_FILE: &str = "private";
+// UNIT_BOUNDARY_DESCRIPTION: the most digests one hold may name. A runner names only what its own machines boot, which is a few dozen at most; the cap bounds what one caller can make the service remember.
+pub const HOLDS_PER_CALL: usize = 1024;
 
-impl ImageCache {
-    pub fn entry(&self, reference: &str) -> PathBuf {
-        cache_path(&self.dir, reference)
-    }
+// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict. A runner's own cache has no ceiling: it serves one owner, on that owner's claim.
+pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
+    let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
+    Some(budget.saturating_add(budget / 2))
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: both names an image may be cached under — the unpacked tree and the archive an earlier release left — so holding one holds the other.
-    pub fn both_names(&self, reference: &str) -> [PathBuf; 2] {
-        let base = self.entry(reference);
-        [PathBuf::from(format!("{}.tar", base.display())), base]
-    }
+// UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
+pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
 
-    pub fn digest_entry(&self, digest: &str) -> PathBuf {
-        digest_path(&self.dir, digest)
-    }
+// UNIT_BOUNDARY_DESCRIPTION: how the cache is opened. `pins` are references held for as long as the cache is open: the harness images the service preloads. `check_access` is set where the cache is shared by owners: an entry that was not proven readable without credentials is then served only to a caller whose own credentials read its manifest. `hold_grace` is how long after opening nothing is evicted, which gives every runner time to name what it holds again after the service restarts and forgets. `fetch_ceiling` is the size past which a fetch is refused.
+pub struct CacheConfig {
+    pub dir: PathBuf,
+    pub budget: i64,
+    pub crane: String,
+    pub pins: Vec<String>,
+    pub lifetime: CancellationToken,
+    pub check_access: bool,
+    pub ref_fresh: Duration,
+    pub hold_lease: Duration,
+    pub hold_grace: Duration,
+    pub fetch_ceiling: Option<u64>,
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the pins hold: for each image, the digest entry its reference last resolved to, and the tree and the archive an earlier release named after the reference — still held because an archive an earlier release cached still boots a machine, and evicting it would cost the install the only copy it has.
-    pub fn pinned(&self) -> BTreeSet<PathBuf> {
-        let mut held = BTreeSet::new();
-        for reference in &self.pinned {
-            if !is_image_ref(reference) || reference.contains("..") {
-                continue;
-            }
-            held.extend(self.both_names(reference));
-            if let Some(digest) = self.known_digest(reference) {
-                held.insert(self.digest_entry(&digest));
-            }
-        }
-        held
-    }
+#[derive(Default)]
+struct Memory {
+    refs: HashMap<String, (String, Instant)>,
+    public: HashSet<String>,
+    holds: HashMap<String, Instant>,
+    entries: HashMap<PathBuf, Entry>,
+    measured: bool,
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: the digest this reference last resolved to on this directory, and when. The record names its own reference, and one that names another is not believed, so a hash collision or a hand-edited file cannot boot the wrong image.
-    fn read_ref(&self, reference: &str) -> Option<(String, SystemTime)> {
-        let path = ref_path(&self.dir, reference);
-        let at = fs::metadata(&path).ok()?.modified().ok()?;
-        let record: RefRecord = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
-        (record.image == reference && cache::is_digest(&record.digest))
-            .then_some((record.digest, at))
-    }
+// UNIT_BOUNDARY_DESCRIPTION: what a machine of a reference boots: the digest its tree is stored under, and what the image says to run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Resolved {
+    pub digest: String,
+    pub launch: ImageLaunch,
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: written under a staged name and renamed, so a reader in another process never reads half a record.
-    fn write_ref(&self, reference: &str, digest: &str) -> anyhow::Result<()> {
-        let path = ref_path(&self.dir, reference);
-        let dir = path.parent().unwrap_or(&self.dir);
-        fs::create_dir_all(dir)?;
-        let staged = dir.join(format!(".new-{}-{}", std::process::id(), nanos()));
-        let body = serde_json::to_vec(&RefRecord {
-            image: reference.to_string(),
-            digest: digest.to_string(),
-        })?;
-        let written =
-            crate::files::write(&staged, &body, 0o644).and_then(|()| fs::rename(&staged, &path));
-        if written.is_err() {
-            let _ = fs::remove_file(&staged);
-        }
-        Ok(written?)
-    }
+// UNIT_BOUNDARY_DESCRIPTION: what a fetch cost when a resolve had to make one: how long it ran, whether it worked, the size of each entry the trim after it evicted, and what the cache held after that trim.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Fetched {
+    pub ms: u64,
+    pub ok: bool,
+    #[serde(default)]
+    pub freed: Vec<u64>,
+    #[serde(default)]
+    pub used: Option<u64>,
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: the digest a known reference names: a pinned reference its own, a tag the one it last resolved to however long ago. It is what an entry is held under by something that only knows the reference.
-    pub fn known_digest(&self, reference: &str) -> Option<String> {
-        if let Some(digest) = pinned_digest(reference) {
-            return Some(digest.to_string());
-        }
-        self.read_ref(reference).map(|(digest, _)| digest)
-    }
+// UNIT_BOUNDARY_DESCRIPTION: the answer to one resolve. `fetched` is set when the entry was not cached, so the runner can count a hit, a miss and the fetch. `unreachable` is set only by a client that never reached the cache, which is the one failure where a runner may still boot a tree it already holds.
+pub struct Lookup {
+    pub resolved: anyhow::Result<Resolved>,
+    pub fetched: Option<Fetched>,
+    pub unreachable: bool,
+}
 
-    // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is taken from the index; otherwise the registry is asked and the answer written to the index for every process on the directory. A registry that cannot answer boots the digest the tag last resolved to, so an outage boots what was cached before. None means the tag was never resolved here and cannot be now, and the caller falls back to the first format.
-    pub fn resolve_digest(
-        &self,
-        reference: &str,
-        fresh: Duration,
-        auths: &[String],
-    ) -> Option<String> {
-        if let Some(digest) = pinned_digest(reference) {
-            return Some(digest.to_string());
+impl Lookup {
+    fn failed(e: anyhow::Error) -> Self {
+        Self {
+            resolved: Err(e),
+            fetched: None,
+            unreachable: false,
         }
-        let known = self.read_ref(reference);
-        if let Some((digest, at)) = &known {
-            if at.elapsed().is_ok_and(|age| age < fresh) {
-                return Some(digest.clone());
-            }
-        }
-        let known = known.map(|(digest, _)| digest);
-        if self.crane.is_empty() {
-            return known;
-        }
-        let logged = reference.replace(['\n', '\r'], " ");
-        let anonymous = [String::new()];
-        let candidates = if auths.is_empty() {
-            &anonymous[..]
-        } else {
-            auths
-        };
-        let answer = candidates.iter().find_map(|auth| {
-            let credentials = DockerConfig::new(auth).ok()?;
-            command::output(
-                credentials.apply(Command::new(&self.crane).arg("digest").arg(reference)),
-                Instant::now() + RESOLVE_TIMEOUT,
-                &self.lifetime,
-            )
-            .ok()
-            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-            .filter(|digest| cache::is_digest(digest))
-        });
-        let Some(digest) = answer else {
-            if let Some(known) = &known {
-                tracing::warn!(image = %logged, digest = %known, "image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to");
-            }
-            return known;
-        };
-        if let Err(e) = self.write_ref(reference, &digest) {
-            tracing::warn!(image = %logged, error = %format!("{e:#}"), "image cache: cannot record what a tag resolved to");
-        }
-        Some(digest)
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: tells the other processes on the directory what this one holds: its own entries and its pins. Refreshed after every operation, because a claim is believed only while it keeps being written.
-    pub fn publish(&self, own: &BTreeSet<PathBuf>) {
-        let mut held = own.clone();
-        held.extend(self.pinned());
-        cache::publish_holders(&self.dir, &self.owner, &held);
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it once for every machine of it to boot, then trims the cache to its budget. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete. `auths` are the docker configs to fetch with, tried in order, and none for an anonymous fetch; the layers come with the one that read the config. `busy` is what this process's other machines hold, which a stale entry may not be replaced out from under; `own` is everything this process holds, spared by the trim.
-    pub fn fetch(
-        &self,
-        reference: &str,
-        auths: &[String],
-        cached: &Path,
-        busy: &BTreeSet<PathBuf>,
-        own: &BTreeSet<PathBuf>,
-    ) -> anyhow::Result<Trim> {
-        let parent = cached.parent().unwrap_or(&self.dir);
-        fs::create_dir_all(parent)?;
-        let scratch = Scratch::new(parent)?;
-        fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
-        let started = Instant::now();
-        let (config, used) = fetch::read_config(&self.crane, reference, auths, &self.lifetime)
-            .inspect_err(|_| {
-                tracing::warn!(
-                    image = reference,
-                    duration_ms = elapsed_ms(started),
-                    "image config fetch failed"
-                );
-            })?;
-        let launch = launch_from_config(&config)
-            .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))?;
-        fetch::unpack(
-            &self.crane,
-            reference,
-            &scratch.path().join(ROOTFS_DIR),
-            &used,
-            &self.lifetime,
-        )?;
-        fs::write(
-            scratch.path().join(LAUNCH_FILE),
-            serde_json::to_vec(&launch)?,
-        )?;
-        if !used.is_empty() && !fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
-            fs::write(scratch.path().join(PRIVATE_FILE), "")?;
-        }
-        tracing::info!(
-            image = reference,
-            duration_ms = elapsed_ms(started),
-            bytes = cache::dir_size(scratch.path()),
-            "image unpacked into the shared cache"
-        );
-        self.claim(scratch.path(), cached, busy)?;
-        Ok(self.evict(own, Some(cached)))
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit on a private entry is a boot the registry never saw, so before a machine reuses one, an anonymous read or one of its own credentials, tried in the order they were sent, must still read the image. It fails closed: a registry that cannot be reached refuses the boot, because an answer that cannot be checked is not an answer. A public entry is not checked, and still boots with the registry down. The anonymous read comes first for every machine, not only one without credentials, because an install with default pull secrets sends every machine one, and a mark a flaky probe left on a public image would otherwise never clear.
-    pub fn may_reuse(
-        &self,
-        reference: &str,
-        cached: &Path,
-        auths: &[String],
-    ) -> anyhow::Result<()> {
-        match fs::symlink_metadata(cached.join(PRIVATE_FILE)) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(e.into()),
-            Ok(_) => {}
-        }
-        if self.crane.is_empty() {
-            return Err(unusable(format!(
-                "{reference} is cached from a private registry, and this runner has no crane to check this machine may read it"
-            )));
-        }
-        if fetch::readable(&self.crane, reference, ANONYMOUS, &self.lifetime) {
-            self.mark_public(reference, cached);
-            return Ok(());
-        }
-        if !auths
-            .iter()
-            .any(|auth| fetch::readable(&self.crane, reference, auth, &self.lifetime))
-        {
-            return Err(unusable(format!(
-                "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
-            )));
-        }
-        Ok(())
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: the private marker is written when the anonymous probe at fetch time fails, and a probe fails for a registry that was briefly unreachable or rate-limiting just as it does for one that refused. So the answer is revisable: an anonymous read that succeeds later removes the marker, and a mismarked public image costs one extra read instead of a live registry for every boot until it is evicted.
-    fn mark_public(&self, reference: &str, cached: &Path) {
-        match fs::remove_file(cached.join(PRIVATE_FILE)) {
-            Ok(()) => {
-                tracing::info!(image = %reference.replace(['\n', '\r'], " "), "image cache: an entry marked private reads anonymously, so it is public after all")
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(image = %reference.replace(['\n', '\r'], " "), error = %e, "image cache: cannot clear the private marker of an entry that reads anonymously")
-            }
-        }
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: puts a finished unpack in place. Processes on one node directory may unpack the same image at once, so a loser that finds a complete entry keeps it — both wrote the same image. An entry with no launch record is from a release that stored none, and is replaced unless a machine here or elsewhere is running from it.
-    fn claim(&self, scratch: &Path, cached: &Path, busy: &BTreeSet<PathBuf>) -> anyhow::Result<()> {
-        match fs::rename(scratch, cached) {
-            Ok(()) => return Ok(()),
-            Err(e) if !matches!(e.raw_os_error(), Some(libc::EEXIST) | Some(libc::ENOTEMPTY)) => {
-                return Err(e.into());
-            }
-            Err(_) => {}
-        }
-        if matches!(read_launch(cached), Ok(Some(_))) {
-            return Ok(());
-        }
-        if busy.contains(cached) || cache::held_elsewhere(&self.dir, &self.owner).contains(cached) {
-            anyhow::bail!(
-                "{} is the image of a machine that is already running, and it predates the launch this release records beside a tree: stop that machine before creating another from this image",
-                cached.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-            );
-        }
-        fs::remove_dir_all(cached)?;
-        fs::rename(scratch, cached)?;
-        Ok(())
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: trims the cache to its budget, oldest write first, sparing what this process holds, its pins, and every claim another process published. Goes over budget rather than free an image something is running from.
-    pub fn evict(&self, own: &BTreeSet<PathBuf>, keep: Option<&Path>) -> Trim {
-        let mut mine = own.clone();
-        mine.extend(self.pinned());
-        let spared = cache::spared(&mine, &cache::held_elsewhere(&self.dir, &self.owner));
-        let mut trim = Trim::default();
-        for evicted in cache::evict(&self.dir, keep, self.budget, &spared) {
-            tracing::info!(
-                image = %evicted.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                bytes = evicted.size,
-                "image cache: evicted an image to stay inside the volume"
-            );
-            trim.freed.push(evicted.size);
-        }
-        if self.budget > 0 {
-            let used: u64 = cache::entries(&self.dir).iter().map(|e| e.size).sum();
-            trim.used = Some(used);
-            if used > self.budget as u64 {
-                tracing::warn!(
-                    bytes = used,
-                    budget = self.budget,
-                    "image cache: over its stated budget, and every image left is one a machine is running from"
-                );
-            }
-        }
-        trim
     }
 }
 
-fn nanos() -> u32 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or_default()
+// UNIT_BOUNDARY_DESCRIPTION: the image cache as a runner uses it, whether the cache is in its own process or is the node's service at the other end of a socket. `hold` names every digest the runner's machines boot, and must be called again within HOLD_LEASE to keep them.
+pub trait Images: Send + Sync {
+    fn resolve(&self, reference: &str, auths: &[String]) -> Lookup;
+    fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()>;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
@@ -313,31 +117,435 @@ pub struct Trim {
     pub used: Option<u64>,
 }
 
-fn elapsed_ms(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+impl ImageCache {
+    // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, so it is removed now. A directory mounted read-only, as the staged archives are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
+    pub fn open(config: CacheConfig) -> Self {
+        let _ = fs::create_dir_all(&config.dir);
+        cache::reclaim_scratch(&config.dir);
+        Self {
+            config,
+            opened: Instant::now(),
+            memory: Mutex::new(Memory::default()),
+            measuring: Mutex::new(()),
+            fetching: Mutex::new(HashMap::new()),
+        }
+    }
+
+    #[cfg(test)]
+    fn dir(&self) -> &Path {
+        &self.config.dir
+    }
+
+    fn digest_entry(&self, digest: &str) -> PathBuf {
+        digest_path(&self.config.dir, digest)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the digest a machine created now from this reference should boot. A pinned reference is never resolved, because it cannot move. A tag resolved within `fresh` is answered from memory; otherwise the registry is asked with each of the caller's credentials in turn. A registry that cannot answer gives the digest the tag last resolved to, so an outage boots what was cached before; a tag never resolved here is refused with what the registry said.
+    fn digest_for(
+        &self,
+        reference: &str,
+        fresh: Duration,
+        auths: &[String],
+    ) -> anyhow::Result<String> {
+        if let Some(digest) = pinned_digest(reference) {
+            return Ok(digest.to_string());
+        }
+        let known = locked(&self.memory).refs.get(reference).cloned();
+        if let Some((digest, at)) = &known {
+            if at.elapsed() < fresh {
+                return Ok(digest.clone());
+            }
+        }
+        let known = known.map(|(digest, _)| digest);
+        if self.config.crane.is_empty() {
+            return known.ok_or_else(|| {
+                unusable(format!(
+                    "{} was never resolved here, and this cache has no crane to ask the registry",
+                    logged(reference)
+                ))
+            });
+        }
+        let mut last = String::new();
+        let answer = fetch::in_turn(auths).iter().find_map(|auth| {
+            let credentials = DockerConfig::new(auth).ok()?;
+            match command::output(
+                credentials.apply(
+                    Command::new(&self.config.crane)
+                        .arg("digest")
+                        .arg(reference),
+                ),
+                Instant::now() + RESOLVE_TIMEOUT,
+                &self.config.lifetime,
+            ) {
+                Ok(out) => Some(String::from_utf8_lossy(&out).trim().to_string())
+                    .filter(|digest| cache::is_digest(digest)),
+                Err(e) => {
+                    last = format!("{e:#}");
+                    None
+                }
+            }
+        });
+        let Some(digest) = answer else {
+            let Some(known) = known else {
+                return Err(unusable(format!(
+                    "resolving {}: {}",
+                    logged(reference),
+                    first_lines(&last)
+                )));
+            };
+            tracing::warn!(image = %logged(reference), digest = %known, "image cache: the registry could not resolve a tag, so it boots the digest the tag last resolved to");
+            return Ok(known);
+        };
+        locked(&self.memory)
+            .refs
+            .insert(reference.to_string(), (digest.clone(), Instant::now()));
+        Ok(digest)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: resolves a reference, fetches its digest when the cache lacks it, and holds the entry for the caller before anything else, so no eviction can take it between this answer and the caller's next hold. Two callers after one missing digest fetch it once: the second waits for the first and then finds it cached. A cached entry is checked against the caller's credentials when the cache is shared.
+    pub fn resolve_with(&self, reference: &str, auths: &[String], fresh: Duration) -> Lookup {
+        if !is_image_ref(reference) || reference.contains("..") {
+            return Lookup::failed(unusable(format!(
+                "{:?} is not an image reference",
+                logged(reference)
+            )));
+        }
+        let digest = match self.digest_for(reference, fresh, auths) {
+            Ok(digest) => digest,
+            Err(e) => return Lookup::failed(e),
+        };
+        self.hold_one(&digest);
+        let pinned = format!("{}@{digest}", repository(reference));
+        let entry = self.digest_entry(&digest);
+        let gate = self.fetch_gate(&digest);
+        let _fetching = locked(&gate);
+        match read_launch(&entry) {
+            Ok(Some(launch)) => {
+                let checked = self.may_reuse(&pinned, &digest, auths);
+                Lookup {
+                    resolved: checked.map(|()| Resolved { digest, launch }),
+                    fetched: None,
+                    unreachable: false,
+                }
+            }
+            Ok(None) if self.config.crane.is_empty() => Lookup::failed(unusable(format!(
+                "{} is not cached, and this cache has no crane to fetch it with",
+                logged(reference)
+            ))),
+            Ok(None) => {
+                if let Err(e) = self.room_to_fetch() {
+                    return Lookup::failed(e);
+                }
+                let started = Instant::now();
+                let fetched = self.fetch(&pinned, auths, &entry, &digest);
+                let mut report = Fetched {
+                    ms: elapsed_ms(started),
+                    ok: fetched.is_ok(),
+                    ..Fetched::default()
+                };
+                let resolved = fetched.map(|launch| {
+                    let trim = self.evict(Some(&entry));
+                    report.freed = trim.freed;
+                    report.used = trim.used;
+                    Resolved { digest, launch }
+                });
+                Lookup {
+                    resolved,
+                    fetched: Some(report),
+                    unreachable: false,
+                }
+            }
+            Err(e) => Lookup::failed(e.context(format!("reading the cached launch of {digest}"))),
+        }
+    }
+
+    fn fetch_gate(&self, digest: &str) -> Arc<Mutex<()>> {
+        let mut fetching = locked(&self.fetching);
+        fetching.retain(|_, gate| Arc::strong_count(gate) > 1);
+        fetching.entry(digest.to_string()).or_default().clone()
+    }
+
+    fn hold_one(&self, digest: &str) {
+        locked(&self.memory)
+            .holds
+            .insert(digest.to_string(), Instant::now());
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete; the entry is renamed into place whole. `auths` are tried in order, and the layers come with the one that read the config. An entry fetched with no credential, or one an anonymous read also reaches, is public: any caller may boot it.
+    fn fetch(
+        &self,
+        reference: &str,
+        auths: &[String],
+        cached: &Path,
+        digest: &str,
+    ) -> anyhow::Result<ImageLaunch> {
+        let crane = &self.config.crane;
+        let lifetime = &self.config.lifetime;
+        let scratch = Scratch::new(&self.config.dir)?;
+        fs::create_dir(scratch.path().join(ROOTFS_DIR))?;
+        let started = Instant::now();
+        let (config, used) =
+            fetch::read_config(crane, reference, auths, lifetime).inspect_err(|_| {
+                tracing::warn!(
+                    image = reference,
+                    duration_ms = elapsed_ms(started),
+                    "image config fetch failed"
+                );
+            })?;
+        let launch = launch_from_config(&config)
+            .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))?;
+        fetch::unpack(
+            crane,
+            reference,
+            &scratch.path().join(ROOTFS_DIR),
+            &used,
+            lifetime,
+        )?;
+        fs::write(
+            scratch.path().join(LAUNCH_FILE),
+            serde_json::to_vec(&launch)?,
+        )?;
+        let public = !self.config.check_access
+            || used.is_empty()
+            || fetch::readable(crane, reference, ANONYMOUS, lifetime);
+        let size = cache::dir_size(scratch.path());
+        tracing::info!(
+            image = reference,
+            duration_ms = elapsed_ms(started),
+            bytes = size,
+            public,
+            "image unpacked into the cache"
+        );
+        match fs::rename(scratch.path(), cached) {
+            Err(e) if !matches!(e.raw_os_error(), Some(libc::EEXIST) | Some(libc::ENOTEMPTY)) => {
+                return Err(e.into())
+            }
+            _ => {}
+        }
+        let mut memory = locked(&self.memory);
+        memory.entries.insert(
+            cached.to_path_buf(),
+            Entry {
+                path: cached.to_path_buf(),
+                size,
+                modified: SystemTime::now(),
+            },
+        );
+        if public {
+            memory.public.insert(digest.to_string());
+        }
+        Ok(launch)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after an anonymous read, or one of the caller's credentials in the order they were sent, still reads the image's manifest. The anonymous read comes first for every caller, so an install whose default pull Secrets give every machine a credential still learns an image is public. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again.
+    fn may_reuse(&self, reference: &str, digest: &str, auths: &[String]) -> anyhow::Result<()> {
+        if !self.config.check_access || locked(&self.memory).public.contains(digest) {
+            return Ok(());
+        }
+        let crane = &self.config.crane;
+        let lifetime = &self.config.lifetime;
+        if crane.is_empty() {
+            return Err(unusable(format!(
+                "{reference} is cached, and this cache has no crane to check the caller may read it"
+            )));
+        }
+        if fetch::readable(crane, reference, ANONYMOUS, lifetime) {
+            locked(&self.memory).public.insert(digest.to_string());
+            return Ok(());
+        }
+        if auths
+            .iter()
+            .any(|auth| fetch::readable(crane, reference, auth, lifetime))
+        {
+            return Ok(());
+        }
+        Err(unusable(format!(
+            "{reference} is cached from a private registry, and this machine's pull credentials cannot read its manifest"
+        )))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: holds each digest for another HOLD_LEASE. A hold only ever extends: a caller cannot drop what another holds, so a runner that sends a short list, or a wrong one, never frees a tree another owner's machine runs from. Only a digest with an entry on disk is held, and a call naming more than HOLDS_PER_CALL is refused, so what callers can make the service remember is bounded by what the directory holds.
+    pub fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            digests.len() <= HOLDS_PER_CALL,
+            "a hold names {} digests, more than the {HOLDS_PER_CALL} one call may",
+            digests.len()
+        );
+        let present: Vec<&String> = digests
+            .iter()
+            .filter(|d| cache::is_digest(d) && self.digest_entry(d).is_dir())
+            .collect();
+        let now = Instant::now();
+        let mut memory = locked(&self.memory);
+        for digest in present {
+            memory.holds.insert(digest.clone(), now);
+        }
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what eviction must spare: every hold still inside its lease, and the digest each pin last resolved to. Lapsed holds are forgotten here.
+    fn held(&self, memory: &mut Memory) -> BTreeSet<PathBuf> {
+        let lease = self.config.hold_lease;
+        memory.holds.retain(|_, at| at.elapsed() < lease);
+        let mut held: BTreeSet<PathBuf> =
+            memory.holds.keys().map(|d| self.digest_entry(d)).collect();
+        for pin in &self.config.pins {
+            let digest = pinned_digest(pin)
+                .map(str::to_string)
+                .or_else(|| memory.refs.get(pin).map(|(digest, _)| digest.clone()));
+            if let Some(digest) = digest {
+                held.insert(self.digest_entry(&digest));
+            }
+        }
+        held
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: weighs every entry already in the directory, once, the first time the cache needs its size. The trees are walked outside the memory lock, so a hold or a resolve never waits on the walk; an entry written since opening was weighed as it was written and keeps that weight.
+    fn measure(&self) {
+        if locked(&self.memory).measured {
+            return;
+        }
+        let _measuring = locked(&self.measuring);
+        if locked(&self.memory).measured {
+            return;
+        }
+        let found = cache::entries(&self.config.dir);
+        let mut memory = locked(&self.memory);
+        for entry in found {
+            memory.entries.entry(entry.path.clone()).or_insert(entry);
+        }
+        memory.measured = true;
+    }
+
+    fn used(&self) -> u64 {
+        self.measure();
+        locked(&self.memory).entries.values().map(|e| e.size).sum()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: refuses a fetch while the cache is past its fetch ceiling. Only a cache whose every other tree is held gets there, so the refusal is logged as an error for the operator: some runner holds more than its machines can be running.
+    fn room_to_fetch(&self) -> anyhow::Result<()> {
+        let Some(ceiling) = self.config.fetch_ceiling else {
+            return Ok(());
+        };
+        let used = self.used();
+        if used <= ceiling {
+            return Ok(());
+        }
+        tracing::error!(
+            bytes = used,
+            budget = self.config.budget,
+            ceiling,
+            "image cache: refusing to fetch, the cache is past its ceiling and every tree in it is held"
+        );
+        Err(out_of_capacity(format!(
+            "the node's image cache holds {used} bytes against a budget of {}, all of them held by running machines, so no other image can be fetched there now",
+            self.config.budget
+        )))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: trims the cache to its budget, oldest write first, sparing what is held. The victims are chosen under the memory lock from the weights kept there, and deleted outside it. Nothing is evicted during the grace after opening, while runners have not yet named what they hold again. Goes over budget rather than free an image something is running from.
+    pub fn evict(&self, keep: Option<&Path>) -> Trim {
+        self.measure();
+        let mut trim = Trim::default();
+        let chosen = {
+            let mut memory = locked(&self.memory);
+            if self.opened.elapsed() < self.config.hold_grace {
+                Vec::new()
+            } else {
+                let held = self.held(&mut memory);
+                let all = memory.entries.values().cloned().collect();
+                cache::choose(all, keep, self.config.budget, &held)
+            }
+        };
+        for victim in chosen {
+            if !self.remove(&victim) {
+                continue;
+            }
+            tracing::info!(
+                image = %victim.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                bytes = victim.size,
+                "image cache: evicted an image to stay inside the budget"
+            );
+            trim.freed.push(victim.size);
+        }
+        if self.config.budget > 0 {
+            let used = self.used();
+            trim.used = Some(used);
+            if used > self.config.budget as u64 {
+                tracing::warn!(
+                    bytes = used,
+                    budget = self.config.budget,
+                    "image cache: over its stated budget, and every image left is one a machine is running from or a pin"
+                );
+            }
+        }
+        trim
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: deletes one chosen entry, with the entry's fetch gate taken so no resolve reads the tree while it goes. A resolve of the digest that comes after waits on the gate, then finds the entry gone and fetches it again. An entry a resolve is reading now, or one held since it was chosen, is passed over: a resolve holds its digest before it takes the gate, so a hold is either seen here or its resolve is still waiting.
+    fn remove(&self, victim: &Entry) -> bool {
+        let Some(digest) = entry_digest(&victim.path) else {
+            return false;
+        };
+        let gate = self.fetch_gate(&digest);
+        let Ok(_resolving) = gate.try_lock() else {
+            return false;
+        };
+        if self.held(&mut locked(&self.memory)).contains(&victim.path) {
+            return false;
+        }
+        if let Err(e) = fs::remove_dir_all(&victim.path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(image = %digest, error = %e, "image cache: evicting an image");
+                return false;
+            }
+        }
+        let mut memory = locked(&self.memory);
+        memory.entries.remove(&victim.path);
+        memory.public.remove(&digest);
+        true
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
+    pub fn preload(&self, auths: &[String]) {
+        for reference in &self.config.pins {
+            if self.config.lifetime.is_cancelled() {
+                return;
+            }
+            let lookup = self.resolve_with(reference, auths, Duration::ZERO);
+            if let Err(e) = lookup.resolved {
+                tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+            }
+        }
+        self.evict(None);
+    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from any finished entry and dot-prefixed so the cache patterns never count it. It removes itself when dropped — on every path out of a fetch, including a cancelled one — and a tree a killed process left is reclaimed by eviction once it is older than any fetch may run.
+impl Images for ImageCache {
+    fn resolve(&self, reference: &str, auths: &[String]) -> Lookup {
+        self.resolve_with(reference, auths, self.config.ref_fresh)
+    }
+
+    fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()> {
+        ImageCache::hold(self, digests)
+    }
+}
+
+fn logged(reference: &str) -> String {
+    reference.replace(['\n', '\r'], " ")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an unpack in progress, named apart from any finished entry and dot-prefixed so the cache patterns never count it. It removes itself when dropped — on every path out of a fetch, including a cancelled one — and a tree a killed process left is reclaimed when the cache is next opened.
 struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(parent: &Path) -> anyhow::Result<Self> {
-        for attempt in 0..100u32 {
-            let nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos())
-                .unwrap_or_default();
-            let path = parent.join(format!(
-                "{PARTIAL_PREFIX}{}-{nanos:x}-{attempt}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e.into()),
-            }
-        }
-        anyhow::bail!("no free scratch directory in {}", parent.display())
+        fs::create_dir_all(parent)?;
+        Ok(Self(files::create_unique_dir(
+            parent,
+            PARTIAL_PREFIX,
+            0o777,
+        )?))
     }
 
     fn path(&self) -> &Path {
@@ -350,3 +558,7 @@ impl Drop for Scratch {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+
+#[cfg(test)]
+#[path = "imagecache_tests.rs"]
+mod tests;

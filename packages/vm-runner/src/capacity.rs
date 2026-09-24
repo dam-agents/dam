@@ -65,8 +65,8 @@ mod tests {
     use super::*;
     use crate::api::MachineSpec;
     use crate::state::write_spec;
+    use crate::testdir::TempDir;
     use std::fs;
-    use std::path::PathBuf;
 
     // TEST_SCENARIO: this refusal is not a log line. It is written into the Agent's status by the controller, which passes it through unchanged, so it is what a person reads when their agent will not start, and what a runbook quotes. The wording is pinned, with the three numbers in the places the reader expects them.
     #[test]
@@ -251,26 +251,5 @@ mod tests {
             },
         )
         .unwrap();
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-capacity-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

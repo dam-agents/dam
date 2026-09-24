@@ -24,10 +24,7 @@ if ! dam-tool-real containerd >/dev/null 2>&1; then
 fi
 real=$(dam-tool-real containerd)
 
-disk=
-for d in /storage /workspace; do
-    [ -d "$d" ] && [ -w "$d" ] && { disk=$d; break; }
-done
+disk=$(dam-runtime-dir)
 
 # Deliberately not the packaged /etc/containerd/config.toml: the containerd RPM
 # ships one, so a generate-if-absent on that path would never fire, and its

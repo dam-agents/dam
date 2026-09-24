@@ -1,0 +1,4 @@
+{
+  "agentHome": "/home/agent",
+  "caFile": "/etc/platform/ca/ca.crt"
+}

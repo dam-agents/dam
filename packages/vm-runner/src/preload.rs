@@ -1,76 +1,72 @@
-use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::cache::repository;
-use crate::imagecache::ImageCache;
-use crate::launch::read_launch;
-use crate::pullauth::PullSecrets;
-use crate::state::is_image_ref;
+use serde_json::{Map, Value};
+use tokio_util::sync::CancellationToken;
 
-// UNIT_BOUNDARY_DESCRIPTION: the per-node service that fills a node's image cache before any runner needs it. A runner exists only once one of its owner's agents needs one, so without this the first machine on every image, on every node, after every deploy, waits out the fetch with a user on the other end. It is a process on the cache with no machines: it holds nothing but its pins, which are the harness images the install ships, and it claims them the way a runner claims its machines' images — which is what keeps eviction from taking an image nobody is running yet, since it is held by nobody and is the oldest write.
-pub struct Preloader {
-    pub cache: ImageCache,
-    pub every: Duration,
-    // UNIT_BOUNDARY_DESCRIPTION: the install's default pull Secrets to fetch with. They are read again on every pass, so a rotated Secret is used without a restart. None fetches anonymously.
-    pub pull_secrets: Option<PullSecrets>,
+use crate::imagecache::ImageCache;
+
+// UNIT_BOUNDARY_DESCRIPTION: the node service's preload loop. A runner exists only once one of its owner's agents needs one, so without this the first machine on every harness image, on every node, after every deploy, waits out the fetch with a user on the other end. Each pass reads the install's default pull Secrets from their mounted volume again, so a rotated Secret is used without a restart.
+pub async fn run(
+    cache: Arc<ImageCache>,
+    every: Duration,
+    secrets: Option<PathBuf>,
+    lifetime: CancellationToken,
+) {
+    loop {
+        let auths = secrets
+            .as_deref()
+            .map(read_pull_secrets)
+            .unwrap_or_default();
+        let pass = cache.clone();
+        if tokio::task::spawn_blocking(move || pass.preload(&auths))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        tokio::select! {
+            _ = lifetime.cancelled() => return,
+            _ = tokio::time::sleep(every) => {}
+        }
+    }
 }
 
-impl Preloader {
-    // UNIT_BOUNDARY_DESCRIPTION: one pass. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the claim moves with it; the old digest's tree is then held only by the machines still running it. Claims are published before anything is fetched and again after each fetch, because a pass can outlast the window a runner believes a claim for, and a claim written only at the start would go stale while the pass that wrote it was still running. The directory is swept every pass, not only after a fetch: runners tidy it only as a side effect of a miss, and a node whose images are all cached would otherwise never reclaim what a departed owner left.
-    pub fn sweep(&self, auths: &[String]) {
-        let none = BTreeSet::new();
-        self.cache.publish(&none);
-        for reference in &self.cache.pinned {
-            if self.cache.lifetime.is_cancelled() {
-                return;
-            }
-            if !is_image_ref(reference) || reference.contains("..") {
-                tracing::warn!(
-                    reason = "the reference is not one a cache entry can be named after",
-                    "image cache: this install names an image the preloader will not fetch"
-                );
-                continue;
-            }
-            let Some(digest) = self.cache.resolve_digest(reference, Duration::ZERO, auths) else {
-                tracing::warn!(image = %reference, "image cache: the registry cannot say which image this install ships under a tag");
-                continue;
+// UNIT_BOUNDARY_DESCRIPTION: the docker configs to preload with, one per mounted pull Secret, in the order the install lists them. The kubelet tries each Secret in turn, so they are kept apart rather than merged, and a stale credential for a registry does not hide a good one listed after it. The chart projects Secret number N into the directory `N`, zero-padded so the names sort in order, under the key it was written with: `.dockerconfigjson`, a whole config with its registries under `auths`, or the older `.dockercfg`, which is the registries alone. A Secret that is missing or names no registry adds nothing. The kubelet's own dot-named links are skipped. The documents hold credentials, so none is logged.
+pub fn read_pull_secrets(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort();
+    names
+        .iter()
+        .filter_map(|name| {
+            let secret = dir.join(name);
+            let read = |key: &str| -> Option<Value> {
+                serde_json::from_slice(&fs::read(secret.join(key)).ok()?).ok()
             };
-            let entry = self.cache.digest_entry(&digest);
-            if !matches!(read_launch(&entry), Ok(Some(_))) {
-                let pinned = format!("{}@{digest}", repository(reference));
-                if let Err(e) = self.cache.fetch(&pinned, auths, &entry, &none, &none) {
-                    tracing::warn!(image = %reference, error = %format!("{e:#}"), "image cache: preloading an image this install ships");
-                }
-            }
-            self.cache.publish(&none);
-        }
-        self.cache.evict(&none, None);
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: passes until the service is told to stop. The interval bounds the gap between passes, and is also how long a registry that was down is waited out.
-    pub async fn run(self) {
-        let this = std::sync::Arc::new(self);
-        loop {
-            let auths = match &this.pull_secrets {
-                Some(secrets) => secrets.resolve().await.unwrap_or_else(|e| {
-                    tracing::warn!(error = %format!("{e:#}"), "image cache: reading the install's pull Secrets, fetching anonymously this pass");
-                    Vec::new()
-                }),
-                None => Vec::new(),
+            let auths: Option<Map<String, Value>> = match read(".dockerconfigjson") {
+                Some(config) => match config.get("auths") {
+                    Some(Value::Object(auths)) => Some(auths.clone()),
+                    _ => None,
+                },
+                None => match read(".dockercfg") {
+                    Some(Value::Object(auths)) => Some(auths),
+                    _ => None,
+                },
             };
-            let pass = this.clone();
-            if tokio::task::spawn_blocking(move || pass.sweep(&auths))
-                .await
-                .is_err()
-            {
-                return;
-            }
-            tokio::select! {
-                _ = this.cache.lifetime.cancelled() => return,
-                _ = tokio::time::sleep(this.every) => {}
-            }
-        }
-    }
+            auths
+                .filter(|auths| !auths.is_empty())
+                .map(|auths| serde_json::json!({ "auths": auths }).to_string())
+        })
+        .collect()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Kubernetes quantity as the chart writes the cache budget — `50Gi`, `500M`, or plain bytes — as a byte count. Only the suffixes a size is written with are read; anything else is refused rather than read as some other number.
@@ -135,12 +131,8 @@ pub fn parse_duration(text: &str) -> anyhow::Result<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
-    use tokio_util::sync::CancellationToken;
 
-    // TEST_SCENARIO: the chart hands the budget and the interval over as it writes them. The forms it uses must read as the numbers they mean, and anything else must be refused — a budget read as a smaller number evicts images the node needs, and an interval read as a longer one lets the preloader's claims go stale.
+    // TEST_SCENARIO: the chart hands the budget and the interval over as it writes them. The forms it uses must read as the numbers they mean, and anything else must be refused — a budget read as a smaller number evicts images the node needs.
     #[test]
     fn the_charts_budget_and_interval_read_as_what_they_mean() {
         assert_eq!(parse_quantity("50Gi").unwrap(), 50 << 30);
@@ -156,67 +148,37 @@ mod tests {
         assert!(parse_duration("").is_err());
     }
 
-    struct Dir(PathBuf);
-    impl Drop for Dir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    const DIGEST_HEX: &str = "2222222222222222222222222222222222222222222222222222222222222222";
-
-    // TEST_SCENARIO: a pass resolves each shipped tag, fetches the digest it names when the cache lacks it, and claims that digest entry under the service's name so a runner's eviction spares it; a second pass over a warm cache resolves again and fetches nothing.
+    // TEST_SCENARIO: the chart mounts each default pull Secret under its place in the install's list. Both keys a pull Secret is written under are read, the Secrets are kept apart in list order rather than merged, and a Secret with no registry in it, or with nothing mounted, adds nothing — so a pass with nothing to fetch with is anonymous rather than one with an empty config.
     #[test]
-    fn a_pass_fetches_what_is_missing_and_claims_it() {
+    fn each_mounted_secret_keeps_its_own_registries_in_list_order() {
         let dir =
-            Dir(std::env::temp_dir().join(format!("vm-runner-preload-{}", std::process::id())));
-        let _ = fs::remove_dir_all(&dir.0);
-        fs::create_dir_all(&dir.0).unwrap();
-        let crane = dir.0.join("crane");
-        fs::write(
-            &crane,
-            format!(
-                "#!/bin/sh\necho \"$@\" >> {}/crane.log\nif [ \"$1\" = digest ]; then echo sha256:{DIGEST_HEX}; exit 0; fi\nif [ \"$1\" = config ]; then printf '{{\"config\":{{\"Cmd\":[\"serve\"]}}}}'; exit 0; fi\nd=$(mktemp -d); echo x > \"$d/f\"; tar -cf - -C \"$d\" .; rm -rf \"$d\"\n",
-                dir.0.display(),
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&crane, fs::Permissions::from_mode(0o755)).unwrap();
-        let preloader = Preloader {
-            cache: ImageCache {
-                dir: dir.0.join("images"),
-                owner: "cache-node-a".into(),
-                budget: 1 << 40,
-                crane: crane.to_string_lossy().into_owned(),
-                pinned: vec!["quay.io/x/claude-code:1".into(), "../bad".into()],
-                lifetime: CancellationToken::new(),
-            },
-            every: Duration::from_secs(60),
-            pull_secrets: None,
+            std::env::temp_dir().join(format!("vm-runner-pull-secrets-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let write = |name: &str, key: &str, body: &str| {
+            fs::create_dir_all(dir.join(name)).unwrap();
+            fs::write(dir.join(name).join(key), body).unwrap();
         };
-        preloader.sweep(&[]);
-        let entry = preloader
-            .cache
-            .digest_entry(&format!("sha256:{DIGEST_HEX}"));
-        assert!(read_launch(&entry).unwrap().is_some());
-        let claims = fs::read_to_string(dir.0.join("images/.holders/cache-node-a")).unwrap();
-        let claimed = entry.strip_prefix(dir.0.join("images")).unwrap();
-        assert!(claims.lines().any(|l| Path::new(l) == claimed), "{claims}");
-        let log = fs::read_to_string(dir.0.join("crane.log")).unwrap();
-        assert!(
-            log.lines()
-                .any(|l| l == format!("export quay.io/x/claude-code@sha256:{DIGEST_HEX} -")),
-            "the tree was not fetched by the digest the tag resolved to: {log}"
+        write("001", ".dockercfg", r#"{"ghcr.io":{"auth":"c2Vjb25k"}}"#);
+        write(
+            "000",
+            ".dockerconfigjson",
+            r#"{"auths":{"quay.io":{"auth":"Zmlyc3Q="}}}"#,
         );
-        let fetches = || {
-            fs::read_to_string(dir.0.join("crane.log"))
-                .unwrap()
-                .lines()
-                .filter(|l| !l.starts_with("digest "))
-                .count()
-        };
-        let first = fetches();
-        preloader.sweep(&[]);
-        assert_eq!(fetches(), first, "a warm cache was fetched again");
+        write("002", ".dockerconfigjson", "{}");
+        write("003", ".dockerconfigjson", "not json");
+        fs::create_dir_all(dir.join("004")).unwrap();
+        write(".hidden", ".dockercfg", r#"{"docker.io":{"auth":"eA=="}}"#);
+
+        let docs = read_pull_secrets(&dir);
+
+        assert_eq!(
+            docs,
+            [
+                r#"{"auths":{"quay.io":{"auth":"Zmlyc3Q="}}}"#,
+                r#"{"auths":{"ghcr.io":{"auth":"c2Vjb25k"}}}"#,
+            ]
+        );
+        assert!(read_pull_secrets(&dir.join("missing")).is_empty());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

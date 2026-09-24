@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -19,7 +21,7 @@ type Client struct {
 	HTTP  *http.Client
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a status probes the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -41,6 +43,17 @@ func (c *Client) Ensure(ctx context.Context, id string, spec MachineSpec) (Machi
 
 func (c *Client) Status(ctx context.Context, id string) (MachineStatus, error) {
 	return c.do(ctx, http.MethodGet, id, nil)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the long-poll a watcher makes: the runner answers once the machine's status version is no longer `since`, or once `wait` ends with no change. The call's deadline grows by the wait, so a read that sees no change still gets its answer.
+func (c *Client) WaitStatus(ctx context.Context, id string, since uint64, wait time.Duration) (MachineStatus, error) {
+	hc := *c.HTTP
+	hc.Timeout += wait
+	query := url.Values{
+		"wait":  {strconv.FormatInt(max(int64(wait/time.Second), 1), 10)},
+		"since": {strconv.FormatUint(since, 10)},
+	}
+	return c.send(ctx, &hc, http.MethodGet, id, "?"+query.Encode(), nil)
 }
 
 func (c *Client) List(ctx context.Context) ([]string, error) {
@@ -68,19 +81,23 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 }
 
 func (c *Client) do(ctx context.Context, method, id string, body any) (MachineStatus, error) {
+	return c.send(ctx, c.HTTP, method, id, "", body)
+}
+
+func (c *Client) send(ctx context.Context, hc *http.Client, method, id, query string, body any) (MachineStatus, error) {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			return MachineStatus{}, err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.URL+"/machines/"+id, &buf)
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+"/machines/"+id+query, &buf)
 	if err != nil {
 		return MachineStatus{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.HTTP.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return MachineStatus{}, fmt.Errorf("VM runner: %w", err)
 	}

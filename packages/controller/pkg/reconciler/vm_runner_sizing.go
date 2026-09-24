@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,14 +18,6 @@ import (
 
 // UNIT_BOUNDARY_DESCRIPTION: what each machine may write on the claim beyond its disk: the root overlay it runs on, which is thrown away at every stop but grows while the guest runs, and the bookkeeping under machines/.
 const runnerClaimHeadroomGiB = 1
-
-// UNIT_BOUNDARY_DESCRIPTION: how long a runner pod whose request already matches its demand goes unlisted. A change of demand is acted on at once; this bounds only how late a replacement pod, which starts at the install's request, is noticed when no reconcile saw its runner not ready.
-const runnerResizeRecheck = 30 * time.Second
-
-type runnerResize struct {
-	demandMiB int
-	at        time.Time
-}
 
 const (
 	resizeSupportUnknown int32 = iota
@@ -118,7 +109,7 @@ func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantit
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
 	}
 	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB) << 30
-	if spec := r.config.VM.Runner; spec.ImageCacheHostPath == "" && spec.ImageArchiveHostPath == "" {
+	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {
 		budget, err := imageBudgetBytes(spec)
 		if err != nil {
 			return resource.Quantity{}, resource.Quantity{}, err
@@ -174,11 +165,6 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 	if !r.podResizeAvailable() {
 		return
 	}
-	if last, ok := r.runnerResized.Load(owner); ok {
-		if seen := last.(runnerResize); seen.demandMiB == demandMiB && time.Since(seen.at) < runnerResizeRecheck {
-			return
-		}
-	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
 	})
@@ -227,7 +213,6 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 		}
 		slog.Info("vm runner: asked the node for a new memory request on the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String())
 	}
-	r.runnerResized.Store(owner, runnerResize{demandMiB: demandMiB, at: time.Now()})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an accepted resize is a request to the node, not an allocation. The kubelet reports what it did with it on the pod: deferred while the node has no room right now, infeasible when it never will. Either way the scheduler has not accounted for that memory, so it is reported once per pod and size rather than read as done — the runner's own admission against its limit is what still stands between the owner's machines and the node.
