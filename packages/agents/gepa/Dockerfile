@@ -19,11 +19,6 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 # revisit on GEPA_VERSION bumps. The `gskill` extra needs Docker-in-Docker and
 # is deliberately not installed.
 RUN uv python install 3.11 &&\
-    # uv's managed interpreter bundles its own pip, whose vendored setuptools
-    # and msgpack are separate from the real ones patched below and are what
-    # this image still reported. Nothing here uses pip — uv drives every
-    # install and `uv venv` seeds none.
-    drop-pip "$(uv python find 3.11)" &&\
     # The standalone interpreter's own site-packages ships setuptools 82.0.1
     # (CVE-2026-59890) — the venv floor below does not reach it, and uv marks
     # the install externally managed, hence --break-system-packages.

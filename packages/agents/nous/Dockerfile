@@ -18,18 +18,12 @@ ARG NOUS_REF=v0.4.0
 
 # uv-managed Python in a shared location so the agent user (uid 65532) can use
 # it at runtime. UV_PYTHON_INSTALL_DIR keeps interpreters out of root's $HOME.
-# uv comes from the base image's lazy installers; first use here bakes it in.
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     NOUS_VENV=/opt/nous-venv
 
 # Python 3.11 + Nous (and its claude-agent-sdk dependency) from GitHub, in a
 # dedicated venv. The repo is public, so the install needs no credentials.
 RUN uv python install 3.11 &&\
-    # uv's managed interpreter bundles its own pip, whose vendored setuptools
-    # and msgpack are separate from the real ones patched below and are what
-    # this image still reported. Nothing here uses pip — uv drives every
-    # install and `uv venv` seeds none.
-    drop-pip "$(uv python find 3.11)" &&\
     # The standalone interpreter's own site-packages ships setuptools 82.0.1
     # (CVE-2026-59890) — the venv floor below does not reach it, and uv marks
     # the install externally managed, hence --break-system-packages.
