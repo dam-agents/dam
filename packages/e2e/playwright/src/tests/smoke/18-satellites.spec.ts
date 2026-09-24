@@ -171,16 +171,13 @@ test.describe("satellites", () => {
     test.setTimeout(240_000);
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
-    for (const s of await api.satellites.list.query())
-      await api.satellites.remove.mutate(s.name);
+    await removeIfPresent(api);
 
     await page.goto(`${baseUrl}/settings/connections`);
     await expect(
       page.getByRole("heading", { level: 1, name: "Connections" }),
     ).toBeVisible();
-    await expect(page.getByTestId("connection-group-satellites")).toHaveCount(
-      0,
-    );
+    await expect(page.getByTestId(`satellite-${SATELLITE}`)).toHaveCount(0);
 
     await api.satellites.connect.mutate({
       manifest: MANIFEST,
