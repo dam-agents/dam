@@ -95,6 +95,13 @@ curl -sG http://localhost:5555/api/trpc/e2e.getReceivedPrompts --data-urlencode 
 
 `$KEY` is an API key created in the UI (Settings → API keys). The `dam` CLI reads the same key from `DAM_TOKEN`. Build the CLI with `mise run //packages/cli:build` and pass `--server http://localhost:5555`.
 
+## Running the Playwright suite
+
+- **Browsers:** the pinned Playwright expects a newer Chromium revision than the preinstalled `/opt/pw-browsers/chromium*-1194`, and `playwright install` must not run here. Point `PLAYWRIGHT_BROWSERS_PATH` at a scratch directory of symlinks, laid out the way the error message names the missing path. For 1223 that is `chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell` linking to the 1194 `chrome-linux/headless_shell`, plus empty `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` markers.
+- **`*.localhost`:** Chromium resolves it internally, but Node's `fetch` (token minting in the specs) goes through glibc, which does not. Add `127.0.0.1 keycloak.localhost` to `/etc/hosts`.
+- **Environment:** set `PLATFORM_BASE_URL=http://localhost:5555` and `PLATFORM_KEYCLOAK_URL=http://keycloak.localhost:5555` for an `e2e:install` cluster, then run `mise exec -- pnpm exec playwright test --project=<name>` from `packages/e2e/playwright`. The `run` task depends on `install-browsers`, which downloads.
+- **CPU:** the container has 4 cores, and a cluster with one agent already requests about 87% of them. A spec that creates a second agent waits on `FailedScheduling: Insufficient cpu`, so delete idle agents first.
+
 ## Restart and recovery
 
 - **Restart k3s:** `mise run cluster:stop` stops k3s. Under the launcher, every pod dies with its PID namespace. The task also clears the mounts and pod iptables rules left in the host netns, as `k3s-killall.sh` would on a supervised host; a stale hostport rule silently sends `:5555` to a dead pod IP. Then re-run the install with `K3S_LAUNCHER` set: with no supervisor, it starts k3s whenever no `k3s-server` process is running. Restarting k3s by hand loses the install's `NO_PROXY` export, so `kubectl logs` and `exec` break through the proxy.
