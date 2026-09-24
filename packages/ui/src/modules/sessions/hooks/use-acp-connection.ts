@@ -26,8 +26,11 @@ import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { draftKey } from "../lib/draft-key.js";
+import {
+  type PromptDelivery,
+  withDeliveryTracking,
+} from "../lib/prompt-delivery.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
-import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
 
@@ -195,9 +198,9 @@ export function useAcpConnection(
       const handler = makeUpdateHandler();
       const { connection, ws } = await openInitializedConnection(
         selectedAgent,
-        (update, updateSessionId, frame) => {
+        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
           if (listening) handler(update, updateSessionId, frame);
-        },
+        }),
       );
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
@@ -245,7 +248,7 @@ export function useAcpConnection(
         },
       };
     },
-    [selectedAgent, makeUpdateHandler, keepAsLive, releaseStartSlot],
+    [selectedAgent, makeUpdateHandler, delivery, keepAsLive, releaseStartSlot],
   );
 
   const beginSession = useCallback((): Promise<StartedSession> => {
@@ -274,7 +277,7 @@ export function useAcpConnection(
     const handler = makeUpdateHandler();
     const { connection, ws } = await openInitializedConnection(
       selectedAgent,
-      (update, updateSessionId, frame) => {
+      withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
         const collector = collectorRef.current;
         if (
           collector &&
@@ -291,12 +294,12 @@ export function useAcpConnection(
           return;
         }
         handler(update, updateSessionId, frame);
-      },
+      }),
     );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     return connectionRef.current;
-  }, [selectedAgent, makeUpdateHandler, attachCloseHandler]);
+  }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 
   const loadChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const idleSessionsRef = useRef(new Map<string, number>());

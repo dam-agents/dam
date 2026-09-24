@@ -30,6 +30,7 @@
     "@opentelemetry/instrumentation-runtime-node": "^0.32.0",
     "@opentelemetry/instrumentation-undici": "^0.29.0",
     "@opentelemetry/sdk-node": "^0.219.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@slack/bolt": "^4.7.0",
     "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",

@@ -12,6 +12,7 @@ import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
+import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
 import { composeTelemetryModule } from "./modules/telemetry/compose.js";
@@ -106,6 +107,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     createAgentService: agent.exports.createService,
   });
 
+  const satellite = composeSatelliteModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const ssh = composeSshModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
@@ -159,6 +167,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of connection.commands) program.addCommand(command);
   for (const command of schedule.commands) program.addCommand(command);
   for (const command of skill.commands) program.addCommand(command);
+  for (const command of satellite.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);
   for (const command of channel.commands) program.addCommand(command);
   for (const command of metrics.commands) program.addCommand(command);

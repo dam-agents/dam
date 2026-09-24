@@ -18,7 +18,7 @@ import (
 
 const AgentContainerName = "agent"
 
-// UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. platform-init needs it too and is a guest binary that pulls in no Kubernetes libraries at all, so it reads its own copy from the machine contract rather than this package — and a test here asserts the two agree, because nothing else would notice them drifting.
+// UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. On the vm backend platform-init, which is Rust and runs inside the guest, bind-mounts the disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
 const agentHomeDir = "/home/agent"
 
 func portInt32(p int) int32 {

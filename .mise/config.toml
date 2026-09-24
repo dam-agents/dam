@@ -12,6 +12,7 @@ repo_root = "{{config_root}}"
 auto = true
 
 [tools]
+"aqua:rustsec/rustsec/cargo-audit" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
@@ -30,6 +31,7 @@ maven = "latest"
 nodejs = "24"
 pinact = "latest"
 pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
+rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
 uv = "0.9"
 yq = "latest"
@@ -94,7 +96,7 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(find . -path '*/node_modules' -prune -o -path '*/.mise/tasks/*' -type f -not -perm -u+x -print)
+bad=$(fd --hidden --type f --full-path --exclude node_modules '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []

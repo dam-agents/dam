@@ -17,6 +17,7 @@ function agent(extra: Partial<Agent>): Agent {
     features: { liveUpdates: true },
     stopRequested: false,
     overBudget: false,
+    podRestarts: 0,
     contributionFailures: [],
     unsupportedContributionKinds: [],
     workspaceFailures: [],

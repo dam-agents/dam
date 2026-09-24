@@ -114,6 +114,10 @@ export interface SlackPostMessage {
   blocks?: SlackBlock[];
   replyBroadcast?: boolean;
   teamId: SlackWorkspace;
+  unfurlLinks?: boolean;
+  unfurlMedia?: boolean;
+  username?: string;
+  iconUrl?: string;
 }
 
 export interface SlackPostEphemeral {

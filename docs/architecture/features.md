@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-21
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -8,8 +8,15 @@ Last verified: 2026-09-21
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, session costs and agent telemetry (a per-reply timeline
-in the conversation). Graduating a feature to always-on is deletion: drop its
+interactive artifacts, session costs, agent telemetry (a per-reply timeline
+in the conversation) and agent avatars (a robot head drawn in the browser from
+a hash of the agent's name and its owner's identity, so nothing is stored,
+two people's default-named agents look different, and renaming an agent
+changes its face; the flag also names the agent on its chat messages, which
+otherwise say "Agent"). Slack replies are the one place an avatar leaves the
+browser: where a workspace grants the persona scope, the api-server uploads a
+PNG copy to a public image host for the message icon, whatever the owner's
+flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Experiments, Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).
@@ -31,6 +38,38 @@ per-user flag says what a user wants to see, and here the kit, not the user, is
 choosing the runtime. The new sandbox runtime is not a choice
 inside the form — with both answers yes, every agent the form creates is a
 microVM, and the form says so in a notice pointing back at the flag.
+
+### Install preflight
+
+The install-wide answer is the chart's value alone, and turning it on asks an
+operator to get several things right at once: a device plugin, the runner's
+identity, its memory limit, its egress ranges, the image budget. Each one gone
+wrong would otherwise surface only as a vm Agent that never becomes ready. So
+the chart refuses the values the controller cannot use, and the
+[controller](platform-topology.md#controller) checks the install against the
+cluster at startup and on a periodic pass: that a schedulable node in the
+[VM runners'](platform-topology.md#vm-runner) placement advertises the device
+resources, that the runner ServiceAccount exists, and that the values it hands
+each runner are usable. A **problem** is logged and named on every vm Agent
+whose runner is not ready.
+
+What the check cannot see is said as a **warning**, logged only and never on an
+Agent — so silence on an Agent is not a pass:
+
+- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only
+  grant the chart adds with virtualization; an install without it gets a log
+  line instead of the device check.
+- **Egress that reaches the cluster.** The runner's egress ranges match
+  in-cluster addresses too. No portable API names the pod range, so the
+  exceptions are never defaulted from the cluster; the controller instead
+  checks the ones configured against an address it knows sits in each range —
+  the API server's Service address and its own pod address. Reaching one is
+  only a warning, because an install may leave a range open on purpose.
+- **Taints.** Placement is checked against the node selector alone; the
+  scheduler's own message on the runner pod says when a toleration is missing.
+
+The api-server does not read this result: a failed preflight does not withdraw
+the install-wide answer.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only. A

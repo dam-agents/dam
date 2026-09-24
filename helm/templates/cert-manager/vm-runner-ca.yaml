@@ -1,0 +1,57 @@
+{{- if .Values.virtualization.enabled }}
+{{/*
+The VM runners' own CA. The bootstrap issuer signs the CA Certificate; the CA
+issuer then signs each runner's serving certificate, which the controller
+trusts a runner by. It is separate from the envoyMitm CA because that one signs
+gateway leaves for hostnames taken from users' credential hosts, and a leaf
+naming a runner's Service host would pass for the runner.
+
+cert-manager only honours `ca:` ClusterIssuers that reference a Secret in the
+namespace passed to its --cluster-resource-namespace flag (default
+`cert-manager`). Override .Values.virtualization.runnerCA.secretNamespace to
+match if your install differs.
+*/}}
+{{- $ca := .Values.virtualization.runnerCA }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $ca.bootstrapIssuerName }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $ca.secretName }}
+  namespace: {{ $ca.secretNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+spec:
+  isCA: true
+  commonName: platform VM runner CA
+  secretName: {{ $ca.secretName }}
+  duration: {{ $ca.duration }}
+  renewBefore: {{ $ca.renewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ $ca.bootstrapIssuerName }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $ca.issuerName }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+spec:
+  ca:
+    secretName: {{ $ca.secretName }}
+{{- end }}

@@ -14,8 +14,31 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
+{{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
+{{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
+{{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
+{{- end -}}
+
+{{/*
+The kit reader needs the host and the token together. Rendering one without
+the other would drop the pair silently, and every catalog and kit on that
+host would then read as a host nobody named — which the refresh settles as
+the author withdrawing them, pruning the very rows the setting was added to
+serve. Fail at render instead, where the operator is looking.
+*/}}
+{{- define "platform.validate.enterpriseGitHubNeedsBothHostAndToken" -}}
+{{- $ghe := dig "enterprise" dict (.Values.github | default dict) -}}
+{{- $named := $ghe.host | default "" | trim -}}
+{{- $fallback := dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer | trim -}}
+{{- $secret := ($ghe.tokenSecret | default dict).name | default "" | trim -}}
+{{- if and $named (not $secret) -}}
+{{- fail (printf "github.enterprise.host is %q but github.enterprise.tokenSecret.name is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Name the secret, or clear the host." $named) -}}
+{{- end -}}
+{{- if and $secret (not $named) (not $fallback) -}}
+{{- fail "github.enterprise.tokenSecret.name is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the secret — a token with no host to send it to reads nothing." -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -74,9 +97,11 @@ first evicted — taking every machine with it.
 
 {{/*
 A machine's egress allowlist is enforced by smolvm inside the very process an
-escaped guest would own. The runner's own NetworkPolicy is the only gate behind
-it, and it cannot default to closed because the runner pulls agent images — so
-an install has to say, rather than inherit an open pod by omission.
+escaped guest would own. The runner's own NetworkPolicy is the kernel gate on
+where such a guest may go (each gateway's ingress policy separately decides whose
+credentials it can reach), and it cannot default to closed because the runner
+pulls agent images — so an install has to say, rather than inherit an open pod
+by omission.
 */}}
 {{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
 {{- if .Values.virtualization.enabled -}}
@@ -122,5 +147,67 @@ say so.
 {{- if and ($v.imageCache | default dict).hostPath $v.runner.imageArchiveHostPath -}}
 {{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only archives staged for an install with no registry." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Values the controller would otherwise take in and fail on later, one agent at a
+time: a range that is not a CIDR makes Kubernetes reject the runner's
+NetworkPolicy on every reconcile, and an exception that is not one is dropped
+without a word, leaving the range it was meant to close open. A DNS policy
+other than the two the runner supports is silently read as `Default`. A budget
+that is not a positive quantity refuses every runner. A device plugin with no
+grants advertises nothing, so every runner pends. `0.0.0.0/0` with no
+exceptions is not refused here: the values name it as the way to leave the
+runner unconfined on purpose, and the controller warns about it at startup.
+*/}}
+{{- define "platform.validate.vmValuesTheControllerCanUse" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
+{{- range $field := list "egressCidrs" "egressExceptCidrs" -}}
+{{- range (index $v.runner $field | default list) -}}
+{{- if not (regexMatch $cidr (toString .)) -}}
+{{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $dns := $v.runner.dnsPolicy | default "Default" -}}
+{{- if not (has $dns (list "Default" "ClusterFirst")) -}}
+{{- fail (printf "virtualization.runner.dnsPolicy %q is not one the runner supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
+{{- end -}}
+{{- $budget := toString (($v.imageCache | default dict).budget | default "") -}}
+{{- if not (regexMatch `^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$` $budget) -}}
+{{- fail (printf "virtualization.imageCache.budget %q is not a byte quantity (e.g. 50Gi). It is required: the controller refuses to create a runner without a bound on what its cached images may occupy." $budget) -}}
+{{- end -}}
+{{- if regexMatch `^0*(\.0*)?([eE][+-]?[0-9]+)?[A-Za-z]*$` $budget -}}
+{{- fail (printf "virtualization.imageCache.budget %q leaves the cached images no room at all, so no runner can fetch an image. Give it a positive size well under the disk it sits on." $budget) -}}
+{{- end -}}
+{{- if and $v.devicePlugin.enabled (lt (int $v.devicePlugin.count) 1) -}}
+{{- fail "virtualization.devicePlugin.count must be at least 1 — it is how many VM runners a node may host, and with none the plugin advertises no device and every runner pends." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Virtualization values the chart no longer reads. Helm keeps a value nothing
+reads without a word, so an install that still sets one would be quietly given
+something else: the node image cache service can no longer be switched off and
+runs where the runners do, the runner admits sources by its NetworkPolicy
+alone, and every owner's runner runs `runner.image`. Fail at render instead,
+naming what took each one's place.
+*/}}
+{{- define "platform.validate.vmValuesThisChartNoLongerReads" -}}
+{{- $v := .Values.virtualization | default dict -}}
+{{- $cache := $v.imageCache | default dict -}}
+{{- $runner := $v.runner | default dict -}}
+{{- if hasKey $cache "preload" -}}
+{{- fail "virtualization.imageCache.preload is no longer read. The node image cache service is the only writer of imageCache.hostPath, so it always runs where that is set, on the runners' own nodeSelector and tolerations; its interval is virtualization.imageCache.preloadInterval and its resources virtualization.imageCache.resources. Remove the preload block." -}}
+{{- end -}}
+{{- if hasKey $runner "ingressCidrs" -}}
+{{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
+{{- end -}}
+{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
+{{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
 {{- end -}}
 {{- end -}}

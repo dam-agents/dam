@@ -8,7 +8,7 @@ import {
   AGENT_WORK_DIR,
   type AppRouter,
 } from "agent-runtime-api";
-import type { ExperimentsService } from "api-server-api";
+import type { ExperimentsService, SatelliteView } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -45,6 +45,11 @@ import {
   registerAgentTelemetryTools,
   type AgentTelemetryService,
 } from "../../modules/metrics/index.js";
+import {
+  DEFAULT_SATELLITE_WAIT_MS,
+  registerSatelliteTools,
+} from "../../modules/satellites/index.js";
+import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 function resolveWorkspacePath(input: string): string {
   const agentHome = AGENT_HOME_DIR;
@@ -124,6 +129,11 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  satellites?: {
+    ops: SatelliteAgentOpsImpl;
+    granted: SatelliteView[];
+    waitDeadlineMs: number;
+  } | null;
 }
 
 export function createMcpSession(
@@ -236,7 +246,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
+    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -247,8 +257,20 @@ export function createMcpSession(
           "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
         ),
       attachment: attachmentInput,
+      unfurlLinks: z
+        .boolean()
+        .optional()
+        .describe(
+          "Slack only: whether Slack should unfurl links. Omit for Slack's default behavior.",
+        ),
+      unfurlMedia: z
+        .boolean()
+        .optional()
+        .describe(
+          "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
+        ),
     },
-    async ({ channel, text, chatId, attachment }) => {
+    async ({ channel, text, chatId, attachment, unfurlLinks, unfurlMedia }) => {
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const resolved = loaded?.resolved;
@@ -260,6 +282,8 @@ export function createMcpSession(
         {
           ...(chatId ? { conversationId: chatId } : {}),
           ...(resolved ? { attachment: resolved } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       );
       const failed = "error" in result;
@@ -275,6 +299,8 @@ export function createMcpSession(
           hasAttachment: attachmentAudit !== undefined,
           ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
           textLength: text.length,
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
@@ -441,7 +467,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread; the thread is where the answer belongs, so leave alsoSendToChannel off unless you were asked to surface the answer to the whole channel. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread; the thread is where the answer belongs, so leave alsoSendToChannel off unless you were asked to surface the answer to the whole channel. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
       attachment: attachmentInput,
@@ -457,8 +483,27 @@ export function createMcpSession(
         .describe(
           'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Leave it off: the answer to a turn belongs in its thread, and broadcasting ordinary back-and-forth spams the channel. Set it only when you were asked to surface the answer to the whole channel.',
         ),
+      unfurlLinks: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether Slack should unfurl links. Omit for Slack's default behavior.",
+        ),
+      unfurlMedia: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether Slack should unfurl media. Omit for Slack's default behavior.",
+        ),
     },
-    async ({ text, attachment, threadTs, alsoSendToChannel }) => {
+    async ({
+      text,
+      attachment,
+      threadTs,
+      alsoSendToChannel,
+      unfurlLinks,
+      unfurlMedia,
+    }) => {
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
@@ -469,6 +514,8 @@ export function createMcpSession(
           ...(threadTs ? { threadTs } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       );
       const failed = "error" in result;
@@ -483,6 +530,8 @@ export function createMcpSession(
           action: "reply",
           textLength: text.length,
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
+          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           hasAttachment: loaded !== undefined,
           ...(loaded ? { attachment: loaded.audit } : {}),
         },
@@ -979,6 +1028,14 @@ export function createMcpSession(
     },
   );
 
+  if (deps.satellites)
+    registerSatelliteTools(server, {
+      ops: deps.satellites.ops,
+      agentId,
+      satellites: deps.satellites.granted,
+      waitDeadlineMs: deps.satellites.waitDeadlineMs,
+    });
+
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
@@ -1003,6 +1060,8 @@ export interface MountMcpDeps {
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  satelliteOps?: SatelliteAgentOpsImpl;
+  satelliteWaitDeadlineMs?: number;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1027,7 +1086,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const ownerIsInspector = await deps.carriesInspectorRole(verified.owner);
+    const [ownerIsInspector, grantedSatellites] = await Promise.all([
+      deps.carriesInspectorRole(verified.owner),
+      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+        (err: unknown) => {
+          console.error(
+            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            err,
+          );
+          return [];
+        },
+      ),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -1055,6 +1125,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       agentTelemetry: deps.agentTelemetry,
+      satellites:
+        deps.satelliteOps && grantedSatellites.length > 0
+          ? {
+              ops: deps.satelliteOps,
+              granted: grantedSatellites,
+              waitDeadlineMs:
+                deps.satelliteWaitDeadlineMs ?? DEFAULT_SATELLITE_WAIT_MS,
+            }
+          : null,
     });
     await session.server.connect(session.transport);
 

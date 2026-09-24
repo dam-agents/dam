@@ -53,6 +53,10 @@ import {
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import {
+  AgentAvatar,
+  isAsleep,
+} from "../../agents/components/avatar/agent-avatar.js";
+import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
@@ -61,6 +65,7 @@ import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
+import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -274,6 +279,7 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
       return true;
@@ -564,10 +570,19 @@ export function ChatView() {
           <ArrowLeft size={14} />
         </Button>
         <div className="flex items-center gap-3 min-w-0">
-          <span
-            aria-hidden
-            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-          />
+          {avatarsEnabled && agentView ? (
+            <AgentAvatar
+              name={agentView.name}
+              size={40}
+              sleeping={isAsleep(agentDisplay?.state)}
+              stopped={agentView.stopRequested}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+            />
+          )}
           <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
@@ -758,6 +773,9 @@ export function ChatView() {
                         <Fragment key={item.message.id}>
                           <ChatMessage
                             message={item.message}
+                            avatarAgentName={
+                              avatarsEnabled ? agentView?.name : undefined
+                            }
                             isLast={item.index === messages.length - 1}
                             {...timeProps(item.message.at, now)}
                             hasPendingPermission={hasPendingPermission}

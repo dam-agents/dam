@@ -10,6 +10,6 @@ Available:
 - `mise` to install extra software
 
 Additionally available if running in a root VM:
-- `k3s`: start with `k3s server &`, use `k3s kubectl`, stops on restart
-- `docker`: daemon starts when first called, stops on restart
+- `k3s`: start with `k3s server &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`
+- `docker`: daemon starts when first called, stops on restart; images are kept in `~/.local/share/docker` and `~/.local/share/containerd`
 - `dnf` to install extra software

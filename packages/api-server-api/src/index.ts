@@ -335,6 +335,14 @@ export {
   templateIdForProvider,
 } from "./modules/connections/providers.js";
 
+export {
+  CONNECTION_EGRESS_PATH_SEGMENT,
+  connectionEgressPathPrefix,
+  stripConnectionEgressPrefix,
+  applyConnectionEgressAddressing,
+  unaddressableRivalHost,
+} from "./modules/connections/egress-addressing.js";
+
 export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {
@@ -772,6 +780,7 @@ export type {
 export {
   AGENT_SCOPES,
   ALL_SCOPES,
+  SATELLITE_SCOPES,
   API_KEY_PREFIX,
   CREDENTIAL_SCOPES,
 } from "./modules/api-keys/types.js";
@@ -847,3 +856,41 @@ export type {
   TelemetryTurnResult,
   TelemetryLogsResult,
 } from "./modules/telemetry/types.js";
+
+export {
+  DEFAULT_MAX_CONCURRENT,
+  INLINE_OUTPUT_LIMIT,
+  MAX_JOB_OUTPUT_BYTES,
+  MAX_TOOL_ARGS_BYTES,
+  claimInputSchema,
+  formatJobRef,
+  heartbeatInputSchema,
+  jobRefSchema,
+  jobStatusSchema,
+  reportInputSchema,
+  satelliteConnectInputSchema,
+  satelliteGrantInputSchema,
+  satelliteManifestSchema,
+  satelliteNameSchema,
+  RESERVED_TOOL_NAMES,
+  satelliteToolNameSchema,
+  satelliteToolSchema,
+  startJobInputSchema,
+  toolArgsSchema,
+} from "./modules/satellites/schemas.js";
+export type {
+  ClaimInput,
+  HeartbeatInput,
+  JobOutcome,
+  JobStarted,
+  JobStatus,
+  JobView,
+  ReportInput,
+  SatelliteAgentOps,
+  SatelliteManifest,
+  SatelliteTool,
+  SatelliteView,
+  SatelliteWorkerOps,
+  SatellitesService,
+  WorkItem,
+} from "./modules/satellites/types.js";

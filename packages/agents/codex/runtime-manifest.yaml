@@ -1,0 +1,56 @@
+# Codex runtime manifest. Codex reads MCP servers only from `[mcp_servers.*]`
+# in its own config.toml — never from the $HOME/.mcp.json the built-in binding
+# writes — so the driver targets that file instead. A streamable-HTTP server is
+# keyed off `url` alone, with static headers under `http_headers`; the default
+# binding's `type` / `headers` keys are not Codex's. Other drivers match
+# platform-base.
+manifestVersion: 1
+
+drivers:
+  mcp-entry:
+    path: "$HOME/.codex/config.toml"
+    format: toml
+    keyPath: mcp_servers
+    urlKey: url
+    headersKey: http_headers
+
+  # Codex's built-in model list names OpenAI's own models, which an
+  # OpenAI-compatible endpoint need not serve, so the list is discovered from
+  # the endpoint the agent was granted. A `model` in config.toml outranks the
+  # provider's OPENAI_MODEL pin: the harness scripts pass the pin only when the
+  # file sets none. No redirectEnv — the OpenAI preset names api.openai.com
+  # through the same variable, where Codex's own default is the better answer.
+  harness-config:
+    file: "$HOME/.codex/config.toml"
+    format: toml
+    keys:
+      model: model
+      configOptions:
+        effort: model_reasoning_effort
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: effort
+          name: Effort
+          description: Reasoning effort level
+          category: thought_level
+          choices:
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+    modelDiscovery:
+      urlEnv:
+        - OPENAI_BASE_URL
+      pinEnv:
+        - OPENAI_MODEL

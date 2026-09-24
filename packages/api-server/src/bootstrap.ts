@@ -48,6 +48,7 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
+import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
@@ -159,11 +160,14 @@ import { createReposRepository } from "./modules/repos/infrastructure/repos-repo
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
+  catalogEntryHosts,
   createCatalogSourceFromLocator,
   createOnboardingChecklist,
   createOnboardingChecklistRepository,
   createOnboardingMarker,
   createCatalogRefresh,
+  createGitCatalogSource,
+  createGitHosts,
   createGitRefResolver,
   createResolvedCatalogRepository,
   createStarterKitsRepository,
@@ -231,6 +235,12 @@ import {
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
+import {
+  composeSatellitesModule,
+  createOutcomeDelivery,
+  createOutcomeWakeRetry,
+} from "./modules/satellites/index.js";
+import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -320,18 +330,35 @@ export async function bootstrap() {
   const starterKitsRepo = createStarterKitsRepository({
     resolved: resolvedCatalog,
   });
+  const kitGitHosts = createGitHosts({
+    host: config.githubEnterpriseHost,
+    token: config.githubEnterpriseToken,
+  });
   const starterKitsRefresh = createCatalogRefresh({
-    catalogs: parseCatalogSeeds(config.starterKitsCatalogs).flatMap((c) => {
+    catalogs: parseCatalogSeeds(
+      config.starterKitsCatalogs,
+      kitGitHosts,
+    ).flatMap((c) => {
       const located = createCatalogSourceFromLocator(
+        kitGitHosts,
         c.locator,
         c.kind,
         c.ref,
         c.dir,
       );
-      return located ? [{ name: c.name, ...located }] : [];
+      if (!located) return [];
+      return [
+        {
+          name: c.name,
+          ...located,
+          entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
+        },
+      ];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(),
+    refs: createGitRefResolver(kitGitHosts),
+    sourceForEntry: (gitUrl, ref) =>
+      createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
@@ -471,6 +498,60 @@ export async function bootstrap() {
     runtimeDelivery.sweep.tick(),
   );
   const onboardingChecklists = createOnboardingChecklistRepository(db);
+
+  let deliverSatelliteOutcome: (
+    agentId: string,
+  ) => Promise<boolean> = async () => false;
+  const satellitesBoot = composeSatellitesModule({
+    db,
+    maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
+    ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    isAgentOwnedBy: (agentId, ownerSub) =>
+      agentsRepo.isOwnedBy(agentId, ownerSub),
+    spillLog: async (agentId, ref, output) => {
+      try {
+        return await createAgentWorkspaceFiles(
+          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+        ).write({
+          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+          bytes: Buffer.from(output, "utf8"),
+          contentType: "text/plain",
+        });
+      } catch {
+        return null;
+      }
+    },
+    deliverOutcome: async ({ agentId }) => {
+      await deliverSatelliteOutcome(agentId);
+    },
+  });
+
+  const outcomeDeliveryDeps = {
+    repo: satellitesBoot.repo,
+    bump: (
+      agentId: string,
+      events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
+    ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId: string) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    spillLog: satellitesBoot.spillLog,
+    log: (msg: string) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  };
+  deliverSatelliteOutcome = createOutcomeDelivery(outcomeDeliveryDeps);
+  await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
+    satellitesBoot.sweepLeases().then(() => undefined),
+  );
+  const retrySatelliteOutcomes = createOutcomeWakeRetry(
+    outcomeDeliveryDeps,
+    deliverSatelliteOutcome,
+  );
+  await periodicJobs.register("satellite-outcome-wake-retry", 3_600_000, () =>
+    retrySatelliteOutcomes().then(() => undefined),
+  );
+
   const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
@@ -830,6 +911,8 @@ export async function bootstrap() {
         slackInstalls.canonicalWorkspaceName,
         undefined,
         DEFAULT_SETTLE_MS,
+        undefined,
+        config.imgbbApiKey ? createImgbbAgentIcons(config.imgbbApiKey) : null,
       )
     : undefined;
 
@@ -1026,6 +1109,11 @@ export async function bootstrap() {
       name: "connection-grants",
       listAgentIds: () => listConnectionGrantAgentIds(db),
       cleanup: createConnectionGrantsCleanupHook(db),
+    },
+    {
+      name: "satellite-grants",
+      listAgentIds: () => satellitesBoot.listAgentIds(),
+      cleanup: satellitesBoot.onAgentDeleted,
     },
     {
       name: "agent-env",
@@ -1230,6 +1318,7 @@ export async function bootstrap() {
             await connections.validateProviderConnection(
               sel.providerConnectionId,
             );
+          await connections.validateGrantSet(sel.connectionIds);
           return {
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
           };
@@ -1342,6 +1431,7 @@ export async function bootstrap() {
     reposService,
     userDirectory,
     apiKeysModule,
+    satellitesBoot,
     auth,
     jwksWarmup,
     surfaceAttribution,
@@ -1351,6 +1441,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    satellitesBoot,
     agentStateCache,
     config,
     api,

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import { totalCostUsd } from "../../metrics/lib/totals.js";
 import {
@@ -70,8 +71,9 @@ export function SpendWidget() {
           {spenders.map((spender) => (
             <div key={spender.agentId}>
               <div className="mb-1 flex items-center justify-between">
-                <span className="truncate text-sm text-muted-foreground">
-                  {spender.agentName}
+                <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                  <AgentAvatar name={spender.agentName} size={16} />
+                  <span className="truncate">{spender.agentName}</span>
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
                   ${spender.costUsd.toFixed(2)}

@@ -23,10 +23,20 @@ env:
   MISE_LOCKED: "1"
 
 jobs:
-  check:
+  check-test:
     name: mise check
+    # `mise run check` and `mise run test` side by side in one job: each took
+    # about three minutes, most of it the same setup, and each held its own
+    # runner slot and turn in the queue. A tag runs only `check`.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Thirty minutes. A cold run installs its tools, compiles smolvm from
+    # source and then has caches to write back, and a run measured at 10m04s
+    # for `check` alone was killed in that tail after it had already passed —
+    # which reports as cancelled and reads as a red PR. Since #3857 a PR run
+    # never saves, so a branch cannot warm itself: if main's entry is missing or
+    # its key has moved, every PR pays the full cold cost until the next main
+    # push rewrites it. That run is the one this budget has to fit.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,58 +45,69 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          restore-keys: |
+            rust-${{ runner.os }}-${{ github.job }}-
+            rust-${{ runner.os }}-
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
           restore-keys: |
-            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
             go-${{ runner.os }}-${{ github.job }}-
-      - run: mise run check
-
-  test:
-    name: mise test
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: ${{ env.MISE_VERSION }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+            go-${{ runner.os }}-
+      - env:
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ "$TAG" = true ]; then mise run check; else mise run --continue-on-error check ::: test; fi
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-          restore-keys: |
-            mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
-            mise-task-artifacts-${{ runner.os }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-${{ github.sha }}
-          restore-keys: |
-            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('packages/controller/go.sum') }}-
-            go-${{ runner.os }}-${{ github.job }}-
-      - run: mise run test
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/vm-runner/target
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
+  # appversion and the merge-* jobs only tag images, and nothing on a PR reads
+  # a tag: e2e pulls by digest, agents build from platform-base's digest, and
+  # publishing and scanning run on main and tags. A PR skips them. Runner slots
+  # are what a PR waits on: run 35789042417 queued its builds for up to 9m44s
+  # while the builds themselves took seconds.
   appversion:
     name: derive app version
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -148,29 +169,15 @@ jobs:
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
   build-images:
+    # One job per arch builds all five images side by side; see image:ci-build.
+    # A PR builds its images in e2e instead: see e2e:ci-images.
     needs: [changes]
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        component: [controller, vm-runner, api-server, ui, keycloak]
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
-        include:
-          - component: controller
-            dockerfile: packages/controller/Dockerfile
-            context: packages/controller
-          - component: vm-runner
-            dockerfile: packages/controller/Dockerfile.vm-runner
-            context: packages/controller
-          - component: api-server
-            dockerfile: packages/api-server/Dockerfile
-            context: .
-          - component: ui
-            dockerfile: packages/ui/Dockerfile
-            context: .
-          - component: keycloak
-            dockerfile: packages/keycloak-theme/Dockerfile
-            context: .
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,48 +188,39 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - if: matrix.component == 'keycloak'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      # For the keycloak theme build.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-      - if: matrix.component == 'keycloak'
-        run: mise run //packages/keycloak-theme:build
-      - id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
-      - name: Export digest
+      # Only the registry buildcache, written here and read by every PR. A gha
+      # cache export, once also written on PR runs with mode=max, put gigabytes
+      # per run into the 10 GB GitHub gives the whole repository and evicted
+      # the Go, mise-tool and Playwright caches every run reads.
+      - name: Build
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
+          ARCH: ${{ matrix.arch }}
+          CACHE_TO: "1"
+        run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digests-${{ matrix.component }}-${{ matrix.arch }}
-          path: /tmp/digests/*
+          name: digests-images-${{ matrix.arch }}
+          path: /tmp/digests
           retention-days: 1
           if-no-files-found: error
 
   merge-images:
     name: merge multi-arch manifests
-    needs: [changes, build-images, appversion, check]
+    needs: [changes, build-images, appversion, check-test]
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      matrix:
-        component: [controller, vm-runner, api-server, ui, keycloak]
+    timeout-minutes: 20
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: digests-${{ matrix.component }}-*
+          pattern: digests-images-*
           path: /tmp/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -231,26 +229,18 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ needs.appversion.outputs.composite }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['keycloak'] }},enable=${{ matrix.component == 'keycloak' && github.event_name != 'pull_request' }}
-      - name: Create manifest list and push
+      - name: Create manifest lists and push
         env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-        run: |
-          set -euo pipefail
-          cd /tmp/digests
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$IMAGE@sha256:%s " *)
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+          SOURCE_SHA_TAGGED: keycloak vm-runner
+          # keycloak's merge takes minutes of copying inside the registry, and
+          # its source rarely moves. A main push leaves an unchanged one alone;
+          # tags and the nightly run merge it, with its registry requests
+          # logged to find where the time goes.
+          SKIP_UNCHANGED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'keycloak' || '' }}
+          CI_MERGE_DEBUG: keycloak
+        run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
 
   build-platform-base:
     needs: [changes]
@@ -277,10 +267,9 @@ jobs:
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
-            type=gha,scope=platform-base-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || format('type=gha,mode=max,scope=platform-base-{0}', matrix.arch) }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || '' }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -296,8 +285,8 @@ jobs:
 
   merge-platform-base:
     name: merge multi-arch platform-base manifest
-    needs: [build-platform-base, appversion, changes, check]
-    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    needs: [build-platform-base, appversion, changes, check-test]
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.platform_base == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -334,63 +323,72 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
 
   build-agents:
-    needs: [merge-platform-base, changes]
+    # One job per arch builds the agents one after another; see
+    # image:ci-build. Not side by side: k-search alone is about 4 GB
+    # compressed. From build-platform-base's digest, not merge-platform-base's tag:
+    # the tag waits on `check`, which is not what an agent build depends on.
+    # merge-agents keeps the `check` gate on publishing.
+    needs: [build-platform-base, changes]
     if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       matrix:
-        component: ${{ fromJSON(needs.changes.outputs.agents) }}
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: needs.changes.outputs.platform_base == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: digests-platform-base-${{ matrix.arch }}
+          path: /tmp/base-digest
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: packages/agents/${{ matrix.component }}
-          file: packages/agents/${{ matrix.component }}/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
-      - name: Export digest
+      - name: Build
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          BUILT: ${{ needs.changes.outputs.platform_base }}
+          TAG: ${{ needs.changes.outputs.platform_base_tag }}
+          PR: ${{ github.event_name == 'pull_request' }}
+          CACHE_TO: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          set -euo pipefail
+          if [ "$BUILT" = true ]; then base="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/base-digest)"; else base="$IMAGE_PREFIX/platform-base:$TAG"; fi
+          # A PR builds its agents only to prove they build: e2e runs the mock,
+          # and nothing reads a PR's agent tags. Exporting is most of the cost —
+          # k-search spent 9 of its 10 minutes compressing, re-timestamping and
+          # pushing layers after a one-minute build — so a PR exports nothing.
+          read -r -a agents <<< "$AGENTS"
+          [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
+          .mise/tasks/image/ci-build --serial --base-image "$base" "$ARCH" "${agents[@]}"
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digests-${{ matrix.component }}-${{ matrix.arch }}
-          path: /tmp/digests/*
+          name: digests-agents-${{ matrix.arch }}
+          path: /tmp/digests
           retention-days: 1
           if-no-files-found: error
 
   merge-agents:
     name: merge multi-arch agent manifests
-    needs: [build-agents, appversion, changes]
-    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    needs: [build-agents, appversion, changes, check-test]
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      matrix:
-        component: ${{ fromJSON(needs.changes.outputs.agents) }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: digests-${{ matrix.component }}-*
+          pattern: digests-agents-*
           path: /tmp/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -399,37 +397,28 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ needs.appversion.outputs.composite }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)[matrix.component] }},enable=${{ github.event_name != 'pull_request' }}
-      - name: Create manifest list and push
+      - name: Create manifest lists and push
         env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: |
-          set -euo pipefail
-          cd /tmp/digests
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$IMAGE@sha256:%s " *)
+          read -r -a agents <<< "$AGENTS"
+          SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge /tmp/digests "${agents[@]}"
 
   build-workloads:
+    # One job per arch, one workload after another, like build-agents. Every
+    # workload builds even after one fails, but merge-workloads then merges
+    # none.
     needs: [merge-agents, changes]
     if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
-      # one flaky workload build must not cancel the siblings
+      # One arch's failed build must not cancel the other's, which then
+      # reports nothing of its own.
       fail-fast: false
       matrix:
-        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -441,46 +430,35 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: packages/agents/${{ matrix.component }}
-          file: packages/agents/${{ matrix.component }}/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
-            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
-      - name: Export digest
+      - name: Build
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          BASE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
+          CACHE_TO: "1"
         run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
+          read -r -a workloads <<< "$WORKLOADS"
+          .mise/tasks/image/ci-build --serial --base-image "$BASE" "$ARCH" "${workloads[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digests-${{ matrix.component }}-${{ matrix.arch }}
-          path: /tmp/digests/*
+          name: digests-workloads-${{ matrix.arch }}
+          path: /tmp/digests
           retention-days: 1
           if-no-files-found: error
 
   merge-workloads:
     name: merge multi-arch workload manifests
     needs: [build-workloads, appversion, changes]
-    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: digests-${{ matrix.component }}-*
+          pattern: digests-workloads-*
           path: /tmp/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -489,31 +467,22 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ needs.appversion.outputs.composite }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)[matrix.component] }},enable=${{ github.event_name != 'pull_request' }}
-      - name: Create manifest list and push
+      - name: Create manifest lists and push
         env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: |
-          set -euo pipefail
-          cd /tmp/digests
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$IMAGE@sha256:%s " *)
+          read -r -a workloads <<< "$WORKLOADS"
+          SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge /tmp/digests "${workloads[@]}"
 
   build-mock:
     name: build mock (e2e fixture)
     needs: [build-platform-base, changes]
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
+    # On a PR, e2e builds mock itself unless platform-base moved.
+    if: >-
+      ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() &&
+          (github.event_name != 'pull_request' || needs.changes.outputs.platform_base == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -548,51 +517,60 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.ref }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
-            type=gha,scope=mock
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || 'type=gha,mode=max,scope=mock' }}
+          # Registry buildcache only: see build-images.
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || '' }}
 
   e2e:
     name: mise e2e
-    needs: [build-images, build-mock]
-    if: >-
-      ${{ !startsWith(github.ref, 'refs/tags/v') &&
-          !cancelled() &&
-          needs.build-images.result == 'success' &&
-          needs.build-mock.result == 'success' }}
+    # No `needs` on the builds: bringing the cluster up takes minutes and needs
+    # no image, so it runs while they build. e2e:ci-images builds them here on
+    # a PR, or waits for this run's build jobs, in the background, and
+    # cluster:install waits for it at the image load. A failed build still
+    # fails this job, there.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The builds' own time now counts against this budget.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     env:
       IS_SANDBOX: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # On a PR, image:resolve reads the commit that last touched
+          # platform-base.
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
+      - if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: digests-*-amd64
-          path: /tmp/digests
-      - name: Pull built images from registry
-        env:
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          for c in controller api-server ui keycloak; do
-            d="$(ls "/tmp/digests/digests-$c-amd64")"
-            docker pull "$IMAGE_PREFIX/$c@sha256:$d"
-            docker tag "$IMAGE_PREFIX/$c@sha256:$d" "platform-$c:latest"
-          done
-          docker pull "$IMAGE_PREFIX/mock:$SHA"
-          docker tag "$IMAGE_PREFIX/mock:$SHA" "platform-mock:latest"
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+      # The keycloak image bakes in the theme JAR. Built here, before the
+      # background build starts, so it does not race e2e:install's own run of
+      # the same task, which is then a cache hit.
+      - if: github.event_name == 'pull_request'
+        run: mise run //packages/keycloak-theme:build
+      - name: Build or fetch this run's images in the background
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYCLOAK_THEME_BUILT: "1"
+          CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
+          # The jobs that make the images e2e loads; see e2e:ci-images.
+          CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          CI_IMAGES_JOBS: >-
+            ${{ github.event_name == 'pull_request'
+                && 'detect stale images|build mock (e2e fixture)'
+                || 'detect stale images|build-images (amd64)|build mock (e2e fixture)' }}
+        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
@@ -600,6 +578,19 @@ jobs:
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
+          CI_IMAGES_STATUS: /tmp/ci-images.status
+      - name: Image fetch log
+        if: ${{ !cancelled() }}
+        run: cat /tmp/ci-images.log
+      # The vm-runner build e2e:ci-images left running in the background.
+      - name: vm-runner build
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        run: |
+          set -euo pipefail
+          [ -e /tmp/vm-runner-build.log ] || { echo "::error::the vm-runner build never started; see the image fetch log"; exit 1; }
+          for _ in $(seq 180); do [ -s /tmp/vm-runner-build.status ] && break; sleep 10; done
+          cat /tmp/vm-runner-build.log || true
+          [ "$(cat /tmp/vm-runner-build.status 2>/dev/null)" = 0 ]
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -766,7 +757,13 @@ jobs:
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || true
+          rc=0
+          results=$(mise -C packages/controller x -- govulncheck -format json ./...) || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+            echo "::error::govulncheck exited $rc, so this is not a scan result"
+            exit 1
+          fi
+          printf '%s' "$results" | jq -se 'any(.[]; .config != null)' > /dev/null
           out=$(printf '%s' "$results" | jq -s '
             [ .[]
               | select(.finding != null and .finding.trace[0].function != null)
@@ -789,6 +786,46 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+  cargo-audit:
+    name: cargo audit
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+
+      - name: Detect vulnerabilities
+        run: |
+          set -euo pipefail
+          results=$(mise -C packages/vm-runner x --no-deps -- cargo audit --json) || true
+          printf '%s' "$results" | jq -e '.vulnerabilities.list' > /dev/null
+          out=$(printf '%s' "$results" | jq '
+            [ .vulnerabilities.list[]
+              | { id: .advisory.id,
+                  url: ("https://rustsec.org/advisories/" + .advisory.id),
+                  severity: "unknown",
+                  scope: "vm-runner (Rust)",
+                  pkg: .package.name,
+                  fixed: ((.versions.patched // []) | join(", ")) } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::cargo audit: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-cargo-audit
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
   npm-audit:
     name: pnpm audit
     if: github.ref == 'refs/heads/main'
@@ -807,6 +844,7 @@ jobs:
         run: |
           set -euo pipefail
           results=$(mise x --no-deps -- pnpm audit --prod --json) || true
+          printf '%s' "$results" | jq -e 'has("advisories") and has("metadata")' > /dev/null
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
@@ -965,7 +1003,7 @@ jobs:
 
   manage-security-issues:
     name: File security issues
-    needs: [go-vuln, npm-audit, mend-sca, container-scan]
+    needs: [go-vuln, cargo-audit, npm-audit, mend-sca, container-scan]
     if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
@@ -980,9 +1018,16 @@ jobs:
       - name: Reconcile summary issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCANNERS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
           shopt -s nullglob
+
+          unfinished=$(jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")' <<<"$SCANNERS")
+          if [ -n "$unfinished" ]; then
+            echo "::warning::scanner(s) did not finish: $unfinished; the summary issue is left as it is"
+            exit 0
+          fi
 
           files=(findings/*/findings.json)
           if [ "${#files[@]}" -eq 0 ]; then

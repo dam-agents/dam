@@ -215,6 +215,8 @@ export interface ConnectionsService {
 
   validateProviderConnection(id: string): Promise<void>;
 
+  validateGrantSet(connectionIds: string[]): Promise<void>;
+
   createFromTemplate(
     input: ConnectionCreateInput & { id?: string },
   ): Promise<string>;

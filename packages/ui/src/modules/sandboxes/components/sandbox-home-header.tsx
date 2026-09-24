@@ -15,6 +15,10 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
+import {
+  AgentAvatar,
+  isAsleep,
+} from "../../agents/components/avatar/agent-avatar.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
@@ -28,9 +32,10 @@ import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
+  avatarName?: string;
 }
 
-export function SandboxHomeHeader({ agent, display }: Props) {
+export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -78,6 +83,14 @@ export function SandboxHomeHeader({ agent, display }: Props) {
 
   return (
     <PageHeader
+      leading={
+        <AgentAvatar
+          name={avatarName ?? agent.name}
+          size={44}
+          sleeping={isAsleep(display.state)}
+          stopped={agent.stopRequested}
+        />
+      }
       title={agent.name}
       adornment={
         <StatusBadge

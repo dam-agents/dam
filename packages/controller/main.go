@@ -138,11 +138,13 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	podInformer := podFactory.Core().V1().Pods()
 
 	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
-	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient).WithAgentCache(agentInformer.Lister())
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
+		agentReconciler.CheckVMInstall(ctx)
+		go runVMPreflight(ctx, agentReconciler, 5*time.Minute)
 	}
 	go idleChecker.RunLoop(ctx)
 
@@ -157,7 +159,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
-	agentReconciler.WithRequeue(agentQueue.AddAfter)
+	agentReconciler.WithRequeue(ctx, agentQueue.AddAfter)
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
@@ -169,7 +171,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
-				agentReconciler.Delete(ctx, u.GetName())
+				agentReconciler.Delete(ctx, u.GetName(), u.GetLabels())
 			}
 		},
 	})
@@ -333,6 +335,19 @@ func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 	return nil
 }
 
+func runVMPreflight(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.CheckVMInstall(ctx)
+		}
+	}
+}
+
 func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
 	sweep := func() {
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
@@ -340,6 +355,7 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 		r.ReconcileOrphanPVCs(sctx)
 		r.ReconcileOrphanLeafSecrets(sctx)
 		r.ReconcileOrphanMachines(sctx)
+		r.ReconcileRunnerRollout(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}

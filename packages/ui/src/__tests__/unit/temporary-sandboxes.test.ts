@@ -23,6 +23,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   overBudget: false,
   size: { cpu: "1", memory: "2Gi" },
   state: "running",
+  podRestarts: 0,
   contributionFailures: [],
   unsupportedContributionKinds: [],
   workspaceFailures: [],

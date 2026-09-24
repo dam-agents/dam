@@ -1,0 +1,39 @@
+name: CodeQL (javascript-typescript)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.mjs"
+      - "**/*.cjs"
+      - "**/package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/codeql-analyze.yml"
+      - ".github/workflows/codeql-javascript-typescript.yml"
+  schedule:
+    - cron: "37 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-javascript-typescript-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write
+    uses: $/.github/workflows/codeql-analyze.yml
+    with:
+      language: javascript-typescript
+      build-mode: none
+      quality: true

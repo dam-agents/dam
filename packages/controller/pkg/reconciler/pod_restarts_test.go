@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -82,6 +85,37 @@ func TestReconcile_PublishesRestartsOnARecoveredPod(t *testing.T) {
 	require.Equal(t, string(metav1.ConditionTrue), ready, "the pod recovered")
 	restarts, reason := agentRestartStatus(t, r, "my-agent")
 	assert.Equal(t, int64(1), restarts)
+	assert.Equal(t, "OutOfMemory", reason)
+}
+
+// TEST_SCENARIO: A failed read of the agent pod says nothing about its restarts. The published count must stay as it was, or the next good read republishes it as a rise and the UI announces a restart that never happened.
+func TestReconcile_KeepsRestartsWhenThePodCannotBeRead(t *testing.T) {
+	agent := agentCR()
+	pod := readyPod("my-agent-0")
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{
+		{
+			Name:         "agent",
+			RestartCount: 2,
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled"},
+			},
+		},
+	}
+	r, client := setupReconciler(t, agent, pod, readyPod("my-agent-gateway-0"))
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	restarts, _ := agentRestartStatus(t, r, "my-agent")
+	require.Equal(t, int64(2), restarts, "precondition: the count was published")
+
+	client.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.(k8stesting.GetAction).GetName() != "my-agent-0" {
+			return false, nil, nil
+		}
+		return true, nil, stderrors.New("apiserver unavailable")
+	})
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	restarts, reason := agentRestartStatus(t, r, "my-agent")
+	assert.Equal(t, int64(2), restarts)
 	assert.Equal(t, "OutOfMemory", reason)
 }
 

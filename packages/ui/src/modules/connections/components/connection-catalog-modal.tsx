@@ -5,7 +5,7 @@ import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
-import { useAppConnections } from "../api/queries.js";
+import { fetchConnection, useAppConnections } from "../api/queries.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
@@ -17,6 +17,11 @@ import {
   catalogTabCounts,
   filterGroupsByAccepts,
 } from "../lib/catalog-providers.js";
+import {
+  grantBlockedReason,
+  grantRivalry,
+  grantSkippedMessage,
+} from "../lib/grant-rivals.js";
 import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
 import {
@@ -78,6 +83,20 @@ export function ConnectionCatalogModal({
       })),
     [counts],
   );
+  const grantedIds = sandbox?.grantedIds;
+  const grantedConnections = useMemo(
+    () =>
+      grantedIds
+        ? (connectionsQ.data ?? NO_CONNECTIONS).filter((c) =>
+            grantedIds.has(c.id),
+          )
+        : NO_CONNECTIONS,
+    [connectionsQ.data, grantedIds],
+  );
+  const blockedReasonOf = (connection: ConnectionView) => {
+    const rivalry = grantRivalry(connection, grantedConnections);
+    return rivalry && grantBlockedReason(rivalry);
+  };
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
   const narrowed = useMemo(
     () => (accepts ? filterGroupsByAccepts(allGroups, accepts) : null),
@@ -114,8 +133,17 @@ export function ConnectionCatalogModal({
       setPane({ kind: "create", providerId });
   };
 
-  const onCreated = (id: string) => {
-    sandbox?.onToggleGrant(id, true);
+  const grantCreated = async (id: string) => {
+    if (sandbox) {
+      const created = await fetchConnection(id).catch(() => null);
+      const rivalry = created && grantRivalry(created, grantedConnections);
+      if (rivalry) {
+        emitToast({ kind: "warning", message: grantSkippedMessage(rivalry) });
+        onClose();
+        return;
+      }
+      sandbox.onToggleGrant(id, true);
+    }
     emitToast({
       kind: "success",
       message: sandbox
@@ -124,6 +152,7 @@ export function ConnectionCatalogModal({
     });
     onClose();
   };
+  const onCreated = (id: string) => void grantCreated(id);
 
   const groupById = (providerId: string) =>
     (narrowed ?? allGroups).find((g) => g.provider.id === providerId);
@@ -133,7 +162,7 @@ export function ConnectionCatalogModal({
   }
 
   return (
-    <Modal widthClass="w-[860px] max-w-full h-[85vh]">
+    <Modal widthClass="w-[860px] max-w-full" heightClass="h-[85vh]">
       <DialogHeader
         title={title ?? "Connection catalogue"}
         subtitle={
@@ -171,6 +200,7 @@ export function ConnectionCatalogModal({
                   group={group}
                   templateById={templateById}
                   sandbox={sandbox}
+                  grantBlockedReason={blockedReasonOf}
                   onNew={() => openNew(group)}
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}

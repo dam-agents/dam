@@ -20,6 +20,12 @@ import type { LoadedKit } from "../../modules/starter-kits/infrastructure/kits-r
 import { createStarterKitsService } from "../../modules/starter-kits/services/starter-kits-service.js";
 
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import {
+  events$,
+  ofType,
+  EventType,
+  type StarterKitApplied,
+} from "../../events.js";
 
 function kit(overrides: Partial<ResolvedStarterKit> = {}): ResolvedStarterKit {
   return starterKitSchema.parse({
@@ -62,6 +68,7 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
     overBudget: false,
+    podRestarts: 0,
     contributionFailures: [],
     unsupportedContributionKinds: [],
     workspaceFailures: [],
@@ -316,6 +323,31 @@ describe("starter kits: apply", () => {
     ]);
     expect(calls.woken).toEqual(["agent-1"]);
     expect(calls.deleted).toEqual([]);
+  });
+
+  it("records the applied kit as usage activity", async () => {
+    const { service } = makeHarness(LOADED);
+    const seen: StarterKitApplied[] = [];
+    const sub = events$()
+      .pipe(ofType<StarterKitApplied>(EventType.StarterKitApplied))
+      .subscribe((event) => seen.push(event));
+    try {
+      await service.apply(APPLY);
+    } finally {
+      sub.unsubscribe();
+    }
+
+    expect(seen).toEqual([
+      {
+        type: EventType.StarterKitApplied,
+        agentId: "agent-1",
+        actorSub: "user-1",
+        surface: "ui",
+        catalog: "platform",
+        kitId: "code-reviewer",
+        version: "abc123",
+      },
+    ]);
   });
 
   it("creates a knowledge-base kit as a regular kit: its share roots stamped, its install queued before its first session", async () => {

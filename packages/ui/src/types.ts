@@ -31,6 +31,11 @@ export interface ThoughtPart {
   text: string;
 }
 
+export interface HistoryPart {
+  kind: "history";
+  text: string;
+}
+
 export interface ImagePart {
   kind: "image";
   data: string;
@@ -68,6 +73,7 @@ export interface VerdictPart {
 export type MessagePart =
   | TextPart
   | ThoughtPart
+  | HistoryPart
   | ImagePart
   | FilePart
   | ToolChip
@@ -145,6 +151,8 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podRestarts: number;
+  podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: {

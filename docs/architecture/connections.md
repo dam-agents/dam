@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-18
+Last verified: 2026-09-23
 
 ## Overview
 
@@ -80,6 +80,19 @@ A typed unit a Connection emits when granted to an Agent — a discriminated uni
 
 Kinds are added by extending the union and gating on agent capabilities (see [Versioning](runtime-delivery.md#versioning)). Exact per-kind fields live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
+### Addressing a Connection
+
+A user may hold several Connections to one service — two Slack workspaces, two GitHub identities, two tenants of one MCP server — and, where the platform can tell them apart, grant more than one of them to the same Agent. They reach the same host, so the host alone does not say which account a request acts as.
+
+Each Connection therefore has an **address**: a per-Connection path prefix on the real host, `/__platform_conn/<connection id>/`. The gateway picks the credential from that path and strips it before the request leaves, so the upstream sees the address it published. The host stays the real one, so egress rules, approval prompts and logs keep describing the real destination, and a prompt names the Connection through the path.
+
+The address is a property of the Agent's grant, not of the stored Connection: contributions are recorded against the real address, and the runtime state an Agent is given carries the prefixed one. So a Connection's address is stable whether or not a second Connection to that service exists, and adding one never re-addresses the first. Today the platform prefixes the `mcp-entry` URLs of each Connection — the addresses it writes on the Agent's behalf. The Agent sees those entries under the names the user gave the Connections, so two workspaces read as two named servers.
+
+Naming a Connection is only *required* where two of them genuinely collide: the same header on the same host over paths that overlap. Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address. Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
+
+Two limits follow. First, the Agent only knows the addresses the platform writes for it, and today those are the MCP entries alone. A Connection reached any other way — GitHub through `gh`, `git` and raw file fetches, a Custom Header credential, a path-scoped Google service — has no address the Agent can use, so two such Connections that collide can never both work: every request where their paths overlap is refused. The Connections context therefore refuses to grant an Agent a Connection that collides with one it holds unless both are addressed — when a grant is added and when an Agent is created with its first grants — and the connection pickers say which granted Connection is in the way. An Agent that already holds such a pair can still change its other grants, and is shown a warning naming the pair until one is revoked. Two Slack workspaces or two tenants of one MCP server are addressed, so they stay grantable together.
+
+Second, an address only holds while the Agent keeps using it: an upstream that answers with an absolute URL of its own, stripped of the prefix, sends the Agent back unaddressed. That is an accepted limit rather than a guarded one — the reply is a refusal the Agent can read, not a request served as the wrong account.
 
 ## Example Connections
 

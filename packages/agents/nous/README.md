@@ -144,8 +144,8 @@ show it in the local catalog.
 
 ## CI / publishing
 
-The nous image is published by CI (`.github/workflows/cd.yml`): the matrixed
-`build-workloads` job (per-arch) runs after `merge-agents` — nous builds `FROM`
+The nous image is published by CI (`.github/workflows/cd.yml`): the per-arch
+`build-workloads` job runs after `merge-agents` — nous builds `FROM`
 claude-code, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to
 `quay.io/dam-agents/nous`. The `publish` (Helm) job waits on `merge-workloads`.
