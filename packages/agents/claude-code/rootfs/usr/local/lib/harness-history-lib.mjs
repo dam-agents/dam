@@ -1,8 +1,18 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const ADAPTER_DIR =
-  process.env.CLAUDE_AGENT_ACP_DIR ?? "/usr/local/share/tool-bin/claude-agent-acp-lib";
+function adapterDir() {
+  if (process.env.CLAUDE_AGENT_ACP_DIR) return process.env.CLAUDE_AGENT_ACP_DIR;
+  const bin = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((dir) => join(dir, "claude-agent-acp"))
+    .find((candidate) => existsSync(candidate));
+  if (!bin) throw new Error("claude-agent-acp not found on PATH");
+  return dirname(dirname(realpathSync(bin)));
+}
+
+const ADAPTER_DIR = adapterDir();
 
 let modulesPromise;
 

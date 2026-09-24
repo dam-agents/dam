@@ -97,7 +97,7 @@ build_mise() (
   done
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs} \
-    "$b"/usr/local/lib/platform-python "$b"/usr/local/share/{ca-certificates,tool-bin}
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
@@ -110,16 +110,6 @@ build_mise() (
   # Not -C: mise reads .miserc.toml from the working directory only.
   cd "$stage"
   mise -E "$harness" install
-
-  # The claude CLI sits in the adapter's install, under a per-arch directory.
-  if [ "$harness" = claude-code ]; then
-    in_image() { printf '/usr/local/share/mise%s\n' "${1#"$MISE_DATA_DIR"}"; }
-    acp="$(mise -E claude-code where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp"
-    cli="$(echo "$acp"/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"
-    test -x "$cli"
-    ln -sfn "$(in_image "$acp")" "$b/usr/local/share/tool-bin/claude-agent-acp-lib"
-    ln -sfn "$(in_image "$cli")" "$b/usr/local/share/tool-bin/claude"
-  fi
 
   # The apt bootstrap needs root. out/ is made first, as this user, so the
   # next build can remove it.
