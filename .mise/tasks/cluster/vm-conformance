@@ -31,19 +31,12 @@ if [ -z "$RUNNER" ]; then
 fi
 echo "Conformance target: $RUNNER"
 
-# The runner fetches nothing here: like the agent images, the guest is an
-# archive on the node's image directory, named the way the runner looks it up.
+# The runner fetches nothing here: like the agent images, the guest is a
+# pre-flattened tree on the node's image directory, named the way the runner
+# looks it up (image:stage-vm).
 echo "Building and staging $IMAGE..."
 docker build -t "$IMAGE" -f packages/controller/Dockerfile.vm-conformance-guest packages/controller/
-tar="/tmp/$(printf '%s' "$IMAGE" | tr '/:@' '___').tar"
-docker save -o "$tar" "$IMAGE"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
-else
-  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-  limactl shell "$LIMA_INSTANCE" sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
-  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
-fi
+LIMA_INSTANCE="$LIMA_INSTANCE" .mise/tasks/image/stage-vm "$IMAGE"
 rm -f "$tar"
 
 WORK="$(mktemp -d)"

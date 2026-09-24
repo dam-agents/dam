@@ -279,10 +279,12 @@ virtualization:
     canary:
       owners: []
       percent: 0
-    # A directory on the node holding `docker save` archives named after the
-    # image reference, mounted read-only into every runner. It is how a
-    # cluster with no registry (local dev) gives runners their agent image;
-    # empty means runners pull from the registry as usual.
+    # A directory on the node holding pre-flattened image trees (each with
+    # its launch record; `mise run image:stage-vm` makes one) or `docker save`
+    # archives, named after the image reference and mounted read-only into
+    # every runner. It is how a cluster with no registry (local dev) gives
+    # runners their agent image; empty means runners pull from the registry
+    # as usual.
     imageArchiveHostPath: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever
