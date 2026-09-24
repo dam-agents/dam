@@ -20,7 +20,10 @@ import {
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useAgentRunState,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -203,8 +206,10 @@ export function useAcpSession(
     [loadSessionHistory, setMessages],
   );
 
+  const agentRunState = useAgentRunState(selectedAgent);
   const { sendPrompt: promptAgent, stopAgent } = useAcpPrompt({
     selectedAgent,
+    agentRunState,
     ensureConnection: ensureLive,
     beginSession,
     engagedSessionIdRef,
