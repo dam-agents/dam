@@ -127,6 +127,22 @@ harnessTemplates:
         value: "Hello from the mock agent."
 
 
+# ClickStack on the lima VM: the operator's 512Mi default puts ClickHouse's
+# server limit at 460Mi, below its ~600Mi resident footprint, so every insert
+# and query fails with MEMORY_LIMIT_EXCEEDED. Rendered only with CLICKSTACK=1.
+clickstack:
+  clickhouse:
+    cluster:
+      spec:
+        containerTemplate:
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.
