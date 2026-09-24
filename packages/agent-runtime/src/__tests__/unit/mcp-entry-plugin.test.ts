@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Contribution, DispatchContext } from "agent-runtime-api";
 import { createMcpEntryPlugin } from "../../modules/runtime-channel/drivers/mcp-entry-plugin.js";
@@ -122,5 +123,65 @@ describe("mcp-entry plugin", () => {
       renamed: { httpUrl: "http://hs/mcp2" },
       "user-own": { command: "node", args: ["srv.mjs"] },
     });
+  });
+
+  /**
+   * TEST_SCENARIO: Codex reads MCP servers only from `[mcp_servers.<name>]` in
+   * its own config.toml, as `url` plus `http_headers`. The same file holds the
+   * user's own settings and servers, so the driver must rewrite only its own
+   * entries and keep every other key.
+   */
+  it("writes TOML entries in Codex's field names and keeps the rest of the file", async () => {
+    const target = join(home, ".codex/config.toml");
+    const handler = bind({
+      path: "$HOME/.codex/config.toml",
+      format: "toml",
+      keyPath: "mcp_servers",
+      urlKey: "url",
+      headersKey: "http_headers",
+    });
+    await handler([entry("platform-outbound", "http://hs/mcp")], ctx);
+    writeFileSync(
+      target,
+      'model = "gpt-5"\n' +
+        readFileSync(target, "utf8") +
+        '\n[mcp_servers.user-own]\ncommand = "node"\n',
+    );
+
+    await handler(
+      [
+        entry("platform-outbound", "http://hs/mcp"),
+        {
+          kind: "mcp-entry",
+          name: "linear",
+          url: "https://mcp.linear.app/mcp",
+          headers: { Authorization: "Bearer dummy-placeholder" },
+        },
+      ],
+      ctx,
+    );
+    expect(parseToml(readFileSync(target, "utf8"))).toEqual({
+      model: "gpt-5",
+      mcp_servers: {
+        "platform-outbound": { url: "http://hs/mcp" },
+        linear: {
+          url: "https://mcp.linear.app/mcp",
+          http_headers: { Authorization: "Bearer dummy-placeholder" },
+        },
+        "user-own": { command: "node" },
+      },
+    });
+
+    await handler([entry("platform-outbound", "http://hs/mcp")], ctx);
+    expect(parseToml(readFileSync(target, "utf8")).mcp_servers).toEqual({
+      "platform-outbound": { url: "http://hs/mcp" },
+      "user-own": { command: "node" },
+    });
+  });
+
+  it("rejects an `extraFields` key that names the configured headers key", () => {
+    expect(() =>
+      bind({ headersKey: "http_headers", extraFields: { http_headers: "" } }),
+    ).toThrow(/cannot be set/);
   });
 });

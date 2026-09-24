@@ -1,0 +1,15 @@
+# Codex runtime manifest. Codex reads MCP servers only from `[mcp_servers.*]`
+# in its own config.toml — never from the $HOME/.mcp.json the built-in binding
+# writes — so the driver targets that file instead. A streamable-HTTP server is
+# keyed off `url` alone, with static headers under `http_headers`; the default
+# binding's `type` / `headers` keys are not Codex's. Other drivers match
+# platform-base.
+manifestVersion: 1
+
+drivers:
+  mcp-entry:
+    path: "$HOME/.codex/config.toml"
+    format: toml
+    keyPath: mcp_servers
+    urlKey: url
+    headersKey: http_headers
