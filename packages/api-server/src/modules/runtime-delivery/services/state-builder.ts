@@ -12,6 +12,7 @@ import {
   event as eventSchema,
 } from "agent-runtime-api";
 import {
+  RESERVED_MCP_SERVER_NAMES,
   SHARED_KB_TEMPLATE_ID,
   applyConnectionEgressAddressing,
   type Contribution,
@@ -29,6 +30,7 @@ import type {
   PendingEventRow,
 } from "../infrastructure/outbox-repo.js";
 import type { BuiltinContributions } from "./builtin-contributions.js";
+import { getLogger } from "../../../core/logger.js";
 
 export interface StatePayload {
   contributions: Contribution[];
@@ -63,7 +65,7 @@ export function createStateBuilder(deps: {
       const rawContribs = [
         ...userEnv,
         ...builtin,
-        ...granted.contributions,
+        ...withoutReservedMcpEntries(agentId, granted.contributions),
         ...skills,
       ];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
@@ -78,6 +80,21 @@ export function createStateBuilder(deps: {
       };
     },
   };
+}
+
+function withoutReservedMcpEntries(
+  agentId: string,
+  contributions: Contribution[],
+): Contribution[] {
+  return contributions.filter((c) => {
+    if (c.kind !== "mcp-entry" || !RESERVED_MCP_SERVER_NAMES.includes(c.name))
+      return true;
+    getLogger().warn(
+      { agentId, name: c.name },
+      "dropped a granted mcp entry using a reserved platform server name",
+    );
+    return false;
+  });
 }
 
 async function readUserEnvContributions(

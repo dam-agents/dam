@@ -191,7 +191,7 @@ Owned by the worker, set in the apply-ack transaction using the cursor. The per-
 
 ### Expiry
 
-Each event row carries `expires_at`, chosen by the producer — a schedule fire, for instance, expires at the schedule's next occurrence so a backlog of fires never forms ([schedules](schedules.md#fire)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`; a drop, like a settle, is told to that kind's listener ([schedules](schedules.md#one-time-schedules)). The agent applies the same TTL check on incoming events as defense in depth.
+Event rows carry a producer-set `expires_at`; a schedule fire expires at its next occurrence to bound backlog ([schedules](schedules.md#fire)). The state-builder keeps live, undispatched events; the cron sweep deletes and counts expired ones `dropped-expired`, and notifies its kind listener. The agent checks incoming TTLs as defense in depth.
 
 ## Outbox + events
 

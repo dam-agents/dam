@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { resourceNameSchema } from "../shared.js";
+import { RESERVED_MCP_SERVER_NAMES, resourceNameSchema } from "../shared.js";
 
 export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
@@ -41,7 +41,12 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)),
 });
 
-export const connectionNameSchema = resourceNameSchema("my-mcp-server");
+export const connectionNameSchema = resourceNameSchema("my-mcp-server").refine(
+  (name) => !RESERVED_MCP_SERVER_NAMES.includes(name),
+  {
+    message: "that name is reserved for the platform's own tools",
+  },
+);
 
 const commonFields = {
   templateId: z.string().min(1),

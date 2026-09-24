@@ -1,7 +1,11 @@
-import { PLATFORM_MCP_ENTRY_NAME } from "agent-runtime-api";
-import { SHARED_KB_TEMPLATE_ID, type Contribution } from "api-server-api";
+import {
+  KB_AGGREGATE_MCP_SERVER,
+  PLATFORM_OUTBOUND_MCP_SERVER,
+  SHARED_KB_TEMPLATE_ID,
+  type Contribution,
+} from "api-server-api";
 
-export const KB_AGGREGATE_MCP_ENTRY_NAME = "knowledge-bases";
+export const KB_AGGREGATE_MCP_ENTRY_NAME = KB_AGGREGATE_MCP_SERVER;
 export { SHARED_KB_TEMPLATE_ID };
 
 export interface BuiltinContributionOpts {
@@ -26,7 +30,7 @@ export function createBuiltinContributions(
       return [
         {
           kind: "mcp-entry",
-          name: PLATFORM_MCP_ENTRY_NAME,
+          name: PLATFORM_OUTBOUND_MCP_SERVER,
           url: `${agentPath}/mcp`,
         },
         ...(contributionOpts.sharedKnowledgeBases

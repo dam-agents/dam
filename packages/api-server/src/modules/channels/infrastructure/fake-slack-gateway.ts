@@ -1,7 +1,7 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
-import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
+import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
@@ -271,21 +271,22 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         undefined,
         modelsThreads,
       );
-      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
-      let fold = emptyTailFold<SlackMessage>();
-      let cursor: number | null = 0;
-      let stoppedShort = false;
-      for (let read = 0; ; read += 1) {
-        if (read >= maxPages) {
-          stoppedShort = true;
-          break;
-        }
-        const page = pageOf(all, cursor, args.limit);
-        fold = foldTailPage(fold, page.messages, args.limit);
-        cursor = page.nextCursor;
-        if (cursor === null) break;
-      }
-      return { messages: fold.window, hasMore: stoppedShort };
+      const walk = await foldThreadPages<SlackMessage, number>(
+        {
+          limit: args.limit,
+          maxPages: args.maxPages ?? THREAD_TAIL_MAX_PAGES,
+          opener: args.threadTs,
+          ...(args.before !== undefined ? { before: args.before } : {}),
+        },
+        async (from) => {
+          const page = pageOf(all, from ?? 0, args.limit);
+          return {
+            messages: page.messages,
+            next: page.nextCursor ?? undefined,
+          };
+        },
+      );
+      return walk;
     },
 
     async getChannelHistory(args) {

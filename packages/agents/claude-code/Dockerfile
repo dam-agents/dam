@@ -48,9 +48,10 @@ ENV PLATFORM_HARNESS=claude-code
 # allow rules for the platform's own two MCP servers. Those rules resolve ahead
 # of any permission prompt or auto-mode classifier check, which is what keeps an
 # agent able to reach the platform — reply to its channel turn, report an
-# invocation result, read a knowledge base — in every permission mode. Without
-# them a mode that prompts has nobody to answer on an unattended turn, and the
-# agent goes silent with its answer undeliverable. Reach on those tools is
+# invocation result, read a knowledge base — in every permission mode without a
+# prompt ever being raised. On an unattended turn the relay would answer such a
+# prompt yes anyway, so this is belt and braces, and it is also what spares an
+# owner sitting in the UI a prompt per platform call. Reach on those tools is
 # enforced by the platform (per-agent endpoint path, mesh identity, binding),
 # never by the harness's permission layer; per-operation control over them is
 # #3323's, not this file's. They live here rather than in user settings so an

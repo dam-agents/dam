@@ -91,6 +91,23 @@ export interface SlackChannelRead {
   hasMore: boolean;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A window cut out of a thread, for a caller reading
+ * the thread rather than recording how far it has read. `opener` is the message
+ * that started the thread, carried whatever the window holds, because a window
+ * taken from the middle of a long thread is unreadable without it. The two gaps
+ * are reported apart on purpose: `hasEarlier` says replies sit before the
+ * window and another read reaches them, `hasMore` that the walk gave up before
+ * the thread's end and no further read recovers what it missed. Collapsing them
+ * would send a reader back through a thread towards messages nothing fetched.
+ */
+export interface SlackThreadWindow {
+  messages: SlackMessage[];
+  opener: SlackMessage | null;
+  hasEarlier: boolean;
+  hasMore: boolean;
+}
+
 export const THREAD_TAIL_MAX_PAGES = 20;
 
 export interface SlackMessage {
@@ -231,9 +248,10 @@ export interface SlackGateway {
     channel: string;
     threadTs: string;
     limit: number;
+    before?: string;
     maxPages?: number;
     teamId: SlackWorkspace;
-  }): Promise<SlackThreadRead>;
+  }): Promise<SlackThreadWindow>;
   getChannelHistory(args: {
     channel: string;
     limit: number;

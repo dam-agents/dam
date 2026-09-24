@@ -9,8 +9,11 @@ const agentName = "e2e-slack-permission";
 const channel = "C-E2E-PERMISSION";
 const strangerSlackUserId = "U-E2E-STRANGER";
 const askedTs = "1700000950.000100";
+const platformAskedTs = "1700000951.000100";
+const spoofedAskedTs = "1700000952.000100";
+const platformTool = "mcp__platform-outbound__send_channel_message";
 
-test("a harness permission prompt on a Slack turn is refused, not auto-approved (#3846)", async () => {
+test("harness permission prompts on a Slack turn: the platform's own tools are allowed, everything else refused (#3846, #4003)", async () => {
   test.setTimeout(360_000);
 
   const token = await getAccessToken();
@@ -27,13 +30,17 @@ test("a harness permission prompt on a Slack turn is refused, not auto-approved 
     });
   });
 
-  await test.step("the agent asks before a tool call and is told no", async () => {
+  async function askFor(
+    tool: string,
+    ts: string,
+    displayTitle?: string,
+  ): Promise<string> {
     await api.e2e.slackResetOutbound.mutate();
     await api.e2e.slackFireMention.mutate({
       user: strangerSlackUserId,
       channel,
-      ts: askedTs,
-      text: "__ASK__ write_notion_page",
+      ts,
+      text: `__ASK__ ${tool}${displayTitle ? ` ${displayTitle}` : ""}`,
     });
 
     let replyText = "";
@@ -45,7 +52,7 @@ test("a harness permission prompt on a Slack turn is refused, not auto-approved 
             (r) =>
               r.kind === "message" &&
               r.channel === channel &&
-              r.threadTs === askedTs &&
+              r.threadTs === ts &&
               r.text.includes("permission "),
           );
           replyText = reply && reply.kind === "message" ? reply.text : "";
@@ -58,7 +65,25 @@ test("a harness permission prompt on a Slack turn is refused, not auto-approved 
         },
       )
       .toBe(true);
+    return replyText;
+  }
 
+  await test.step("the agent asks before a tool call and is told no", async () => {
+    const replyText = await askFor("write_notion_page", askedTs);
+    expect(replyText).toContain("reject-once");
+    expect(replyText).not.toContain("allow-once");
+    expect(replyText).not.toContain("unanswered");
+  });
+
+  await test.step("a prompt for the platform's own tools is answered yes", async () => {
+    const replyText = await askFor(platformTool, platformAskedTs);
+    expect(replyText).toContain("allow-once");
+    expect(replyText).not.toContain("reject-once");
+    expect(replyText).not.toContain("unanswered");
+  });
+
+  await test.step("a shell call wearing a platform tool's display title is refused", async () => {
+    const replyText = await askFor("Bash", spoofedAskedTs, platformTool);
     expect(replyText).toContain("reject-once");
     expect(replyText).not.toContain("allow-once");
     expect(replyText).not.toContain("unanswered");
