@@ -15,6 +15,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
+{{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -185,5 +186,28 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if and $v.devicePlugin.enabled (lt (int $v.devicePlugin.count) 1) -}}
 {{- fail "virtualization.devicePlugin.count must be at least 1 — it is how many VM runners a node may host, and with none the plugin advertises no device and every runner pends." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Virtualization values the chart no longer reads. Helm keeps a value nothing
+reads without a word, so an install that still sets one would be quietly given
+something else: the node image cache service can no longer be switched off and
+runs where the runners do, the runner admits sources by its NetworkPolicy
+alone, and every owner's runner runs `runner.image`. Fail at render instead,
+naming what took each one's place.
+*/}}
+{{- define "platform.validate.vmValuesThisChartNoLongerReads" -}}
+{{- $v := .Values.virtualization | default dict -}}
+{{- $cache := $v.imageCache | default dict -}}
+{{- $runner := $v.runner | default dict -}}
+{{- if hasKey $cache "preload" -}}
+{{- fail "virtualization.imageCache.preload is no longer read. The node image cache service is the only writer of imageCache.hostPath, so it always runs where that is set, on the runners' own nodeSelector and tolerations; its interval is virtualization.imageCache.preloadInterval and its resources virtualization.imageCache.resources. Remove the preload block." -}}
+{{- end -}}
+{{- if hasKey $runner "ingressCidrs" -}}
+{{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
+{{- end -}}
+{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
+{{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
 {{- end -}}
 {{- end -}}

@@ -48,6 +48,16 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set controller.envoyMitm.enabled=false \
   | "${KUBECONFORM[@]}" "$@"
+# Virtualization keys the chart no longer reads fail the render rather than
+# being dropped without a word.
+for removed in 'virtualization.imageCache.preload.enabled=false' \
+  'virtualization.runner.ingressCidrs[0]=10.0.0.0/8' \
+  'virtualization.runner.canaryImage=quay.io/x/vm-runner:canary'; do
+  if helm template platform . "${COMMON[@]}" --set "$removed" >/dev/null 2>&1; then
+    echo "a render setting $removed succeeded, but the chart no longer reads it" >&2
+    exit 1
+  fi
+done
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \
