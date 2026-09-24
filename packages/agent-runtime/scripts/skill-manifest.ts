@@ -73,6 +73,16 @@ function skillSourceParents(): string[] {
       path.posix.join("packages/agents", ent.name, "dam-skills"),
     );
   }
+  const miseHarnessDir = "packages/mise-oci/image/harness";
+  for (const ent of fs.readdirSync(path.join(repoRoot, miseHarnessDir), {
+    withFileTypes: true,
+  })) {
+    if (!ent.isDirectory()) continue;
+    parents.push(
+      path.posix.join(miseHarnessDir, ent.name, "app/working-dir/.agents/skills"),
+      path.posix.join(miseHarnessDir, ent.name, "usr/local/share/dam-skills"),
+    );
+  }
   return parents;
 }
 

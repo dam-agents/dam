@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-09-16
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -322,6 +322,6 @@ publishes either — [artifact-library](artifact-library.md) owns that rule.
   [`packages/api-server/src/modules/experiments/`](../../packages/api-server/src/modules/experiments/)
 - Harness REST routes: [`packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts`](../../packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts)
 - Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
-- Authoring kit staged in the image: [`packages/agents/claude-code/dam-skills/`](../../packages/agents/claude-code/dam-skills/)
+- Authoring kit staged in the image: [`packages/mise-oci/image/harness/claude-code/usr/local/share/dam-skills/`](../../packages/mise-oci/image/harness/claude-code/usr/local/share/dam-skills/)
 - Shared kinded-create rail: [`packages/api-server/src/modules/agents/services/kinded-agent-create.ts`](../../packages/api-server/src/modules/agents/services/kinded-agent-create.ts)
 - UI module (chat dock, store, API bindings): [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

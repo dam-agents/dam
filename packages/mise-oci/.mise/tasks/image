@@ -62,20 +62,41 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
 # no empty directories, so the ones the image needs are made there too. Every
 # file the build adds is owned by --owner, the agent, which is what makes the
 # home, the trust store and the mise data dir writable in a container.
+# node_modules is left out: pnpm links the pi extension's dev dependencies into
+# its tree, and the image ships the extension's source only.
 rm -rf "$stage"
 mkdir -p "$stage"
-cp -a "$pkg/image/." "$stage/"
+tar -C "$pkg/image" --exclude=node_modules -cf - . | tar -C "$stage" -xf -
 b="$stage/build"
-install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,usr/local/lib} "$b"/usr/local/share/{ca-certificates,tool-bin}
+install -d "$b"/{app/working-dir/.agents/skills,app/working-dir/.claude,home/agent,etc/logrotate.d,etc/ssl/certs} \
+  "$b"/usr/local/{bin,lib/platform-python} "$b"/usr/local/share/{ca-certificates,tool-bin,dam-skills}
 cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
 cp -a packages/agent-runtime/dist "$b/app/dist"
 install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+
+# What every harness shares with the Fedora images still built on
+# platform-base (k-search, the e2e mock) comes from there, not from a copy: the
+# skills and the shipped-skill manifest that covers them, the working-dir
+# seed, the default runtime manifest, dam-run and the experiment SDK.
+p=packages/platform-base
+cp -a "$p/skills/." "$b/app/working-dir/.agents/skills/"
+cp -a "$p/dam-skills/." "$b/usr/local/share/dam-skills/"
+install -m 644 "$p/skills-manifest.json" "$b/usr/local/share/dam-skill-manifest.json"
+install -m 644 "$p/working-dir/.claude.json" "$b/app/working-dir/.claude.json"
+install -m 644 "$p/working-dir/.claude/settings.json" "$b/app/working-dir/.claude/settings.json"
+install -m 644 "$p/runtime-manifest.yaml" "$b/app/runtime-manifest.yaml"
+install -m 755 "$p/dam-run.mjs" "$b/usr/local/bin/dam-run"
+install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
 
 # Every mise call for the image runs from inside the stage, not with -C: mise
 # reads .miserc.toml, and with it the env_conf_d opt-in, from the working
 # directory, so under -C every harness fragment would load at once.
 cd "$stage"
 mise trust -q .
+# The resolved versions are locked first, the way platform-base locks its tools
+# at build time, so an install under MISE_LOCKED (CI) has URLs and checksums.
+case "$(uname -m)" in x86_64) platform=linux-x64 ;; aarch64 | arm64) platform=linux-arm64 ;; *) platform="linux-$(uname -m)" ;; esac
+mise -E "$harness" lock --platform "$platform"
 mise -E "$harness" install
 
 # Claude's CLI sits inside the adapter's install under a per-arch directory, so
@@ -90,8 +111,16 @@ if [ "$harness" = claude-code ]; then
   ln -sfn "$(in_image "$cli")" "$b/usr/local/share/tool-bin/claude"
 fi
 
+# mise's apt bootstrap runs apt-get and dpkg against the host's own apt and
+# debconf caches too, so the build needs root; a CI runner has passwordless
+# sudo. What it writes as root is handed back, so the next build can reuse it.
 rm -rf "$out"
-mise -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
+if [ "$(id -u)" = 0 ]; then
+  mise -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
+else
+  sudo --preserve-env env "PATH=$PATH" "$(command -v mise)" -E "$harness" oci build -o "$out" --owner 65532:0 ${from:+--from "$from"}
+  sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
+fi
 echo "OCI layout: $out"
 
 if [ -n "$load" ]; then

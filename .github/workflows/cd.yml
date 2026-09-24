@@ -350,6 +350,16 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
+      # The Debian harness images (claude-code, codex, pi-agent, bob) build with
+      # `mise oci`, which needs mise, the repo's node, pnpm and crane, and
+      # agent-runtime's dependencies; see image:ci-build. Only those tools: the
+      # rest of the repo's toolchain is for other jobs.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: nodejs pnpm crane
+      - name: Install workspace dependencies
+        run: mise deps install --only pnpm
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}

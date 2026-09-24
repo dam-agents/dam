@@ -62,7 +62,9 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 "apt:zip" = "latest"
 
 [oci]
-from = "docker.io/library/debian:trixie-slim"
+# Docker Hub's library image through Google's mirror of it, which CI runners
+# pull without Docker Hub's anonymous rate limit.
+from = "mirror.gcr.io/library/debian:trixie-slim"
 # The same MISE_DATA_DIR platform-base uses, so paths the shared scripts and
 # manifests name keep resolving.
 mount_point = "/usr/local/share/mise"
@@ -87,10 +89,6 @@ PORT = "8080"
 # Copy paths are relative to this file. A copy cannot target / itself, so each
 # top-level directory is its own layer; a harness fragment's copies come after
 # these and replace what they share.
-[[oci.copy]]
-host = "../../rootfs/app"
-image = "/app"
-
 [[oci.copy]]
 host = "../../rootfs/etc"
 image = "/etc"

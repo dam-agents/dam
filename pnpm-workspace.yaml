@@ -3,7 +3,7 @@ packages:
   - "packages/e2e/agents/mock"
   - "packages/e2e/agents/mock-api"
   - "packages/e2e/playwright"
-  - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+  - "packages/mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 trustPolicy: no-downgrade
 trustPolicyExclude:

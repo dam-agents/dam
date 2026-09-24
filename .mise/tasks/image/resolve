@@ -45,7 +45,17 @@ TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.confi
 # keep in sync with packages/platform-base/Dockerfile.
 PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
-# harness agents on platform-base; CI's `agents` build/merge matrix
+# The Debian harness images `mise oci` builds from packages/mise-oci, one config
+# environment each. They copy what they share with platform-base out of its
+# package rather than building on its image, so their source is that shared
+# content, agent-runtime and their own environment; keep in sync with the
+# image task there.
+MISE_IMAGES="claude-code codex pi-agent bob"
+MISE_IMAGE_PATHS="packages/mise-oci/.mise packages/mise-oci/image/.miserc.toml packages/mise-oci/image/mise/conf.d/base.toml packages/mise-oci/image/rootfs packages/platform-base/skills packages/platform-base/dam-skills packages/platform-base/skills-manifest.json packages/platform-base/working-dir packages/platform-base/runtime-manifest.yaml packages/platform-base/dam-run.mjs packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+is_mise_image() { case " $MISE_IMAGES " in *" $1 "*) ;; *) return 1 ;; esac; }
+
+# harness agents: the mise images plus k-search on platform-base; CI's `agents`
+# build/merge matrix
 AGENTS="claude-code codex pi-agent bob k-search"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
@@ -60,9 +70,13 @@ is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
 own_paths() {
   if is_workload "$1"; then echo "packages/agents/$1"; return; fi
+  if is_mise_image "$1"; then
+    echo "$MISE_IMAGE_PATHS packages/mise-oci/image/mise/conf.d/harness.$1.toml packages/mise-oci/image/harness/$1"
+    return
+  fi
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
-    claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
+    k-search) echo "packages/agents/$1" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it and the Dockerfile. It is also the image's only
@@ -82,8 +96,8 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    platform-base|keycloak|vm-runner) echo "" ;;
-    claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
+    platform-base|keycloak|vm-runner|claude-code|codex|pi-agent|bob) echo "" ;;
+    k-search|mock) echo "platform-base" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -127,6 +141,10 @@ build_or_reuse() {
     echo "  pull failed, building instead" >&2
   fi
   echo "⚒ build $lt"
+  if is_mise_image "$comp"; then
+    mise run //packages/mise-oci:image -- "$comp" --load="$lt"
+    return
+  fi
   docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
@@ -180,7 +198,11 @@ self_check() {
   chk "$(base_of shinkaevolve)" claude-code
   chk "$(base_of gepa)" claude-code
   chk "$(base_of skydiscover)" claude-code
-  chk "$(base_of claude-code)" platform-base
+  chk "$(base_of claude-code)" ""
+  chk "$(base_of k-search)" platform-base
+  has "$(effective_paths claude-code)" packages/mise-oci/image/harness/claude-code
+  has "$(effective_paths claude-code)" packages/agent-runtime
+  has "$(effective_paths bob)" packages/mise-oci/image/mise/conf.d/harness.bob.toml
   chk "$(base_of platform-base)" ""
   chk "$(base_of keycloak)" ""
   chk "$(base_of vm-runner)" ""
@@ -189,15 +211,15 @@ self_check() {
   has "$PINNED_TAGS" vm-runner
   chk "$(local_tag platform-base)" platform-base
   chk "$(local_tag bob)" "platform-bob:latest"
-  has "$(effective_paths nous)" packages/platform-base
-  has "$(effective_paths nous)" packages/agents/claude-code
+  has "$(effective_paths nous)" packages/platform-base/skills
+  has "$(effective_paths nous)" packages/mise-oci/image/harness/claude-code
   has "$(effective_paths nous)" packages/agents/nous
   has "$(effective_paths shinkaevolve)" packages/agents/shinkaevolve
-  has "$(effective_paths shinkaevolve)" packages/agents/claude-code
+  has "$(effective_paths shinkaevolve)" packages/mise-oci/image/harness/claude-code
   has "$(effective_paths gepa)" packages/agents/gepa
-  has "$(effective_paths gepa)" packages/agents/claude-code
+  has "$(effective_paths gepa)" packages/mise-oci/image/harness/claude-code
   has "$(effective_paths skydiscover)" packages/agents/skydiscover
-  has "$(effective_paths skydiscover)" packages/agents/claude-code
+  has "$(effective_paths skydiscover)" packages/mise-oci/image/harness/claude-code
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
   # git/docker.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
