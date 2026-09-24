@@ -6,5 +6,5 @@ version = "0.2.27"
 uvx_args = "--with setuptools>=83.0.0 --with msgpack>=1.2.1"
 
 [oci.env]
-OPENEVOLVE_VENV = "/usr/local/share/mise/installs/pipx-openevolve/0.2.27/openevolve"
+OPENEVOLVE_VENV = "/opt/openevolve-venv"
 OPENEVOLVE_OUTPUT_ROOT = "/home/agent/work/openevolve-runs"

@@ -98,7 +98,7 @@ build_mise() (
     tar -C "$d" --exclude=node_modules --exclude=.mise -cf - . | tar -C "$stage/$a" -xf -
   done
   b="$stage/build"
-  install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs} \
+  install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist "$b/app/dist"
@@ -128,11 +128,21 @@ build_mise() (
   # mise oci relocates #! lines, not the launcher uv writes for a long one.
   { grep -rlZ "^'''exec' '$MISE_DATA_DIR/" "$MISE_DATA_DIR"/installs/pipx-*/*/*/bin 2>/dev/null || true; } |
     xargs -0r sed -i "s|'$MISE_DATA_DIR/|'/usr/local/share/mise/|"
-  # A *_VENV path spells its tool's version; a bump that misses it fails here.
-  sed -n 's/^[A-Z_]*_VENV = "\(.*\)"$/\1/p' mise/conf.d/harness.*.toml |
-    while read -r v; do
-      [ -x "$MISE_DATA_DIR${v#/usr/local/share/mise}/bin/python" ] || { echo "$v is not a venv: does its path match the tool's version?" >&2; exit 1; }
-    done
+  # Playwright's Chromium, which agent-browser finds through
+  # PLAYWRIGHT_BROWSERS_PATH; the download is kept between builds.
+  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
+  cp -a "$work/ms-playwright" build/opt/
+  # agent-browser does not look for the arm64 build's directory name.
+  set -- build/opt/ms-playwright/chromium-[0-9]*/chrome-linux*/chrome
+  [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
+  ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/chrome
+  # A workload's /opt/<name>-venv link spells its tool's version; a bump that
+  # misses it fails here.
+  for l in */rootfs/opt/*-venv; do
+    [ -L "$l" ] || continue
+    t="$(readlink "$l")"
+    [ -x "$MISE_DATA_DIR/${t#../usr/local/share/mise/}/bin/python" ] || { echo "$l -> $t is not a venv: does it match the tool's version?" >&2; exit 1; }
+  done
 
   # The apt bootstrap needs root. out/ is made first, as this user, so the
   # next build can remove it.

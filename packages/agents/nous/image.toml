@@ -8,7 +8,7 @@ uvx_args = "--with setuptools>=83.0.0 --with msgpack>=1.2.1"
 postinstall = '"$MISE_TOOL_INSTALL_PATH/nous/bin/python" {{config_root}}/nous/patch-campaign-schema.py'
 
 [oci.env]
-NOUS_VENV = "/usr/local/share/mise/installs/pipx-ai-native-systems-research-agentic-strategy-evolution/v0.4.0/nous"
+NOUS_VENV = "/opt/nous-venv"
 NOUS_ALLOW_AUTO_APPROVE = "1"
 NOUS_CAMPAIGN_PARENT = "/home/agent/nous-campaigns"
 NO_PROXY = "127.0.0.1,localhost,::1"

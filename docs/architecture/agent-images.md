@@ -9,7 +9,7 @@ The container images an agent runs in: one per harness (Claude Code, Codex, pi, 
 All images but k-search are built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) on Debian (trixie-slim), with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
 
 - **A harness image** is a mise config environment over the base: its own tools and env, and a `rootfs/` of its files at their image paths. Its files replace the base's where both ship one (harness scripts, runtime manifest).
-- **A workload** is an environment over Claude Code's. Its Python package is a baked tool with its own venv, which the image names in an environment variable; scripts run the workload through that venv, not the image's `python`.
+- **A workload** is an environment over Claude Code's. Its Python package is a baked tool with its own venv, linked at `/opt/<name>-venv` and named in an environment variable; the entrypoint and login shells put that venv first on `PATH`, so `python` is the workload's.
 - **k-search** is the one Dockerfile image, `FROM` the Claude Code image, because it clones and patches two repositories at build time.
 - **The e2e mock** is an environment too, kept beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/).
 
@@ -35,5 +35,6 @@ On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-
 ## What the agent gets
 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
+- agent-browser and Playwright share one Chromium, baked at Playwright's browser path.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
 - An agent's own `mise use -g`, `npm i -g` and `pip install` work, but install into the image and last until the agent restarts; only `pip install --user` lands in the home. mise reads no config from the home, so a tool pin an older image persisted there is inert.

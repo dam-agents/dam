@@ -7,6 +7,7 @@ Available:
 - `node` (26), `npm`, `pnpm`
 - `python` (3.12), `pip`, `uv`, `uvx`
 - `gh`, `rg`, `fd`, `jq`, `kubectl`
+- `agent-browser` and Playwright (`playwright`, `npx playwright`), sharing one bundled Chromium; a project's own Playwright of another version needs its own `playwright install`
 - `mise` to install extra software
 
 Additionally available if running in a root VM:

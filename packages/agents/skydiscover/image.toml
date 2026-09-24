@@ -9,5 +9,5 @@ uvx_args = "--with scipy --with setuptools>=83.0.0 --with msgpack>=1.2.1"
 postinstall = '"$MISE_TOOL_INSTALL_PATH/skydiscover/bin/python" {{config_root}}/skydiscover/check-packaging.py'
 
 [oci.env]
-SKYDISCOVER_VENV = "/usr/local/share/mise/installs/pipx-skydiscover-ai-skydiscover/e221cde39a787351df7e52c656ad3f00add402fe/skydiscover"
+SKYDISCOVER_VENV = "/opt/skydiscover-venv"
 SKYDISCOVER_OUTPUT_ROOT = "/home/agent/work/skydiscover-runs"

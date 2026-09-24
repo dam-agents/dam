@@ -12,5 +12,5 @@ uvx_args = "--with pillow>=12.3.0 --with setuptools>=83.0.0 --with msgpack>=1.2.
 postinstall = '"$MISE_TOOL_INSTALL_PATH/shinka-evolve/bin/python" -c "import shinka, hydra"'
 
 [oci.env]
-SHINKA_VENV = "/usr/local/share/mise/installs/pipx-shinka-evolve/0.0.7/shinka-evolve"
+SHINKA_VENV = "/opt/shinka-venv"
 SHINKA_OUTPUT_ROOT = "/home/agent/work/shinka-runs"

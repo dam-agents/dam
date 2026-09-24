@@ -52,4 +52,8 @@ if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
 	fi
 fi
 
+# A workload's venv comes first, ahead of the tool directories mise puts at the
+# front of the image's PATH.
+if [ -d /opt/venv/bin ]; then export PATH="/opt/venv/bin:$PATH"; fi
+
 exec "$@"
