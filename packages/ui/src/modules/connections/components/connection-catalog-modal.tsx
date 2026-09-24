@@ -1,10 +1,12 @@
-import type { ConnectionView } from "api-server-api";
+import type { ConnectionView, SatelliteView } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
+import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
+import { CatalogSatellitesPane } from "../../satellites/components/catalog-satellites-pane.js";
 import { fetchConnection, useAppConnections } from "../api/queries.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
@@ -22,6 +24,7 @@ import {
   grantRivalry,
   grantSkippedMessage,
 } from "../lib/grant-rivals.js";
+import type { RowGrantControls } from "./catalog-connection-row.js";
 import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
 import {
@@ -32,6 +35,9 @@ import { ConnectionMaintenanceDialog } from "./connection-update-credential-dial
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
+const SATELLITES_TAB = "satellites";
+
+type ModalTab = CatalogTab | typeof SATELLITES_TAB;
 
 type Pane =
   | { kind: "browse" }
@@ -41,6 +47,7 @@ type Pane =
 interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
+  satelliteGrant?: (satellite: SatelliteView) => RowGrantControls;
   oauthReturnView?: string;
   onGoToChannels?: () => void;
   initialProviderId?: string;
@@ -53,6 +60,7 @@ interface Props {
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
+  satelliteGrant,
   oauthReturnView,
   onGoToChannels,
   initialProviderId,
@@ -64,7 +72,12 @@ export function ConnectionCatalogModal({
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
-  const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
+  const [activeTab, setActiveTab] = useState<ModalTab>("apps");
+  const { data: satellites = NO_SATELLITES } = useSatellites();
+  const showSatellites =
+    satellites.length > 0 && (!sandbox || satelliteGrant !== undefined);
+  const shownTab =
+    activeTab === SATELLITES_TAB && !showSatellites ? "apps" : activeTab;
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
   const {
@@ -73,15 +86,30 @@ export function ConnectionCatalogModal({
     loading: loadingCatalog,
   } = useCatalogGroups(connectionsQ.data ?? NO_CONNECTIONS);
   const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
-  const catalogTabs = useMemo<TabDef<CatalogTab>[]>(
-    () =>
-      CATALOG_TAB_ORDER.map((tab) => ({
+  const catalogTabs = useMemo<TabDef<ModalTab>[]>(
+    () => [
+      ...CATALOG_TAB_ORDER.map((tab) => ({
         value: tab,
         label: CATALOG_TAB_LABEL[tab],
         trailing: <span className="text-muted-foreground">{counts[tab]}</span>,
         testId: `catalog-tab-${tab}`,
       })),
-    [counts],
+      ...(showSatellites
+        ? [
+            {
+              value: SATELLITES_TAB,
+              label: "Satellites",
+              trailing: (
+                <span className="text-muted-foreground">
+                  {satellites.length}
+                </span>
+              ),
+              testId: `catalog-tab-${SATELLITES_TAB}`,
+            } satisfies TabDef<ModalTab>,
+          ]
+        : []),
+    ],
+    [counts, showSatellites, satellites.length],
   );
   const grantedIds = sandbox?.grantedIds;
   const grantedConnections = useMemo(
@@ -176,7 +204,7 @@ export function ConnectionCatalogModal({
           <Tabs
             ariaLabel="Connection categories"
             tabs={catalogTabs}
-            value={pane.kind === "browse" ? activeTab : null}
+            value={pane.kind === "browse" ? shownTab : null}
             onValueChange={(tab) => {
               setActiveTab(tab);
               setPane({ kind: "browse" });
@@ -194,7 +222,16 @@ export function ConnectionCatalogModal({
                   Nothing this install offers satisfies this requirement.
                 </p>
               )}
-              {(narrowed ?? byTab.get(activeTab) ?? []).map((group) => (
+              {shownTab === SATELLITES_TAB && !narrowed && (
+                <CatalogSatellitesPane
+                  satellites={satellites}
+                  grant={satelliteGrant}
+                />
+              )}
+              {(
+                narrowed ??
+                (shownTab === SATELLITES_TAB ? [] : (byTab.get(shownTab) ?? []))
+              ).map((group) => (
                 <CatalogProviderCard
                   key={group.provider.id}
                   group={group}

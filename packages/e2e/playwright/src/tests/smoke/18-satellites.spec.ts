@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { baseUrl } from "../../config.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { ensureAgentExists, waitForAgentRunning } from "../../lib/agents.js";
@@ -13,6 +14,10 @@ import { harnessName } from "../../lib/fixtures.js";
  * satellite's reach, draining, and removal. A snapshot the contract rejects must
  * be refused at connect rather than stored half-valid, because a stored-but-
  * invalid tool list would fail every later start instead of the one bad tool.
+ *
+ * The browser half checks the one path a user has to a satellite in the UI: it
+ * appears among Connections only once a machine has connected, and it is added
+ * to an agent from that agent's connection catalogue.
  *
  * Deliberately not covered here: an agent actually starting a job. That path
  * runs through the platform MCP server on the in-cluster harness port, which no
@@ -150,6 +155,58 @@ test.describe("satellites", () => {
 
     await api.satellites.connect.mutate({ manifest: MANIFEST });
     expect(await api.satellites.jobs.query(SATELLITE)).toEqual([]);
+    await api.satellites.remove.mutate(SATELLITE);
+  });
+
+  /**
+   * TEST_SCENARIO: Satellites are experimental in the CLI, and a second switch
+   * in the UI would be one more place to turn them on. So the UI shows them
+   * only once a machine has connected: before that, Connections carries no
+   * satellite surface at all; after, the satellite is listed there and in an
+   * agent's catalogue, and adding it there grants it.
+   */
+  test("a connected satellite shows among Connections and is added to an agent there", async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const api = createApiClient(await getAccessToken());
+    await acceptTerms(api);
+    for (const s of await api.satellites.list.query())
+      await api.satellites.remove.mutate(s.name);
+
+    await page.goto(`${baseUrl}/settings/connections`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Connections" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("connection-group-satellites")).toHaveCount(
+      0,
+    );
+
+    await api.satellites.connect.mutate({
+      manifest: MANIFEST,
+      host: "e2e-host",
+    });
+    await page.reload();
+    const card = page.getByTestId("connection-group-satellites");
+    await expect(card.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
+    await expect(card.getByText("Online")).toBeVisible();
+
+    await ensureAgentExists(api, AGENT_NAME, harnessName);
+    const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
+    await page.getByTestId("open-connection-catalog").first().click();
+    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
+    await expect(page.getByText("In this agent")).toBeVisible();
+
+    await expect
+      .poll(async () =>
+        (await api.satellites.list.query())
+          .find((s) => s.name === SATELLITE)
+          ?.grantedAgentIds.includes(agentId),
+      )
+      .toBe(true);
+
     await api.satellites.remove.mutate(SATELLITE);
   });
 });

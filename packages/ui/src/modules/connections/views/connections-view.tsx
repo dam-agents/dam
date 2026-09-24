@@ -8,6 +8,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
+import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
+import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionGroupCard } from "../components/connection-group-card.js";
@@ -18,6 +21,8 @@ import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 
 export function ConnectionsView() {
   const connectionsQ = useAppConnections({ fresh: true });
+  const { data: satellites = NO_SATELLITES } = useSatellites({ fresh: true });
+  const { confirmAndRemove, removingName } = useRemoveSatelliteWithConfirm();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -47,7 +52,7 @@ export function ConnectionsView() {
 
       {connectionsQ.isPending ? (
         <ListSkeleton />
-      ) : groups.length > 0 ? (
+      ) : groups.length > 0 || satellites.length > 0 ? (
         <>
           <div className="mb-3 flex items-center justify-between">
             <SectionLabel>My connections</SectionLabel>
@@ -64,6 +69,13 @@ export function ConnectionsView() {
                 maintenance={maintenance.rowActions}
               />
             ))}
+            {satellites.length > 0 && (
+              <SatellitesGroupCard
+                satellites={satellites}
+                onRemove={(s) => void confirmAndRemove(s)}
+                removingName={removingName}
+              />
+            )}
           </Inset>
         </>
       ) : (
