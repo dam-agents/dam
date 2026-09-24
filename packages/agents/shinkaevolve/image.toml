@@ -1,0 +1,24 @@
+# The shinkaevolve config environment over claude-code's: mise -E claude-code,shinkaevolve.
+
+# The sqlite3 CLI polls run progress in results/programs.sqlite.
+[bootstrap.packages]
+"apt:sqlite3" = "latest"
+
+# The --with floors and overrides.txt are CVE fixes the package's own pins do
+# not reach.
+[tools."pipx:shinka-evolve"]
+version = "0.0.7"
+uvx_args = "--with pillow>=12.3.0 --with setuptools>=83.0.0 --with msgpack>=1.2.1 --overrides {{config_root}}/shinkaevolve/overrides.txt"
+postinstall = '"$MISE_TOOL_INSTALL_PATH/shinka-evolve/bin/python" -c "import shinka, hydra"'
+
+[oci.env]
+SHINKA_VENV = "/usr/local/share/mise/installs/pipx-shinka-evolve/0.0.7/shinka-evolve"
+SHINKA_OUTPUT_ROOT = "/home/agent/work/shinka-runs"
+
+[[oci.copy]]
+host = "../../shinkaevolve/rootfs/app"
+image = "/app"
+
+[[oci.copy]]
+host = "../../shinkaevolve/rootfs/etc"
+image = "/etc"

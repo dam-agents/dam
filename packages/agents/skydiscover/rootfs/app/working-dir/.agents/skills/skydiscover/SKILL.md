@@ -226,7 +226,7 @@ skydiscover-run [INITIAL_PROGRAM] EVALUATOR --search <type> \
 **Agentic mode (`--agentic`) is unsupported in this image**: the CLI
 advertises the flag, but the installed package ships without its tool
 schemas (`llm/tool_schemas/`), so it crashes at startup. Don't offer it;
-the Dockerfile asserts the gap so a ref bump that fixes upstream packaging
+the image build asserts the gap so a ref bump that fixes upstream packaging
 will surface as a build failure prompting a docs update.
 
 **Resume:** relaunch with `--checkpoint output/checkpoints/checkpoint_<N>`

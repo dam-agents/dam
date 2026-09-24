@@ -140,7 +140,7 @@ estimate, but an informed user may pre-authorize it (see below).
   # would SIGTERM the whole process group, run included, mid-flight
   dir="$GEPA_OUTPUT_ROOT/<run-id>"
   cd "$dir"
-  python driver.py > run.log 2>&1 &
+  "$GEPA_VENV/bin/python" driver.py > run.log 2>&1 &
   pid=$!; echo "$pid" > run.pid
   wait "$pid"
   ```
@@ -165,8 +165,8 @@ estimate, but an informed user may pre-authorize it (see below).
 
 ## Run dependencies
 
-Driver scripts and any user-system code run in the GEPA venv (`$GEPA_VENV`,
-first on `PATH`), which has `gepa` plus litellm, datasets, tqdm, cloudpickle
+Driver scripts and any user-system code run in the GEPA venv (`$GEPA_VENV`;
+its interpreter is `$GEPA_VENV/bin/python`), which has `gepa` plus litellm, datasets, tqdm, cloudpickle
 (the tracking stacks — mlflow, wandb — are deliberately absent).
 PyPI egress is open, so install whatever the run needs into that venv
 (`uv pip install --python "$GEPA_VENV/bin/python" …`). The venv is ephemeral

@@ -27,7 +27,7 @@ Why this works in the pod (all verified against a live agent):
   * Nous's POST to 127.0.0.1 must NOT be proxied — the image sets
     ``NO_PROXY=127.0.0.1,localhost,::1`` so localhost bypasses the gateway.
 
-stdlib only — runs on the agent image's venv python; the pod has no extra tools
+stdlib only — runs on the image's python3; the pod has no extra tools
 (not even ``awk``).
 """
 from __future__ import annotations

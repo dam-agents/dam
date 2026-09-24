@@ -1,0 +1,20 @@
+# The gepa config environment over claude-code's: mise -E claude-code,gepa.
+
+# gepa ships no executable, so litellm, one of its dependencies, carries the
+# venv. gepa's [full] extra without mlflow and wandb, which AGENTS.md forbids;
+# the setuptools and msgpack floors are CVE fixes.
+[tools."pipx:litellm"]
+version = "1.91.5"
+uvx_args = "--with gepa==0.1.4 --with tqdm>=4.66.1 --with cloudpickle>=3.0.0 --with datasets>=2.14.6 --with setuptools>=83.0.0 --with msgpack>=1.2.1"
+
+[oci.env]
+GEPA_VENV = "/usr/local/share/mise/installs/pipx-litellm/1.91.5/litellm"
+GEPA_OUTPUT_ROOT = "/home/agent/work/gepa-runs"
+
+[[oci.copy]]
+host = "../../gepa/rootfs/app"
+image = "/app"
+
+[[oci.copy]]
+host = "../../gepa/rootfs/etc"
+image = "/etc"

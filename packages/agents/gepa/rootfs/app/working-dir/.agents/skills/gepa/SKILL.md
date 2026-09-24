@@ -21,12 +21,12 @@ frontier keeps the best candidates across rounds. It fits objectives that are
 
 > Upstream: https://github.com/gepa-ai/gepa — pinned PyPI release in
 > `$GEPA_VENV`
-> (`python -c 'from importlib.metadata import version; print(version("gepa"))'`
+> (`"$GEPA_VENV/bin/python" -c 'from importlib.metadata import version; print(version("gepa"))'`
 > for the exact version; this reference is written against 0.1.4).
 
 **GEPA has no CLI — it is a library.** Every run is a `driver.py` you author
-that calls `gepa.optimize(...)`, run with the venv `python` (first on
-`PATH`); never `pip install gepa` yourself, it's pre-installed.
+that calls `gepa.optimize(...)`, run with the venv's interpreter,
+`"$GEPA_VENV/bin/python"`; never `pip install gepa` yourself, it's pre-installed.
 
 **This skill is the pure library reference.** Everything platform-specific
 lives elsewhere: how this pod reaches model providers (credentials, gateway,
@@ -124,7 +124,7 @@ methods, then pass `adapter=` **instead of** `task_lm`/`evaluator`:
 Crib from the shipped adapters in `gepa/adapters/` (`default_adapter`,
 `generic_rag_adapter`, `dspy_adapter`, `langchain_adapter`, `mcp_adapter`,
 `terminal_bench_adapter`, …) — read them from the installed package:
-`python -c "import gepa, os; print(os.path.dirname(gepa.__file__))"`.
+`"$GEPA_VENV/bin/python" -c "import gepa, os; print(os.path.dirname(gepa.__file__))"`.
 `seed_candidate` may hold **multiple named components**; GEPA evolves them
 round-robin. There is also `gepa.optimize_anything.optimize_anything`, a
 single-metric convenience wrapper for free-form text artifacts.

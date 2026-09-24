@@ -1,0 +1,22 @@
+# The skydiscover config environment over claude-code's: mise -E claude-code,skydiscover.
+
+# A pinned commit: the released wheels predate EvoX's config data files. scipy
+# is baked in because nearly every numerical task needs it; the setuptools and
+# msgpack floors are CVE fixes. The postinstall fails the build once upstream
+# packaging changes what the skill says.
+[tools."pipx:skydiscover-ai/skydiscover"]
+version = "e221cde39a787351df7e52c656ad3f00add402fe"
+uvx_args = "--with scipy --with setuptools>=83.0.0 --with msgpack>=1.2.1"
+postinstall = '"$MISE_TOOL_INSTALL_PATH/skydiscover/bin/python" {{config_root}}/skydiscover/check-packaging.py'
+
+[oci.env]
+SKYDISCOVER_VENV = "/usr/local/share/mise/installs/pipx-skydiscover-ai-skydiscover/e221cde39a787351df7e52c656ad3f00add402fe/skydiscover"
+SKYDISCOVER_OUTPUT_ROOT = "/home/agent/work/skydiscover-runs"
+
+[[oci.copy]]
+host = "../../skydiscover/rootfs/app"
+image = "/app"
+
+[[oci.copy]]
+host = "../../skydiscover/rootfs/etc"
+image = "/etc"

@@ -21,26 +21,21 @@ evolution, runs it, and reports the winning variant (and can open a PR with it).
 
 ## Image
 
-Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`) so it
+Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml)) so it
 inherits the Claude harness, the model gateway, and CA trust — the pod holds no
-credentials. On top it adds Python 3.11 + the `openevolve` package in a venv at
-`/opt/openevolve-venv` (installed with `uv` from PyPI, pinned via
-`ARG OPENEVOLVE_VERSION`). Both harnesses (chat and terminal) are inherited
+credentials. On top it adds the `openevolve` package in a venv at
+`$OPENEVOLVE_VENV` (a mise `pipx:` tool from PyPI, pinned in `image.toml`). Both harnesses (chat and terminal) are inherited
 unchanged from the base; OpenEvolve customizes behavior via `AGENTS.md` + the
 `openevolve` skill, not the harness scripts.
 
 ## Build
 
 ```sh
-mise run //packages/agents:image -- openevolve            # plain docker build (pip-installs openevolve)
+mise run //packages/agents:image -- openevolve   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
-Override the pinned release with `OPENEVOLVE_VERSION`:
-
-```sh
-OPENEVOLVE_VERSION=0.2.27 mise run //packages/agents:image -- openevolve
-```
+The pinned release is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the openevolve template at the locally-built
 `platform-openevolve:latest` but keeps it `enabled: false`; flip that to

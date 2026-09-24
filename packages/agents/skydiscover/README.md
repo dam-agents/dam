@@ -39,11 +39,11 @@ it authors the run inputs, runs the search, and reports the winning program
 
 ## Image
 
-Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
+Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
-holds no credentials. On top it adds Python 3.11 + the `skydiscover` package
-in a venv at `/opt/skydiscover-venv` (installed with `uv` from the upstream
-git repo at a pinned commit, `ARG SKYDISCOVER_REF`) — base package only:
+holds no credentials. On top it adds the `skydiscover` package
+in a venv at `$SKYDISCOVER_VENV` (a mise `pipx:` tool from the upstream git
+repo at a pinned commit) — base package only:
 AdaEvolve and EvoX need no extras, the `external` extra (wrapped backends) is
 deliberately absent, and the heavy `math` extra is runtime-installed per run
 when a task needs it — except `scipy`, which is baked in (the venv resets
@@ -65,15 +65,11 @@ skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents:image -- skydiscover            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
+mise run //packages/agents:image -- skydiscover   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
-Override the pinned upstream commit with `SKYDISCOVER_REF`:
-
-```sh
-SKYDISCOVER_REF=<commit-sha> mise run //packages/agents:image -- skydiscover
-```
+The pinned commit is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
 `platform-skydiscover:latest` but keeps them `enabled: false`; flip one to

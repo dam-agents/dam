@@ -35,3 +35,7 @@ fi
 
 unset -f _gateway_custom_upstream _gateway_wait_env 2>/dev/null || true
 unset _GATEWAY_BASE _gateway_env _i 2>/dev/null || true
+
+# Workloads extend the gateway environment here.
+for _hook in /usr/local/lib/model-gateway.d/*.sh; do [ -r "$_hook" ] && . "$_hook"; done
+unset _hook

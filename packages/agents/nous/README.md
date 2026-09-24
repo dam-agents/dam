@@ -31,12 +31,12 @@ CLI and are the one dispatch path that does not export.
 
 ## Image
 
-Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
+Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
 so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds:
 
-- Python 3.11 + the `nous` package in a venv at `/opt/nous-venv`, installed with
-  `uv` **straight from the public GitHub repo** (pinned via `ARG NOUS_REF`,
-  default `v0.4.0`), with the venv on `PATH`. No source vendoring.
+- The `nous` package in a venv at `$NOUS_VENV`, a mise `pipx:` tool installed
+  **straight from the public GitHub repo** at a pinned tag, with the `nous`
+  CLI on `PATH`. No source vendoring.
 - A build-time patch ([`patch-campaign-schema.py`](./patch-campaign-schema.py))
   that adds the `channels:` property to the installed `campaign.schema.yaml`.
   Nous's runtime reads `campaign.channels` at every gate, but the v0.4.0 schema
@@ -50,8 +50,8 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 - `NOUS_CAMPAIGN_PARENT=/home/agent/nous-campaigns` (on the persist:true `$HOME`
   mount) so campaign artifacts survive pod restarts and stay out of target repos
   (Nous issue #239).
-- A Nous-oriented [`AGENTS.md`](./AGENTS.md) as the chat-mode system context,
-  plus the [`nous` skill](./workspace/.agents/skills/nous/SKILL.md) (CLI +
+- A Nous-oriented [`AGENTS.md`](./rootfs/etc/AGENTS.md) as the chat-mode system context,
+  plus the [`nous` skill](./rootfs/app/working-dir/.agents/skills/nous/SKILL.md) (CLI +
   campaign-authoring reference) shipped into the workspace.
 - The Nous **wiki** slash commands (`post-campaign`, `index-wiki`,
   `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored verbatim
@@ -63,7 +63,7 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 ## How the agent operates (chat mode)
 
 Both harnesses are inherited unchanged from the claude-code base; nous
-customizes behavior through [`AGENTS.md`](./AGENTS.md) + the skill, not the
+customizes behavior through [`AGENTS.md`](./rootfs/etc/AGENTS.md) + the skill, not the
 harness scripts. The chat harness drives `nous` per `AGENTS.md`:
 
 - **New conversation** → lists existing campaigns (running / not running) and
@@ -94,7 +94,7 @@ artifacts persist on `$HOME`, so the agent **resumes on the next turn**
 
 ### Progress to Slack/Telegram — the channel bridge
 
-[`nous-channel-bridge.py`](./nous-channel-bridge.py) (shipped to
+[`nous-channel-bridge.py`](./rootfs/usr/local/bin/nous-channel-bridge) (shipped to
 `/usr/local/bin/nous-channel-bridge`) lets a campaign report into the agent's
 bound Slack/Telegram thread using Nous's **own** `channels:` feature — without
 external egress or a webhook secret on disk. Nous's gate notifier POSTs each
@@ -109,7 +109,7 @@ channel bound to the agent; delivery is best-effort.
 
 Each summary is itself an OpenAI-format LLM call (`OPENAI_BASE_URL`). Under
 LiteLLM that hits the proxy's intercept CA and a model-id `403`, so the image
-extends the base model-gateway shim ([`nous-model-gateway.sh`](./nous-model-gateway.sh)):
+extends the base model-gateway shim through its hook directory ([`model-gateway.d/nous.sh`](./rootfs/usr/local/lib/model-gateway.d/nous.sh)):
 after the base repoints `ANTHROPIC_BASE_URL` at the in-pod gateway, it does the
 same for `OPENAI_BASE_URL` when that is unset or a LiteLLM endpoint. It's sourced
 by the chat/terminal harness and the SSH login profile, so the whole shell env —
@@ -126,17 +126,12 @@ OpenAI endpoint is left alone).
 ## Build
 
 ```sh
-mise run //packages/agents:image -- nous          # plain docker build (pip-installs nous from GitHub)
+mise run //packages/agents:image -- nous   # claude-code plus this workload's mise environment
 mise run cluster:build-agent        # rebuild + restart agent pods in the dev cluster
 ```
 
-The build pip-installs Nous from its public GitHub repo — no local clone or
-vendoring. Override the pinned release with `NOUS_REF`:
-
-```sh
-NOUS_REF=main mise run //packages/agents:image -- nous     # track a branch
-NOUS_REF=v0.4.1 mise run //packages/agents:image -- nous   # or a different tag
-```
+The build installs Nous from its public GitHub repo, with no local clone or
+vendoring. The pinned tag is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the nous template at the locally-built
 `platform-nous:latest` but keeps it `enabled: false`; flip that to `true` to
