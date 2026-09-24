@@ -6,7 +6,7 @@ import {
   type JobStarted,
   type SatelliteView,
 } from "api-server-api";
-import { admit, isOnline } from "../domain/admission.js";
+import { admit, isOnline, jobCount } from "../domain/admission.js";
 import { isTerminal, type JobRow, type SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
@@ -170,7 +170,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           code: "BAD_REQUEST",
           message:
             inserted.total >= satellite.maxConcurrent
-              ? `${name} is running ${inserted.total} jobs (max ${satellite.maxConcurrent}) — wait for one to finish`
+              ? `${name} is running ${jobCount(inserted.total)} (max ${satellite.maxConcurrent}) — wait for one to finish`
               : `${tool} already has ${inserted.forTool} running (max ${verdict.toolMax}) — wait for one to finish`,
         });
       return {

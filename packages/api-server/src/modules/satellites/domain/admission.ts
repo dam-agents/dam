@@ -3,6 +3,10 @@ import type { SatelliteRow } from "./types.js";
 
 export const OFFLINE_AFTER_MS = 90_000;
 
+export function jobCount(n: number): string {
+  return n === 1 ? "1 job" : `${n} jobs`;
+}
+
 export function isOnline(satellite: SatelliteRow, now: Date): boolean {
   if (satellite.lastSeenAt === null) return false;
   return now.getTime() - satellite.lastSeenAt.getTime() < OFFLINE_AFTER_MS;
@@ -30,8 +34,6 @@ export function admit(
   active: ActiveCounts,
   now: Date,
 ): Admission {
-  if (satellite.draining)
-    return { ok: false, reason: `${satellite.name} is shutting down` };
   if (!isOnline(satellite, now))
     return {
       ok: false,
@@ -40,6 +42,8 @@ export function admit(
           ? `${satellite.name} has never connected`
           : `${satellite.name} is offline (last seen ${describeAge(now.getTime() - satellite.lastSeenAt.getTime())} ago)`,
     };
+  if (satellite.draining)
+    return { ok: false, reason: `${satellite.name} is shutting down` };
 
   const entry = satellite.tools.find((candidate) => candidate.name === tool);
   if (entry === undefined)
@@ -54,7 +58,7 @@ export function admit(
   if (active.total >= satellite.maxConcurrent)
     return {
       ok: false,
-      reason: `${satellite.name} is running ${active.total} jobs (max ${satellite.maxConcurrent}) — wait for one to finish`,
+      reason: `${satellite.name} is running ${jobCount(active.total)} (max ${satellite.maxConcurrent}) — wait for one to finish`,
     };
 
   const perTool = entry.maxConcurrent;

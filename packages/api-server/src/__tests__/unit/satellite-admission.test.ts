@@ -80,6 +80,23 @@ describe("admission", () => {
     );
   });
 
+  /**
+   * TEST_SCENARIO: Draining is cleared only by a claim, so a machine that
+   * drained and exited stays marked draining after it is gone. Once it is past
+   * the offline window, the reason must say it is offline: "shutting down"
+   * tells the model to wait for something that has already happened.
+   */
+  it("calls a machine that drained and left offline, not shutting down", () => {
+    const gone = satellite({
+      draining: true,
+      lastSeenAt: new Date(NOW.getTime() - OFFLINE_AFTER_MS - 1),
+    });
+    const verdict = admit(gone, "run", NO_ACTIVE, NOW);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toContain("offline");
+  });
+
   it("refuses at the satellite's concurrency limit", () => {
     const verdict = admit(
       satellite({ maxConcurrent: 2 }),
@@ -297,6 +314,69 @@ describe("a satellite's own tool names", () => {
       ).toBe(false);
     expect(satelliteToolNameSchema.safeParse("waiting").success).toBe(true);
     expect(satelliteToolNameSchema.safeParse("run").success).toBe(true);
+  });
+});
+
+describe("a call that outlives its inline wait", () => {
+  /**
+   * TEST_SCENARIO: A tool call blocks for a while and then hands back a job
+   * reference. By then the machine has usually claimed the Job, so the status
+   * in the reference must be the one the wait read, not the one the Job was
+   * inserted with: a model reading "queued" would think it never started.
+   */
+  it("reports the status the wait saw, not the one the job was inserted with", async () => {
+    const handlers = new Map<string, (args: unknown) => Promise<unknown>>();
+    const server = {
+      registerTool: (
+        n: string,
+        _config: unknown,
+        handler: (args: unknown) => Promise<unknown>,
+      ) => handlers.set(n, handler),
+      tool: () => {},
+    };
+    registerSatelliteTools(server as never, {
+      ops: {
+        start: async () => ({
+          ref: "gpu-box#7",
+          satellite: "gpu-box",
+          sequence: 7,
+          status: "queued",
+        }),
+        wait: async () => ({
+          ref: "gpu-box#7",
+          status: "running",
+          isError: false,
+          exitCode: null,
+          output: null,
+          outputPath: null,
+          truncated: false,
+          reason: null,
+        }),
+      } as never,
+      agentId: "agent-1",
+      satellites: [
+        {
+          name: "gpu-box",
+          description: null,
+          host: null,
+          online: true,
+          draining: false,
+          lastSeenAt: null,
+          tools: [{ name: "run", inputSchema: { type: "object" } }],
+          maxConcurrent: 16,
+          activeJobs: 0,
+          grantedAgentIds: [],
+        },
+      ],
+      waitDeadlineMs: 1000,
+    });
+    const result = (await handlers.get("gpu_box__run")?.({
+      cmd: ["./slow.sh"],
+    })) as { content: { text: string }[] };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      ref: "gpu-box#7",
+      status: "running",
+    });
   });
 });
 
