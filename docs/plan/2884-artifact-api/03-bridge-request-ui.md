@@ -61,18 +61,18 @@ Apply `/typescript-engineering` for the shim and contract, `/react-ui-engineerin
 
 ## Acceptance criteria
 
-- [ ] An interactive artifact in the docked preview of its publishing agent's chat, latest
+- [x] An interactive artifact in the docked preview of its publishing agent's chat, latest
       version, flag on: `await platform.request({ method: "GET", path: "/" })` resolves with the
       server's status, content type and body.
-- [ ] Non-2xx server answers resolve; platform failures reject with `err.reason` set to one of the
+- [x] Non-2xx server answers resolve; platform failures reject with `err.reason` set to one of the
       README reasons.
-- [ ] The same artifact in the library view, a history version, another agent's chat, or with the
+- [x] The same artifact in the library view, a history version, another agent's chat, or with the
       flag off: `request` rejects or never gets an answer, and no `callAgentApi` call is made (check
       the network tab).
-- [ ] A 9th concurrent request rejects with `too-many-requests`.
-- [ ] Messages from any window other than the preview frame are ignored.
-- [ ] `sendPrompt` still works as before.
-- [ ] `mise run //packages/ui:check`, `mise run //packages/ui:test`,
+- [x] A 9th concurrent request rejects with `too-many-requests`.
+- [x] Messages from any window other than the preview frame are ignored.
+- [x] `sendPrompt` still works as before.
+- [x] `mise run //packages/ui:check`, `mise run //packages/ui:test`,
       `mise run //packages/api-server:check` and `mise run check:comment-types` pass.
 
 ## Smoke test

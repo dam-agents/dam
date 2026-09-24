@@ -263,6 +263,13 @@ export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  ARTIFACT_REQUEST_TYPE,
+  ARTIFACT_RESPONSE_TYPE,
+  ARTIFACT_REQUEST_MAX_IN_FLIGHT,
+  artifactRequestEnvelopeSchema,
+  artifactRequestMessageSchema,
+  type ArtifactRequestMessage,
+  type ArtifactResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,

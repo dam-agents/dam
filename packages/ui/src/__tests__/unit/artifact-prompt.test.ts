@@ -5,10 +5,8 @@ import {
 } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import {
-  canSendArtifactPrompt,
-  readArtifactPrompt,
-} from "../../modules/artifacts/lib/artifact-prompt.js";
+import { canUseArtifactBridge } from "../../modules/artifacts/lib/artifact-bridge.js";
+import { readArtifactPrompt } from "../../modules/artifacts/lib/artifact-prompt.js";
 
 const artifact: LibraryArtifact = {
   id: "page",
@@ -34,11 +32,11 @@ const artifact: LibraryArtifact = {
 
 describe("artifact callback eligibility", () => {
   it("allows the latest private interactive HTML in its agent's chat", () => {
-    expect(canSendArtifactPrompt(artifact, true, "agent", 2)).toBe(true);
+    expect(canUseArtifactBridge(artifact, true, "agent", 2)).toBe(true);
   });
 
   it("disables callbacks when the feature is off", () => {
-    expect(canSendArtifactPrompt(artifact, false, "agent", 2)).toBe(false);
+    expect(canUseArtifactBridge(artifact, false, "agent", 2)).toBe(false);
   });
 
   it.each<Partial<LibraryArtifact>>([
@@ -50,14 +48,14 @@ describe("artifact callback eligibility", () => {
     { agentId: "another-agent" },
   ])("refuses an ineligible artifact: %j", (patch) => {
     expect(
-      canSendArtifactPrompt({ ...artifact, ...patch }, true, "agent", 2),
+      canUseArtifactBridge({ ...artifact, ...patch }, true, "agent", 2),
     ).toBe(false);
   });
 
   it("does not send from historical versions or missing contexts", () => {
-    expect(canSendArtifactPrompt(artifact, true, "agent", 1)).toBe(false);
-    expect(canSendArtifactPrompt(artifact, true, null, 2)).toBe(false);
-    expect(canSendArtifactPrompt(null, true, "agent", 2)).toBe(false);
+    expect(canUseArtifactBridge(artifact, true, "agent", 1)).toBe(false);
+    expect(canUseArtifactBridge(artifact, true, null, 2)).toBe(false);
+    expect(canUseArtifactBridge(null, true, "agent", 2)).toBe(false);
   });
 });
 
