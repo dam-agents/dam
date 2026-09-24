@@ -56,9 +56,10 @@ own session, telemetry or image, so nothing in this plan applies to it. This pla
 - **Retention follows the root driver, not the immediate parent.** A grandchild's record
   must survive its parent's reaping, so every row carries `root_driver_id` and cleanup keys
   off that. The existing `resolveRoot` walk already computes it at spawn.
-- **The child Agent is reaped exactly as today.** Eager delete on report, liveness sweep on
-  deadline or pod restart, driver cascade on driver delete. Only the row deletion ten minutes
-  after terminal is removed.
+- **The child Agent stays a throwaway.** A reported target is reaped a few seconds after it
+  reports, through one reap path the liveness sweep backstops, so its last telemetry batch
+  lands before the pod goes; deadline, pod restart and driver cascade still reap at once. The
+  row deletion ten minutes after terminal is removed.
 - **Capture happens before the delete, best effort, bounded.** A child whose pod does not
   answer within the capture budget yields a record without a conversation, never a failed
   reap and never a blocked `report_result`.
@@ -230,11 +231,12 @@ under the card (fine for short children, breaks for long transcripts).
 | 01 | ✅ Design pass | Mockups of the Delegation block and the child view; agreed component spec written back here | — |
 | 02 | ✅ Durable delegation record | Drop the ten-minute row delete; add the missing columns; cleanup follows the root driver; docs | — |
 | 03 | ✅ Fan-out contract in the SDK | `label` on the spawn request; verify replayed chip content keeps the lines | — |
-| 04 | Delegation read path | `invocations.tree` | 02 |
+| 04 | ✅ Delegation read path | `invocations.tree` | 02 |
 | 05 | Telemetry per node | `telemetry.invocationTurns`, `telemetry.turn` scoped to a child | 04 |
 | 06 | Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
 | 07 | Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
-| 08 | Capture the child conversation at teardown | Capture before every reap, store via the artifact store, key on the record, cleanup, docs | 02, 07 |
+| 10 | A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
+| 08 | Capture the child conversation at teardown | Capture inside the reap path, store via the artifact store, key on the record, cleanup, docs | 07, 10 |
 | 09 | Read-only child view | `invocations.transcript`; docked panel rendering stored frames | 01, 06, 08 |
 
 ```mermaid
@@ -243,7 +245,7 @@ graph LR
   02 --> 04 --> 05 --> 06
   03 --> 06
   07 --> 08
-  02 --> 08
+  02 --> 10 --> 08
   06 --> 09
   08 --> 09
   01 --> 09

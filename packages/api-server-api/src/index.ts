@@ -582,6 +582,7 @@ export type {
   TelemetryService,
   TelemetryTurnsQuery,
   TelemetryTurnQuery,
+  TelemetryInvocationTurnsQuery,
   TelemetryLogsQuery,
   TelemetryExportSignal,
   TurnSummary,
@@ -592,6 +593,7 @@ export type {
   LogAttachment,
   TelemetryTurnsResult,
   TelemetryTurnResult,
+  TelemetryInvocationTurnsResult,
   TelemetryLogsResult,
 } from "./modules/telemetry/types.js";
 

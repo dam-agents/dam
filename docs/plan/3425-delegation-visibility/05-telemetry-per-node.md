@@ -45,8 +45,9 @@ Apply `/typescript-engineering`.
 ## Acceptance criteria
 
 - [ ] For the README fan-out, `telemetry.invocationTurns` returns one `TurnSummary` per
-      child with non-zero calls and cost once telemetry flushed; their costs sum to at most
-      the driver's session total for the same window.
+      child with non-zero calls and cost once telemetry flushed. A child's rows carry its own
+      session id, so its cost is not inside the driver's session turns; it is inside the
+      driver's agent-level spend, which is where to cross-check.
 - [ ] A child with no rows is absent from the map, not zero.
 - [ ] `telemetry.turn` with `invocationId` returns only that child's spans and logs.
 - [ ] With the telemetry store unreachable the procedure returns `available: false` with
@@ -58,5 +59,6 @@ Apply `/typescript-engineering`.
 `mise run test` and `mise run check`. On the dev cluster with ClickStack enabled and the
 `agent-telemetry` feature on, a minute after the README prompt finishes, call
 `telemetry.invocationTurns` for the driver and the two ids from the devtools tRPC client as
-in slice 04, and compare with the driver's own reply line: the two children together cost
-less than the driver's session total in the sidebar.
+in slice 04. Verified 2026-09-24: both children of the 09:04 fan-out returned 3 calls and
+$0.0734 each with their models listed, and `telemetry.turn` scoped by `invocationId` returned
+only that child's 11 records.

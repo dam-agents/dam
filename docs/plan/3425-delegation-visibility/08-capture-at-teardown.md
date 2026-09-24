@@ -1,6 +1,6 @@
 # 08 — Capture the child conversation at teardown
 
-**Depends on:** 02-durable-record, 07-session-frames-out-of-pod
+**Depends on:** 07-session-frames-out-of-pod, 10-reap-grace
 **Part of:** Delegation visibility — see [README](./README.md)
 
 ## Context
@@ -31,15 +31,10 @@ Apply `/typescript-engineering`.
    via the slice 07 port, stores, stamps the record. Every step in its own try/catch;
    failures go to stderr with the invocation id and the capture returns normally. Wall
    clock budget 20 s end to end.
-4. **Call it before every delete of a target**, in this order: read then delete.
-   - `services/invocations-service.ts:244-250` `recordResult`: after `repo.complete`, run
-     capture, then `agents.delete`. Do not make the MCP `report_result` response wait on
-     the delete; it already does not wait today, so keep the same shape and run capture
-     plus delete as the detached tail.
-   - `services/invocation-liveness.ts:29-41` `failAndReap`: capture before the delete.
-   - `services/driver-cascade.ts:23`: capture before each child delete.
-   The pod is alive in the first two cases; in the cascade it may already be going, so the
-   15 s client timeout from slice 07 bounds it.
+4. **Call it inside the reap path** — slice 10's `services/target-reaper.ts` `reap()`: capture
+   first, then delete, then mark reaped. That covers the report path, the liveness sweep and
+   its backstop, and the driver cascade with one insertion. In the cascade the pod may already
+   be going, so the 15 s client timeout from slice 07 bounds it.
 5. **Cleanup** — the cleanup hook from slice 02 deletes the rows by root; extend it to
    delete each returned `transcript_key` through the store, logging and continuing on
    failure, the way kb-shares purges share objects.
