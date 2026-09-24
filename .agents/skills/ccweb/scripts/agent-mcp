@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Make one JSON-RPC call to the platform MCP server as an agent, from inside
+# the agent's pod, so it carries that agent's mesh identity. Stands in for a
+# model when the harness is the scripted mock. Prints the JSON-RPC response.
+#
+# Usage: agent-mcp <agent-id> <method> [params-json]
+#   agent-mcp agent-1a2b tools/list
+#   agent-mcp agent-1a2b tools/call '{"name":"gpu_box__run","arguments":{"cmd":["./hello.sh","world"]}}'
+set -euo pipefail
+AGENT="$1" METHOD="$2" PARAMS="${3:-{\}}"
+BODY=$(printf '{"jsonrpc":"2.0","id":1,"method":"%s","params":%s}' "$METHOD" "$PARAMS")
+mise run -q cluster:kubectl -- -n platform-agents exec "$AGENT-0" -c agent -- \
+  sh -c 'curl -sS -m 300 -X POST "$PLATFORM_MCP_URL" -H "content-type: application/json" -H "accept: application/json, text/event-stream" -H "mcp-protocol-version: 2025-06-18" --data-binary "$0"' "$BODY" \
+  | sed -n 's/^data: //p'

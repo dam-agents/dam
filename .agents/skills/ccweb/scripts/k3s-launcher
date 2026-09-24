@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# K3S_LAUNCHER for cluster:install's plain-process branch on a Claude Code on
+# the web container. Usage (cluster:install calls it): k3s-launcher k3s server ...
+# To stop k3s and every pod: k3s-launcher stop
+#
+# Each workaround turns on only when its probe says the host needs it:
+#   - cgroup v1: kubelet >= 1.35 refuses to start unless told fail-cgroupv1=false.
+#   - no CAP_SYS_RESOURCE: runc cannot lower a pod's oom_score_adj (kubelet asks
+#     for -998 on the pause container), so every sandbox fails to start;
+#     containerd's restrict_oom_score_adj clamps the request instead.
+#   - PID 1 not inspectable (/proc/1/ns/net denied): istio-cni and ztunnel enter
+#     the host netns through /proc/1, so k3s runs as the child of a fresh PID
+#     namespace whose PID 1 is this script.
+# The session's fixed disk allowance is far below what the 252G device reports,
+# so kubelet's percentage eviction thresholds fire early; absolute ones replace
+# them.
+#
+# `stop` kills the namespace init, and every pod dies with the namespace: the
+# clean way to restart. Restart with cluster:install again, or by hand:
+#   setsid k3s-launcher k3s server --write-kubeconfig-mode 644 --https-listen-port 16443 >>~/.k3s.log 2>&1 &
+set -euo pipefail
+
+CONTAINERD_DIR=/var/lib/rancher/k3s/agent/etc/containerd
+DROPIN=/etc/rancher/k3s/config.yaml.d/60-ccweb.yaml
+
+if [ "${1:-}" = stop ]; then
+  # Matches the namespace init by its exact argv element, which a shell whose
+  # -c string merely mentions this script never has.
+  for d in /proc/[0-9]*; do
+    if grep -qs k3s-launcher "$d/cmdline" && tr '\0' '\n' <"$d/cmdline" 2>/dev/null | grep -qx -- --inside; then
+      kill -9 "${d#/proc/}" 2>/dev/null || true
+    fi
+  done
+  pkill -x k3s-server 2>/dev/null || true
+  for _ in $(seq 1 30); do pgrep -x k3s-server >/dev/null || break; sleep 1; done
+  for _ in 1 2 3; do
+    mount | awk '{print $3}' | grep -E 'k3s|kubelet|netns' | sort -r | xargs -r -n1 umount -l 2>/dev/null || true
+  done
+  # What k3s-killall.sh does on a supervised host. The netns is the host's,
+  # so pod rules and links outlive the pods; a stale hostport DNAT sends the
+  # next cluster's :5555 to a pod IP that no longer exists.
+  for backend in iptables iptables-legacy; do
+    command -v "$backend-save" >/dev/null 2>&1 || continue
+    "$backend-save" 2>/dev/null | grep -v -e KUBE- -e CNI- -e ISTIO -e FLANNEL -e flannel | "$backend-restore"
+  done
+  if command -v ip >/dev/null 2>&1; then
+    for link in cni0 flannel.1 kube-ipvs0 istioin istioout; do
+      ip link delete "$link" 2>/dev/null || true
+    done
+  fi
+  rm -rf /var/lib/cni
+  exit 0
+fi
+
+if [ "${1:-}" = --inside ]; then
+  shift
+  mount -t proc proc /proc
+  mount --make-rshared /
+  "$@" &
+  child=$!
+  trap 'kill -TERM "$child" 2>/dev/null || true' TERM INT
+  # PID 1 of the namespace: bash reaps re-parented orphans while it waits.
+  while kill -0 "$child" 2>/dev/null; do wait "$child" || true; done
+  exit 0
+fi
+
+mkdir -p "$(dirname "$DROPIN")"
+{
+  echo "kubelet-arg+:"
+  echo '  - "eviction-hard=nodefs.available<2Gi,imagefs.available<2Gi,memory.available<200Mi"'
+  echo '  - "eviction-minimum-reclaim=nodefs.available=500Mi,imagefs.available=500Mi"'
+  if [ "$(stat -fc %T /sys/fs/cgroup)" != cgroup2fs ]; then
+    echo '  - "fail-cgroupv1=false"'
+  fi
+} >"$DROPIN"
+
+needs_oom_clamp() { ! (echo -1 >/proc/self/oom_score_adj) 2>/dev/null; }
+needs_pidns() { ! stat -f /proc/1/ns/net >/dev/null 2>&1; }
+
+# k3s regenerates config.toml from its own template on every start; a
+# config-v3.toml.tmpl overrides that. It is derived from the rendered file, so
+# the first start is a short throwaway run that only renders it. Delete the
+# .tmpl after a k3s upgrade to re-derive it.
+if needs_oom_clamp && [ ! -f "$CONTAINERD_DIR/config-v3.toml.tmpl" ]; then
+  if [ ! -f "$CONTAINERD_DIR/config.toml" ]; then
+    "$@" >/dev/null 2>&1 &
+    render=$!
+    for _ in $(seq 1 60); do [ -f "$CONTAINERD_DIR/config.toml" ] && break; sleep 1; done
+    kill "$render" 2>/dev/null || true
+    wait "$render" 2>/dev/null || true
+  fi
+  sed "/^\[plugins.'io.containerd.cri.v1.runtime'\]\$/a restrict_oom_score_adj = true" \
+    "$CONTAINERD_DIR/config.toml" >"$CONTAINERD_DIR/config-v3.toml.tmpl"
+  grep -q '^restrict_oom_score_adj = true' "$CONTAINERD_DIR/config-v3.toml.tmpl" \
+    || { echo "k3s-launcher: containerd runtime table not found in config.toml" >&2; exit 1; }
+fi
+
+if needs_pidns; then
+  exec unshare --pid --fork --mount --propagation slave "$0" --inside "$@"
+fi
+exec "$@"
