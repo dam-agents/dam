@@ -84,8 +84,9 @@ entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 cmd = ["node", "dist/server.js"]
 
 [oci.env]
-# mise prepends the tool bin directories.
-PATH = "/home/agent/.local/share/aube/bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# mise prepends the tool bin directories. The agent's own aube globals come
+# last, so nothing in the home shadows an image tool.
+PATH = "/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/share/aube/bin"
 HOME = "/home/agent"
 SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
