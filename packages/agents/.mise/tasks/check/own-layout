@@ -32,7 +32,8 @@ def layout(root):
     layers, diff_ids = [], []
     for files in (["usr/local/share/mise/x", "etc/ssh/ssh_host_ed25519_key", "etc/hostname"], ["app/a"]):
         blob, diff_id = layer(files)
-        layers.append({"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip", **put(root, blob)})
+        tool = {"annotations": {"dev.mise.tool.short": "x"}} if files[0].startswith("usr/local/share/mise") else {}
+        layers.append({"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip", **put(root, blob), **tool})
         diff_ids.append(diff_id)
     config = put(root, json.dumps({"rootfs": {"type": "layers", "diff_ids": diff_ids}}).encode())
     manifest = put(root, json.dumps({"config": config, "layers": layers}).encode())
@@ -65,5 +66,7 @@ with tempfile.TemporaryDirectory() as tmp:
     owners = results[0][0]
     assert owners == {"usr/local/share/mise/x": (65532, 0), "etc/hostname": (0, 0), "app/a": (0, 0)}, owners
     assert results[0][1] == results[1][1], "a cached rewrite differs from the first"
-    assert len([f for f in os.listdir(cache) if f.endswith(".json")]) == 2, "the second run rewrote a layer again"
+    memos = [f for d in ("tools", "other") for f in os.listdir(os.path.join(cache, d)) if f.endswith(".json")]
+    assert len(memos) == 2, "the second run rewrote a layer again"
+    assert len(os.listdir(os.path.join(cache, "tools"))) == 2, "the tool layer is not in the tools cache"
 print("own-layout: ok")

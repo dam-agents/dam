@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan, --lock refreshes packages/agents/base/mise.lock (with --bump, re-resolving `latest` pins) and builds nothing."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
@@ -7,12 +7,14 @@ resolve=.mise/tasks/image/resolve
 agents=packages/agents
 workloads=" $($resolve list-workloads) "
 root="$PWD"
-dry=false reuse=true load=true named=()
+dry=false reuse=true load=true lock=false bump=() named=()
 for a in "$@"; do
   case "$a" in
     --dry-run) dry=true ;;
     --build) reuse=false ;;
     --no-load) load=false ;;
+    --lock) lock=true ;;
+    --bump) bump=(--bump) ;;
     -*) echo "unknown option: $a" >&2; exit 2 ;;
     *) named+=("$a") ;;
   esac
@@ -68,19 +70,17 @@ build_runtime() {
   (cd "$runtime" && pnpm pkg delete devDependencies)
 }
 
-# Subshell: it leaves the repo's mise context and directory.
-build_mise() (
-  harness=$1 out="$oci_out/$1" envs=$1
-  # A workload is an environment over claude-code's.
-  case "$workloads" in *" $1 "*) envs="claude-code,$1" ;; esac
+lockfile="$agents/base/mise.lock"
 
-  # mise runs for the staged image project only, outside the repo.
-  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT MISE_LOCKED "${!MISE_TASK_@}"
+# Stages the mise project for the named agents, outside the repo, and points
+# mise at it alone. Call it in a subshell.
+stage_project() {
+  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
   export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
-    MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1
+    MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1
   : > "$MISE_GLOBAL_CONFIG_FILE"
 
   # In the repo every agent dir is a mise config root, so the stage renames
@@ -90,13 +90,37 @@ build_mise() (
   cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
   cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
   cp "$agents/base/rootfs/etc/mise/conf.d/settings.toml" "$stage/mise/conf.d/settings.toml"
-  for a in base ${envs//,/ }; do
+  [ ! -f "$lockfile" ] || cp "$lockfile" "$stage/mise/mise.lock"
+  for a in base "$@"; do
     d="$(dir_of "$a")"
     [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
     mkdir -p "$stage/$a"
     # pi's extension ships as source; node_modules holds its dev dependencies.
     tar -C "$d" --exclude=node_modules --exclude=.mise -cf - . | tar -C "$stage/$a" -xf -
   done
+}
+
+# One lockfile for every image: mise lock only resolves, so any host can run it.
+# The pipx tools stay out: mise cannot lock one with uvx_args, and each is
+# pinned exactly in its image.toml.
+lock_mise() (
+  all=()
+  for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; all+=("${d##*/}"); done
+  stage_project "${all[@]}"
+  cd "$stage"
+  envs="${all[*]}"
+  envs="${envs// /,}"
+  read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r '[keys[] | select(startswith("pipx:") | not)] | join(" ")')"
+  mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
+  cp mise/mise.lock "$root/$lockfile"
+)
+
+# Subshell: it leaves the repo's mise context and directory.
+build_mise() (
+  harness=$1 out="$oci_out/$1" envs=$1
+  # A workload is an environment over claude-code's.
+  case "$workloads" in *" $1 "*) envs="claude-code,$1" ;; esac
+  stage_project ${envs//,/ }
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
@@ -151,8 +175,8 @@ build_mise() (
   sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
   ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out"
   [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
-  # The owned-layer cache grows with every distinct layer; remove $state/owned
-  # to reclaim it.
+  # The re-owned layer cache grows with every distinct layer; remove
+  # $state/owned to reclaim it.
   mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
   echo "OCI layout: $out"
 )
@@ -182,6 +206,8 @@ layout() {
   if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c .
   else limactl shell --workdir / "$vm" sh -c 'tar -C ~/platform-agent-oci/"$1" -c .' _ "$1"; fi
 }
+
+if [ "$lock" = true ]; then lock_mise; exit; fi
 
 todo=()
 for a in ${mise_images[@]+"${mise_images[@]}"}; do reused "$a" || todo+=("$a"); done

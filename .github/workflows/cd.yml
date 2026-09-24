@@ -263,16 +263,16 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      # The mise image build's downloads and re-owned layers; see image:ci-build.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The mise images' tool installs, Chromium and re-owned tool layers, which
+      # the lockfile and the image files fix; see image:ci-build.
+      - id: agent-tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cache/platform-agent-oci/owned
-            ~/.cache/platform-agent-oci/build/cache
+            ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-oci-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
-          restore-keys: agent-oci-${{ runner.os }}-${{ runner.arch }}-
-      - run: touch /tmp/agent-oci-restored
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -284,6 +284,15 @@ jobs:
           read -r -a agents <<< "$AGENTS"
           [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
+      # Only when the lockfile or an image file changed: otherwise the key hit.
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/build/data
+            ~/.cache/platform-agent-oci/build/ms-playwright
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -291,18 +300,6 @@ jobs:
           path: /tmp/digests
           retention-days: 1
           if-no-files-found: error
-      # Once a day, for every other run to restore. A layer no build of this run
-      # read is dropped first, so the cache holds one generation.
-      - if: github.event_name == 'schedule'
-        run: find ~/.cache/platform-agent-oci/owned -type f ! -newer /tmp/agent-oci-restored -delete
-      - if: github.event_name == 'schedule'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/platform-agent-oci/owned
-            ~/.cache/platform-agent-oci/build/cache
-            ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-oci-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
 
   merge-agents:
     name: merge multi-arch agent manifests
@@ -363,16 +360,16 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      # The mise image build's downloads and re-owned layers; see image:ci-build.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The mise images' tool installs, Chromium and re-owned tool layers, which
+      # the lockfile and the image files fix; see image:ci-build.
+      - id: agent-tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cache/platform-agent-oci/owned
-            ~/.cache/platform-agent-oci/build/cache
+            ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-oci-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
-          restore-keys: agent-oci-${{ runner.os }}-${{ runner.arch }}-
-      - run: touch /tmp/agent-oci-restored
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -382,6 +379,15 @@ jobs:
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial --base-image "$BASE" "$ARCH" "${workloads[@]}"
+      # Only when the lockfile or an image file changed: otherwise the key hit.
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/build/data
+            ~/.cache/platform-agent-oci/build/ms-playwright
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-workloads-${{ matrix.arch }}
@@ -439,18 +445,27 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
-      # The mise image build's downloads and re-owned layers; see image:ci-build.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The mise images' tool installs, Chromium and re-owned tool layers, which
+      # the lockfile and the image files fix; see image:ci-build.
+      - id: agent-tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cache/platform-agent-oci/owned
-            ~/.cache/platform-agent-oci/build/cache
+            ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-oci-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
-          restore-keys: agent-oci-${{ runner.os }}-${{ runner.arch }}-
-      - run: touch /tmp/agent-oci-restored
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:sha
+      # Only when the lockfile or an image file changed: otherwise the key hit.
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/build/data
+            ~/.cache/platform-agent-oci/build/ms-playwright
+            ~/.cache/platform-agent-oci/owned/tools
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('packages/agents/base/mise.lock', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
 
   e2e:
     name: mise e2e
