@@ -204,7 +204,7 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
 export function uiGuide(host: string, name: string): string[] {
   return [
     `to give an agent these tools, open ${host}, pick the agent and go to`,
-    `  Configure agent → Connections → + New → MCP servers → "${name}" → Add to agent`,
+    `  ⵗ → Configure agent → Connections → + New → MCP servers → "${name}" → Add to agent`,
   ];
 }
 

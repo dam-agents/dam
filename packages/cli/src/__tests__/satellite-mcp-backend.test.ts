@@ -202,7 +202,7 @@ describe("the guide printed once connected", () => {
     const text = uiGuide("http://localhost:5555", "jan@lab").join("\n");
     expect(text).toContain("http://localhost:5555");
     expect(text).toContain(
-      'Configure agent → Connections → + New → MCP servers → "jan@lab" → Add to agent',
+      'ⵗ → Configure agent → Connections → + New → MCP servers → "jan@lab" → Add to agent',
     );
   });
 });
