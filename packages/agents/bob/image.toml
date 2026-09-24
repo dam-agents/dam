@@ -1,5 +1,3 @@
-# The bob config environment over base/base.toml: mise -E bob.
-
 # A self-contained tarball outside the npm registry; dist/bob.js needs no
 # dependencies.
 [tools."http:bob"]

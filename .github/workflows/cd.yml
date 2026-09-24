@@ -102,9 +102,9 @@ jobs:
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
   # a tag: e2e pulls by digest, and publishing and scanning run on main and
-  # tags. A PR skips them. Runner slots
-  # are what a PR waits on: run 35789042417 queued its builds for up to 9m44s
-  # while the builds themselves took seconds.
+  # tags. A PR skips them. Runner slots are what a PR waits on: run
+  # 35789042417 queued its builds for up to 9m44s while the builds themselves
+  # took seconds.
   appversion:
     name: derive app version
     if: ${{ github.event_name != 'pull_request' }}
@@ -259,7 +259,6 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-      # For the mise images; see image:ci-build.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}

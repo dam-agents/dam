@@ -1,5 +1,3 @@
-# The codex config environment over base/base.toml: mise -E codex.
-
 [tools]
 "npm:@openai/codex" = "0.153.4"
 "npm:@zed-industries/codex-acp" = "0.16.0"

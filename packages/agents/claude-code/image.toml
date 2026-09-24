@@ -1,5 +1,3 @@
-# The claude-code config environment over base/base.toml: mise -E claude-code.
-
 # The claude CLI the adapter bundles, linked beside the adapter's own bin.
 [tools."npm:@agentclientprotocol/claude-agent-acp"]
 version = "0.75.1"

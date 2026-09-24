@@ -1,5 +1,3 @@
-# The pi-agent config environment over base/base.toml: mise -E pi-agent.
-
 [tools]
 "npm:@earendil-works/pi-coding-agent" = "0.85.1"
 "npm:pi-acp" = "0.0.33"

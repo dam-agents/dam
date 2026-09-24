@@ -13,7 +13,7 @@
 #   --serial      build one at a time, for images too large to build side by
 #                 side on one runner's disk; the builder is pruned between
 #                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
-#   --base-image  BASE_IMAGE for the components built on a base (the workloads)
+#   --base-image  BASE_IMAGE for the components built on a base (k-search)
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
 # registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
@@ -63,7 +63,7 @@ output_for() {
   esac
 }
 
-# crane pushes the OCI layout; the digest lands where buildx's metadata would.
+# The digest lands where buildx's metadata would.
 build_mise() {
   local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci/out/$1" ref
   packages/agents/.mise/tasks/image --build $([ "$kind" = load ] || echo --no-load) "$c" || return 1

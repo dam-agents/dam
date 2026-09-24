@@ -1,5 +1,3 @@
-# The mock config environment over base/base.toml: mise -E mock.
-
 [[oci.copy]]
 host = "../../mock/rootfs/app"
 image = "/app"

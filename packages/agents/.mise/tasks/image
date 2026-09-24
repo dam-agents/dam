@@ -38,7 +38,7 @@ fi
 
 if [ "$dry" = true ]; then
   echo "mise oci (one at a time): ${mise_images[*]:-—}"
-  echo "docker (in parallel):     ${docker_images[*]:-—}"
+  echo "docker:                   ${docker_images[*]:-—}"
   exit 0
 fi
 [ -z "${SKIP_IMAGE_BUILD:-}" ] || exit 0
@@ -56,9 +56,7 @@ work="$state/build"
 stage="$work/stage"
 runtime="$work/runtime"
 
-runtime_built=false
 build_runtime() {
-  [ "$runtime_built" = false ] || return 0
   pnpm --filter agent-runtime exec tsup
   pnpm --filter driver-sdk exec tsup
   rm -rf "$runtime"
@@ -66,7 +64,6 @@ build_runtime() {
     pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
   cp packages/agent-runtime/package.json "$runtime/package.json"
   (cd "$runtime" && pnpm pkg delete devDependencies)
-  runtime_built=true
 }
 
 # Subshell: it leaves the repo's mise context and directory.
@@ -84,8 +81,8 @@ build_mise() (
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1
   : > "$MISE_GLOBAL_CONFIG_FILE"
 
-  # Repo names mise would not load (every agent dir is a config root) get
-  # mise's names here.
+  # In the repo every agent dir is a mise config root, so the stage renames
+  # the fragments to names mise loads.
   rm -rf "$stage"
   mkdir -p "$stage/mise/conf.d"
   cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
@@ -141,6 +138,8 @@ build_in_vm() {
   limactl shell --workdir / "$vm" sh -c '
     set -e
     [ -x ~/.local/bin/mise ] || curl -fsSL https://mise.run | sh
+    # mise runs the arm64 node it installs, which links libatomic.
+    dpkg -s libatomic1 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq libatomic1; }
     export PATH="$HOME/.local/bin:$PATH"
     cd ~/platform-src
     mise trust -q
@@ -177,10 +176,4 @@ build_docker() {
   docker build -t "platform-$1:latest" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$(dir_of "$1")"
 }
 
-pids=() failed=()
-for a in ${docker_images[@]+"${docker_images[@]}"}; do
-  build_docker "$a" 2>&1 | sed "s/^/[$a] /" &
-  pids+=("$!")
-done
-for i in ${pids[@]+"${!pids[@]}"}; do wait "${pids[$i]}" || failed+=("${docker_images[$i]}"); done
-[ ${#failed[@]} -eq 0 ] || { echo "failed: ${failed[*]}" >&2; exit 1; }
+for a in ${docker_images[@]+"${docker_images[@]}"}; do build_docker "$a"; done

@@ -12,7 +12,6 @@ if [ "$(id -u)" = 0 ]; then
 	install -d -m 0755 /run/sshd
 fi
 
-# The gateway's MITM CA joins the system bundle.
 mitm_ca=/etc/platform/ca/ca.crt
 if [ -s "$mitm_ca" ]; then
 	cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
