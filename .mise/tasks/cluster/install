@@ -655,19 +655,12 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --a
 
 # 6b. vm-backend images onto the node, where every VM runner mounts them read
 # only: runners are per owner and created on demand, so there is no pod to copy
-# into at install time, and no registry for them to pull from.
+# into at install time, and no registry for them to pull from. Each image is a
+# pre-flattened tree with its launch record, which a machine boots in seconds;
+# see image:stage-vm for why not an archive.
 for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
-  echo "Loading $image for the VM runners..."
-  tar="/tmp/$(printf '%s' "$image" | tr '/:@' '___').tar"
-  docker save -o "$tar" "$image"
-  if [ -n "${IS_SANDBOX:-}" ]; then
-    sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
-  else
-    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-    limactl shell "$LIMA_INSTANCE" sudo install -D -m 644 "$tar" "/var/lib/platform-vm-images/$(basename "$tar")"
-    limactl shell "$LIMA_INSTANCE" rm -f "$tar"
-  fi
-  rm -f "$tar"
+  echo "Staging $image for the VM runners..."
+  LIMA_INSTANCE="$LIMA_INSTANCE" .mise/tasks/image/stage-vm "$image"
 done
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its

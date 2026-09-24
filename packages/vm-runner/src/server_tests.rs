@@ -9,10 +9,10 @@ use crate::api::{
     REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
     STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
-use crate::cache::{archive_path, digest_path, PARTIAL_PREFIX};
+use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::imagecache::{CacheConfig, ImageCache};
-use crate::launch::ImageLaunch;
+use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, UNHEALTHY_RESTART};
 use std::path::Path;
 
@@ -856,6 +856,35 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
         !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
         "a machine booted from an archive holds no cache entry"
     );
+}
+
+// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), so the machine boots the tree in place instead of flattening an archive inside the guest. The tree wins over an archive staged under the same name, which an earlier install left behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
+    let h = Harness::new("staged-tree");
+    fs::write(
+        h.dir.join("crane"),
+        "#!/bin/sh\necho unreachable >&2\nexit 1\n",
+    )
+    .unwrap();
+    let images = h.dir.join("images");
+    let tree = staged_path(&images, "quay.io/x/vm:1");
+    fs::create_dir_all(tree.join(ROOTFS_DIR)).unwrap();
+    fs::write(
+        tree.join(LAUNCH_FILE),
+        r#"{"entrypoint":["/from-tree"],"cmd":[],"env":[],"workingDir":"/"}"#,
+    )
+    .unwrap();
+    write_archive(
+        &archive_path(&images, "quay.io/x/vm:1"),
+        r#"{"config":{"Entrypoint":["/from-archive"]}}"#,
+    );
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
+    assert_eq!(PathBuf::from(image), tree.join(ROOTFS_DIR));
+    assert_eq!(launch.unwrap().entrypoint, vec!["/from-tree"]);
+    assert_eq!(h.crane_calls(), 0);
 }
 
 // TEST_SCENARIO: an image that cannot be read is reported as an image problem, which is what tells the person to fix the image rather than wait for a retry.

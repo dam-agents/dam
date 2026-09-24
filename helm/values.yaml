@@ -258,10 +258,12 @@ virtualization:
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
-    # A directory on the node holding `docker save` archives named after the
-    # image reference, mounted read-only into every runner. It is how a
-    # cluster with no registry (local dev) gives runners their agent image;
-    # empty means runners fetch images from the registry.
+    # A directory on the node holding pre-flattened image trees (each with
+    # its launch record; `mise run image:stage-vm` makes one) or `docker save`
+    # archives, named after the image reference and mounted read-only into
+    # every runner. It is how a cluster with no registry (local dev) gives
+    # runners their agent image; empty means runners fetch images from the
+    # registry.
     imageArchiveHostPath: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever

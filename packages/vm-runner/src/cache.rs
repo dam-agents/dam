@@ -13,7 +13,14 @@ pub const PULL_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages the `docker save` archive of an image: the reference with the three characters a path segment must not carry replaced by an underscore, and `.tar` after it. `cluster:install` writes the archive under this name, so both must replace the same characters. The runner only reads these archives, and eviction never counts one.
 pub fn archive_path(image_dir: &Path, image: &str) -> PathBuf {
-    image_dir.join(format!("{}.tar", image.replace(['/', ':', '@'], "_")))
+    let mut path = staged_path(image_dir, image).into_os_string();
+    path.push(".tar");
+    path.into()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages an image as a tree, `rootfs` and the launch record under the same name the archive would carry without its extension. This is what `image:stage-vm` makes.
+pub fn staged_path(image_dir: &Path, image: &str) -> PathBuf {
+    image_dir.join(image.replace(['/', ':', '@'], "_"))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a string is a digest this cache can name an entry by: `sha256:` and 64 lower-case hex digits. Hand-written rather than a regex, and pinned by a test.
