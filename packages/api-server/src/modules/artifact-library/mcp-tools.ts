@@ -85,7 +85,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "Opt-in HTML prompt buttons. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
+          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
         ),
       expires_in_hours: z
         .number()

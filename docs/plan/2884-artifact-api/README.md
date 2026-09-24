@@ -135,7 +135,7 @@ postMessage (page ↔ host), schemas next to `ARTIFACT_PROMPT_TYPE` in
 | 01 | ✅ [Runtime relay to the Artifact API Port](./01-runtime-relay.md) | `ARTIFACT_API_PORT`, `artifactApi.request` in agent-runtime-api and agent-runtime, limits and outcomes | none |
 | 02 | ✅ [api-server `callAgentApi` mutation](./02-api-server-call-agent-api.md) | contract schemas + reasons, artifact checks, agent from publisher, wake, pod client | 01 |
 | 03 | ✅ [Bridge `platform.request` in shim and host UI](./03-bridge-request-ui.md) | shim `request()`, message schemas, host hook with gate and in-flight cap | 02 |
-| 04 | [Docs: skill and architecture pages](./04-docs.md) | `platform-artifacts` skill section, architecture pages | 03 |
+| 04 | ✅ [Docs: skill and architecture pages](./04-docs.md) | `platform-artifacts` skill section, architecture pages | 03 |
 
 ## Conventions & glossary
 

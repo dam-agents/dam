@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-16
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -81,16 +81,44 @@ Accepted prompts use the normal chat reporting for replies, queued turns and
 delivery errors; the page receives no separate answer. Publishing an updated
 artifact uses the normal version flow.
 
-The renderer injects a platform-owned prompt API without changing the stored
-HTML. It sends requests to the host over `window.postMessage`; the in-app
-sandbox retains an opaque origin and receives no app credentials. The host
+The same page can also **share state with its Agent** through the **Artifact
+API**, an HTTP server the publishing Agent runs inside its own sandbox on the
+fixed Artifact API Port, bound to loopback. The state lives with the Agent, so
+both the page and the Agent read and change it, unlike the page's own browser
+storage, which the Agent never sees. Unlike a prompt, this is request and
+response. One request travels four hops: the page posts it to the host app; the
+app checks the frame and the same gate as for prompts, then calls the api-server
+with the owner's own session; the api-server checks the artifact and wakes its
+Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake));
+agent-runtime relays it over loopback to the Agent's server, and the answer comes
+back the same way. The call names an artifact, never an Agent: the api-server
+reads the publishing Agent from the artifact, so a page can only reach the Agent
+that published it, and uploaded artifacts (no publishing Agent) get no access. It
+serves only artifacts that are owned by the caller, HTML, interactive and
+private, whatever the feature flag says. Any HTTP status the server returns is a
+normal answer; a typed failure reason reports only what the platform could not
+deliver, such as nothing listening on the port, a timeout, a body over the size
+cap or too many requests in flight from one frame. Bodies are text only and
+capped both ways, and only the content type crosses in either direction. The
+Agent starts and keeps its server alive itself; the platform never starts,
+supervises or restarts it, so after hibernation the page reports nothing
+listening until the Agent starts it again. The contract is in
+[`packages/api-server-api/`](../../packages/api-server-api/) and
+[`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+
+The renderer injects a platform-owned bridge (`sendPrompt` and `request`)
+without changing the stored HTML. It sends requests to the host over
+`window.postMessage`; the in-app sandbox retains an opaque origin and receives
+no app credentials. The host
 validates both the message payload and the sending window against its preview
 frame: the injected API is an authoring convenience, not an authorization gate.
+The page still never holds a credential for either call. The frame is sandboxed
+without modals, so browser dialogs are blocked.
 
 Callbacks are available only in the chat's docked preview, including fullscreen,
 and work in a newly started conversation without reloading the page.
-Library previews and historical versions cannot send prompts, and disabling the
-feature disconnects the callback. There is no permanent Session binding: the
+Library previews and historical versions cannot send prompts or requests, and
+disabling the feature disconnects both. There is no permanent Session binding: the
 currently open conversation is the destination. Interactive pages cannot be shared,
 including with named viewers; that restriction is enforced with the sharing write.
 Retention remains available, and a separate static copy can be shared.
