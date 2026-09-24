@@ -469,7 +469,10 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # Under the job's timeout, so a hung image build fails the step and the
+      # log steps below still run; the job's own timeout cancels them too.
       - run: mise run e2e
+        timeout-minutes: 35
         env:
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
