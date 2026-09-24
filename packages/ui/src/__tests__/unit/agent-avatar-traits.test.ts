@@ -5,7 +5,7 @@ import {
   samplePath,
 } from "api-server-api/avatar/geometry";
 import {
-  bugEyeCenter,
+  antennaCenter,
   EDGE_MARGIN,
   gapRanges,
   hatLayout,
@@ -79,7 +79,7 @@ describe("avatarTraits", () => {
     );
     for (const head of ["circle", "squircle", "capsule", "egg"]) {
       expect(pairs.has(`${head}:wings`)).toBe(true);
-      expect(pairs.has(`${head}:bug-eyes`)).toBe(true);
+      expect(pairs.has(`${head}:antennas`)).toBe(true);
       expect(pairs.has(`${head}:bands`)).toBe(true);
     }
     expect(pairs.has("capsule:block")).toBe(true);
@@ -92,13 +92,13 @@ describe("avatarTraits", () => {
       new Set(ALL.map(({ traits }) => pick(traits)));
     expect(seen((t) => t.head)).toEqual(new Set(HEAD_SHAPES));
     expect(seen((t) => t.face)).toEqual(
-      new Set(["eyes", "visor", "happy", "wink", "shades", "dots", "blank"]),
+      new Set(["eyes", "visor", "happy", "wink", "shades", "dots"]),
     );
     expect(seen((t) => t.sides)).toEqual(
       new Set(["none", "block", "round", "wings", "fins", "double"]),
     );
     expect(seen((t) => t.top)).toEqual(
-      new Set(["none", "hat", "bolt", "cap", "bug-eyes", "crown", "siren"]),
+      new Set(["none", "hat", "bolt", "cap", "antennas", "crown", "siren"]),
     );
     expect(seen((t) => t.banding)).toEqual(
       new Set(["none", "chin", "bands", "belt"]),
@@ -227,14 +227,14 @@ describe("face layout", () => {
     }
   });
 
-  // TEST_SCENARIO: Bug eyes float above the head. They stay inside the drawing area and apart from each other.
-  it("keeps bug eyes inside the avatar and apart", () => {
+  // TEST_SCENARIO: Antennas float above the head. They stay inside the drawing area and apart from each other.
+  it("keeps antennas inside the avatar and apart", () => {
     for (const { traits } of ALL) {
-      if (traits.top !== "bug-eyes") continue;
+      if (traits.top !== "antennas") continue;
       const head = HEAD_GEOMETRY[traits.head];
-      const [a, b] = traits.bugEyes.map((bug, i) => ({
-        r: bug.r,
-        c: bugEyeCenter(head, i, bug.r),
+      const [a, b] = traits.antennas.map((antenna, i) => ({
+        r: antenna.r,
+        c: antennaCenter(head, i, antenna.r),
       }));
       for (const eye of [a!, b!])
         expect(eye.c[1] - eye.r).toBeGreaterThanOrEqual(-4);
@@ -263,7 +263,7 @@ describe("face layout", () => {
     }
   });
 
-  // TEST_SCENARIO: The image is a fixed 100-unit square starting 4 units above zero. Stacked parts below the head, and the hat or bug eyes above it, must not be cut off at its edges, and the hat keeps a gap between brim, crown and head.
+  // TEST_SCENARIO: The image is a fixed 100-unit square starting 4 units above zero. Stacked parts below the head, and the hat or antennas above it, must not be cut off at its edges, and the hat keeps a gap between brim, crown and head.
   it("keeps parts above and below every head inside the image", () => {
     for (const shape of HEAD_SHAPES) {
       const head = HEAD_GEOMETRY[shape];
