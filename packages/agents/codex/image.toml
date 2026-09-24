@@ -12,6 +12,10 @@ PLATFORM_HARNESS = "codex"
 OPENAI_API_KEY = "dummy-placeholder"
 
 [[oci.copy]]
+host = "../../codex/rootfs/app"
+image = "/app"
+
+[[oci.copy]]
 host = "../../codex/rootfs/etc"
 image = "/etc"
 

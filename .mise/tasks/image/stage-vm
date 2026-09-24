@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#MISE description="Stage a local image for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount. Usage: image:stage-vm -- <image-ref>. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+# The runner boots a staged tree as a shared read-only lower layer, so a
+# machine starts in seconds. A `docker save` archive staged instead is
+# flattened inside every guest on first boot under smolvm's fixed 600 s pull
+# window; on a slow host that flatten outran the window, the start failed and
+# the flatten began again from nothing.
+set -euo pipefail
+IMAGE="${1:?usage: image:stage-vm -- <image-ref>}"
+LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+IMAGE_DIR=/var/lib/platform-vm-images
+name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+cid="$(docker create "$IMAGE")"
+docker export "$cid" -o "$work/rootfs.tar"
+docker rm -f "$cid" >/dev/null
+# The record the runner reads beside the tree: what the image says to run.
+docker image inspect "$IMAGE" | yq -o=json \
+  '.[0].Config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
+  > "$work/launch.json"
+
+# Runs as root on the node: unpacks beside the live entry, moves the old entry
+# aside and the new one in, so a runner looking the entry up finds a whole
+# tree at every moment — never a half-written one, and never none. A machine
+# already booted from the old tree keeps its mounted files until it restarts.
+# The archive an earlier stage left under the same name goes last: the runner
+# prefers the tree, and the archive only costs disk.
+place='set -e
+dest="$1"; tar="$2"; launch="$3"
+rm -rf "$dest.new" "$dest.old"
+mkdir -p "$dest.new/rootfs"
+tar -xf "$tar" -C "$dest.new/rootfs"
+install -m 644 "$launch" "$dest.new/launch.json"
+chmod -R a+rX "$dest.new"
+[ ! -e "$dest" ] || mv "$dest" "$dest.old"
+mv "$dest.new" "$dest"
+rm -rf "$dest.old" "$dest.tar"'
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
+else
+  limactl copy "$work/rootfs.tar" "$LIMA_INSTANCE:/tmp/$name.rootfs.tar"
+  limactl copy "$work/launch.json" "$LIMA_INSTANCE:/tmp/$name.launch.json"
+  limactl shell "$LIMA_INSTANCE" sudo sh -c "$place" _ "$IMAGE_DIR/$name" "/tmp/$name.rootfs.tar" "/tmp/$name.launch.json"
+  limactl shell "$LIMA_INSTANCE" rm -f "/tmp/$name.rootfs.tar" "/tmp/$name.launch.json"
+fi
+echo "staged $IMAGE at $IMAGE_DIR/$name"

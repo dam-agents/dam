@@ -622,9 +622,9 @@ impl Server {
         if !is_image_ref(image) || image.contains("..") {
             anyhow::bail!("invalid image reference {image:?}");
         }
-        if let Some((archive, launch)) = self.staged_archive(image)? {
+        if let Some((staged, launch)) = self.staged_image(image)? {
             self.metrics.lookup(true);
-            return Ok((archive.to_string_lossy().into_owned(), launch, None));
+            return Ok((staged.to_string_lossy().into_owned(), launch, None));
         }
         let lookup = self.images.resolve(image, auths);
         if let Some(fetched) = &lookup.fetched {
@@ -790,7 +790,12 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
-    fn staged_archive(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
+    fn staged_image(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
+        // UNIT_BOUNDARY_DESCRIPTION: a staged tree wins over an archive of the same name: the tree boots in place, where the archive is flattened inside every guest on its first boot, under smolvm's fixed pull window, which a slow host outran.
+        let tree = cache::staged_path(&self.config.image_dir, image);
+        if let Some(launch) = read_launch(&tree).map_err(|e| unusable(format!("{e:#}")))? {
+            return Ok(Some((tree.join(ROOTFS_DIR), launch)));
+        }
         let archive = cache::archive_path(&self.config.image_dir, image);
         if !archive.exists() {
             return Ok(None);
