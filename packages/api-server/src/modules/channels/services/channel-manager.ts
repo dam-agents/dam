@@ -85,13 +85,26 @@ export interface MessageReactionsResult {
 
 export interface ThreadQuery {
   threadTs: string;
+  cursor?: string;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One window of a thread as the reading Agent gets
+ * it. `hasMore` says the window is not the whole thread and `cursor` is how to
+ * reach the rest, so the two together say which end is missing: a cursor means
+ * the remainder sits before this window, and its absence under `hasMore` means
+ * the thread is longer than a read can walk and nothing reaches the newest
+ * replies. That second state carries no handle on purpose. The window returned
+ * there is a slice from the middle whose position the platform cannot vouch
+ * for, and a handle inviting a walk from it would send the Agent back through
+ * the wrong part of a thread whose end it never saw.
+ */
 export interface ThreadResult {
   messages: string[];
   conversationId: string;
   threadTs: string;
   hasMore: boolean;
+  cursor?: string;
 }
 
 interface Worker {
@@ -293,6 +306,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
       conversationId: z.string(),
       threadTs: z.string(),
       hasMore: z.boolean(),
+      cursor: z.string().optional(),
     }),
     z.object({ error: z.string() }),
   ]),
