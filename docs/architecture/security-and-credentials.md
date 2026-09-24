@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-23
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -338,7 +338,7 @@ above. It does not ride the Envoy path at all:
   `imagePullSecrets`. A vm Agent has no pod, so its runner hands those
   Secrets, in order, to the cache, for that fetch alone, never
   storing them; a shared cache checks a private entry per boot, not
-  per read ([persistence](persistence.md#the-machine-image-cache)).
+  per read ([persistence](vm-image-cache.md)).
   Either way the
   agent never holds the bytes — because of *where the Secret is
   consumed*, not Envoy injection.
@@ -644,7 +644,7 @@ differ:
   mounts no credentials.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the
   default pull secrets it preloads with
-  ([persistence](persistence.md#the-machine-image-cache)).
+  ([persistence](vm-image-cache.md)).
 - **Per-Agent ServiceAccount** in the agent namespace, name ==
   Agent ID. Both pods of the long-lived pair run as this SA, but
   only the *gateway* pod is a mesh participant — istiod stamps it with
