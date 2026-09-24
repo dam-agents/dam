@@ -49,7 +49,7 @@ if [ -z "${AGENT_IMAGES[*]:-}" ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
-[ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+[ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"

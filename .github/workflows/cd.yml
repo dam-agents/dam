@@ -264,8 +264,9 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
+      # Not `mise deps install`: it installs the repo's whole toolchain first.
       - name: Install workspace dependencies
-        run: mise deps install --only pnpm
+        run: mise exec node pnpm -- pnpm install --frozen-lockfile
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -405,8 +406,9 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane
+      # Not `mise deps install`: it installs the repo's whole toolchain first.
       - name: Install workspace dependencies
-        run: mise deps install --only pnpm
+        run: mise exec node pnpm -- pnpm install --frozen-lockfile
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:sha
 

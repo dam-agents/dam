@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci` on a Linux host of the target arch (the lima VM on macOS), Dockerfile workloads with docker build on claude-code. Options: --build never reuses, --no-load keeps a mise image as its OCI layout only, --dry-run prints the plan."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile workloads with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
@@ -71,7 +71,6 @@ build_runtime() {
 # Subshell: it leaves the repo's mise context and directory.
 build_mise() (
   harness=$1 out="$state/out/$1"
-  [ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
 
   # mise runs for the staged image project only, outside the repo.
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT MISE_LOCKED "${!MISE_TASK_@}"
@@ -122,14 +121,49 @@ build_mise() (
   echo "OCI layout: $out"
 )
 
-# One at a time: they share the stage and the host's apt caches.
-for a in ${mise_images[@]+"${mise_images[@]}"}; do
-  reused "$a" && continue
-  echo "⚒ build platform-$a:latest"
-  build_runtime
-  build_mise "$a"
-  [ "$load" = false ] || docker tag "$(tar -C "$state/out/$a" -c . | docker load | sed -n 's/^Loaded image ID: //p')" "platform-$a:latest"
-done
+# `mise oci` needs a Linux host of the image's arch; elsewhere the Lima VM
+# builds from a copy of the working tree (the host's node_modules are not
+# Linux's).
+vm="${LIMA_INSTANCE:-platform-k3s}"
+build_in_vm() {
+  limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
+  git ls-files -z --cached --others --exclude-standard |
+    while IFS= read -r -d '' f; do [ -e "$f" ] && printf '%s\0' "$f"; done |
+    tar --null -T - -cf - |
+    limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
+  # The tools CI's build-agents job sets up, not the repo's whole toolchain.
+  limactl shell --workdir / "$vm" sh -c '
+    set -e
+    [ -x ~/.local/bin/mise ] || curl -fsSL https://mise.run | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    cd ~/platform-src
+    mise trust -q
+    mise exec node pnpm -- pnpm install --frozen-lockfile
+    mise exec node pnpm -- packages/agents/.mise/tasks/image --build --no-load "$@"' _ "$@"
+}
+layout() {
+  if [ "$(uname -s)" = Linux ]; then tar -C "$state/out/$1" -c .
+  else limactl shell --workdir / "$vm" sh -c 'tar -C ~/.cache/platform-agent-oci/out/"$1" -c .' _ "$1"; fi
+}
+
+todo=()
+for a in ${mise_images[@]+"${mise_images[@]}"}; do reused "$a" || todo+=("$a"); done
+if [ ${#todo[@]} -gt 0 ]; then
+  echo "⚒ build ${todo[*]}"
+  if [ "$(uname -s)" = Linux ]; then
+    build_runtime
+    # One at a time: they share the stage and the host's apt caches.
+    for a in "${todo[@]}"; do build_mise "$a"; done
+  else
+    [ "$load" = true ] || { echo "--no-load builds on Linux only" >&2; exit 2; }
+    build_in_vm "${todo[@]}"
+  fi
+  if [ "$load" = true ]; then
+    for a in "${todo[@]}"; do
+      docker tag "$(layout "$a" | docker load | sed -n 's/^Loaded image ID: //p')" "platform-$a:latest"
+    done
+  fi
+fi
 
 build_docker() {
   local a=$1 var args=()

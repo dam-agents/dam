@@ -12,7 +12,7 @@ mise run //packages/agents:image -- --dry-run            # what every agent woul
 
 CI builds them in `image:ci-build` (the `build-agents` and `build-mock` jobs, and the e2e job on a PR) and pushes the OCI layout by digest with crane. Loading a layout into docker needs Docker's containerd image store, the default from Docker 29.
 
-The build host must be Linux on the image's architecture, with `apt-get`: `mise oci` packages the host's own tool installs and runs the host's apt-get into a side rootfs. On macOS, run it in the lima VM; a changed image cannot be built on macOS itself yet, and `//packages/agents:image` reuses the registry image while its source is unchanged. The apt step needs root, so the task runs `mise oci build` under `sudo` when it is not root. The OCI layout lands in `~/.cache/platform-agent-oci/out/<agent>`. The host's own mise settings pass through (for example `MISE_GITHUB_ATTESTATIONS=false` where the GitHub API is out of reach).
+`mise oci` needs a Linux host of the image's architecture with `apt-get`: it packages the host's own tool installs and runs the host's apt-get into a side rootfs. Elsewhere (macOS) the task builds in the cluster tasks' Lima VM (`LIMA_INSTANCE`, default `platform-k3s`, made by `cluster:install`) from a copy of the working tree, and loads the result into the host's docker. The apt step needs root, so the task runs `mise oci build` under `sudo` when it is not root. The OCI layout lands in `~/.cache/platform-agent-oci/out/<agent>`. The host's own mise settings pass through (for example `MISE_GITHUB_ATTESTATIONS=false` where the GitHub API is out of reach).
 
 ## Layout
 
