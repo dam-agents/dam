@@ -48,3 +48,7 @@ export const invocationsTreeInputSchema = z.object({
   driverAgentId: z.string().min(1),
   ids: z.array(z.string().min(1)).min(1).max(INVOCATIONS_TREE_MAX_IDS),
 });
+
+export const invocationsRunningInputSchema = z.object({
+  driverAgentId: z.string().min(1),
+});

@@ -39,9 +39,11 @@ export function useTurns(
   });
 }
 
+export type TurnScope = { sessionId: string } | { invocationId: string };
+
 export function useTurn(
   agentId: string | null,
-  sessionId: string | null,
+  scope: TurnScope,
   from: string | null,
   to: string | null,
   promptId: string | null,
@@ -52,10 +54,10 @@ export function useTurn(
 
   return useQuery({
     ...trpc.telemetry.turn.queryOptions(
-      agentId && sessionId && from && to
+      agentId && from && to
         ? {
             agentId,
-            sessionId,
+            ...scope,
             from,
             to,
             ...(promptId === null ? {} : { promptId }),

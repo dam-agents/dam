@@ -4,6 +4,8 @@ import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
 import type { MessagePart, Role } from "../../../types.js";
+import { DelegationBlock } from "../../invocations/components/delegation-block.js";
+import { parseFanOut } from "../../invocations/lib/fan-out.js";
 import { HistoryBlock } from "./history-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
@@ -62,7 +64,13 @@ export function ChatMessagePart({
           )}
         </div>
       );
-    default:
-      return <ToolChip chip={part} />;
+    default: {
+      const spawns = parseFanOut(part);
+      return spawns ? (
+        <DelegationBlock chip={part} spawns={spawns} />
+      ) : (
+        <ToolChip chip={part} />
+      );
+    }
   }
 }
