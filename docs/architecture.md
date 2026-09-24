@@ -56,9 +56,10 @@ The cluster boundary is the trust boundary. Browsers and Slack users reach Platf
 
 ## Subsystems
 
-- [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner), the protocols between them, and the K8s resource model.
+Each page is the authoritative, self-contained description of its subsystem.
+
+- [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner), the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
 - [vm-runner](architecture/vm-runner.md) — the `vm` Backend's per-owner machine host; its [image cache](architecture/vm-image-cache.md).
-- [agent-images](architecture/agent-images.md) — what agents run in: a `mise oci` Debian base; one environment per harness.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete.
 - [schedules](architecture/schedules.md) — recurring work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.

@@ -13,17 +13,16 @@ function adapterDir() {
   return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
 }
 
-const ADAPTER_DIR = adapterDir();
-
 let modulesPromise;
 
 async function loadModules() {
+  const adapter = adapterDir();
   const agent = await import(
-    pathToFileURL(`${ADAPTER_DIR}/dist/acp-agent.js`).href
+    pathToFileURL(`${adapter}/dist/acp-agent.js`).href
   );
   const sdkCandidates = [
-    `${ADAPTER_DIR}/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-    `${ADAPTER_DIR}/../../@anthropic-ai/claude-agent-sdk/sdk.mjs`,
+    `${adapter}/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`,
+    `${adapter}/../../@anthropic-ai/claude-agent-sdk/sdk.mjs`,
   ];
   const sdkPath = sdkCandidates.find((candidate) => existsSync(candidate));
   if (!sdkPath) {
