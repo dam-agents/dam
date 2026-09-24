@@ -258,10 +258,16 @@ function allowOnceOptionId(
 
 function permissionToolName(toolCall: unknown): string | null {
   if (!toolCall || typeof toolCall !== "object") return null;
-  const { name, title } = toolCall as { name?: unknown; title?: unknown };
-  if (typeof name === "string" && name !== "") return name;
-  if (typeof title === "string" && title !== "") return title;
-  return null;
+  const { name } = toolCall as { name?: unknown };
+  return typeof name === "string" && name !== "" ? name : null;
+}
+
+function permissionToolLabel(toolCall: unknown): string | null {
+  if (!toolCall || typeof toolCall !== "object") return null;
+  const { title } = toolCall as { title?: unknown };
+  const named = permissionToolName(toolCall);
+  if (named) return named;
+  return typeof title === "string" && title !== "" ? title : null;
 }
 
 async function withAcpConnection<T>(
@@ -317,9 +323,9 @@ async function withAcpConnection<T>(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
-        const toolName = permissionToolName(params.toolCall);
+        const toolName = permissionToolLabel(params.toolCall);
         const sessionId = params.sessionId ?? null;
-        const allowId = isPlatformMcpTool(toolName)
+        const allowId = isPlatformMcpTool(permissionToolName(params.toolCall))
           ? allowOnceOptionId(params.options ?? [])
           : null;
         if (allowId) {
