@@ -25,9 +25,9 @@ const YELLOW_HUE = 95;
 const YELLOW_LIFT = 0.1;
 
 const TONES = {
-  base: { l: 0.74, c: 0.16 },
-  shade: { l: 0.61, c: 0.18 },
-  light: { l: 0.88, c: 0.09 },
+  base: { l: 0.66, c: 0.2 },
+  shade: { l: 0.53, c: 0.21 },
+  light: { l: 0.86, c: 0.11 },
 } as const;
 
 function oklchToLinearRgb(l: number, c: number, hue: number) {
@@ -92,21 +92,14 @@ export const HEAD_SHAPES = [
 ] as const;
 export type HeadShape = (typeof HEAD_SHAPES)[number];
 
-export type Face =
-  | "eyes"
-  | "visor"
-  | "happy"
-  | "wink"
-  | "shades"
-  | "dots"
-  | "blank";
+export type Face = "eyes" | "visor" | "happy" | "wink" | "shades" | "dots";
 export type Sides = "none" | "block" | "round" | "wings" | "fins" | "double";
 export type Top =
   | "none"
   | "hat"
   | "bolt"
   | "cap"
-  | "bug-eyes"
+  | "antennas"
   | "crown"
   | "siren";
 export type Banding = "none" | "chin" | "bands" | "belt";
@@ -124,9 +117,10 @@ export interface EyeSpec {
   r: number;
   pupil: number;
   look: Look;
+  shape?: "square" | "goat";
 }
 
-export interface BugEye {
+export interface Antenna {
   r: number;
 }
 
@@ -141,7 +135,8 @@ export const DERPS = [
   "triple",
   "trio-row",
   "tiny",
-  "quad",
+  "square",
+  "goat",
 ] as const;
 export type Derp = (typeof DERPS)[number];
 
@@ -164,7 +159,7 @@ export interface AvatarTraits {
   face: Face;
   derp: Derp | null;
   eyes: EyeSpec[];
-  bugEyes: [BugEye, BugEye];
+  antennas: [Antenna, Antenna];
   sides: Sides;
   top: Top;
   banding: Banding;
@@ -282,13 +277,15 @@ export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
       const look = random() < 0.5 ? sideLook(random, side) : randomLook(random);
       return [eye(-17, 48, 5.5, look, 0), eye(17, 48, 5.5, look, 0)];
     }
-    case "quad":
-      return [
-        eye(-10, 41, 6, randomLook(random)),
-        eye(10, 41, 6, randomLook(random)),
-        eye(-10, 57, 6, randomLook(random)),
-        eye(10, 57, 6, randomLook(random)),
-      ];
+    case "square":
+      return [{ ...eye(0, 49, 19, randomLook(random), 0.44), shape: "square" }];
+    case "goat": {
+      const look = randomLook(random);
+      return [-13, 13].map((x) => ({
+        ...eye(x, 48, 11, look, 0.62),
+        shape: "goat" as const,
+      }));
+    }
     case "trio-row": {
       const look = random() < 0.5 ? sideLook(random, side) : null;
       return [-17, 0, 17].map((x, i) =>
@@ -308,7 +305,7 @@ const TOP_WEIGHTS: readonly (readonly [Top, number])[] = [
   ["hat", 17],
   ["bolt", 11],
   ["cap", 15],
-  ["bug-eyes", 18],
+  ["antennas", 18],
   ["crown", 13],
   ["siren", 12],
 ];
@@ -320,14 +317,6 @@ const FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
   ["wink", 8],
   ["shades", 7],
   ["dots", 7],
-];
-
-const BUG_FACE_WEIGHTS: readonly (readonly [Face, number])[] = [
-  ["blank", 38],
-  ["eyes", 20],
-  ["happy", 12],
-  ["wink", 12],
-  ["dots", 18],
 ];
 
 const BANDING_WEIGHTS: readonly (readonly [Banding, number])[] = [
@@ -408,25 +397,23 @@ export function avatarTraits(seed: string): AvatarTraits {
   const colors = pickColors(random);
   const head = pickFrom(random, HEAD_SHAPES);
   const top = pickWeighted(random, TOP_WEIGHTS);
-  const face = pickWeighted(
-    random,
-    top === "bug-eyes" ? BUG_FACE_WEIGHTS : FACE_WEIGHTS,
-  );
+  const face = pickWeighted(random, FACE_WEIGHTS);
   const derp = face === "eyes" ? pickFrom(random, DERPS) : null;
   const eyes = derp ? derpEyes(derp, random) : [];
-  const bugMismatch = random() < 0.35;
-  const bugBigLeft = random() < 0.5;
-  const bugRadius = (big: boolean) => (bugMismatch ? (big ? 8.5 : 5.5) : 7);
-  const bugEyes: AvatarTraits["bugEyes"] = [
-    { r: bugRadius(bugBigLeft) },
-    { r: bugRadius(!bugBigLeft) },
+  const antennaMismatch = random() < 0.35;
+  const antennaBigLeft = random() < 0.5;
+  const antennaRadius = (big: boolean) =>
+    antennaMismatch ? (big ? 8.5 : 5.5) : 7;
+  const antennas: AvatarTraits["antennas"] = [
+    { r: antennaRadius(antennaBigLeft) },
+    { r: antennaRadius(!antennaBigLeft) },
   ];
   const sides = pickFrom(random, head === "box" ? SIDES_WIDE : SIDES_ANY);
   const banding = pickWeighted(random, BANDING_WEIGHTS);
   const bottom = pickFrom(random, BOTTOMS);
   const pickedMouth = pickFrom(random, MOUTHS);
   const hasMouth =
-    (face === "eyes" || face === "blank" || face === "dots") &&
+    (face === "eyes" || face === "dots") &&
     banding === "none" &&
     mouthFits(HEAD_GEOMETRY[head]);
   const traits = makeRoomForFace({
@@ -435,7 +422,7 @@ export function avatarTraits(seed: string): AvatarTraits {
     face,
     derp,
     eyes,
-    bugEyes,
+    antennas,
     sides,
     top,
     banding,

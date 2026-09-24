@@ -8,6 +8,9 @@ use crate::state::is_image_ref;
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes: one interval of the prober's steady cadence, so the machine reads unready on the second consecutive miss and not the first. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Quiet longer than UNHEALTHY_RESTART restarts.
+pub const READY_GRACE: Duration = crate::server::STEADY_PROBE;
+
 // UNIT_BOUNDARY_DESCRIPTION: one step towards the desired spec. Each step is whole: a start or a restart applies every change to the stopped machine — size, env, image and egress allowlist — before it boots, so one step is enough unless a newer spec arrives while it runs. `unhealthy` marks a restart the runner chose because the guest went quiet; only those are counted as the agent's restarts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -56,6 +59,15 @@ impl Health {
     // UNIT_BOUNDARY_DESCRIPTION: an action is starting on the machine, so the silence measured so far belongs to the guest it replaces. Without clearing it, the restart the silence caused would at once qualify for another. `ever_ready` stays, so the new guest can still be given up on later.
     pub fn action_started(&mut self) {
         self.quiet_since = None;
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether a machine that has answered is still reported ready: quiet, but for no longer than READY_GRACE. Asked only of a boot that has answered — before that a miss is the boot still running, not a guest gone quiet, and a restart's new guest must not be ready on the old one's answers.
+    pub fn within_grace(&self, now: SystemTime) -> bool {
+        self.ever_ready
+            && self.quiet_since.is_some_and(|since| {
+                now.duration_since(since)
+                    .is_ok_and(|quiet| quiet <= READY_GRACE)
+            })
     }
 
     pub fn dead_for_long(&self, now: SystemTime) -> bool {
@@ -338,6 +350,27 @@ mod tests {
 
         quiet.observed_running(true, later(UNHEALTHY_RESTART));
         assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)));
+    }
+
+    // TEST_SCENARIO: a machine that answered is still ready for one steady probe interval of silence and not a moment longer; one that never answered gets no grace at all.
+    #[test]
+    fn a_missed_probe_is_forgiven_for_one_interval_after_an_answer() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let later = |after: Duration| start + after;
+
+        let mut never_answered = Health::default();
+        never_answered.observed_running(false, start);
+        assert!(!never_answered.within_grace(start));
+
+        let mut quiet = Health::default();
+        quiet.observed_running(true, start);
+        assert!(
+            !quiet.within_grace(start),
+            "an answering machine needs no grace"
+        );
+        quiet.observed_running(false, later(Duration::from_secs(1)));
+        assert!(quiet.within_grace(later(Duration::from_secs(1) + READY_GRACE)));
+        assert!(!quiet.within_grace(later(Duration::from_secs(2) + READY_GRACE)));
     }
 
     // TEST_SCENARIO: the restart that follows giving up on a machine must not at once qualify it for another. The quiet mark is cleared when the action starts, or the runner restarts the machine on every reconcile, forever.

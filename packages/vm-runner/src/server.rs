@@ -927,11 +927,16 @@ impl Server {
                 return;
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
-            let mut changed = entry.seen.as_ref() != Some(&seen);
-            if entry.action.is_none() && seen.state == State::Running {
-                entry.health.observed_running(seen.ready, SystemTime::now());
-            }
             let answered = if seen.ready { entry.boot.take() } else { None };
+            let mut seen = seen;
+            let now = SystemTime::now();
+            let settled = entry.action.is_none() && seen.state == State::Running;
+            // UNIT_BOUNDARY_DESCRIPTION: an answer counts whatever the machine is doing — a guest that answered while its start call still ran has answered, and would otherwise flap on the first miss after the call returned. A miss counts only for a settled machine: during an action, and in every other state, silence is expected.
+            if seen.ready || settled {
+                entry.health.observed_running(seen.ready, now);
+            }
+            seen.ready |= settled && entry.boot.is_none() && entry.health.within_grace(now);
+            let mut changed = entry.seen.as_ref() != Some(&seen);
             changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
             entry.seen = Some(seen);
             entry.looked += 1;

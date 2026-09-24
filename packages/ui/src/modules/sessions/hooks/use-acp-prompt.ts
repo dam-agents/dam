@@ -1,5 +1,5 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { PromptBlock } from "api-server-api";
+import type { AgentState, PromptBlock } from "api-server-api";
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -45,6 +45,7 @@ export interface SendPromptOptions {
 
 export interface UseAcpPromptOptions {
   selectedAgent: string | null;
+  agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;
   beginSession: () => Promise<StartedSession>;
   engagedSessionIdRef: React.MutableRefObject<string | null>;
@@ -63,6 +64,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 } {
   const {
     selectedAgent,
+    agentRunState,
     ensureConnection,
     beginSession,
     engagedSessionIdRef,
@@ -239,7 +241,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           "Not delivered — the agent never confirmed it received this message.",
         );
       };
-      delivery.beginSend(promptId, failDelivery);
+      delivery.beginSend(promptId, failDelivery, {
+        waking: agentRunState !== "running",
+      });
 
       let started: StartedSession | null = null;
       let detached = false;
@@ -334,6 +338,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     },
     [
       selectedAgent,
+      agentRunState,
       ensureConnection,
       beginSession,
       canKeepConnection,

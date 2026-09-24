@@ -146,7 +146,7 @@ mise run test               # run tests
 mise run //packages/ui:run             # start UI dev server
 ```
 
-Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization.
+Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provisioning the Lima VM, instead installing k3s directly to avoid nested virtualization. With a running systemd (or OpenRC) it runs the Lima provision scripts on the host; without one it installs the pinned k3s binary and starts it as a plain process, prefixed by `K3S_LAUNCHER` when the host needs a wrapper. On a node kernel without IPv6 the mesh dataplane is installed IPv4-only. Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
 
 ### vm-backend agents (VM runner)
 
