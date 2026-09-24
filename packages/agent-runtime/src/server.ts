@@ -15,6 +15,7 @@ import { appRouter } from "agent-runtime-api/router";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
+  ARTIFACT_API_PORT,
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   type AgentRuntimeContext,
@@ -33,6 +34,7 @@ import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createHarnessClient } from "./modules/runtime-channel/harness-client.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
@@ -107,6 +109,10 @@ const kbPublish = composeKbPublish({
   homeDir,
   harness: harnessClient,
   log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
+});
+const artifactApi = composeArtifactApi({
+  port: ARTIFACT_API_PORT,
+  fetch: globalThis.fetch,
 });
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
@@ -278,6 +284,7 @@ const CORS = {
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
+  artifactApi,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,
