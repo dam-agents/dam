@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the machine API conformance suite, run against a runner driving a real VMM, reached over its machine API with the token and CA the controller would use. The cluster task names the runner through the environment; with nothing named there is nothing to run and the test skips. It covers create to ready, stop and start keeping the disk, a revision restart, the egress and capacity refusals, delete, and a runner restart republishing the port.
+// TEST_OVERVIEW: the machine API conformance suite, run against a runner driving a real VMM, reached over its machine API with the token and CA the controller would use. The cluster task names the runner through the environment; with nothing named there is nothing to run and the test skips. It covers create to ready, a status read waiting for a change, stop and start keeping the disk, a revision restart, an egress change applied in place, the capacity refusal, delete, and a runner restart republishing the port.
 package vmconformance
 
 import (

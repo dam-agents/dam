@@ -110,16 +110,6 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if .Values.virtualization.enabled }}
-  # Delete only, and only to clear the endpoint slice an earlier release wrote
-  # by hand for a vm agent: Kubernetes maintains that Service's endpoints now,
-  # and two slices naming one Service are unioned. Creating one is what
-  # OpenShift's restricted endpoints admission refuses; removing one needs no
-  # such grant. Goes when the cleanup in vm_agent.go does.
-  - apiGroups: ["discovery.k8s.io"]
-    resources: ["endpointslices"]
-    verbs: ["delete"]
-{{- end }}
 
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
@@ -148,7 +138,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{- if or .Values.virtualization.enabled (and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

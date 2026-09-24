@@ -82,17 +82,19 @@ spec:
                   "serviceAccountName" (printf "%s-vm-runner" (include "platform.fullname" .))
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
-                  "reserveMiB" $r.reserveMiB "ingressCidrs" $r.ingressCidrs "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
+                  "reserveMiB" $r.reserveMiB "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources
-                  "canaryImage" ($r.canaryImage | default "")
-                  "canary" (dict "owners" ($r.canary.owners | default list) "percent" ($r.canary.percent | default 0 | int))
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
             - name: AGENT_VM
               value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner | toJson | quote }}
+            {{- if .Values.virtualization.enabled }}
+            - name: VM_RUNNER_CA_ISSUER
+              value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
+            {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET

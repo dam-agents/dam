@@ -21,20 +21,22 @@ docker image inspect "$IMAGE" | yq -o=json \
   '.[0].Config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   > "$work/launch.json"
 
-# Runs as root on the node: unpacks beside the live entry and renames over it,
-# so a runner reading the entry never sees a half-written tree. A machine
-# already booted from the old tree keeps its mounted files until it restarts. The archive an
-# earlier stage left under the same name goes too: the runner prefers the tree,
-# and the archive only costs disk.
+# Runs as root on the node: unpacks beside the live entry, moves the old entry
+# aside and the new one in, so a runner looking the entry up finds a whole
+# tree at every moment — never a half-written one, and never none. A machine
+# already booted from the old tree keeps its mounted files until it restarts.
+# The archive an earlier stage left under the same name goes last: the runner
+# prefers the tree, and the archive only costs disk.
 place='set -e
 dest="$1"; tar="$2"; launch="$3"
-rm -rf "$dest.new"
+rm -rf "$dest.new" "$dest.old"
 mkdir -p "$dest.new/rootfs"
 tar -xf "$tar" -C "$dest.new/rootfs"
 install -m 644 "$launch" "$dest.new/launch.json"
 chmod -R a+rX "$dest.new"
-rm -rf "$dest" "$dest.tar"
-mv "$dest.new" "$dest"'
+[ ! -e "$dest" ] || mv "$dest" "$dest.old"
+mv "$dest.new" "$dest"
+rm -rf "$dest.old" "$dest.tar"'
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   sudo sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"

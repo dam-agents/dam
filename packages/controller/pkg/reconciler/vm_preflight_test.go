@@ -130,7 +130,7 @@ func TestAVMAgentCarriesThePreflightProblems(t *testing.T) {
 	dep := readyRunnerDeployment()
 	dep.Status.ReadyReplicas = 0
 	_, srv := newFakeNode(t)
-	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret())
+	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",

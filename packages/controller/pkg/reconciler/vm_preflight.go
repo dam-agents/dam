@@ -76,7 +76,6 @@ func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {
 	}{
 		{"egressCidrs", spec.EgressCIDRs},
 		{"egressExceptCidrs", spec.EgressExceptCIDRs},
-		{"ingressCidrs", spec.IngressCIDRs},
 	} {
 		for _, c := range field.cidrs {
 			if _, err := netip.ParsePrefix(c); err != nil {

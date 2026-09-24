@@ -1,16 +1,20 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 
+use serde::Deserialize;
+
 use crate::api::MachineSpec;
 use crate::server::{Rejected, Server};
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects, unchanged from earlier releases so a controller of either age can drive it. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
+// UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
 
 #[derive(Clone)]
 struct Api {
@@ -109,12 +113,32 @@ async fn list(State(api): State<Api>, headers: HeaderMap) -> Response {
     }
 }
 
-async fn status(State(api): State<Api>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+// UNIT_BOUNDARY_DESCRIPTION: a status read that names `wait`, in seconds, and the `since` version the caller last saw waits until the machine's status version differs from it, or until the wait ends. Without `wait` it answers at once.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StatusWait {
+    wait: u64,
+    since: u64,
+}
+
+async fn status(
+    State(api): State<Api>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    query: Result<Query<StatusWait>, QueryRejection>,
+) -> Response {
     if !authorized(&api, &headers) {
         return unauthorized();
     }
+    let Ok(Query(asked)) = query else {
+        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
+    };
     let server = api.server.clone();
-    match blocking(move || server.get(&id)).await {
+    let read = move || match asked.wait {
+        0 => server.get(&id),
+        wait => server.wait(&id, asked.since, Duration::from_secs(wait)),
+    };
+    match blocking(read).await {
         Ok(Ok(status)) => Json(status).into_response(),
         Ok(Err(e)) => rejected(e),
         Err(response) => response,
@@ -160,8 +184,8 @@ async fn remove(State(api): State<Api>, headers: HeaderMap, Path(id): Path<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{MachineStatus, STATE_ABSENT, STATE_CREATING};
-    use crate::runtime::{Machine, Runtime};
+    use crate::api::{MachineStatus, State, STATE_CREATING};
+    use crate::runtime::{Machine, Runtime, Update};
     use crate::server::Config;
     use axum::body::Body;
     use axum::http::Request;
@@ -173,13 +197,13 @@ mod tests {
     struct Idle;
 
     impl Runtime for Idle {
-        fn state(&self, _: &str) -> anyhow::Result<&'static str> {
-            Ok(STATE_ABSENT)
+        fn state(&self, _: &str) -> anyhow::Result<State> {
+            Ok(State::Absent)
         }
         fn create(&self, _: &str, _: &Machine<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn update(&self, _: &str, _: &MachineSpec, _: Option<&MachineSpec>) -> anyhow::Result<()> {
+        fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
         fn start(&self, _: &str) -> anyhow::Result<()> {
@@ -189,12 +213,6 @@ mod tests {
             Ok(())
         }
         fn delete(&self, _: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn delete_keeping_storage(&self, _: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn discard_kept_storage(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
     }
@@ -216,15 +234,13 @@ mod tests {
             Config {
                 state_dir: dir.join("machines"),
                 image_dir: dir.join("images"),
-                runner_id: String::new(),
+                image_cache_socket: None,
                 image_budget: 0,
                 crane: String::new(),
                 init: None,
                 ports: 31000..=31099,
                 memory_mib: 1 << 20,
                 reserve_mib: 0,
-                allow_from: Vec::new(),
-                pinned: Vec::new(),
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
             },
             Arc::new(Idle),
@@ -355,6 +371,43 @@ mod tests {
             body.trim(),
             "[]",
             "an empty list must be [] as the Go client decodes it, not null"
+        );
+    }
+
+    // TEST_SCENARIO: the controller's watcher reads a machine's status with `wait` and `since`. A read naming the version it already holds is answered once the wait ends, with that version; one naming another version is answered at once; a query that is not two numbers is the caller's mistake.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_status_read_can_wait_for_a_change() {
+        let api = api("wait");
+        let (_, body) = call(&api, "PUT", "/machines/m1", Some("secret"), SPEC).await;
+        let held: MachineStatus = serde_json::from_str(&body).unwrap();
+        assert_ne!(held.version, 0);
+
+        let started = std::time::Instant::now();
+        let path = format!("/machines/m1?wait=1&since={}", held.version);
+        let (status, body) = call(&api, "GET", &path, Some("secret"), "").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            started.elapsed() >= Duration::from_secs(1),
+            "the read did not wait"
+        );
+        let answer: MachineStatus = serde_json::from_str(&body).unwrap();
+        assert_eq!(answer.version, held.version);
+
+        let started = std::time::Instant::now();
+        let path = format!("/machines/m1?wait=10&since={}", held.version - 1);
+        let (status, _) = call(&api, "GET", &path, Some("secret"), "").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a stale version waited"
+        );
+
+        assert_eq!(
+            call(&api, "GET", "/machines/m1?wait=soon", Some("secret"), "").await,
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid wait or since\n".to_string()
+            )
         );
     }
 

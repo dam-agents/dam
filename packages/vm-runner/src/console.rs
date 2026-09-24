@@ -228,7 +228,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    // TEST_SCENARIO: the console file is where smolvm points every machine's virtual console, including machines from earlier releases, and the size, the wait and both sentences reach the Agent's condition, which an operator reads and a runbook quotes. All of them are pinned as literals, and the sentence that joins a message to its tail is checked on the join itself.
+    // TEST_SCENARIO: the console file is where smolvm points every machine's virtual console, and the size, the wait and both sentences reach the Agent's condition, which an operator reads and a runbook quotes. All of them are pinned as literals, and the sentence that joins a message to its tail is checked on the join itself.
     #[test]
     fn the_console_file_and_the_condition_wording_are_pinned() {
         assert_eq!(CONSOLE_LOG, "agent-console.log");

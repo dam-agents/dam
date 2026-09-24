@@ -82,7 +82,6 @@ type VMRunnerSpec struct {
 	StorageClass         string                        `json:"storageClass,omitempty"`
 	Devices              map[string]string             `json:"devices,omitempty"`
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
-	IngressCIDRs         []string                      `json:"ingressCidrs,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
 	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
@@ -92,14 +91,7 @@ type VMRunnerSpec struct {
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
-	CanaryImage          string                        `json:"canaryImage,omitempty"`
-	Canary               VMRunnerCanary                `json:"canary,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
-}
-
-type VMRunnerCanary struct {
-	Owners  []string `json:"owners,omitempty"`
-	Percent int      `json:"percent,omitempty"`
 }
 
 type VMRunnerRollout struct {

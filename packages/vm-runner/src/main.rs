@@ -4,13 +4,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use ipnet::IpNet;
-use vm_runner::embedded::{self, Smolvm};
+use vm_runner::embedded::Smolvm;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
-use vm_runner::{http, state, templates};
+use vm_runner::{http, templates};
 
-// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines, kept name-for-name across releases. The controller builds these args itself in packages/controller/pkg/reconciler/vm_runner.go — not the Helm chart — and it passes a subset: state-dir, metrics-listen, image-dir, runner-id, image-budget-bytes, memory-mib, reserve-mib, tls-cert, tls-key and allow-from. The image's entrypoint passes --smolvm. The rest are defaults the pod never overrides. A rename is therefore not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start.
+// UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
 #[command(name = "vm-runner", about = "Hosts vm-backend agents as microVMs")]
 struct Args {
@@ -22,27 +21,28 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images and local archives, shared by every runner on this node when the install gives them a host directory.
+    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the archives an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
     image_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: this runner's name among the runners sharing the image directory; empty keeps the cache private to this runner.
-    #[arg(long = "runner-id", default_value = "")]
-    runner_id: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket. Set, every image is resolved and fetched by that service and this runner only reads the image directory; empty makes this runner the one writer of its own cache.
+    #[arg(long = "image-cache-socket", default_value = "")]
+    image_cache_socket: String,
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image the shared cache does not hold; empty disables the fetch.
+    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image this runner's own cache does not hold; empty disables the fetch. Unused with a node cache, whose service fetches.
     #[arg(long, default_value = "crane")]
     crane: String,
-    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest, built and shipped separately from this runner.
+    // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest: the platform-init package beside this one, linked statically because it runs against the agent image's libc and not this one's.
     #[arg(
         long = "platform-init",
         default_value = "/usr/local/libexec/platform-init"
     )]
     platform_init: PathBuf,
+    // UNIT_BOUNDARY_DESCRIPTION: the pod ports machines are published on. The controller opens exactly this range in the runner's NetworkPolicy and passes it here from the same constants, so a machine is never published on a port the policy drops.
     #[arg(long = "port-min", default_value_t = 31000)]
     port_min: u16,
     #[arg(long = "port-max", default_value_t = 31099)]
@@ -54,32 +54,11 @@ struct Args {
     reserve_mib: i64,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
-    #[arg(long = "tls-cert", default_value = "")]
+    // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
+    #[arg(long = "tls-cert")]
     tls_cert: String,
-    #[arg(long = "tls-key", default_value = "")]
+    #[arg(long = "tls-key")]
     tls_key: String,
-    // UNIT_BOUNDARY_DESCRIPTION: CIDRs allowed to dial published machine ports; empty admits any. Parsed at startup rather than at first use, because the failure of an allowlist is that it admits everybody, and a runner that took a malformed entry would report nothing wrong while doing exactly that.
-    #[arg(long = "allow-from", default_value = "", value_parser = allow_from)]
-    allow_from: AllowFrom,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the whole list as one flag value, which is what it is — a newtype rather than a bare Vec because clap reads a Vec field as "one of these per occurrence" and would hand the parser a single entry while expecting a single entry back. Declared as a Vec it builds, rejects a malformed CIDR correctly, and then panics on the success path downcasting what it parsed.
-#[derive(Clone, Debug, Default)]
-struct AllowFrom(Vec<IpNet>);
-
-// UNIT_BOUNDARY_DESCRIPTION: this flag is split on commas, blank entries are skipped, and anything that is not a CIDR exits the runner before it starts. The three rules are the ones earlier releases applied, so an install's value means what it meant before.
-fn allow_from(value: &str) -> anyhow::Result<AllowFrom> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| {
-            entry
-                .parse::<IpNet>()
-                .map_err(|e| anyhow::anyhow!("--allow-from {entry}: {e}"))
-        })
-        .collect::<anyhow::Result<Vec<IpNet>>>()
-        .map(AllowFrom)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
@@ -131,11 +110,27 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     Ok(listener)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. Inside the thirty seconds kubelet allows before SIGKILL, so the runner's own close still gets a turn after it.
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE the controller's termination grace on the runner pod covers.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
 const REAP_EVERY: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: how often the serving certificate is read again. cert-manager renews it in the mounted Secret well before it expires, and restarting to pick it up would reboot every machine, so the runner re-reads it in place instead.
+const TLS_RELOAD_EVERY: Duration = Duration::from_secs(300);
+
+fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: String) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(TLS_RELOAD_EVERY);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            if let Err(e) = tls.reload_from_pem_file(&cert, &key).await {
+                tracing::warn!(error = %e, "the serving certificate could not be re-read; keeping the one loaded");
+            }
+        }
+    });
+}
 
 fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
@@ -166,7 +161,7 @@ fn main() -> anyhow::Result<()> {
         .block_on(serve(args, token))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     for device in ["/dev/kvm", "/dev/net/tun"] {
@@ -200,20 +195,18 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         Config {
             state_dir: args.state_dir.clone(),
             image_dir: args.image_dir.clone(),
-            runner_id: args.runner_id.clone(),
+            image_cache_socket: (!args.image_cache_socket.is_empty())
+                .then(|| PathBuf::from(&args.image_cache_socket)),
             image_budget: args.image_budget_bytes,
             crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
-            allow_from: args.allow_from.0.clone(),
-            pinned: Vec::new(),
             listen: None,
         },
         runtime.clone(),
     )?;
-    warn_template_backed(&args.state_dir);
 
     let install = args
         .smolvm
@@ -251,7 +244,6 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
-        tls = !args.tls_cert.is_empty(),
         platform_init = %args.platform_init.display(),
         metrics = %args.metrics_listen,
         "VM runner serving"
@@ -259,23 +251,15 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     let serving = {
         let handle = handle.clone();
         async move {
-            if args.tls_cert.is_empty() {
-                axum_server::from_tcp(listener)
-                    .handle(handle)
-                    .serve(app)
-                    .await
-            } else {
-                let _ = rustls::crypto::ring::default_provider().install_default();
-                let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                    &args.tls_cert,
-                    &args.tls_key,
-                )
-                .await?;
-                axum_server::from_tcp_rustls(listener, tls)
-                    .handle(handle)
-                    .serve(app)
-                    .await
-            }
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let tls =
+                axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
+                    .await?;
+            reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
+            axum_server::from_tcp_rustls(listener, tls)
+                .handle(handle)
+                .serve(app)
+                .await
         }
     };
     tokio::pin!(serving);
@@ -288,58 +272,25 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         _ = term.recv() => tracing::info!(signal = "SIGTERM", "VM runner stopping"),
         _ = tokio::signal::ctrl_c() => tracing::info!(signal = "SIGINT", "VM runner stopping"),
     }
-    handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
-    if let Err(e) = serving.await {
-        tracing::warn!(error = %e, "the machine API did not shut down cleanly");
-    }
-    if let Some((handle, serving)) = scrape {
+    server.stop_taking_work();
+    let draining = async {
         handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
-        let _ = serving.await;
-    }
-    server.close().await;
+        if let Err(e) = serving.await {
+            tracing::warn!(error = %e, "the machine API did not shut down cleanly");
+        }
+        if let Some((handle, serving)) = scrape {
+            handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
+            let _ = serving.await;
+        }
+    };
+    tokio::join!(draining, server.close());
     tracing::info!("VM runner stopped");
     Ok(())
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: names the machines whose storage disk is a qcow2 overlay over the shipped template, which earlier releases made for agents sized at exactly smolvm's default. Their home depends on the template file in this image; an upgrade that changes it changes the bytes under them. Reported so an operator can find them before an upgrade does.
-fn warn_template_backed(state_dir: &Path) {
-    let backed: Vec<String> = state::machine_ids(state_dir)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|id| embedded::template_backed_storage(id))
-        .collect();
-    if !backed.is_empty() {
-        tracing::warn!(machines = ?backed, "these machines' storage disks are overlays over the shipped disk template; a runner image with a different template would change the data under them");
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // TEST_SCENARIO: an allowlist fails open — a value it cannot read admits everybody rather than nobody, and says nothing. So each of the flag's three rules is pinned: entries split on commas, surrounding space ignored, blanks skipped, and anything that is not a CIDR refused before the runner starts rather than ignored while it runs.
-    #[test]
-    fn the_allowlist_reads_every_shape_the_go_runner_accepts_and_no_others() {
-        assert_eq!(allow_from("").unwrap().0, vec![]);
-        assert_eq!(allow_from(" , ").unwrap().0, vec![]);
-        assert_eq!(
-            allow_from("10.0.0.0/8, 192.168.1.0/24").unwrap().0,
-            vec![
-                "10.0.0.0/8".parse::<IpNet>().unwrap(),
-                "192.168.1.0/24".parse().unwrap()
-            ]
-        );
-        assert_eq!(
-            allow_from("fd00::/8").unwrap().0,
-            vec!["fd00::/8".parse::<IpNet>().unwrap()]
-        );
-
-        let err = allow_from("10.0.0.0/8,not-a-cidr").unwrap_err().to_string();
-        assert!(
-            err.contains("not-a-cidr"),
-            "the refusal has to name the entry: {err}"
-        );
-    }
 
     // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
     #[test]
@@ -368,7 +319,7 @@ mod tests {
 
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
-    fn the_go_runners_listen_address_binds_every_interface() {
+    fn a_bare_port_binds_every_interface() {
         let listener = bind(":0").unwrap();
         assert!(listener.local_addr().unwrap().ip().is_unspecified());
         assert!(bind(":http").is_err());
@@ -404,50 +355,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // TEST_SCENARIO: clap reads a Vec field as one value per occurrence, so a parser that returns the whole list against a Vec field builds, refuses a bad CIDR correctly, and then panics downcasting a good one. Parsing the flag through the real Args is what tells the two apart — the unit test above passes either way.
-    #[test]
-    fn a_parsed_allowlist_survives_being_read_back_off_the_args() {
-        let args = Args::try_parse_from([
-            "vm-runner",
-            "--memory-mib=1",
-            "--allow-from=10.0.0.0/8,192.168.1.0/24",
-        ])
-        .expect("these are the flags the controller passes");
-        assert_eq!(args.allow_from.0.len(), 2);
-        assert!(Args::try_parse_from(["vm-runner", "--allow-from=nope"]).is_err());
-    }
-
-    // TEST_SCENARIO: the controller builds the runner's arguments in code, and a flag this binary does not know is a runner pod that exits on start rather than a failed build. Every flag the controller's Deployment passes is read from that code and must be one this binary defines.
-    #[test]
-    fn every_flag_the_controller_passes_is_known() {
-        use clap::CommandFactory;
-        let path = "../controller/pkg/reconciler/vm_runner.go";
-        let go = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("the controller builds the runner's args in {path}: {e}"));
-        let deployment = go
-            .split_once("func (r *AgentReconciler) applyRunnerDeployment(")
-            .expect("vm_runner.go still builds the runner's Deployment")
-            .1;
-        let deployment = deployment.split_once("\n}").unwrap().0;
-        let passed: Vec<&str> = deployment
-            .split("\"--")
-            .skip(1)
-            .filter_map(|rest| rest.split_once('=').map(|(name, _)| name))
-            .collect();
-        assert!(passed.contains(&"metrics-listen"), "{passed:?}");
-        let command = Args::command();
-        for flag in passed {
-            assert!(
-                command.get_arguments().any(|a| a.get_long() == Some(flag)),
-                "the controller passes --{flag}, which this runner does not define"
-            );
-        }
-    }
-
-    // TEST_SCENARIO: the image's ENTRYPOINT passes its own arguments ahead of the controller's, and this binary runs under that ENTRYPOINT. The arguments are read from the Dockerfile itself rather than copied here, so an ENTRYPOINT that gains a flag this binary does not know fails here instead of as a runner pod that exits on start.
-    #[test]
-    fn the_images_entrypoint_arguments_are_accepted() {
-        let path = "../controller/Dockerfile.vm-runner";
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.
+    fn entrypoint_args() -> Vec<String> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile");
         let dockerfile = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
         let line = dockerfile
@@ -461,10 +371,64 @@ mod tests {
             .iter()
             .position(|word| word == "vm-runner")
             .expect("the ENTRYPOINT runs vm-runner");
+        words[runner + 1..].to_vec()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the args the controller renders into the runner's Deployment, as the controller's own test records them. Kubernetes expands `$(NAME)` from the container's environment before the runner sees an arg. The controller uses one such reference, the pod's memory limit, and it is given a value here; any other reference fails, so a new one gets a stated value rather than reaching the parser unexpanded.
+    fn controller_args() -> Vec<String> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/runner-args.json");
+        let args: Vec<String> = serde_json::from_str(
+            &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the runner args fixture is a list of strings");
+        args.into_iter()
+            .map(|arg| {
+                let arg = arg.replace("$(RUNNER_MEMORY_MIB)", "4096");
+                assert!(
+                    !arg.contains("$("),
+                    "{arg} names an environment variable this test gives no value"
+                );
+                arg
+            })
+            .collect()
+    }
+
+    fn pod_argv() -> Vec<String> {
         let mut argv = vec!["vm-runner".to_string()];
-        argv.extend(words[runner + 1..].iter().cloned());
-        argv.push("--memory-mib=1".to_string());
-        Args::try_parse_from(&argv)
-            .unwrap_or_else(|e| panic!("the ENTRYPOINT's arguments {argv:?} are rejected: {e}"));
+        argv.extend(entrypoint_args());
+        argv.extend(controller_args());
+        argv
+    }
+
+    // TEST_SCENARIO: the pod runs this binary with the ENTRYPOINT's args followed by the controller's. A flag it does not know, a value it cannot read, or a flag both of them set is a runner pod that exits on start rather than a failed build, so the two lists must parse together, as the one argv the pod passes.
+    #[test]
+    fn the_args_the_pod_runs_with_are_accepted() {
+        let argv = pod_argv();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
+    }
+
+    // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.
+    #[test]
+    fn every_flag_is_set_by_the_image_or_the_controller() {
+        use clap::CommandFactory;
+        let argv = pod_argv();
+        let passed: Vec<&str> = argv
+            .iter()
+            .filter_map(|word| word.strip_prefix("--"))
+            .map(|flag| flag.split_once('=').map_or(flag, |(name, _)| name))
+            .collect();
+        let command = Args::command();
+        for flag in command
+            .get_arguments()
+            .filter_map(|arg| arg.get_long())
+            .filter(|flag| !matches!(*flag, "help" | "version"))
+        {
+            assert!(
+                passed.contains(&flag),
+                "--{flag} is set by neither the image's ENTRYPOINT nor the controller, so the runner runs on its default"
+            );
+        }
     }
 }

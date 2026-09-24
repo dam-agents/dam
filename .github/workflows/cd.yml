@@ -59,7 +59,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
           restore-keys: |
             rust-${{ runner.os }}-${{ github.job }}-
             rust-${{ runner.os }}-
@@ -98,7 +98,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
   # a tag: e2e pulls by digest, agents build from platform-base's digest, and

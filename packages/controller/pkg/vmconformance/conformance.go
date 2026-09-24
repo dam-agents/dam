@@ -65,7 +65,33 @@ func Run(t *testing.T, target Target) {
 		again := m.ensure(t, m.spec())
 		assert.Equal(t, vmrunner.StateRunning, again.State, "the same spec again is not a new operation")
 		assert.Equal(t, st.Port, again.Port)
-		assert.Zero(t, again.StartingMs, "a machine that answered is no longer starting")
+		assert.True(t, again.Ready, "a machine that answered stays ready")
+	})
+
+	// TEST_SCENARIO: the controller learns that a guest answered by waiting on the machine's status version rather than by polling. A read naming the version it holds waits while nothing changes and answers with the same version; one naming a version from before the machine was asked to run answers at once; and the machine coming up is reported to a waiting read.
+	t.Run("a status read waits for a change", func(t *testing.T) {
+		m := newMachine(t, target)
+		asked := m.ensure(t, m.spec())
+		st := asked
+		deadline := time.Now().Add(target.Ready)
+		for !st.Ready {
+			require.True(t, time.Now().Before(deadline), "machine %s never became ready: last status %+v", m.id, st)
+			next, err := target.Client.WaitStatus(t.Context(), m.id, st.Version, 5*time.Second)
+			require.NoError(t, err)
+			st = next
+		}
+		assert.NotEqual(t, asked.Version, st.Version, "the machine coming up moved its version")
+
+		started := time.Now()
+		held, err := target.Client.WaitStatus(t.Context(), m.id, st.Version, 2*time.Second)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, time.Since(started), 2*time.Second, "a read naming the current version did not wait")
+		assert.Equal(t, st.Version, held.Version)
+
+		started = time.Now()
+		_, err = target.Client.WaitStatus(t.Context(), m.id, asked.Version, 10*time.Second)
+		require.NoError(t, err)
+		assert.Less(t, time.Since(started), 5*time.Second, "a read naming an old version waited")
 	})
 
 	// TEST_SCENARIO: hibernate and wake. A machine asked to stop stops and keeps its port; asked to run again, it starts with what its disk held — the probe guest is ready only if the marker its first boot wrote is still there.
@@ -99,33 +125,32 @@ func Run(t *testing.T, target Target) {
 
 		rolled := m.spec()
 		rolled.Revision = "r2"
-		asked := time.Now()
 		st := m.ensure(t, rolled)
 		assert.Equal(t, vmrunner.StateRestarting, st.State)
 		after := m.waitReady(t)
 		assert.Equal(t, before.Port, after.Port, "a restart keeps the machine's port")
-		assert.LessOrEqual(t, after.StartingMs, time.Since(asked).Milliseconds(), "the machine was not started again after the revision changed")
+		assert.NotEqual(t, before.Version, after.Version, "the restart moved the machine's status version")
 		if bootBefore != "" {
 			assert.NotEqual(t, bootBefore, m.boot(t, after.Port), "the guest answering is the one from before the restart")
 		}
 	})
 
-	// TEST_SCENARIO: the egress allowlist is the gateway's address, and that address can move to another owner's gateway. A running machine whose allowlist changes is stopped and refused with the egress reason, and it stays stopped on every later ensure rather than being started against an address it no longer owns.
-	t.Run("an egress change is refused", func(t *testing.T) {
+	// TEST_SCENARIO: the egress allowlist is the gateway's address, and that address can move to another owner's gateway. A running machine whose allowlist changes is restarted onto the new one in place: it answers the ensure as restarting and becomes ready again on its port, with its disk.
+	t.Run("an egress change restarts the machine on the new allowlist", func(t *testing.T) {
 		m := newMachine(t, target)
-		m.ensure(t, m.spec())
-		m.waitReady(t)
+		first := m.spec()
+		first.Env = map[string]string{vmprobe.EnvWrite: m.marker}
+		m.ensure(t, first)
+		before := m.waitReady(t)
 
 		moved := m.spec()
 		moved.AllowCIDRs = []string{egressAfter}
-		m.ensure(t, moved)
-		m.waitReason(t, vmrunner.ReasonEgressChanged)
-		st := m.waitState(t, vmrunner.StateStopped)
-		assert.False(t, st.Ready)
-
-		again := m.ensure(t, moved)
-		assert.Equal(t, vmrunner.ReasonEgressChanged, again.Reason, "the refusal holds on the next ensure")
-		assert.Equal(t, vmrunner.StateStopped, again.State, "a refused machine is not started again")
+		moved.Env = map[string]string{vmprobe.EnvExpect: m.marker}
+		st := m.ensure(t, moved)
+		assert.Equal(t, vmrunner.StateRestarting, st.State)
+		after := m.waitReady(t)
+		assert.Equal(t, before.Port, after.Port, "an egress change keeps the machine's port")
+		assert.Empty(t, after.Reason)
 	})
 
 	// TEST_SCENARIO: a machine that does not fit the runner's memory is refused with the capacity reason and a message, and nothing is created for it.

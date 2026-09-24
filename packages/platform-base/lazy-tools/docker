@@ -4,10 +4,10 @@
 # and no init system in a sandbox is going to start it.
 #
 # There is no init system in a sandbox, so the daemon is started here rather
-# than enabled as a service, and its data root is put on the machine's storage
-# disk when there is one. That is not a preference: a guest's rootfs is an
-# overlay, overlayfs refuses an overlay as an upperdir, and the daemon's default
-# root is inside it — so on the vm Backend the default cannot work at all.
+# than enabled as a service, and its data root is put where dam-runtime-dir
+# says, under HOME. That is not a preference: a guest's rootfs is an overlay,
+# overlayfs refuses an overlay as an upperdir, and the daemon's default root is
+# inside it — so on the vm Backend the default cannot work at all.
 set -eu
 
 # See the k3s shim: the sandbox shell's umask 027 makes a container runtime lay
@@ -34,9 +34,8 @@ if ! "$real" info >/dev/null 2>&1; then
         dockerd=$(dam-tool-real dockerd) || { echo "moby-engine installed no dockerd" >&2; exit 1; }
 
         root=
-        for d in /storage /workspace; do
-            [ -d "$d" ] && [ -w "$d" ] && { root="--data-root $d/docker"; break; }
-        done
+        dir=$(dam-runtime-dir)
+        [ -z "$dir" ] || root="--data-root $dir/docker"
 
         # The shared containerd rather than the private one the daemon would
         # otherwise fork, so docker and k3s keep one content store between them.

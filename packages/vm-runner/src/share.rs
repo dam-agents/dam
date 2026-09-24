@@ -78,7 +78,8 @@ fn staged_path(to: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{gosource, guest};
+    use crate::guest;
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: the share is the one place the host and the inside of a machine meet on a path. The host writes this layout and platform-init reads it at the paths in guest.rs, so the two are one contract written in two places: a share whose CA sits somewhere else is a guest that trusts nothing the platform signed, and an init at another name is a machine that boots with no agent in it.
     #[test]
@@ -95,24 +96,22 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: machines created by earlier releases have their share under this name, and its path is baked into each machine's command line. A runner that wrote the share under another name would write it beside the old one, and the machine would keep booting against a directory nobody updates, its CA never rotated and no error anywhere.
-    #[test]
-    fn the_share_keeps_the_name_earlier_releases_wrote_it_under() {
-        assert_eq!(SHARE_DIR, "share");
-    }
-
-    // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts `/etc/platform/ca/ca.crt` in the agent's own environment as NODE_EXTRA_CA_CERTS, a package away, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate.
+    // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts the guest's CA file in the agent's own environment as NODE_EXTRA_CA_CERTS, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate. The controller's tests hold its environment to the same fixture.
     #[test]
     fn the_ca_is_named_what_the_agents_environment_points_at() {
-        let resources = gosource::read_in("reconciler", "resources.go");
-        assert!(
-            resources.contains(&format!("\"{}/{CA_FILE}\"", guest::GUEST_CA_DIR)),
-            "NODE_EXTRA_CA_CERTS no longer names {}/{CA_FILE}, so the agent trusts nothing the platform signed",
-            guest::GUEST_CA_DIR
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/guest.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the guest fixture is JSON");
+        assert_eq!(
+            fixture["caFile"],
+            format!("{}/{CA_FILE}", guest::GUEST_CA_DIR),
+            "the agent's environment names a CA file the share does not write"
         );
     }
 
-    // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse, and the shares of machines from earlier releases carry these same modes.
+    // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse.
     #[test]
     fn the_share_is_written_with_stated_modes_rather_than_the_umask() {
         let dir = TempDir::new("modes");
@@ -261,26 +260,5 @@ mod tests {
 
     fn mode_of(path: &Path) -> u32 {
         fs::metadata(path).unwrap().permissions().mode() & 0o777
-    }
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path =
-                std::env::temp_dir().join(format!("vm-runner-share-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 }

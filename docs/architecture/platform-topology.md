@@ -73,7 +73,7 @@ The agent-runtime pod holds zero credential Secrets and has no admitted route to
 
 ### VM runner
 
-The pods behind the `vm` Backend: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller. Each vm Agent is a persistent machine on its owner's runner, published through the agent's Service so the api-server dials it like a pod; the runner is the Backend's trust boundary, per owner rather than per Agent. A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, with an optional canary image for a subset of owners. [vm-runner](vm-runner.md) owns the runner in depth: its gates, machine API, image cache, guest and rollout.
+The pods behind the `vm` Backend: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller. Each vm Agent is a persistent machine on its owner's runner, published through the agent's Service so the api-server dials it like a pod; the runner is the Backend's trust boundary, per owner rather than per Agent. A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time. [vm-runner](vm-runner.md) owns the runner in depth: its gates, machine API, image cache, guest and rollout.
 
 ### gateway
 

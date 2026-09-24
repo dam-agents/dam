@@ -63,11 +63,11 @@ own_paths() {
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
-    # The runner is the Rust crate, whole: its source, its lockfile, the pin
-    # naming the smolvm tree it builds against and the script that fetches it.
-    # Beside it ships platform-init, in Go; check:vm-runner-source fails when a
-    # Go import escapes the list, or when the crate is missing from it.
-    vm-runner) echo "packages/vm-runner packages/controller/cmd/platform-init packages/controller/pkg/vmrunner packages/controller/Dockerfile.vm-runner packages/controller/go.mod packages/controller/go.sum" ;;
+    # The runner is the Rust workspace, whole: the runner and platform-init,
+    # their lockfile, the pin naming the smolvm tree they build against, the
+    # script that fetches it and the Dockerfile. It is also the image's only
+    # build context, so nothing the image compiles in can live outside it.
+    vm-runner) echo "packages/vm-runner" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
     # build also depends on dev-config and (any) lockfile change — lockfile
     # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
@@ -185,9 +185,7 @@ self_check() {
   chk "$(base_of keycloak)" ""
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
-  has "$(effective_paths vm-runner)" packages/vm-runner
-  has "$(effective_paths vm-runner)" packages/controller/cmd/platform-init
-  has "$(effective_paths vm-runner)" packages/controller/pkg/vmrunner
+  chk "$(effective_paths vm-runner)" packages/vm-runner
   has "$PINNED_TAGS" vm-runner
   chk "$(local_tag platform-base)" platform-base
   chk "$(local_tag bob)" "platform-bob:latest"
