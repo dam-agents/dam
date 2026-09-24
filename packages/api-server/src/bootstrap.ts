@@ -506,6 +506,7 @@ export async function bootstrap() {
     db,
     maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
     ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    agentName: async (agentId) => (await agentsRepo.get(agentId))?.name ?? null,
     isAgentOwnedBy: (agentId, ownerSub) =>
       agentsRepo.isOwnedBy(agentId, ownerSub),
     spillLog: async (agentId, ref, output) => {

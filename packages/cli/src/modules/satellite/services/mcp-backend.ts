@@ -1,5 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   MAX_JOB_OUTPUT_BYTES,
   satelliteToolSchema,
@@ -8,14 +10,18 @@ import {
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A Satellite backed by a stdio MCP server the user
- * names on the command line. The worker owns the child process, so the platform
- * still reaches nothing but the queue; what the tools mean is entirely the
- * server's business, and the platform never reads inside their schemas.
+ * UNIT_BOUNDARY_DESCRIPTION: A Satellite backed by an MCP server the user names
+ * on the command line: either one the worker starts over stdio, or one already
+ * listening that the worker reaches by URL. Either way the worker is the only
+ * MCP client, so the platform still reaches nothing but the queue; what the
+ * tools mean is entirely the server's business, and the platform never reads
+ * inside their schemas.
  *
- * The server inherits the worker's own environment, exactly as a Command Surface
- * command does, so what the user exported when they started the worker is what
- * it sees.
+ * A started server inherits the worker's own environment, exactly as a Command
+ * Surface command does, so what the user exported when they started the worker
+ * is what it sees. A server reached by URL is tried over Streamable HTTP first
+ * and over the older SSE transport when that fails, since servers in the wild
+ * still speak either.
  *
  * Every listed tool is parsed against the contract's own schema here rather than
  * forwarded: a name the platform reserves, one that is too long, or one holding
@@ -55,19 +61,53 @@ function renderContent(result: Record<string, unknown>): {
     : { output: joined, truncated: false };
 }
 
+export type McpServerSpec =
+  | { kind: "stdio"; command: string; args: string[]; cwd?: string }
+  | { kind: "url"; url: URL; headers: Record<string, string> };
+
+const CLIENT_INFO = { name: "satellite", version: "1.0.0" };
+
+async function connectClient(spec: McpServerSpec): Promise<Client> {
+  if (spec.kind === "stdio") {
+    const client = new Client(CLIENT_INFO);
+    await client.connect(
+      new StdioClientTransport({
+        command: spec.command,
+        args: spec.args,
+        cwd: spec.cwd,
+        env: process.env as Record<string, string>,
+        stderr: "inherit",
+      }),
+    );
+    return client;
+  }
+  const requestInit = { headers: spec.headers };
+  try {
+    const client = new Client(CLIENT_INFO);
+    await client.connect(
+      new StreamableHTTPClientTransport(spec.url, { requestInit }),
+    );
+    return client;
+  } catch (streamableError) {
+    const client = new Client(CLIENT_INFO);
+    try {
+      await client.connect(new SSEClientTransport(spec.url, { requestInit }));
+      return client;
+    } catch {
+      throw streamableError;
+    }
+  }
+}
+
+function describeArgs(tool: string, args: Record<string, unknown>): string {
+  const text = `${tool} ${JSON.stringify(args)}`;
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+}
+
 export async function createMcpBackend(
-  spec: { command: string; args: string[]; cwd?: string },
-  log: { line: (text: string) => void },
+  spec: McpServerSpec,
 ): Promise<SatelliteBackend> {
-  const transport = new StdioClientTransport({
-    command: spec.command,
-    args: spec.args,
-    cwd: spec.cwd,
-    env: process.env as Record<string, string>,
-    stderr: "inherit",
-  });
-  const client = new Client({ name: "dam-satellite", version: "1.0.0" });
-  await client.connect(transport);
+  const client = await connectClient(spec);
 
   const listed = await client.listTools();
   const tools: SatelliteTool[] = [];
@@ -94,11 +134,11 @@ export async function createMcpBackend(
   return {
     tools,
 
+    describeCall: describeArgs,
+
     async call(input): Promise<CallOutcome> {
       const controller = new AbortController();
       inFlight.set(input.sequence, controller);
-      log.line(`START #${input.sequence}: ${input.tool}`);
-      const startedAt = Date.now();
       try {
         const result = await client.callTool(
           { name: input.tool, arguments: input.args },
@@ -106,10 +146,6 @@ export async function createMcpBackend(
           { signal: controller.signal },
         );
         const { output, truncated } = renderContent(result);
-        const elapsed = Math.round((Date.now() - startedAt) / 1000);
-        log.line(
-          `EXIT #${input.sequence}: ${result.isError === true ? "error" : "ok"} in ${elapsed}s`,
-        );
         return {
           status: "done",
           isError: result.isError === true,
@@ -118,12 +154,9 @@ export async function createMcpBackend(
           truncated,
         };
       } catch (err) {
-        if (controller.signal.aborted) {
-          log.line(`CANCEL #${input.sequence}`);
+        if (controller.signal.aborted)
           return { status: "cancelled", output: "", truncated: false };
-        }
         const reason = err instanceof Error ? err.message : String(err);
-        log.line(`FAILED #${input.sequence}: ${reason}`);
         return {
           status: "interrupted",
           reason: reason.slice(0, 280),

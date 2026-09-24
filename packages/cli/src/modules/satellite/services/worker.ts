@@ -3,7 +3,7 @@ import type {
   SatelliteTool,
   WorkItem,
 } from "api-server-api";
-import type { SatelliteBackend } from "./backend.js";
+import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 const HEARTBEAT_MS = 20_000;
 const CLAIM_WAIT_MS = 25_000;
@@ -50,6 +50,60 @@ export interface WorkerLog {
   line(text: string): void;
 }
 
+function agentLabel(agent: WorkItem["agent"]): string {
+  if (agent === undefined) return "an agent";
+  return agent.name === null ? agent.id : `${agent.name} (${agent.id})`;
+}
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function firstLine(text: string): string {
+  const line = text.trim().split("\n")[0] ?? "";
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The one line the worker's log says about how a
+ * call ended. The log is the interface for whoever is at the machine, so each
+ * way a call can end reads differently: a command that ran and exited, one
+ * that failed, one the machine refused to run at all, one cancelled on the
+ * platform's request, and one whose outcome is unknown.
+ */
+export function describeOutcome(
+  sequence: number,
+  outcome: CallOutcome,
+  startedAt: number,
+): string {
+  const elapsed = seconds(Date.now() - startedAt);
+  switch (outcome.status) {
+    case "done":
+      if (outcome.blocked === true)
+        return `BLOCKED #${sequence}: ${firstLine(outcome.output)}`;
+      if (!outcome.isError)
+        return `DONE #${sequence} in ${elapsed}${outcome.exitCode === null ? "" : `: exit ${outcome.exitCode}`}`;
+      return `FAILED #${sequence} in ${elapsed}: ${outcome.exitCode === null ? firstLine(outcome.output) || "the tool returned an error" : `exit ${outcome.exitCode}`}`;
+    case "cancelled":
+      return `CANCELLED #${sequence} after ${elapsed}`;
+    case "interrupted":
+      return `INTERRUPTED #${sequence} after ${elapsed}: ${outcome.reason}`;
+  }
+}
+
+function reportable(
+  outcome: CallOutcome,
+): Parameters<WorkerTransport["report"]>[0]["outcome"] {
+  if (outcome.status !== "done") return outcome;
+  return {
+    status: "done",
+    isError: outcome.isError,
+    exitCode: outcome.exitCode,
+    output: outcome.output,
+    truncated: outcome.truncated,
+  };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The loop between the platform queue and whatever
  * this machine exposes. It knows nothing about commands — a work item is an MCP
@@ -63,6 +117,7 @@ export function createWorker(deps: {
   transport: WorkerTransport;
   log: WorkerLog;
   host: string;
+  guide?: string[];
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
@@ -99,6 +154,10 @@ export function createWorker(deps: {
 
   function startJob(item: WorkItem): void {
     running.add(item.sequence);
+    const startedAt = Date.now();
+    log.line(
+      `REQUEST #${item.sequence} from ${agentLabel(item.agent)}: ${backend.describeCall(item.tool, item.args)}`,
+    );
     void backend
       .call({
         sequence: item.sequence,
@@ -106,16 +165,26 @@ export function createWorker(deps: {
         args: item.args,
       })
       .then((outcome) => {
-        report({ satellite: name, sequence: item.sequence, outcome });
-      })
-      .catch((err: unknown) => {
+        log.line(describeOutcome(item.sequence, outcome, startedAt));
         report({
           satellite: name,
           sequence: item.sequence,
-          outcome: {
-            status: "interrupted",
-            reason: String(err).slice(0, 280),
-          },
+          outcome: reportable(outcome),
+        });
+      })
+      .catch((err: unknown) => {
+        const reason = String(err).slice(0, 280);
+        log.line(
+          describeOutcome(
+            item.sequence,
+            { status: "interrupted", reason, output: "", truncated: false },
+            startedAt,
+          ),
+        );
+        report({
+          satellite: name,
+          sequence: item.sequence,
+          outcome: { status: "interrupted", reason },
         });
       })
       .finally(() => {
@@ -136,7 +205,7 @@ export function createWorker(deps: {
     let started = 0;
     for (const item of items)
       if (item.kind === "cancel") {
-        log.line(`CANCEL ${name}#${item.sequence}`);
+        log.line(`CANCEL REQUESTED #${item.sequence}`);
         backend.cancel(item.sequence);
       } else {
         startJob(item);
@@ -172,6 +241,7 @@ export function createWorker(deps: {
     async start(): Promise<void> {
       await transport.connect(manifest(backend.tools), deps.host);
       announce(`connected as "${name}"`);
+      for (const line of deps.guide ?? []) log.line(line);
 
       const heartbeat = setInterval(() => {
         void transport

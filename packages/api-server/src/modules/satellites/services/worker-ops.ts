@@ -23,6 +23,7 @@ export interface WorkerOpsDeps {
     satellite: string;
     sequence: number;
   }) => Promise<void>;
+  agentName?: (agentId: string) => Promise<string | null>;
   now?: () => Date;
 }
 
@@ -82,12 +83,20 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           input.capacity,
           new Date(now().getTime() + LEASE_MS),
         );
-        for (const job of claimed)
+        const names = await Promise.all(
+          claimed.map((job) =>
+            (deps.agentName?.(job.agentId) ?? Promise.resolve(null)).catch(
+              () => null,
+            ),
+          ),
+        );
+        for (const [index, job] of claimed.entries())
           items.push({
             kind: "call",
             sequence: job.sequence,
             tool: job.tool,
             args: job.args,
+            agent: { id: job.agentId, name: names[index] ?? null },
           });
 
         if (items.length > 0 || now().getTime() >= deadline) return items;

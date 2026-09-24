@@ -7,6 +7,7 @@ import {
 } from "../services/command-backend.js";
 import {
   connectOptions,
+  defaultSatelliteName,
   fail,
   log,
   readStdin,
@@ -20,9 +21,9 @@ interface Opts extends CommonConnectOpts {
   timeout?: string;
 }
 
-export function buildCommandsCommand(deps: ConnectDeps): Command {
+export function buildShellCommand(deps: ConnectDeps): Command {
   return connectOptions(
-    new Command("commands")
+    new Command("shell")
       .description(
         "Expose a fixed set of approved commands on this machine, as one tool an agent can call",
       )
@@ -30,6 +31,7 @@ export function buildCommandsCommand(deps: ConnectDeps): Command {
         "[patterns]",
         "one usage line per permitted command; read from stdin when omitted",
       ),
+    { defaultName: defaultSatelliteName() },
   )
     .option("--cwd <dir>", "working directory commands run in")
     .option("--timeout <duration>", "kill a job after this long, e.g. 30m")
@@ -38,15 +40,16 @@ export function buildCommandsCommand(deps: ConnectDeps): Command {
       "\nOne permitted command shape per line. A # opens a description, and a\n" +
         "trailing [...] group sets that command's own options: approval, max=N,\n" +
         "timeout=D, cwd=PATH.\n\n" +
-        "  dam satellite commands --name gpu-box --cwd /srv --timeout 6h <<'EOF'\n" +
+        "  dam satellite shell --name gpu-box --cwd /srv --timeout 6h <<'EOF'\n" +
         "  ./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]  # Process a database\n" +
         "  ./deploy.sh (staging|prod)  # Deploy it  [approval]\n" +
         "  ./train.sh ./data/**/*.db   # Train      [max=1 timeout=2h]\n" +
         "  EOF\n\n" +
         "Or as one argument:\n" +
-        '  dam satellite commands --name box "./run.sh [--thing] *  # run a thing"\n\n' +
+        '  dam satellite shell "./run.sh [--thing] *  # run a thing"\n\n' +
         "The text is the whole allowlist and the platform can never widen it.\n" +
         "Changing it means restarting: there is no file to re-read.\n" +
+        "Without --name the satellite is called user@hostname.\n" +
         "First interrupt drains, second kills running jobs.\n",
     )
     .action(async (patterns: string | undefined, opts: Opts) => {
@@ -57,7 +60,7 @@ export function buildCommandsCommand(deps: ConnectDeps): Command {
         );
 
       const surface = parseCommandSurface(text, {
-        name: opts.name!,
+        name: opts.name ?? defaultSatelliteName(),
         ...(opts.description === undefined
           ? {}
           : { description: opts.description }),
@@ -70,7 +73,7 @@ export function buildCommandsCommand(deps: ConnectDeps): Command {
       return serve(
         deps,
         opts,
-        createCommandBackend(surface.value, log),
+        createCommandBackend(surface.value),
         surface.value.pushed,
         ["permitted commands:", ...describeSurface(surface.value)],
       );

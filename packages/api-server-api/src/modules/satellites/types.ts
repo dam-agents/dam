@@ -65,6 +65,7 @@ export interface WorkItem {
   sequence: number;
   tool: string;
   args: Record<string, unknown>;
+  agent?: { id: string; name: string | null };
 }
 
 export interface SatellitesService {

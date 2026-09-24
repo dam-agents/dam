@@ -10,8 +10,8 @@ The machine polls; nothing is pushed to it. The worker runs beside the tools, cl
 
 Two verbs start a worker, and **nothing above it can tell them apart**:
 
-- `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any stdio MCP server, whose tools are offered as they come, bar a name the contract refuses.
-- `dam satellite commands --name gpu-box "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
+- `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any MCP server, whose tools are offered as they come, bar a name the contract refuses. The worker either starts it over stdio or, with `--url localhost:8080`, reaches one already listening and forwards each call to it: Streamable HTTP first, then SSE, with any `--header` the server wants. A bare `host:port` means `http://host:port/mcp`. Either way the worker is the server's only client, so the platform still reaches nothing but the queue.
+- `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run. Without `--name` it is called `user@hostname`, folded into the name contract.
 
 Two verbs rather than one flag because the two are different things to set up, not two ways of saying one thing, and an explicit verb cannot be misread the way a selector flag can.
 
@@ -20,7 +20,7 @@ Making the Command Surface a degenerate MCP server rather than a parallel concep
 The Command Surface is **text the user passes, not a file the worker reads**. It comes as one argument or on stdin, which is what a heredoc wants:
 
 ```
-dam satellite commands --name gpu-box --cwd /srv --timeout 6h <<'EOF'
+dam satellite shell --name gpu-box --cwd /srv --timeout 6h <<'EOF'
 ./process.sh (sales.db|events.db) [-n ^[1-9][0-9]{0,3}$]  # Process a database
 ./train.sh ./data/**/*.db    # Train      [max=1 timeout=2h]
 EOF
@@ -62,7 +62,7 @@ MCP is the *contract* between Platform and a Satellite, but not the *transport*:
 ## Concepts
 
 - **Satellite** — a named, owner-scoped tool surface, identified by `(owner, name)`. Durable: the record outlives any connection, and its tools stay listable while the machine is offline. Per-owner by design — two people wanting the same machine run one worker each, so every call stays attributable to a real person's key. Platform's sharing model lends *Agents*, never resources ([multi-player](../strategy/multi-player.md)).
-- **Command Surface** — the text declaring a Satellite's Command Patterns and their settings, passed to `dam satellite commands`. Read only by the worker; the platform never sees it. An MCP-server Satellite has none.
+- **Command Surface** — the text declaring a Satellite's Command Patterns and their settings, passed to `dam satellite shell`. Read only by the worker; the platform never sees it. An MCP-server Satellite has none.
 - **Snapshot** — the server's copy of the Satellite's **tool list**, replaced on each connect, and what the Agent's tools are built from. It is a *claim by the Satellite*, not a platform guarantee: identity is the name, so a worker reconnecting from a different checkout serves the same name backed by different tools.
 - **Job** — one tool call, identified by `(satellite, sequence)` and rendered `gpu-box#7`. The sequence is minted server-side, since the id must return before any worker has seen the Job.
 - **Command Pattern** — one permitted command shape (below). A Command Surface concept only, enforced entirely on the machine.
@@ -131,18 +131,21 @@ Revoking a grant, deleting a Satellite and deleting an Agent share one rule, and
 
 ## Surfaces
 
-Satellites are a pre-release surface. There is no browser surface yet; the CLI and an Agent's tools are the whole of it, and the tools appear only for an Agent that holds a grant, which is deliberate to give.
+Satellites are a pre-release surface. The tools appear only for an Agent that holds a grant, which is deliberate to give.
 
-The CLI is at parity plus `dam satellite mcp` and `dam satellite commands`, whose **log is the interface**: the parsed Command Patterns print at startup, every refused command names the pattern it came closest to, and every Job start and exit is one line. A parse error names the line it is on, since the text the user just typed is the whole allowlist. Shutdown drains on the first interrupt and forces on the second. There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
+The UI shows Satellites **only once one has connected**. Running a worker is the opt-in: a second switch in the UI would be one more place to enable the same experiment. Until then nothing about Satellites appears. After it, the Connections page lists each Satellite with whether it is online, its tools and its host, and removes one. An Agent's Connections section lists the Satellites granted to it. Its **+ New** catalog gains a Satellites tab, which is where a grant is given, so the path is Settings → Connections → + New → Satellites → the machine → Add to agent. The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
+
+The CLI is at parity plus `dam satellite mcp` and `dam satellite shell`, whose **log is the interface**. The parsed Command Patterns print at startup. Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it. Every request is one line naming the Agent that sent it and what it asked for. The api-server resolves the Agent's name when the worker claims the call, and falls back to its id. Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`. A parse error names the line it is on, since the text the user just typed is the whole allowlist. Shutdown drains on the first interrupt and forces on the second. There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
 A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has. Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
-Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`. A tool needs no `satellite` argument the model could get wrong. Two machines can still render one registered name — a tool name may hold the separator — and the second is dropped rather than registered twice, which would fail the whole session. A proxied call blocks briefly and returns the outcome if it is quick, and a job reference otherwise, so the common short call costs one tool call rather than two.
+Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`. Any character of the name other than a letter or digit becomes `_`, so `jan@lab.local` registers `jan_lab_local__run`. A tool needs no `satellite` argument the model could get wrong. Two machines can still render one registered name — a tool name may hold the separator — and the second is dropped rather than registered twice, which would fail the whole session. A proxied call blocks briefly and returns the outcome if it is quick, and a job reference otherwise, so the common short call costs one tool call rather than two.
 
 ## Where the code lives
 
 - Contract and router: [`packages/api-server-api/src/modules/satellites/`](../../packages/api-server-api/src/modules/satellites/)
 - Implementation: [`packages/api-server/src/modules/satellites/`](../../packages/api-server/src/modules/satellites/)
 - Worker and CLI: [`packages/cli/src/modules/satellite/`](../../packages/cli/src/modules/satellite/)
+- UI: [`packages/ui/src/modules/satellites/`](../../packages/ui/src/modules/satellites/)

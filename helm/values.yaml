@@ -196,7 +196,9 @@ virtualization:
     # restore each file's owner and mode as it unpacks. Set this only where
     # that SCC is off, or where the runner needs a shape it refuses: the
     # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
-    # Empty = no extra binding rendered.
+    # With `imageCache.hostPath` the same SCC also admits the node image
+    # cache, which sets its own SELinux type (see `imageCache`), so it must
+    # have `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
     scc: ""
     # One claim, three directories with three lifetimes: `disks/` holds the
     # machine disks — every vm agent's storage — `machines/` the per-machine
@@ -337,7 +339,15 @@ virtualization:
   # A host directory rather than a ReadWriteMany claim: RWX is the expensive
   # class to ask an install for, and it buys cluster-wide dedup where per-node
   # is enough. On OpenShift it needs `runner.scc`, since the chart's own agent
-  # SCC refuses hostPath.
+  # SCC refuses hostPath — and that SCC must have `seLinuxContext.type:
+  # RunAsAny`: SELinux confines every container to `container_t`, which may
+  # neither write nor read the directory the kubelet creates for a hostPath
+  # (it carries the host's `var_lib_t`), so when `openshift.scc.anyuidCapNet`
+  # is on the cache pod runs as `spc_t` at level `s0` and labels the directory
+  # `container_file_t` as it starts. Every tree it unpacks inherits that label,
+  # which is what lets the runners, still confined, boot from it. Under a
+  # `MustRunAs` SCC admission refuses the cache pod; without the label it
+  # exits on start with the operation it was refused.
   #
   # Setting `hostPath` deploys the image cache service: a DaemonSet in
   # `agentNamespace`, on the runners' nodeSelector and tolerations, that is the

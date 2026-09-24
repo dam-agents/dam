@@ -102,6 +102,19 @@ spec:
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
             - --images={{ join "," $images }}
+            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- /*
+            The directory the kubelet creates for the hostPath carries the
+            host's own SELinux label, which a container confined to
+            container_t may neither write nor read. The service labels it for
+            containers as it opens the cache, and every tree it unpacks
+            inherits that label, which is what lets the confined runners on
+            the node boot from it. The level is the plain s0: a runner under a
+            RunAsAny SCC gets a category pair of its own per pod, and only a
+            tree at s0 is readable from every one of them.
+            */}}
+            - --selinux-label=system_u:object_r:container_file_t:s0
+            {{- end }}
             {{- if $pullSecrets }}
             - --pull-secret-dir=/etc/vm-image-cache/pull-secrets
             {{- end }}
@@ -120,6 +133,20 @@ spec:
               add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
             appArmorProfile:
               type: Unconfined
+            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- /*
+            The label above is set from inside the container, and container_t
+            may not relabel a host directory any more than write it, so on
+            OpenShift the service runs as spc_t: the type a privileged
+            container gets, unconfined by SELinux, without this becoming a
+            privileged container. `runner.scc` has to leave the type to the
+            pod (seLinuxContext RunAsAny); under MustRunAs admission refuses
+            this pod. The runners keep container_t.
+            */}}
+            seLinuxOptions:
+              type: spc_t
+              level: s0
+            {{- end }}
           resources:
             {{- toYaml $cache.resources | nindent 12 }}
           volumeMounts:

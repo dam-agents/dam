@@ -24,12 +24,18 @@ import {
  * machine's filesystem layout, and a malformed duration or a pattern that would
  * let the caller choose the program is rejected at startup rather than at run
  * time.
+ *
+ * The worker's log is the interface for whoever is at the machine, so the specs
+ * also pin what it says: each request names the Agent that sent it and what it
+ * asked for, and each outcome reads differently for a command that ran, one
+ * that failed, and one the machine refused.
  */
 
 const PATTERNS = `
 /bin/echo (hello|goodbye)  # Say something
 /bin/tail -f /etc/hosts
 /bin/sleep ^[1-9]$
+/bin/false  # Fail
 `;
 
 const IDENTITY = { name: "test-box", maxConcurrent: 4 };
@@ -50,6 +56,7 @@ interface Reported {
 
 function harness(items: WorkItem[], timeout?: string) {
   const reports: Reported[] = [];
+  const lines: string[] = [];
   let handedOut = false;
   let resolveAll: () => void = () => {};
   const allReported = new Promise<void>((r) => {
@@ -72,29 +79,46 @@ function harness(items: WorkItem[], timeout?: string) {
   };
 
   const parsed = surface(timeout);
-  const backend = createCommandBackend(parsed, { line: () => {} });
+  const backend = createCommandBackend(parsed);
   const worker = createWorker({
     name: parsed.pushed.name,
     maxConcurrent: parsed.pushed.maxConcurrent,
     backend,
     transport,
-    log: { line: () => {} },
+    log: { line: (text) => lines.push(text) },
     host: "test-host",
+    guide: ["open the UI"],
   });
-  return { worker, backend, reports, allReported };
+  return { worker, backend, reports, lines, allReported };
 }
 
-function runItem(sequence: number, cmd: string[]): WorkItem {
-  return { kind: "call", sequence, tool: "run", args: { cmd } };
+function runItem(
+  sequence: number,
+  cmd: string[],
+  agent?: WorkItem["agent"],
+): WorkItem {
+  return {
+    kind: "call",
+    sequence,
+    tool: "run",
+    args: { cmd },
+    ...(agent === undefined ? {} : { agent }),
+  };
 }
 
-async function drive(items: WorkItem[]): Promise<Reported[]> {
-  const { worker, reports, allReported } = harness(items);
+async function driveLogged(
+  items: WorkItem[],
+): Promise<{ reports: Reported[]; lines: string[] }> {
+  const { worker, reports, lines, allReported } = harness(items);
   const running = worker.start();
   await allReported;
   await worker.drain();
   await running;
-  return reports;
+  return { reports, lines };
+}
+
+async function drive(items: WorkItem[]): Promise<Reported[]> {
+  return (await driveLogged(items)).reports;
 }
 
 describe("the satellite worker", () => {
@@ -133,6 +157,56 @@ describe("the satellite worker", () => {
   });
 });
 
+describe("the worker's log", () => {
+  const AGENT = { id: "agent-1a2b", name: "Builder" };
+
+  it("names the agent behind a request and what it asked to run", async () => {
+    const { lines } = await driveLogged([
+      runItem(1, ["/bin/echo", "hello"], AGENT),
+    ]);
+    expect(lines).toContain(
+      "REQUEST #1 from Builder (agent-1a2b): /bin/echo hello",
+    );
+    expect(
+      lines.some((line) => /^DONE #1 in \d+\.\ds: exit 0$/.test(line)),
+    ).toBe(true);
+  });
+
+  it("says a refused command was blocked, and why, without reporting that flag", async () => {
+    const { reports, lines } = await driveLogged([
+      runItem(1, ["/bin/cat", "/etc/passwd"], AGENT),
+    ]);
+    expect(lines.find((line) => line.startsWith("BLOCKED #1: "))).toContain(
+      "refused locally",
+    );
+    expect(Object.keys(reports[0]?.outcome ?? {})).not.toContain("blocked");
+  });
+
+  it("tells a command that ran and failed apart from one that was blocked", async () => {
+    const { lines } = await driveLogged([runItem(1, ["/bin/false"], AGENT)]);
+    expect(lines.some((line) => /^FAILED #1 in .*: exit 1$/.test(line))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.startsWith("BLOCKED"))).toBe(false);
+  });
+
+  it("falls back to the agent's id when its name is unknown", async () => {
+    const { lines } = await driveLogged([
+      runItem(1, ["/bin/echo", "hello"], { id: "agent-9z", name: null }),
+    ]);
+    expect(lines).toContain("REQUEST #1 from agent-9z: /bin/echo hello");
+  });
+
+  it("prints where to add the satellite right after it connects", async () => {
+    const { lines } = await driveLogged([runItem(1, ["/bin/echo", "hello"])]);
+    const connected = lines.findIndex((line) =>
+      line.startsWith("connected as"),
+    );
+    expect(connected).toBeGreaterThanOrEqual(0);
+    expect(lines.indexOf("open the UI")).toBeGreaterThan(connected);
+  });
+});
+
 describe("claiming work", () => {
   function worker(transport: WorkerTransport, maxConcurrent: number) {
     const parsed = parseCommandSurface(PATTERNS, {
@@ -146,7 +220,7 @@ describe("claiming work", () => {
       worker: createWorker({
         name: parsed.value.pushed.name,
         maxConcurrent,
-        backend: createCommandBackend(parsed.value, { line: () => {} }),
+        backend: createCommandBackend(parsed.value),
         transport,
         log: { line: (text) => lines.push(text) },
         host: "test-host",

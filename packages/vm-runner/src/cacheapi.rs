@@ -114,7 +114,8 @@ pub async fn serve(
     }
     let listener = tokio::net::UnixListener::bind(path)
         .map_err(|e| anyhow::anyhow!("binding {}: {e}", path.display()))?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| anyhow::anyhow!("setting the mode of the socket {}: {e}", path.display()))?;
     axum::serve(listener, router(cache))
         .with_graceful_shutdown(shutdown)
         .await?;

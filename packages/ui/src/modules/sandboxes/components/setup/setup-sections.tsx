@@ -14,6 +14,11 @@ import { ConnectionCatalogModal } from "../../../connections/components/connecti
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
+import {
+  NO_SATELLITES,
+  useSatellites,
+} from "../../../satellites/api/queries.js";
+import { SatellitesGroupCard } from "../../../satellites/components/satellites-group-card.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
@@ -80,10 +85,14 @@ export function ProviderSection({
 export function useSetupConnectionCatalog({
   connectionIds,
   onToggle,
+  satelliteNames,
+  onToggleSatellite,
   oauthReturnView,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
+  satelliteNames: string[];
+  onToggleSatellite: (name: string, granted: boolean) => void;
   oauthReturnView: string;
 }): { openCatalog: () => void; catalogNode: ReactNode } {
   const [open, setOpen] = useState(false);
@@ -95,6 +104,10 @@ export function useSetupConnectionCatalog({
       <ConnectionCatalogModal
         onClose={() => setOpen(false)}
         sandbox={{ grantedIds, onToggleGrant: onToggle }}
+        satelliteGrant={(s) => ({
+          granted: satelliteNames.includes(s.name),
+          onToggle: (on) => onToggleSatellite(s.name, on),
+        })}
         oauthReturnView={oauthReturnView}
       />
     ) : null,
@@ -104,6 +117,8 @@ export function useSetupConnectionCatalog({
 export function ConnectionsSetupSection({
   connectionIds,
   onToggle,
+  satelliteNames,
+  onToggleSatellite,
   onOpenCatalog,
   title,
   leading,
@@ -111,12 +126,19 @@ export function ConnectionsSetupSection({
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
+  satelliteNames: string[];
+  onToggleSatellite: (name: string, granted: boolean) => void;
   onOpenCatalog: () => void;
   title?: string;
   leading?: React.ReactNode;
   excludeIds?: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
+  const { data: satellites = NO_SATELLITES } = useSatellites();
+  const pickedSatellites = useMemo(
+    () => satellites.filter((s) => satelliteNames.includes(s.name)),
+    [satellites, satelliteNames],
+  );
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
   const granted = useMemo(
     () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
@@ -128,6 +150,17 @@ export function ConnectionsSetupSection({
     [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
+  const satellitesCard = pickedSatellites.length > 0 && (
+    <SatellitesGroupCard
+      satellites={pickedSatellites}
+      showCount
+      grant={(s) => ({
+        granted: true,
+        onToggle: (on) => onToggleSatellite(s.name, on),
+        actionHidden: true,
+      })}
+    />
+  );
 
   return (
     <section className="mb-8">
@@ -138,7 +171,16 @@ export function ConnectionsSetupSection({
         onToggleGrant={onToggle}
         onOpenCatalog={onOpenCatalog}
         {...(title ? { title } : {})}
-        {...(leading ? { leading } : {})}
+        {...(leading || satellitesCard
+          ? {
+              leading: (
+                <>
+                  {leading}
+                  {satellitesCard}
+                </>
+              ),
+            }
+          : {})}
       />
     </section>
   );

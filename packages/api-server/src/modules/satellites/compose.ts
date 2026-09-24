@@ -39,6 +39,7 @@ export function composeSatellitesModule(deps: {
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
   spillLog: AgentOpsDeps["spillLog"];
   deliverOutcome: WorkerOpsDeps["deliverOutcome"];
+  agentName?: WorkerOpsDeps["agentName"];
 }): SatellitesComposition {
   const repo = createSatellitesRepository(deps.db);
 
@@ -67,6 +68,7 @@ export function composeSatellitesModule(deps: {
     repo,
     maxConcurrentCeiling: deps.maxConcurrentCeiling,
     deliverOutcome: deps.deliverOutcome,
+    ...(deps.agentName === undefined ? {} : { agentName: deps.agentName }),
   };
 
   return {
