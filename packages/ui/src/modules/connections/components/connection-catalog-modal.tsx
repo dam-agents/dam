@@ -73,7 +73,7 @@ export function ConnectionCatalogModal({
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [activeTab, setActiveTab] = useState<ModalTab>("apps");
-  const { data: satellites = NO_SATELLITES } = useSatellites();
+  const { data: satellites = NO_SATELLITES } = useSatellites({ live: true });
   const showSatellites =
     satellites.length > 0 && (!sandbox || satelliteGrant !== undefined);
   const shownTab =

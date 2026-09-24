@@ -21,7 +21,7 @@ import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 
 export function ConnectionsView() {
   const connectionsQ = useAppConnections({ fresh: true });
-  const { data: satellites = NO_SATELLITES } = useSatellites({ fresh: true });
+  const { data: satellites = NO_SATELLITES } = useSatellites({ live: true });
   const { confirmAndRemove, removingName } = useRemoveSatelliteWithConfirm();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();

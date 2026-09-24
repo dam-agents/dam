@@ -3,11 +3,17 @@ import type { SatelliteView } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
 
-export function useSatellites(options?: { fresh?: boolean }) {
+const LIVE_REFETCH_MS = 5000;
+
+export function useSatellites(options?: { live?: boolean }) {
   return useQuery({
     ...trpc.satellites.list.queryOptions(),
-    ...(options?.fresh
-      ? { staleTime: 0, refetchOnMount: "always" as const }
+    ...(options?.live
+      ? {
+          staleTime: 0,
+          refetchOnMount: "always" as const,
+          refetchInterval: LIVE_REFETCH_MS,
+        }
       : {}),
     meta: { errorToast: "Couldn't load satellites" },
   });

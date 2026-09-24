@@ -11,7 +11,10 @@ import {
   isOnline,
   OFFLINE_AFTER_MS,
 } from "../../modules/satellites/domain/admission.js";
-import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
+import type {
+  JobRow,
+  SatelliteRow,
+} from "../../modules/satellites/domain/types.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import { composeSatellitesModule } from "../../modules/satellites/compose.js";
 
@@ -475,5 +478,73 @@ describe("the tool names the platform registers", () => {
   it("keeps its own verbs, and drops a satellite tool that would shadow one", () => {
     const names = registered([view("box", ["run"])]);
     expect(names).toEqual(["box__run", "box__wait", "box__get", "box__cancel"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A shell Satellite started without a name is called
+   * user@hostname, and a hostname usually carries dots. Neither character is
+   * one an MCP tool name may hold, so both fold into the separator's own
+   * underscore rather than failing the Agent's session.
+   */
+  it("folds the @ and dots of a user@hostname satellite into a valid tool name", () => {
+    const names = registered([view("jan@lab.local", ["run"])]);
+    expect(names).toContain("jan_lab_local__run");
+    expect(names.every((n) => /^[a-z0-9_]+$/.test(n))).toBe(true);
+  });
+});
+
+describe("a claimed call", () => {
+  const queued: JobRow = {
+    owner: "alice",
+    satellite: "gpu-box",
+    sequence: 7,
+    agentId: "agent-1",
+    tool: "run",
+    args: { cmd: ["./process.sh"] },
+    status: "running",
+    isError: false,
+    exitCode: null,
+    output: null,
+    truncated: false,
+    reason: null,
+    cancelRequested: false,
+    cancelSentAt: null,
+    deliveredAt: null,
+    wokeAt: null,
+    awaitedUntil: null,
+    startedAt: NOW,
+    endedAt: null,
+    createdAt: NOW,
+  };
+
+  function claimWith(agentName: (id: string) => Promise<string | null>) {
+    const repo = {
+      get: async () => satellite(),
+      touch: async () => {},
+      setDraining: async () => {},
+      takeCancellations: async () => [],
+      claimQueued: async () => [queued],
+    };
+    return createSatelliteWorkerOps({
+      repo: repo as never,
+      maxConcurrentCeiling: 64,
+      deliverOutcome: async () => {},
+      agentName,
+    }).claim("alice", { satellite: "gpu-box", capacity: 4, waitMs: 0 });
+  }
+
+  it("names the agent that sent it, for the machine's log", async () => {
+    const [item] = await claimWith(async () => "Builder");
+    expect(item).toMatchObject({
+      kind: "call",
+      agent: { id: "agent-1", name: "Builder" },
+    });
+  });
+
+  it("still goes out when the name cannot be looked up", async () => {
+    const [item] = await claimWith(async () => {
+      throw new Error("db down");
+    });
+    expect(item).toMatchObject({ agent: { id: "agent-1", name: null } });
   });
 });
