@@ -141,10 +141,10 @@ confirmed, drop the stale; operator-tagged entries are never dropped). Bounded m
 what lets the agent improve forever without the file growing forever.
 
 A third route, useful for every agent (not just learning ones): **`work/LESSONS.md`** —
-operational lessons. Verified environment facts and recurring failure modes ("GraphQL is
-not proxied here — use REST", "this API paginates at 100"), written **only when a root
-cause was actually reproduced**, read at the start of work runs. It prevents every future
-run from re-diagnosing the same environmental quirk; entries name the evidence.
+operational lessons. Verified environment facts and recurring failure modes ("awk is not
+in this image — sed and cut only", "this API paginates at 100"), written **only when a
+root cause was actually reproduced**, read at the start of work runs. It prevents every
+future run from re-diagnosing the same environmental quirk; entries name the evidence.
 
 ## Logging
 
