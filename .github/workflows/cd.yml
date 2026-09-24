@@ -368,6 +368,8 @@ jobs:
           TAG: ${{ needs.changes.outputs.platform_base_tag }}
           PR: ${{ github.event_name == 'pull_request' }}
           CACHE_TO: ${{ github.event_name != 'pull_request' && '1' || '' }}
+          # The mise images lock and verify their tools against GitHub's API.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ "$BUILT" = true ]; then base="$IMAGE_PREFIX/platform-base@sha256:$(ls /tmp/base-digest)"; else base="$IMAGE_PREFIX/platform-base:$TAG"; fi

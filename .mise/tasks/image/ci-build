@@ -75,8 +75,8 @@ build_mise() {
     *) packages/mise-oci/.mise/tasks/image "$c" || return 1 ;;
   esac
   case "$kind" in
-    cacheonly | load) return 0 ;;
-    sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" ;;
+    cacheonly | load) ;;
+    sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
     digest)
       crane push "$layout" "$IMAGE_PREFIX/$c" --image-refs "/tmp/ci-build/meta/$c.ref" || return 1
       ref="$(head -1 "/tmp/ci-build/meta/$c.ref")"
@@ -84,6 +84,9 @@ build_mise() {
       ;;
     *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
   esac
+  # The layout is done with once pushed or proven, and the serial job's later
+  # buildx images need the disk.
+  rm -rf "$layout"
 }
 
 build_one() {
