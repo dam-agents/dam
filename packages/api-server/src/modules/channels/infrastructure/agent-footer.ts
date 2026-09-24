@@ -1,4 +1,4 @@
-import { mcpToolPrefix, PLATFORM_OUTBOUND_MCP_SERVER } from "api-server-api";
+import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 
 import type { SlackBlock, SlackMessage } from "./slack-gateway.js";
 
@@ -71,8 +71,6 @@ export function parseAgentFooter(
   }
   return null;
 }
-
-export const OUTBOUND_TOOL_PREFIX = mcpToolPrefix(PLATFORM_OUTBOUND_MCP_SERVER);
 
 export const THREAD_MARKER_NOTE =
   "A line ending in a [thread: ...] tag opened a thread: the tag gives how " +

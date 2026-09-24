@@ -31,10 +31,6 @@ export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
   KB_AGGREGATE_MCP_SERVER,
 ];
 
-export function mcpToolPrefix(server: string): string {
-  return `mcp__${server}__`;
-}
-
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export function isValidEnvName(name: string): boolean {

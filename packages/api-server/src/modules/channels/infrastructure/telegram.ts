@@ -31,7 +31,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
-import { OUTBOUND_TOOL_PREFIX } from "./agent-footer.js";
+import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import {
   createConversationQueue,
