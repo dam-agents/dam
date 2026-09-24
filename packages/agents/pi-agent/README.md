@@ -2,7 +2,7 @@
 
 Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from [`packages/mise-oci`](../../mise-oci/), as its `pi-agent` config environment ([`harness.pi-agent.toml`](../../mise-oci/image/mise/conf.d/harness.pi-agent.toml)). Its files live at their image paths under [`packages/mise-oci/image/harness/pi-agent/`](../../mise-oci/image/harness/pi-agent/).
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from [`packages/agents/base`](../base/), as its `pi-agent` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 
@@ -11,7 +11,7 @@ The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.htm
 | Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
 | Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
 
-Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/settings.json).
+Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi/agent/settings.json).
 
 ## File layout
 
@@ -42,7 +42,7 @@ On the platform the actual credential never lives in pod env. The pod carries a 
 
 Three steps to enable any pi built-in provider:
 
-1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to the harness config (`[oci.env]` in [`harness.pi-agent.toml`](../../mise-oci/image/mise/conf.d/harness.pi-agent.toml)), the agent template, or per-instance via the Configure Agent UI:
+1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to the harness config (`[oci.env]` in [`image.toml`](image.toml)), the agent template, or per-instance via the Configure Agent UI:
 
    ```toml
    [oci.env]
@@ -53,7 +53,7 @@ Three steps to enable any pi built-in provider:
 
 2. **Create a generic secret on the platform** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
 
-3. **Select the model** in [`settings.json`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
+3. **Select the model** in [`settings.json`](rootfs/app/working-dir/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
 
 #### Provider env vars and host patterns
 
@@ -128,7 +128,7 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
-The [`pi-dynamic-providers`](../../mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](rootfs/app/working-dir/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|

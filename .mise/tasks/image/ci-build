@@ -69,10 +69,10 @@ output_for() {
 # since buildx never sees it. The push's digest is written where the buildx
 # metadata file would put it, so the digest step below reads both alike.
 build_mise() {
-  local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci/out/$1" ref
+  local c=$1 kind=$2 layout="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci/out/$1" ref
   case "$kind" in
-    load) packages/mise-oci/.mise/tasks/image "$c" --load || return 1 ;;
-    *) packages/mise-oci/.mise/tasks/image "$c" || return 1 ;;
+    load) packages/agents/.mise/tasks/oci "$c" --load || return 1 ;;
+    *) packages/agents/.mise/tasks/oci "$c" || return 1 ;;
   esac
   case "$kind" in
     cacheonly | load) ;;

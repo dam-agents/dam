@@ -1,4 +1,6 @@
-# Claude Code: `mise oci build -E claude-code`. Mirrors packages/agents/claude-code.
+# Claude Code: this agent's config environment, `mise oci build -E claude-code`, staged as
+# mise/conf.d/harness.claude-code.toml over base/base.toml. The copies name this
+# directory's rootfs/ as the oci task stages it, harness/claude-code/.
 
 [tools]
 # The ACP adapter; the claude CLI rides along inside it, and the image task

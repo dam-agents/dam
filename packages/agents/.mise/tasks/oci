@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Experimental: build a Debian agent image with `mise oci` instead of a Dockerfile. Argument: the harness component, claude-code|codex|pi-agent|bob. Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-<harness>:latest)"
+#MISE description="Build a Debian agent image with `mise oci`: an agent whose directory has an image.toml (claude-code, codex, pi-agent, bob). Linux host of the target arch with apt-get (the lima VM on macOS). Options: --from=REF base image, --load[=TAG] into docker (default platform-<harness>:latest)"
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
-pkg=packages/mise-oci
+agents=packages/agents
 harness=""
 from=""
 load=""
@@ -16,9 +16,9 @@ for a in "$@"; do
     *) harness="$a" ;;
   esac
 done
-[ -n "$harness" ] && [ -f "$pkg/image/mise/conf.d/harness.$harness.toml" ] || {
-  echo "usage: image <harness> [--from=REF] [--load[=TAG]]; harnesses:" \
-    "$(cd "$pkg/image/mise/conf.d" && ls harness.*.toml | sed 's/^harness\.//; s/\.toml$//' | tr '\n' ' ')" >&2
+[ -n "$harness" ] && [ -f "$agents/$harness/image.toml" ] || {
+  echo "usage: oci <agent> [--from=REF] [--load[=TAG]]; agents built this way:" \
+    "$(cd "$agents" && ls -d */image.toml | sed 's|/image.toml$||' | tr '\n' ' ')" >&2
   exit 2
 }
 [ "$load" = default ] && load="platform-$harness:latest"
@@ -29,7 +29,7 @@ done
 [ "$(uname -s)" = Linux ] || { echo "mise oci builds on Linux only; on macOS run this in the lima VM" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "needs apt-get on the build host for [bootstrap.packages]" >&2; exit 1; }
 
-state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-mise-oci"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
 work="$state/build"
 stage="$work/stage"
 runtime="$work/runtime"
@@ -57,16 +57,28 @@ export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$
   MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" MISE_EXPERIMENTAL=1
 : > "$MISE_GLOBAL_CONFIG_FILE"
 
-# image/ is the whole config: its conf.d fragments name every layer, the
-# rootfs trees included. build/ beside them is what the host builds; git keeps
-# no empty directories, so the ones the image needs are made there too. Every
+# The stage is a mise project in the layout mise reads: base/ becomes its root
+# config and rootfs, and every agent with an image.toml adds its config
+# environment (mise/conf.d/harness.<agent>.toml) and its tree (harness/<agent>).
+# The fragments' copy paths are relative to mise/conf.d/ in this layout. In the
+# repo the files keep names mise would not load, since each agent directory is
+# a config root. build/ beside them is what the host builds; git keeps no
+# empty directories, so the ones the image needs are made there too. Every
 # file the build adds is owned by --owner, the agent, which is what makes the
 # home, the trust store and the mise data dir writable in a container.
 # node_modules is left out: pnpm links the pi extension's dev dependencies into
 # its tree, and the image ships the extension's source only.
 rm -rf "$stage"
-mkdir -p "$stage"
-tar -C "$pkg/image" --exclude=node_modules -cf - . | tar -C "$stage" -xf -
+mkdir -p "$stage/mise/conf.d" "$stage/harness"
+cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
+cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
+cp -a "$agents/base/rootfs" "$stage/rootfs"
+for f in "$agents"/*/image.toml; do
+  a="$(basename "$(dirname "$f")")"
+  cp "$f" "$stage/mise/conf.d/harness.$a.toml"
+  mkdir -p "$stage/harness/$a"
+  tar -C "$agents/$a/rootfs" --exclude=node_modules -cf - . | tar -C "$stage/harness/$a" -xf -
+done
 b="$stage/build"
 install -d "$b"/{app/working-dir/.agents/skills,app/working-dir/.claude,home/agent,etc/logrotate.d,etc/ssl/certs} \
   "$b"/usr/local/{bin,lib/platform-python} "$b"/usr/local/share/{ca-certificates,tool-bin,dam-skills}

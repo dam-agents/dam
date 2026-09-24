@@ -1,3 +1,0 @@
-# Opts the staged build into environment-specific conf.d fragments:
-# mise/conf.d/harness.<name>.toml loads only under `-E <name>`.
-env_conf_d = true

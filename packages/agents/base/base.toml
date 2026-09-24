@@ -1,8 +1,8 @@
-# What every harness image shares, as a `mise oci` config fragment that always
-# loads. A harness is a config environment: its harness.<name>.toml fragment
-# adds the harness's tools, env and files, and `mise oci build -E <name>` builds
-# its image. The image task stages this directory, with agent-runtime built into
-# build/, outside the repo.
+# What every agent image built with `mise oci` shares: the config that always
+# loads. Each such agent is a config environment of its own, from its
+# image.toml, and `mise oci build -E <agent>` builds its image. The oci task
+# stages this file as mise/conf.d/base.toml, the agents' image.toml files
+# beside it, and agent-runtime built into build/, all outside the repo.
 #
 # It started from platform-base and diverges from it on purpose: every tool is
 # baked in, with no lazy installs, tool shims, oc or gws. It runs on both
@@ -86,7 +86,7 @@ PORT = "8080"
 [oci.labels]
 "org.opencontainers.image.description" = "Experimental Debian agent image built with mise oci"
 
-# Copy paths are relative to this file. A copy cannot target / itself, so each
+# Copy paths are relative to this file where the oci task stages it. A copy cannot target / itself, so each
 # top-level directory is its own layer; a harness fragment's copies come after
 # these and replace what they share.
 [[oci.copy]]

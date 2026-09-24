@@ -155,6 +155,15 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
+  packages/agents/pi-agent/rootfs/app/working-dir/.pi/agent/extensions/pi-dynamic-providers:
+    devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.85.1
+        version: 0.85.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.0
+
   packages/api-server:
     dependencies:
       '@agentclientprotocol/sdk':
@@ -605,15 +614,6 @@ importers:
       vite:
         specifier: ^6.4.3
         version: 6.4.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0)
-
-  packages/mise-oci/image/harness/pi-agent/app/working-dir/.pi/agent/extensions/pi-dynamic-providers:
-    devDependencies:
-      '@earendil-works/pi-coding-agent':
-        specifier: 0.85.1
-        version: 0.85.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.12.0
 
   packages/platform-base: {}
 

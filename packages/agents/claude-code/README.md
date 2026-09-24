@@ -1,9 +1,9 @@
 # Claude Code agent image
 
-Built with `mise oci` from [`packages/mise-oci`](../../mise-oci/): the `claude-code` config environment, [`harness.claude-code.toml`](../../mise-oci/image/mise/conf.d/harness.claude-code.toml), over the shared Debian base. The harness's files live at their image paths under [`packages/mise-oci/image/harness/claude-code/`](../../mise-oci/image/harness/claude-code/).
+Built with `mise oci` from [`packages/agents/base`](../base/): the `claude-code` config environment, [`image.toml`](image.toml), over the shared Debian base. The harness's files live at their image paths under [`rootfs/`](rootfs/).
 
 ```sh
-mise run //packages/agents:image -- claude-code   # or //packages/mise-oci:image -- claude-code --load
+mise run //packages/agents:image -- claude-code   # or //packages/agents:oci -- claude-code --load
 ```
 
 The workload images (nous, openevolve, shinkaevolve, gepa, skydiscover) are built on this one.

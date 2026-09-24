@@ -1,4 +1,6 @@
-# Codex: `mise oci build -E codex`. Mirrors packages/agents/codex.
+# Codex: this agent's config environment, `mise oci build -E codex`, staged as
+# mise/conf.d/harness.codex.toml over base/base.toml. The copies name this
+# directory's rootfs/ as the oci task stages it, harness/codex/.
 
 [tools]
 "npm:@openai/codex" = "0.153.4"

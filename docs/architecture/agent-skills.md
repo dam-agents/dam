@@ -20,7 +20,7 @@ A Local Skill's name **on the wire is its frontmatter `name:` when it has one**,
 
 An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in platform-base's [`runtime-manifest.yaml`](../../packages/platform-base/runtime-manifest.yaml).
 
-Each harness image symlinks its harness-native skills dir onto that canonical store — the link ships in the harness's image tree ([`packages/mise-oci/`](../../packages/mise-oci/)), or its Dockerfile for the images still built with one ([`packages/agents/`](../../packages/agents/)) — so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
+Each harness image symlinks its harness-native skills dir onto that canonical store — the link ships in the harness's image tree, or its Dockerfile for the images still built with one ([`packages/agents/`](../../packages/agents/)) — so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
