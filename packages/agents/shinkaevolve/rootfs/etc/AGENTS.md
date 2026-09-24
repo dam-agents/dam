@@ -81,7 +81,7 @@ estimate, but an informed user may pre-authorize it (see below).
    metric (runtime, accuracy, size, error rate) and agree on it first.
 2. **You've authored the task inputs** — `initial.<ext>` (with `EVOLVE-BLOCK`
    markers) and `evaluate.py` (emitting `combined_score`) — per the skill.
-3. **You've run a smoke-eval** (`python evaluate.py --program_path
+3. **You've run a smoke-eval** (`"$SHINKA_VENV/bin/python" evaluate.py --program_path
    initial.<ext> --results_dir <tmp>`) and shown the evaluator scores a known
    input sensibly (a baseline number the user recognizes as correct). This
    catches the silent failure mode where the evaluator runs but scores the

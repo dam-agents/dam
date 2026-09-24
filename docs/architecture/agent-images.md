@@ -2,7 +2,7 @@
 
 Last verified: 2026-09-24
 
-The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily and there are no tool shims. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
+The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily, and no baked tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
 
 ## One base, one environment per image
 

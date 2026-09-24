@@ -163,7 +163,7 @@ Before any full run, smoke-test the evaluator against the initial program and
 confirm it scores a known input sensibly:
 
 ```sh
-python evaluate.py --program_path task/initial.py --results_dir /tmp/smoke
+"$SHINKA_VENV/bin/python" evaluate.py --program_path task/initial.py --results_dir /tmp/smoke
 ```
 
 Then present a cost estimate, get the user's go-ahead, and launch backgrounded

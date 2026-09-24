@@ -197,7 +197,7 @@ Before any full run, smoke-test the evaluator against the initial program and
 confirm it scores a known input sensibly:
 
 ```sh
-cd task && python -c "from evaluator import evaluate; print(evaluate('initial.py'))"
+cd task && "$SKYDISCOVER_VENV/bin/python" -c "from evaluator import evaluate; print(evaluate('initial.py'))"
 ```
 
 Then present a cost estimate, get the user's go-ahead, and launch backgrounded
@@ -312,7 +312,7 @@ def evaluate(program_path):
 Smoke-eval with the mandatory cheat case (must score 0) next to the baseline:
 
 ```sh
-cd task && python3 -c "
+cd task && "$SKYDISCOVER_VENV/bin/python" -c "
 from evaluator import evaluate
 print('baseline:', evaluate('initial.py'))
 open('/tmp/cheat.py','w').write('import math\ndef approx(x):\n    return math.sin(x)\n')
