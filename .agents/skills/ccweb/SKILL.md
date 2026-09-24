@@ -97,9 +97,9 @@ curl -sG http://localhost:5555/api/trpc/e2e.getReceivedPrompts --data-urlencode 
 
 ## Restart and recovery
 
-- **Restart k3s:** `.agents/skills/ccweb/scripts/k3s-launcher stop` kills the PID namespace, and every pod with it. It also flushes the pod iptables rules the way `k3s-killall.sh` would, because the network namespace is the host's. A stale hostport rule silently sends `:5555` to a dead pod IP. Then re-run the install with `K3S_LAUNCHER` set: with no supervisor, it starts k3s whenever no `k3s-server` process is running. Restarting k3s by hand loses the install's `NO_PROXY` export, so `kubectl logs` and `exec` break through the proxy.
-- **Full reset:** `k3s-launcher stop`, then `rm -rf /var/lib/rancher/k3s /etc/rancher/k3s`, then the bring-up from `pull-images` on.
-- **Never `pgrep -f`/`pkill -f` on a pattern like `k3s`:** it matches your own shell's command line and kills it. Use `pgrep -x k3s-server` or `k3s-launcher stop`.
+- **Restart k3s:** `mise run cluster:stop` stops k3s. Under the launcher, every pod dies with its PID namespace. The task also clears the mounts and pod iptables rules left in the host netns, as `k3s-killall.sh` would on a supervised host; a stale hostport rule silently sends `:5555` to a dead pod IP. Then re-run the install with `K3S_LAUNCHER` set: with no supervisor, it starts k3s whenever no `k3s-server` process is running. Restarting k3s by hand loses the install's `NO_PROXY` export, so `kubectl logs` and `exec` break through the proxy.
+- **Full reset:** `mise run cluster:stop`, then `rm -rf /var/lib/rancher/k3s /etc/rancher/k3s`, then the bring-up from `pull-images` on.
+- **Never `pgrep -f`/`pkill -f` on a pattern like `k3s`:** it matches your own shell's command line and kills it. Use `pgrep -x k3s-server` or `mise run cluster:stop`.
 - **After a k3s upgrade:** delete `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl`, and the launcher re-derives it.
 - **Postgres:** `mise run cluster:kubectl -- exec platform-postgres-0 -- psql -U platform -d platform`.
 - **Curated catalog warnings** (`self-signed certificate in certificate chain`) are the proxy's CA inside the api-server pod. They are harmless for local work.

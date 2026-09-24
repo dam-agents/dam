@@ -5,7 +5,22 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   if [ -d /run/systemd/system ]; then
     sudo systemctl stop k3s
   else
-    sudo pkill -f 'k3s server' || true
+    sudo pkill -x k3s-server || true
+    for _ in $(seq 1 30); do pgrep -x k3s-server >/dev/null || break; sleep 1; done
+    # What k3s-killall.sh does on a supervised host; a plain process leaves it
+    # all behind. Pods outlive k3s in their shims, their mounts stay, and their
+    # iptables rules live in the host netns — a stale hostport DNAT sends the
+    # next start's ingress port to a pod IP that no longer exists.
+    sudo pkill -9 -f '/var/lib/rancher/k3s/data/[^ ]*/containerd-shim' || true
+    for _ in 1 2 3; do
+      mount | awk '{print $3}' | grep -E '^/(run/k3s|var/lib/kubelet|var/lib/rancher/k3s|run/netns|var/run/netns)' | sort -r \
+        | xargs -r -n1 sudo umount -l 2>/dev/null || true
+    done
+    for backend in iptables iptables-legacy; do
+      command -v "$backend-save" >/dev/null 2>&1 || continue
+      sudo "$backend-save" 2>/dev/null | grep -v -e KUBE- -e CNI- -e ISTIO -e FLANNEL -e flannel | sudo "$backend-restore"
+    done
+    sudo rm -rf /var/lib/cni
   fi
 else
   limactl stop platform-k3s

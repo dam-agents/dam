@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # K3S_LAUNCHER for cluster:install's plain-process branch on a Claude Code on
 # the web container. Usage (cluster:install calls it): k3s-launcher k3s server ...
-# To stop k3s and every pod: k3s-launcher stop
+# To stop k3s and every pod: IS_SANDBOX=1 mise run cluster:stop
 #
 # Each workaround turns on only when its probe says the host needs it:
 #   - cgroup v1: kubelet >= 1.35 refuses to start unless told fail-cgroupv1=false.
@@ -15,42 +15,13 @@
 # so kubelet's percentage eviction thresholds fire early; absolute ones replace
 # them.
 #
-# `stop` kills the namespace init, and every pod dies with the namespace: the
-# clean way to restart. Restart with cluster:install again, or by hand:
-#   setsid k3s-launcher k3s server --write-kubeconfig-mode 644 --https-listen-port 16443 >>~/.k3s.log 2>&1 &
+# When k3s-server exits, this script, the namespace's PID 1, exits after it,
+# and every pod in the namespace dies with it. cluster:stop relies on that and
+# then clears the mounts and iptables rules pods leave in the host netns.
 set -euo pipefail
 
 CONTAINERD_DIR=/var/lib/rancher/k3s/agent/etc/containerd
 DROPIN=/etc/rancher/k3s/config.yaml.d/60-ccweb.yaml
-
-if [ "${1:-}" = stop ]; then
-  # Matches the namespace init by its exact argv element, which a shell whose
-  # -c string merely mentions this script never has.
-  for d in /proc/[0-9]*; do
-    if grep -qs k3s-launcher "$d/cmdline" && tr '\0' '\n' <"$d/cmdline" 2>/dev/null | grep -qx -- --inside; then
-      kill -9 "${d#/proc/}" 2>/dev/null || true
-    fi
-  done
-  pkill -x k3s-server 2>/dev/null || true
-  for _ in $(seq 1 30); do pgrep -x k3s-server >/dev/null || break; sleep 1; done
-  for _ in 1 2 3; do
-    mount | awk '{print $3}' | grep -E 'k3s|kubelet|netns' | sort -r | xargs -r -n1 umount -l 2>/dev/null || true
-  done
-  # What k3s-killall.sh does on a supervised host. The netns is the host's,
-  # so pod rules and links outlive the pods; a stale hostport DNAT sends the
-  # next cluster's :5555 to a pod IP that no longer exists.
-  for backend in iptables iptables-legacy; do
-    command -v "$backend-save" >/dev/null 2>&1 || continue
-    "$backend-save" 2>/dev/null | grep -v -e KUBE- -e CNI- -e ISTIO -e FLANNEL -e flannel | "$backend-restore"
-  done
-  if command -v ip >/dev/null 2>&1; then
-    for link in cni0 flannel.1 kube-ipvs0 istioin istioout; do
-      ip link delete "$link" 2>/dev/null || true
-    done
-  fi
-  rm -rf /var/lib/cni
-  exit 0
-fi
 
 if [ "${1:-}" = --inside ]; then
   shift
