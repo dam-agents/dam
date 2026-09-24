@@ -1,8 +1,9 @@
-import { SHARED_KB_TEMPLATE_ID, type Contribution } from "api-server-api";
 import {
   KB_AGGREGATE_MCP_SERVER,
   PLATFORM_OUTBOUND_MCP_SERVER,
-} from "../../../core/platform-mcp.js";
+  SHARED_KB_TEMPLATE_ID,
+  type Contribution,
+} from "api-server-api";
 
 export const KB_AGGREGATE_MCP_ENTRY_NAME = KB_AGGREGATE_MCP_SERVER;
 export { SHARED_KB_TEMPLATE_ID };

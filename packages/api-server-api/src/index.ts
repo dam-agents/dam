@@ -316,6 +316,12 @@ export type {
 } from "./modules/connections/providers.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
+  KB_AGGREGATE_MCP_SERVER,
+  mcpToolPrefix,
+  PLATFORM_OUTBOUND_MCP_SERVER,
+  RESERVED_MCP_SERVER_NAMES,
+} from "./modules/shared.js";
+export {
   DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,

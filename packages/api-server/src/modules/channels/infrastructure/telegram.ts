@@ -31,6 +31,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { OUTBOUND_TOOL_PREFIX } from "./agent-footer.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import {
   createConversationQueue,
@@ -501,9 +502,9 @@ export function createTelegramWorker(deps: {
     const freshPrompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
-      `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
+      `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
-      "To deliberately stay silent — a group message that isn't for you, or one already handled — call `mcp__platform-outbound__no_reply_needed` instead of replying.",
+      `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
       "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
       "",

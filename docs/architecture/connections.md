@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-23
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -86,7 +86,7 @@ A user may hold several Connections to one service — two Slack workspaces, two
 
 Each Connection therefore has an **address**: a per-Connection path prefix on the real host, `/__platform_conn/<connection id>/`. The gateway picks the credential from that path and strips it before the request leaves, so the upstream sees the address it published. The host stays the real one, so egress rules, approval prompts and logs keep describing the real destination, and a prompt names the Connection through the path.
 
-The address is a property of the Agent's grant, not of the stored Connection: contributions are recorded against the real address, and the runtime state an Agent is given carries the prefixed one. So a Connection's address is stable whether or not a second Connection to that service exists, and adding one never re-addresses the first. Today the platform prefixes the `mcp-entry` URLs of each Connection — the addresses it writes on the Agent's behalf. The Agent sees those entries under the names the user gave the Connections, so two workspaces read as two named servers.
+The address is a property of the Agent's grant, not of the stored Connection: contributions are recorded against the real address, and the runtime state an Agent is given carries the prefixed one. So a Connection's address is stable whether or not a second Connection to that service exists, and adding one never re-addresses the first. Today the platform prefixes the `mcp-entry` URLs of each Connection — the addresses it writes on the Agent's behalf. The Agent sees those entries under the names the user gave the Connections, so two workspaces read as two named servers. The two names the platform injects under are reserved and a Connection cannot take one: an entry name becomes the prefix on every tool it carries, and those two prefixes are what a relayed turn approves on the platform's behalf ([channel turns](channel-turns.md)), so a Connection wearing one would inherit that approval.
 
 Naming a Connection is only *required* where two of them genuinely collide: the same header on the same host over paths that overlap. Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address. Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
 
