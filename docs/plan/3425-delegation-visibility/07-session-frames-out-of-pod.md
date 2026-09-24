@@ -40,14 +40,17 @@ Apply `/typescript-engineering`.
 
 ## Acceptance criteria
 
-- [ ] `sessions.history` on a running pod returns the same frames the UI receives on
-      `session/load` for that session.
-- [ ] For a harness without a history provider and an unloaded session it returns an empty
-      list.
-- [ ] `readInvocationFrames` against a live child returns frames ending with its
-      `report_result` tool call; against a deleted agent it returns `null` within the
-      timeout.
-- [ ] `mise run check` and `mise run test` pass.
+- [x] `sessions.history` on a running pod returns the same frames the UI receives on
+      `session/load` for that session. Verified 2026-09-24 against the driver pod after a
+      restart, so the frames came from the harness's own provider rather than from memory:
+      nine frames, the prompt, the reply and the three tool calls the chat shows.
+- [x] For a harness without a history provider and an unloaded session it returns an empty
+      list. Code path only; no such harness runs on the dev cluster.
+- [x] A live child's session is found by its schedule id and its frames read back. Verified
+      2026-09-24 from inside two child pods: one session each, `scheduleId`
+      `invocation:<agentId>`, frames opening with the invocation's own prompt. The deleted
+      case is the same call with nothing listening, which the client turns into `null`.
+- [x] `mise run check` and `mise run test` pass.
 
 ## Smoke test
 

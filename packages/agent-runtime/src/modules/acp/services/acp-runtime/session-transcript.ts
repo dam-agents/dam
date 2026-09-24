@@ -56,6 +56,7 @@ export interface SessionTranscript {
     opts?: { synthetic?: boolean },
   ): void;
   metadataOf(sessionId: string): CachedMetadata;
+  lines(sessionId: string): { frames: string[]; truncated: boolean };
   forget(sessionId: string): void;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
@@ -300,6 +301,15 @@ export function createSessionTranscript(
       if (replaceable && !(log.metadata.cached && synthetic)) {
         log.metadata = { cached: true, value: result, synthetic };
       }
+    },
+
+    lines(sessionId) {
+      const log = sessionLogs.get(sessionId);
+      if (!log) return { frames: [], truncated: false };
+      return {
+        frames: log.entries.map((entry) => entry.line),
+        truncated: log.truncated,
+      };
     },
 
     metadataOf(sessionId) {

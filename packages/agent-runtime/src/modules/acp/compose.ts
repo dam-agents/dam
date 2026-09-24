@@ -104,6 +104,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     () => new Date().toISOString(),
   );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
+  const historyProvider = historyProviderOf(opts);
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     activeTurns,
@@ -119,7 +120,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
     onArtifactTouch: opts.onArtifactTouch,
-    historyProvider: historyProviderOf(opts),
+    ...(historyProvider ? { historyProvider } : {}),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     ...(opts.beforeFirstSpawn
@@ -139,6 +140,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
+    sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
+    ...(historyProvider ? { historyProvider } : {}),
   });
 
   return {

@@ -26,3 +26,11 @@ export {
 } from "./services/target-admission.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
 export { REPORT_GRACE_MS } from "./services/target-reaper.js";
+export {
+  createPodSessionClient,
+  invocationScheduleId,
+} from "./infrastructure/pod-session-client.js";
+export type {
+  TargetFrames,
+  TargetFramesReader,
+} from "./services/target-frames-reader.js";

@@ -82,6 +82,7 @@ export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
+  sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
@@ -1067,6 +1068,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     isSessionRunning(sessionId) {
       return sessionIsRunning(sessionId);
+    },
+
+    sessionFrames(sessionId) {
+      return transcript.lines(sessionId);
     },
 
     resetSession(sessionId) {

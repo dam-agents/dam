@@ -17,6 +17,8 @@ export type {
   PodSessionType,
   SessionDirectoryEntry,
   SessionDirectoryReport,
+  SessionHistory,
+  SessionHistoryInput,
   SessionsService,
 } from "./modules/sessions/types.js";
 export {
@@ -25,6 +27,8 @@ export {
   podSessionNoticeSchema,
   podSessionSchema,
   podSessionTypeSchema,
+  sessionHistoryInputSchema,
+  sessionHistorySchema,
   sessionDirectoryEntrySchema,
   sessionDirectoryReportSchema,
 } from "./modules/sessions/schemas.js";
