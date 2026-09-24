@@ -671,6 +671,33 @@ async fn a_machine_whose_first_boot_failed_takes_the_next_spec_whole() {
     );
 }
 
+// TEST_SCENARIO: a stored spec that cannot be read says nothing about which image the machine's record names. The next start must write the image it is asked for rather than assume the record already holds it, or the machine boots its old image and reads as converged.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_stored_spec_is_unreadable_takes_the_image_it_is_asked_for() {
+    let h = Harness::new("unreadable-spec");
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    std::fs::write(
+        h.dir.join("machines").join("m1").join("spec.json"),
+        "not json",
+    )
+    .unwrap();
+
+    let mut upgraded = spec(true);
+    upgraded.image = "quay.io/x/vm:2".into();
+    h.server.put("m1", upgraded).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.last_update().image.map(PathBuf::from),
+        Some(h.entry("m1").join(ROOTFS_DIR)),
+        "the image is resolved and written to the record"
+    );
+    assert_eq!(
+        read_spec(&h.dir.join("machines"), "m1").unwrap().image,
+        "quay.io/x/vm:2"
+    );
+}
+
 // TEST_SCENARIO: a machine id is a path segment under the state directory, and an image reference names a cache entry. Anything that could leave either is refused before it reaches the disk.
 #[tokio::test(flavor = "multi_thread")]
 async fn names_that_could_escape_their_directories_are_refused() {

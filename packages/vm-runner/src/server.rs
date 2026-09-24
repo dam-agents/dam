@@ -578,8 +578,8 @@ impl Server {
         )?;
         let applied = read_spec(&self.config.state_dir, id);
         let image = match &applied {
-            Some(applied) if applied.image != spec.image => Some(self.resolve(spec, auths)?),
-            _ => None,
+            Some(applied) if applied.image == spec.image => None,
+            _ => Some(self.resolve(spec, auths)?),
         };
         let port = state::port(&self.config.state_dir, id);
         if port != 0 {
