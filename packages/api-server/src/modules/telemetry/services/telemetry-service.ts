@@ -1,20 +1,27 @@
-import type {
-  TelemetryLogsQuery,
-  TelemetryLogsResult,
-  TelemetryService,
-  TelemetrySpan,
-  TelemetryTurnQuery,
-  TelemetryTurnResult,
-  TelemetryTurnsQuery,
-  TelemetryTurnsResult,
-  TurnSummary,
+import {
+  TELEMETRY_MAX_SINCE_HOURS,
+  type TelemetryInvocationTurnsQuery,
+  type TelemetryInvocationTurnsResult,
+  type TelemetryLogsQuery,
+  type TelemetryLogsResult,
+  type TelemetryService,
+  type TelemetrySpan,
+  type TelemetryTurnQuery,
+  type TelemetryTurnResult,
+  type TelemetryTurnsQuery,
+  type TelemetryTurnsResult,
+  type TurnSummary,
 } from "api-server-api";
 
 import {
   attachLogsToSpans,
   type UnattachedLog,
 } from "../domain/attach-logs.js";
-import { BOUNDARY_DEBOUNCE_MS, groupIntoTurns } from "../domain/group-turns.js";
+import {
+  BOUNDARY_DEBOUNCE_MS,
+  groupIntoTurns,
+  summariseRun,
+} from "../domain/group-turns.js";
 
 export const TELEMETRY_DISABLED_REASON =
   "The telemetry backend is not enabled on this deployment, so agent traces and logs are not recorded here.";
@@ -24,6 +31,7 @@ export interface TelemetryWindow {
   fromIso?: string;
   toIso?: string;
   sessionId?: string;
+  invocationIds?: readonly string[];
 }
 
 export interface TelemetryLogFilter extends TelemetryWindow {
@@ -39,6 +47,7 @@ const shiftIso = (iso: string, deltaMs: number): string => {
 };
 
 const END_TRUNCATION_MS = 1;
+const TELEMETRY_INVOCATION_ROWS = 20_000;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the window one turn is read through. The listing
@@ -56,7 +65,10 @@ export function turnWindow(query: TelemetryTurnQuery): TelemetryWindow {
   return {
     fromIso: shiftIso(query.from, -markerPadMs),
     toIso: shiftIso(query.to, markerPadMs + END_TRUNCATION_MS),
-    sessionId: query.sessionId,
+    ...(query.sessionId === undefined ? {} : { sessionId: query.sessionId }),
+    ...(query.invocationId === undefined
+      ? {}
+      : { invocationIds: [query.invocationId] }),
   };
 }
 
@@ -199,6 +211,33 @@ export function createTelemetryService(deps: {
       };
     },
 
+    async invocationTurns(
+      query: TelemetryInvocationTurnsQuery,
+    ): Promise<TelemetryInvocationTurnsResult> {
+      const ids = ownedTelemetryScope(await deps.listOwnedAgents(), undefined);
+      if (ids.length === 0) return { available: true, turns: {} };
+
+      const window: TelemetryWindow = {
+        hours: TELEMETRY_MAX_SINCE_HOURS,
+        invocationIds: query.ids,
+      };
+      const [logs, spans] = await Promise.all([
+        deps.reader.logRecords(ids, window, TELEMETRY_INVOCATION_ROWS),
+        deps.reader.sessionSpans(ids, window, TELEMETRY_INVOCATION_ROWS),
+      ]);
+
+      const turns: Record<string, TurnSummary> = {};
+      for (const id of query.ids) {
+        const run = summariseRun(
+          id,
+          logs.filter((l) => l.invocationId === id),
+          spans.filter((sp) => sp.invocationId === id),
+        );
+        if (run) turns[id] = run;
+      }
+      return { available: true, turns };
+    },
+
     async logs(query: TelemetryLogsQuery): Promise<TelemetryLogsResult> {
       const ids = ownedTelemetryScope(
         await deps.listOwnedAgents(),
@@ -237,6 +276,7 @@ export function createDisabledTelemetryService(): TelemetryService {
   return {
     turns: async () => unavailable,
     turn: async () => unavailable,
+    invocationTurns: async () => unavailable,
     logs: async () => unavailable,
   };
 }

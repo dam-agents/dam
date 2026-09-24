@@ -821,6 +821,8 @@ export {
 export {
   telemetryTurnsInputSchema,
   telemetryTurnInputSchema,
+  telemetryInvocationTurnsInputSchema,
+  TELEMETRY_MAX_INVOCATION_IDS,
   telemetryLogsInputSchema,
   telemetryExportQuerySchema,
   telemetryExportSignalSchema,
@@ -843,6 +845,7 @@ export type {
   TelemetryService,
   TelemetryTurnsQuery,
   TelemetryTurnQuery,
+  TelemetryInvocationTurnsQuery,
   TelemetryLogsQuery,
   TelemetryExportQuery,
   TelemetryExportSignal,
@@ -856,8 +859,10 @@ export type {
   TelemetryTurns,
   TelemetryTurn,
   TelemetryLogs,
+  TelemetryInvocationTurns,
   TelemetryTurnsResult,
   TelemetryTurnResult,
+  TelemetryInvocationTurnsResult,
   TelemetryLogsResult,
 } from "./modules/telemetry/types.js";
 

@@ -4,6 +4,7 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  telemetryInvocationTurnsInputSchema,
   telemetryLogsInputSchema,
   telemetryTurnInputSchema,
   telemetryTurnsInputSchema,
@@ -21,6 +22,12 @@ export const telemetryRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.telemetry.turn(input);
+    }),
+  invocationTurns: readAgentProcedure
+    .input(telemetryInvocationTurnsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.telemetry.invocationTurns(input);
     }),
   logs: readAgentProcedure
     .input(telemetryLogsInputSchema)
