@@ -8,6 +8,8 @@ import { z } from "zod";
 import { parseServerUrl } from "../modules/satellite/commands/mcp.js";
 import {
   defaultSatelliteName,
+  mcpDefaultName,
+  shellDefaultName,
   uiGuide,
 } from "../modules/satellite/commands/shared.js";
 import { createMcpBackend } from "../modules/satellite/services/mcp-backend.js";
@@ -18,8 +20,8 @@ import { createMcpBackend } from "../modules/satellite/services/mcp-backend.js";
  * real Streamable HTTP server and pin that its tools are what the Satellite
  * offers, that a call is forwarded and its result comes back, and that headers
  * the user passes reach the server, since an existing server usually wants
- * credentials. They also pin how a --url is read, the name a shell Satellite
- * takes when given none, and the guide the worker prints once connected.
+ * credentials. They also pin how a --url is read, the name a Satellite takes
+ * when given none, and the guide the worker prints once connected.
  */
 
 let server: Server;
@@ -149,11 +151,49 @@ describe("reading --url", () => {
   });
 });
 
-describe("the default shell satellite name", () => {
-  it("is one the platform accepts, naming who serves it from where", () => {
+describe("the default satellite name", () => {
+  it("falls back to one the platform accepts, naming who serves it from where", () => {
     const name = defaultSatelliteName();
     expect(name).toContain("@");
     expect(satelliteNameSchema.safeParse(name).success).toBe(true);
+  });
+
+  it("names an MCP satellite after the server it starts, past the runner", () => {
+    const stdio = (...command: string[]) =>
+      mcpDefaultName({
+        kind: "stdio",
+        command: command[0]!,
+        args: command.slice(1),
+      });
+    expect(
+      stdio("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"),
+    ).toBe("server-filesystem");
+    expect(stdio("uvx", "mcp-server-git")).toBe("mcp-server-git");
+    expect(stdio("pnpm", "dlx", "@acme/build-mcp@1.2.0")).toBe("build-mcp");
+    expect(stdio("python3", "-m", "mcp_server_time")).toBe("mcp-server-time");
+    expect(stdio("./bin/Mise.sh", "mcp")).toBe("mise");
+    expect(stdio("npx")).toBe(defaultSatelliteName());
+  });
+
+  it("names an MCP satellite after the host it forwards to", () => {
+    expect(
+      mcpDefaultName({
+        kind: "url",
+        url: new URL("http://Localhost:8080/mcp"),
+        headers: {},
+      }),
+    ).toBe("localhost");
+  });
+
+  it("names a shell satellite after its one permitted command, else the machine", () => {
+    expect(
+      shellDefaultName(
+        "./process.sh (a|b)  # one\n\n  ./process.sh --fast  # two  [max=1]\n",
+      ),
+    ).toBe("process");
+    expect(shellDefaultName("./build.sh *\n./deploy.sh (staging|prod)")).toBe(
+      defaultSatelliteName(),
+    );
   });
 });
 
@@ -162,7 +202,7 @@ describe("the guide printed once connected", () => {
     const text = uiGuide("http://localhost:5555", "jan@lab").join("\n");
     expect(text).toContain("http://localhost:5555");
     expect(text).toContain(
-      'Settings → Connections → + New → Satellites → "jan@lab" → Add to agent',
+      'Configure agent → Connections → + New → MCP servers → "jan@lab" → Add to agent',
     );
   });
 });

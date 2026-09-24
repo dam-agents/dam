@@ -42,10 +42,10 @@ export function SatelliteRow({
   return (
     <div className="rounded-lg border border-border" data-testid={rowId}>
       <div className="flex items-center gap-2 px-4 py-3">
-        <div className="flex min-w-[160px] flex-1 items-center gap-2">
+        <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
           <Satellite size={16} className="shrink-0 text-foreground/80" />
           <p
-            className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground"
+            className="max-w-full shrink-0 truncate text-[15px] text-foreground"
             title={satellite.description ?? undefined}
           >
             {satellite.name}
