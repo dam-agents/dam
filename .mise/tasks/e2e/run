@@ -62,9 +62,12 @@ cleanup() {
     echo "=== End diagnostics ==="
   fi
 
-  echo ""
-  echo "=== Tearing down test cluster ==="
-  mise run cluster:delete -- --force || true
+  # A GitHub-hosted runner is a fresh VM per job and is discarded after it.
+  if [ -z "${GITHUB_ACTIONS:-}" ]; then
+    echo ""
+    echo "=== Tearing down test cluster ==="
+    mise run cluster:delete -- --force || true
+  fi
 
   exit $exit_code
 }
@@ -80,12 +83,11 @@ trap cleanup EXIT
 # and so restarts nothing.
 mise run //packages/e2e/playwright:install-browsers
 
-# Nuke any pre-existing cluster before provisioning. A previous run may have
-# died before its own teardown fired, and a CI runner is not guaranteed to be
-# ephemeral — the same host has served two jobs in a row, the second starting
-# on the first's half-removed k3s. That state fails before any test runs: the
-# node comes up without flannel, so `/run/flannel/subnet.env` is missing and
-# every pod sandbox — k3s's own bootstrap included — fails to get a network.
+# Nuke any pre-existing cluster before provisioning: a previous run may have
+# died before its own teardown fired. A half-removed k3s fails before any test
+# runs: the node comes up without flannel, so `/run/flannel/subnet.env` is
+# missing and every pod sandbox — k3s's own bootstrap included — fails to get a
+# network. On a GitHub-hosted runner, a fresh VM per job, this finds nothing.
 # In a sandbox this uninstalls k3s from the host; locally it deletes the VM.
 echo "Nuking any pre-existing test cluster..."
 mise run cluster:delete -- --force

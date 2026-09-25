@@ -1,0 +1,45 @@
+# The k-search config environment over claude-code's: mise -E claude-code,k-search.
+
+# K-Search runs from its source tree, with KernelBench's copied in; oci_link
+# is where the image task links a tool's install.
+[tools."http:kernelbench"]
+version = "423217d9fda91e0c2d67e4a43bf62f96f6d104f1"
+url = "https://github.com/ScalingIntelligence/KernelBench/archive/{{ version }}.tar.gz"
+checksum = "sha256:13daba046457c912cd37808209de2264b059d004ad708880dac996cc88019495"
+strip_components = 1
+
+[tools."http:k-search"]
+version = "53c8fab9a5e8fab2c86610d24fbec5067f90e115"
+url = "https://github.com/caoshiyi/K-Search/archive/{{ version }}.tar.gz"
+checksum = "sha256:dd6c4283828aab225901a5ede98c05695df924160484fed74b0d4594c86ef554"
+strip_components = 1
+depends = ["http:kernelbench"]
+postinstall = "{{config_root}}/k-search/patch-tasks.sh"
+oci_link = "/opt/k-search"
+
+# KernelBench ships no executable, so modal, which it needs, carries the venv.
+# The .pth loads the modal proxy patch in every interpreter of the venv. The
+# postinstall runs no interpreter: the .pyc it would leave makes every install
+# a new multi-GB layer.
+[tools."pipx:modal"]
+version = "1.5.5"
+uvx_args = "--with openai==2.54.0 --with kernelbench[gpu]@https://github.com/ScalingIntelligence/KernelBench/archive/423217d9fda91e0c2d67e4a43bf62f96f6d104f1.tar.gz#sha256=13daba046457c912cd37808209de2264b059d004ad708880dac996cc88019495"
+postinstall = '''
+cd "$MISE_TOOL_INSTALL_PATH"/modal/lib/python3.*/site-packages &&
+cp {{config_root}}/k-search/dam_modal_proxy_patch.py . &&
+echo 'import dam_modal_proxy_patch' > zz_dam_modal_proxy.pth
+'''
+
+# The ACP shim harness-chat runs; it resolves the SDK from the install it sits in.
+[tools."npm:@agentclientprotocol/sdk"]
+version = "0.17.1"
+postinstall = 'cp {{config_root}}/k-search/ksearch-acp-shim.mjs "$MISE_TOOL_INSTALL_PATH/"'
+oci_link = "/opt/ksearch-acp"
+
+[oci.env]
+# K-Search is no harness family.
+PLATFORM_HARNESS = ""
+KSEARCH_VENV = "/opt/ksearch-venv"
+KSEARCH_ROOT = "/opt/k-search"
+# Placeholder only; the real key is injected at the gateway, never in-pod.
+OPENAI_API_KEY = "dummy-placeholder"

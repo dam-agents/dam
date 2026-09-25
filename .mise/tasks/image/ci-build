@@ -2,7 +2,6 @@
 #MISE description="CI only: build several component images for one arch in one job"
 #MISE hide=true
 #USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk; the builder is pruned between builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free"
-#USAGE flag "--base-image <ref>" help="BASE_IMAGE for the components built on a base (k-search)"
 #USAGE arg "<arch>"
 #USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without exporting, to prove it builds), sha (push <component>:$GITHUB_SHA) or load (write the component's dist/oci tar, named platform-<component>:latest)"
 # cd.yml builds all of one arch's images, agents or workloads in one job
@@ -18,24 +17,23 @@
 # with //packages/agents:oci and need mise, node, pnpm and crane.
 set -uo pipefail
 
-serial="${usage_serial:-false}" base="${usage_base_image:-}" arch="$usage_arch"
+serial="${usage_serial:-false}" arch="$usage_arch"
 eval "set -- $usage_component"
 : "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}"
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
 export AGENT_OCI_OUT=/tmp/ci-build/oci
 
-# spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
+# spec <component> -> "<dockerfile> <context>"
 spec() {
   if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
     controller | ui) echo crane ;;
     # The runner image is built from its crate alone, platform-init included.
-    vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner no" ;;
-    api-server) echo "packages/api-server/Dockerfile . no" ;;
-    keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
-    *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
-       echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
+    vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner" ;;
+    api-server) echo "packages/api-server/Dockerfile ." ;;
+    keycloak) echo "packages/keycloak-theme/Dockerfile ." ;;
+    *) echo "ci-build: unknown component $1" >&2; return 1 ;;
   esac
 }
 
@@ -86,17 +84,12 @@ build_crane() {
 }
 
 build_one() {
-  local c=$1 kind=$2 s file ctx takes extra out args=()
+  local c=$1 kind=$2 s file ctx out args=()
   s="$(spec "$c")" || return 1
   if [ "$s" = mise ]; then build_mise "$c" "$kind"; return; fi
   if [ "$s" = crane ]; then build_crane "$c" "$kind"; return; fi
-  read -r file ctx takes extra <<< "$s"
-  [ -z "$extra" ] || args+=(--build-context "$extra")
+  read -r file ctx <<< "$s"
   out="$(output_for "$c" "$kind")" || return 1
-  if [ "$takes" = yes ]; then
-    [ -n "$base" ] || { echo "ci-build: $c needs --base-image" >&2; return 1; }
-    args+=(--build-arg "BASE_IMAGE=$base")
-  fi
   if [ "${CACHE_TO:-}" = 1 ]; then
     args+=(--cache-to "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch,mode=max,image-manifest=true")
   fi

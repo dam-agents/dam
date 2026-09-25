@@ -35,10 +35,11 @@ set -euo pipefail
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 
-# Test-only files never ship (final images copy dist/ + node_modules), so they
-# don't move the last-touching commit. Ceiling: a reused image may differ in
-# builder-stage test sources; runtime content is identical.
-TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
+# Test-only files and the agents' READMEs never ship (final images copy dist/ +
+# node_modules, an agent's rootfs), so they don't move the last-touching commit.
+# Ceiling: a reused image may differ in builder-stage test sources; runtime
+# content is identical.
+UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
 
 # Source of the images `mise oci` builds (//packages/agents:oci), besides
 # their own directory.
@@ -102,14 +103,14 @@ registry_has() { crane digest "$1" >/dev/null 2>&1; }
 
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
-source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $TEST_EXCLUDES 2>/dev/null || true; }
+source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $UNSHIPPED 2>/dev/null || true; }
 
 resolve() {
   local comp="$1" paths sha ref
   [ -n "${RESOLVE_NO_REUSE:-}" ] && { echo BUILD; return; }
   paths="$(effective_paths "$comp")"
   # Uncommitted change (or untracked file) in the effective source ⇒ must build.
-  [ -n "$(git status --porcelain -- $paths $TEST_EXCLUDES 2>/dev/null)" ] && { echo BUILD; return; }
+  [ -n "$(git status --porcelain -- $paths $UNSHIPPED 2>/dev/null)" ] && { echo BUILD; return; }
   sha="$(source_sha "$comp")"
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
@@ -122,14 +123,8 @@ resolve_derived() {
   ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
 }
 
-# tag portion to hand children as BASE_IMAGE / to publish under this run's sha
-tag_for() {
-  local d; d="$(resolve_derived "$1")"
-  if [ "${d%% *}" = REUSE ]; then local r="${d#REUSE }"; echo "${r##*:}"; else echo "${GITHUB_SHA:?GITHUB_SHA required}"; fi
-}
-
 gha_outputs() {
-  local archs built a agents_json cc_tag wl_built w workloads_json s src
+  local archs built a agents_json wl_built w workloads_json s src
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
@@ -142,7 +137,6 @@ gha_outputs() {
     [ "$(resolve_derived "$a" | cut -d' ' -f1)" = BUILD ] && built+=("$a")
   done
   agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  cc_tag="$(tag_for claude-code)"
   # Workloads are slow, rarely-changing builds on the claude-code base: PRs
   # never build them.
   wl_built=()
@@ -152,8 +146,8 @@ gha_outputs() {
     done
   fi
   workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  printf 'agents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
-    "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
+  printf 'agents=%s\narchs=%s\nworkloads=%s\nsource_shas=%s\n' \
+    "$agents_json" "$archs" "$workloads_json" "$src"
 }
 
 self_check() {
@@ -193,7 +187,6 @@ self_check() {
   has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
   has "$out" 'archs=["amd64","arm64"]'
-  has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"keycloak":"'
   has "$out" '"vm-runner":"'
   # PRs never build workloads — the EVENT gate short-circuits before any
