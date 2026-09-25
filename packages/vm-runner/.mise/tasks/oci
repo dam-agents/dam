@@ -40,8 +40,18 @@ install -m 755 "$target/release/vm-runner" "$target/release/vm-image-cache" "$b/
 host="$(rustc -vV | sed -n 's/^host: //p')"
 RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p platform-init --target "$host"
 init="$target/$host/release/platform-init"
-ldd "$init" 2>&1 | grep -qE 'statically linked|not a dynamic executable' ||
-  { echo "platform-init is linked dynamically, and would fail inside a guest" >&2; exit 1; }
+# A binary that names a program interpreter (PT_INTERP) is linked dynamically.
+# Read from its program headers, for a 64-bit little-endian ELF: ldd's verdict
+# on a static-pie binary differs between architectures.
+interp() {
+  local off size n i
+  off=$(od -An -t u8 -j 32 -N 8 "$1") size=$(od -An -t u2 -j 54 -N 2 "$1") n=$(od -An -t u2 -j 56 -N 2 "$1")
+  for ((i = 0; i < n; i++)); do
+    [ "$(od -An -t u4 -j $((off + i * size)) -N 4 "$1" | tr -d ' ')" != 3 ] || return 0
+  done
+  return 1
+}
+! interp "$init" || { echo "platform-init names a program interpreter, and would fail inside a guest" >&2; exit 1; }
 install -m 755 "$init" "$b/usr/local/libexec/platform-init"
 
 case "$(uname -m)" in
