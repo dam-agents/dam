@@ -1,5 +1,5 @@
 #!/usr/bin/env -S usage bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them; Dockerfile agents (k-search) with docker build on claude-code."
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--build" help="Never reuse an image from the registry"
 #USAGE flag "--no-tar" help="Linux only: keep a mise image as its OCI layout"
@@ -259,7 +259,10 @@ serve_apt_base() {
 # `mise oci` needs a Linux host of the image's arch; elsewhere the Lima VM
 # builds from a copy of the working tree (the host's node_modules are not
 # Linux's).
-vm="${LIMA_INSTANCE:-platform-k3s}"
+# The dev VM whichever cluster the tars go to: its disk holds the build cache,
+# which the e2e VM's has no room for.
+vm="${AGENT_BUILD_VM:-platform-k3s}"
+limactl list -q 2>/dev/null | grep -qx "$vm" || vm="${LIMA_INSTANCE:-$vm}"
 build_in_vm() {
   limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
   git ls-files -z --cached --others --exclude-standard |
