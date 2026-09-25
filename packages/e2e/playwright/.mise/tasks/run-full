@@ -3,4 +3,6 @@
 #MISE depends=[":install-browsers"]
 #MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
 set -euo pipefail
-E2E_FULL=1 pnpm exec playwright test "$@"
+# One worker: the full specs have no dependencies, so more would race auth's
+# terms check and the slack specs' shared mock outbound.
+E2E_FULL=1 pnpm exec playwright test --workers=1 "$@"

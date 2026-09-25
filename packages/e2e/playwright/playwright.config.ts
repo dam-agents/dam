@@ -9,7 +9,7 @@ const full = process.env.E2E_FULL === "1";
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   expect: { timeout: 15_000 },
@@ -51,7 +51,7 @@ export default defineConfig({
     {
       name: "experiments",
       testMatch: /12-.*\.spec\.ts$/,
-      dependencies: ["messages"],
+      dependencies: ["session-delete"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
@@ -123,7 +123,7 @@ export default defineConfig({
     {
       name: "session-delete",
       testMatch: /08-session-delete\.spec\.ts$/,
-      dependencies: ["agent"],
+      dependencies: ["messages"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
