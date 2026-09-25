@@ -121,33 +121,6 @@ export type {
   PrecheckVerdict,
 } from "./modules/schedules/types.js";
 export type {
-  ExperimentStatus,
-  SpanStatus,
-  Skeleton,
-  TraceEvent,
-  PlanRegisterInput,
-  FinishInput,
-  Experiment,
-  ExperimentDriverSummary,
-  ExperimentSandboxCreateInput,
-  ExperimentSpan,
-  TraceFeed,
-  TraceFeedStage,
-  TraceFeedInvocation,
-  ScoreSeriesPoint,
-  ExperimentsService,
-} from "./modules/experiments/types.js";
-export {
-  planRegisterRequestSchema,
-  appendEventsRequestSchema,
-  finishRequestSchema,
-  EXPERIMENT_SKILL_NAME,
-  CUSTOM_DATA_MAX_BYTES,
-  EXPERIMENT_FEED_MESSAGE_TYPE,
-  EXPERIMENT_FOLDER_PREFIX,
-  experimentFolderName,
-} from "./modules/experiments/schemas.js";
-export type {
   StarterKit,
   StarterKitApplyInput,
   ResolvedSkill,

@@ -5,7 +5,6 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
-  ExperimentExecute: "experiment_execute",
   CliRun: "cli_run",
 } as const;
 
@@ -52,7 +51,6 @@ export interface SessionView {
   mode: SessionMode;
   createdAt: string;
   scheduleId?: string | null;
-  experimentId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
   updatedAt?: string | null;
@@ -66,7 +64,6 @@ export interface SessionView {
 
 export const SESSION_CATEGORIES = [
   "chats",
-  "experiments",
   "scheduled",
   "channels",
   "runs",
@@ -86,7 +83,6 @@ export function sessionCategoryOf(session: {
   )
     return "channels";
   if (session.type === SessionType.ScheduleCron) return "scheduled";
-  if (session.type === SessionType.ExperimentExecute) return "experiments";
   if (session.type === SessionType.CliRun) return "runs";
   return "chats";
 }

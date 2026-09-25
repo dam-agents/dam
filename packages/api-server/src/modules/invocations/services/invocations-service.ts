@@ -39,15 +39,6 @@ export class AttenuationError extends Error {
   }
 }
 
-export class ExperimentNotRunningError extends Error {
-  constructor(experimentId: string) {
-    super(
-      `experiment ${experimentId} is not running; spawns attached to it are rejected`,
-    );
-    this.name = "ExperimentNotRunningError";
-  }
-}
-
 export class UnresolvableDriverError extends Error {
   constructor(driverAgentId: string) {
     super(
@@ -90,7 +81,6 @@ export interface SpawnInput {
   schema: unknown;
   label?: string;
   ttlMs?: number;
-  experimentSpanId?: string;
 }
 
 export interface RecordResult {
@@ -121,10 +111,6 @@ export function createInvocationsService(deps: {
   driverResolution: DriverResolution;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
-  isExperimentRunning?: (
-    experimentId: string,
-    driverAgentId: string,
-  ) => Promise<boolean>;
   targetAdmission?: TargetAdmission;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
@@ -184,15 +170,6 @@ export function createInvocationsService(deps: {
         });
       }
 
-      if (input.experimentSpanId && deps.isExperimentRunning) {
-        const experimentId = input.experimentSpanId.split("/", 1)[0]!;
-        if (
-          !(await deps.isExperimentRunning(experimentId, input.driverAgentId))
-        ) {
-          throw new ExperimentNotRunningError(experimentId);
-        }
-      }
-
       const rootId = await deps.driverResolution.resolveRoot(
         input.driverAgentId,
       );
@@ -216,7 +193,6 @@ export function createInvocationsService(deps: {
         owner: deps.owner,
         resultSchema: input.schema,
         expiresAt,
-        experimentSpanId: input.experimentSpanId ?? null,
       });
       let agent;
       try {

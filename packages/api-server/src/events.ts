@@ -39,7 +39,6 @@ export enum EventType {
   ArtifactUpdated = "ArtifactUpdated",
   ArtifactDeleted = "ArtifactDeleted",
   ArtifactFolderChanged = "ArtifactFolderChanged",
-  ExperimentChanged = "ExperimentChanged",
   ArtifactPublished = "ArtifactPublished",
   ArtifactShared = "ArtifactShared",
   ArtifactViewed = "ArtifactViewed",
@@ -47,7 +46,6 @@ export enum EventType {
   SkillPublished = "SkillPublished",
   SkillSetSaved = "SkillSetSaved",
   SkillSetDeleted = "SkillSetDeleted",
-  KindedAgentCreated = "KindedAgentCreated",
   StarterKitApplied = "StarterKitApplied",
   InvocationSpawned = "InvocationSpawned",
   FeatureFlagChanged = "FeatureFlagChanged",
@@ -267,16 +265,6 @@ export type ArtifactFolderChanged = {
   ownerSub: string;
 };
 
-export type ExperimentChanged = {
-  type: EventType.ExperimentChanged;
-  experimentId: string;
-  agentId: string;
-  ownerSub: string;
-  action?: "started" | "stopped" | "deleted";
-  actorSub?: string;
-  surface?: string;
-};
-
 export type AttentionChanged = {
   type: EventType.AttentionChanged;
   ownerSub: string;
@@ -356,14 +344,6 @@ export type SkillSetDeleted = {
   type: EventType.SkillSetDeleted;
   actorSub: string;
   surface: string;
-};
-
-export type KindedAgentCreated = {
-  type: EventType.KindedAgentCreated;
-  agentId: string;
-  actorSub: string;
-  surface: string;
-  kind: string;
 };
 
 export type StarterKitApplied = {
@@ -448,7 +428,6 @@ export type DomainEvent =
   | ArtifactUpdated
   | ArtifactDeleted
   | ArtifactFolderChanged
-  | ExperimentChanged
   | AttentionChanged
   | SessionTurnRelayed
   | AgentRelayAttached
@@ -459,7 +438,6 @@ export type DomainEvent =
   | SkillPublished
   | SkillSetSaved
   | SkillSetDeleted
-  | KindedAgentCreated
   | StarterKitApplied
   | InvocationSpawned
   | FeatureFlagChanged

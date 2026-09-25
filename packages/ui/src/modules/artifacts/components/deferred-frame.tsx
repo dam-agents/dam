@@ -12,7 +12,6 @@ export function DeferredFrame({
   title,
   className,
   deferMs = MODAL_ANIMATION_MS,
-  postData,
   onSendPrompt,
   agentApiArtifactId,
 }: {
@@ -20,7 +19,6 @@ export function DeferredFrame({
   title: string;
   className: string;
   deferMs?: number;
-  postData?: unknown;
   onSendPrompt?: (prompt: string) => Promise<void>;
   agentApiArtifactId?: string;
 }) {
@@ -34,11 +32,6 @@ export function DeferredFrame({
     const timer = setTimeout(() => setMounted(true), deferMs);
     return () => clearTimeout(timer);
   }, [deferMs]);
-
-  useEffect(() => {
-    if (!loaded || postData === undefined) return;
-    frameRef.current?.contentWindow?.postMessage(postData, "*");
-  }, [loaded, postData]);
 
   return (
     <div className={cn("relative", className)}>

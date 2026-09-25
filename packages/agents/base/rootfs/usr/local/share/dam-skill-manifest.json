@@ -2,7 +2,8 @@
   "manifestVersion": 1,
   "skills": {
     "agent-case-study": [
-      "89de1762a9c515e2aee30af59edee909f0cea1cfa65e6198612b03c727661f5d"
+      "89de1762a9c515e2aee30af59edee909f0cea1cfa65e6198612b03c727661f5d",
+      "f14537a93590a5875f0bb5352cd85179758d163d3082ba6e0411da79913eacde"
     ],
     "dam-experiment": [
       "defed4453890a3ee618050345965ff9bf0d1b02d4bb779f7b5ae59b5129803dc",

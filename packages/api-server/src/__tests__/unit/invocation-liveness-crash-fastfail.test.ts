@@ -27,7 +27,6 @@ function runningRow(id: string): InvocationRow {
     errorReason: null,
     expiresAt: new Date(Date.now() + 60 * 60_000),
     completedAt: null,
-    experimentSpanId: null,
   };
 }
 
