@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #MISE dir="{{vars.repo_root}}"
 set -eo pipefail
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 mise run //packages/keycloak-theme:build
 docker build -f packages/keycloak-theme/Dockerfile -o type=docker,name=platform-keycloak:latest,dest=packages/keycloak-theme/dist/oci/keycloak.tar .

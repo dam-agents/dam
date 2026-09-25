@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env -S usage bash
 #MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
 #MISE hide=true
 #MISE dir="{{cwd}}"

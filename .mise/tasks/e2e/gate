@@ -2,14 +2,10 @@
 #MISE description="Wait until the e2e cluster stably serves UI + Keycloak on :5555. Shared by `e2e` (via e2e:install) and `e2e:loop`'s warm path."
 #MISE hide=true
 #MISE raw=true
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
 set -eo pipefail
 
-VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 # The install (or a warm --rebuild) rolls traefik, keycloak, and the
 # apiserver, and their routes come up at different moments — a single lucky
@@ -31,12 +27,12 @@ done
 if [ "$STREAK" -lt 3 ]; then
   echo "ERROR: e2e cluster is up but not stably routing on :5555 (UI + keycloak)." >&2
   echo "It does not auto-heal — reprovision with 'mise run e2e', or check" >&2
-  echo "'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
+  echo "'LIMA_INSTANCE=$LIMA_INSTANCE mise run cluster:fix-certs'." >&2
   # Same signature the ztunnel-cert-watchdog keys on (cluster:install);
   # keep the regex in sync. Turns the generic advice above into a verdict.
   if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
       | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
-    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun." >&2
+    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$LIMA_INSTANCE mise run cluster:fix-certs', then rerun." >&2
   fi
   exit 1
 fi

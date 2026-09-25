@@ -4,12 +4,7 @@
 set -eo pipefail
 eval "components=($usage_component)"
 
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 # The agents the cluster has deployed, from its ConfigMaps: their entries in
 # the harness-templates ConfigMap (one CM keyed by "<name>.yaml"), plus the

@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-#MISE description="Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`. VM via E2E_VM_NAME (default platform-k3s-test)."
+#MISE description="Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`."
 #MISE hide=true
 #MISE raw=true
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
 set -eo pipefail
 
-VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 export E2E_MOCK_ONLY=1
 
@@ -26,9 +22,6 @@ INSTALL_ARGS=(
 # and oidc-client-ts can generate PKCE state in signinRedirect(). On
 # *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
 # the OIDC redirect throws silently, and the SPA hangs on a blank screen.
-if [ -z "${IS_SANDBOX:-}" ]; then
-  INSTALL_ARGS+=(--vm-name="$VM_NAME")
-fi
 # E2E_VIRTUALIZATION=1 installs the vm backend too, which is what un-skips the
 # vm agent spec. It needs /dev/kvm (nested virtualization on the lima VM), so
 # it is opt-in and CI never sets it.

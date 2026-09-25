@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 #MISE description="Reclaim disk in the dev cluster: prune unused images, delete completed/failed pods, surface orphan PVCs."
 set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   RUN_IN_VM="sudo"
 else
-  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
 fi
 

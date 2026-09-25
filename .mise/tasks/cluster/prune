@@ -3,7 +3,7 @@
 #MISE raw=true
 set -eo pipefail
 
-LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 KEEP="10GB"
 for arg in "$@"; do
   case "$arg" in

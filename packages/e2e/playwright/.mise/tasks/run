@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-#MISE description="Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier"
+#MISE description="Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier. E2E_FULL=1 adds the slow on-demand specs under src/tests/full/; args after -- go to playwright test (--headed, --ui, a filter)"
 #MISE depends=[":install-browsers"]
-#MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
+#MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first", LIMA_INSTANCE = "platform-k3s-test" }
 # Defensive: the sandbox k3s ingress binds IPv4 only, so the specs' own
 # fetches (Keycloak token mint, tRPC clients) resolve `*.localhost` v4-first
 # instead of depending on happy-eyeballs fallback. The browser side gets the

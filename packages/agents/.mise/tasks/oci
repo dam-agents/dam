@@ -44,14 +44,13 @@ if [ "$dry" = true ]; then
   echo "docker:                   ${docker_images[*]:-—}"
   exit 0
 fi
-[ -z "${SKIP_IMAGE_BUILD:-}" ] || exit 0
 
 reused() {
   [ "$reuse" = true ] || return 1
   local d; d="$($resolve resolve "$1")"
   [ "${d%% *}" = REUSE ] || return 1
   echo "↺ reuse ${d#REUSE } -> $(tar_of "$1")"
-  mise run //:image:pull -- "${d#REUSE }" "$(tar_of "$1")" "platform-$1:latest"
+  .mise/tasks/image/pull "${d#REUSE }" "$(tar_of "$1")" "platform-$1:latest"
 }
 
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"

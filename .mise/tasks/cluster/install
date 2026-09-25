@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Honors LIMA_INSTANCE; SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD also skips importing them."
 #MISE raw=true
-#MISE depends=["//packages/controller:oci", "//packages/vm-runner:oci", "//packages/api-server:oci", "//packages/ui:oci", "//packages/keycloak-theme:oci"]
+#USAGE flag "--lima-template <path>" default="etc/lima/k3s.yaml"
+#USAGE flag "--helm-values <path>"
+#USAGE flag "--set <key=val>" var=#true
+#USAGE flag "--no-restart"
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #
@@ -11,22 +14,19 @@
 # install: provisions VM/k3s if needed, uses helm install
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-LIMA_INSTANCE="platform-k3s"
-LIMA_TEMPLATE="etc/lima/k3s.yaml"
-HELM_VALUES=""
+if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+  mise run //packages/controller:oci ::: //packages/vm-runner:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
+fi
+
+LIMA_TEMPLATE="$usage_lima_template"
+HELM_VALUES="${usage_helm_values:-}"
+eval "sets=(${usage_set:-})"
 HELM_EXTRA_ARGS=()
-NO_RESTART=false
+for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
+NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
-for arg in "$@"; do
-  case "$arg" in
-    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
-    --lima-template=*) LIMA_TEMPLATE="${arg#--lima-template=}" ;;
-    --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
-    --set=*) HELM_EXTRA_ARGS+=("$arg") ;;
-    --no-restart) NO_RESTART=true ;;
-  esac
-done
 
 # Resolve the optional personal overlay (values-dev.yaml, gitignored) up front so
 # the agent render in step 3 sees the same values the install uses. Committed dev
@@ -62,7 +62,6 @@ fi
 
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   # A running systemd, not an installed systemctl: containers often ship the
   # binary with something else as PID 1, and the k3s installer then fails
   # to enable a unit nothing will ever start.
@@ -138,7 +137,6 @@ SHIM
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
   for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
     # Nested virtualization exposes /dev/kvm inside the VM, which the sandbox
@@ -497,7 +495,7 @@ kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mo
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build helm
 
-# 3. Load images into k3s (built by depends: //packages/*:image, or out-of-band in CI).
+# 3. Load images into k3s (built at the top, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
 # does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
@@ -548,7 +546,7 @@ else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
-  [ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
+  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
 
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background; this is where they are first
@@ -564,7 +562,7 @@ else
   [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
   TARS=()
   for c in "${COMPONENTS[@]}" ${AGENT_TASKS[@]+"${AGENT_TASKS[@]}"}; do TARS+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-  LIMA_INSTANCE="$LIMA_INSTANCE" mise run cluster:import -- "${TARS[@]}"
+  mise run cluster:import -- "${TARS[@]}"
 fi
 
 # 4. Helm install or upgrade.
@@ -640,7 +638,7 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --a
 for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
   echo "Staging $image for the VM runners..."
   comp="${image##*/}"; comp="${comp%%:*}"
-  LIMA_INSTANCE="$LIMA_INSTANCE" mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")"
+  mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")"
 done
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its

@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Recover from expired dev-cluster certs (issue #283): roll ztunnel + waypoint deployments + cert-manager webhook. Honors LIMA_INSTANCE."
 set -eo pipefail
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 # Diagnose first: the expired-SVID signature always surfaces in ztunnel
 # logs — for ztunnel-held workload certs and for an expired waypoint cert

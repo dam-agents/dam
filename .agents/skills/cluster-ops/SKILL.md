@@ -18,7 +18,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 - `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
 - `cluster:stop` / `cluster:uninstall` / `cluster:delete`
 
-The `cluster:build`, `cluster:fix-certs`, and `cluster:status` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
+Every `cluster:*` task honors a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster, `platform-k3s-test`). The `e2e:*` tasks and the Playwright run task pin `platform-k3s-test` themselves.
 
 Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
 
@@ -34,10 +34,7 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 
 ## vm backend (KVM only)
 
-The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple silicon M3+, macOS 15+), so nothing in CI exercises it live. Two ways to test it on a host that has it:
-
-- `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` and stages the mock image for the VM runners, which un-skips `smoke/19-vm-agent.spec.ts`. Without it that spec skips itself.
-- `mise run cluster:vm-conformance` runs the machine API conformance suite against a live runner. It needs a runner to exist — create one vm agent first — and it scales the controller to zero for the run (its orphan sweep would delete the suite's machines) and restarts the runner once, which stops every machine on it. `LIMA_INSTANCE=platform-k3s-test` targets the e2e VM. The suite has no fake-VMM run in CI: it needs a real runner, so it runs on a KVM host only.
+The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple silicon M3+, macOS 15+), so nothing in CI exercises it live. To test it on a host that has it, `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` and stages the mock image for the VM runners, which un-skips `smoke/19-vm-agent.spec.ts`. Without it that spec skips itself.
 
 ## Disk space (two independent VMs)
 

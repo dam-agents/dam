@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
 #MISE description="Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite"
 #MISE raw=true
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; the pipeline runs smoke only"
 #USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
 #USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
 set -eo pipefail
 
-VM_NAME="platform-k3s-test"
-export E2E_VM_NAME="$VM_NAME"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
-[ "${usage_headed:-}" != true ] || PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed"
-[ "${usage_full:-}" != true ] || PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full"
+PLAYWRIGHT_ARGS=()
+[ "${usage_headed:-}" != true ] || PLAYWRIGHT_ARGS+=(--headed)
+[ "${usage_full:-}" != true ] || export E2E_FULL=1
 # --test fully narrows the run only for full-only projects, which have no
 # dependencies — e.g. --full --test=prompt-delivery runs just the four
 # prompt-delivery specs. A smoke spec still pulls in its whole dependency
@@ -25,13 +20,13 @@ PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
 # they're needed anyway because e2e:reset (step 3) wipes the state the chain
 # builds up. Full-only specs also need --full, or their project doesn't exist
 # and the filter matches nothing.
-TEST_FILTER="${usage_test:-}"
+[ -z "${usage_test:-}" ] || PLAYWRIGHT_ARGS+=("$usage_test")
 REBUILD="${usage_rebuild:-}"
 
 # 1. Ensure a warm cluster exists. Bootstrap once if it's missing; never try to
 # heal a broken one — fail loud and let the operator decide.
 NEEDS_BOOTSTRAP=false
-if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$VM_NAME"; then
+if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
   NEEDS_BOOTSTRAP=true
 elif ! kubectl --kubeconfig="$KUBECONFIG" get deployment platform-apiserver >/dev/null 2>&1; then
   NEEDS_BOOTSTRAP=true
@@ -42,24 +37,24 @@ if [ "$NEEDS_BOOTSTRAP" = true ]; then
 fi
 
 # 2. Optional rebuild. Interactive prompt unless --rebuild was passed. Default
-# none: just reset data and rerun. The build tasks honor LIMA_INSTANCE so they
-# target the test VM rather than the dev cluster.
+# none: just reset data and rerun. The build tasks inherit LIMA_INSTANCE, so
+# they target the test VM rather than the dev cluster.
 if [ -z "${usage_rebuild+set}" ] && [ -t 0 ]; then
   read -r -p "Rebuild which? [controller,api-server,ui,keycloak,agents] (default: none): " REBUILD || true
 fi
 IFS=', ' read -ra COMPONENTS <<< "$REBUILD"
-[ ${#COMPONENTS[@]} -eq 0 ] || LIMA_INSTANCE="$VM_NAME" mise run cluster:build -- "${COMPONENTS[@]}"
+[ ${#COMPONENTS[@]} -eq 0 ] || mise run cluster:build -- "${COMPONENTS[@]}"
 
 # 3. Wipe data to the specs' expected preconditions.
 mise run e2e:reset
 
 # 3b. Readiness gate — shared with the fresh-install path (see e2e:gate), so
 # a warm --rebuild of keycloak/traefik gets the same stability check.
-E2E_VM_NAME="$VM_NAME" mise run e2e:gate
+mise run e2e:gate
 
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
-# for the next loop. The filter rides after `--` so mise appends it to the
-# playwright command instead of parsing it as its own flag.
+# for the next loop. The arguments ride after `--` so mise appends them to the
+# playwright command instead of parsing them as its own flags.
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
-  mise run "$PLAYWRIGHT_TASK" ${TEST_FILTER:+-- "$TEST_FILTER"}
+  mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"}

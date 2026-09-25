@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Uninstall Platform chart and clean up all resources"
 set -eo pipefail
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
 # Drain agent workloads BEFORE helm uninstall. On a transitional install

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 #MISE description="Build the controller image to dist/oci/controller.tar"
 set -euo pipefail
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 GOOS=linux mise run //packages/controller:build
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/usr/local/bin"
 cp "dist/bin/linux_$(go env GOARCH)/controller" "$root/usr/local/bin/"
-mise run //:image:pack -- registry.access.redhat.com/hi/core-runtime:latest "$root" dist/oci/controller.tar platform-controller:latest \
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/core-runtime:latest "$root" dist/oci/controller.tar platform-controller:latest \
   --entrypoint controller
