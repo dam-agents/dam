@@ -176,3 +176,4 @@ starterKits:
       adaevolve: { enabled: false, image: platform-skydiscover:latest }
       evox: { enabled: false, image: platform-skydiscover:latest }
       k-search: { enabled: false, image: platform-k-search:latest }
+      micro-manager: { enabled: true }
