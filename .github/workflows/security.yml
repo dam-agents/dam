@@ -1,0 +1,422 @@
+name: Security
+
+# Scans what a CI/CD run on main published, and the lockfiles it built from,
+# and keeps one summary issue open while any finding stands. cd.yml calls it
+# once the run's images are merged: on every push to main and in the nightly
+# run, which rebuilds every image. The nightly run also checks the base image
+# pins. The github context is the calling run's. setup-mise is referenced as
+# `./` for the reason cd.yml gives.
+
+on:
+  workflow_call:
+    inputs:
+      images-published:
+        description: >-
+          Every image of this commit is published: no job that builds or
+          merges images failed.
+        type: boolean
+        required: true
+    secrets:
+      QUAY_USERNAME:
+        required: true
+      QUAY_PASSWORD:
+        required: true
+      MEND_USER_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  MISE_LOCKED: "1"
+
+jobs:
+  base-pins:
+    name: base image pins
+    # image:pack bases are pinned by digest, so no rebuild picks up a base
+    # update by itself. The nightly run keeps one issue open while a pin is
+    # behind its tag; update-vulnerable-deps bumps it with image:bump-bases.
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane usage
+      - name: Reconcile the stale-pins issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # By path: --check exits 1 when a pin is stale, which is not a failure here.
+          stale="$(.mise/tasks/image/bump-bases --check)"
+          code=$?
+          if [ "$code" -ne 0 ] && [ -z "$stale" ]; then exit "$code"; fi
+          title="Base image pins are behind (automated)"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -z "$stale" ]; then
+            [ -z "$existing" ] || gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
+              --comment "Every base image pin matches its tag again."
+            exit 0
+          fi
+          body="$(printf '%s\n' "$stale" | awk -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '
+            BEGIN {
+              print "A base image tag moved past its pin, so the images built on it miss its updates."
+              print "Re-pin with `mise run image:bump-bases`. Last checked: [run](" run ")."
+              print ""
+              print "| Task | Tag | Pinned | Current |"
+              print "| --- | --- | --- | --- |"
+            }
+            { printf "| `%s` | `%s` | `%s` | `%s` |\n", $1, $2, substr($3, 1, 19), substr($4, 1, 19) }')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" \
+              --label "security,vulnerability"
+          fi
+
+  go-vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: go go:golang.org/x/vuln/cmd/govulncheck
+
+      - name: Detect vulnerabilities
+        working-directory: packages/controller
+        run: |
+          set -euo pipefail
+          rc=0
+          results=$(govulncheck -format json ./...) || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+            echo "::error::govulncheck exited $rc, so this is not a scan result"
+            exit 1
+          fi
+          printf '%s' "$results" | jq -se 'any(.[]; .config != null)' > /dev/null
+          out=$(printf '%s' "$results" | jq -s '
+            [ .[]
+              | select(.finding != null and .finding.trace[0].function != null)
+              | .finding
+              | { id: .osv,
+                  url: ("https://pkg.go.dev/vuln/" + .osv),
+                  severity: "unknown",
+                  scope: "controller (Go)",
+                  pkg: (.trace[0].package // .trace[0].module),
+                  fixed: (.fixed_version // "") } ]
+            | unique_by(.id)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::govulncheck: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-go-vuln
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # cargo-audit reads Cargo.lock alone, so it runs without cargo.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: aqua:rustsec/rustsec/cargo-audit
+
+      - name: Detect vulnerabilities
+        working-directory: packages/vm-runner
+        run: |
+          set -euo pipefail
+          results=$(cargo-audit audit --json) || true
+          printf '%s' "$results" | jq -e '.vulnerabilities.list' > /dev/null
+          out=$(printf '%s' "$results" | jq '
+            [ .vulnerabilities.list[]
+              | { id: .advisory.id,
+                  url: ("https://rustsec.org/advisories/" + .advisory.id),
+                  severity: "unknown",
+                  scope: "vm-runner (Rust)",
+                  pkg: .package.name,
+                  fixed: ((.versions.patched // []) | join(", ")) } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::cargo audit: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-cargo-audit
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  npm-audit:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: nodejs pnpm
+      - name: Detect vulnerabilities
+        run: |
+          set -euo pipefail
+          results=$(pnpm audit --prod --json) || true
+          printf '%s' "$results" | jq -e 'has("advisories") and has("metadata")' > /dev/null
+          out=$(printf '%s' "$results" | jq '
+            [ (.advisories // {}) | to_entries[] | .value
+              | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
+                  url: (.url // ""),
+                  severity: (.severity // "unknown"),
+                  scope: "pnpm audit",
+                  pkg: .module_name,
+                  fixed: (.patched_versions // "") } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::pnpm audit: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-npm-audit
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  mend-sca:
+    name: Mend SCA
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    env:
+      MEND_URL: https://ibmets.whitesourcesoftware.com
+      MEND_EMAIL: eal_apm0047897service_user@ibm.com
+      MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}
+      MEND_ORGNAME: Enterprise Applications
+      MEND_PRODUCTNAME: EAL_APM0047897
+      MEND_PROJECTNAME: platform-sca
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Mend CLI
+        run: |
+          curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend
+          chmod +x /usr/local/bin/mend
+
+      - name: Detect vulnerabilities
+        run: |
+          set -euo pipefail
+
+          results=$(mend dep --dir . \
+            --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
+            --update --format json --non-interactive)
+
+          out=$(echo "$results" | jq '
+            [.. | objects | select(.vulnerabilities) |
+              .name as $lib | .vulnerabilities[] |
+              { id: .name, url: .url, severity: .severity,
+                scope: "Mend SCA", pkg: $lib,
+                fixed: (.topFix.fixResolution // "") }]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::Mend SCA: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-mend-sca
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  trivy-components:
+    name: image:resolve list-components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      components: ${{ steps.list.outputs.components }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: list
+        run: |
+          set -euo pipefail
+          components=$(.mise/tasks/image/resolve list-components | tr ' ' '\n' | jq -cR . | jq -cs .)
+          echo "Images to scan: $components"
+          echo "components=$components" >> "$GITHUB_OUTPUT"
+
+  container-scan:
+    name: trivy ${{ matrix.component }}
+    needs: [trivy-components]
+    # Otherwise some of the commit's images carry no tag, and scanning the
+    # rest would read as those images being clean. The summary issue then
+    # stays as it is.
+    if: inputs.images-published
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.trivy-components.outputs.components) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane trivy
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Detect vulnerabilities
+        id: scan
+        env:
+          COMPONENT: ${{ matrix.component }}
+          SHA: ${{ github.sha }}
+          IMAGE_PREFIX: quay.io/dam-agents
+        run: |
+          set -euo pipefail
+          echo "artifact=findings-trivy-${COMPONENT}" >> "$GITHUB_OUTPUT"
+          echo '[]' > findings.json
+          # trivy.yaml at the repo root sets ignore-unfixed.
+          report=$(trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
+            echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
+            exit 0
+          }
+          out=$(echo "$report" | jq '
+            ((.ArtifactName // "") | split("/") | last | split(":") | first) as $component
+            | [ (.Results // [])[] | (.Vulnerabilities // [])[]
+                | { id: .VulnerabilityID,
+                    url: (.PrimaryURL // ""),
+                    severity: (.Severity // "unknown"),
+                    scope: $component,
+                    pkg: (.PkgName + " " + .InstalledVersion),
+                    fixed: (.FixedVersion // "") } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::Trivy (${COMPONENT}): $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ${{ steps.scan.outputs.artifact }}
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  manage-security-issues:
+    name: File security issues
+    needs: [go-vuln, cargo-audit, npm-audit, mend-sca, container-scan]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: findings-*
+          path: findings
+      - name: Reconcile summary issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCANNERS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          unfinished=$(jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")' <<<"$SCANNERS")
+          if [ -n "$unfinished" ]; then
+            echo "::warning::scanner(s) did not finish: $unfinished; the summary issue is left as it is"
+            exit 0
+          fi
+
+          files=(findings/*/findings.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::no findings artifacts to process"
+            exit 0
+          fi
+
+          title="Security vulnerabilities (automated scan)"
+          existing=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "in:title \"$title\"" \
+            --json number \
+            --jq '.[0].number // empty')
+
+          count=$(jq -s 'add // [] | unique_by([.id, .scope, .pkg]) | length' "${files[@]}")
+          echo "::notice::$count finding(s) across all scanners"
+
+          if [ "$count" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --comment "All vulnerabilities resolved — no findings in the latest scan."
+            fi
+            exit 0
+          fi
+
+          body=$(jq -s -r --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" '
+            { critical: 0, high: 1, medium: 2, moderate: 2, low: 3 } as $rank
+            | add // []
+            | unique_by([.id, .scope, .pkg])
+            | sort_by([($rank[.severity | ascii_downcase] // 4), .scope, .pkg])
+            | ([ "Open vulnerabilities found by the scheduled scanners (\(length) total).",
+                 "This issue is regenerated on every scan — last update: [run](\($run)).",
+                 "",
+                 "| CVE | Severity | Image / source | Package | Fixed in |",
+                 "| --- | --- | --- | --- | --- |" ]
+               + map("| [\(.id)](\(.url)) | \(.severity | ascii_upcase) | \(.scope) | `\(.pkg)` | `\(if .fixed == "" then "—" else .fixed end)` |")
+               + [ "",
+                   "---",
+                   "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow." ])
+            | join("\n")
+          ' "${files[@]}")
+
+          # GitHub caps issue bodies at 65536 chars; a too-long body 422s the API call
+          if [ "${#body}" -gt 65000 ]; then
+            body="${body:0:65000}"$'\n\n---\n**Truncated** — full findings in the workflow run artifacts.'
+          fi
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "${GITHUB_REPOSITORY}" --body "$body"
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$body" \
+              --label "security,vulnerability"
+          fi
