@@ -609,7 +609,6 @@ jobs:
       - name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
-          KEYCLOAK_THEME_BUILT: "1"
           CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}

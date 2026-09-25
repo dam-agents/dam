@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-#MISE dir="{{vars.repo_root}}"
-set -eo pipefail
+#MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR, to dist/oci/keycloak.tar"
+set -euo pipefail
 mise run //packages/keycloak-theme:build
-docker build -f packages/keycloak-theme/Dockerfile -o type=docker,name=platform-keycloak:latest,dest=packages/keycloak-theme/dist/oci/keycloak.tar .
+root="$(mktemp -d)"
+trap 'rm -rf "$root"' EXIT
+cp dist/jar/keycloak-theme-for-kc-all-other-versions.jar "$root/keycloak-theme.jar"
+# No `kc.sh build` here: the chart starts Keycloak with build options of its
+# own (the database, the features), so Keycloak augments at every start and
+# picks the provider up then.
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" \
+  quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4 \
+  "$root" dist/oci/keycloak.tar platform-keycloak:latest --at /opt/keycloak/providers

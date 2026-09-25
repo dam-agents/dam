@@ -3,7 +3,7 @@
 #MISE hide=true
 #MISE dir="{{cwd}}"
 #USAGE arg "<base>" help="Base image reference"
-#USAGE arg "<root>" help="Directory whose tree becomes the layer, at /"
+#USAGE arg "<root>" help="Directory whose tree becomes the layer, at / or --at"
 #USAGE arg "<tar>" help="Image tar to write"
 #USAGE arg "<tag>" help="Tag the tar carries"
 #USAGE flag "--entrypoint <entrypoint>"
@@ -11,6 +11,7 @@
 #USAGE flag "--workdir <workdir>"
 #USAGE flag "--user <user>"
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
+#USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
 set -euo pipefail
 work="$(mktemp -d)"
@@ -19,7 +20,7 @@ trap 'rm -rf "$work"' EXIT
 # Its top-level entries, not ".", so the layer never resets / itself.
 layer() {
   tar --sort=name --owner="${2%:*}" --group="${2#*:}" --numeric-owner --mtime=@0 --format=gnu \
-    -C "$1" -cf "$3" $(ls -A "$1")
+    ${4:+--transform "s|^|$4/|S"} -C "$1" -cf "$3" $(ls -A "$1")
 }
 eval "root_layers=(${usage_root_layer:-})"
 appends=()
@@ -27,7 +28,8 @@ for i in "${!root_layers[@]}"; do
   layer "${root_layers[$i]}" 0:0 "$work/$i.tar"
   appends+=(--append "$work/$i.tar")
 done
-layer "$usage_root" "$usage_owner" "$work/layer.tar"
+at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
+layer "$usage_root" "$usage_owner" "$work/layer.tar" "$at"
 mkdir -p "$(dirname "$usage_tar")"
 crane mutate "$usage_base" ${appends[@]+"${appends[@]}"} --append "$work/layer.tar" -t "$usage_tag" -o "$usage_tar" \
   --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" \

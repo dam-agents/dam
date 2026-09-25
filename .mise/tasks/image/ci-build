@@ -9,8 +9,7 @@
 # shared queue, which is what a run waited on, not the builds.
 #
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
-# registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
-# caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
+# registry buildcache (main, tags, schedule). Every build runs even after one
 # fails; the exit status names the failures.
 #
 # By path, like image:resolve, with usage installed. image.toml agents build
@@ -28,10 +27,9 @@ export AGENT_OCI_OUT=/tmp/ci-build/oci
 spec() {
   if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
-    controller | ui | api-server) echo crane ;;
+    controller | ui | api-server | keycloak) echo crane ;;
     # The runner image is built from its crate alone, platform-init included.
     vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner" ;;
-    keycloak) echo "packages/keycloak-theme/Dockerfile ." ;;
     *) echo "ci-build: unknown component $1" >&2; return 1 ;;
   esac
 }
@@ -67,9 +65,10 @@ build_mise() {
 }
 
 build_crane() {
-  local c=$1 kind=$2 tar ref
+  local c=$1 kind=$2 tar ref pkg=$1
+  [ "$c" != keycloak ] || pkg=keycloak-theme
   tar="$(tar_of "$c")"
-  mise run "//packages/$c:oci" || return 1
+  mise run "//packages/$pkg:oci" || return 1
   case "$kind" in
     cacheonly | load) ;;
     sha) crane push "$tar" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
@@ -91,10 +90,6 @@ build_one() {
   out="$(output_for "$c" "$kind")" || return 1
   if [ "${CACHE_TO:-}" = 1 ]; then
     args+=(--cache-to "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch,mode=max,image-manifest=true")
-  fi
-  if [ "$c" = keycloak ] && [ -z "${KEYCLOAK_THEME_BUILT:-}" ]; then
-    # The image bakes in the theme JAR.
-    mise run //packages/keycloak-theme:build || return 1
   fi
   docker buildx build --platform "linux/$arch" -f "$file" \
     --cache-from "type=registry,ref=$IMAGE_PREFIX/$c:buildcache-$arch" \

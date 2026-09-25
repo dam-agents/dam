@@ -1,9 +1,0 @@
-.git
-.github
-.worktrees
-docs
-**/node_modules
-# Build output: the builder stages build their own, but for the theme JAR
-# the keycloak image bakes in.
-**/dist
-!packages/keycloak-theme/dist/jar

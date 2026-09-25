@@ -75,12 +75,13 @@ own_paths() {
     # script that fetches it and the Dockerfile. It is also the image's only
     # build context, so nothing the image compiles in can live outside it.
     vm-runner) echo "packages/vm-runner" ;;
-    # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
-    # build also depends on dev-config and (any) lockfile change — lockfile
-    # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
-    # source-sha tag is what the published chart pins as the image tag, so a
-    # release that doesn't touch these paths doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml" ;;
+    # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
+    # image:pack. The theme build also depends on dev-config and (any)
+    # lockfile change — lockfile bumps re-tag it even when unrelated, which
+    # errs toward rebuilds. Its source-sha tag is what the published chart
+    # pins as the image tag, so a release that doesn't touch these paths
+    # doesn't roll the Keycloak pod.
+    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack" ;;
     claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
