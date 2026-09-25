@@ -340,16 +340,15 @@ spec:
               value: {{ $catalogs | toJson | quote }}
             {{- end }}
             {{- $ghe := dig "enterprise" dict (.Values.github | default dict) }}
-            {{- $gheSecret := $ghe.tokenSecret | default dict }}
             {{- $gheHost := $ghe.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}
-            {{- if and $gheHost $gheSecret.name }}
+            {{- if and $gheHost $ghe.token }}
             - name: GITHUB_ENTERPRISE_HOST
               value: {{ $gheHost | quote }}
             - name: GITHUB_ENTERPRISE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ $gheSecret.name | quote }}
-                  key: {{ $gheSecret.key | default "token" | quote }}
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: GITHUB_ENTERPRISE_TOKEN
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}

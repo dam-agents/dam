@@ -62,5 +62,5 @@ done
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \
   --set github.enterprise.host=github.example.com \
-  --set github.enterprise.tokenSecret.name=kit-catalog-token \
+  --set github.enterprise.token=ghe-test-token \
   | "${KUBECONFORM[@]}" "$@"

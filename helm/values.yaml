@@ -1855,7 +1855,9 @@ e2e:
 # clone rides the gateway with the `github-enterprise` connection its kit
 # requires, and never sees this token.
 #
-# Leave `enterprise.tokenSecret.name` empty to read no enterprise host at all.
+# Leave `enterprise.token` empty to read no enterprise host at all. It is meant
+# to arrive through a secret values layer rather than a values file in git; the
+# chart stores it in the api-server's Secret, not the pod spec.
 # An empty `enterprise.host` falls back to the enterprise host the connection
 # presets already name (apiServer.oauthAppDefaults.githubEnterprise.host), so a
 # single-host install spells it once; setting it here does not change what those
@@ -1866,9 +1868,7 @@ e2e:
 github:
   enterprise:
     host: ""
-    tokenSecret:
-      name: ""
-      key: token
+    token: ""
 
 # -- Starter kit catalogs. The api-server reads every catalog listed here, in
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
