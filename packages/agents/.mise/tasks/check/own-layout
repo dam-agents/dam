@@ -47,7 +47,8 @@ def read(root):
     config = json.load(open(blob(manifest["config"]["digest"])))
     owners = {}
     for l, diff_id in zip(manifest["layers"], config["rootfs"]["diff_ids"]):
-        plain = gzip.decompress(open(blob(l["digest"]), "rb").read())
+        data = open(blob(l["digest"]), "rb").read()
+        plain = gzip.decompress(data) if l["mediaType"].endswith("+gzip") else data
         assert "sha256:" + hashlib.sha256(plain).hexdigest() == diff_id, "diff_id does not match the layer"
         with tarfile.open(fileobj=io.BytesIO(plain)) as t:
             owners.update({m.name: (m.uid, m.gid) for m in t})
@@ -65,5 +66,7 @@ with tempfile.TemporaryDirectory() as tmp:
     owners = results[0][0]
     assert owners == {"usr/local/share/mise/x": (65532, 0), "etc/hostname": (0, 0), "app/a": (0, 0)}, owners
     assert results[0][1] == results[1][1], "a cached rewrite differs from the first"
+    media = [l["mediaType"] for l in results[0][1]["layers"]]
+    assert media == ["application/vnd.oci.image.layer.v1.tar", "application/vnd.oci.image.layer.v1.tar+gzip"], media
     assert len([f for f in os.listdir(cache) if f.endswith(".json")]) == 2, "the second run rewrote a layer again"
 print("own-layout: ok")

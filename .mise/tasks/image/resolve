@@ -133,11 +133,13 @@ resolve() {
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
 }
 
-# The components of a list that resolve to BUILD, as a JSON array.
+# The components of a list that resolve to BUILD, as a JSON array. An `if`,
+# not `&&`: a reused last component would end the loop, and with it this
+# pipeline, with status 1.
 stale_json() {
   local c
   for c in "$@"; do
-    [ "$(resolve "$c" | cut -d' ' -f1)" = BUILD ] && echo "$c"
+    if [ "$(resolve "$c" | cut -d' ' -f1)" = BUILD ]; then echo "$c"; fi
   done | jq -R . | jq -cs 'map(select(length>0))'
 }
 
@@ -222,6 +224,9 @@ self_check() {
   has "$out" 'images=[]'
   has "$out" 'mock=false'
   has "$out" 'archs=["amd64"]'
+  # A reused component, last in its list, leaves it out and fails nothing.
+  out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
+  chk "$out" '["a"]'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 

@@ -1,3 +1,6 @@
+[task_config]
+includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
+
 # kc.gen.tsx is generated from the keycloakify config; tsc, eslint and
 # start-keycloak read it, so it is regenerated before any task in this root.
 [deps.kc-gen]
@@ -8,24 +11,3 @@ depends = ["//:pnpm"]
 sources = ["vite.config.ts", "package.json"]
 outputs = ["src/kc.gen.tsx"]
 run = "pnpm exec keycloakify update-kc-gen"
-
-[tasks.check]
-depends = [":check:*"]
-
-[tasks.fix]
-depends = [":fix:*"]
-
-[tasks."check:tsc"]
-extends = "ts:check:tsc"
-
-[tasks."check:lint"]
-extends = "ts:check:lint"
-
-[tasks."check:format"]
-extends = "ts:check:format"
-
-[tasks."fix:lint"]
-extends = "ts:fix:lint"
-
-[tasks."fix:format"]
-extends = "ts:fix:format"

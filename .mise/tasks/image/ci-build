@@ -11,9 +11,11 @@
 # Env: IMAGE_PREFIX. Every build runs even after one fails; the
 # exit status names the failures.
 #
-# By path, like image:resolve, with usage installed. image.toml agents build
-# with //packages/agents:oci and need mise, node, pnpm and crane; every other
-# component with its package's :oci task, which writes its image tar.
+# By path, like image:resolve, with usage and pigz installed. image.toml
+# agents build with //packages/agents:oci and need mise, node, pnpm and crane;
+# every other component with its package's :oci task, which writes its image
+# tar. A pushed image's plain-tar layers are gzipped first; see
+# image:gzip-layout.
 set -uo pipefail
 
 serial="${usage_serial:-false}" arch="$usage_arch"
@@ -47,8 +49,9 @@ source_ref() {
 # script turns into /tmp/digests.
 push_layout() {
   local c=$1 kind=$2 layout=$3 ref
+  case "$kind" in cacheonly | load) return ;; esac
+  .mise/tasks/image/gzip-layout "$layout" || return 1
   case "$kind" in
-    cacheonly | load) ;;
     source) crane push "$layout" "$(source_ref "$c")" || return 1 ;;
     # By digest: an untagged crane reference means :latest.
     digest)
@@ -67,29 +70,16 @@ build_mise() {
   rm -rf "$layout"
 }
 
-# A tar that holds an OCI layout (a mise oci image) is pushed as that layout:
-# pushed as a tarball, crane rewrites its OCI manifest as a Docker one around
-# the OCI config and layers, which quay.io refuses as invalid.
+# Every :oci tar holds an OCI layout, which is pushed as that layout: pushed
+# as a tarball, crane rewrites its OCI manifest as a Docker one around the OCI
+# config and layers, which quay.io refuses as invalid.
 build_tar() {
-  local c=$1 pkg=$2 kind=$3 tar ref layout="$AGENT_OCI_OUT/$1"
-  tar="$(tar_of "$c")"
+  local c=$1 pkg=$2 kind=$3 layout="$AGENT_OCI_OUT/$1"
   mise run "//packages/$pkg:oci" || return 1
-  if tar -tf "$tar" oci-layout >/dev/null 2>&1; then
-    rm -rf "$layout" && mkdir -p "$layout" && tar -C "$layout" -xf "$tar" || return 1
-    push_layout "$c" "$kind" "$layout" || return 1
-    rm -rf "$layout"
-    return
-  fi
-  case "$kind" in
-    cacheonly | load) ;;
-    source) crane push "$tar" "$(source_ref "$c")" || return 1 ;;
-    digest)
-      ref="$(crane digest --tarball "$tar")" || return 1
-      crane push "$tar" "$IMAGE_PREFIX/$c@$ref" || return 1
-      jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
-      ;;
-    *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
-  esac
+  case "$kind" in cacheonly | load) return ;; esac
+  rm -rf "$layout" && mkdir -p "$layout" && tar -C "$layout" -xf "$(tar_of "$c")" || return 1
+  push_layout "$c" "$kind" "$layout" || return 1
+  rm -rf "$layout"
 }
 
 build_one() {

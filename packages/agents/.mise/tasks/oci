@@ -221,8 +221,11 @@ save_layers() {
     jq -cn --arg m "$2" --arg d "sha256:$h" --argjson s "${#1}" '{mediaType: $m, digest: $d, size: $s}'
   }
   add_layer "$tar" application/vnd.oci.image.layer.v1.tar
+  # A blob whose digest is its diff id is own-layout.py's plain tar.
   while read -r kind a b c; do
-    [ "$kind" != blob ] || add_layer "$state/$b" application/vnd.oci.image.layer.v1.tar+gzip "$c"
+    [ "$kind" = blob ] || continue
+    if [ "$a" = "$c" ]; then m=application/vnd.oci.image.layer.v1.tar; else m=application/vnd.oci.image.layer.v1.tar+gzip; fi
+    add_layer "$state/$b" "$m" "$c"
   done < "$list"
   config="$(put "$(jq -cn --arg a "$(oci_arch)" --argjson d "$diffs" \
     '{architecture: $a, os: "linux", config: {}, rootfs: {type: "layers", diff_ids: $d}}')" \

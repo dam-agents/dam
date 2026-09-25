@@ -1,21 +1,9 @@
-[tasks.check]
-depends = [":check:*"]
-
-[tasks.fix]
-depends = [":fix:*"]
-
-[tasks."check:tsc"]
-extends = "ts:check:tsc"
-
-[tasks."check:lint"]
-extends = "ts:check:lint"
+[task_config]
+includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
 
 [tasks."check:format"]
 extends = "ts:check:format"
 run = "pnpm exec prettier --check 'src/**/*.ts' '!src/proto-gen/**'"
-
-[tasks."fix:lint"]
-extends = "ts:fix:lint"
 
 [tasks."fix:format"]
 extends = "ts:fix:format"

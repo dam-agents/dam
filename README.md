@@ -143,7 +143,7 @@ The hosted deployment provides IBM internal model endpoints and integrations tha
 * [mise](https://mise.jdx.dev)
 * macOS or Linux
 
-Images build without a container runtime: each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM.
+Nothing needs Docker or another container runtime on your machine. Each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM. The Keycloak theme's full preview (`mise run //packages/keycloak-theme:run`) runs the Keycloak image's server on the host's Java.
 
 On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
 

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# The chart's dependencies (the clickstack telemetry subchart and its nested
+# opentelemetry-collector), built into charts/ from Chart.lock. The helm deps
+# provider runs it, and CI by path, where `mise deps` would install every tool
+# first. `helm repo add` is idempotent.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
+helm dependency build .

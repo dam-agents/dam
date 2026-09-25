@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
-#MISE description="Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"
+#MISE description="Run the Keycloak image's server on the host with the theme (full-fidelity preview), no container runtime: http://localhost:8080 (or $KEYCLOAK_PORT), admin/admin, and keycloakify's test realm myrealm (testuser/password123) on the platform theme"
+#MISE depends=["//packages/keycloak-theme:oci"]
+# Keycloak is Java alone, so the server runs out of the image's /opt/keycloak on
+# the repo's Java: the digest-pinned upstream release with this theme's JAR in
+# its providers, exactly what the chart deploys. Each run starts from a fresh
+# copy, so its realm and admin come from the import below.
 set -euo pipefail
-pnpm exec keycloakify start-keycloak -p ./ "$@"
+kc="$(mktemp -d)"
+trap 'rm -rf "$kc"' EXIT
+crane export - - < dist/oci/keycloak.tar | tar -x -C "$kc" --strip-components=2 opt/keycloak
+major="$(sed -n 's/^Keycloak - Version \([0-9]*\)\..*/\1/p' "$kc/version.txt")"
+mkdir -p "$kc/data/import"
+jq '.loginTheme = "platform" | .eventsListeners -= ["keycloakify-logging"] | .users |= map(.credentials |= map(.value //= "password123"))' \
+  "node_modules/keycloakify/src/bin/start-keycloak/realmConfig/defaultConfig/realm-kc-$major.json" \
+  > "$kc/data/import/myrealm-realm.json"
+KC_BOOTSTRAP_ADMIN_USERNAME=admin KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  "$kc/bin/kc.sh" start-dev --import-realm --http-port "${KEYCLOAK_PORT:-8080}" "$@"
