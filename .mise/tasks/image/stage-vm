@@ -8,7 +8,7 @@
 # the flatten began again from nothing.
 set -euo pipefail
 IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
-LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 IMAGE_DIR=/var/lib/platform-vm-images
 name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"

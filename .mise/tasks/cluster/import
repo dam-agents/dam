@@ -4,7 +4,7 @@
 #USAGE arg "<tar>..." var=#true
 set -euo pipefail
 eval "tars=($usage_tar)"
-LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 for t in "${tars[@]}"; do
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$t"

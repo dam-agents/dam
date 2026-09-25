@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Wipe e2e cluster data without reinstalling: drop+recreate the platform DB, delete agents (CRs/StatefulSets/pods/PVCs), clear stored Playwright auth. Leaves the cluster running. VM via E2E_VM_NAME (default platform-k3s-test)."
+#MISE description="Wipe e2e cluster data without reinstalling: drop+recreate the platform DB, delete agents (CRs/StatefulSets/pods/PVCs), clear stored Playwright auth. Leaves the cluster running."
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
 set -eo pipefail
 
-VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
 # 1. Delete agents (custom resources) so the controller

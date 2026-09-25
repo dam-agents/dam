@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-#MISE sources=["**/*.go", "go.mod", "go.sum"]
-#MISE outputs=["dist/**"]
-#MISE cache.enabled=true
-set -euo pipefail
-go build -o dist/bin/ ./... "$@"

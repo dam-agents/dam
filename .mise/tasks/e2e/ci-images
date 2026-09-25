@@ -81,7 +81,7 @@ pids=()
 for c in $LOADED mock; do
   ref="$IMAGE_PREFIX/$c:$GITHUB_SHA"
   [ "$c" = mock ] || ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")"
-  mise run image:pull -- "$ref" "$(.mise/tasks/image/resolve tar-path "$c")" "platform-$c:latest" &
+  .mise/tasks/image/pull "$ref" "$(.mise/tasks/image/resolve tar-path "$c")" "platform-$c:latest" &
   pids+=($!)
 done
 for pid in "${pids[@]}"; do wait "$pid"; done

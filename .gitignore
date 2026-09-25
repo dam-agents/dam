@@ -57,5 +57,4 @@ __pycache__/
 # go build ./cmd/<name> drops its binary in the package directory
 /packages/controller/vm-runner
 /packages/controller/vm-image-cache
-/packages/controller/vm-conformance-guest
 /packages/controller/controller

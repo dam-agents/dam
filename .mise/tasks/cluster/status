@@ -2,11 +2,7 @@
 #MISE description="Show cluster and pod status. Options: --watch (continuous refresh every 2s). Honors LIMA_INSTANCE."
 #MISE raw=true
 set -eo pipefail
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${LIMA_INSTANCE:-platform-k3s}/copied-from-guest/kubeconfig.yaml"
-fi
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 STATUS_CMD="
 if [ -n \"${IS_SANDBOX:-}\" ]; then

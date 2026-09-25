@@ -2,6 +2,10 @@
 # and depended on by path — see .mise/fetch-smolvm for why. It is a dependency
 # provider and not a task: every cargo task here needs the clone present, and a
 # task that depended on it would inherit no cache key and become uncacheable.
+# So every cargo task lists `smolvm.pin` in its sources: the provider's staleness
+# never reaches a task's key, and a pin that moves `commit=` alone leaves
+# `Cargo.lock` untouched (smolvm is a path dependency there). Undeclared, a
+# cached pass taken against the old source replays.
 [deps.smolvm]
 description = "Clone the pinned smolvm source this crate builds against"
 auto = true

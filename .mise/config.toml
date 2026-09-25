@@ -64,7 +64,7 @@ deny_write = true
 
 [task_templates."ts:check:format"]
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
-sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc"]
+sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache.enabled = true
 deny_net = true
@@ -105,6 +105,12 @@ bad=$(fd --hidden --type f --full-path '/[.]mise/tasks/' --exec-batch sh -c 'for
 outputs = []
 deny_net = true
 deny_write = true
+
+# Not cached: it walks every tracked TS/JS/Go/Rust file, and a sources glob wide
+# enough to match that has to traverse node_modules.
+[tasks."check:comment-types"]
+description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+run = { task = "strip-comments", args = ["--check"] }
 
 # Not cached: the append-only comparison reads git history (merge-base with
 # origin/main), which no sources glob can key.
