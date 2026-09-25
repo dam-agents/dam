@@ -138,6 +138,8 @@ warm_mise() (
   cd "$stage"
   envs="${all[*]}"
   mise -E "${envs// /,}" install
+  # A cache restored from an older lockfile keeps the versions it replaced.
+  mise -E "${envs// /,}" prune --yes
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "${envs// /,}" exec -- playwright install chromium
 )
 
