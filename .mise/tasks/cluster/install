@@ -239,24 +239,30 @@ spec:
         protocol: TCP
 YAML
 
-# 2. Install cert-manager
+# 2. Install cert-manager, beside the Istio install below: neither needs the
+# other, and each spends most of its time waiting for its pods. Its output is
+# prefixed, and the Istio block ends by waiting for it.
 CERT_MANAGER_VERSION="v1.21.2"
 
-if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
-  echo "Installing cert-manager ($CERT_MANAGER_VERSION)..."
-  # Retried: freshly-provisioned k3s can restart its apiserver right after
-  # reporting Ready (seen as ECONNREFUSED mid-apply on CI runners).
-  for attempt in 1 2 3 4 5; do
-    kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml && break
-    [ "$attempt" = 5 ] && exit 1
-    echo "cert-manager apply failed (attempt $attempt); retrying in 10s..."
-    sleep 10
-  done
-  echo "Waiting for cert-manager to be ready..."
-  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
-else
-  echo "cert-manager already installed"
-fi
+install_cert_manager() {
+  if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
+    echo "Installing cert-manager ($CERT_MANAGER_VERSION)..."
+    # Retried: freshly-provisioned k3s can restart its apiserver right after
+    # reporting Ready (seen as ECONNREFUSED mid-apply on CI runners).
+    for attempt in 1 2 3 4 5; do
+      kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml && break
+      [ "$attempt" = 5 ] && return 1
+      echo "cert-manager apply failed (attempt $attempt); retrying in 10s..."
+      sleep 10
+    done
+    echo "Waiting for cert-manager to be ready..."
+    kubectl --kubeconfig="$KUBECONFIG" -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
+  else
+    echo "cert-manager already installed"
+  fi
+}
+install_cert_manager > >(sed -u 's/^/[cert-manager] /') 2>&1 &
+CERT_MANAGER_PID=$!
 
 # 2b. Install Istio ambient + Gateway-API CRDs (required).
 # Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
@@ -281,14 +287,17 @@ fi
 # reconcile. Idempotent, and covers both install orders (whichever of the k3s
 # Traefik bootstrap vs. this CRD apply wins the race).
 echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
+# One call each for every CRD: kubectl still stamps the rest when one is
+# missing.
+GATEWAY_CRDS=()
 for crd in gatewayclasses gateways grpcroutes httproutes referencegrants; do
-  kubectl --kubeconfig="$KUBECONFIG" label crd "$crd.gateway.networking.k8s.io" \
-    app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
-    meta.helm.sh/release-name=traefik-crd --overwrite >/dev/null 2>&1 || true
-  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
-    meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
+  GATEWAY_CRDS+=("$crd.gateway.networking.k8s.io")
 done
+kubectl --kubeconfig="$KUBECONFIG" label crd "${GATEWAY_CRDS[@]}" \
+  app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+kubectl --kubeconfig="$KUBECONFIG" annotate crd "${GATEWAY_CRDS[@]}" \
+  meta.helm.sh/release-name=traefik-crd meta.helm.sh/release-namespace=kube-system \
+  --overwrite >/dev/null 2>&1 || true
 
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
@@ -358,6 +367,7 @@ istio_install_if_missing ztunnel istio/ztunnel \
   ${ZTUNNEL_IPV4_ONLY[@]+"${ZTUNNEL_IPV4_ONLY[@]}"}
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+wait "$CERT_MANAGER_PID" || { echo "FATAL: cert-manager install failed" >&2; exit 1; }
 
 # Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
 # markers (issue #283) and, if any are present, roll ds/ztunnel plus all
@@ -550,21 +560,39 @@ else
   # Like the agents', off Linux its build runs in the VM, so it waits for one.
   [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ] && mise run //packages/vm-runner:oci
 
-  # CI brings the cluster up while this run's images are still building, and
-  # e2e:ci-images pulls them in the background; this is where they are first
-  # needed.
-  if [ -n "${CI_IMAGES_STATUS:-}" ]; then
-    echo "Waiting for this run's images (e2e:ci-images)..."
-    until [ -s "$CI_IMAGES_STATUS" ]; do sleep 5; done
-    [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; exit 1; }
-  fi
-
-  echo "Loading images into k3s..."
   COMPONENTS=(controller api-server ui keycloak)
   [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
-  TARS=()
-  for c in "${COMPONENTS[@]}" ${AGENT_TASKS[@]+"${AGENT_TASKS[@]}"}; do TARS+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-  mise run cluster:import -- "${TARS[@]}"
+  COMPONENTS+=(${AGENT_TASKS[@]+"${AGENT_TASKS[@]}"})
+  # CI brings the cluster up while this run's images are still building, and
+  # e2e:ci-images pulls them in the background; this is where they are first
+  # needed. Each one it has finished is imported while the rest are still on
+  # their way, so only the last to land is imported after the wait.
+  if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+    echo "Waiting for this run's images (e2e:ci-images)..."
+    REMAINING=("${COMPONENTS[@]}")
+    until [ -s "$CI_IMAGES_STATUS" ]; do
+      LEFT=()
+      for c in "${REMAINING[@]}"; do
+        if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
+          echo "Loading $c into k3s..."
+          mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
+        else
+          LEFT+=("$c")
+        fi
+      done
+      REMAINING=(${LEFT[@]+"${LEFT[@]}"})
+      sleep 2
+    done
+    [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; exit 1; }
+    COMPONENTS=(${REMAINING[@]+"${REMAINING[@]}"})
+  fi
+
+  if [ ${#COMPONENTS[@]} -gt 0 ]; then
+    echo "Loading images into k3s: ${COMPONENTS[*]}"
+    TARS=()
+    for c in "${COMPONENTS[@]}"; do TARS+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
+    mise run cluster:import -- "${TARS[@]}"
+  fi
 fi
 
 # 4. Helm install or upgrade.

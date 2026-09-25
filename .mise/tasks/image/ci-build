@@ -102,19 +102,28 @@ for n in "${names[@]}"; do
   break
 done
 
+# One build, its wall time last in its output. Given CI_BUILD_READY_DIR, a
+# file named after the component lands there once it is built: e2e:ci-images
+# sets it, and cluster:install imports each image as it lands.
+timed_build() {
+  local start=$SECONDS code=0
+  build_one "$1" "$2" || code=$?
+  echo "$1: $((SECONDS - start))s"
+  [ "$code" -eq 0 ] || return "$code"
+  [ -z "${CI_BUILD_READY_DIR:-}" ] || touch "$CI_BUILD_READY_DIR/$1"
+}
+
 failed=()
 if [ "$serial" = true ]; then
   for i in "${!names[@]}"; do
     echo "::group::${names[$i]}"
-    SECONDS=0
-    build_one "${names[$i]}" "${kinds[$i]}" 2>&1 || failed+=("${names[$i]}")
-    echo "${names[$i]}: ${SECONDS}s"
+    timed_build "${names[$i]}" "${kinds[$i]}" 2>&1 || failed+=("${names[$i]}")
     echo "::endgroup::"
   done
 else
   pids=()
   for i in "${!names[@]}"; do
-    build_one "${names[$i]}" "${kinds[$i]}" > "/tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
+    timed_build "${names[$i]}" "${kinds[$i]}" > "/tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
     pids+=($!)
   done
   for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done

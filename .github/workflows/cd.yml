@@ -284,8 +284,8 @@ jobs:
         run: |
           read -r -a images <<< "$IMAGES"
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
-      # Main writes it on a miss, once the build has compiled into it; a PR's e2e
-      # job reads the amd64 one.
+      # Main writes it on a miss, once the build has compiled into it; a PR's
+      # build-vm-runner job reads the amd64 one.
       - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -482,6 +482,41 @@ jobs:
           read -r -a workloads <<< "$WORKLOADS"
           SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge /tmp/digests "${workloads[@]}"
 
+  build-vm-runner:
+    name: build vm-runner (PR)
+    # e2e does not run the vm-runner, so a PR only proves it builds; one whose
+    # source is already published needs no proof. Its own runner: a cold
+    # release build of the Rust crate takes eight minutes, which on the e2e
+    # runner took CPU from the image builds the cluster waits on.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # image:resolve finds the vm-runner's source sha in the history.
+          fetch-depth: 0
+      - id: rust-release-key
+        run: *rust-release-version
+      # build-images' vm-runner release build, read-only.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *rust-release-paths
+          key: *rust-release-key
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Build
+        run: |
+          set -euo pipefail
+          decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
+          case "$decision" in
+            "REUSE "*) echo "vm-runner unchanged: ${decision#REUSE }" ;;
+            *) .mise/tasks/image/ci-build amd64 vm-runner:cacheonly ;;
+          esac
+
   build-mock:
     name: build mock (e2e fixture)
     needs: [changes]
@@ -569,19 +604,9 @@ jobs:
       # Before the background build: its pnpm install would race e2e:install's.
       - if: github.event_name == 'pull_request'
         run: mise deps install --only pnpm
-      # build-images' vm-runner release build, for the one e2e:ci-images proves.
-      - id: rust-release-key
-        if: github.event_name == 'pull_request'
-        run: *rust-release-version
-      - if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: *rust-release-paths
-          key: *rust-release-key
       - name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
-          CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
           CI_IMAGES_IMAGES_JOB: build-images (amd64)
@@ -589,10 +614,18 @@ jobs:
           # As the `changes` job sets it, so both resolve the same images stale.
           RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
+      # Keyed by the Playwright the lockfile resolves, which fixes the browser
+      # build it downloads: a lockfile change elsewhere keeps the entry.
+      - id: playwright
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^  playwright-core@\([0-9][^:]*\):.*/\1/p' pnpm-lock.yaml | head -n1)"
+          [ -n "$v" ] || { echo "::error::pnpm-lock.yaml resolves no playwright-core"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # Under the job's timeout, so a hung image build fails the step and the
       # log steps below still run; the job's own timeout cancels them too.
       - run: mise run e2e
@@ -603,15 +636,6 @@ jobs:
       - name: Image fetch log
         if: ${{ !cancelled() }}
         run: cat /tmp/ci-images.log
-      # The vm-runner build e2e:ci-images left running in the background.
-      - name: vm-runner build
-        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
-        run: |
-          set -euo pipefail
-          [ -e /tmp/vm-runner-build.log ] || { echo "::error::the vm-runner build never started; see the image fetch log"; exit 1; }
-          for _ in $(seq 180); do [ -s /tmp/vm-runner-build.status ] && break; sleep 10; done
-          cat /tmp/vm-runner-build.log || true
-          [ "$(cat /tmp/vm-runner-build.status 2>/dev/null)" = 0 ]
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

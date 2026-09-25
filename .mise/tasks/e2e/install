@@ -30,16 +30,5 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
 fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
 
-# Targeted apiserver rollout: on a fresh cluster the apiserver pod starts in
-# parallel with postgres and loses a race against postgres's init-databases.sh
-# (creates keycloak + platform DBs, then restarts postgres). The Drizzle
-# migration's CREATE SCHEMA dies with ECONNRESET and the pod crash-loops.
-# Bouncing just apiserver after postgres is settled lets the second pod
-# generation migrate cleanly. UI/controller don't share this race, and
-# restarting the UI introduces a transient Traefik-endpoint 502 window that
-# breaks Playwright's first asset fetch — leave them alone.
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
-
 # Readiness gate — shared task, see e2e:gate.
 mise run e2e:gate

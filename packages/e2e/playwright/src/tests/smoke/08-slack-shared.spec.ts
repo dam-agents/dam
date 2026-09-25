@@ -47,7 +47,7 @@ test("any channel member drives the agent through a shared binding", async () =>
         },
         {
           timeout: 180_000,
-          intervals: [5_000],
+          intervals: [1_000],
           message: "the reply did not land back in the slack thread",
         },
       )
@@ -102,7 +102,7 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
         },
         {
           timeout: 180_000,
-          intervals: [5_000],
+          intervals: [1_000],
           message: "the fetch result did not post back to the thread",
         },
       )

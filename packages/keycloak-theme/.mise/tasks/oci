@@ -1,15 +1,39 @@
 #!/usr/bin/env bash
-#MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR, to dist/oci/keycloak.tar"
+#MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR and its build options pre-built, to dist/oci/keycloak.tar"
 #MISE sources=["src/**/*", "public/**/*", "!public/keycloakify-dev-resources/**", "vite.config.ts", "package.json", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack"]
 #MISE outputs=["dist/oci/keycloak.tar"]
 set -euo pipefail
+base=quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4
 mise run //packages/keycloak-theme:build
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
-cp dist/jar/keycloak-theme-for-kc-all-other-versions.jar "$root/keycloak-theme.jar"
-# No `kc.sh build` here: the chart starts Keycloak with build options of its
-# own (the database, the features), so Keycloak augments at every start and
-# picks the provider up then.
-"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" \
-  quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4 \
-  "$root" dist/oci/keycloak.tar platform-keycloak:latest --at /opt/keycloak/providers
+mkdir "$root/providers" "$root/quarkus"
+cp dist/jar/keycloak-theme-for-kc-all-other-versions.jar "$root/providers/keycloak-theme.jar"
+
+# `kc.sh build` here, with the build options the chart starts Keycloak with, so
+# `start --optimized` skips the Quarkus augmentation every start otherwise runs
+# first, about 25 seconds. It runs on this host's Java against the base's own
+# /opt/keycloak, flattened once per base, with the theme in its providers: an
+# optimized start loads only the providers the build saw. The build rewrites
+# lib/quarkus alone, which lands over the base's with the owner and mode the
+# base gives it, so a start that has to re-augment can still write there.
+# Keep the options in step with the chart's keycloak/app.yaml.
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack/keycloak-$(printf '%s %s' "$base" "$(uname -m)" | sha256sum | cut -c1-32)"
+if [ ! -d "$cache/opt/keycloak" ]; then
+  rm -rf "$cache.$$" && mkdir -p "$cache.$$"
+  crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$base" - | tar -C "$cache.$$" -x opt/keycloak
+  mv -T "$cache.$$" "$cache" 2>/dev/null || rm -rf "$cache.$$"
+fi
+kc="$root/keycloak"
+cp -a "$cache/opt/keycloak" "$kc"
+# mtime 0, as the layer stores it: Keycloak compares a provider's timestamp to
+# the one the build saw.
+touch -d @0 "$root/providers/keycloak-theme.jar"
+cp -p "$root/providers/keycloak-theme.jar" "$kc/providers/"
+"$kc/bin/kc.sh" build --db=postgres --health-enabled=true --features=token-exchange,admin-fine-grained-authz:v1
+cp "$kc"/lib/quarkus/* "$root/quarkus/"
+chmod 0664 "$root"/quarkus/*
+
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" "$base" \
+  "$root/providers" dist/oci/keycloak.tar platform-keycloak:latest --at /opt/keycloak/providers \
+  --layer "1000:0=/opt/keycloak/lib/quarkus=$root/quarkus"
