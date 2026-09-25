@@ -115,6 +115,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   };
   if (harness) body.harness = harness;
   if (image) body.image = image;
+  if (label !== undefined) body.label = label;
   if (ttlMs !== undefined) body.ttlMs = ttlMs;
   if (memory !== undefined) body.memory = memory;
   if (cpu !== undefined) body.cpu = cpu;

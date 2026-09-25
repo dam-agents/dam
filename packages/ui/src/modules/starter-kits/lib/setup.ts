@@ -10,6 +10,7 @@ import {
   type StarterKitSchedule,
   type StarterKitScheduleOverride,
   type StarterKitView,
+  type TemplateHarness,
 } from "api-server-api";
 
 import type { ProviderRef } from "../../providers/components/provider-item.js";
@@ -255,7 +256,6 @@ const HARNESS_LABEL: Record<HarnessFamily, string> = {
   codex: "Codex",
   pi: "Pi",
   bob: "Bob",
-  mock: "Mock",
 };
 
 function harnessFamilyLabel(
@@ -285,13 +285,14 @@ export function kitResourcesLine(
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-export function allowedHarnesses<T extends { harness?: HarnessFamily }>(
+export function allowedHarnesses<T extends { harness?: TemplateHarness }>(
   kit: Pick<StarterKitView, "harnesses">,
   harnesses: readonly T[],
 ): T[] {
   if (!kit.harnesses) return [...harnesses];
+  const accepted = new Set<string>(kit.harnesses);
   return harnesses.filter(
-    (t) => t.harness !== undefined && kit.harnesses!.includes(t.harness),
+    (t) => t.harness !== undefined && accepted.has(t.harness),
   );
 }
 

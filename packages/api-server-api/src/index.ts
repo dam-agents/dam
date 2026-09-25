@@ -11,6 +11,7 @@ export { templateSpecSchema } from "./modules/templates/schemas.js";
 export type {
   HarnessFamily,
   Template,
+  TemplateHarness,
   TemplateSpec,
   TemplatesService,
   Resources,

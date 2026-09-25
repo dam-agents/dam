@@ -76,6 +76,7 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
         "backend": "vm",
         "skills": [{"source": "https://github.example/acme/skills", "name": "grill"}],
         "ttlMs": 3_600_000,
+        "label": "cell:persona/task",
     }
 
 
@@ -94,7 +95,7 @@ def test_spawn_keeps_the_experiment_sdk_size_arguments(stub):
 
     body = stub.requests[0][2]
     assert (body["memory"], body["cpu"]) == ("4Gi", "2")
-    assert "label" not in body
+    assert body["label"] == "cell"
 
 
 def test_spawn_needs_a_harness_or_an_image(stub):

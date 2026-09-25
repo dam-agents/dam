@@ -1,4 +1,4 @@
-import type { HarnessFamily, StarterKit } from "api-server-api";
+import type { StarterKit, TemplateHarness } from "api-server-api";
 import { spellHarnessCommand } from "../../templates/index.js";
 import type { GrantedTemplate } from "./requirements.js";
 import { satisfiesRequirement } from "./requirements.js";
@@ -100,7 +100,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
 
 export function kitInitializationTask(
   facts: OnboardingFacts,
-  harness: HarnessFamily | undefined,
+  harness: TemplateHarness | undefined,
 ): string | null {
   const { onboarding } = facts.kit;
   if (onboarding === false) return null;

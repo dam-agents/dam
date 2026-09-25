@@ -13,7 +13,7 @@ Every image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.h
 - **k-search** runs from upstream source trees rather than a package: they are baked tools too, pinned by commit and checksum, patched by a postinstall and linked at a fixed path (`oci_link`).
 - **The e2e mock** is an environment too, kept beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/).
 
-Only the agent-runtime, driver-sdk and the experiment SDK come from the rest of the repo; the build compiles them into each image.
+Only the agent-runtime, the two driver SDKs (JavaScript and Python) and the experiment SDK come from the rest of the repo; the build compiles them into each image.
 
 ## Building
 

@@ -238,7 +238,7 @@ def spawn(
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
     sub-agent the moment it lapses, mid-work or not. ``label`` names the
-    sub-agent in this script's log lines."""
+    sub-agent, in this script's log lines and on the platform."""
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
     if resources is not None and (memory is not None or cpu is not None):
@@ -249,6 +249,8 @@ def spawn(
         body["harness"] = harness
     if image is not None:
         body["image"] = image
+    if label is not None:
+        body["label"] = label
     if connections:
         body["connections"] = connections
     if seed is not None:

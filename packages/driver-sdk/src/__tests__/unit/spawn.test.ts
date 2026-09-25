@@ -58,6 +58,7 @@ describe("spawn", () => {
       url: "http://api.test/api/agents/driver-1/invocations",
       body: {
         harness: "claude-code",
+        label: "cell:one",
         seed: { url: "https://github.example/acme/tool" },
         install: { command: "make" },
         env: [{ name: "A", value: "1" }],
