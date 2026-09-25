@@ -40,3 +40,16 @@ By ecosystem:
 - Node.js: use `pnpm`, with overrides in top-level `package.json` if necessary
 - GitHub Actions: use `pinact`
 - Go: fix manually, run `mise -C packages/controller x -- govulncheck ./...` to verify
+- Agent images (`mise oci`, see `docs/architecture/agent-images.md`): tools are pinned in `packages/agents/base/base.toml` and each `packages/agents/*/image.toml` (plus `packages/e2e/agents/mock/image.toml`), resolved in `packages/agents/base/image.lock`, with the npm tools' dependency trees in `packages/agents/base/image-locks/<tool>/<version>/aube-lock.yaml`. Bump the pin, then `mise run //packages/agents:oci --lock`; for a `latest` pin, `mise run //packages/agents:oci --lock --bump` (re-resolves every `latest`). A vulnerable npm transitive is fixed by bumping its tool. Workload `pipx:` tools are pinned exactly in their `image.toml` and are not in the lock. `apt.toml` packages are `latest` and rebuilt daily: no action. The image's release-age gate is `packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`. k-search's `Dockerfile` pins its own extra deps.
+- Keycloak: `FROM` tag+digest in `packages/keycloak-theme/Dockerfile`. Before bumping, scan the candidate (`mise x --no-deps -- trivy image quay.io/keycloak/keycloak:<tag>`) to confirm it fixes the findings.
+
+## Trivy findings in images
+
+The automated scan issue aggregates Trivy results without file paths. To find which baked tool carries a package, scan the image the issue's run scanned (`quay.io/dam-agents/<component>:<head sha of the run>`):
+
+```sh
+mise x --no-deps -- trivy image --quiet --platform linux/amd64 --format json <image> \
+  | jq -r '.Results[] | select(.Vulnerabilities) | .Target as $t | .Vulnerabilities[] | "\($t)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"' | sort -u
+```
+
+In agent images the target is `usr/local/share/mise/installs/<tool>/<version>/…`; a `Python` target with no path is usually a pip-vendored library in mise's Python. Go modules inside third-party binaries (docker's static bundle, buildx, compose, k3s, kubectl) are fixed only by an upstream release: if the tool is already at its latest release, the finding is blocked upstream. Report it as such, do not suppress it.
