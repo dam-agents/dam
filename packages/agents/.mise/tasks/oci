@@ -1,27 +1,35 @@
-#!/usr/bin/env bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan, --lock refreshes packages/agents/base/image.lock and image-locks/ (with --bump, re-resolving `latest` pins), --warm installs every image's tools for CI's cache; both build nothing."
+#!/usr/bin/env -S usage bash
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code."
 #MISE dir="{{vars.repo_root}}"
+#USAGE flag "--build" help="Never reuse an image from the registry"
+#USAGE flag "--no-tar" help="Linux only: keep a mise image as its OCI layout"
+#USAGE flag "--dry-run" help="Print the plan"
+#USAGE flag "--lock" help="Refresh packages/agents/base/image.lock and image-locks/; builds nothing"
+#USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
+#USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
+#USAGE arg "[agent]..." var=#true
 set -euo pipefail
 
 resolve=.mise/tasks/image/resolve
 agents=packages/agents
 workloads=" $($resolve list-workloads) "
 root="$PWD"
-dry=false reuse=true load=true lock=false warm=false bump=() named=()
-for a in "$@"; do
-  case "$a" in
-    --dry-run) dry=true ;;
-    --build) reuse=false ;;
-    --no-load) load=false ;;
-    --lock) lock=true ;;
-    --warm) warm=true ;;
-    --bump) bump=(--bump) ;;
-    -*) echo "unknown option: $a" >&2; exit 2 ;;
-    *) named+=("$a") ;;
-  esac
-done
+dry="${usage_dry_run:-false}" lock="${usage_lock:-false}" warm="${usage_warm:-false}"
+reuse=true; [ "${usage_build:-}" != true ] || reuse=false
+write_tar=true; [ "${usage_no_tar:-}" != true ] || write_tar=false
+bump=(); [ "${usage_bump:-}" != true ] || bump=(--bump)
+eval "named=(${usage_agent:-})"
 
 dir_of() { local d; for d in "$agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && { echo "$d"; return; }; done; return 1; }
+tar_of() { echo "$(dir_of "$1")/dist/oci/$1.tar"; }
+arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
+# ctr import and docker load name the image by this annotation.
+name_layout() {
+  jq --arg n "docker.io/library/platform-$2:latest" \
+    '.manifests[0].annotations += {"io.containerd.image.name": $n, "org.opencontainers.image.ref.name": "latest"}' \
+    "$1/index.json" > "$1/index.json.new"
+  mv "$1/index.json.new" "$1/index.json"
+}
 if [ ${#named[@]} -eq 0 ]; then
   for d in "$agents"/*/; do
     [ -f "$d/Dockerfile" ] || [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
@@ -35,7 +43,7 @@ for a in "${named[@]}"; do
   else echo "$a has neither an image.toml nor a Dockerfile" >&2; exit 2; fi
 done
 if [ ${#docker_images[@]} -gt 0 ]; then
-  [ "$load" = true ] || { echo "--no-load applies to mise images only: ${docker_images[*]}" >&2; exit 2; }
+  [ "$write_tar" = true ] || { echo "--no-tar applies to mise images only: ${docker_images[*]}" >&2; exit 2; }
   case " ${mise_images[*]:-} " in *" claude-code "*) ;; *) mise_images=(claude-code ${mise_images[@]+"${mise_images[@]}"}) ;; esac
 fi
 
@@ -50,8 +58,13 @@ reused() {
   [ "$reuse" = true ] || return 1
   local d; d="$($resolve resolve "$1")"
   [ "${d%% *}" = REUSE ] || return 1
-  echo "↺ reuse ${d#REUSE } -> platform-$1:latest"
-  docker pull "${d#REUSE }" && docker tag "${d#REUSE }" "platform-$1:latest"
+  echo "↺ reuse ${d#REUSE } -> $(tar_of "$1")"
+  local l s=0; l="$(mktemp -d)"
+  # Callers test the result, which leaves set -e off in here.
+  crane pull --format=oci --platform "linux/$arch" "${d#REUSE }" "$l" && name_layout "$l" "$1" &&
+    mkdir -p "$(dirname "$(tar_of "$1")")" && tar -C "$l" -cf "$(tar_of "$1")" . || s=$?
+  rm -rf "$l"
+  return $s
 }
 
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
@@ -104,7 +117,7 @@ stage_project() {
     [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
     mkdir -p "$stage/$a"
     # pi's extension ships as source; node_modules holds its dev dependencies.
-    tar -C "$d" --exclude=node_modules --exclude=.mise -cf - . | tar -C "$stage/$a" -xf -
+    tar -C "$d" --exclude=node_modules --exclude=.mise --exclude=./dist -cf - . | tar -C "$stage/$a" -xf -
   done
 }
 
@@ -153,12 +166,12 @@ build_mise() (
   install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
-  cp -a packages/agent-runtime/dist "$b/app/dist"
-  install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  cp -a packages/agent-runtime/dist/js "$b/app/dist"
+  install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
   install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
   if [ "$harness" = mock ]; then
     pnpm --filter mock-agent exec tsup
-    install -D -m 644 packages/e2e/agents/mock/dist/main.js "$stage/mock/rootfs/app/mock-agent.js"
+    install -D -m 644 packages/e2e/agents/mock/dist/js/main.js "$stage/mock/rootfs/app/mock-agent.js"
   fi
   # A copy cannot target /, hence one per top-level directory; the agent's
   # come after base's and win.
@@ -223,6 +236,7 @@ build_mise() (
   # The re-owned layer cache grows with every distinct layer; remove
   # $state/owned to reclaim it.
   mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
+  name_layout "$out" "$harness"
   echo "OCI layout: $out"
 )
 
@@ -237,8 +251,13 @@ build_in_vm() {
     COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf - |
     limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
   # The tools CI's build-agents job sets up, not the repo's whole toolchain.
+  # The host's GitHub token goes in on stdin, out of any process list: the
+  # VM's mise calls the GitHub API, unauthenticated otherwise.
+  printf '%s\n' "${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}" |
   limactl shell --workdir / "$vm" sh -c '
     set -e
+    read -r GITHUB_TOKEN || true
+    [ -z "$GITHUB_TOKEN" ] || export GITHUB_TOKEN
     want=$1; shift
     [ -x ~/.local/bin/mise ] || curl -fsSL https://mise.run | sh
     ~/.local/bin/mise self-update --yes "$want" >/dev/null
@@ -247,7 +266,7 @@ build_in_vm() {
     export PATH="$HOME/.local/bin:$PATH"
     cd ~/platform-src
     mise trust -q
-    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm -- packages/agents/.mise/tasks/image --build --no-load "$@"' _ "$(sed -n 's/^min_version = "\(.*\)"$/\1/p' .mise/config.toml)" "$@"
+    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm usage -- packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$(mise config get -f .mise/config.toml min_version)" "$@"
 }
 layout() {
   if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c .
@@ -269,20 +288,24 @@ if [ ${#todo[@]} -gt 0 ]; then
     # One at a time: they share the stage and the host's apt caches.
     for a in "${todo[@]}"; do build_mise "$a"; done
   else
-    [ "$load" = true ] || { echo "--no-load builds on Linux only" >&2; exit 2; }
+    [ "$write_tar" = true ] || { echo "--no-tar builds on Linux only" >&2; exit 2; }
     build_in_vm "${todo[@]}"
   fi
-  if [ "$load" = true ]; then
+  if [ "$write_tar" = true ]; then
     for a in "${todo[@]}"; do
-      docker tag "$(layout "$a" | docker load | sed -n 's/^Loaded image ID: //p')" "platform-$a:latest"
+      mkdir -p "$(dirname "$(tar_of "$a")")"
+      layout "$a" > "$(tar_of "$a")"
     done
   fi
 fi
 
 build_docker() {
   reused "$1" && return
-  echo "⚒ build platform-$1:latest"
-  docker build -t "platform-$1:latest" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$(dir_of "$1")"
+  echo "⚒ build $(tar_of "$1")"
+  # FROM platform-claude-code, which docker resolves from its own store.
+  docker load -i "$(tar_of claude-code)" >/dev/null
+  docker build -o "type=docker,name=platform-$1:latest,dest=$(tar_of "$1")" \
+    ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$(dir_of "$1")"
 }
 
 for a in ${docker_images[@]+"${docker_images[@]}"}; do build_docker "$a"; done

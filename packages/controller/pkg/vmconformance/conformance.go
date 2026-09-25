@@ -24,7 +24,7 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: far past the memory of any host a runner is given, so a runner that admits machines against its memory at all has to refuse this one.
 	tooMuchMiB = 1 << 26
 	poll       = 200 * time.Millisecond
-	// UNIT_BOUNDARY_DESCRIPTION: the WORKDIR Dockerfile.vm-conformance-guest sets. An image's command resolves relative paths there, so a guest that reports another directory is a runner that lost it on the way to the entrypoint.
+	// UNIT_BOUNDARY_DESCRIPTION: the WORKDIR cluster:vm-conformance gives the guest's image. An image's command resolves relative paths there, so a guest that reports another directory is a runner that lost it on the way to the entrypoint.
 	guestWorkDir = "/conformance"
 )
 

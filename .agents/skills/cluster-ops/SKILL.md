@@ -49,8 +49,9 @@ other's filesystems:
 - the **k3s VM** (`platform-k3s`, 200 GiB per `etc/lima/k3s.yaml`) — runs the cluster
   and has its **own** containerd
 
-Images cross the gap by copy, not by mount: `docker save` to a tar, `limactl copy` into
-the guest, `k3s ctr images import`. So every image is stored on both disks, and neither
+Images cross the gap by copy, not by mount: each `:oci` task writes a tar to its
+package's `dist/oci/`, and `cluster:import` copies it into the guest for
+`k3s ctr images import`. So every image is stored on both disks, and neither
 `docker system prune` nor a cluster-side prune helps the other side.
 
 **Symptom.** An image build fails with `no space left on device` (often mid-`unpacking`,

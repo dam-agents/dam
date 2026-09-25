@@ -52,10 +52,10 @@ Run the install with a long timeout or in the background: the first run takes ab
 
   ```sh
   mise exec -- pnpm --filter api-server exec tsup
-  mkdir -p /tmp/apiimg/dist && cp packages/api-server/dist/*.js /tmp/apiimg/dist/
+  mkdir -p /tmp/apiimg/dist/js && cp packages/api-server/dist/js/*.js /tmp/apiimg/dist/js/
   printf 'FROM platform-api-server:latest\nCOPY --chown=65532:0 dist/ /app/dist/\n' >/tmp/apiimg/Dockerfile
   docker build -q -t platform-api-server:latest /tmp/apiimg
-  docker save platform-api-server:latest -o /tmp/api.tar && k3s ctr -n k8s.io images import /tmp/api.tar && rm /tmp/api.tar
+  docker save platform-api-server:latest -o packages/api-server/dist/oci/api-server.tar && k3s ctr -n k8s.io images import packages/api-server/dist/oci/api-server.tar
   mise run cluster:kubectl -- rollout restart deploy/platform-apiserver
   ```
 
@@ -63,7 +63,7 @@ Run the install with a long timeout or in the background: the first run takes ab
 
 ## Disk
 
-The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored twice, once in docker and once in k3s containerd. After an install, `docker builder prune -af` and `docker image prune -af` reclaim the docker copy, which the node no longer needs. After that, later install runs need `SKIP_IMAGE_LOAD=1`, or run `pull-images` again first, because the load step saves the images from docker.
+The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored three times: as the `dist/oci/` tars the install imports, in docker, and in k3s containerd. After an install, `docker builder prune -af` and `docker image prune -af` reclaim the docker copy, which later install runs do not read. Deleting the tars needs `SKIP_IMAGE_LOAD=1` on later runs, or `pull-images` again first.
 
 ## Driving the UI with agent-browser
 

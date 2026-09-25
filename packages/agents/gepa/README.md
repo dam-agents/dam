@@ -49,7 +49,7 @@ holding keys (the provider-agnostic discover → wire → probe procedure).
 ## Build
 
 ```sh
-mise run //packages/agents:image -- gepa   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- gepa   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 

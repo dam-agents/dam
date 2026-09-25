@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 #MISE raw=true
-#MISE depends=["//packages/controller:image", "//packages/vm-runner:image", "//packages/api-server:image", "//packages/ui:image", "//packages/keycloak-theme:image"]
+#MISE depends=["//packages/controller:oci", "//packages/vm-runner:oci", "//packages/api-server:oci", "//packages/ui:oci", "//packages/keycloak-theme:oci"]
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #
@@ -500,8 +500,9 @@ helm dependency build helm
 # 3. Load images into k3s (built by depends: //packages/*:image, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
-# does NOT skip the load: buildx built the images out-of-band into the docker
-# daemon, and they still have to be imported into k3s's separate containerd.
+# does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
+# still have to be imported into k3s's containerd.
+agent_tar() { local d="packages/agents/$1"; [ -d "$d" ] || d="packages/e2e/agents/$1"; echo "$d/dist/oci/$1.tar"; }
 if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
   echo "Skipping image load (SKIP_IMAGE_LOAD set)"
   NO_RESTART=true
@@ -522,7 +523,6 @@ else
              | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
              | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
   AGENT_TASKS=()
-  AGENT_IMAGES=()
   VM_IMAGES=()
   SEEN_COMPONENTS=()
   while IFS=$'\t' read -r name image; do
@@ -545,12 +545,11 @@ else
     SEEN_COMPONENTS+=("$comp")
     if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      AGENT_IMAGES+=("$image")
     else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
-  [ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+  [ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
 
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background; this is where they are first
@@ -562,20 +561,11 @@ else
   fi
 
   echo "Loading images into k3s..."
-  tar="/tmp/platform-images.tar"
-  PLATFORM_IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest)
-  [ -n "$VIRT_ENABLED" ] && PLATFORM_IMAGES+=(platform-vm-runner:latest)
-  docker save -o "$tar" "${PLATFORM_IMAGES[@]}" "${AGENT_IMAGES[@]}"
-  if [ -n "${IS_SANDBOX:-}" ]; then
-    sudo k3s ctr images import "$tar"
-  else
-    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-    limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
-    # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
-    # so without this a stale multi-GiB tar is left behind in the VM.
-    limactl shell "$LIMA_INSTANCE" rm -f "$tar"
-  fi
-  rm -f "$tar"
+  TARS=(packages/controller/dist/oci/controller.tar packages/api-server/dist/oci/api-server.tar
+    packages/ui/dist/oci/ui.tar packages/keycloak-theme/dist/oci/keycloak.tar)
+  [ -n "$VIRT_ENABLED" ] && TARS+=(packages/vm-runner/dist/oci/vm-runner.tar)
+  for c in ${AGENT_TASKS[@]+"${AGENT_TASKS[@]}"}; do TARS+=("$(agent_tar "$c")"); done
+  LIMA_INSTANCE="$LIMA_INSTANCE" mise run cluster:import -- "${TARS[@]}"
 fi
 
 # 4. Helm install or upgrade.
@@ -650,6 +640,8 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --a
 # see image:stage-vm for why not an archive.
 for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
   echo "Staging $image for the VM runners..."
+  comp="${image##*/}"; comp="${comp%%:*}"
+  docker load -i "$(agent_tar "${comp#platform-}")" >/dev/null
   LIMA_INSTANCE="$LIMA_INSTANCE" .mise/tasks/image/stage-vm "$image"
 done
 

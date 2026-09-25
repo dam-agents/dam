@@ -1,5 +1,5 @@
 # Shared by every `mise oci` agent image; each agent's image.toml is a config
-# environment over it. Staged by //packages/agents:image as mise/conf.d/base.toml.
+# environment over it. Staged by //packages/agents:oci as mise/conf.d/base.toml.
 
 [tools]
 node = "26"

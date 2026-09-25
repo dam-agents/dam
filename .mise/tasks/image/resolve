@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
 # Decide whether a container image must be built or can be reused from the
-# registry. Single source of truth shared by `//packages/agents:image` and
+# registry. Single source of truth shared by `//packages/agents:oci` and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.
 #
 # An image is REUSABLE when its effective source (its own paths PLUS its base's,
@@ -40,9 +40,9 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # builder-stage test sources; runtime content is identical.
 TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
 
-# Source of the images `mise oci` builds (//packages/agents:image), besides
+# Source of the images `mise oci` builds (//packages/agents:oci), besides
 # their own directory.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # harness agents; CI's `agents` build/merge matrix
 AGENTS="claude-code codex pi-agent bob"

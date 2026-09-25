@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE dir="{{vars.repo_root}}"
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/api-server/Dockerfile -o type=docker,name=platform-api-server:latest,dest=packages/api-server/dist/oci/api-server.tar .

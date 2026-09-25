@@ -37,7 +37,7 @@ the embeddings default) is defined once in the `shinkaevolve` skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents:image -- shinkaevolve   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- shinkaevolve   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 

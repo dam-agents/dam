@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Pull the published images a local install needs and tag them the way
-# cluster:install expects (platform-<component>:latest), for hosts where
+# Pull the published images a local install needs and write them where
+# cluster:install imports them from (each component's dist/oci/<component>.tar,
+# named platform-<component>:latest), for hosts where
 # `docker build` cannot run: RUN steps there do not trust the agent proxy's CA.
 # Run from the repo root, then install with SKIP_IMAGE_BUILD=1.
 #
@@ -19,9 +20,16 @@ AGENTS=("$@")
 [ ${#AGENTS[@]} -gt 0 ] || AGENTS=(mock)
 
 pull_tag() {
+  local d="packages/$2"
+  case "$2" in
+    api-server | ui | controller) ;;
+    keycloak) d=packages/keycloak-theme ;;
+    *) d="packages/agents/$2"; [ -d "$d" ] || d="packages/e2e/agents/$2" ;;
+  esac
   docker pull -q "$1" >/dev/null
-  docker tag "$1" "$2"
-  echo "  $2 <- $1"
+  docker tag "$1" "platform-$2:latest"
+  mkdir -p "$d/dist/oci" && docker save "platform-$2:latest" -o "$d/dist/oci/$2.tar"
+  echo "  $d/dist/oci/$2.tar <- $1"
 }
 
 git fetch -q origin main 2>/dev/null || true
@@ -37,12 +45,12 @@ for candidate in $(git rev-list --first-parent -n 30 "$BASE"); do
 done
 [ -n "$SHA" ] || { echo "no main commit in the last 30 has published api-server/ui/controller images" >&2; exit 1; }
 [ "$SHA" = "$(git rev-parse HEAD)" ] || echo "note: HEAD is not $SHA; api-server/ui/controller images predate your changes (see the ccweb skill's overlay recipe)"
-for c in api-server ui controller; do pull_tag "$PREFIX/$c:$SHA" "platform-$c:latest"; done
+for c in api-server ui controller; do pull_tag "$PREFIX/$c:$SHA" "$c"; done
 
 for c in keycloak "${AGENTS[@]}"; do
   decision=$(mise run -q image:resolve -- resolve "$c" 2>/dev/null | tail -1)
   case "$decision" in
-    "REUSE "*) pull_tag "${decision#REUSE }" "platform-$c:latest" ;;
+    "REUSE "*) pull_tag "${decision#REUSE }" "$c" ;;
     *) echo "  platform-$c:latest: no reusable image (source changed or unpublished) — $decision" >&2 ;;
   esac
 done

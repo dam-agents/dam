@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="CI only: build or fetch this run's amd64 images and tag what the e2e cluster loads. Writes ok|fail to the file named by its argument."
+#MISE description="CI only: build or fetch this run's amd64 images as the dist/oci tars the e2e cluster loads. Writes ok|fail to the file named by its argument."
 #MISE hide=true
 # cd.yml's e2e job starts with the run instead of after the builds, because
 # bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
@@ -85,10 +85,15 @@ done
 docker pull "$IMAGE_PREFIX/mock:$GITHUB_SHA" &
 pids+=($!)
 for pid in "${pids[@]}"; do wait "$pid"; done
+# Where cluster:install imports them from, as image:ci-build's load output
+# leaves them.
 for c in $LOADED; do
   docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")" "platform-$c:latest"
+  d="packages/$c"; [ "$c" != keycloak ] || d=packages/keycloak-theme
+  mkdir -p "$d/dist/oci" && docker save "platform-$c:latest" -o "$d/dist/oci/$c.tar"
 done
 docker tag "$IMAGE_PREFIX/mock:$GITHUB_SHA" "platform-mock:latest"
+mkdir -p packages/e2e/agents/mock/dist/oci && docker save platform-mock:latest -o packages/e2e/agents/mock/dist/oci/mock.tar
 
 result=ok
 echo "$(date -u +%H:%M:%S) images pulled and tagged"

@@ -49,4 +49,4 @@ EXPOSE 4000
 
 # The --import preload wires OpenTelemetry before the app evaluates; it is a
 # no-op unless an OTLP endpoint is configured in the environment.
-CMD ["node", "--import", "./dist/telemetry.js", "dist/index.js"]
+CMD ["node", "--import", "./dist/js/telemetry.js", "dist/js/index.js"]

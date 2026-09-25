@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Build the UI image to dist/oci/ui.tar"
+set -euo pipefail
+# Not a dependency: SKIP_IMAGE_BUILD (CI) skips the build too, so it never
+# rewrites what e2e:ci-images is packing.
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+mise run //packages/ui:build
+root="$(mktemp -d)"
+trap 'rm -rf "$root"' EXIT
+mkdir -p "$root/usr/share/nginx" "$root/etc/nginx/conf.d"
+cp -R dist/js "$root/usr/share/nginx/html"
+cp default.conf "$root/etc/nginx/conf.d/"
+mise run //:image:pack -- registry.access.redhat.com/hi/nginx:1.30 "$root" dist/oci/ui.tar platform-ui:latest

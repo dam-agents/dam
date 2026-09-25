@@ -23,7 +23,6 @@ DEPLOYED_KITS=$(printf '%s\n' "$DEPLOYED_CMS" \
            | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
            | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
 AGENT_TASKS=()
-AGENT_IMAGES=()
 SEEN_COMPONENTS=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
@@ -38,32 +37,22 @@ while IFS=$'\t' read -r name image; do
   SEEN_COMPONENTS+=("$comp")
   if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
     AGENT_TASKS+=("$comp")
-    AGENT_IMAGES+=("$image")
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
   fi
 done <<< "$DEPLOYED_AGENTS"$'\n'"$DEPLOYED_KITS"
 
-if [ -z "${AGENT_IMAGES[*]:-}" ]; then
+if [ -z "${AGENT_TASKS[*]:-}" ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
-[ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
 
 echo "Loading into k3s..."
-tar="/tmp/platform-agent-images.tar"
-docker save "${AGENT_IMAGES[@]}" -o "$tar"
-
-if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s ctr images import "$tar"
-else
-  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
-  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
-  # so without this a stale multi-GiB tar is left behind in the VM.
-  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
-fi
-rm -f "$tar"
+agent_tar() { local d="packages/agents/$1"; [ -d "$d" ] || d="packages/e2e/agents/$1"; echo "$d/dist/oci/$1.tar"; }
+tars=()
+for c in "${AGENT_TASKS[@]}"; do tars+=("$(agent_tar "$c")"); done
+LIMA_INSTANCE="$LIMA_INSTANCE" mise run cluster:import -- "${tars[@]}"
 
 echo "Restarting agent pods..."
 kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all 2>/dev/null || true

@@ -126,7 +126,7 @@ OpenAI endpoint is left alone).
 ## Build
 
 ```sh
-mise run //packages/agents:image -- nous   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- nous   # claude-code plus this workload's mise environment
 mise run cluster:build-agent        # rebuild + restart agent pods in the dev cluster
 ```
 
