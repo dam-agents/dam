@@ -11,6 +11,6 @@ Available:
 - `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
 
 Additionally available if running in a root VM:
-- `docker`: start the daemon with `(umask 022; dockerd >/var/log/dockerd.log 2>&1 &)`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy, and `docker login` lasts until a restart
+- `docker`: start the daemon with `(umask 022; dockerd >/var/log/dockerd.log 2>&1 &)`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy
 - `k3s`: start with `(umask 022; k3s server >/var/log/k3s.log 2>&1 &)`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`
 - `apt-get` to install extra software

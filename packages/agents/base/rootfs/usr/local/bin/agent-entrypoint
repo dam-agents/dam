@@ -10,14 +10,6 @@ if [ "$(id -u)" = 0 ]; then
 	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
 	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 	install -d -m 0755 /run/sshd
-	# docker runs only on a machine. Its client passes the agent's gateway to
-	# every container and build; the file sits outside the home, rewritten
-	# each boot, so logins last until a restart.
-	if [ -n "${HTTPS_PROXY:-}" ]; then
-		printf '{"proxies":{"default":{"httpProxy":"%s","httpsProxy":"%s","noProxy":"%s"}}}\n' \
-			"${HTTP_PROXY:-$HTTPS_PROXY}" "$HTTPS_PROXY" "${NO_PROXY:-}" >/etc/docker/config.json
-		export DOCKER_CONFIG=/etc/docker
-	fi
 fi
 
 mitm_ca=/etc/platform/ca/ca.crt
@@ -34,6 +26,22 @@ if [ ! -f "$home/.initialized" ]; then
 	echo "agent-entrypoint: seeded home from image workspace"
 fi
 mkdir -p "$home/work"
+
+# docker runs only on a machine. Its client passes the agent's gateway, which
+# differs per agent, to every container and build; the rest of the file, logins
+# included, is kept.
+if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
+	cfg="$home/.docker/config.json"
+	mkdir -p "$home/.docker"
+	[ -s "$cfg" ] || echo '{}' >"$cfg"
+	if jq --arg http "${HTTP_PROXY:-$HTTPS_PROXY}" --arg https "$HTTPS_PROXY" --arg no "${NO_PROXY:-}" \
+		'.proxies.default = {httpProxy: $http, httpsProxy: $https, noProxy: $no}' "$cfg" >"$cfg.tmp"; then
+		mv "$cfg.tmp" "$cfg"
+	else
+		rm -f "$cfg.tmp"
+		echo "agent-entrypoint: WARNING: $cfg is not valid JSON; docker containers and builds get no proxy" >&2
+	fi
+fi
 
 # In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
 mkdir -p /tmp/agent-cache
