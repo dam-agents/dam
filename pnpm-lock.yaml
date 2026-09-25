@@ -192,7 +192,7 @@ importers:
         version: 1.14.4
       '@hono/node-server':
         specifier: 2.0.12
-        version: 2.0.12(hono@4.13.5)
+        version: 2.0.12(hono@4.13.8)
       '@kubernetes/client-node':
         specifier: ^1.2.0
         version: 1.4.0
@@ -272,8 +272,8 @@ importers:
         specifier: workspace:*
         version: link:../db
       hono:
-        specifier: ^4.13.5
-        version: 4.13.5
+        specifier: ^4.13.8
+        version: 4.13.8
       import-in-the-middle:
         specifier: ^3.2.0
         version: 3.2.0
@@ -5458,8 +5458,8 @@ packages:
     resolution: {integrity: sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w==}
     engines: {node: '>=12.0.0'}
 
-  hono@4.13.5:
-    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
+  hono@4.13.8:
+    resolution: {integrity: sha512-/Gng7NfoykZl2pjukW5Z6+8Yxm3BPRf86GTbQnt0SbySkvax4fyL4H3HhY1cCpBGmiW9XDRFzRV+CXK2W8QudQ==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@9.0.3:
@@ -9058,9 +9058,9 @@ snapshots:
       protobufjs: 7.6.5
       yargs: 17.7.2
 
-  '@hono/node-server@2.0.12(hono@4.13.5)':
+  '@hono/node-server@2.0.12(hono@4.13.8)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.8
 
   '@hookform/resolvers@5.2.2(react-hook-form@7.72.1(react@19.2.7))(zod@4.4.3)':
     dependencies:
@@ -9399,7 +9399,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 2.0.12(hono@4.13.5)
+      '@hono/node-server': 2.0.12(hono@4.13.8)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
@@ -9409,7 +9409,7 @@ snapshots:
       eventsource-parser: 3.0.6
       express: 5.2.1
       express-rate-limit: 8.5.1(express@5.2.1)
-      hono: 4.13.5
+      hono: 4.13.8
       jose: 6.2.2
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -12567,7 +12567,7 @@ snapshots:
 
   highlight.js@11.11.1: {}
 
-  hono@4.13.5: {}
+  hono@4.13.8: {}
 
   hosted-git-info@9.0.3:
     dependencies:
