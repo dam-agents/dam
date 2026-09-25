@@ -234,6 +234,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The vm-runner's release build: its crates, cargo's target and the smolvm
+      # and crane downloads, per arch.
+      # Keyed by the exact Rust version and the crate's lock and pins, with no
+      # older entry to fall back on, so an entry holds one lockfile's build and
+      # never piles up the artifacts of the crates a bump replaced. The
+      # workspace's own crates recompile every run anyway: cargo fingerprints a
+      # path dependency by mtime, and a fresh checkout moves every one.
+      - id: rust-release-key
+        run: |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - id: rust-release
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -247,6 +270,18 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
+      # Main writes it on a miss, once the build has compiled into it; a PR's e2e
+      # job reads the amd64 one.
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       # The keycloak theme build, for e2e on a PR. This job starts from an
       # empty task cache, so the entry holds this run's artifacts alone.
       - if: ${{ matrix.arch == 'amd64' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -599,6 +634,24 @@ jobs:
       # Before the background build: its pnpm install would race e2e:install's.
       - if: github.event_name == 'pull_request'
         run: mise deps install --only pnpm
+      # build-images' vm-runner release build, for the one e2e:ci-images proves.
+      - id: rust-release-key
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       - name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
