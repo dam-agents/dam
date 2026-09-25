@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<base>" help="Base image reference"
+#USAGE arg "<root>" help="Directory whose tree becomes the layer, at /"
+#USAGE arg "<tar>" help="Image tar to write"
+#USAGE arg "<tag>" help="Tag the tar carries"
+#USAGE flag "--entrypoint <entrypoint>"
+#USAGE flag "--workdir <workdir>"
+#USAGE flag "--user <user>"
+#USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
+set -euo pipefail
+layer="$(mktemp)"
+trap 'rm -f "$layer"' EXIT
+# One owner, mtime 0, sorted: the layer's digest follows its content alone.
+# Its top-level entries, not ".", so the layer never resets / itself.
+tar --sort=name --owner="${usage_owner%:*}" --group="${usage_owner#*:}" --numeric-owner --mtime=@0 --format=gnu \
+  -C "$usage_root" -cf "$layer" $(ls -A "$usage_root")
+mkdir -p "$(dirname "$usage_tar")"
+crane mutate "$usage_base" --append "$layer" -t "$usage_tag" -o "$usage_tar" \
+  --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" \
+  ${usage_entrypoint:+--entrypoint "$usage_entrypoint"} ${usage_workdir:+--workdir "$usage_workdir"} ${usage_user:+--user "$usage_user"}

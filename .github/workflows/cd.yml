@@ -153,6 +153,10 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: crane
       - id: d
         env:
           EVENT: ${{ github.event_name }}
@@ -161,7 +165,7 @@ jobs:
           set -euo pipefail
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
           [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_AGENTS=1
-          # By path: this job has no mise; the same file is the image:resolve task.
+          # By path: mise here installs crane alone; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
@@ -221,7 +225,10 @@ jobs:
           pattern: digests-images-*
           path: /tmp/digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: crane usage
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -262,7 +269,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-          install_args: nodejs pnpm crane
+          install_args: nodejs pnpm crane usage
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -278,7 +285,7 @@ jobs:
       # Written on a miss only, when the lockfile or an image file changed; any
       # job that misses writes it, since each may run without the others.
       - if: steps.agent-tools.outputs.cache-hit != 'true'
-        run: packages/agents/.mise/tasks/image --warm
+        run: packages/agents/.mise/tasks/oci --warm
       - if: steps.agent-tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -320,7 +327,10 @@ jobs:
           pattern: digests-agents-*
           path: /tmp/digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: crane usage
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -363,7 +373,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-          install_args: nodejs pnpm crane
+          install_args: nodejs pnpm crane usage
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -379,7 +389,7 @@ jobs:
       # Written on a miss only, when the lockfile or an image file changed; any
       # job that misses writes it, since each may run without the others.
       - if: steps.agent-tools.outputs.cache-hit != 'true'
-        run: packages/agents/.mise/tasks/image --warm
+        run: packages/agents/.mise/tasks/oci --warm
       - if: steps.agent-tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -418,7 +428,10 @@ jobs:
           pattern: digests-workloads-*
           path: /tmp/digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: crane usage
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -452,7 +465,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
-          install_args: nodejs pnpm crane
+          install_args: nodejs pnpm crane usage
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -468,7 +481,7 @@ jobs:
       # Written on a miss only, when the lockfile or an image file changed; any
       # job that misses writes it, since each may run without the others.
       - if: steps.agent-tools.outputs.cache-hit != 'true'
-        run: packages/agents/.mise/tasks/image --warm
+        run: packages/agents/.mise/tasks/oci --warm
       - if: steps.agent-tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -499,11 +512,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Its containerd image store loads OCI layouts.
-      - uses: docker/setup-docker-action@2bf61fb9464cc67f0cbdeabed6aa0380accd1c70 # v5.5.0
-        with:
-          version: v29.8.1
-          daemon-config: '{"features": {"containerd-snapshotter": true}}'
       - if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

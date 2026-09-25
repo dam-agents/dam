@@ -6,6 +6,7 @@ export default defineConfig({
   target: "node24",
   platform: "node",
   outExtension: () => ({ js: ".mjs" }),
+  outDir: "dist/js",
   splitting: false,
   clean: true,
 });

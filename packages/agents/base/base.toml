@@ -1,5 +1,5 @@
 # Shared by every `mise oci` agent image; each agent's image.toml is a config
-# environment over it. Staged by //packages/agents:image as mise/conf.d/base.toml.
+# environment over it. Staged by //packages/agents:oci as mise/conf.d/base.toml.
 
 [tools]
 node = "26"
@@ -36,62 +36,7 @@ linux-arm64 = { asset_pattern = "buildx-v{{ version }}.linux-arm64" }
 [tools."github:docker/compose"]
 version = "latest"
 
-# libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, and from
-# libasound2t64 on, what Playwright lists for its Chromium on trixie.
-[bootstrap.packages]
-"apt:ca-certificates" = "latest"
-"apt:catatonit" = "latest"
-"apt:curl" = "latest"
-"apt:file" = "latest"
-"apt:gawk" = "latest"
-"apt:git" = "latest"
-"apt:iptables" = "latest"
-"apt:libatomic1" = "latest"
-"apt:libnss-extrausers" = "latest"
-"apt:libnss3-tools" = "latest"
-"apt:openssh-server" = "latest"
-"apt:openssl" = "latest"
-"apt:patch" = "latest"
-"apt:procps" = "latest"
-"apt:unzip" = "latest"
-"apt:xz-utils" = "latest"
-"apt:zip" = "latest"
-"apt:libasound2t64" = "latest"
-"apt:libatk-bridge2.0-0t64" = "latest"
-"apt:libatk1.0-0t64" = "latest"
-"apt:libatspi2.0-0t64" = "latest"
-"apt:libcairo2" = "latest"
-"apt:libcups2t64" = "latest"
-"apt:libdbus-1-3" = "latest"
-"apt:libdrm2" = "latest"
-"apt:libgbm1" = "latest"
-"apt:libglib2.0-0t64" = "latest"
-"apt:libnspr4" = "latest"
-"apt:libnss3" = "latest"
-"apt:libpango-1.0-0" = "latest"
-"apt:libx11-6" = "latest"
-"apt:libxcb1" = "latest"
-"apt:libxcomposite1" = "latest"
-"apt:libxdamage1" = "latest"
-"apt:libxext6" = "latest"
-"apt:libxfixes3" = "latest"
-"apt:libxkbcommon0" = "latest"
-"apt:libxrandr2" = "latest"
-"apt:libfontconfig1" = "latest"
-"apt:libfreetype6" = "latest"
-"apt:fonts-liberation" = "latest"
-"apt:fonts-noto-color-emoji" = "latest"
-"apt:fonts-freefont-ttf" = "latest"
-"apt:fonts-ipafont-gothic" = "latest"
-"apt:fonts-wqy-zenhei" = "latest"
-"apt:fonts-tlwg-loma-otf" = "latest"
-"apt:fonts-unifont" = "latest"
-"apt:xfonts-scalable" = "latest"
-
 [oci]
-# Google's mirror: no Docker Hub rate limit on CI.
-from = "mirror.gcr.io/library/debian:trixie-slim"
 mount_point = "/usr/local/share/mise"
 user = "65532"
 workdir = "/app"

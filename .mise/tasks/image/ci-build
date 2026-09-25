@@ -1,38 +1,25 @@
-#!/usr/bin/env bash
-#MISE description="CI only: build several component images for one arch in one job. See the usage block below."
+#!/usr/bin/env -S usage bash
+#MISE description="CI only: build several component images for one arch in one job"
 #MISE hide=true
+#USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk; the builder is pruned between builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free"
+#USAGE flag "--base-image <ref>" help="BASE_IMAGE for the components built on a base (k-search)"
+#USAGE arg "<arch>"
+#USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without exporting, to prove it builds), sha (push <component>:$GITHUB_SHA) or load (write the component's dist/oci tar, named platform-<component>:latest)"
 # cd.yml builds all of one arch's images, agents or workloads in one job
 # instead of one job per image. Each job costs a runner slot and a turn in the
 # shared queue, which is what a run waited on, not the builds.
 #
-# Usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<output>]...
-#   <output>  digest (default): push by digest and write /tmp/digests/<component>/<hex>
-#             cacheonly: build without exporting, to prove it builds
-#             sha: push <component>:$GITHUB_SHA
-#             load: load into the local docker as platform-<component>:latest
-#   --serial      build one at a time, for images too large to build side by
-#                 side on one runner's disk; the builder is pruned between
-#                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
-#   --base-image  BASE_IMAGE for the components built on a base (k-search)
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
 # registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
-# By path, like image:resolve. image.toml agents build with
-# //packages/agents:image and need mise, node, pnpm and crane.
+# By path, like image:resolve, with usage installed. image.toml agents build
+# with //packages/agents:oci and need mise, node, pnpm and crane.
 set -uo pipefail
 
-serial=false base=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --serial) serial=true; shift ;;
-    --base-image) base="$2"; shift 2 ;;
-    *) break ;;
-  esac
-done
-arch="${1:?usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<output>]...}"; shift
-[ $# -gt 0 ] || { echo "ci-build: no components" >&2; exit 2; }
+serial="${usage_serial:-false}" base="${usage_base_image:-}" arch="$usage_arch"
+eval "set -- $usage_component"
 : "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}"
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
@@ -42,23 +29,24 @@ export AGENT_OCI_OUT=/tmp/ci-build/oci
 spec() {
   if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
-    controller) echo "packages/controller/Dockerfile packages/controller no" ;;
+    controller | ui) echo crane ;;
     # The runner image is built from its crate alone, platform-init included.
     vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner no" ;;
     api-server) echo "packages/api-server/Dockerfile . no" ;;
-    ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
     *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
        echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
   esac
 }
 
+tar_of() { .mise/tasks/image/resolve tar-path "$1"; }
+
 output_for() {
   case "$2" in
     digest) echo "type=image,name=$IMAGE_PREFIX/$1,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true" ;;
     cacheonly) echo "type=cacheonly" ;;
     sha) echo "type=image,name=$IMAGE_PREFIX/$1:$GITHUB_SHA,push=true" ;;
-    load) echo "type=docker,name=platform-$1:latest" ;;
+    load) echo "type=docker,name=platform-$1:latest,dest=$(tar_of "$1")" ;;
     *) echo "ci-build: unknown output $2" >&2; return 1 ;;
   esac
 }
@@ -66,7 +54,7 @@ output_for() {
 # The digest lands where buildx's metadata would.
 build_mise() {
   local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1" ref
-  packages/agents/.mise/tasks/image --build $([ "$kind" = load ] || echo --no-load) "$c" || return 1
+  packages/agents/.mise/tasks/oci --build $([ "$kind" = load ] || echo --no-tar) "$c" || return 1
   case "$kind" in
     cacheonly | load) ;;
     sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
@@ -81,10 +69,27 @@ build_mise() {
   rm -rf "$layout"
 }
 
+build_crane() {
+  local c=$1 kind=$2 tar ref
+  tar="$(tar_of "$c")"
+  mise run "//packages/$c:oci" || return 1
+  case "$kind" in
+    cacheonly | load) ;;
+    sha) crane push "$tar" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
+    digest)
+      ref="$(crane digest --tarball "$tar")" || return 1
+      crane push "$tar" "$IMAGE_PREFIX/$c@$ref" || return 1
+      jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
+      ;;
+    *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
+  esac
+}
+
 build_one() {
   local c=$1 kind=$2 s file ctx takes extra out args=()
   s="$(spec "$c")" || return 1
   if [ "$s" = mise ]; then build_mise "$c" "$kind"; return; fi
+  if [ "$s" = crane ]; then build_crane "$c" "$kind"; return; fi
   read -r file ctx takes extra <<< "$s"
   [ -z "$extra" ] || args+=(--build-context "$extra")
   out="$(output_for "$c" "$kind")" || return 1

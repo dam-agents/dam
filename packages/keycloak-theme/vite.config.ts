@@ -9,6 +9,7 @@ export default defineConfig({
     tailwindcss(),
     keycloakify({
       themeName: ["platform"],
+      keycloakifyBuildDirPath: "dist/jar",
       accountThemeImplementation: "none",
       environmentVariables: [
         { name: "PLATFORM_ALLOW_PASSWORD", default: "true" },
@@ -17,4 +18,7 @@ export default defineConfig({
       ],
     }),
   ],
+  build: {
+    outDir: "dist/js",
+  },
 });

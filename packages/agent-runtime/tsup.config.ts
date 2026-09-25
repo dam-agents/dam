@@ -7,6 +7,7 @@ export default defineConfig({
   platform: "node",
   noExternal: ["agent-runtime-api", "api-server-api"],
   external: ["@lydell/node-pty", "@xterm/headless", "@xterm/addon-serialize"],
+  outDir: "dist/js",
   splitting: false,
   clean: true,
 });

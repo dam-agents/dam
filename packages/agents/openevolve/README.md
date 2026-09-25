@@ -31,8 +31,8 @@ unchanged from the base; OpenEvolve customizes behavior via `AGENTS.md` + the
 ## Build
 
 ```sh
-mise run //packages/agents:image -- openevolve   # claude-code plus this workload's mise environment
-mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
+mise run //packages/agents:oci -- openevolve   # claude-code plus this workload's mise environment
+mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
 The pinned release is the `version` in [`image.toml`](image.toml).

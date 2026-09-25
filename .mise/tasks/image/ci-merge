@@ -1,12 +1,11 @@
-#!/usr/bin/env bash
-#MISE description="CI only: tag each component's per-arch digests as one multi-arch image. See the usage block below."
+#!/usr/bin/env -S usage bash
+#MISE description="CI only: tag each component's per-arch digests as one multi-arch image"
 #MISE hide=true
+#USAGE arg "<digests-dir>" help="Holds <component>/ with one empty file per arch, named by the digest's hex, as image:ci-build writes them"
+#USAGE arg "<component>..." var=#true
 # cd.yml merges every image of one kind in one job instead of one job per
 # image; see image:ci-build.
 #
-# Usage: ci-merge <digests-dir> <component>...
-#   <digests-dir>/<component>/ holds one empty file per arch, named by the
-#   digest's hex, as image:ci-build writes them.
 # Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
 #   COMPOSITE (the app version), SOURCE_SHAS (image:resolve's JSON map) and
 #   SOURCE_SHA_TAGGED (the components that also get their source-sha tag).
@@ -21,8 +20,8 @@
 # (not for a prerelease) and latest.
 set -uo pipefail
 
-dir="${1:?usage: ci-merge <digests-dir> <component>...}"; shift
-[ $# -gt 0 ] || { echo "ci-merge: no components" >&2; exit 2; }
+dir="$usage_digests_dir"
+eval "set -- $usage_component"
 : "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}" "${GITHUB_REF:?}" "${COMPOSITE:?}"
 
 release=()
@@ -41,29 +40,31 @@ esac
 # image (keycloak's copy inside the registry takes minutes) rather than the
 # sum of them all.
 merge_one() {
-  local c=$1 s t seen=" " args=() srcs=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
+  local c=$1 s t seen=" " uniq=() args=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
   if [[ " ${SOURCE_SHA_TAGGED:-} " == *" $c "* ]]; then
     s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
     [ -n "$s" ] && tags+=("$s")
   fi
   for t in "${tags[@]}"; do
     [[ "$seen" == *" $t "* ]] && continue
-    seen+="$t " args+=(-t "$IMAGE_PREFIX/$c:$t")
+    seen+="$t " uniq+=("$t")
   done
   if [ -n "${s:-}" ] && [[ " ${SKIP_UNCHANGED:-} " == *" $c "* ]] &&
-     docker buildx imagetools inspect "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
+     crane digest "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
     echo "$c: $IMAGE_PREFIX/$c:$s exists, so its source is unchanged; not merged"
     return 0
   fi
-  for d in "$dir/$c"/*; do [ -e "$d" ] && srcs+=("$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
-  if [ "${#srcs[@]}" -eq 0 ]; then echo "::error::no digests for $c"; return 1; fi
-  echo "$c:$seen<- ${srcs[*]}"
+  for d in "$dir/$c"/*; do [ -e "$d" ] && args+=(-m "$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
+  if [ "${#args[@]}" -eq 0 ]; then echo "::error::no digests for $c"; return 1; fi
+  echo "$c:$seen<- ${args[*]}"
   if [[ " ${CI_MERGE_DEBUG:-} " == *" $c "* ]]; then
-    docker --log-level debug buildx imagetools create "${args[@]}" "${srcs[@]}" 2>&1 |
+    crane -v index append "${args[@]}" -t "$IMAGE_PREFIX/$c:${uniq[0]}" 2>&1 |
       while IFS= read -r line; do printf '%s %s\n' "$(date -u +%T.%3N)" "$line"; done
-    return "${PIPESTATUS[0]}"
+    [ "${PIPESTATUS[0]}" = 0 ] || return 1
+  else
+    crane index append "${args[@]}" -t "$IMAGE_PREFIX/$c:${uniq[0]}" || return 1
   fi
-  docker buildx imagetools create "${args[@]}" "${srcs[@]}"
+  for t in "${uniq[@]:1}"; do crane tag "$IMAGE_PREFIX/$c:${uniq[0]}" "$t" || return 1; done
 }
 
 mkdir -p /tmp/ci-merge

@@ -42,7 +42,7 @@ fi
 
 echo
 echo "== k3s VM =="
-# cluster:install and the cluster:build-* tasks copy a multi-GiB image tar into
+# cluster:install and cluster:build copy a multi-GiB image tar into
 # the guest to import it. They clean up after themselves now, but a run that was
 # interrupted between the copy and the import still leaves one behind.
 RM_TARS='sudo rm -f /tmp/platform-images.tar /tmp/platform-agent-images.tar /tmp/platform-api-server.tar /tmp/platform-controller.tar /tmp/platform-ui.tar /tmp/platform-keycloak.tar'

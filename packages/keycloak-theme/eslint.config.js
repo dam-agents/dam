@@ -10,7 +10,6 @@ export default [
     ignores: [
       "src/kc.gen.tsx",
       "dist/**",
-      "dist_keycloak/**",
       "public/**",
     ],
   },

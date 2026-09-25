@@ -13,6 +13,7 @@ export default defineConfig({
   format: "esm",
   target: "node20",
   platform: "node",
+  outDir: "dist/js",
   splitting: false,
   clean: true,
   noExternal: [/.*/],

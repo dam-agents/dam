@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
+#MISE description="Build the controller and the conformance guest to dist/bin/<GOOS>_<GOARCH>/"
 set -euo pipefail
-CGO_ENABLED=0 go build -o dist/controller . "$@"
+CGO_ENABLED=0 go build -o "dist/bin/$(go env GOOS)_$(go env GOARCH)/" . ./cmd/vm-conformance-guest "$@"

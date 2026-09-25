@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
 # Decide whether a container image must be built or can be reused from the
-# registry. Single source of truth shared by `//packages/agents:image` and
+# registry. Single source of truth shared by `//packages/agents:oci` and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.
 #
 # An image is REUSABLE when its effective source (its own paths PLUS its base's,
@@ -40,9 +40,9 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # builder-stage test sources; runtime content is identical.
 TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
 
-# Source of the images `mise oci` builds (//packages/agents:image), besides
+# Source of the images `mise oci` builds (//packages/agents:oci), besides
 # their own directory.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # harness agents; CI's `agents` build/merge matrix
 AGENTS="claude-code codex pi-agent bob"
@@ -56,6 +56,13 @@ WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
 PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
+
+# Where a component's :oci task writes its image tar.
+tar_path() {
+  local d=packages/keycloak-theme
+  [ "$1" = keycloak ] || for d in "packages/$1" "packages/agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && break; done
+  echo "$d/dist/oci/$1.tar"
+}
 
 own_paths() {
   if is_workload "$1"; then echo "packages/agents/$1"; return; fi
@@ -91,7 +98,7 @@ effective_paths() {
   if [ -n "$base" ]; then echo "$(own_paths "$1") $(effective_paths "$base")"; else own_paths "$1"; fi
 }
 
-registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
+registry_has() { crane digest "$1" >/dev/null 2>&1; }
 
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
@@ -205,6 +212,7 @@ case "${1:-}" in
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo api-server ui controller vm-runner keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
+  tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

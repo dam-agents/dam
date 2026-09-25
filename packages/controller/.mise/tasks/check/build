@@ -3,4 +3,4 @@
 #MISE outputs=["dist/**"]
 #MISE cache.enabled=true
 set -euo pipefail
-go build -o dist/ ./... "$@"
+go build -o dist/bin/ ./... "$@"

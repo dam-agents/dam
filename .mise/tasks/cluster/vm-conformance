@@ -35,8 +35,17 @@ echo "Conformance target: $RUNNER"
 # pre-flattened tree on the node's image directory, named the way the runner
 # looks it up (image:stage-vm).
 echo "Building and staging $IMAGE..."
-docker build -t "$IMAGE" -f packages/controller/Dockerfile.vm-conformance-guest packages/controller/
-LIMA_INSTANCE="$LIMA_INSTANCE" .mise/tasks/image/stage-vm "$IMAGE"
+GOOS=linux mise run //packages/controller:build
+guest="$(mktemp -d)"
+# The suite asserts the guest starts in /conformance (vmconformance.guestWorkDir),
+# and smolvm runs it as root, which the base's passwd names.
+mkdir "$guest/conformance"
+cp "packages/controller/dist/bin/linux_$(go env GOARCH)/vm-conformance-guest" "$guest/"
+mise run //:image:pack -- registry.access.redhat.com/hi/core-runtime:latest "$guest" \
+  packages/controller/dist/oci/vm-conformance-guest.tar "$IMAGE" \
+  --entrypoint /vm-conformance-guest --workdir /conformance --user root
+rm -rf "$guest"
+LIMA_INSTANCE="$LIMA_INSTANCE" mise run image:stage-vm -- packages/controller/dist/oci/vm-conformance-guest.tar
 
 WORK="$(mktemp -d)"
 CONTROLLER_SELECTOR="app.kubernetes.io/component=controller"

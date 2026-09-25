@@ -221,4 +221,4 @@ Then `repo_path: ~/tiny-search`. Two things this buys beyond convenience:
 what its image was built with. A nous image built before tiny-search landed in
 this skill will not have the directory — check for it in the prompt and fail
 loudly rather than improvising a download. Rebuilding is
-`mise run cluster:build-agent` on a dev cluster.
+`mise run cluster:build -- agents` on a dev cluster.

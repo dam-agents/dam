@@ -2,4 +2,4 @@
 #MISE description="Build the VM runner image: the runner, the image cache service and platform-init, all from this directory"
 #MISE dir="{{vars.repo_root}}"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-vm-runner:latest packages/vm-runner/
+docker build -o type=docker,name=platform-vm-runner:latest,dest=packages/vm-runner/dist/oci/vm-runner.tar packages/vm-runner/

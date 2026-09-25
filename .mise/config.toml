@@ -13,6 +13,7 @@ auto = true
 
 [tools]
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
+"conda:tar" = "1.35" # GNU tar on every host: image:pack's layers need its owner, mtime and sort options
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
@@ -25,6 +26,7 @@ go = "1.26"
 gum = "latest"
 helm = "4.2.0"
 java = "21"
+jq = "latest"
 kubeconform = "latest"
 lima = "2"
 maven = "latest"
@@ -33,6 +35,7 @@ pinact = "latest"
 pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
 rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
+usage = "latest"
 uv = "0.9"
 yq = "latest"
 zizmor = "latest"
