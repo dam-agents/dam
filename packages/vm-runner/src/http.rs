@@ -241,6 +241,7 @@ mod tests {
                 image_budget: 0,
                 crane: String::new(),
                 init: None,
+                runc: None,
                 ports: 31000..=31099,
                 memory_mib: 1 << 20,
                 reserve_mib: 0,

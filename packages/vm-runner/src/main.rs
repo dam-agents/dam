@@ -42,6 +42,12 @@ struct Args {
         default_value = "/usr/local/libexec/platform-init"
     )]
     platform_init: PathBuf,
+    // UNIT_BOUNDARY_DESCRIPTION: platform-runc is copied into every machine's share beside platform-init. The image points docker and k3s at it, and it gives every container they start the platform CA. The second binary of the platform-init package, linked statically for the same reason.
+    #[arg(
+        long = "platform-runc",
+        default_value = "/usr/local/libexec/platform-runc"
+    )]
+    platform_runc: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the pod ports machines are published on. The controller opens exactly this range in the runner's NetworkPolicy and passes it here from the same constants, so a machine is never published on a port the policy drops.
     #[arg(long = "port-min", default_value_t = 31000)]
     port_min: u16,
@@ -200,6 +206,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
             image_budget: args.image_budget_bytes,
             crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
+            runc: Some(args.platform_runc.clone()),
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
@@ -245,6 +252,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
         platform_init = %args.platform_init.display(),
+        platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,
         "VM runner serving"
     );

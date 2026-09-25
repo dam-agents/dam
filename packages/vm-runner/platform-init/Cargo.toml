@@ -4,18 +4,17 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-# The entrypoint of every machine. It runs inside the agent's image, which
-# shares no libc with the runner's, so the image build links it statically, and
-# it depends on nothing a static link could make awkward: std, and the libc
-# bindings for mount(2), pivot_root(2), umount2(2), dup3(2) and execv(3). The runner links the library
+# The entrypoint of every machine, and platform-runc, the container runtime
+# wrapper shipped beside it. Both run inside the agent's image, which shares no
+# libc with the runner's, so the image build links them statically, and they
+# depend on nothing a static link could make awkward: std, serde_json, and the
+# libc bindings for mount(2), pivot_root(2), umount2(2), dup3(2) and execv(3). The runner links the library
 # half too, for the guest contract in guest.rs, so the two sides of the share
 # read their paths from one file.
 [dependencies]
 libc = "0.2"
-
-[dev-dependencies]
-# Reads the contract fixtures the controller's tests read too. Already in the
-# lock by way of the runner.
+# platform-runc, the second binary here, edits a container's OCI spec, which is
+# JSON. Already in the lock by way of the runner.
 serde_json = "1"
 
 [lints.clippy]

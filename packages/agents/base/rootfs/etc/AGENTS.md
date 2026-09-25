@@ -12,6 +12,6 @@ Available:
 - `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
 
 Additionally available if running in a root VM:
-- `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy, but the gateway answers some hosts with its own CA, `/etc/platform/ca/ca.crt`, which a container or build must trust to reach them (mount it, or add it to the image's trust store)
-- `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`
+- `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`: it is appended to the image's own CA bundle and named in `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` and `NODE_EXTRA_CA_CERTS`; a tool with a trust store of its own, such as a Java keystore, still needs it added
+- `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
 - `apt-get` to install extra software

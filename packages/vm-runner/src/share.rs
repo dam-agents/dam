@@ -7,7 +7,7 @@ use crate::api::MachineSpec;
 use crate::files;
 use crate::state::machine_dir;
 
-// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, and the CA the guest must trust. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, the CA the guest must trust, and platform-runc, the runtime wrapper that gives the containers the guest starts that same CA. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
 
 // UNIT_BOUNDARY_DESCRIPTION: the share's name inside a machine's state directory. The guest sees it mounted at guest::SHARE_PATH, so this name is private to the host side, while everything below it is the contract platform-init reads.
 pub const SHARE_DIR: &str = "share";
@@ -15,12 +15,13 @@ pub const SHARE_DIR: &str = "share";
 pub const CA_DIR: &str = "ca";
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
+pub const RUNC_FILE: &str = "runc";
 
 // UNIT_BOUNDARY_DESCRIPTION: the modes the share's CA is written with, stated rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and two installs would write one machine's share differently.
 pub const CA_DIR_MODE: u32 = 0o755;
 pub const CA_MODE: u32 = 0o644;
 
-// UNIT_BOUNDARY_DESCRIPTION: platform-init is exec'd by the guest, so the executable bit is not cosmetic: a machine handed a share whose init cannot run boots with its disk unmounted and no agent in it. The mode is set on the staged file after the copy as well as at create, because a create does not change the mode of a file that already exists — and a scratch file left behind by a killed runner is exactly the one that already exists.
+// UNIT_BOUNDARY_DESCRIPTION: platform-init and platform-runc are exec'd by the guest, so the executable bit is not cosmetic: a machine handed a share whose init cannot run boots with its disk unmounted and no agent in it. The mode is set on the staged file after the copy as well as at create, because a create does not change the mode of a file that already exists — and a scratch file left behind by a killed runner is exactly the one that already exists.
 pub const INIT_MODE: u32 = 0o755;
 
 // UNIT_BOUNDARY_DESCRIPTION: init is written beside itself and renamed over, so a machine reading the share while it is rewritten sees the old binary or the new one and never a half of either. The rename is within one directory, which is what makes it atomic.
@@ -31,6 +32,7 @@ pub fn write_share(
     id: &str,
     spec: &MachineSpec,
     init: Option<&Path>,
+    runc: Option<&Path>,
 ) -> anyhow::Result<()> {
     let base =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
@@ -38,7 +40,11 @@ pub fn write_share(
     let ca = share.join(CA_DIR);
     files::create_dir(&ca, CA_DIR_MODE)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
-    copy_init(init, &share.join(INIT_FILE))
+    copy_init(init, &share.join(INIT_FILE))?;
+    match runc {
+        Some(runc) => copy_executable(runc, &share.join(RUNC_FILE), "platform-runc"),
+        None => Ok(()),
+    }
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -47,8 +53,11 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
             "no platform-init binary configured, so a machine would boot with its disk unmounted"
         )
     })?;
-    let mut source =
-        fs::File::open(init).map_err(|e| anyhow::anyhow!("reading platform-init: {e}"))?;
+    copy_executable(init, to, "platform-init")
+}
+
+fn copy_executable(from: &Path, to: &Path, what: &str) -> anyhow::Result<()> {
+    let mut source = fs::File::open(from).map_err(|e| anyhow::anyhow!("reading {what}: {e}"))?;
     let staged = staged_path(to);
     let mut destination = fs::OpenOptions::new()
         .write(true)
@@ -94,6 +103,36 @@ mod tests {
             format!("{}/{CA_DIR}", guest::SHARE_PATH),
             "the guest binds a CA directory this module does not write"
         );
+        assert_eq!(
+            guest::RUNC_PATH,
+            format!("{}/{RUNC_FILE}", guest::SHARE_PATH),
+            "the image points its container runtimes at a wrapper this module does not write"
+        );
+    }
+
+    // TEST_SCENARIO: platform-runc is what every container runtime in the guest execs to start a container, so it arrives executable and is replaced with the runner that ships it, like init. A share without it still boots the machine: its containers only miss the CA.
+    #[test]
+    fn a_share_carries_a_runc_that_can_run_when_one_is_configured() {
+        let dir = TempDir::new("runc");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let runc = dir.path().join("platform-runc");
+        fs::write(&runc, b"first runc").unwrap();
+        let spec = MachineSpec::default();
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert!(!share.join(RUNC_FILE).exists());
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        fs::write(&runc, b"second runc").unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        assert_eq!(fs::read(share.join(RUNC_FILE)).unwrap(), b"second runc");
+        assert_eq!(
+            mode_of(&share.join(RUNC_FILE)),
+            INIT_MODE,
+            "the guest execs this file"
+        );
     }
 
     // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts the guest's CA file in the agent's own environment as NODE_EXTRA_CA_CERTS, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate. The controller's tests hold its environment to the same fixture.
@@ -125,6 +164,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -148,6 +188,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -184,6 +225,7 @@ mod tests {
                     ..Default::default()
                 },
                 Some(&init),
+                None,
             )
             .unwrap();
         };
@@ -251,10 +293,17 @@ mod tests {
         fs::write(&init, b"init").unwrap();
 
         assert!(
-            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init)).is_err(),
+            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init), None).is_err(),
             "a share was written outside the machine directory"
         );
-        assert!(write_share(dir.path(), "Agent", &MachineSpec::default(), Some(&init)).is_err());
+        assert!(write_share(
+            dir.path(),
+            "Agent",
+            &MachineSpec::default(),
+            Some(&init),
+            None
+        )
+        .is_err());
         assert!(!dir.path().join(SHARE_DIR).exists());
     }
 

@@ -6,7 +6,8 @@
 # Everything in this image is built from this directory, its only context: the
 # runner, which drives smolvm through its embedding API rather than forking the
 # CLI; the per-node image cache service beside it; and platform-init, the
-# entrypoint the runner hands every machine.
+# entrypoint the runner hands every machine, with platform-runc, the container
+# runtime wrapper it ships beside it.
 #   docker build packages/vm-runner
 
 # Built for the target platform rather than cross-compiled: CI builds each
@@ -14,8 +15,8 @@
 # cross linker. smolvm is cloned at the commit smolvm.pin names by the crate's
 # own fetch script, the same one the crate's checks run.
 FROM registry.access.redhat.com/hi/rust:1.94-builder AS rust-builder
-# platform-init runs inside the agent's image, which shares no libc with this
-# one, so it is linked statically, against glibc's static archive. The builder
+# platform-init and platform-runc run inside the agent's image, which shares no
+# libc with this one, so they are linked statically, against glibc's static archive. The builder
 # carries only the gnu target, so this is the static link it can make.
 RUN dnf install -y --setopt=install_weak_deps=False glibc-static && dnf clean all
 WORKDIR /src
@@ -35,8 +36,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     host=$(rustc -vV | sed -n 's/^host: //p') && \
     RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p platform-init --target "$host" && \
     cp "target/$host/release/platform-init" /platform-init && \
-    readelf -lW /platform-init > /tmp/headers && ! grep -q 'program interpreter' /tmp/headers && \
-    readelf -dW /platform-init > /tmp/dynamic && ! grep -q '(NEEDED)' /tmp/dynamic
+    cp "target/$host/release/platform-runc" /platform-runc && \
+    for bin in /platform-init /platform-runc; do \
+        readelf -lW "$bin" > /tmp/headers && ! grep -q 'program interpreter' /tmp/headers && \
+        readelf -dW "$bin" > /tmp/dynamic && ! grep -q '(NEEDED)' /tmp/dynamic || exit 1; \
+    done
 
 
 FROM quay.io/fedora/fedora:42 AS runner
@@ -115,6 +119,11 @@ RUN vm-image-cache --help >/dev/null
 # is the agent image, which shares no libc with this one.
 COPY --from=rust-builder /platform-init /usr/local/libexec/platform-init
 
+# platform-runc goes into each machine's share the same way. The agent image
+# points docker and k3s at it, and it gives every container they start the
+# platform's MITM CA before handing it to the real runc.
+COPY --from=rust-builder /platform-runc /usr/local/libexec/platform-runc
+
 # smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
 # chart mounts the disks: one of three mounts under /var/lib/platform, beside the
 # per-machine bookkeeping and the image cache, each with a lifetime of its own.
@@ -122,7 +131,8 @@ COPY --from=rust-builder /platform-init /usr/local/libexec/platform-init
 # spawned itself. The ENTRYPOINT names every path that is this image's layout
 # and not the controller's to choose — the smolvm release's launcher, beside
 # which the runner finds the libraries its VMMs load, the guest agent and the
-# disk templates; crane; platform-init — so the runner relies on no default for
+# disk templates; crane; platform-init and platform-runc — so the runner relies
+# on no default for
 # any of them. The controller passes the rest.
 ENV HOME=/var/lib/platform/disks
-ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init"]
+ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init", "--platform-runc", "/usr/local/libexec/platform-runc"]

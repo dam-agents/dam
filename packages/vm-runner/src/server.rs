@@ -54,6 +54,7 @@ pub struct Config {
     pub image_budget: i64,
     pub crane: String,
     pub init: Option<PathBuf>,
+    pub runc: Option<PathBuf>,
     pub ports: RangeInclusive<u16>,
     pub memory_mib: i32,
     pub reserve_mib: i32,
@@ -538,6 +539,7 @@ impl Server {
             id,
             spec,
             self.config.init.as_deref(),
+            self.config.runc.as_deref(),
         )?;
         let port = {
             let _ports = locked(&self.ports);
@@ -575,6 +577,7 @@ impl Server {
             id,
             spec,
             self.config.init.as_deref(),
+            self.config.runc.as_deref(),
         )?;
         let applied = read_spec(&self.config.state_dir, id);
         let image = match &applied {

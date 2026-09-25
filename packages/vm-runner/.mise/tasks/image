@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build the VM runner image: the runner, the image cache service and platform-init, all from this directory"
+#MISE description="Build the VM runner image: the runner, the image cache service, platform-init and platform-runc, all from this directory"
 #MISE dir="{{vars.repo_root}}"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-vm-runner:latest packages/vm-runner/
