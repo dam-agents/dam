@@ -11,9 +11,11 @@
 # Env: IMAGE_PREFIX. Every build runs even after one fails; the
 # exit status names the failures.
 #
-# By path, like image:resolve, with usage installed. image.toml agents build
-# with //packages/agents:oci and need mise, node, pnpm and crane; every other
-# component with its package's :oci task, which writes its image tar.
+# By path, like image:resolve, with usage and pigz installed. image.toml
+# agents build with //packages/agents:oci and need mise, node, pnpm and crane;
+# every other component with its package's :oci task, which writes its image
+# tar. A pushed image's plain-tar layers are gzipped first; see
+# image:gzip-layout.
 set -uo pipefail
 
 serial="${usage_serial:-false}" arch="$usage_arch"
@@ -47,8 +49,9 @@ source_ref() {
 # script turns into /tmp/digests.
 push_layout() {
   local c=$1 kind=$2 layout=$3 ref
+  case "$kind" in cacheonly | load) return ;; esac
+  .mise/tasks/image/gzip-layout "$layout" || return 1
   case "$kind" in
-    cacheonly | load) ;;
     source) crane push "$layout" "$(source_ref "$c")" || return 1 ;;
     # By digest: an untagged crane reference means :latest.
     digest)

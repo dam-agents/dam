@@ -14,8 +14,8 @@
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
 # The tar holds an OCI layout, like every other image tar: the base's layers as
-# the registry serves them, then the new layers as plain tars, which no step
-# spends time compressing. The base is kept as a layout per reference and arch,
+# the registry serves them, then the new layers as plain tars, which a local
+# cluster imports as they are and image:ci-build gzips as it publishes them. The base is kept as a layout per reference and arch,
 # so a rebuild downloads nothing; the reference carries its digest, so an entry
 # never goes stale.
 set -euo pipefail

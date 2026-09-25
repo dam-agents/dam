@@ -4,8 +4,9 @@ Usage: own-layout.py <layout-dir> <cache-dir>
 
 The cache keeps each rewritten layer under its input digest, so the layers
 images share (the base, apt, the common tools) are rewritten once. A rewritten
-layer is a plain tar: gzipping it again cost a build minutes, and a registry
-serves it the same.
+layer is a plain tar: gzipping it again here, on one core, cost a build
+minutes. image:ci-build gzips a published image's plain layers with pigz as it
+pushes, and a local cluster imports them as they are.
 """
 
 import concurrent.futures

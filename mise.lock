@@ -18,6 +18,10 @@ checksum = "sha256:4406fd67c5beeb99b9372f9bf07aa3e40ca141e337eceebac3ff64aa72799
 url = "https://conda.anaconda.org/conda-forge/linux-aarch64/libiconv-1.18-h1ea5142_3.conda"
 checksum = "sha256:d22c666eb887afd2119aac2110e23a0e817e9391bda99293421f7c46dab1564c"
 
+[conda-packages.linux-arm64."libzlib-1.3.2-hdc9db2a_3"]
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/libzlib-1.3.2-hdc9db2a_3.conda"
+checksum = "sha256:76efa6cc9d7e6f5ee3bbca0939f64054af2bdfb3c3632531f8e633cf6c2ea41e"
+
 [conda-packages.linux-x64."_openmp_mutex-4.5-20_gnu"]
 url = "https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda"
 checksum = "sha256:1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9"
@@ -34,6 +38,10 @@ checksum = "sha256:92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd
 url = "https://conda.anaconda.org/conda-forge/linux-64/libiconv-1.18-h0cb94f2_3.conda"
 checksum = "sha256:f943117edb9cd4d9c61cc972eee5a34291dc55ea7a6e9e38da104995841cbcb6"
 
+[conda-packages.linux-x64."libzlib-1.3.2-h25fd6f3_3"]
+url = "https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda"
+checksum = "sha256:eb8a0db0aa570124f7d2a93d7c7f596e3390df5e047818d873baad32985fc736"
+
 [conda-packages.macos-arm64."libiconv-1.18-he4c29f2_3"]
 url = "https://conda.anaconda.org/conda-forge/osx-arm64/libiconv-1.18-he4c29f2_3.conda"
 checksum = "sha256:689a14968267f2f97c07112fca5636e7d756036b9aee969911267c20bd3eea1f"
@@ -41,6 +49,10 @@ checksum = "sha256:689a14968267f2f97c07112fca5636e7d756036b9aee969911267c20bd3ee
 [conda-packages.macos-arm64."libintl-0.25.1-hae62183_2"]
 url = "https://conda.anaconda.org/conda-forge/osx-arm64/libintl-0.25.1-hae62183_2.conda"
 checksum = "sha256:b43c6645e668f86d04d5c06d6dc17efe921bbd9244be4b77946d56fb950a3fcc"
+
+[conda-packages.macos-arm64."libzlib-1.3.2-h8088a28_3"]
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.3.2-h8088a28_3.conda"
+checksum = "sha256:a18fa5d5bac452401459f966cf0d872224e8080c4ff93c77e168d43ab42ef9d7"
 
 [[tools."aqua:rustsec/rustsec/cargo-audit"]]
 version = "0.22.2"
@@ -58,6 +70,39 @@ url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.
 [tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-arm64"]
 checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
 url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
+
+[[tools."conda:pigz"]]
+version = "2.8"
+backend = "conda:pigz"
+specifiers = ["2.8"]
+
+[tools."conda:pigz".options]
+channel = "conda-forge"
+
+[tools."conda:pigz"."platforms.linux-arm64"]
+checksum = "sha256:d1e0dceac39a1a8021bdadd8f9ae41b5c68320610e57b829c013f5d03ec3533d"
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/pigz-2.8-h1abf092_2.conda"
+conda_deps = [
+    "libgcc-16.2.0-h205dda4_7",
+    "libzlib-1.3.2-hdc9db2a_3",
+    "_openmp_mutex-4.5-20_gnu",
+    "libgomp-16.2.0-h8acb6b2_7",
+]
+
+[tools."conda:pigz"."platforms.linux-x64"]
+checksum = "sha256:3d535f86f6eb4243cc47c51a3694e01bfc1aa72d80d9789c053f0154b531f974"
+url = "https://conda.anaconda.org/conda-forge/linux-64/pigz-2.8-h421ea60_2.conda"
+conda_deps = [
+    "libgcc-16.2.0-ha9f2e26_7",
+    "libzlib-1.3.2-h25fd6f3_3",
+    "_openmp_mutex-4.5-20_gnu",
+    "libgomp-16.2.0-he0feb66_7",
+]
+
+[tools."conda:pigz"."platforms.macos-arm64"]
+checksum = "sha256:70cf9d08c80a7a82822e95c2bfaeec182cb7136cc73eb5dbfbc892264f49167d"
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/pigz-2.8-hfab5511_2.conda"
+conda_deps = ["libzlib-1.3.2-h8088a28_3"]
 
 [[tools."conda:tar"]]
 version = "1.35"
