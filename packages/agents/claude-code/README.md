@@ -7,3 +7,5 @@ mise run //packages/agents:image -- claude-code   # add --build to skip the regi
 ```
 
 The workload images (nous, openevolve, shinkaevolve, gepa, skydiscover) are built on this one.
+
+<!-- ci cache probe -->
