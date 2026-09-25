@@ -46,16 +46,7 @@ Run the install with a long timeout or in the background: the first run takes ab
 `docker build` cannot work here: the builder's `RUN` steps reach the network through the proxy but do not trust its CA. Do not edit Dockerfiles to inject it. Do not shadow `/usr/local/bin/docker` with a wrapper either: the permission classifier treats that as persistence and refuses it.
 
 - **Unchanged code:** `pull-images` pulls CI's images. api-server, ui and controller come from the newest main commit at or behind your merge base. keycloak and agents come via `image:resolve`.
-- **Changed controller or ui:** `mise run //packages/<controller|ui>:oci`, then `mise run cluster:import -- packages/<controller|ui>/dist/oci/<controller|ui>.tar`. Neither build runs a container.
-- **Changed TypeScript in api-server:** build the bundle on the host and layer it over the published image `pull-images` named. Nothing in that build runs inside an image:
-
-  ```sh
-  mise exec -- pnpm --filter api-server exec tsup
-  mkdir -p /tmp/apiimg/app/dist/js && cp packages/api-server/dist/js/*.js /tmp/apiimg/app/dist/js/
-  mise run image:pack -- quay.io/dam-agents/api-server:<sha> /tmp/apiimg packages/api-server/dist/oci/api-server.tar platform-api-server:latest --owner 65532:0
-  mise run cluster:import -- packages/api-server/dist/oci/api-server.tar
-  mise run cluster:kubectl -- rollout restart deploy/platform-apiserver
-  ```
+- **Changed controller, ui or api-server:** `mise run //packages/<pkg>:oci`, then `mise run cluster:import -- packages/<pkg>/dist/oci/<pkg>.tar`. None of these builds runs a container.
 
 - **Image gone from the node** (`ErrImageNeverPull` / `ImagePullBackOff` on `platform-*:latest`, typically after an eviction GC): pull it straight into containerd and re-tag it. For example: `k3s ctr -n k8s.io images pull --platform linux/amd64 quay.io/dam-agents/mock:<tag> && k3s ctr -n k8s.io images tag --force quay.io/dam-agents/mock:<tag> docker.io/library/platform-mock:latest`.
 

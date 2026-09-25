@@ -7,17 +7,29 @@
 #USAGE arg "<tar>" help="Image tar to write"
 #USAGE arg "<tag>" help="Tag the tar carries"
 #USAGE flag "--entrypoint <entrypoint>"
+#USAGE flag "--cmd <cmd>" help="The image's CMD, its words separated by commas"
 #USAGE flag "--workdir <workdir>"
 #USAGE flag "--user <user>"
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
+#USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
 set -euo pipefail
-layer="$(mktemp)"
-trap 'rm -f "$layer"' EXIT
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
 # One owner, mtime 0, sorted: the layer's digest follows its content alone.
 # Its top-level entries, not ".", so the layer never resets / itself.
-tar --sort=name --owner="${usage_owner%:*}" --group="${usage_owner#*:}" --numeric-owner --mtime=@0 --format=gnu \
-  -C "$usage_root" -cf "$layer" $(ls -A "$usage_root")
+layer() {
+  tar --sort=name --owner="${2%:*}" --group="${2#*:}" --numeric-owner --mtime=@0 --format=gnu \
+    -C "$1" -cf "$3" $(ls -A "$1")
+}
+eval "root_layers=(${usage_root_layer:-})"
+appends=()
+for i in "${!root_layers[@]}"; do
+  layer "${root_layers[$i]}" 0:0 "$work/$i.tar"
+  appends+=(--append "$work/$i.tar")
+done
+layer "$usage_root" "$usage_owner" "$work/layer.tar"
 mkdir -p "$(dirname "$usage_tar")"
-crane mutate "$usage_base" --append "$layer" -t "$usage_tag" -o "$usage_tar" \
+crane mutate "$usage_base" ${appends[@]+"${appends[@]}"} --append "$work/layer.tar" -t "$usage_tag" -o "$usage_tar" \
   --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" \
-  ${usage_entrypoint:+--entrypoint "$usage_entrypoint"} ${usage_workdir:+--workdir "$usage_workdir"} ${usage_user:+--user "$usage_user"}
+  ${usage_entrypoint:+--entrypoint "$usage_entrypoint"} ${usage_cmd:+--cmd "$usage_cmd"} \
+  ${usage_workdir:+--workdir "$usage_workdir"} ${usage_user:+--user "$usage_user"}

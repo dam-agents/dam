@@ -1,3 +1,20 @@
 #!/usr/bin/env bash
-#MISE dir="{{vars.repo_root}}"
-docker build -f packages/api-server/Dockerfile -o type=docker,name=platform-api-server:latest,dest=packages/api-server/dist/oci/api-server.tar .
+#MISE description="Build the api-server image to dist/oci/api-server.tar"
+set -euo pipefail
+pnpm exec tsup
+root="$(mktemp -d)" npm="$(mktemp -d)"
+trap 'rm -rf "$root" "$npm"' EXIT
+# The image's native modules, for Linux of the host's arch, whatever the host.
+pnpm --filter api-server deploy --frozen-lockfile --prod --node-linker=hoisted \
+  --os=linux --cpu="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')" --libc=glibc "$root/app"
+mkdir -p "$root/app/packages/db"
+cp -R ../db/drizzle "$root/app/packages/db/"
+# The server runs on node alone. The base's bundled npm is the one scanners
+# flag and nothing runs, so it is removed.
+mkdir -p "$npm/usr/lib/node_modules_24" "$npm/usr/bin"
+touch "$npm/usr/lib/node_modules_24/.wh.npm"
+for b in npm npm-24 npx npx-24; do touch "$npm/usr/bin/.wh.$b"; done
+# The --import preload wires OpenTelemetry before the app evaluates; it is a
+# no-op unless an OTLP endpoint is configured in the environment.
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/nodejs:24 "$root" dist/oci/api-server.tar platform-api-server:latest \
+  --owner 65532:0 --root-layer "$npm" --cmd node,--import,./dist/js/telemetry.js,dist/js/index.js
