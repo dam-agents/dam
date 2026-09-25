@@ -4,6 +4,10 @@ set -eu
 
 home="${HOME:-/home/agent}"
 
+# A container runtime started under a tighter umask creates image layers a
+# non-root container cannot traverse (CoreDNS and traefik under k3s die on it).
+umask 022
+
 # On a machine, SSH logins as `agent` must land as root, the harness's user;
 # extrausers serves no uid 0 entry.
 if [ "$(id -u)" = 0 ]; then
