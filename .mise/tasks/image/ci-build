@@ -40,9 +40,8 @@ tar_of() { .mise/tasks/image/resolve tar-path "$1"; }
 
 # Each pushed digest lands in /tmp/ci-build/meta, which the end of this
 # script turns into /tmp/digests.
-build_mise() {
-  local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1" ref
-  packages/agents/.mise/tasks/oci --build $([ "$kind" = load ] || echo --no-tar) "$c" || return 1
+push_layout() {
+  local c=$1 kind=$2 layout=$3 ref
   case "$kind" in
     cacheonly | load) ;;
     sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
@@ -54,13 +53,28 @@ build_mise() {
       ;;
     *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
   esac
+}
+
+build_mise() {
+  local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1"
+  packages/agents/.mise/tasks/oci --build $([ "$kind" = load ] || echo --no-tar) "$c" || return 1
+  push_layout "$c" "$kind" "$layout" || return 1
   rm -rf "$layout"
 }
 
+# A tar that holds an OCI layout (a mise oci image) is pushed as that layout:
+# pushed as a tarball, crane rewrites its OCI manifest as a Docker one around
+# the OCI config and layers, which quay.io refuses as invalid.
 build_tar() {
-  local c=$1 pkg=$2 kind=$3 tar ref
+  local c=$1 pkg=$2 kind=$3 tar ref layout="$AGENT_OCI_OUT/$1"
   tar="$(tar_of "$c")"
   mise run "//packages/$pkg:oci" || return 1
+  if tar -tf "$tar" oci-layout >/dev/null 2>&1; then
+    rm -rf "$layout" && mkdir -p "$layout" && tar -C "$layout" -xf "$tar" || return 1
+    push_layout "$c" "$kind" "$layout" || return 1
+    rm -rf "$layout"
+    return
+  fi
   case "$kind" in
     cacheonly | load) ;;
     sha) crane push "$tar" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
