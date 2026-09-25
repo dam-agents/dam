@@ -426,43 +426,6 @@ describe("usage metrics", () => {
     );
   });
 
-  /** TEST_SCENARIO: experiment transitions the platform drives itself — a sweep
-   *  reaping an idle experiment — are not someone using the feature, so only
-   *  the ones a person drove count. */
-  it("counts only person-driven experiment transitions", async () => {
-    start();
-
-    emit({
-      type: EventType.ExperimentChanged,
-      experimentId: "exp-1",
-      agentId: "agent-1",
-      ownerSub: "user-1",
-      action: "started",
-      actorSub: "user-1",
-      surface: "ui",
-    });
-    emit({
-      type: EventType.ExperimentChanged,
-      experimentId: "exp-1",
-      agentId: "agent-1",
-      ownerSub: "user-1",
-      action: "stopped",
-    });
-    emit({
-      type: EventType.ExperimentChanged,
-      experimentId: "exp-1",
-      agentId: "agent-1",
-      ownerSub: "user-1",
-    });
-
-    expect(
-      await seriesOf(
-        "platform.experiment.change.total",
-        "platform.experiment.action",
-      ),
-    ).toEqual(new Map([["started", 1]]));
-  });
-
   /** TEST_SCENARIO: delegation and the way in are plain volumes — one has no
    *  bounded dimension worth carrying, the other only its choice. */
   it("counts invocation spawns and entry-point choices", async () => {
@@ -552,15 +515,6 @@ describe("usage metrics", () => {
       relay: "acp",
     });
     emit({
-      type: EventType.ExperimentChanged,
-      experimentId: "exp-1",
-      agentId: "agent-1",
-      ownerSub: "user-1",
-      action: "started",
-      actorSub: "user-1",
-      surface: "ui",
-    });
-    emit({
       type: EventType.InvocationSpawned,
       targetAgentId: "agent-2",
       driverAgentId: "agent-1",
@@ -601,7 +555,6 @@ describe("usage metrics", () => {
         "platform.relay.kind",
         "platform.relay.surface",
       ],
-      "platform.experiment.change.total": ["platform.experiment.action"],
       "platform.invocation.spawn.total": [],
       "platform.entry_point.choice.total": ["platform.entry_point.choice"],
     };

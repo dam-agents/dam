@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-23
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -18,7 +18,7 @@ browser: where a workspace grants the persona scope, the api-server uploads a
 PNG copy to a public image host for the message icon, whatever the owner's
 flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
-simply never read again (Experiments, Knowledge Bases and the
+simply never read again (Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).
 
 A per-user flag says what a user wants to see; it cannot say what the install

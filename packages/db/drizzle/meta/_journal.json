@@ -386,6 +386,13 @@
       "when": 1790251401588,
       "tag": "0054_bump_agents_holding_reserved_mcp_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1790319636520,
+      "tag": "0055_drop_experiments",
+      "breakpoints": true
     }
   ]
 }

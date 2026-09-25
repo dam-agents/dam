@@ -15,7 +15,6 @@ import {
 import { SizeNeverFitsError } from "../../modules/budgets/index.js";
 import {
   AttenuationError,
-  ExperimentNotRunningError,
   InvalidSchemaError,
   ProviderMismatchError,
   UnresolvableDriverError,
@@ -114,9 +113,6 @@ export function mountInvocationRoutes(
         prompt: body.prompt,
         schema: body.schema,
         ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
-        ...(body.experimentSpanId !== undefined
-          ? { experimentSpanId: body.experimentSpanId }
-          : {}),
       });
       return c.json({ id }, 201);
     } catch (err) {
@@ -141,9 +137,6 @@ export function mountInvocationRoutes(
       }
       if (err instanceof SizeNeverFitsError) {
         return c.json({ error: err.message }, 400);
-      }
-      if (err instanceof ExperimentNotRunningError) {
-        return c.json({ error: err.message }, 409);
       }
       if (err instanceof UnresolvableDriverError) {
         return c.json({ error: err.message }, 409);

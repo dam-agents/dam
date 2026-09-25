@@ -79,7 +79,7 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
     }
 
 
-def test_spawn_keeps_the_experiment_sdk_size_arguments(stub):
+def test_spawn_keeps_the_older_size_arguments(stub):
     _done(stub)
 
     d.spawn(

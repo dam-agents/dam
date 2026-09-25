@@ -7,17 +7,11 @@ export interface SetupProviderPolicy {
   recommended?: ProviderPresetType;
 }
 
-const CLAUDE_ONLY_PROVIDERS: readonly ProviderPresetType[] = [
-  "ibm-litellm",
-  "anthropic",
-];
-
 const EVERY_PROVIDER: SetupProviderPolicy = { recommended: "ibm-litellm" };
 
 const POLICY_BY_FLOW: Record<SetupFlow, SetupProviderPolicy> = {
   "coding-agent": EVERY_PROVIDER,
   "starter-kit": EVERY_PROVIDER,
-  experiment: { allow: CLAUDE_ONLY_PROVIDERS, recommended: "ibm-litellm" },
 };
 
 export function setupProviderPolicy(flow: SetupFlow): SetupProviderPolicy {

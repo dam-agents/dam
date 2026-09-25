@@ -21,7 +21,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format-size";
 
-import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
   useArtifact,
@@ -66,8 +65,6 @@ export function ArtifactPreviewDialog({
   const total = versions?.length ?? head;
 
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
-  const latestFeedPost = useDashboardFeedPost(artifact.id);
-  const experimentFeedPost = version === head ? latestFeedPost : undefined;
   const couldEdit = isEditableArtifact(artifact);
   const content = useArtifactContent(
     !renderable || showSource || couldEdit ? artifact.id : null,
@@ -193,7 +190,6 @@ export function ArtifactPreviewDialog({
                     html={preview.data}
                     title={artifact.title}
                     className="h-full w-full"
-                    postData={experimentFeedPost}
                   />
                 )
               )}

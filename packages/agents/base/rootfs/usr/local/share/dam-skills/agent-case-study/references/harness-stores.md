@@ -14,7 +14,7 @@ session, independent of the harness store. Shape:
 {
   "sessions": {
     "<sessionId>": {
-      "meta": { "type": "schedule_cron", "scheduleId": "…", "threadTs": "…", "experimentId": "…" },
+      "meta": { "type": "schedule_cron", "scheduleId": "…", "threadTs": "…" },
       "createdAt": "2026-08-01T09:00:00.000Z",
       "lastActivityAt": "2026-08-01T09:04:12.000Z"
     }
@@ -25,8 +25,7 @@ session, independent of the harness store. Shape:
 
 All `meta` fields are optional. `tombstones` lists sessions the owner deleted —
 skip them. Classify: `type == "schedule_cron"` is a
-scheduled run, `threadTs` present is channel-driven, `experimentId` present is
-an experiment run, otherwise on-demand. Count the window like:
+scheduled run, `threadTs` present is channel-driven, otherwise on-demand. Count the window like:
 
 ```sh
 jq -r --arg since "$(date -u -d '7 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-7d +%Y-%m-%d)" '

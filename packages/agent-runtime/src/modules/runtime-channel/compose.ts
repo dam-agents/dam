@@ -26,7 +26,6 @@ import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createInitializationPlugin } from "./drivers/initialization-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
-import { createExperimentExecutePlugin } from "./drivers/experiment-execute-plugin.js";
 import { createSatelliteOutcomePlugin } from "./drivers/satellite-outcome-plugin.js";
 import { createDispatcher, type ContextEnv } from "./dispatcher.js";
 import { createEventDispatcher } from "./event-dispatcher.js";
@@ -122,9 +121,6 @@ export async function composeRuntimeChannel(
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
-  );
-  registry.register(
-    createExperimentExecutePlugin({ driver: opts.triggerDriver }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(

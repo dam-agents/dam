@@ -20,7 +20,6 @@ function toItem(row: AttentionRecordRow): AttentionItem {
     type: row.type as SessionType,
     title: row.title,
     scheduleId: row.scheduleId,
-    experimentId: row.experimentId,
     createdAt: row.createdAt.toISOString(),
     activityAt: row.activityAt?.toISOString() ?? null,
     seenAt: row.seenAt?.toISOString() ?? null,

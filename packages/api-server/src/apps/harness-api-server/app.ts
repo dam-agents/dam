@@ -14,10 +14,7 @@ import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import {
-  EXPERIMENT_ACTIVE_KEY,
-  INVOCATIONS_ACTIVE_KEY,
-} from "../../modules/agents/infrastructure/labels.js";
+import { INVOCATIONS_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -26,7 +23,6 @@ import {
   composeArtifactLibraryForOwner,
   createAgentApiPodClient,
 } from "../../modules/artifact-library/index.js";
-import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import {
   composeInvocationsForOwner,
   createTargetAdmission,
@@ -193,13 +189,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-  const experimentPin = {
-    set: (agentId: string) =>
-      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-    clear: (agentId: string) =>
-      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-  };
-
   const connectionsRepo = createConnectionsRepository(db);
   const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
   const kbMcp = composeKbShareServing({
@@ -235,15 +224,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).schedules,
     markOnboardingComplete: markOnboardingComplete,
     onboardingChecklist,
-    experimentsServiceFor: (owner) =>
-      composeExperimentsForOwner({
-        db,
-        owner,
-        surface: "mcp",
-        artifactLibrary: artifactLibraryFor(owner),
-        pin: experimentPin,
-        agents: agentsServiceFor(owner),
-      }).experiments,
     artifactLibraryFor,
     invocationsServiceFor,
     connectionsServiceFor,

@@ -71,10 +71,6 @@ Sharing a knowledge base as a read-only MCP endpoint needs object storage config
 
 Consumers read shared snapshots over the **in-cluster harness route** (`/api/agents/:id/kb`), not the egress gateway, so the cluster's own service DNS must resolve (the standard CoreDNS setup — no extra configuration). The same serving app is also reachable on the share host as a by-link endpoint for external MCP clients.
 
-## Experiments
-
-A `running` Experiment whose script sends no trace event for `EXPERIMENT_INACTIVITY_SECONDS` (api-server env var, default 900) is reaped to `failed`, releasing the driver agent's hibernation pin. The SDK heartbeats every ~60 s from a background thread, so quiet-but-alive stages (long spawns, local compute) don't trip it — a reap means the script process is gone.
-
 ## Slack Integration
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. A Slack channel binds to at most one instance globally; the binding routes every mention in that channel.

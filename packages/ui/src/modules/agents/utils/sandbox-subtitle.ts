@@ -33,17 +33,7 @@ export function joinSubtitleSegments(
 export function sandboxSubtitle(
   agent: AgentView,
   lookup: SandboxSubtitleLookup,
-  extras?: {
-    experimentCount?: number;
-  },
 ): string {
-  if (agent.kind === "experiment") {
-    const kinded = joinSubtitleSegments([
-      experimentCountLabel(extras?.experimentCount),
-      catalogConnectionsLabel(agent, lookup),
-    ]);
-    return kinded || sandboxSubtitleParts(agent, lookup).harness;
-  }
   const { harness, provider } = sandboxSubtitleParts(agent, lookup);
   return joinSubtitleSegments([harness, provider, sizeLabel(agent, lookup)]);
 }
@@ -54,26 +44,6 @@ function sizeLabel(
 ): string | null {
   if (!lookup.slotUnit || !agent.size.cpu || !agent.size.memory) return null;
   return formatSizeLabel(sizeInMi(agent.size), lookup.slotUnit);
-}
-
-function experimentCountLabel(count: number | undefined): string | null {
-  if (count === undefined) return null;
-  if (count === 0) return "No active experiments";
-  return `${count} experiment${count === 1 ? "" : "s"}`;
-}
-
-function catalogConnectionsLabel(
-  agent: AgentView,
-  lookup: SandboxSubtitleLookup,
-): string | null {
-  let count = 0;
-  for (const connectionId of agent.grantedConnectionIds) {
-    const templateId = lookup.connectionTemplateIdById.get(connectionId);
-    if (templateId && providerTypeForTemplateId(templateId)) continue;
-    count += 1;
-  }
-  if (count === 0) return null;
-  return `${count} connection${count === 1 ? "" : "s"}`;
 }
 
 function providerLabel(

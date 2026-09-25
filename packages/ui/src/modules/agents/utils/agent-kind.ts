@@ -7,17 +7,12 @@ export function sharesKnowledgeBase(agent: AgentView): boolean {
   return agent.kind === "knowledge-base";
 }
 
-export function isExperimentSandbox(agent: AgentView): boolean {
-  return agent.kind === "experiment";
-}
-
 export interface AgentKindBadge {
   label: string;
   variant: "accent" | "template" | "muted" | "warning" | "kit";
 }
 
 const KIND_BADGE: Record<AgentKind, AgentKindBadge | null> = {
-  experiment: { label: "Experiment", variant: "accent" },
   "knowledge-base": null,
 };
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
 
-export type SetupFlow = "coding-agent" | "experiment" | "starter-kit";
+export type SetupFlow = "coding-agent" | "starter-kit";
 
 export const setupFormSchema = z.object({
   name: z.string(),

@@ -23,7 +23,6 @@ function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
     mode: SessionMode.Chat,
     title: null,
     scheduleId: null,
-    experimentId: null,
     createdAt: "2026-08-19T10:00:00Z",
     activityAt: null,
     seenAt: null,

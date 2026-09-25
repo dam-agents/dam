@@ -277,7 +277,7 @@ function renderDoc(members, emitted, rowTypes) {
     "",
     "The table is generated from the source, so it cannot drift from what the code actually emits. The prose around it is not — treat a sentence as a claim to check, and the table as the fact. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).",
     "",
-    "A row type shown as `prefix_<action>` is stored with the action substituted, so `experiment_<action>` is written as `experiment_started`, `experiment_stopped` or `experiment_deleted`.",
+    "A row type shown as `prefix_<action>` is stored with the action substituted, so `api_key_<action>` is written as `api_key_created` or `api_key_revoked`.",
     "",
     "Events marked *elsewhere* are consumed, but not by the activity log — they drive live UI updates, the `agents` mirror, channel management, or cleanup when an agent goes away. They will not appear in `activity_events`, so they answer nothing about usage.",
     "",

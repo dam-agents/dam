@@ -1,5 +1,4 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -40,8 +39,7 @@ const folder = (id: string, name = id): ArtifactFolder => ({
 
 /**
  * TEST_OVERVIEW: grouping for the folder-aware artifact lists — every user
- * folder is a group (empty included), experiment folders appear only when
- * they hold artifacts, Ungrouped comes last, and no artifact is ever dropped
+ * folder is a group (empty included), Ungrouped comes last, and no artifact is ever dropped
  * even when its folder is unknown to the folders list.
  */
 describe("groupArtifactsByFolder", () => {
@@ -53,14 +51,6 @@ describe("groupArtifactsByFolder", () => {
     expect(groups.map((g) => g.key)).toEqual(["f1", "f2", UNGROUPED_KEY]);
     expect(groups[1]?.artifacts).toEqual([]);
     expect(groups[2]?.artifacts.map((a) => a.id)).toEqual(["a2"]);
-  });
-
-  test("includes an experiment folder only when it holds artifacts", () => {
-    const exp = folder("e1", `${EXPERIMENT_FOLDER_PREFIX}run`);
-    expect(groupArtifactsByFolder([], [exp]).map((g) => g.key)).toEqual([]);
-    expect(
-      groupArtifactsByFolder([artifact("a1", "e1")], [exp]).map((g) => g.key),
-    ).toEqual(["e1"]);
   });
 
   test("omits an empty Ungrouped unless includeEmptyUngrouped", () => {

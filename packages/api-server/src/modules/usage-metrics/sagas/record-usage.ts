@@ -10,7 +10,6 @@ import {
   type ConnectionRemoved,
   type DomainEvent,
   type EntryPointChosen,
-  type ExperimentChanged,
   type FilesImported,
   type InvocationSpawned,
   type ScheduleFired,
@@ -124,11 +123,6 @@ export function startUsageMetricsSaga(
       surface: toUsageSurface(e.surface),
     }),
   );
-
-  on<ExperimentChanged>(EventType.ExperimentChanged, (e) => {
-    if (!e.action || !e.actorSub) return;
-    deps.recorder.experimentChange({ action: e.action });
-  });
 
   on<InvocationSpawned>(EventType.InvocationSpawned, () =>
     deps.recorder.invocationSpawn(),

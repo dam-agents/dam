@@ -29,7 +29,6 @@ export const spawnInvocationRequestSchema = z
       .string()
       .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
       .optional(),
-    experimentSpanId: z.string().min(1).max(300).optional(),
   })
   .refine((d) => d.harness !== undefined || d.image !== undefined, {
     message: "pass a harness, or an image",

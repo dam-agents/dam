@@ -12,7 +12,6 @@ export {
 } from "./compose.js";
 export {
   AttenuationError,
-  ExperimentNotRunningError,
   InvalidSchemaError,
   ProviderMismatchError,
   UnresolvableDriverError,

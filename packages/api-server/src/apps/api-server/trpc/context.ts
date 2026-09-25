@@ -1,10 +1,7 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import { composeAgentsModule } from "../../../modules/agents/index.js";
-import {
-  ANN_STARTER_KIT_ONBOARDED,
-  EXPERIMENT_ACTIVE_KEY,
-} from "../../../modules/agents/infrastructure/labels.js";
+import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../../modules/templates/index.js";
@@ -30,7 +27,6 @@ import {
   createAgentApiPodClient,
 } from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
-import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
@@ -220,23 +216,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: createAgentApiPodClient(config.namespace),
     });
-    const { experiments } = composeExperimentsForOwner({
-      db,
-      owner: user.sub,
-      surface,
-      artifactLibrary,
-      agents,
-      pin: {
-        set: (agentId) =>
-          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-        clear: (agentId) =>
-          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-      },
-      runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
-    });
     const { features } = composeFeaturesForOwner({
       db,
       owner: user.sub,
@@ -380,7 +359,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       approvals,
       attention,
       egressRules,
-      experiments,
       invocationsQuery,
       starterKits,
       kbShares,

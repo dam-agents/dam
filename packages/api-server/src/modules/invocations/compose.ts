@@ -4,7 +4,6 @@ import type {
   InvocationsQueryService,
   SkillsService,
 } from "api-server-api";
-import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
@@ -39,7 +38,6 @@ export function composeInvocationsForOwner(opts: {
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
-  const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
     owner: opts.owner,
@@ -51,10 +49,6 @@ export function composeInvocationsForOwner(opts: {
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
-    isExperimentRunning: async (experimentId, driverAgentId) => {
-      const row = await experimentsRepo.get(experimentId, opts.owner);
-      return row?.status === "running" && row.driverAgentId === driverAgentId;
-    },
   });
 }
 

@@ -22,7 +22,6 @@ export interface InvocationRow {
   errorReason: string | null;
   expiresAt: Date;
   completedAt: Date | null;
-  experimentSpanId: string | null;
 }
 
 export interface InvocationsRepository {
@@ -32,7 +31,6 @@ export interface InvocationsRepository {
     owner: string;
     resultSchema: unknown;
     expiresAt: Date;
-    experimentSpanId: string | null;
   }): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
   complete(id: string, result: unknown): Promise<boolean>;
@@ -43,20 +41,9 @@ export interface InvocationsRepository {
   listRunningDriverIds(): Promise<string[]>;
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
-  listByExperiment(
-    driverAgentId: string,
-    experimentId: string,
-    limit: number,
-  ): Promise<InvocationRow[]>;
-  countRunningByDriver(owner: string): Promise<Map<string, number>>;
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
-  failAllRunningByExperiment(
-    driverAgentId: string,
-    experimentId: string,
-    reason: string,
-  ): Promise<string[]>;
   delete(id: string): Promise<void>;
 }
 
@@ -71,7 +58,6 @@ function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     errorReason: r.errorReason,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
-    experimentSpanId: r.experimentSpanId,
   };
 }
 
@@ -85,7 +71,6 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
-        experimentSpanId: input.experimentSpanId,
       });
     },
 
@@ -203,35 +188,6 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return rows.map(toRow);
     },
 
-    async listByExperiment(driverAgentId, experimentId, limit) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.driverAgentId, driverAgentId),
-            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
-          ),
-        )
-        .limit(limit);
-      return rows.map(toRow);
-    },
-
-    async failAllRunningByExperiment(driverAgentId, experimentId, reason) {
-      const updated = await db
-        .update(invocationsTable)
-        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
-        .where(
-          and(
-            eq(invocationsTable.driverAgentId, driverAgentId),
-            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
-            eq(invocationsTable.status, "running"),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
-      return updated.map((r) => r.id);
-    },
-
     async listTargetsByOwner(owner) {
       const rows = await db
         .select({
@@ -241,24 +197,6 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .from(invocationsTable)
         .where(eq(invocationsTable.owner, owner));
       return rows;
-    },
-
-    async countRunningByDriver(owner) {
-      const rows = await db
-        .select({
-          driverAgentId: invocationsTable.driverAgentId,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.owner, owner),
-            eq(invocationsTable.status, "running"),
-            isNotNull(invocationsTable.experimentSpanId),
-          ),
-        )
-        .groupBy(invocationsTable.driverAgentId);
-      return new Map(rows.map((r) => [r.driverAgentId, r.count]));
     },
 
     async delete(id) {

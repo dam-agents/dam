@@ -56,7 +56,7 @@ export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });
 
-export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
+export const agentKindSchema = z.enum(["knowledge-base"]);
 
 export const AGENT_ID_RE = /^agent-[0-9a-f]{16}$/;
 

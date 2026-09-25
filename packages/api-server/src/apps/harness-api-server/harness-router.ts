@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type {
   BudgetsService,
   ConnectionsService,
-  ExperimentsService,
   KbPublishGate,
   SchedulesService,
   SkillsService,
@@ -17,7 +16,6 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes, type AgentKbDeps } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
-import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import type { ArtifactTouchService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -38,7 +36,6 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
-  experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
@@ -70,7 +67,6 @@ export function createHarnessRouter(deps: {
     onboardingChecklist: deps.onboardingChecklist,
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,
-    experimentsServiceFor: deps.experimentsServiceFor,
     kbShareOpsFor: deps.kbShareOpsFor,
     agentHome: deps.agentHome,
     caseStudySubmissions: deps.caseStudySubmissions,
@@ -89,10 +85,6 @@ export function createHarnessRouter(deps: {
     templates: deps.templates,
     budgetsFor: deps.budgetsFor,
     defaultLimits: deps.defaultLimits,
-  });
-  mountExperimentRoutes(app, {
-    k8s: deps.k8s,
-    experimentsServiceFor: deps.experimentsServiceFor,
   });
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,

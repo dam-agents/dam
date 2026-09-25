@@ -52,7 +52,7 @@ Set the window first: `window_start` is 7 days ago, `window_end` is today, both
 
 1. **Session index.** `$HOME/.platform/session-metadata.json`, the platform's
    metadata on every session. Count the window's sessions and their mix -
-   scheduled, channel-driven, experiment, on-demand - skipping tombstoned ids.
+   scheduled, channel-driven, on-demand - skipping tombstoned ids.
    Only the index tells these kinds apart; the harness store mixes them. Shape
    and counting command: `references/harness-stores.md`.
 2. **Session content.** The transcripts: what was asked, what you did, how it
