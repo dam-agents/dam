@@ -154,6 +154,40 @@ export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
   return false;
 }
 
+type RRuleOptions = ReturnType<typeof RRule.parseString>;
+
+export function anchorsAtMidnight(options: RRuleOptions): boolean {
+  return (
+    (options.freq === Frequency.HOURLY ||
+      options.freq === Frequency.MINUTELY) &&
+    (toNumArray(options.byhour).length > 0 ||
+      toNumArray(options.byminute).length > 0)
+  );
+}
+
+export function canOccur(options: RRuleOptions): boolean {
+  if (!anchorsAtMidnight(options)) return true;
+  const interval =
+    typeof options.interval === "number" && options.interval > 0
+      ? options.interval
+      : 1;
+  const hourly = options.freq === Frequency.HOURLY;
+  const phase = gcd(hourly ? interval * 60 : interval, 24 * 60);
+  const hours = orAll(toNumArray(options.byhour), 24);
+  const minutes = hourly ? [0] : orAll(toNumArray(options.byminute), 60);
+  return hours.some((h) => minutes.some((m) => (h * 60 + m) % phase === 0));
+}
+
+function orAll(values: number[], count: number): number[] {
+  return values.length > 0
+    ? values
+    : Array.from({ length: count }, (_, i) => i);
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
 export function hasVisibleOccurrence(
   rruleBody: string,
   windows: QuietWindow[],
@@ -161,7 +195,12 @@ export function hasVisibleOccurrence(
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return true;
   try {
-    const rule = RRule.fromString(rruleBody);
+    const options = RRule.parseString(rruleBody);
+    if (!canOccur(options)) return true;
+    const dtstart = new Date();
+    dtstart.setUTCSeconds(0, 0);
+    if (anchorsAtMidnight(options)) dtstart.setUTCHours(0, 0);
+    const rule = new RRule({ dtstart, ...options });
     let visible = false;
     rule.all((date, i) => {
       if (i >= 1440) return false;

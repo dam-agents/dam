@@ -1,6 +1,11 @@
 import { CronExpressionParser } from "cron-parser";
 import rrulePkg from "rrule";
-import { hasVisibleOccurrence, isInQuietHours } from "api-server-api";
+import {
+  anchorsAtMidnight,
+  canOccur,
+  hasVisibleOccurrence,
+  isInQuietHours,
+} from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
 
 const { RRule } = rrulePkg;
@@ -12,6 +17,11 @@ export function validateCron(expr: string): void {
 export function validateRRule(expr: string): void {
   const rule = RRule.fromString(expr);
   if (!rule) throw new Error(`invalid rrule: ${expr}`);
+  if (!canOccur(RRule.parseString(expr))) {
+    throw new Error(
+      `rrule never fires — its INTERVAL steps from midnight never land on its BYHOUR/BYMINUTE: ${expr}`,
+    );
+  }
 }
 
 export function validateTimezone(tz: string): void {
@@ -47,10 +57,11 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   }
   const wallFrom = toWallClock(from, spec.timezone);
   wallFrom.setUTCSeconds(0, 0);
-  const rule = new RRule({
-    dtstart: wallFrom,
-    ...RRule.parseString(spec.rrule),
-  });
+  const options = RRule.parseString(spec.rrule);
+  if (!canOccur(options)) return null;
+  const dtstart = new Date(wallFrom);
+  if (anchorsAtMidnight(options)) dtstart.setUTCHours(0, 0);
+  const rule = new RRule({ dtstart, ...options });
   const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
   let cursor = wallFrom;
   for (let i = 0; i < 1440; i++) {
