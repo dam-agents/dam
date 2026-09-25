@@ -13,6 +13,7 @@ auto = true
 
 [tools]
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
+"conda:tar" = "1.35" # GNU tar on every host: image:pack's layers need its owner, mtime and sort options
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"

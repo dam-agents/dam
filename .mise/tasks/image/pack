@@ -12,18 +12,10 @@
 set -euo pipefail
 layer="$(mktemp)"
 trap 'rm -f "$layer"' EXIT
-# Root-owned, mtime 0, sorted: the layer's digest follows its content alone,
-# whichever tar the host has.
-python3 - "$layer" "$usage_root" <<'EOF'
-import os, sys, tarfile
-def norm(t):
-    t.uid = t.gid = t.mtime = 0
-    t.uname = t.gname = "root"
-    return t
-with tarfile.open(sys.argv[1], "w") as tar:
-    for d in sorted(os.listdir(sys.argv[2])):
-        tar.add(os.path.join(sys.argv[2], d), d, filter=norm)
-EOF
+# Root-owned, mtime 0, sorted: the layer's digest follows its content alone.
+# Its top-level entries, not ".", so the layer never resets / itself.
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 --format=gnu \
+  -C "$usage_root" -cf "$layer" $(ls -A "$usage_root")
 mkdir -p "$(dirname "$usage_tar")"
 crane mutate "$usage_base" --append "$layer" -t "$usage_tag" -o "$usage_tar" \
   --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" \

@@ -2,6 +2,46 @@
 
 lockfile_version = 2
 
+[conda-packages.linux-arm64."_openmp_mutex-4.5-20_gnu"]
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-20_gnu.conda"
+checksum = "sha256:a2527b1d81792a0ccd2c05850960df119c2b6d8f5fdec97f2db7d25dc23b1068"
+
+[conda-packages.linux-arm64."libgcc-16.2.0-h205dda4_7"]
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/libgcc-16.2.0-h205dda4_7.conda"
+checksum = "sha256:eae7a3449d5a3b5351c5427137c076cc3fc826645c7bfc42dc10772b783826f1"
+
+[conda-packages.linux-arm64."libgomp-16.2.0-h8acb6b2_7"]
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/libgomp-16.2.0-h8acb6b2_7.conda"
+checksum = "sha256:4406fd67c5beeb99b9372f9bf07aa3e40ca141e337eceebac3ff64aa72799494"
+
+[conda-packages.linux-arm64."libiconv-1.18-h1ea5142_3"]
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/libiconv-1.18-h1ea5142_3.conda"
+checksum = "sha256:d22c666eb887afd2119aac2110e23a0e817e9391bda99293421f7c46dab1564c"
+
+[conda-packages.linux-x64."_openmp_mutex-4.5-20_gnu"]
+url = "https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda"
+checksum = "sha256:1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9"
+
+[conda-packages.linux-x64."libgcc-16.2.0-ha9f2e26_7"]
+url = "https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda"
+checksum = "sha256:e031634c3a928f9594eba868bc46ef5230d6571a364a0c63215b06c4563bfcea"
+
+[conda-packages.linux-x64."libgomp-16.2.0-he0feb66_7"]
+url = "https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda"
+checksum = "sha256:92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758"
+
+[conda-packages.linux-x64."libiconv-1.18-h0cb94f2_3"]
+url = "https://conda.anaconda.org/conda-forge/linux-64/libiconv-1.18-h0cb94f2_3.conda"
+checksum = "sha256:f943117edb9cd4d9c61cc972eee5a34291dc55ea7a6e9e38da104995841cbcb6"
+
+[conda-packages.macos-arm64."libiconv-1.18-he4c29f2_3"]
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/libiconv-1.18-he4c29f2_3.conda"
+checksum = "sha256:689a14968267f2f97c07112fca5636e7d756036b9aee969911267c20bd3eea1f"
+
+[conda-packages.macos-arm64."libintl-0.25.1-hae62183_2"]
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/libintl-0.25.1-hae62183_2.conda"
+checksum = "sha256:b43c6645e668f86d04d5c06d6dc17efe921bbd9244be4b77946d56fb950a3fcc"
+
 [[tools."aqua:rustsec/rustsec/cargo-audit"]]
 version = "0.22.2"
 backend = "aqua:rustsec/rustsec/cargo-audit"
@@ -18,6 +58,42 @@ url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.
 [tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-arm64"]
 checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
 url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
+
+[[tools."conda:tar"]]
+version = "1.35"
+backend = "conda:tar"
+specifiers = ["1.35"]
+
+[tools."conda:tar".options]
+channel = "conda-forge"
+
+[tools."conda:tar"."platforms.linux-arm64"]
+checksum = "sha256:48ff9ff6cde5bcb1d74f77036fb66606c7e94a52c75978c65330bbd86741f8a4"
+url = "https://conda.anaconda.org/conda-forge/linux-aarch64/tar-1.35-h90929bb_0.conda"
+conda_deps = [
+    "libgcc-16.2.0-h205dda4_7",
+    "libiconv-1.18-h1ea5142_3",
+    "_openmp_mutex-4.5-20_gnu",
+    "libgomp-16.2.0-h8acb6b2_7",
+]
+
+[tools."conda:tar"."platforms.linux-x64"]
+checksum = "sha256:eab162cadb948c91c14f18b6f30a7c270d682e820c4f2fdb0030c9fc99b3fa49"
+url = "https://conda.anaconda.org/conda-forge/linux-64/tar-1.35-h3b78370_0.conda"
+conda_deps = [
+    "libgcc-16.2.0-ha9f2e26_7",
+    "libiconv-1.18-h0cb94f2_3",
+    "_openmp_mutex-4.5-20_gnu",
+    "libgomp-16.2.0-he0feb66_7",
+]
+
+[tools."conda:tar"."platforms.macos-arm64"]
+checksum = "sha256:31c65c2f20fddd506d1aafb698893dcd7486a15465e225e0f1defc9ec2fc98e2"
+url = "https://conda.anaconda.org/conda-forge/osx-arm64/tar-1.35-h3bfc444_0.conda"
+conda_deps = [
+    "libintl-0.25.1-hae62183_2",
+    "libiconv-1.18-he4c29f2_3",
+]
 
 [[tools.crane]]
 version = "0.22.1"
