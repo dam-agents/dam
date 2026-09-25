@@ -14,6 +14,7 @@
 #
 # Usage:
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
+#   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
@@ -25,11 +26,9 @@
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
-# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule: publish all),
-# RESOLVE_REUSE_AGENTS=1 exempts agents and workloads from
-# RESOLVE_NO_REUSE (CI main: they rebuild only when their effective source moved
-# — the published chart pins their source-sha tags, so an unchanged one keeps
-# last deploy's tag).
+# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
+# all, which also picks up newer Debian packages and uncached tool trees). A
+# main push reuses every image whose effective source did not move.
 # Written for bash 3.2 (macOS) — no associative arrays.
 set -euo pipefail
 
@@ -39,7 +38,7 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # node_modules, an agent's rootfs), so they don't move the last-touching commit.
 # Ceiling: a reused image may differ in builder-stage test sources; runtime
 # content is identical.
-UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
+UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
 
 # Source of the images `mise oci` builds (//packages/agents:oci), besides
 # their own directory.
@@ -50,6 +49,15 @@ AGENTS="claude-code codex pi-agent bob"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
+# Components image:pack builds on the host, plus the task that packs them, the
+# toolchain pins in the root config and their exact versions in mise.lock. A
+# lockfile bump for another tool re-tags them too, which errs toward rebuilds.
+PACK_TOOLING=".mise/tasks/image/pack .mise/config.toml mise.lock"
+# The pnpm workspace: its root manifests and lockfile.
+PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
+# The images cd.yml's build-images job builds, both arches in one job each.
+IMAGES="controller ui api-server keycloak vm-runner"
+
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
 # the harnesses, keycloak, the vm-runner and every workload, since a starter kit
 # names its image directly and its tag has to be pinned the same way a
@@ -78,6 +86,10 @@ own_paths() {
     # version in mise.lock. A lockfile bump for another tool re-tags it too,
     # which errs toward rebuilds.
     vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
+    # Each TS image's own package and its workspace dependencies, transitively.
+    controller) echo "packages/controller $PACK_TOOLING" ;;
+    ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
+    api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
     # image:pack. The theme build also depends on dev-config and (any)
     # lockfile change — lockfile bumps re-tag it even when unrelated, which
@@ -93,7 +105,7 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    keycloak|vm-runner|claude-code|codex|pi-agent|bob|mock) echo "" ;;
+    controller|ui|api-server|keycloak|vm-runner|claude-code|codex|pi-agent|bob|mock) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -121,37 +133,34 @@ resolve() {
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
 }
 
-# Agents and workloads honour RESOLVE_REUSE_AGENTS despite
-# RESOLVE_NO_REUSE (see header); keycloak keeps the caller's mode.
-resolve_derived() {
-  ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
+# The components of a list that resolve to BUILD, as a JSON array.
+stale_json() {
+  local c
+  for c in "$@"; do
+    [ "$(resolve "$c" | cut -d' ' -f1)" = BUILD ] && echo "$c"
+  done | jq -R . | jq -cs 'map(select(length>0))'
 }
 
 gha_outputs() {
-  local archs built a agents_json wl_built w workloads_json s src
+  local archs a s src agents_json workloads_json='[]' images_json='[]' mock=false
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in keycloak vm-runner $AGENTS $WORKLOADS; do
+  src="$(for a in $IMAGES mock $AGENTS $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
-  built=()
-  for a in $AGENTS; do
-    [ "$(resolve_derived "$a" | cut -d' ' -f1)" = BUILD ] && built+=("$a")
-  done
-  agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  # Workloads are slow, rarely-changing builds on the claude-code base: PRs
-  # never build them.
-  wl_built=()
+  agents_json="$(stale_json $AGENTS)"
+  # A PR builds its images and the mock in e2e, which resolves them itself,
+  # and never builds workloads: slow, rarely-changing builds on the
+  # claude-code base.
   if [ "${EVENT:-}" != pull_request ]; then
-    for w in $WORKLOADS; do
-      [ "$(resolve_derived "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
-    done
+    workloads_json="$(stale_json $WORKLOADS)"
+    images_json="$(stale_json $IMAGES)"
+    [ "$(resolve mock | cut -d' ' -f1)" = BUILD ] && mock=true
   fi
-  workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  printf 'agents=%s\narchs=%s\nworkloads=%s\nsource_shas=%s\n' \
-    "$agents_json" "$archs" "$workloads_json" "$src"
+  printf 'agents=%s\narchs=%s\nworkloads=%s\nimages=%s\nmock=%s\nsource_shas=%s\n' \
+    "$agents_json" "$archs" "$workloads_json" "$images_json" "$mock" "$src"
 }
 
 self_check() {
@@ -170,6 +179,14 @@ self_check() {
   has "$(effective_paths claude-code)" packages/agent-runtime
   has "$(effective_paths bob)" packages/agents/bob
   chk "$(base_of keycloak)" ""
+  chk "$(base_of controller)" ""
+  chk "$(base_of ui)" ""
+  chk "$(base_of api-server)" ""
+  has "$(effective_paths controller)" packages/controller
+  has "$(effective_paths ui)" packages/api-server-api
+  has "$(effective_paths ui)" pnpm-lock.yaml
+  has "$(effective_paths api-server)" packages/db
+  has "$(effective_paths api-server)" .mise/tasks/image/pack
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
   has "$(effective_paths vm-runner)" packages/vm-runner
@@ -192,25 +209,32 @@ self_check() {
   has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
   has "$out" 'archs=["amd64","arm64"]'
-  has "$out" 'source_shas={"keycloak":"'
+  has "$out" 'source_shas={"controller":"'
+  has "$out" '"keycloak":"'
   has "$out" '"vm-runner":"'
+  has "$out" '"mock":"'
+  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
+  has "$out" 'mock=true'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'workloads=[]'
+  has "$out" 'images=[]'
+  has "$out" 'mock=false'
   has "$out" 'archs=["amd64"]'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 
 case "${1:-}" in
   resolve)        resolve "$2" ;;
+  source-sha)     source_sha "$2" ;;
   gha-outputs)    gha_outputs ;;
   list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
-  list-components) echo api-server ui controller vm-runner keycloak $AGENTS $WORKLOADS ;;
+  list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|source-sha|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

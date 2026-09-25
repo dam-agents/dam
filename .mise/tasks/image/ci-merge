@@ -1,7 +1,7 @@
 #!/usr/bin/env -S usage bash
 #MISE description="CI only: tag each component's per-arch digests as one multi-arch image"
 #MISE hide=true
-#USAGE arg "<digests-dir>" help="Holds <component>/ with one empty file per arch, named by the digest's hex, as image:ci-build writes them"
+#USAGE arg "<digests-dir>" help="Holds <component>/ with one empty file per arch, named by the digest's hex, as image:ci-build writes them; a component without one is reused and only tagged"
 #USAGE arg "<component>..." var=#true
 # cd.yml merges every image of one kind in one job instead of one job per
 # image; see image:ci-build.
@@ -9,11 +9,12 @@
 # Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
 #   COMPOSITE (the app version), SOURCE_SHAS (image:resolve's JSON map) and
 #   SOURCE_SHA_TAGGED (the components that also get their source-sha tag).
-#   SKIP_UNCHANGED names components left unmerged when their source-sha tag
-#   already exists: the chart pins them by that tag, so an unchanged one needs
-#   no new list, and like a reused agent it gets no <sha> tag and no scan
-#   until the nightly run. CI_MERGE_DEBUG names components whose merge logs
-#   every registry request, timestamped.
+#   CI_MERGE_DEBUG names components whose merge logs every registry request,
+#   timestamped.
+#
+# A component this run did not build, because image:resolve found its source
+# published, has no digests: its source-sha image gets this run's tags. That is
+# one manifest write per tag, where a merge copies inside the registry.
 #
 # The tags are what docker/metadata-action gave each image: the commit sha,
 # the composite version, and on a v* tag its semver version, major.minor
@@ -49,13 +50,18 @@ merge_one() {
     [[ "$seen" == *" $t "* ]] && continue
     seen+="$t " uniq+=("$t")
   done
-  if [ -n "${s:-}" ] && [[ " ${SKIP_UNCHANGED:-} " == *" $c "* ]] &&
-     crane digest "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
-    echo "$c: $IMAGE_PREFIX/$c:$s exists, so its source is unchanged; not merged"
+  for d in "$dir/$c"/*; do [ -e "$d" ] && args+=(-m "$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
+  if [ "${#args[@]}" -eq 0 ]; then
+    s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
+    if [ -z "$s" ] || ! crane digest "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
+      echo "::error::no digests for $c, and no image at its source sha"; return 1
+    fi
+    echo "$c: reused $IMAGE_PREFIX/$c:$s <-$seen"
+    for t in "${uniq[@]}"; do
+      [ "$t" = "$s" ] || crane tag "$IMAGE_PREFIX/$c:$s" "$t" || return 1
+    done
     return 0
   fi
-  for d in "$dir/$c"/*; do [ -e "$d" ] && args+=(-m "$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
-  if [ "${#args[@]}" -eq 0 ]; then echo "::error::no digests for $c"; return 1; fi
   echo "$c:$seen<- ${args[*]}"
   if [[ " ${CI_MERGE_DEBUG:-} " == *" $c "* ]]; then
     crane -v index append "${args[@]}" -t "$IMAGE_PREFIX/$c:${uniq[0]}" 2>&1 |

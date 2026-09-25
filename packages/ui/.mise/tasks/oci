@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build the UI image to dist/oci/ui.tar"
+#MISE sources=["src/**", "public/**", "index.html", "vite.config.ts", "tsconfig.json", "package.json", "default.conf", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../mise.lock"]
+#MISE outputs=["dist/oci/ui.tar"]
 set -euo pipefail
 mise run //packages/ui:build
 root="$(mktemp -d)"
@@ -7,4 +9,4 @@ trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/usr/share/nginx" "$root/etc/nginx/conf.d"
 cp -R dist/js "$root/usr/share/nginx/html"
 cp default.conf "$root/etc/nginx/conf.d/"
-"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/nginx:1.30 "$root" dist/oci/ui.tar platform-ui:latest
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/nginx:1.30@sha256:b1a78d4e21c3d3d820918253b4a260009c7cd5f5edf1831c8f490f1afac3b064 "$root" dist/oci/ui.tar platform-ui:latest
