@@ -1,7 +1,7 @@
 #!/usr/bin/env -S usage bash
 #MISE description="CI only: build several component images for one arch in one job"
 #MISE hide=true
-#USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk; the builder is pruned between builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free"
+#USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk"
 #USAGE arg "<arch>"
 #USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without exporting, to prove it builds), sha (push <component>:$GITHUB_SHA) or load (write the component's dist/oci tar, named platform-<component>:latest)"
 # cd.yml builds all of one arch's images, agents or workloads in one job
@@ -116,11 +116,6 @@ if [ "$serial" = true ]; then
     build_one "${names[$i]}" "${kinds[$i]}" 2>&1 || failed+=("${names[$i]}")
     echo "${names[$i]}: ${SECONDS}s"
     echo "::endgroup::"
-    free_gb=$(( $(df --output=avail -k / | tail -1) / 1048576 ))
-    if [ "$free_gb" -lt "${CI_BUILD_MIN_FREE_GB:-20}" ]; then
-      echo "${free_gb} GB free: pruning the builder"
-      docker buildx prune --all --force >/dev/null 2>&1 || true
-    fi
   done
 else
   pids=()
