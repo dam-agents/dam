@@ -78,22 +78,13 @@ done
 gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
 
 pids=()
-for c in $LOADED; do
-  docker pull "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")" &
+for c in $LOADED mock; do
+  ref="$IMAGE_PREFIX/$c:$GITHUB_SHA"
+  [ "$c" = mock ] || ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")"
+  mise run image:pull -- "$ref" "$(.mise/tasks/image/resolve tar-path "$c")" "platform-$c:latest" &
   pids+=($!)
 done
-docker pull "$IMAGE_PREFIX/mock:$GITHUB_SHA" &
-pids+=($!)
 for pid in "${pids[@]}"; do wait "$pid"; done
-# Where cluster:install imports them from, as image:ci-build's load output
-# leaves them.
-for c in $LOADED; do
-  docker tag "$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")" "platform-$c:latest"
-  d="packages/$c"; [ "$c" != keycloak ] || d=packages/keycloak-theme
-  mkdir -p "$d/dist/oci" && docker save "platform-$c:latest" -o "$d/dist/oci/$c.tar"
-done
-docker tag "$IMAGE_PREFIX/mock:$GITHUB_SHA" "platform-mock:latest"
-mkdir -p packages/e2e/agents/mock/dist/oci && docker save platform-mock:latest -o packages/e2e/agents/mock/dist/oci/mock.tar
 
 result=ok
-echo "$(date -u +%H:%M:%S) images pulled and tagged"
+echo "$(date -u +%H:%M:%S) images pulled"

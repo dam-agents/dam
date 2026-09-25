@@ -21,15 +21,7 @@ bump=(); [ "${usage_bump:-}" != true ] || bump=(--bump)
 eval "named=(${usage_agent:-})"
 
 dir_of() { local d; for d in "$agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && { echo "$d"; return; }; done; return 1; }
-tar_of() { echo "$(dir_of "$1")/dist/oci/$1.tar"; }
-arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
-# ctr import and docker load name the image by this annotation.
-name_layout() {
-  jq --arg n "docker.io/library/platform-$2:latest" \
-    '.manifests[0].annotations += {"io.containerd.image.name": $n, "org.opencontainers.image.ref.name": "latest"}' \
-    "$1/index.json" > "$1/index.json.new"
-  mv "$1/index.json.new" "$1/index.json"
-}
+tar_of() { $resolve tar-path "$1"; }
 if [ ${#named[@]} -eq 0 ]; then
   for d in "$agents"/*/; do
     [ -f "$d/Dockerfile" ] || [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
@@ -59,12 +51,7 @@ reused() {
   local d; d="$($resolve resolve "$1")"
   [ "${d%% *}" = REUSE ] || return 1
   echo "↺ reuse ${d#REUSE } -> $(tar_of "$1")"
-  local l s=0; l="$(mktemp -d)"
-  # Callers test the result, which leaves set -e off in here.
-  crane pull --format=oci --platform "linux/$arch" "${d#REUSE }" "$l" && name_layout "$l" "$1" &&
-    mkdir -p "$(dirname "$(tar_of "$1")")" && tar -C "$l" -cf "$(tar_of "$1")" . || s=$?
-  rm -rf "$l"
-  return $s
+  mise run //:image:pull -- "${d#REUSE }" "$(tar_of "$1")" "platform-$1:latest"
 }
 
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
@@ -236,7 +223,7 @@ build_mise() (
   # The re-owned layer cache grows with every distinct layer; remove
   # $state/owned to reclaim it.
   mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
-  name_layout "$out" "$harness"
+  "$root/.mise/tasks/image/name-layout" "$out" "platform-$harness:latest"
   echo "OCI layout: $out"
 )
 
@@ -248,11 +235,11 @@ build_in_vm() {
   limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
   git ls-files -z --cached --others --exclude-standard |
     while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
-    COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf - |
+    tar --null -T - -cf - |
     limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
   # The tools CI's build-agents job sets up, not the repo's whole toolchain.
-  # The host's GitHub token goes in on stdin, out of any process list: the
-  # VM's mise calls the GitHub API, unauthenticated otherwise.
+  # The host's GitHub token for the VM's mise, on stdin to stay out of
+  # process lists.
   printf '%s\n' "${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}" |
   limactl shell --workdir / "$vm" sh -c '
     set -e
@@ -269,8 +256,8 @@ build_in_vm() {
     AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm usage -- packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$(mise config get -f .mise/config.toml min_version)" "$@"
 }
 layout() {
-  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c .
-  else limactl shell --workdir / "$vm" sh -c 'tar -C ~/platform-agent-oci/"$1" -c .' _ "$1"; fi
+  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c $(ls -A "$oci_out/$1")
+  else limactl shell --workdir / "$vm" sh -c 'cd ~/platform-agent-oci/"$1" && tar -c $(ls -A)' _ "$1"; fi
 }
 
 if [ "$lock" = true ]; then lock_mise; exit; fi
@@ -302,10 +289,12 @@ fi
 build_docker() {
   reused "$1" && return
   echo "⚒ build $(tar_of "$1")"
-  # FROM platform-claude-code, which docker resolves from its own store.
-  docker load -i "$(tar_of claude-code)" >/dev/null
-  docker build -o "type=docker,name=platform-$1:latest,dest=$(tar_of "$1")" \
+  local base; base="$(mktemp -d)"
+  tar -C "$base" -xf "$(tar_of claude-code)"
+  docker build --build-context "platform-claude-code=oci-layout://$base:latest" \
+    -o "type=docker,name=platform-$1:latest,dest=$(tar_of "$1")" \
     ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$(dir_of "$1")"
+  rm -rf "$base"
 }
 
 for a in ${docker_images[@]+"${docker_images[@]}"}; do build_docker "$a"; done

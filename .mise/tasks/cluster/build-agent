@@ -49,9 +49,8 @@ fi
 LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
 
 echo "Loading into k3s..."
-agent_tar() { local d="packages/agents/$1"; [ -d "$d" ] || d="packages/e2e/agents/$1"; echo "$d/dist/oci/$1.tar"; }
 tars=()
-for c in "${AGENT_TASKS[@]}"; do tars+=("$(agent_tar "$c")"); done
+for c in "${AGENT_TASKS[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
 LIMA_INSTANCE="$LIMA_INSTANCE" mise run cluster:import -- "${tars[@]}"
 
 echo "Restarting agent pods..."

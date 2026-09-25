@@ -24,7 +24,6 @@ You are here when `CLAUDE_CODE_REMOTE=true`, PID 1 is `process_api`, and `/run/s
 | Fixed disk allowance far below the 252G the device reports | kubelet's 5% threshold evicts everything, then GCs images | `k3s-launcher`: absolute 2Gi eviction thresholds |
 | The proxy's CA is trusted on the host only | `RUN` steps in `docker build` fail TLS | [`pull-images`](scripts/pull-images) instead of building |
 | No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off |
-| Docker daemon not started | `docker` cannot connect | start it by hand (below) |
 
 The launcher's workarounds are sandbox-only on purpose. Each one turns on only when its probe says it is needed, but clamping OOM scores or lowering eviction thresholds would change behavior on a real host.
 
@@ -33,7 +32,6 @@ The launcher's workarounds are sandbox-only on purpose. Each one turns on only w
 ```sh
 curl -fsSL https://mise.run | sh && export PATH="$HOME/.local/bin:$PATH"
 mise trust -a && mise install
-(nohup dockerd >/tmp/dockerd.log 2>&1 &) ; until docker info >/dev/null 2>&1; do sleep 1; done
 export IS_SANDBOX=1                        # every cluster:* / e2e:* task reads it
 .agents/skills/ccweb/scripts/pull-images   # api-server ui controller keycloak mock
 K3S_LAUNCHER="$PWD/.agents/skills/ccweb/scripts/k3s-launcher" SKIP_IMAGE_BUILD=1 mise run e2e:install
@@ -48,14 +46,14 @@ Run the install with a long timeout or in the background: the first run takes ab
 `docker build` cannot work here: the builder's `RUN` steps reach the network through the proxy but do not trust its CA. Do not edit Dockerfiles to inject it. Do not shadow `/usr/local/bin/docker` with a wrapper either: the permission classifier treats that as persistence and refuses it.
 
 - **Unchanged code:** `pull-images` pulls CI's images. api-server, ui and controller come from the newest main commit at or behind your merge base. keycloak and agents come via `image:resolve`.
-- **Changed TypeScript in api-server:** build the bundle on the host and layer it over the published image. Nothing in that build touches the network:
+- **Changed controller or ui:** `mise run //packages/<controller|ui>:oci`, then `mise run cluster:import -- packages/<controller|ui>/dist/oci/<controller|ui>.tar`. Neither build runs a container.
+- **Changed TypeScript in api-server:** build the bundle on the host and layer it over the published image `pull-images` named. Nothing in that build runs inside an image:
 
   ```sh
   mise exec -- pnpm --filter api-server exec tsup
-  mkdir -p /tmp/apiimg/dist/js && cp packages/api-server/dist/js/*.js /tmp/apiimg/dist/js/
-  printf 'FROM platform-api-server:latest\nCOPY --chown=65532:0 dist/ /app/dist/\n' >/tmp/apiimg/Dockerfile
-  docker build -q -t platform-api-server:latest /tmp/apiimg
-  docker save platform-api-server:latest -o packages/api-server/dist/oci/api-server.tar && k3s ctr -n k8s.io images import packages/api-server/dist/oci/api-server.tar
+  mkdir -p /tmp/apiimg/app/dist/js && cp packages/api-server/dist/js/*.js /tmp/apiimg/app/dist/js/
+  mise run image:pack -- quay.io/dam-agents/api-server:<sha> /tmp/apiimg packages/api-server/dist/oci/api-server.tar platform-api-server:latest --owner 65532:0
+  mise run cluster:import -- packages/api-server/dist/oci/api-server.tar
   mise run cluster:kubectl -- rollout restart deploy/platform-apiserver
   ```
 
@@ -63,7 +61,7 @@ Run the install with a long timeout or in the background: the first run takes ab
 
 ## Disk
 
-The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored three times: as the `dist/oci/` tars the install imports, in docker, and in k3s containerd. After an install, `docker builder prune -af` and `docker image prune -af` reclaim the docker copy, which later install runs do not read. Deleting the tars needs `SKIP_IMAGE_LOAD=1` on later runs, or `pull-images` again first.
+The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored twice: as the `dist/oci/` tars the install imports, and in k3s containerd. Deleting the tars needs `SKIP_IMAGE_LOAD=1` on later runs, or `pull-images` again first.
 
 ## Driving the UI with agent-browser
 

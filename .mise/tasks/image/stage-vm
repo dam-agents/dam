@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
-#MISE description="Stage a local image for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount. Usage: image:stage-vm -- <image-ref>. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+#MISE description="Stage an image tar for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount, by the name the tar carries. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+#USAGE arg "<tar>" help="An image tar, as the :oci tasks write"
 # The runner boots a staged tree as a shared read-only lower layer, so a
 # machine starts in seconds. A `docker save` archive staged instead is
 # flattened inside every guest on first boot under smolvm's fixed 600 s pull
 # window; on a slow host that flatten outran the window, the start failed and
 # the flatten began again from nothing.
 set -euo pipefail
-IMAGE="${1:?usage: image:stage-vm -- <image-ref>}"
+IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
 LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
 IMAGE_DIR=/var/lib/platform-vm-images
 name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-cid="$(docker create "$IMAGE")"
-docker export "$cid" -o "$work/rootfs.tar"
-docker rm -f "$cid" >/dev/null
+crane export - "$work/rootfs.tar" < "$usage_tar"
 # The record the runner reads beside the tree: what the image says to run.
-docker image inspect "$IMAGE" | yq -o=json \
-  '.[0].Config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
+tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
+  '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   > "$work/launch.json"
 
 # Runs as root on the node: unpacks beside the live entry, moves the old entry

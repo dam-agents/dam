@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Pull an image for the host's arch into a named image tar"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<ref>"
+#USAGE arg "<tar>"
+#USAGE arg "<name>" help="The name it imports as, e.g. platform-mock:latest"
+set -euo pipefail
+l="$(mktemp -d)"
+trap 'rm -rf "$l"' EXIT
+crane pull --format=oci --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$usage_ref" "$l"
+mise run //:image:name-layout -- "$l" "$usage_name"
+mkdir -p "$(dirname "$usage_tar")"
+tar -C "$l" -cf "$usage_tar" $(ls -A "$l")

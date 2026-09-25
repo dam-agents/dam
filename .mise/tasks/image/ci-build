@@ -14,9 +14,8 @@
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
-# By path, like image:resolve, which needs usage. image.toml agents build with
-# //packages/agents:oci and need mise, node, pnpm and crane; controller and ui
-# with their :oci tasks, on a runner of the arch.
+# By path, like image:resolve, with usage installed. image.toml agents build
+# with //packages/agents:oci and need mise, node, pnpm and crane.
 set -uo pipefail
 
 serial="${usage_serial:-false}" base="${usage_base_image:-}" arch="$usage_arch"
@@ -40,12 +39,7 @@ spec() {
   esac
 }
 
-tar_of() {
-  case "$1" in
-    keycloak) echo packages/keycloak-theme/dist/oci/keycloak.tar ;;
-    *) echo "packages/$1/dist/oci/$1.tar" ;;
-  esac
-}
+tar_of() { .mise/tasks/image/resolve tar-path "$1"; }
 
 output_for() {
   case "$2" in

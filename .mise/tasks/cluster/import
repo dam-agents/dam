@@ -9,7 +9,6 @@ for t in "${tars[@]}"; do
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$t"
   else
-    # A guest copy left behind is a stale multi-GiB file in the VM.
     g="/tmp/${t##*/}"
     limactl copy "$t" "$LIMA_INSTANCE:$g"
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$g"

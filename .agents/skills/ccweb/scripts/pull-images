@@ -20,16 +20,9 @@ AGENTS=("$@")
 [ ${#AGENTS[@]} -gt 0 ] || AGENTS=(mock)
 
 pull_tag() {
-  local d="packages/$2"
-  case "$2" in
-    api-server | ui | controller) ;;
-    keycloak) d=packages/keycloak-theme ;;
-    *) d="packages/agents/$2"; [ -d "$d" ] || d="packages/e2e/agents/$2" ;;
-  esac
-  docker pull -q "$1" >/dev/null
-  docker tag "$1" "platform-$2:latest"
-  mkdir -p "$d/dist/oci" && docker save "platform-$2:latest" -o "$d/dist/oci/$2.tar"
-  echo "  $d/dist/oci/$2.tar <- $1"
+  local tar; tar="$(.mise/tasks/image/resolve tar-path "$2")"
+  mise run -q image:pull -- "$1" "$tar" "platform-$2:latest"
+  echo "  $tar <- $1"
 }
 
 git fetch -q origin main 2>/dev/null || true

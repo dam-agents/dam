@@ -45,8 +45,7 @@ mise run //:image:pack -- registry.access.redhat.com/hi/core-runtime:latest "$gu
   packages/controller/dist/oci/vm-conformance-guest.tar "$IMAGE" \
   --entrypoint /vm-conformance-guest --workdir /conformance --user root
 rm -rf "$guest"
-docker load -i packages/controller/dist/oci/vm-conformance-guest.tar
-LIMA_INSTANCE="$LIMA_INSTANCE" .mise/tasks/image/stage-vm "$IMAGE"
+LIMA_INSTANCE="$LIMA_INSTANCE" mise run image:stage-vm -- packages/controller/dist/oci/vm-conformance-guest.tar
 
 WORK="$(mktemp -d)"
 CONTROLLER_SELECTOR="app.kubernetes.io/component=controller"

@@ -9,12 +9,13 @@
 #USAGE flag "--entrypoint <entrypoint>"
 #USAGE flag "--workdir <workdir>"
 #USAGE flag "--user <user>"
+#USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
 set -euo pipefail
 layer="$(mktemp)"
 trap 'rm -f "$layer"' EXIT
-# Root-owned, mtime 0, sorted: the layer's digest follows its content alone.
+# One owner, mtime 0, sorted: the layer's digest follows its content alone.
 # Its top-level entries, not ".", so the layer never resets / itself.
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 --format=gnu \
+tar --sort=name --owner="${usage_owner%:*}" --group="${usage_owner#*:}" --numeric-owner --mtime=@0 --format=gnu \
   -C "$usage_root" -cf "$layer" $(ls -A "$usage_root")
 mkdir -p "$(dirname "$usage_tar")"
 crane mutate "$usage_base" --append "$layer" -t "$usage_tag" -o "$usage_tar" \

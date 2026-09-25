@@ -57,6 +57,13 @@ PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
+# Where a component's :oci task writes its image tar.
+tar_path() {
+  local d=packages/keycloak-theme
+  [ "$1" = keycloak ] || for d in "packages/$1" "packages/agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && break; done
+  echo "$d/dist/oci/$1.tar"
+}
+
 own_paths() {
   if is_workload "$1"; then echo "packages/agents/$1"; return; fi
   case "$1" in
@@ -91,7 +98,7 @@ effective_paths() {
   if [ -n "$base" ]; then echo "$(own_paths "$1") $(effective_paths "$base")"; else own_paths "$1"; fi
 }
 
-registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
+registry_has() { crane digest "$1" >/dev/null 2>&1; }
 
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
@@ -205,6 +212,7 @@ case "${1:-}" in
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo api-server ui controller vm-runner keycloak $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
+  tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: resolve-image.sh {resolve|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

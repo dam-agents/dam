@@ -1,0 +1,15 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Name an OCI layout's image for ctr import and docker load, and add the docker save manifest crane reads a tar by"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<layout>"
+#USAGE arg "<name>" help="The image name, e.g. platform-mock:latest"
+set -euo pipefail
+index="$usage_layout/index.json"
+jq --arg n "docker.io/library/$usage_name" --arg t "${usage_name##*:}" \
+  '.manifests[0].annotations += {"io.containerd.image.name": $n, "org.opencontainers.image.ref.name": $t}' \
+  "$index" > "$index.new"
+mv "$index.new" "$index"
+jq --arg n "$usage_name" \
+  '[{Config: ("blobs/" + (.config.digest | sub(":"; "/"))), RepoTags: [$n], Layers: [.layers[].digest | "blobs/" + sub(":"; "/")]}]' \
+  "$usage_layout/blobs/$(jq -r '.manifests[0].digest | sub(":"; "/")' "$index")" > "$usage_layout/manifest.json"
