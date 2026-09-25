@@ -138,9 +138,27 @@ export function composeRuntimeDelivery(
     log,
   });
 
-  const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
+  const eventOutcomeHandlers = new Map<string, EventOutcomeHandler[]>();
+  const addEventOutcomeHandler = (
+    kind: string,
+    handler: EventOutcomeHandler,
+  ): void => {
+    eventOutcomeHandlers.set(kind, [
+      ...(eventOutcomeHandlers.get(kind) ?? []),
+      handler,
+    ]);
+  };
+  const dispatchEventOutcome = (
+    kind: string,
+  ): EventOutcomeHandler | undefined => {
+    const handlers = eventOutcomeHandlers.get(kind);
+    if (!handlers) return undefined;
+    return async (event, input) => {
+      for (const handler of handlers) await handler(event, input);
+    };
+  };
   for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
-    eventOutcomeHandlers.set(kind, async (event) => {
+    addEventOutcomeHandler(kind, async (event) => {
       const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
         log(
           `${event.agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
@@ -161,7 +179,7 @@ export function composeRuntimeDelivery(
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
-    eventOutcomeHandler: (kind) => eventOutcomeHandlers.get(kind),
+    eventOutcomeHandler: dispatchEventOutcome,
     log,
   });
 
@@ -172,9 +190,7 @@ export function composeRuntimeDelivery(
   });
 
   return {
-    registerEventOutcomeHandler: (kind, handler) => {
-      eventOutcomeHandlers.set(kind, handler);
-    },
+    registerEventOutcomeHandler: addEventOutcomeHandler,
     outboxRepo,
     agentsRuntimeRepo,
     queue,

@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
 import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 
-// TEST_OVERVIEW: A driver naming a template that doesn't exist: the catalogue is the
+// TEST_OVERVIEW: A driver names a harness, and the spawn runs on that harness's Template. A harness the install does not carry is refused before anything is created, naming the harnesses it does carry.
 
 function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
   const spawned: Array<Record<string, unknown>> = [];
@@ -36,8 +36,12 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
       }) as never,
     templates: {
       list: async () => [
-        { id: "nous", name: "NOUS", spec: {} },
-        { id: "claude-code", name: "Claude Code", spec: {} },
+        { id: "pi-agent", name: "Pi", spec: { harness: "pi" } },
+        {
+          id: "claude-code",
+          name: "Claude Code",
+          spec: { harness: "claude-code" },
+        },
       ],
       get: async () => null,
     } as never,
@@ -53,42 +57,42 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
   return { app, spawned };
 }
 
-const body = (templateId: string) => ({
+const body = (harness: string) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
     prompt: "go",
     schema: { type: "object" },
-    templateId,
+    harness,
   }),
 });
 
-describe("spawn template validation", () => {
-  test("rejects an unknown template id, naming the available ones", async () => {
+describe("spawn harness validation", () => {
+  test("rejects a harness the install does not carry, naming the ones it does", async () => {
     const { app, spawned } = makeApp();
 
     const res = await app.request(
       "/api/agents/driver-1/invocations",
-      body("nous-agent"),
+      body("codex"),
     );
 
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error: string };
-    expect(json.error).toContain('unknown template "nous-agent"');
-    expect(json.error).toContain("claude-code, nous");
+    expect(json.error).toContain('no harness "codex" on this install');
+    expect(json.error).toContain("claude-code, pi");
     expect(spawned).toHaveLength(0);
   });
 
-  test("passes a known template id through to spawn", async () => {
+  test("runs a known harness on its Template", async () => {
     const { app, spawned } = makeApp();
 
     const res = await app.request(
       "/api/agents/driver-1/invocations",
-      body("nous"),
+      body("pi"),
     );
 
     expect(res.status).toBe(201);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]).toMatchObject({ templateId: "nous" });
+    expect(spawned[0]).toMatchObject({ target: { templateId: "pi-agent" } });
   });
 });

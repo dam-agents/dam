@@ -42,7 +42,7 @@ TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.confi
 
 # Source of the images `mise oci` builds (//packages/agents:image), besides
 # their own directory.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/image packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # harness agents; CI's `agents` build/merge matrix
 AGENTS="claude-code codex pi-agent bob"

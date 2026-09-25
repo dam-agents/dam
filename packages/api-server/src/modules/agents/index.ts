@@ -42,6 +42,7 @@ export {
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export { createInputFromSetup } from "./domain/agent-setup.js";
 export {
   agentStreamable,
   type AgentStreamability,

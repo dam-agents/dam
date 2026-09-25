@@ -155,6 +155,7 @@ build_mise() (
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
   install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
   if [ "$harness" = mock ]; then
     pnpm --filter mock-agent exec tsup

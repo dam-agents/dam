@@ -90,6 +90,7 @@ import { createSlackInstallService } from "./modules/channels/services/slack-ins
 import {
   composeRuntimeDelivery,
   createBullConnection,
+  WORKSPACE_MUTATION_EVENT_KINDS,
 } from "./modules/runtime-delivery/index.js";
 import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
 import {
@@ -178,6 +179,7 @@ import {
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
+  createInvocationSetupFailure,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -1349,6 +1351,19 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
+  const invocationSetupFailure = createInvocationSetupFailure({
+    db,
+    agentsFor: harnessAgentsServiceFor,
+  });
+  for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
+    runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
+      if (input.outcome === "ok") return;
+      await invocationSetupFailure(
+        event.agentId,
+        kind === "workspace-seed" ? "seed" : "install",
+        input.detail ?? input.outcome,
+      );
+    });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );

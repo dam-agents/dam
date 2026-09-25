@@ -117,6 +117,7 @@ harnessTemplates:
   # release-tagged (CI pushes per-commit shas for the e2e job only).
   mock:
     enabled: true
+    harness: mock
     description: "Scripted mock agent (E2E test fixture)"
     image:
       repository: platform-mock

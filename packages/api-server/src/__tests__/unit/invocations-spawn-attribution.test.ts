@@ -59,6 +59,9 @@ function makeService(opts: {
 const spawnInput = {
   driverAgentId: "driver-1",
   driverGrantIds: [],
+  driverProviders: [],
+  target: { templateId: "claude-code" },
+  setup: { env: [], skills: [] },
   connections: [],
   prompt: "do the thing",
   schema: { type: "object" },
