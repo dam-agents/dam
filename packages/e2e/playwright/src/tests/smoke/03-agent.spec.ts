@@ -74,7 +74,9 @@ test("create a mock agent with the connection attached", async ({ page }) => {
       page.getByTestId(`catalog-connection-${connectionId}`),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: /create coding agent/i }).click();
+    await page
+      .getByRole("button", { name: "Create agent", exact: true })
+      .click();
   });
 
   await test.step("agent reaches running", async () => {

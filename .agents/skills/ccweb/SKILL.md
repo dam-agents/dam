@@ -63,7 +63,7 @@ $AB open http://localhost:5555/ && $AB snapshot -i
 
 - **First login:** Keycloak form (`dev` / `dev`), then "I accept the Terms of Use".
 - **Creating an agent:** needs a provider. Add a placeholder under Settings → Providers → Anthropic → API Key. The mock harness never calls the model.
-- **Clicks that silently do nothing:** the app scrolls inside its own containers, not the page, and agent-browser does not scroll those before a click, so an element below the fold is clicked at off-screen coordinates. The agent form's "Create coding agent" button and the lower scopes in the API key dialog both hit this. Run `$AB scrollintoview @eN` before `$AB click @eN`. Checking `$AB get url` or a snapshot after each click catches a miss.
+- **Clicks that silently do nothing:** the app scrolls inside its own containers, not the page, and agent-browser does not scroll those before a click, so an element below the fold is clicked at off-screen coordinates. The agent form's "Create agent" button and the lower scopes in the API key dialog both hit this. Run `$AB scrollintoview @eN` before `$AB click @eN`. Checking `$AB get url` or a snapshot after each click catches a miss.
 - **No API calls in the network log:** the UI's tRPC runs over a WebSocket, so `$AB network requests` never shows them. Read `mise run cluster:kubectl -- logs deploy/platform-apiserver` instead.
 - **Hidden Experimental features tab:** click the version string under Settings → Account five times.
 - Screenshots belong in the scratchpad, not the repo.
