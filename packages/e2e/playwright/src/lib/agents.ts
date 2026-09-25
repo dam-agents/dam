@@ -2,9 +2,12 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import type { ApiClient } from "./api-client.js";
 
+const AGENT_RUNNING_TIMEOUT_MS = 180_000;
+
 export async function waitForAgentRunning(
   api: ApiClient,
   agentName: string,
+  { timeoutMs = AGENT_RUNNING_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<string> {
   let agentId = "";
   await expect
@@ -26,7 +29,7 @@ export async function waitForAgentRunning(
         return agent.state;
       },
       {
-        timeout: 180_000,
+        timeout: timeoutMs,
         intervals: [2_000],
         message: `agent ${agentId} did not reach running state`,
       },
@@ -34,6 +37,29 @@ export async function waitForAgentRunning(
     .toBe("running");
 
   return agentId;
+}
+
+export async function deleteAgentIfPresent(
+  api: ApiClient,
+  agentName: string,
+): Promise<void> {
+  const found = (await api.agents.list.query()).find(
+    (a) => a.name === agentName,
+  );
+  if (!found) return;
+
+  await api.agents.delete.mutate({ id: found.id });
+  await expect
+    .poll(
+      async () =>
+        (await api.agents.list.query()).some((a) => a.name === agentName),
+      {
+        timeout: 120_000,
+        intervals: [2_000],
+        message: `agent ${agentName} was not deleted`,
+      },
+    )
+    .toBe(false);
 }
 
 export async function ensureAgentExists(
