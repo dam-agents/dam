@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily, and no baked tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
 
@@ -30,11 +30,11 @@ The image is built root-owned, and the agent user is then given only the paths i
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA ([vm-runner](vm-runner.md)). The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
 
-On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts the gateway's MITM CA in the system bundle and seeds a new home from the working-dir seed. The seed stays pristine: the runtime reconciles image skills against it ([agent-skills](agent-skills.md)).
+On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts the gateway's MITM CA in the system bundle and seeds a new home from the working-dir seed. On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too. The seed stays pristine: the runtime reconciles image skills against it ([agent-skills](agent-skills.md)).
 
 ## What the agent gets
 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
-- agent-browser and Playwright share one Chromium, baked at Playwright's browser path.
+- agent-browser and Playwright share one baked Chromium. agent-browser runs its headless shell, which calls none of Google's background services, and both trust the gateway's MITM CA through the NSS store the entrypoint fills in the home, since Chromium does not read the system bundle.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
 - aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image and last until the agent restarts. mise reads no config from the home, so a tool pin an older image persisted there is inert.

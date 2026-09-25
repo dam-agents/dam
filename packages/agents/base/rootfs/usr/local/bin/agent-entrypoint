@@ -4,6 +4,10 @@ set -eu
 
 home="${HOME:-/home/agent}"
 
+# A container runtime started under a tighter umask creates image layers a
+# non-root container cannot traverse (CoreDNS and traefik under k3s die on it).
+umask 022
+
 # On a machine, SSH logins as `agent` must land as root, the harness's user;
 # extrausers serves no uid 0 entry.
 if [ "$(id -u)" = 0 ]; then
@@ -17,6 +21,13 @@ if [ -s "$mitm_ca" ]; then
 	cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
 		update-ca-certificates >/dev/null 2>&1 ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	# Chromium trusts its own NSS store in the home, not the system bundle.
+	nssdb="$home/.pki/nssdb"
+	if ! { mkdir -p "$nssdb" && { [ -f "$nssdb/cert9.db" ] || certutil -d "sql:$nssdb" -N --empty-password; } &&
+		{ certutil -d "sql:$nssdb" -D -n platform-mitm-ca 2>/dev/null || true; } &&
+		certutil -d "sql:$nssdb" -A -t "C,," -n platform-mitm-ca -i "$mitm_ca"; } 2>/dev/null; then
+		echo "agent-entrypoint: WARNING: could not trust the platform CA in Chromium; its intercepted hosts may fail TLS" >&2
+	fi
 fi
 
 # /app/working-dir stays pristine: the runtime reconciles image skills against it.
@@ -26,6 +37,22 @@ if [ ! -f "$home/.initialized" ]; then
 	echo "agent-entrypoint: seeded home from image workspace"
 fi
 mkdir -p "$home/work"
+
+# docker runs only on a machine. Its client passes the agent's gateway, which
+# differs per agent, to every container and build; the rest of the file, logins
+# included, is kept.
+if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
+	cfg="$home/.docker/config.json"
+	mkdir -p "$home/.docker"
+	[ -s "$cfg" ] || echo '{}' >"$cfg"
+	if jq --arg http "${HTTP_PROXY:-$HTTPS_PROXY}" --arg https "$HTTPS_PROXY" --arg no "${NO_PROXY:-}" \
+		'.proxies.default = {httpProxy: $http, httpsProxy: $https, noProxy: $no}' "$cfg" >"$cfg.tmp"; then
+		mv "$cfg.tmp" "$cfg"
+	else
+		rm -f "$cfg.tmp"
+		echo "agent-entrypoint: WARNING: $cfg is not valid JSON; docker containers and builds get no proxy" >&2
+	fi
+fi
 
 # In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
 mkdir -p /tmp/agent-cache
