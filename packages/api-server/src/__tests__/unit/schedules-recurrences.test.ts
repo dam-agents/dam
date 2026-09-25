@@ -3,6 +3,8 @@ import type { ScheduleSpec } from "api-server-api";
 import {
   nextFireAt,
   triggerExpiry,
+  validateHasVisibleOccurrence,
+  validateRRule,
 } from "../../modules/schedules/domain/recurrences.js";
 
 function rruleSpec(
@@ -102,6 +104,53 @@ describe("nextFireAt (rrule)", () => {
     );
     const next = nextFireAt(spec, new Date("2026-03-29T00:00:00Z"));
     expect(next?.toISOString()).toBe("2026-03-29T01:30:00.000Z");
+  });
+});
+
+describe("nextFireAt (sub-daily rrule pinned to hours or minutes)", () => {
+  const QUARTER_HOURS_WORKDAY =
+    "FREQ=MINUTELY;INTERVAL=15;BYDAY=MO,TU,WE,TH,FR;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18;BYMINUTE=0,15,30,45";
+
+  it("lands on the pinned minutes when evaluated off the quarter hour", () => {
+    const spec = rruleSpec(QUARTER_HOURS_WORKDAY, "Europe/Prague");
+    const next = nextFireAt(spec, new Date("2026-09-25T11:47:00Z"));
+    expect(next?.toISOString()).toBe("2026-09-25T12:00:00.000Z");
+  });
+
+  it("steps an hourly interval from midnight, not from the evaluation hour", () => {
+    const spec = rruleSpec("FREQ=HOURLY;INTERVAL=2;BYHOUR=8,10,12", "UTC");
+    const next = nextFireAt(spec, new Date("2026-09-25T09:13:00Z"));
+    expect(next?.toISOString()).toBe("2026-09-25T10:00:00.000Z");
+  });
+
+  it.each([
+    "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=7",
+    "FREQ=HOURLY;INTERVAL=2;BYHOUR=9",
+  ])("returns null for %s, whose steps never reach its pins", (rrule) => {
+    expect(nextFireAt(rruleSpec(rrule, "UTC"), new Date())).toBeNull();
+  });
+});
+
+describe("validateRRule", () => {
+  it("rejects a sub-daily interval that never reaches its pins", () => {
+    expect(() => validateRRule("FREQ=MINUTELY;INTERVAL=15;BYMINUTE=7")).toThrow(
+      /never fires/,
+    );
+  });
+
+  it("accepts a quarter-hour rule pinned to quarter-hour minutes", () => {
+    expect(() =>
+      validateRRule("FREQ=MINUTELY;INTERVAL=15;BYHOUR=9;BYMINUTE=0,15,30,45"),
+    ).not.toThrow();
+  });
+
+  it("checks quiet hours for a pinned quarter-hour rule without hanging", () => {
+    expect(() =>
+      validateHasVisibleOccurrence(
+        "FREQ=MINUTELY;INTERVAL=15;BYHOUR=9,10;BYMINUTE=0,15,30,45",
+        [{ startTime: "18:00", endTime: "06:00", enabled: true }],
+      ),
+    ).not.toThrow();
   });
 });
 

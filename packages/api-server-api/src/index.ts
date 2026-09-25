@@ -311,7 +311,9 @@ export {
 } from "./modules/schedules/schemas.js";
 export {
   ALL_DAYS,
+  anchorsAtMidnight,
   buildRRule,
+  canOccur,
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
