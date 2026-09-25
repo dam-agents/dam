@@ -172,12 +172,13 @@ layer_cache_key() {
 }
 
 # An image's entry is its arch's image in the `cache` index of its repository,
-# with the key as a manifest annotation: a tar of the installs and small files
-# under the state directory, then each packaged layer as is. The tar's list
+# with the key as a manifest annotation: an uncompressed tar of the installs
+# and small files under the state directory, then each packaged layer as is,
+# so a save compresses nothing. The tar's list
 # says where each goes: "tree <path>" and "blob <digest> <path> <diff id>".
 save_layers() {
   local harness=$1 repo=$2 key=$3 envs=$4 t w short f m d x kind a b c config manifest
-  local list="$state/layer-cache.$harness.list" tar="$work/layer-cache.tar.gz" lay="$work/layer-cache.layout"
+  local list="$state/layer-cache.$harness.list" tar="$work/layer-cache.tar" lay="$work/layer-cache.layout"
   local paths=() layers='[]' diffs='[]'
   : > "$list"
   for t in $(harness_tools "$harness" "$envs"); do
@@ -203,15 +204,15 @@ save_layers() {
   done
   paths=("${list#"$state"/}")
   while read -r kind a b c; do [ "$kind" != tree ] || paths+=("$a"); done < "$list"
-  tar -C "$state" -cf - "${paths[@]}" | gzip -1 > "$tar"
+  tar -C "$state" -cf "$tar" "${paths[@]}"
 
   rm -rf "$lay" && mkdir -p "$lay/blobs/sha256"
   add_layer() {
     local h size
     h="$(sha256sum "$1" | cut -c1-64)" size="$(wc -c < "$1")"
     ln -f "$1" "$lay/blobs/sha256/$h" 2>/dev/null || cp "$1" "$lay/blobs/sha256/$h"
-    layers="$(jq -c --arg d "sha256:$h" --argjson s "$size" '. + [{mediaType: "application/vnd.oci.image.layer.v1.tar+gzip", digest: $d, size: $s}]' <<< "$layers")"
-    diffs="$(jq -c --arg d "$2" '. + [$d]' <<< "$diffs")"
+    layers="$(jq -c --arg m "$2" --arg d "sha256:$h" --argjson s "$size" '. + [{mediaType: $m, digest: $d, size: $s}]' <<< "$layers")"
+    diffs="$(jq -c --arg d "${3:-sha256:$h}" '. + [$d]' <<< "$diffs")"
   }
   put() {
     local h
@@ -219,8 +220,10 @@ save_layers() {
     printf '%s' "$1" > "$lay/blobs/sha256/$h"
     jq -cn --arg m "$2" --arg d "sha256:$h" --argjson s "${#1}" '{mediaType: $m, digest: $d, size: $s}'
   }
-  add_layer "$tar" "sha256:$(gzip -dc "$tar" | sha256sum | cut -c1-64)"
-  while read -r kind a b c; do [ "$kind" != blob ] || add_layer "$state/$b" "$c"; done < "$list"
+  add_layer "$tar" application/vnd.oci.image.layer.v1.tar
+  while read -r kind a b c; do
+    [ "$kind" != blob ] || add_layer "$state/$b" application/vnd.oci.image.layer.v1.tar+gzip "$c"
+  done < "$list"
   config="$(put "$(jq -cn --arg a "$(oci_arch)" --argjson d "$diffs" \
     '{architecture: $a, os: "linux", config: {}, rootfs: {type: "layers", diff_ids: $d}}')" \
     application/vnd.oci.image.config.v1+json)"
@@ -251,7 +254,7 @@ restore_layers() {
   [ "$(jq -r '.annotations["platform.layer-cache.key"] // empty' <<< "$manifest")" = "$key" ] ||
     { echo "layer cache: $repo:cache holds another key"; return 1; }
   rm -rf "$in" && mkdir -p "$in"
-  crane blob "$repo@$(jq -r '.layers[0].digest' <<< "$manifest")" | tar -xzf - -C "$in" || return 1
+  crane blob "$repo@$(jq -r '.layers[0].digest' <<< "$manifest")" | tar -xf - -C "$in" || return 1
   while read -r kind a b c; do
     [ "$kind" = blob ] || continue
     mkdir -p "$(dirname "$in/$b")"
