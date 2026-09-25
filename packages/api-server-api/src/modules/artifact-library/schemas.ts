@@ -164,7 +164,7 @@ export const artifactApiFailureReasonSchema = z.enum([
 ]);
 
 export const artifactCallAgentApiInputSchema =
-  artifactApiRequestInputSchema.extend({
+  artifactApiRequestInputSchema.safeExtend({
     artifactId: z.string().min(1),
   });
 

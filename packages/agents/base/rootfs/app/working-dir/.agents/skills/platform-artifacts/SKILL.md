@@ -65,8 +65,9 @@ command or compute something on request, but keep it small.
 
 `request({ method, path, body, contentType })` takes a method (`GET`, `POST`,
 `PUT`, `PATCH` or `DELETE`), a path that starts with `/` and may include a query
-string, an optional text body, and an optional content type (default
-`application/json` when there is a body). Bad arguments throw right away.
+string, an optional text body (not with `GET`), and an optional content type
+(default `application/json` when there is a body). Bad arguments throw right
+away or reject with `invalid-request`.
 
 It resolves with `{ status, contentType, body }` for every HTTP status your server
 returns, including 4xx and 5xx, like `fetch`. Check `status` yourself. It rejects

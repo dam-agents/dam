@@ -68,6 +68,12 @@ describe("reading artifact requests", () => {
     { ...getPing, path: "relative" },
     { ...getPing, path: "//other.host/" },
     { ...getPing, method: "POST", body: "x".repeat(1024 * 1024 + 1) },
+    { ...getPing, body: "{}" },
+    { ...getPing, body: "" },
+    { ...getPing, contentType: "" },
+    { ...getPing, contentType: "text/plain\r\nx-injected: 1" },
+    { ...getPing, contentType: " text/plain" },
+    { ...getPing, contentType: "text/plain; charset=ü" },
   ])("marks a request with bad fields as invalid but keeps its id", (data) => {
     expect(
       readArtifactRequest({ source: pageWindow, data }, pageWindow),
@@ -75,6 +81,24 @@ describe("reading artifact requests", () => {
       id: "1",
       request: null,
     });
+  });
+
+  it.each([
+    { method: "DELETE", path: "/items/1", body: "{}" },
+    { method: "POST", path: "/items", body: "", contentType: "text/plain" },
+    {
+      method: "PUT",
+      path: "/items/1",
+      body: "a=1",
+      contentType: "application/x-www-form-urlencoded; charset=utf-8",
+    },
+  ])("accepts a body on methods other than GET: %j", (request) => {
+    expect(
+      readArtifactRequest(
+        { source: pageWindow, data: { ...getPing, ...request } },
+        pageWindow,
+      ),
+    ).toEqual({ id: "1", request });
   });
 });
 

@@ -28,12 +28,24 @@ export const artifactApiBodySchema = z
     { message: `body must be at most ${ARTIFACT_API_MAX_BODY_BYTES} bytes` },
   );
 
-export const artifactApiRequestInputSchema = z.object({
-  method: artifactApiMethodSchema,
-  path: artifactApiPathSchema,
-  body: artifactApiBodySchema.optional(),
-  contentType: z.string().min(1).max(256).optional(),
-});
+export const artifactApiContentTypeSchema = z
+  .string()
+  .max(256)
+  .regex(/^[\x21-\x7e](?:[\t\x20-\x7e]*[\x21-\x7e])?$/, {
+    message: "contentType must be a valid header value",
+  });
+
+export const artifactApiRequestInputSchema = z
+  .object({
+    method: artifactApiMethodSchema,
+    path: artifactApiPathSchema,
+    body: artifactApiBodySchema.optional(),
+    contentType: artifactApiContentTypeSchema.optional(),
+  })
+  .refine((input) => input.method !== "GET" || input.body === undefined, {
+    message: "a GET request cannot have a body",
+    path: ["body"],
+  });
 
 export const artifactApiRelayFailureReasonSchema = z.enum([
   "app-not-listening",

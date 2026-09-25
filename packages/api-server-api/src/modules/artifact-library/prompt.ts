@@ -22,7 +22,7 @@ export const artifactRequestEnvelopeSchema = z.object({
 });
 
 export const artifactRequestMessageSchema =
-  artifactApiRequestInputSchema.extend(artifactRequestEnvelopeSchema.shape);
+  artifactApiRequestInputSchema.safeExtend(artifactRequestEnvelopeSchema.shape);
 
 export type ArtifactRequestMessage = z.infer<
   typeof artifactRequestMessageSchema
