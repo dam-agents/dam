@@ -18,7 +18,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 - `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
 - `cluster:stop` / `cluster:uninstall` / `cluster:delete`
 
-The `cluster:build`, `cluster:fix-certs`, and `cluster:status` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
+Every `cluster:*` task honors a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster, `platform-k3s-test`). The `e2e:*` tasks and the Playwright run task pin `platform-k3s-test` themselves.
 
 Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
 
