@@ -447,6 +447,23 @@ func TestShouldRunStopOverridesEveryRunSignal(t *testing.T) {
 	assert.True(t, shouldRun(ann, time.Hour, now))
 }
 
+// TEST_SCENARIO: a driver waiting on its sub-agents has no session and its last activity is long past, but it must stay up to collect their results; a hard stop still takes it down.
+func TestShouldRunKeepsADriverWithRunningInvocationsAwake(t *testing.T) {
+	now := time.Now().UTC()
+	ann := map[string]string{
+		annInvocationsActive: "true",
+		annLastActivity:      now.Add(-3 * time.Hour).Format(time.RFC3339),
+	}
+	assert.True(t, shouldRun(ann, time.Hour, now), "running invocations must keep the driver awake")
+
+	ann[annStopRequested] = now.Format(time.RFC3339)
+	assert.False(t, shouldRun(ann, time.Hour, now), "a stop must still win over the pin")
+
+	ann[annStopRequested] = ""
+	ann[annInvocationsActive] = ""
+	assert.False(t, shouldRun(ann, time.Hour, now), "a released pin must let the idle window apply")
+}
+
 func TestParseQuantityOrFallsBackNeverZero(t *testing.T) {
 	def := resource.MustParse("1")
 	for _, in := range []string{"", "garbage", "0", "-2", "0Gi"} {

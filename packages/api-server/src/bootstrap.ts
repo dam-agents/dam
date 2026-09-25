@@ -180,6 +180,7 @@ import {
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -212,7 +213,11 @@ import {
   listOpenExperimentDriverIds,
   reconcileExperimentPins,
 } from "./modules/experiments/index.js";
-import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
+import {
+  EXPERIMENT_ACTIVE_KEY,
+  INVOCATIONS_ACTIVE_KEY,
+  LAST_ACTIVITY_KEY,
+} from "./modules/agents/infrastructure/labels.js";
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
@@ -1351,6 +1356,28 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
+  const invocationPinReconciler = composeInvocationPinReconciler({
+    db,
+    listPinnedAgentIds: () =>
+      agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
+    pin: {
+      set: (agentId) =>
+        agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "true"),
+      release: async (agentId) => {
+        await agentsRepo.patchAnnotation(
+          agentId,
+          LAST_ACTIVITY_KEY,
+          new Date().toISOString(),
+        );
+        await agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "");
+      },
+    },
+    log: (msg) => process.stderr.write(`${msg}\n`),
+  });
+  await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
+    invocationPinReconciler.tick(),
+  );
+
   const invocationSetupFailure = createInvocationSetupFailure({
     db,
     agentsFor: harnessAgentsServiceFor,

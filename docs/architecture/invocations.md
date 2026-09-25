@@ -49,6 +49,12 @@ sequenceDiagram
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 
+## The Invocation Pin
+
+A Driver usually waits on its sub-agents from a script, and the signals that keep an Agent awake see sessions, connections and background work its harness reports — not a detached loop, and not a harness that reports nothing. Hibernating a waiting Driver kills the loop, and the results then have nobody to collect them. So while an Agent drives at least one running Invocation it carries a pin the controller's idle checker and early reclaim both honour ([agent-lifecycle](agent-lifecycle.md#hibernate)); a hard stop or pause still wins.
+
+The pin is **level-based**. Spawn sets it synchronously, so a Driver cannot hibernate between its spawn and the next reconcile; a periodic reconcile then pins exactly the Drivers with a running Invocation and releases the rest. No terminal path has to remember to release it, whichever of them ended the last Invocation. A release bumps the Driver's activity, so its ordinary idle window starts from the last result and a chained spawn never finds it asleep. A Driver that crashed mid-fan-out stays up until its targets' deadlines end their Invocations.
+
 ## Driver SDK
 
 The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the pod's platform URL: spawn and wait, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand. A failure raises with the platform's reason. Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate. The HTTP routes are the contract; the clients stay thin. Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

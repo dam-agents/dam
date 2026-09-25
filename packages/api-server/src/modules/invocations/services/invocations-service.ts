@@ -141,6 +141,7 @@ export function createInvocationsService(deps: {
   ) => Promise<boolean>;
   targetAdmission?: TargetAdmission;
   skills?: Pick<SkillsService, "applyEntries">;
+  pinDriver?: (driverAgentId: string) => Promise<void>;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
@@ -225,6 +226,7 @@ export function createInvocationsService(deps: {
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
       });
+      await deps.pinDriver?.(input.driverAgentId);
       let agent;
       try {
         agent = await deps.agents.create({

@@ -14,7 +14,10 @@ import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
+import {
+  EXPERIMENT_ACTIVE_KEY,
+  INVOCATIONS_ACTIVE_KEY,
+} from "../../modules/agents/infrastructure/labels.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -108,6 +111,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
 
+  const harnessAgentsRepo = createAgentsRepository(
+    k8sClient,
+    deps.agentStateCache,
+  );
+
   const skillsFor = (owner: string) =>
     composeSkillsModule({
       agentStateCache: deps.agentStateCache,
@@ -129,6 +137,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       owner,
       agents: agentsServiceFor(owner),
       skills: skillsFor(owner),
+      pinDriver: (driverAgentId) =>
+        harnessAgentsRepo.patchAnnotation(
+          driverAgentId,
+          INVOCATIONS_ACTIVE_KEY,
+          "true",
+        ),
       runtimeMutator,
       wakeAgent,
       targetAdmission: createTargetAdmission({
@@ -149,10 +163,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }),
     });
 
-  const harnessAgentsRepo = createAgentsRepository(
-    k8sClient,
-    deps.agentStateCache,
-  );
   const artifactLibraryFor = (owner: string) =>
     composeArtifactLibraryForOwner({
       db,
