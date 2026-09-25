@@ -9,8 +9,7 @@
 # With CI_IMAGES_BUILD=1 (a PR) it builds the images on this runner, from the
 # registry buildcache, while the cluster comes up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
-# would pull what it pushed. Only a mock on a platform-base this run rebuilt
-# still comes from build-mock.
+# would pull what it pushed.
 #
 # By path, like image:resolve. Needs GH_TOKEN with actions:read,
 # GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_SHA and IMAGE_PREFIX.
@@ -24,10 +23,7 @@ set -e
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_SHA:?}" "${IMAGE_PREFIX:?}"
 
 LOADED="controller api-server ui keycloak"
-pull_mock=true
 if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
-  base="$(.mise/tasks/image/resolve resolve platform-base)"
-  echo "platform-base: $base"
   # e2e does not run the vm-runner, so a PR only proves it builds, and the
   # cluster does not wait for it: a cold build of its Rust stage takes
   # minutes. The e2e job's last step reads CI_VM_RUNNER_STATUS.
@@ -36,24 +32,19 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
     .mise/tasks/image/ci-build amd64 vm-runner:cacheonly || code=$?
     echo "$code" > "${CI_VM_RUNNER_STATUS:?}"
   ) > /tmp/vm-runner-build.log 2>&1 &
-  builds=(controller:load api-server:load ui:load keycloak:load) base_arg=()
-  if [ "${base%% *}" = REUSE ]; then
-    builds+=(mock:load) base_arg=(--base-image "${base#REUSE }") pull_mock=false
-  fi
   SECONDS=0
-  .mise/tasks/image/ci-build "${base_arg[@]}" amd64 "${builds[@]}"
+  .mise/tasks/image/ci-build amd64 controller:load api-server:load ui:load keycloak:load mock:load
   echo "$(date -u +%H:%M:%S) images built in ${SECONDS}s"
-  LOADED=""
-  if [ "$pull_mock" = false ]; then result=ok; exit 0; fi
+  result=ok
+  exit 0
 fi
 
 # CI_IMAGES_JOBS names the jobs e2e needs finished, separated by `|`. cd.yml
 # sets it: the job names differ between a PR and every other run, which
 # builds one job per arch. `detect stale images` is always on it: when it
 # fails, the jobs that need it never start under their names, and nothing
-# else would end the wait. `skipped` counts as done, since a PR skips
-# build-mock when its platform-base did not move; an image a skipped job did
-# not make fails the pull below instead.
+# else would end the wait. `skipped` counts as done; an image a skipped job
+# did not make fails the pull below instead.
 : "${CI_IMAGES_JOBS:?}"
 IFS='|' read -r -a JOBS <<< "$CI_IMAGES_JOBS"
 wanted="$(printf '%s\n' "${JOBS[@]}" | jq -R . | jq -cs .)"
@@ -84,7 +75,7 @@ done
 
 # One artifact holds every image's digest, at <component>/<hex>; see
 # image:ci-build.
-[ -z "$LOADED" ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
+gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
 
 pids=()
 for c in $LOADED; do

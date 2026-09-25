@@ -91,7 +91,7 @@ const KUBERNETES: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "kubectl/oc access to a cluster's API server with a service-account token.",
+    "kubectl access to a cluster's API server with a service-account token.",
   iconSlug: "kubernetes",
   authKind: "header",
   headerName: "Authorization",

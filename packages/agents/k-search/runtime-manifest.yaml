@@ -1,0 +1,4 @@
+# Defaults only, replacing the claude-code manifest.
+manifestVersion: 1
+
+drivers: {}

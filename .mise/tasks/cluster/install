@@ -543,24 +543,14 @@ else
     fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
     SEEN_COMPONENTS+=("$comp")
-    if [ -d "packages/agents/$comp" ]; then
+    if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
       AGENT_TASKS+=("$comp")
-      AGENT_IMAGES+=("$image")
-    elif [ -d "packages/e2e/agents/$comp" ]; then
-      # e2e fixture agents (the scripted mock) live outside packages/agents/* and
-      # are not covered by //packages/agents:image — build straight from their Dockerfile, root
-      # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
-      # the per-agent tasks; in CI the image is already in the daemon.
-      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-        mise run //packages/platform-base:image
-        docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
-      fi
       AGENT_IMAGES+=("$image")
     else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
-  [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
+  [ -n "${AGENT_TASKS[*]}" ] && LIMA_INSTANCE="$LIMA_INSTANCE" mise run //packages/agents:image -- "${AGENT_TASKS[@]}"
 
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background; this is where they are first

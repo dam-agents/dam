@@ -3,7 +3,7 @@ packages:
   - "packages/e2e/agents/mock"
   - "packages/e2e/agents/mock-api"
   - "packages/e2e/playwright"
-  - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+  - "packages/agents/pi-agent/rootfs/app/working-dir/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 trustPolicy: no-downgrade
 trustPolicyExclude:
@@ -27,7 +27,7 @@ trustPolicyExclude:
   # tinyexec@1.2.2 downgraded from trusted-publisher (1.1.1) to provenance-
   # attestation. Same upstream (tinylibs), no open advisories. Pulled in
   # transitively by vitest. Only surfaces in `pnpm deploy --legacy` paths
-  # (platform-base Dockerfile) because legacy deploy bypasses the lockfile
+  # because legacy deploy bypasses the lockfile
   # and re-resolves to latest. Normal pnpm install pins 1.1.1 via the
   # lockfile and is unaffected.
   - "tinyexec@1.2.2"

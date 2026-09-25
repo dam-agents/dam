@@ -1,0 +1,13 @@
+# The claude CLI the adapter bundles, linked beside the adapter's own bin.
+[tools."npm:@agentclientprotocol/claude-agent-acp"]
+version = "0.75.1"
+postinstall = 'cd "$MISE_TOOL_INSTALL_PATH/node_modules/.bin" && ln -s ../.mise/@anthropic-ai+claude-agent-sdk-linux-*/node_modules/@anthropic-ai/claude-agent-sdk-linux-*/claude claude'
+
+[oci.env]
+PLATFORM_HARNESS = "claude-code"
+# No telemetry for the gateway to hold for approval; the CLI rides the pin.
+DISABLE_TELEMETRY = "1"
+DISABLE_ERROR_REPORTING = "1"
+DISABLE_FEEDBACK_COMMAND = "1"
+DISABLE_FEEDBACK_SURVEY = "1"
+DISABLE_AUTOUPDATER = "1"

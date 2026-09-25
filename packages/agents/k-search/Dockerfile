@@ -1,20 +1,20 @@
-ARG BASE_IMAGE=platform-base
+# K-Search: a kernel-optimization workload with its own ACP shim as harness,
+# on the claude-code image like every workload.
+ARG BASE_IMAGE=platform-claude-code
 FROM ${BASE_IMAGE}
 
 USER root
+# Root's build caches stay out of the agent's home.
+ENV HOME=/root
 
 ARG KSEARCH_REF=main
 ARG KERNELBENCH_REF=main
-# No UV_PYTHON_INSTALL_DIR: uv resolves the mise-managed CPython (installed
-# lazily via the base image's python shim) instead of downloading its own.
-ENV KSEARCH_ROOT=/opt/k-search \
+# PLATFORM_HARNESS cleared: K-Search is no harness family.
+ENV PLATFORM_HARNESS= \
+    KSEARCH_ROOT=/opt/k-search \
     VIRTUAL_ENV=/opt/ksearch-venv \
     PATH=/opt/ksearch-venv/bin:$PATH
 
-# uv's download cache survives a rebuild of this layer, which a platform-base
-# change forces every time. Ephemeral CI runners do not carry cache mounts
-# between runs, so this buys nothing there — it is for the warm builders:
-# `mise run cluster:build-agent` locally, and any self-hosted runner.
 RUN --mount=type=cache,target=/root/.cache/uv \
     git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search.git "${KSEARCH_ROOT}" && \
     git clone --depth 1 -b "${KERNELBENCH_REF}" https://github.com/ScalingIntelligence/KernelBench.git /opt/kernelbench && \
@@ -43,13 +43,17 @@ COPY harness-terminal.sh /usr/local/bin/harness-terminal
 COPY ksearch-run.sh /usr/local/bin/ksearch-run
 # .pth auto-loads the modal proxy patch in every venv interpreter.
 COPY dam_modal_proxy_patch.py ${VIRTUAL_ENV}/lib/python3.12/site-packages/dam_modal_proxy_patch.py
-RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal /usr/local/bin/ksearch-run && \
+# Claude Code's login hook waits on a gateway nothing here starts.
+RUN rm /etc/profile.d/model-gateway.sh && \
+    chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal /usr/local/bin/ksearch-run && \
     printf 'import dam_modal_proxy_patch\n' > "${VIRTUAL_ENV}/lib/python3.12/site-packages/zz_dam_modal_proxy.pth" && \
     chown 65532:0 "${VIRTUAL_ENV}/lib/python3.12/site-packages/dam_modal_proxy_patch.py" \
                   "${VIRTUAL_ENV}/lib/python3.12/site-packages/zz_dam_modal_proxy.pth"
 COPY --chown=65532:0 workspace/ /app/working-dir/
+COPY runtime-manifest.yaml /app/runtime-manifest.yaml
 
 # Placeholder only; the real key is injected at the gateway, never in-pod.
 ENV OPENAI_API_KEY=dummy-placeholder
 
+ENV HOME=/home/agent
 USER 65532

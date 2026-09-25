@@ -1,58 +1,255 @@
 #!/usr/bin/env bash
-#MISE description="Build (or reuse from the registry) the agent images — all of them, or the ones named as arguments. Bases first (platform-base, then claude-code), the rest in parallel. --dry-run prints the plan."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan, --lock refreshes packages/agents/base/image.lock and image-locks/ (with --bump, re-resolving `latest` pins) and builds nothing."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
 resolve=.mise/tasks/image/resolve
+agents=packages/agents
 workloads=" $($resolve list-workloads) "
-dry=false; agents=()
-for a in "$@"; do case "$a" in --dry-run) dry=true ;; *) agents+=("$a") ;; esac; done
-if [ ${#agents[@]} -eq 0 ]; then
-  for d in packages/agents/*/; do agents+=("$(basename "$d")"); done
-fi
-for a in "${agents[@]}"; do [ -d "packages/agents/$a" ] || { echo "no such agent: $a" >&2; exit 2; }; done
-
-# Build-time overrides the Dockerfiles pin defaults for (see each agent's README).
-build_arg_var() {
-  case "$1" in
-    nous) echo NOUS_REF ;; gepa) echo GEPA_VERSION ;; openevolve) echo OPENEVOLVE_VERSION ;;
-    shinkaevolve) echo SHINKA_VERSION ;; skydiscover) echo SKYDISCOVER_REF ;; *) echo "" ;;
+root="$PWD"
+dry=false reuse=true load=true lock=false bump=() named=()
+for a in "$@"; do
+  case "$a" in
+    --dry-run) dry=true ;;
+    --build) reuse=false ;;
+    --no-load) load=false ;;
+    --lock) lock=true ;;
+    --bump) bump=(--bump) ;;
+    -*) echo "unknown option: $a" >&2; exit 2 ;;
+    *) named+=("$a") ;;
   esac
-}
-
-build() {
-  local a="$1" var args=()
-  var="$(build_arg_var "$a")"
-  [ -n "$var" ] && [ -n "${!var:-}" ] && args+=(--build-arg "$var=${!var}")
-  # ${args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
-  exec "$resolve" build-or-reuse "$a" -- ${args[@]+"${args[@]}"} "packages/agents/$a"
-}
-
-# Stage 1: claude-code, when requested or when anything requested sits on it.
-stage1=(); stage2=()
-for a in "${agents[@]}"; do
-  case "$workloads" in *" $a "*) needs_cc=true ;; *) needs_cc=false ;; esac
-  if [ "$a" = claude-code ]; then stage1=(claude-code)
-  else stage2+=("$a"); [ "$needs_cc" = true ] && stage1=(claude-code); fi
 done
+
+dir_of() { local d; for d in "$agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && { echo "$d"; return; }; done; return 1; }
+if [ ${#named[@]} -eq 0 ]; then
+  for d in "$agents"/*/; do
+    [ -f "$d/Dockerfile" ] || [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
+  done
+fi
+mise_images=() docker_images=()
+for a in "${named[@]}"; do
+  d="$(dir_of "$a")" || { echo "no such agent: $a" >&2; exit 2; }
+  if [ -f "$d/image.toml" ]; then mise_images+=("$a")
+  elif [ -f "$d/Dockerfile" ]; then docker_images+=("$a")
+  else echo "$a has neither an image.toml nor a Dockerfile" >&2; exit 2; fi
+done
+if [ ${#docker_images[@]} -gt 0 ]; then
+  [ "$load" = true ] || { echo "--no-load applies to mise images only: ${docker_images[*]}" >&2; exit 2; }
+  case " ${mise_images[*]:-} " in *" claude-code "*) ;; *) mise_images=(claude-code ${mise_images[@]+"${mise_images[@]}"}) ;; esac
+fi
 
 if [ "$dry" = true ]; then
-  echo "stage 0 (serial):   platform-base"
-  echo "stage 1 (serial):   ${stage1[*]:-—}"
-  echo "stage 2 (parallel): ${stage2[*]:-—}"
+  echo "mise oci (one at a time): ${mise_images[*]:-—}"
+  echo "docker:                   ${docker_images[*]:-—}"
   exit 0
 fi
+[ -z "${SKIP_IMAGE_BUILD:-}" ] || exit 0
 
-# Not a header dependency, so --dry-run stays a dry run.
-mise run //packages/platform-base:image
+reused() {
+  [ "$reuse" = true ] || return 1
+  local d; d="$($resolve resolve "$1")"
+  [ "${d%% *}" = REUSE ] || return 1
+  echo "↺ reuse ${d#REUSE } -> platform-$1:latest"
+  docker pull "${d#REUSE }" && docker tag "${d#REUSE }" "platform-$1:latest"
+}
 
-for a in ${stage1[@]+"${stage1[@]}"}; do build "$a" & wait "$!"; done
+state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
+work="$state/build"
+stage="$work/stage"
+runtime="$work/runtime"
+oci_out="${AGENT_OCI_OUT:-$state/out}"
 
-pids=(); names=()
-for a in ${stage2[@]+"${stage2[@]}"}; do
-  build "$a" 2>&1 | sed "s/^/[$a] /" &
-  pids+=("$!"); names+=("$a")
-done
-failed=()
-for i in ${pids[@]+"${!pids[@]}"}; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
-if [ ${#failed[@]} -gt 0 ]; then echo "failed: ${failed[*]}" >&2; exit 1; fi
+build_runtime() {
+  pnpm install --frozen-lockfile
+  pnpm --filter agent-runtime exec tsup
+  pnpm --filter driver-sdk exec tsup
+  rm -rf "$runtime"
+  npm_config_inject_workspace_packages=true \
+    pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+  cp packages/agent-runtime/package.json "$runtime/package.json"
+  (cd "$runtime" && pnpm pkg delete devDependencies)
+}
+
+# Not mise.lock: mise's monorepo mode would fold it into the root lockfile.
+lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
+
+# Stages the mise project for the named agents, outside the repo, and points
+# mise at it alone. Call it in a subshell. Installs use the lockfile but do not
+# enforce it: mise cannot lock the workloads' pipx tools.
+stage_project() {
+  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
+  mkdir -p "$work"/{data,cache,config,state}
+  export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
+    MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
+    MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
+    MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0
+  : > "$MISE_GLOBAL_CONFIG_FILE"
+
+  # In the repo every agent dir is a mise config root, so the stage renames
+  # the fragments to names mise loads.
+  rm -rf "$stage"
+  mkdir -p "$stage/mise/conf.d"
+  cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
+  cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
+  cp "$agents/base/rootfs/etc/mise/conf.d/settings.toml" "$stage/mise/conf.d/settings.toml"
+  [ ! -f "$lockfile" ] || cp "$lockfile" "$stage/mise/mise.lock"
+  # aube's lockfiles for the npm tools' dependencies, where mise.lock names them.
+  [ ! -d "$deplocks" ] || { mkdir -p "$stage/mise/.mise" && cp -R "$deplocks" "$stage/mise/.mise/locks"; }
+  for a in base "$@"; do
+    d="$(dir_of "$a")"
+    [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
+    mkdir -p "$stage/$a"
+    # pi's extension ships as source; node_modules holds its dev dependencies.
+    tar -C "$d" --exclude=node_modules --exclude=.mise -cf - . | tar -C "$stage/$a" -xf -
+  done
+}
+
+# One lockfile for every image: mise lock only resolves, so any host can run it.
+# A pipx tool with uvx_args stays out: mise cannot lock it, and its image.toml
+# pins it exactly.
+lock_mise() (
+  all=()
+  for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; all+=("${d##*/}"); done
+  stage_project "${all[@]}"
+  cd "$stage"
+  envs="${all[*]}"
+  envs="${envs// /,}"
+  unlockable="$(awk '/^\[tools\./ { t = $0; sub(/^\[tools\./, "", t); sub(/\]$/, "", t); gsub(/"/, "", t) } /^uvx_args/ { print t }' mise/conf.d/harness.*.toml)"
+  read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r --arg skip "$unlockable" '[keys[] | select(. as $k | $skip | split("\n") | index($k) | not)] | join(" ")')"
+  # Python dependency locks run the image's uv.
+  mise -E "$envs" install uv
+  mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
+  cp mise/mise.lock "$root/$lockfile"
+  rm -rf "${root:?}/$deplocks"
+  [ ! -d mise/.mise/locks ] || cp -R mise/.mise/locks "$root/$deplocks"
+)
+
+# Subshell: it leaves the repo's mise context and directory.
+build_mise() (
+  harness=$1 out="$oci_out/$1" envs=$1
+  # A workload is an environment over claude-code's.
+  case "$workloads" in *" $1 "*) envs="claude-code,$1" ;; esac
+  stage_project ${envs//,/ }
+  b="$stage/build"
+  install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
+  cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
+  cp -a packages/agent-runtime/dist "$b/app/dist"
+  install -m 644 packages/driver-sdk/dist/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  install -m 644 packages/experiment-sdk/src/experiment_sdk.py "$b/usr/local/lib/platform-python/experiment_sdk.py"
+  if [ "$harness" = mock ]; then
+    pnpm --filter mock-agent exec tsup
+    install -D -m 644 packages/e2e/agents/mock/dist/main.js "$stage/mock/rootfs/app/mock-agent.js"
+  fi
+  # A copy cannot target /, hence one per top-level directory; the agent's
+  # come after base's and win.
+  copies() {
+    local d
+    for d in "$stage/$2"/*/; do
+      [ -d "$d" ] || continue
+      d="${d%/}"
+      printf '\n[[oci.copy]]\nhost = "../../%s"\nimage = "/%s"\n' "${d#"$stage"/}" "${d##*/}"
+    done >> "$stage/mise/conf.d/$1"
+  }
+  copies base.toml base/rootfs
+  copies base.toml build
+  for a in ${envs//,/ }; do copies "harness.$a.toml" "$a/rootfs"; done
+
+  # Not -C: mise reads .miserc.toml from the working directory only.
+  cd "$stage"
+  mise -E "$envs" install
+  # mise oci relocates #! lines, not the launcher uv writes for a long one.
+  { find "$MISE_DATA_DIR"/installs/pipx-* -path '*/bin/*' -type f -print0 2>/dev/null |
+    xargs -0r grep -lZ "^'''exec' '$MISE_DATA_DIR/" || true; } |
+    xargs -0r sed -i "s|'$MISE_DATA_DIR/|'/usr/local/share/mise/|"
+  # Playwright's Chromium, which agent-browser finds through
+  # PLAYWRIGHT_BROWSERS_PATH; the download is kept between builds.
+  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
+  cp -a "$work/ms-playwright" build/opt/
+  # agent-browser does not look for the arm64 build's directory name.
+  set -- build/opt/ms-playwright/chromium-[0-9]*/chrome-linux*/chrome
+  [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
+  ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/chrome
+  # A workload's venv, at the /opt path its *_VENV names and as /opt/venv. A
+  # locked install's directory carries a hash, so the link is made here.
+  for f in mise/conf.d/harness.*.toml; do
+    name="$(sed -n 's|^[A-Z_]*_VENV = "/opt/\(.*\)"$|\1|p' "$f")"
+    [ -n "$name" ] || continue
+    tool="$(sed -n 's|^\[tools\."\(pipx:[^"]*\)"\]$|\1|p' "$f")"
+    cfg="$(find "$(mise -E "$envs" where "$tool")" -maxdepth 3 -name pyvenv.cfg | head -1)"
+    [ -n "$cfg" ] || { echo "$tool has no venv" >&2; exit 1; }
+    venv="${cfg%/pyvenv.cfg}"
+    ln -s "../usr/local/share/mise/${venv#"$MISE_DATA_DIR"/}" "build/opt/$name"
+    ln -s "$name" build/opt/venv
+  done
+
+  # The apt bootstrap needs root. out/ is made first, as this user, so the
+  # next build can remove it.
+  rm -rf "$out"
+  mkdir -p "$(dirname "$out")"
+  sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
+  ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out"
+  [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
+  # The re-owned layer cache grows with every distinct layer; remove
+  # $state/owned to reclaim it.
+  mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
+  echo "OCI layout: $out"
+)
+
+# `mise oci` needs a Linux host of the image's arch; elsewhere the Lima VM
+# builds from a copy of the working tree (the host's node_modules are not
+# Linux's).
+vm="${LIMA_INSTANCE:-platform-k3s}"
+build_in_vm() {
+  limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
+  git ls-files -z --cached --others --exclude-standard |
+    while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
+    COPYFILE_DISABLE=1 tar --null -T - -cf - |
+    limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
+  # The tools CI's build-agents job sets up, not the repo's whole toolchain.
+  limactl shell --workdir / "$vm" sh -c '
+    set -e
+    want=$1; shift
+    [ -x ~/.local/bin/mise ] || curl -fsSL https://mise.run | sh
+    ~/.local/bin/mise self-update --yes "$want" >/dev/null
+    # mise runs the arm64 node it installs, which links libatomic.
+    dpkg -s libatomic1 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq libatomic1; }
+    export PATH="$HOME/.local/bin:$PATH"
+    cd ~/platform-src
+    mise trust -q
+    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm -- packages/agents/.mise/tasks/image --build --no-load "$@"' _ "$(sed -n 's/^min_version = "\(.*\)"$/\1/p' .mise/config.toml)" "$@"
+}
+layout() {
+  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c .
+  else limactl shell --workdir / "$vm" sh -c 'tar -C ~/platform-agent-oci/"$1" -c .' _ "$1"; fi
+}
+
+if [ "$lock" = true ]; then lock_mise; exit; fi
+
+todo=()
+for a in ${mise_images[@]+"${mise_images[@]}"}; do reused "$a" || todo+=("$a"); done
+if [ ${#todo[@]} -gt 0 ]; then
+  echo "⚒ build ${todo[*]}"
+  if [ "$(uname -s)" = Linux ]; then
+    build_runtime
+    # One at a time: they share the stage and the host's apt caches.
+    for a in "${todo[@]}"; do build_mise "$a"; done
+  else
+    [ "$load" = true ] || { echo "--no-load builds on Linux only" >&2; exit 2; }
+    build_in_vm "${todo[@]}"
+  fi
+  if [ "$load" = true ]; then
+    for a in "${todo[@]}"; do
+      docker tag "$(layout "$a" | docker load | sed -n 's/^Loaded image ID: //p')" "platform-$a:latest"
+    done
+  fi
+fi
+
+build_docker() {
+  reused "$1" && return
+  echo "⚒ build platform-$1:latest"
+  docker build -t "platform-$1:latest" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$(dir_of "$1")"
+}
+
+for a in ${docker_images[@]+"${docker_images[@]}"}; do build_docker "$a"; done

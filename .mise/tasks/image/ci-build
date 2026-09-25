@@ -13,14 +13,14 @@
 #   --serial      build one at a time, for images too large to build side by
 #                 side on one runner's disk; the builder is pruned between
 #                 builds when less than CI_BUILD_MIN_FREE_GB (default 20) is free
-#   --base-image  BASE_IMAGE for the components built on a base (mock, agents,
-#                 workloads)
+#   --base-image  BASE_IMAGE for the components built on a base (k-search)
 # Env: IMAGE_PREFIX, GITHUB_SHA; CACHE_TO=1 also writes each component's
 # registry buildcache (main, tags, schedule); KEYCLOAK_THEME_BUILT=1 when the
 # caller already built the theme JAR the keycloak image bakes in. Every build runs even after one
 # fails; the exit status names the failures.
 #
-# By path, like image:resolve: the agent and workload jobs do not set up mise.
+# By path, like image:resolve. image.toml agents build with
+# //packages/agents:image and need mise, node, pnpm and crane.
 set -uo pipefail
 
 serial=false base=""
@@ -36,9 +36,11 @@ arch="${1:?usage: ci-build [--serial] [--base-image <ref>] <arch> <component>[:<
 : "${IMAGE_PREFIX:?}" "${GITHUB_SHA:?}"
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
+export AGENT_OCI_OUT=/tmp/ci-build/oci
 
 # spec <component> -> "<dockerfile> <context> <takes-base> [<name>=<extra context>]"
 spec() {
+  if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
     controller) echo "packages/controller/Dockerfile packages/controller no" ;;
     # The runner image is built from its crate alone, platform-init included.
@@ -46,7 +48,6 @@ spec() {
     api-server) echo "packages/api-server/Dockerfile . no" ;;
     ui) echo "packages/ui/Dockerfile . no" ;;
     keycloak) echo "packages/keycloak-theme/Dockerfile . no" ;;
-    mock) echo "packages/e2e/agents/mock/Dockerfile . yes" ;;
     *) [ -f "packages/agents/$1/Dockerfile" ] || { echo "ci-build: unknown component $1" >&2; return 1; }
        echo "packages/agents/$1/Dockerfile packages/agents/$1 yes" ;;
   esac
@@ -62,9 +63,28 @@ output_for() {
   esac
 }
 
+# The digest lands where buildx's metadata would.
+build_mise() {
+  local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1" ref
+  packages/agents/.mise/tasks/image --build $([ "$kind" = load ] || echo --no-load) "$c" || return 1
+  case "$kind" in
+    cacheonly | load) ;;
+    sha) crane push "$layout" "$IMAGE_PREFIX/$c:$GITHUB_SHA" || return 1 ;;
+    # By digest: an untagged crane reference means :latest.
+    digest)
+      ref="$(jq -r '.manifests[0].digest' "$layout/index.json")" || return 1
+      crane push "$layout" "$IMAGE_PREFIX/$c@$ref" || return 1
+      jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
+      ;;
+    *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
+  esac
+  rm -rf "$layout"
+}
+
 build_one() {
   local c=$1 kind=$2 s file ctx takes extra out args=()
   s="$(spec "$c")" || return 1
+  if [ "$s" = mise ]; then build_mise "$c" "$kind"; return; fi
   read -r file ctx takes extra <<< "$s"
   [ -z "$extra" ] || args+=(--build-context "$extra")
   out="$(output_for "$c" "$kind")" || return 1

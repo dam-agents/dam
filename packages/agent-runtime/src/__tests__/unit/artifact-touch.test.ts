@@ -6,7 +6,7 @@ const ARTIFACT = "38172c69-e53f-45fd-9b2e-5e7bc018fdd7";
 
 // TEST_OVERVIEW: The result payload below was captured from a live run against
 // TEST_OVERVIEW: claude-agent-acp 0.66.0, the version pinned in
-// TEST_OVERVIEW: packages/agents/claude-code/harness-tools.toml. The frame around it
+// TEST_OVERVIEW: packages/agents/claude-code/image.toml. The frame around it
 // TEST_OVERVIEW: carries the fields that adapter's emitter sets on a finished tool
 // TEST_OVERVIEW: call. Re-capture both when that pin moves: a stale fixture keeps
 // TEST_OVERVIEW: passing while the wire changes underneath it.

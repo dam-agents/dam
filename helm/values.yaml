@@ -1242,10 +1242,8 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
-    # Fedora packages: what the docker and containerd shims install at runtime.
-    # The image pins its repos to this one host precisely so it can be named
-    # here; the default metalink would resolve to a different mirror each time.
-    - dl.fedoraproject.org
+    # Debian packages: apt-get on a machine, where the agent is root.
+    - deb.debian.org
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#MISE description="Refresh workspace/.claude/commands from the Nous upstream repo, replacing each file by name"
+#MISE description="Refresh rootfs/app/working-dir/.claude/commands from the Nous upstream repo, replacing each file by name"
 #USAGE flag "--ref <ref>" help="Upstream git ref (tag|branch|sha) to sync from (default: main)"
 set -euo pipefail
 
 ref="${usage_ref:-main}"
 repo="AI-native-Systems-Research/agentic-strategy-evolution"
 src=".claude/commands"
-dst="workspace/.claude/commands"
+dst="rootfs/app/working-dir/.claude/commands"
 
 mkdir -p "$dst"
 

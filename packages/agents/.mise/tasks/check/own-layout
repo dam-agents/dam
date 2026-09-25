@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+#MISE description="own-layout.py hands the agent its paths, drops the baked SSH host keys, and reuses its cache"
+#MISE sources=["base/own-layout.py", ".mise/tasks/check/own-layout"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+import gzip, hashlib, io, json, os, subprocess, sys, tarfile, tempfile
+
+here = os.path.dirname(os.path.abspath(__file__))
+script = os.path.join(here, "..", "..", "..", "base", "own-layout.py")
+
+
+def layer(files):
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as t:
+        for name in files:
+            info = tarfile.TarInfo(name)
+            info.size = len(name)
+            t.addfile(info, io.BytesIO(name.encode()))
+    plain = raw.getvalue()
+    return gzip.compress(plain, mtime=0), "sha256:" + hashlib.sha256(plain).hexdigest()
+
+
+def put(root, data):
+    digest = hashlib.sha256(data).hexdigest()
+    with open(os.path.join(root, "blobs", "sha256", digest), "wb") as f:
+        f.write(data)
+    return {"digest": "sha256:" + digest, "size": len(data)}
+
+
+def layout(root):
+    os.makedirs(os.path.join(root, "blobs", "sha256"))
+    layers, diff_ids = [], []
+    for files in (["usr/local/share/mise/x", "etc/ssh/ssh_host_ed25519_key", "etc/hostname"], ["app/a"]):
+        blob, diff_id = layer(files)
+        tool = {"annotations": {"dev.mise.tool.short": "x"}} if files[0].startswith("usr/local/share/mise") else {}
+        layers.append({"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip", **put(root, blob), **tool})
+        diff_ids.append(diff_id)
+    config = put(root, json.dumps({"rootfs": {"type": "layers", "diff_ids": diff_ids}}).encode())
+    manifest = put(root, json.dumps({"config": config, "layers": layers}).encode())
+    with open(os.path.join(root, "index.json"), "w") as f:
+        json.dump({"manifests": [manifest]}, f)
+
+
+def read(root):
+    blob = lambda d: os.path.join(root, "blobs", *d.split(":", 1))
+    with open(os.path.join(root, "index.json")) as f:
+        manifest = json.load(open(blob(json.load(f)["manifests"][0]["digest"])))
+    config = json.load(open(blob(manifest["config"]["digest"])))
+    owners = {}
+    for l, diff_id in zip(manifest["layers"], config["rootfs"]["diff_ids"]):
+        plain = gzip.decompress(open(blob(l["digest"]), "rb").read())
+        assert "sha256:" + hashlib.sha256(plain).hexdigest() == diff_id, "diff_id does not match the layer"
+        with tarfile.open(fileobj=io.BytesIO(plain)) as t:
+            owners.update({m.name: (m.uid, m.gid) for m in t})
+    return owners, manifest
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    cache = os.path.join(tmp, "cache")
+    results = []
+    for run in ("first", "second"):
+        root = os.path.join(tmp, run)
+        layout(root)
+        subprocess.run([sys.executable, script, root, cache], check=True)
+        results.append(read(root))
+    owners = results[0][0]
+    assert owners == {"usr/local/share/mise/x": (65532, 0), "etc/hostname": (0, 0), "app/a": (0, 0)}, owners
+    assert results[0][1] == results[1][1], "a cached rewrite differs from the first"
+    memos = [f for d in ("tools", "other") for f in os.listdir(os.path.join(cache, d)) if f.endswith(".json")]
+    assert len(memos) == 2, "the second run rewrote a layer again"
+    assert len(os.listdir(os.path.join(cache, "tools"))) == 2, "the tool layer is not in the tools cache"
+print("own-layout: ok")

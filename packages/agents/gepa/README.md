@@ -31,11 +31,11 @@ and reports the winning candidate (and can open a PR with it).
 
 ## Image
 
-Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
+Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
-holds no credentials. On top it adds Python 3.11 + the `gepa` package in a
-venv at `/opt/gepa-venv` (installed with `uv` from PyPI, pinned via
-`ARG GEPA_VERSION`), together with the runtime set of its `full` extra —
+holds no credentials. On top it adds the `gepa` package in a
+venv at `$GEPA_VENV` (a mise `pipx:` tool from PyPI, pinned in `image.toml`;
+gepa has no executable, so its litellm dependency carries the venv), together with the runtime set of its `full` extra —
 litellm (GEPA's only LLM client), datasets, tqdm, cloudpickle — minus the
 mlflow/wandb tracking stacks the agent is instructed never to enable. Both harnesses (chat and terminal) are
 inherited unchanged from the base; GEPA customizes behavior via `AGENTS.md` +
@@ -49,15 +49,11 @@ holding keys (the provider-agnostic discover → wire → probe procedure).
 ## Build
 
 ```sh
-mise run //packages/agents:image -- gepa                   # plain docker build (pip-installs gepa)
+mise run //packages/agents:image -- gepa   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
-Override the pinned release with `GEPA_VERSION`:
-
-```sh
-GEPA_VERSION=0.1.4 mise run //packages/agents:image -- gepa
-```
+The pinned release is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the gepa template at the locally-built
 `platform-gepa:latest` but keeps it `enabled: false`; flip that to `true` to

@@ -23,11 +23,11 @@ a PR with it).
 
 ## Image
 
-Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
+Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
-holds no credentials. On top it adds Python 3.11 + the `shinka-evolve` package
-in a venv at `/opt/shinka-venv` (installed with `uv` from PyPI, pinned via
-`ARG SHINKA_VERSION`). Both harnesses (chat and terminal) are inherited
+holds no credentials. On top it adds the `shinka-evolve` package
+in a venv at `$SHINKA_VENV` (a mise `pipx:` tool from PyPI, pinned in
+`image.toml`). Both harnesses (chat and terminal) are inherited
 unchanged from the base; ShinkaEvolve customizes behavior via `AGENTS.md` + the
 `shinkaevolve` skill, not the harness scripts.
 
@@ -37,15 +37,11 @@ the embeddings default) is defined once in the `shinkaevolve` skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents:image -- shinkaevolve           # plain docker build (pip-installs shinka-evolve)
+mise run //packages/agents:image -- shinkaevolve   # claude-code plus this workload's mise environment
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
-Override the pinned release with `SHINKA_VERSION`:
-
-```sh
-SHINKA_VERSION=0.0.7 mise run //packages/agents:image -- shinkaevolve
-```
+The pinned release is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the shinkaevolve template at the locally-built
 `platform-shinkaevolve:latest` but keeps it `enabled: false`; flip that to

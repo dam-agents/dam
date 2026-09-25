@@ -1,0 +1,8 @@
+# The openevolve config environment over claude-code's: mise -E claude-code,openevolve.
+
+[tools."pipx:openevolve"]
+version = "0.2.27"
+
+[oci.env]
+OPENEVOLVE_VENV = "/opt/openevolve-venv"
+OPENEVOLVE_OUTPUT_ROOT = "/home/agent/work/openevolve-runs"

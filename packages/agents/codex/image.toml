@@ -1,0 +1,8 @@
+[tools]
+"npm:@openai/codex" = "0.153.4"
+"npm:@zed-industries/codex-acp" = "0.16.0"
+
+[oci.env]
+PLATFORM_HARNESS = "codex"
+# Satisfies the CLI's startup check; the real credential is injected on the wire.
+OPENAI_API_KEY = "dummy-placeholder"

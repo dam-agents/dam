@@ -1,0 +1,59 @@
+#!/bin/sh
+# Runs as the agent in a container, as root on a vm Backend machine.
+set -eu
+
+home="${HOME:-/home/agent}"
+
+# On a machine, SSH logins as `agent` must land as root, the harness's user;
+# extrausers serves no uid 0 entry.
+if [ "$(id -u)" = 0 ]; then
+	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
+	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+	install -d -m 0755 /run/sshd
+fi
+
+mitm_ca=/etc/platform/ca/ca.crt
+if [ -s "$mitm_ca" ]; then
+	cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
+		update-ca-certificates >/dev/null 2>&1 ||
+		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+fi
+
+# /app/working-dir stays pristine: the runtime reconciles image skills against it.
+if [ ! -f "$home/.initialized" ]; then
+	cp -rn /app/working-dir/. "$home/" 2>/dev/null || true
+	touch "$home/.initialized"
+	echo "agent-entrypoint: seeded home from image workspace"
+fi
+mkdir -p "$home/work"
+
+# In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
+mkdir -p /tmp/agent-cache
+if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
+	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
+		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
+	else
+		rm -f "$home/.cache.tmp"
+		echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
+	fi
+fi
+
+# Maven reads proxies only from settings.xml.
+if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
+	_hp=${HTTPS_PROXY#http://}
+	_m2_proxy() {
+		printf '<proxy><id>platform-%s</id><active>true</active><protocol>%s</protocol><host>%s</host><port>%s</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy>' \
+			"$1" "$1" "${_hp%:*}" "${_hp##*:}"
+	}
+	if ! { mkdir -p "$home/.m2" &&
+		printf '<settings><proxies>%s%s</proxies></settings>\n' "$(_m2_proxy http)" "$(_m2_proxy https)" \
+			> "$home/.m2/settings.xml"; } 2>/dev/null; then
+		echo "agent-entrypoint: WARNING: could not write ~/.m2/settings.xml; Maven fetches may bypass the gateway" >&2
+	fi
+fi
+
+# A workload's venv comes first, ahead of the tool directories mise puts at the
+# front of the image's PATH.
+if [ -d /opt/venv/bin ]; then export PATH="/opt/venv/bin:$PATH"; fi
+
+exec "$@"

@@ -2,6 +2,8 @@
 
 Platform agent running [OpenAI Codex CLI](https://github.com/openai/codex) via the [codex-acp](https://github.com/zed-industries/codex-acp) ACP adapter.
 
+The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)), as its `codex` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+
 ## Stack
 
 | Component | Package | Purpose |
@@ -17,7 +19,7 @@ Create a **generic secret** on the platform with:
 - `hostPattern`: `api.openai.com`
 - env-mapping: `OPENAI_API_KEY`
 
-The Dockerfile sets `OPENAI_API_KEY=dummy-placeholder` so the CLI's startup check passes before a real credential is attached.
+The harness config sets `OPENAI_API_KEY=dummy-placeholder` (`[oci.env]` in `image.toml`) so the CLI's startup check passes before a real credential is attached.
 
 ### Custom OpenAI-compatible endpoints
 
@@ -53,12 +55,12 @@ A file that does not parse is never replaced. The write fails and reports a deli
 
 | Script | Runs | Purpose |
 |---|---|---|
-| `harness-chat.sh` | `codex-acp` | ACP subprocess for chat-mode sessions (UI) |
-| `harness-terminal.sh` | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI) |
+| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
 
 Terminal sessions use `--dangerously-bypass-approvals-and-sandbox` since the pod itself is the sandbox (network isolation + Envoy credential injection).
 
-Codex mints its own thread id on the first turn, so the platform session id cannot be passed in. A managed `SessionStart` hook (`requirements.toml`, shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal.sh` resumes that thread when the file exists and starts a fresh conversation otherwise. A terminal closed before its first turn leaves no pin and simply starts fresh next time.
+Codex mints its own thread id on the first turn, so the platform session id cannot be passed in. A managed `SessionStart` hook ([`requirements.toml`](rootfs/etc/codex/requirements.toml), shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal` resumes that thread when the file exists and starts a fresh conversation otherwise. A terminal closed before its first turn leaves no pin and simply starts fresh next time.
 
 ## Usage
 
