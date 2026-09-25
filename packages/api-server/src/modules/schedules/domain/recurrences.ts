@@ -1,10 +1,10 @@
 import { CronExpressionParser } from "cron-parser";
 import rrulePkg from "rrule";
 import {
-  anchorsAtMidnight,
   canOccur,
   hasVisibleOccurrence,
   isInQuietHours,
+  occurrenceRule,
 } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
 
@@ -19,7 +19,7 @@ export function validateRRule(expr: string): void {
   if (!rule) throw new Error(`invalid rrule: ${expr}`);
   if (!canOccur(RRule.parseString(expr))) {
     throw new Error(
-      `rrule never fires — its INTERVAL steps from midnight never land on its BYHOUR/BYMINUTE: ${expr}`,
+      `rrule never fires — with BYHOUR/BYMINUTE its INTERVAL must divide the day and land on them without BYSETPOS, and its BYMONTH/BYMONTHDAY/BYYEARDAY/BYWEEKNO must match a real date: ${expr}`,
     );
   }
 }
@@ -57,11 +57,8 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   }
   const wallFrom = toWallClock(from, spec.timezone);
   wallFrom.setUTCSeconds(0, 0);
-  const options = RRule.parseString(spec.rrule);
-  if (!canOccur(options)) return null;
-  const dtstart = new Date(wallFrom);
-  if (anchorsAtMidnight(options)) dtstart.setUTCHours(0, 0);
-  const rule = new RRule({ dtstart, ...options });
+  const rule = occurrenceRule(RRule.parseString(spec.rrule), wallFrom);
+  if (!rule) return null;
   const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
   let cursor = wallFrom;
   for (let i = 0; i < 1440; i++) {
