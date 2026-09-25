@@ -82,10 +82,13 @@ spec:
       # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
       # the pod when the rendered templates change, making `helm upgrade` of a
       # template take effect instead of serving stale ones until the next restart.
+      # Credentials arrive through secretKeyRefs, which a Secret change doesn't
+      # refresh either, so the credentials Secret rolls the pod the same way.
       {{- $checksums := dict
             "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
             "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
-            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
+            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum)
+            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       enableServiceLinks: false
@@ -192,11 +195,17 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.slackBotToken }}
             - name: SLACK_BOT_TOKEN
-              value: {{ .Values.apiServer.slackBotToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_BOT_TOKEN
             {{- end }}
             {{- if .Values.apiServer.slackAppToken }}
             - name: SLACK_APP_TOKEN
-              value: {{ .Values.apiServer.slackAppToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_APP_TOKEN
             {{- end }}
             {{- if .Values.apiServer.slackClientId }}
             - name: SLACK_CLIENT_ID
@@ -204,7 +213,10 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.slackClientSecret }}
             - name: SLACK_CLIENT_SECRET
-              value: {{ .Values.apiServer.slackClientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_CLIENT_SECRET
             {{- end }}
             {{- if .Values.apiServer.slackEnterpriseId }}
             - name: SLACK_ENTERPRISE_ID
@@ -212,11 +224,17 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
-              value: {{ .Values.apiServer.telegramBotToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: TELEGRAM_BOT_TOKEN
             {{- end }}
             {{- if .Values.apiServer.imgbbApiKey }}
             - name: IMGBB_API_KEY
-              value: {{ .Values.apiServer.imgbbApiKey | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: IMGBB_API_KEY
             {{- end }}
             {{- if .Values.apiServer.telegramBotName }}
             - name: TELEGRAM_BOT_USERNAME
@@ -357,7 +375,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
             {{- end }}
             {{- if .appSlug }}
             - name: PLATFORM_DEFAULT_GITHUB_APP_SLUG
@@ -375,7 +396,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
             {{- end }}
             {{- if .appSlug }}
             - name: PLATFORM_DEFAULT_GHE_APP_SLUG
@@ -389,7 +413,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_SLACK_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_SLACK_CLIENT_SECRET
             {{- end }}
             {{- end }}
             - name: REDIS_URL

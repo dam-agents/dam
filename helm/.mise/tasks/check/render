@@ -64,3 +64,14 @@ helm template platform . "${COMMON[@]}" \
   --set github.enterprise.host=github.example.com \
   --set github.enterprise.token=ghe-test-token \
   | "${KUBECONFORM[@]}" "$@"
+# Every install token and client secret reaches the api-server through its
+# credentials Secret, which the default values leave out entirely.
+helm template platform . "${COMMON[@]}" \
+  --set apiServer.slackBotToken=t --set apiServer.slackAppToken=t \
+  --set apiServer.slackClientId=c --set apiServer.slackClientSecret=s \
+  --set apiServer.telegramBotToken=t --set apiServer.imgbbApiKey=k \
+  --set apiServer.oauthAppDefaults.github.clientId=c --set apiServer.oauthAppDefaults.github.clientSecret=s \
+  --set apiServer.oauthAppDefaults.githubEnterprise.host=github.example.com \
+  --set apiServer.oauthAppDefaults.githubEnterprise.clientId=c --set apiServer.oauthAppDefaults.githubEnterprise.clientSecret=s \
+  --set apiServer.oauthAppDefaults.slack.clientId=c --set apiServer.oauthAppDefaults.slack.clientSecret=s \
+  | "${KUBECONFORM[@]}" "$@"
