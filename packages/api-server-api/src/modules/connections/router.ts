@@ -13,6 +13,8 @@ import {
   connectionProbeGitHubAppInputSchema,
   connectionProbeGitHubAppForConnectionInputSchema,
   connectionUpdateGitHubAppScopeInputSchema,
+  connectionProbeGitHubUserTokenInputSchema,
+  connectionUpdateGitHubUserTokenScopeInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
@@ -80,6 +82,18 @@ export const connectionsRouter = t.router({
   updateGitHubAppScope: manageCredentialsProcedure
     .input(connectionUpdateGitHubAppScopeInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.updateGitHubAppScope(input)),
+
+  probeGitHubUserTokenForConnection: manageCredentialsProcedure
+    .input(connectionProbeGitHubUserTokenInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.probeGitHubUserTokenForConnection(input),
+    ),
+
+  updateGitHubUserTokenScope: manageCredentialsProcedure
+    .input(connectionUpdateGitHubUserTokenScopeInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.updateGitHubUserTokenScope(input),
+    ),
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)

@@ -335,6 +335,9 @@ export type {
 export type {
   ClusterCaProbe,
   GitHubAppInstallationProbe,
+  GitHubUserTokenInstallation,
+  GitHubUserTokenProbe,
+  GitHubUserTokenScope,
   ConnectionsService,
   Connection,
   ConnectionStatus,

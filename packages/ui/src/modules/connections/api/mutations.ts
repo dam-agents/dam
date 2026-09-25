@@ -83,6 +83,26 @@ export function useUpdateGitHubAppScope() {
   });
 }
 
+export function useProbeGitHubUserToken() {
+  return useMutation({
+    ...trpc.connections.probeGitHubUserTokenForConnection.mutationOptions(),
+    meta: { suppressErrorToast: true },
+  });
+}
+
+export function useUpdateGitHubUserTokenScope() {
+  return useMutation({
+    ...trpc.connections.updateGitHubUserTokenScope.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useTestAnthropic() {
   return useMutation({
     ...trpc.connections.testAnthropic.mutationOptions(),

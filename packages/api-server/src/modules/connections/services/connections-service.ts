@@ -32,6 +32,11 @@ import {
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
 import {
+  gitHubUserTokenApiBase,
+  parseGitHubUserTokenScope,
+  supportsGitHubUserTokenScope,
+} from "../domain/github-user-token-scope.js";
+import {
   shareIdFromTokenHeader,
   tokenHeaderName,
 } from "../../kb-shares/index.js";
@@ -53,7 +58,12 @@ import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import type { XactLock } from "../../../core/xact-lock.js";
-import { refreshOAuthAccessToken } from "./oauth-token.js";
+import {
+  refreshOAuthAccessToken,
+  resolveOAuthClientSecret,
+  type OAuthAuth,
+} from "./oauth-token.js";
+import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -149,6 +159,14 @@ export function createConnectionsService(deps: {
               : {}),
             ...(conn.auth.kind === "github-app"
               ? githubAppScopeView(conn.auth)
+              : {}),
+            ...(conn.auth.kind === "oauth" &&
+            supportsGitHubUserTokenScope(conn.templateId)
+              ? {
+                  githubUserToken: conn.auth.githubUserTokenScope
+                    ? { scope: conn.auth.githubUserTokenScope }
+                    : {},
+                }
               : {}),
           }
         : {};
@@ -307,6 +325,7 @@ export function createConnectionsService(deps: {
           conn: fresh,
           auth: fresh.auth,
           engine: deps.oauthEngine,
+          githubAppEngine: deps.githubAppEngine,
           templates: deps.templates,
           secretStore: deps.secretStore,
         });
@@ -341,6 +360,36 @@ export function createConnectionsService(deps: {
       });
     }
     return { conn, auth: conn.auth };
+  }
+
+  async function requireGitHubUserTokenConnection(id: string): Promise<{
+    conn: Connection;
+    auth: OAuthAuth;
+  }> {
+    const conn = await deps.repo.get(id, deps.ownerId);
+    if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+    if (
+      conn.auth.kind !== "oauth" ||
+      !supportsGitHubUserTokenScope(conn.templateId)
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "This connection is not a GitHub sign-in.",
+      });
+    }
+    return { conn, auth: conn.auth };
+  }
+
+  async function readGitHubUserToken(auth: OAuthAuth): Promise<string> {
+    const token = await deps.secretStore.getField(auth.accessTokenRef);
+    if (!token) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "This connection has not signed in to GitHub yet. Authorize it first.",
+      });
+    }
+    return token;
   }
 
   async function readPrivateKey(
@@ -1046,6 +1095,90 @@ export function createConnectionsService(deps: {
           repositories: scope.repositories?.length ?? 0,
           repositoryIds: scope.repositoryIds?.length ?? 0,
           permissions: Object.keys(scope.permissions ?? {}).length,
+        },
+      });
+    },
+
+    async probeGitHubUserTokenForConnection(input) {
+      const { conn, auth } = await requireGitHubUserTokenConnection(
+        input.connectionId,
+      );
+      const accessToken = await readGitHubUserToken(auth);
+      return rejectIfInvalid(() =>
+        deps.githubAppEngine.readUserInstallations({
+          id: `connection:${conn.id}:${conn.templateId}`,
+          apiBaseUrl: gitHubUserTokenApiBase(auth.host),
+          accessToken,
+        }),
+      );
+    },
+
+    async updateGitHubUserTokenScope(input) {
+      const { conn } = await requireGitHubUserTokenConnection(input.id);
+      let scope: ReturnType<typeof parseGitHubUserTokenScope>;
+      try {
+        scope = parseGitHubUserTokenScope(input);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Invalid scope.",
+        });
+      }
+
+      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh || fresh.auth.kind !== "oauth") return;
+        const auth = fresh.auth;
+        const accessToken = await readGitHubUserToken(auth);
+        const scoped = scope
+          ? await rejectIfInvalid(async () =>
+              scopeGitHubUserToken(deps.githubAppEngine, {
+                connectionRef: `connection:${conn.id}:${conn.templateId}`,
+                auth,
+                scope,
+                clientSecret: await resolveOAuthClientSecret({
+                  conn: fresh,
+                  auth,
+                  templates: deps.templates,
+                  secretStore: deps.secretStore,
+                }),
+                accessToken,
+              }),
+            )
+          : undefined;
+
+        await deps.secretStore.putFields(
+          auth.accessTokenRef,
+          buildConnectionSdsFields(
+            fresh.contributions,
+            scoped?.accessToken ?? accessToken,
+          ),
+        );
+
+        const nextAuth: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
+        delete nextAuth.githubUserTokenScope;
+        if (scope) {
+          nextAuth.githubUserTokenScope = scoped?.accountLogin
+            ? { ...scope, targetLogin: scoped.accountLogin }
+            : scope;
+        }
+        if (scoped?.expiresAt !== undefined) {
+          nextAuth.expiresAt = scoped.expiresAt;
+        }
+        await deps.repo.updateAuth(conn.id, nextAuth);
+      });
+
+      securityLog("info", "connection.scope_update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          narrowed: scope !== undefined,
+          repositoryIds: scope?.repositoryIds?.length ?? 0,
+          permissions: Object.keys(scope?.permissions ?? {}).length,
         },
       });
     },

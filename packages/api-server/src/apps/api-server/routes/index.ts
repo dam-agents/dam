@@ -53,6 +53,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
       db: boot.db,
       secretStore: boot.secretStore,
       engine: boot.connectionsBoot.oauthEngine,
+      githubAppEngine: boot.connectionsBoot.githubAppEngine,
       templates: boot.connectionsBoot.templates,
       runtimeMutator: boot.runtimeMutator,
       uiBaseUrl: config.uiBaseUrl,

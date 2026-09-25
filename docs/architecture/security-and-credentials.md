@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-28
+Last verified: 2026-09-29
 
 ## Overview
 
@@ -278,16 +278,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   A Connection may additionally **narrow the authority of the token it mints**,
   below what the app installation itself holds — to a chosen set of repositories,
   to a chosen set of permissions, or both. An installation is an
-  organization-wide grant, typically far broader than any one agent's task, and
-  narrowing is how one broadly-installed app backs many least-privilege
+  organization-wide grant, and narrowing is how one broadly-installed app backs many least-privilege
   Connections without a second app per task. GitHub is the arbiter: it refuses
   any request exceeding the installation, so the narrowing can only ever reduce
   authority, never claim it. The chosen subset is **part of the credential's
   stored identity, not a one-time argument** — every renewal and every key
   rotation re-mints against the same subset, so a Connection cannot silently
   widen back to the whole installation between renewals. Narrowing is opt-in:
-  a Connection that names no subset carries the installation's full authority,
-  which is what every Connection made before the capability existed does. Once
+  a Connection that names no subset carries the installation's full authority. Once
   a subset stops being covered — the organization drops a repository from the
   installation, or revokes a permission — renewal is *rejected* rather than
   merely failing, so the Connection reads expired and waits for someone to
@@ -309,7 +307,8 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   Connection's own stored key and re-mints at once, so the narrower token
   replaces the live one; a subset the installation cannot cover fails the edit
   rather than parking the Connection at its next renewal. Nothing else moves,
-  and because the token is read gateway-side the change needs no pod roll.
+  and because the token is read gateway-side the change needs no pod roll. A
+  GitHub App sign-in narrows its user token alike ([connections](connections.md)).
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
