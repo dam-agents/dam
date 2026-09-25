@@ -1,0 +1,33 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Re-pin every image:pack base (tag@digest in a package's :oci task) to the digest its tag names now"
+#USAGE flag "--check" help="Change nothing: print each stale pin as '<file> <tag> <pinned> <current>' and exit 1 if there is one"
+# The images image:pack builds take their base by tag and digest, so an image's
+# source sha names its whole content and image:resolve can reuse it. Base
+# updates therefore land as commits: this task writes them, and cd.yml's
+# nightly run checks for them with --check.
+#
+# By path too, with crane on PATH.
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+
+pin_re='[a-z0-9.-]+\.[a-z]+/[a-z0-9/._-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}'
+# Nothing is printed or written until every tag resolved, so a registry error
+# never reads as a partial list.
+stale=()
+for f in $(git grep -lE "$pin_re" -- 'packages/*/.mise/tasks/oci'); do
+  for pin in $(grep -oE "$pin_re" "$f" | sort -u); do
+    tag="${pin%@*}" pinned="${pin#*@}"
+    current="$(crane digest "$tag")"
+    [ "$current" = "$pinned" ] || stale+=("$f $tag $pinned $current")
+  done
+done
+for s in ${stale[@]+"${stale[@]}"}; do
+  read -r f tag pinned current <<< "$s"
+  if [ "${usage_check:-false}" = true ]; then
+    echo "$s"
+  else
+    sed -i.bak "s|$tag@$pinned|$tag@$current|" "$f" && rm -f "$f.bak"
+    echo "$f: $tag -> $current"
+  fi
+done
+[ "${usage_check:-false}" != true ] || [ ${#stale[@]} -eq 0 ]

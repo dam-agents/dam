@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #MISE description="Build the controller image to dist/oci/controller.tar"
+#MISE sources=["**/*.go", "go.mod", "go.sum", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../mise.lock"]
+#MISE outputs=["dist/oci/controller.tar"]
 set -euo pipefail
 GOOS=linux mise run //packages/controller:build
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/usr/local/bin"
 cp "dist/bin/linux_$(go env GOARCH)/controller" "$root/usr/local/bin/"
-"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/core-runtime:latest "$root" dist/oci/controller.tar platform-controller:latest \
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/core-runtime:latest@sha256:58f9030ce520821c61798d41ca52aa2b10ba5f20c49245f63ecffcfcaa3d464f "$root" dist/oci/controller.tar platform-controller:latest \
   --entrypoint controller

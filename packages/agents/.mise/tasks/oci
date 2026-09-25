@@ -1,5 +1,5 @@
 #!/usr/bin/env -S usage bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them. CI sets AGENT_LAYER_CACHE (and AGENT_LAYER_CACHE_REFRESH) to keep k-search's packaged tool layers in the registry."
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--build" help="Never reuse an image from the registry"
 #USAGE flag "--no-tar" help="Linux only: keep a mise image as its OCI layout"
@@ -46,6 +46,16 @@ reused() {
   echo "↺ reuse ${d#REUSE } -> $(tar_of "$1")"
   .mise/tasks/image/pull "${d#REUSE }" "$(tar_of "$1")" "platform-$1:latest"
 }
+
+# Images whose own tools are too big for CI's tools cache: k-search's venv is
+# gigabytes. `mise oci` tars and gzips it for minutes and own-layout.py rewrites
+# it again, so CI keeps those tools' installs and both packaged layers in the
+# registry instead (AGENT_LAYER_CACHE, the image prefix), under a tag in the
+# image's own repository keyed by everything that shapes them. The installs
+# carry their absolute paths, so the key has the state directory too.
+# AGENT_LAYER_CACHE_REFRESH=1 installs afresh and overwrites the entry, which
+# picks up the newest releases of a venv's unpinned dependencies.
+layer_cached=" k-search "
 
 state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
 work="$state/build"
@@ -128,10 +138,10 @@ lock_mise() (
 )
 
 # Every image's tools and Chromium, which is what CI caches per arch; each
-# build then installs only what it lacks. k-search's GPU venv is gigabytes the
-# repository's 10 GB cache cannot hold, so its build downloads it.
+# build then installs only what it lacks. The layer_cached images' tools are
+# left to the registry.
 warm_mise() (
-  all=($(all_images | grep -vx k-search))
+  all=($(for a in $(all_images); do case "$layer_cached" in *" $a "*) ;; *) echo "$a" ;; esac; done))
   stage_project "${all[@]}"
   cd "$stage"
   envs="${all[*]}"
@@ -140,6 +150,83 @@ warm_mise() (
   mise -E "${envs// /,}" prune --yes
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "${envs// /,}" exec -- playwright install chromium
 )
+
+# The tools an image's own environment adds to the ones it builds on, from the
+# stage: <harness> <its environments>.
+harness_tools() {
+  local under="${2%,"$1"}"
+  [ "$under" != "$2" ] || under=""
+  comm -23 <(mise -E "$2" ls --current --json | jq -r 'keys[]' | sort) \
+    <(mise ${under:+-E "$under"} ls --current --json | jq -r 'keys[]' | sort)
+}
+
+layer_cache_ref() {
+  local key
+  key="$( {
+    echo "$state"; uname -m; mise --version
+    find "$(dir_of "$1")" "$agents/base/image.lock" "$agents/base/image-locks" "$agents/base/own-layout.py" \
+      "$agents/base/miserc.toml" "$agents/base/rootfs/etc/mise/conf.d/settings.toml" -type f -print0 |
+      sort -z | xargs -0 sha256sum
+  } | sha256sum | cut -c1-16)"
+  echo "$AGENT_LAYER_CACHE/$1:layer-cache-$(uname -m)-$key"
+}
+
+# The entry is one image: a tar of the installs and small files, under the
+# state directory, then each packaged layer as is. Its list says where each
+# layer and tree goes: "blob <digest> <path>" and "tree <path>".
+save_layers() {
+  local harness=$1 ref=$2 envs=$3 t w short f m d kind a b
+  local list="$state/layer-cache.$harness.list" tar="$work/layer-cache.tar.gz" paths=() files=()
+  : > "$list"
+  for t in $(harness_tools "$harness" "$envs"); do
+    w="$(mise -E "$envs" where "$t")"
+    short="$(basename "$(dirname "$w")")"
+    echo "tree build/data/installs/$short" >> "$list"
+    for f in "$MISE_CACHE_DIR/$short/$(basename "$w")"/oci-layers/*; do
+      [ -f "$f" ] || continue
+      case "$f" in
+        *.json) echo "tree ${f#"$state"/}" >> "$list" ;;
+        *)
+          echo "blob sha256:${f##*/} ${f#"$state"/}" >> "$list"
+          for m in "$state/owned/${f##*/}".*.json; do
+            [ -f "$m" ] || continue
+            echo "tree ${m#"$state"/}" >> "$list"
+            d="$(jq -r '.digest // empty' "$m")"
+            [ -z "$d" ] || echo "blob $d owned/${d#sha256:}" >> "$list"
+          done
+          ;;
+      esac
+    done
+  done
+  paths=("${list#"$state"/}")
+  while read -r kind a b; do [ "$kind" != tree ] || paths+=("$a"); done < "$list"
+  tar -C "$state" -cf - "${paths[@]}" | gzip -1 > "$tar"
+  files=(-f "$tar")
+  while read -r kind a b; do [ "$kind" != blob ] || files+=(-f "$state/$b"); done < "$list"
+  crane append "${files[@]}" -t "$ref"
+  rm -f "$tar"
+  echo "layer cache: saved $ref"
+}
+
+# Everything lands in a scratch directory first and moves into place only once
+# all of it arrived: a half-restored install would pass for a complete one.
+restore_layers() {
+  local harness=$1 ref=$2 in="$work/layer-cache.in" manifest kind a b
+  manifest="$(crane manifest "$ref" 2>/dev/null)" || { echo "layer cache: no $ref"; return 1; }
+  rm -rf "$in" && mkdir -p "$in"
+  crane blob "${ref%:*}@$(jq -r '.layers[0].digest' <<< "$manifest")" | tar -xzf - -C "$in" || return 1
+  while read -r kind a b; do
+    [ "$kind" = blob ] || continue
+    mkdir -p "$(dirname "$in/$b")"
+    crane blob "${ref%:*}@$a" > "$in/$b" || return 1
+  done < "$in/layer-cache.$harness.list"
+  while read -r kind a b; do
+    [ "$kind" = blob ] && a=$b
+    { rm -rf "${state:?}/$a" && mkdir -p "$(dirname "$state/$a")" && mv "$in/$a" "$state/$a"; } || return 1
+  done < "$in/layer-cache.$harness.list"
+  rm -rf "$in"
+  echo "layer cache: restored $ref"
+}
 
 # Subshell: it leaves the repo's mise context and directory.
 build_mise() (
@@ -171,6 +258,12 @@ build_mise() (
   copies base.toml base/rootfs
   copies base.toml build
   for a in ${envs//,/ }; do copies "harness.$a.toml" "$a/rootfs"; done
+
+  cache_ref="" cache_hit=false
+  if [ -n "${AGENT_LAYER_CACHE:-}" ] && [[ "$layer_cached" == *" $harness "* ]]; then
+    cache_ref="$(layer_cache_ref "$harness")"
+    [ -n "${AGENT_LAYER_CACHE_REFRESH:-}" ] || ! restore_layers "$harness" "$cache_ref" || cache_hit=true
+  fi
 
   # Not -C: mise reads .miserc.toml from the working directory only.
   cd "$stage"
@@ -228,6 +321,9 @@ build_mise() (
   # The re-owned layer cache grows with every distinct layer; remove
   # $state/owned to reclaim it.
   mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
+  # A failed save costs the next build its hit, not this build.
+  [ -z "$cache_ref" ] || [ "$cache_hit" = true ] || save_layers "$harness" "$cache_ref" "$envs" ||
+    echo "layer cache: could not save $cache_ref" >&2
   "$root/.mise/tasks/image/name-layout" "$out" "platform-$harness:latest"
   echo "OCI layout: $out"
 )

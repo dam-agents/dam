@@ -6,9 +6,9 @@
 #
 # Usage: pull-images [agent-component ...]    (default agent: mock, the e2e harness)
 #
-# api-server, ui and controller are built on every main commit and tagged with
-# its sha, so they come from the newest first-parent main commit at or behind
-# HEAD's merge base that has all three. keycloak and the agents are tagged by
+# api-server, ui and controller are tagged with every main commit's sha (built
+# anew only when their source moved), so they come from the newest first-parent
+# main commit at or behind HEAD's merge base that has all three. keycloak and the agents are tagged by
 # source sha; `image:resolve` names the reusable ref. A component whose source
 # HEAD changed resolves to BUILD, and this script says so rather than pulling
 # something stale.

@@ -12,3 +12,6 @@ crane pull --format=oci --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x
 "$(dirname "$0")/name-layout" "$l" "$usage_name"
 mkdir -p "$(dirname "$usage_tar")"
 tar -C "$l" -cf "$usage_tar" $(ls -A "$l")
+# Older than any source, so a package's :oci task still builds the checkout
+# over a pulled image rather than taking it for its own output.
+touch -t 198001010000 "$usage_tar"

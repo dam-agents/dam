@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR, to dist/oci/keycloak.tar"
+#MISE sources=["src/**/*", "public/**/*", "!public/keycloakify-dev-resources/**", "vite.config.ts", "package.json", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack"]
+#MISE outputs=["dist/oci/keycloak.tar"]
 set -euo pipefail
 mise run //packages/keycloak-theme:build
 root="$(mktemp -d)"

@@ -191,6 +191,8 @@ jobs:
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
       workloads: ${{ steps.d.outputs.workloads }}
+      images: ${{ steps.d.outputs.images }}
+      mock: ${{ steps.d.outputs.mock }}
       source_shas: ${{ steps.d.outputs.source_shas }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -213,18 +215,20 @@ jobs:
           MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
-          [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
-          [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_AGENTS=1
+          # A tag, the nightly run and a dispatch publish every image afresh;
+          # a PR or a main push reuses what its source did not change.
+          [ "$EVENT" = pull_request ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
           # By path: mise here installs crane alone; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
   build-images:
-    # One job per arch builds all five images side by side; see image:ci-build.
-    # A PR builds its images in e2e instead: see e2e:ci-images.
+    # One job per arch builds the stale ones of the five images side by side;
+    # see image:ci-build. merge-images tags the rest. A PR builds its images in
+    # e2e instead: see e2e:ci-images.
     needs: [changes]
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -248,6 +252,7 @@ jobs:
           [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
           echo "rust=$rust" >> "$GITHUB_OUTPUT"
       - id: rust-release
+        if: ${{ contains(fromJSON(needs.changes.outputs.images), 'vm-runner') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -257,6 +262,25 @@ jobs:
             ~/.cache/platform-vm-runner
             packages/vm-runner/target
           key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
+      # check-test's Go and pnpm caches, read-only, for the images that build
+      # from them. Before mise-action, for the reason check-test gives.
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'controller') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-check-test-
+            go-${{ runner.os }}-
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -269,7 +293,10 @@ jobs:
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
-        run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
+          IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
+        run: |
+          read -r -a images <<< "$IMAGES"
+          .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's e2e
       # job reads the amd64 one.
       - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
@@ -283,8 +310,9 @@ jobs:
             packages/vm-runner/target
           key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       # The keycloak theme build, for e2e on a PR. This job starts from an
-      # empty task cache, so the entry holds this run's artifacts alone.
-      - if: ${{ matrix.arch == 'amd64' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # empty task cache, so the entry holds this run's artifacts alone, and
+      # only a run that built keycloak has any.
+      - if: ${{ matrix.arch == 'amd64' && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
@@ -299,14 +327,17 @@ jobs:
   merge-images:
     name: merge multi-arch manifests
     needs: [changes, build-images, appversion, check-test]
-    if: ${{ github.event_name != 'pull_request' }}
+    # build-images is skipped when every image is reused; then this job only
+    # tags.
+    if: ${{ github.event_name != 'pull_request' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - if: ${{ needs.changes.outputs.images != '[]' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: digests-images-*
           path: /tmp/digests
@@ -325,12 +356,10 @@ jobs:
         env:
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-          SOURCE_SHA_TAGGED: keycloak vm-runner
-          # keycloak's merge takes minutes of copying inside the registry, and
-          # its source rarely moves. A main push leaves an unchanged one alone;
-          # tags and the nightly run merge it, with its registry requests
-          # logged to find where the time goes.
-          SKIP_UNCHANGED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'keycloak' || '' }}
+          # Every image carries its source-sha tag: image:resolve reuses by it.
+          SOURCE_SHA_TAGGED: controller vm-runner api-server ui keycloak
+          # keycloak's merge takes minutes of copying inside the registry; its
+          # registry requests are logged to find where the time goes.
           CI_MERGE_DEBUG: keycloak
         run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
 
@@ -490,6 +519,11 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          # k-search's venv layers, kept in the registry; see //packages/agents:oci.
+          # A main push reuses them, every other run installs afresh and
+          # replaces them.
+          AGENT_LAYER_CACHE: ${{ env.IMAGE_PREFIX }}
+          AGENT_LAYER_CACHE_REFRESH: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') && '1' || '' }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
@@ -537,14 +571,17 @@ jobs:
   build-mock:
     name: build mock (e2e fixture)
     needs: [changes]
-    # On a PR, e2e builds the mock itself.
-    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v') }}
+    # On a PR, e2e builds the mock itself. Otherwise only a mock whose source
+    # sha has no image builds; e2e pulls it by that tag.
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v') && needs.changes.outputs.mock == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The push tag is the mock's source sha, which needs the history.
+          fetch-depth: 0
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -579,7 +616,7 @@ jobs:
             ~/.cache/platform-agent-oci/build/ms-playwright
           key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
-        run: .mise/tasks/image/ci-build amd64 mock:sha
+        run: .mise/tasks/image/ci-build amd64 mock:source
 
   e2e:
     name: mise e2e
@@ -601,8 +638,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # e2e:ci-images reads the vm-runner's source history on a PR.
-          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          # e2e:ci-images resolves every image by its source history.
+          fetch-depth: 0
       # See build-images. Before mise-action, like check-test's.
       - if: github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -610,13 +647,34 @@ jobs:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
           restore-keys: mise-task-artifacts-${{ runner.os }}-keycloak-theme-
-      # check-test saves it.
+      # check-test saves it, and the Go cache below.
       - if: github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: pnpm-store-${{ runner.os }}-
+      # Only a PR that changes the controller builds it here; one that does not
+      # pulls main's image.
+      - id: controller-changed
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- $(.mise/tasks/image/resolve paths controller); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.controller-changed.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-check-test-
+            go-${{ runner.os }}-
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -658,10 +716,10 @@ jobs:
           CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
-          CI_IMAGES_JOBS: >-
-            ${{ github.event_name == 'pull_request'
-                && 'detect stale images'
-                || 'detect stale images|build-images (amd64)|build mock (e2e fixture)' }}
+          CI_IMAGES_IMAGES_JOB: build-images (amd64)
+          CI_IMAGES_MOCK_JOB: build mock (e2e fixture)
+          # As the `changes` job sets it, so both resolve the same images stale.
+          RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -833,6 +891,59 @@ jobs:
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
           helm package helm --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
+
+  base-pins:
+    name: base image pins
+    # image:pack bases are pinned by digest, so no rebuild picks up a base
+    # update by itself. The nightly run keeps one issue open while a pin is
+    # behind its tag; update-vulnerable-deps bumps it with image:bump-bases.
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Reconcile the stale-pins issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # By path: --check exits 1 when a pin is stale, which is not a failure here.
+          stale="$(.mise/tasks/image/bump-bases --check)"
+          code=$?
+          if [ "$code" -ne 0 ] && [ -z "$stale" ]; then exit "$code"; fi
+          title="Base image pins are behind (automated)"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -z "$stale" ]; then
+            [ -z "$existing" ] || gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
+              --comment "Every base image pin matches its tag again."
+            exit 0
+          fi
+          body="$(printf '%s\n' "$stale" | awk -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '
+            BEGIN {
+              print "A base image tag moved past its pin, so the images built on it miss its updates."
+              print "Re-pin with `mise run image:bump-bases`. Last checked: [run](" run ")."
+              print ""
+              print "| Task | Tag | Pinned | Current |"
+              print "| --- | --- | --- | --- |"
+            }
+            { printf "| `%s` | `%s` | `%s` | `%s` |\n", $1, $2, substr($3, 1, 19), substr($4, 1, 19) }')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" \
+              --label "security,vulnerability"
+          fi
 
   go-vuln:
     name: govulncheck

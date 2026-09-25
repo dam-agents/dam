@@ -6,13 +6,17 @@
 # this in the background, and cluster:install waits on the status file
 # (CI_IMAGES_STATUS) right before it loads the images into k3s.
 #
-# With CI_IMAGES_BUILD=1 (a PR) it builds the images on this runner while the
-# cluster comes up; see image:ci-build. A
+# An image whose effective source is already published (image:resolve says
+# REUSE) is pulled right away. The rest are built on this runner on a PR
+# (CI_IMAGES_BUILD=1), while the cluster comes up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
-# would pull what it pushed.
+# would pull what it pushed. On every other run they come from this run's
+# build jobs, which build the same set: the `changes` job resolves it the same
+# way.
 #
 # By path, like image:resolve. Needs GH_TOKEN with actions:read,
-# GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_SHA and IMAGE_PREFIX.
+# GITHUB_REPOSITORY, GITHUB_RUN_ID and IMAGE_PREFIX; RESOLVE_NO_REUSE as the
+# `changes` job has it.
 set -uo pipefail
 
 status_file="${1:?usage: ci-images <status-file>}"
@@ -20,9 +24,27 @@ result=fail
 trap 'echo "$result" > "$status_file"' EXIT
 set -e
 
-: "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_SHA:?}" "${IMAGE_PREFIX:?}"
+: "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${IMAGE_PREFIX:?}"
 
-LOADED="controller api-server ui keycloak"
+resolve=.mise/tasks/image/resolve
+LOADED="controller api-server ui keycloak mock"
+
+pull() { .mise/tasks/image/pull "$2" "$($resolve tar-path "$1")" "platform-$1:latest"; }
+
+stale=() pids=()
+for c in $LOADED; do
+  decision="$($resolve resolve "$c")" || decision=BUILD
+  case "$decision" in
+    "REUSE "*)
+      echo "$c unchanged: ${decision#REUSE }"
+      pull "$c" "${decision#REUSE }" &
+      pids+=($!)
+      ;;
+    *) stale+=("$c") ;;
+  esac
+done
+echo "to build: ${stale[*]:-none}"
+
 if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   # e2e does not run the vm-runner, so a PR only proves it builds, and the
   # cluster does not wait for it: a cold build of its Rust crate takes
@@ -30,7 +52,7 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   # job's last step reads CI_VM_RUNNER_STATUS.
   (
     code=0
-    decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
+    decision="$($resolve resolve vm-runner)" || decision=BUILD
     case "$decision" in
       "REUSE "*) echo "vm-runner unchanged: ${decision#REUSE }" ;;
       *) .mise/tasks/image/ci-build amd64 vm-runner:cacheonly || code=$? ;;
@@ -38,21 +60,25 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
     echo "$code" > "${CI_VM_RUNNER_STATUS:?}"
   ) > /tmp/vm-runner-build.log 2>&1 &
   SECONDS=0
-  .mise/tasks/image/ci-build amd64 controller:load api-server:load ui:load keycloak:load mock:load
-  echo "$(date -u +%H:%M:%S) images built in ${SECONDS}s"
+  [ ${#stale[@]} -eq 0 ] || .mise/tasks/image/ci-build amd64 "${stale[@]/%/:load}"
+  for pid in ${pids[@]+"${pids[@]}"}; do wait "$pid"; done
+  echo "$(date -u +%H:%M:%S) images ready in ${SECONDS}s"
   result=ok
   exit 0
 fi
 
-# CI_IMAGES_JOBS names the jobs e2e needs finished, separated by `|`. cd.yml
-# sets it: the job names differ between a PR and every other run, which
-# builds one job per arch. `detect stale images` is always on it: when it
-# fails, the jobs that need it never start under their names, and nothing
-# else would end the wait. `skipped` counts as done; an image a skipped job
-# did not make fails the pull below instead.
-: "${CI_IMAGES_JOBS:?}"
-IFS='|' read -r -a JOBS <<< "$CI_IMAGES_JOBS"
-wanted="$(printf '%s\n' "${JOBS[@]}" | jq -R . | jq -cs .)"
+# The jobs that build what is stale, by their cd.yml names: CI_IMAGES_IMAGES_JOB
+# builds controller, api-server, ui and keycloak; CI_IMAGES_MOCK_JOB the mock.
+# `detect stale images` is always waited on: when it fails, the build jobs that
+# need it never start under their names, and nothing else would end the wait.
+JOBS=("detect stale images")
+for c in ${stale[@]+"${stale[@]}"}; do
+  case "$c" in
+    mock) JOBS+=("${CI_IMAGES_MOCK_JOB:?}") ;;
+    *) JOBS+=("${CI_IMAGES_IMAGES_JOB:?}") ;;
+  esac
+done
+wanted="$(printf '%s\n' "${JOBS[@]}" | sort -u | jq -R . | jq -cs .)"
 
 deadline=$((SECONDS + ${CI_IMAGES_TIMEOUT:-2400}))
 while :; do
@@ -62,7 +88,7 @@ while :; do
     state="$(printf '%s' "$jobs" | jq -r --argjson wanted "$wanted" '
       [.jobs[] | select(.name as $n | $wanted | index($n))] as $j
       | ($j | map(select(.status == "completed"))) as $done
-      | ($done | map(select(.conclusion != "success" and .conclusion != "skipped"))) as $bad
+      | ($done | map(select(.conclusion != "success"))) as $bad
       | if ($bad | length) > 0 then "failed: " + ($bad | map(.name + "=" + .conclusion) | join(", "))
         elif ($done | length) == ($wanted | length) then "ready"
         else "waiting: \($done | length)/\($wanted | length) done" end')"
@@ -78,18 +104,19 @@ while :; do
   sleep 10
 done
 
-# One artifact holds every image's digest, at <component>/<hex>; see
-# image:ci-build.
-gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
-
-pids=()
-for c in $LOADED mock; do
-  ref="$IMAGE_PREFIX/$c:$GITHUB_SHA"
-  [ "$c" = mock ] || ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")"
-  .mise/tasks/image/pull "$ref" "$(.mise/tasks/image/resolve tar-path "$c")" "platform-$c:latest" &
+# One artifact holds every built image's digest, at <component>/<hex>; see
+# image:ci-build. build-mock pushes the mock under its source sha.
+for c in ${stale[@]+"${stale[@]}"}; do
+  if [ "$c" = mock ]; then
+    ref="$IMAGE_PREFIX/mock:$($resolve source-sha mock)"
+  else
+    [ -d /tmp/digests ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
+    ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")"
+  fi
+  pull "$c" "$ref" &
   pids+=($!)
 done
-for pid in "${pids[@]}"; do wait "$pid"; done
+for pid in ${pids[@]+"${pids[@]}"}; do wait "$pid"; done
 
 result=ok
 echo "$(date -u +%H:%M:%S) images pulled"
