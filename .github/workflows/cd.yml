@@ -271,9 +271,9 @@ jobs:
           path: |
             ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
-      # Written only here, and only on a miss: when the lockfile or an image file
-      # changed.
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+      # Written on a miss only, when the lockfile or an image file changed; any
+      # job that misses writes it, since each may run without the others.
       - if: steps.agent-tools.outputs.cache-hit != 'true'
         run: packages/agents/.mise/tasks/image --warm
       - if: steps.agent-tools.outputs.cache-hit != 'true'
@@ -282,7 +282,7 @@ jobs:
           path: |
             ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -369,7 +369,18 @@ jobs:
           path: |
             ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+      # Written on a miss only, when the lockfile or an image file changed; any
+      # job that misses writes it, since each may run without the others.
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        run: packages/agents/.mise/tasks/image --warm
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/build/data
+            ~/.cache/platform-agent-oci/build/ms-playwright
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
@@ -444,7 +455,18 @@ jobs:
           path: |
             ~/.cache/platform-agent-oci/build/data
             ~/.cache/platform-agent-oci/build/ms-playwright
-          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
+      # Written on a miss only, when the lockfile or an image file changed; any
+      # job that misses writes it, since each may run without the others.
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        run: packages/agents/.mise/tasks/image --warm
+      - if: steps.agent-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/build/data
+            ~/.cache/platform-agent-oci/build/ms-playwright
+          key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', '!packages/agents/base/own-layout.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:sha
 
