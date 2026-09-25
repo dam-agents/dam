@@ -341,7 +341,10 @@ spec:
             - name: GITHUB_ENTERPRISE_HOST
               value: {{ $gheHost | quote }}
             - name: GITHUB_ENTERPRISE_TOKEN
-              value: {{ $ghe.token | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: GITHUB_ENTERPRISE_TOKEN
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}

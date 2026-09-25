@@ -331,7 +331,7 @@ API Server database host — uses external host if set, otherwise shared postgre
 {{- end }}
 
 {{/*
-API Server secrets name — chart-managed Secret holding the external DB password
+API Server secrets name — chart-managed Secret holding operator-supplied credentials
 */}}
 {{- define "platform.apiserver.secrets.fullname" -}}
 {{- printf "%s-apiserver-secrets" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}

@@ -1855,9 +1855,9 @@ e2e:
 # clone rides the gateway with the `github-enterprise` connection its kit
 # requires, and never sees this token.
 #
-# Leave `enterprise.token` empty to read no enterprise host at all. Like the
-# other credentials in these values, it is meant to arrive through a secret
-# values layer rather than be written into a values file in git.
+# Leave `enterprise.token` empty to read no enterprise host at all. It is meant
+# to arrive through a secret values layer rather than a values file in git; the
+# chart stores it in the api-server's Secret, not the pod spec.
 # An empty `enterprise.host` falls back to the enterprise host the connection
 # presets already name (apiServer.oauthAppDefaults.githubEnterprise.host), so a
 # single-host install spells it once; setting it here does not change what those
