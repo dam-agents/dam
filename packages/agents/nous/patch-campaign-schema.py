@@ -33,7 +33,7 @@ webhook channel; ``webhook_url`` for a slack channel; optional ``headers`` for a
 webhook channel.
 
 stdlib + the orchestrator's own deps (pyyaml, jsonschema) only — runs on the
-nous venv python during ``docker build``.
+nous venv python, as the image build's postinstall.
 """
 from __future__ import annotations
 

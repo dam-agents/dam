@@ -1405,7 +1405,7 @@ controller:
       # Relaxing them gives the agent container privileges that bypass the
       # paired-pod credential split and the L7 ext_authz gate.
       # Agent ConfigMaps cannot set these — chart-only by design.
-      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      # UID 65532 is the agent user every agent image is built with.
       podSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532
