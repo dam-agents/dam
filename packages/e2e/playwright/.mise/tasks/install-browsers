@@ -4,7 +4,9 @@
 # provider, and this one is a large download plus `sudo apt` on Linux that only
 # the e2e run tasks need.
 set -euo pipefail
-if [ "$(uname)" = "Linux" ]; then
+# GitHub's runner image already has Chromium's libraries; --with-deps would
+# only add fonts and xvfb, 25s of apt a run that headless tests never use.
+if [ "$(uname)" = "Linux" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
   pnpm exec playwright install --with-deps chromium
 else
   pnpm exec playwright install chromium
