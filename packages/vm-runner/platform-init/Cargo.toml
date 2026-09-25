@@ -4,9 +4,10 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-# The entrypoint of every machine. It runs inside the agent's image, which
-# shares no libc with the runner's, so the image build links it statically, and
-# it depends on nothing a static link could make awkward: std, the libc
+# The entrypoint of every machine, and platform-runc, the container runtime
+# wrapper shipped beside it. Both run inside the agent's image, which shares no
+# libc with the runner's, so the image build links them statically, and they
+# depend on nothing a static link could make awkward: std, serde_json, the libc
 # bindings for mount(2), pivot_root(2), umount2(2), pipe2(2), dup3(2),
 # sigtimedwait(2), waitpid(2) and kill(2), and the tar reader for a
 # migrated agent's seed. The runner links the library
@@ -22,10 +23,8 @@ tar = { version = "0.4", default-features = false }
 # the runner was told to expect. Pure Rust, and already in the lock by way of
 # the runner.
 sha2 = "0.10"
-
-[dev-dependencies]
-# Reads the contract fixtures the controller's tests read too. Already in the
-# lock by way of the runner.
+# platform-runc edits a container's OCI spec, which is JSON; the contract
+# fixture tests read it too. Already in the lock by way of the runner.
 serde_json = "1"
 
 [lints.clippy]

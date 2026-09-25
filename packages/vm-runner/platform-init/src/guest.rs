@@ -5,6 +5,9 @@ pub const SHARE_PATH: &str = "/platform";
 pub const INIT_PATH: &str = "/platform/init";
 pub const SHARE_CA_DIR: &str = "/platform/ca";
 
+// UNIT_BOUNDARY_DESCRIPTION: platform-runc, the OCI runtime wrapper that gives every container started inside a machine the platform CA. The image's entrypoint points docker and k3s at this path, so it is part of the contract the runner writes the share by.
+pub const RUNC_PATH: &str = "/platform/runc";
+
 // UNIT_BOUNDARY_DESCRIPTION: the home an agent brings with it when it moves to this backend: a tar of its old volume, uploaded into the share while the machine is stopped and before it ever booted. platform-init seeds the agent store from it instead of from the image, on the one boot that finds no store.
 pub const SHARE_SEED_FILE: &str = "/platform/seed.tar";
 
@@ -46,6 +49,7 @@ pub fn is_sha256(text: &str) -> bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: where the image expects the platform's MITM CA. The share carries it and platform-init binds it here, so an image's own trust setup is the same sequence on both backends.
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
+pub const GUEST_CA_FILE: &str = "/etc/platform/ca/ca.crt";
 
 // UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the fresh root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
 pub const DISK_DEVICE_PATH: &str = "/workspace";
@@ -88,7 +92,22 @@ mod tests {
         assert_eq!(fixture["agentHome"], AGENT_HOME);
     }
 
-    // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory and the seed directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, or the image's home where the agent's own was meant to be.
+    // TEST_SCENARIO: platform-runc reads the CA from the same guest path the controller puts in the agent's environment. A CA file named differently on this side is a wrapper that finds nothing and starts every container without the CA, silently.
+    #[test]
+    fn the_ca_file_is_the_one_the_controller_names() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../contract/guest.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the guest fixture is JSON");
+        assert_eq!(fixture["caFile"], GUEST_CA_FILE);
+        assert_eq!(
+            Path::new(GUEST_CA_FILE).parent(),
+            Some(Path::new(GUEST_CA_DIR))
+        );
+    }
+
+    // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory, the seed and platform-runc directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, the image's home where the agent's own was meant to be, or containers that never get the CA.
     #[test]
     fn the_share_paths_are_inside_the_share() {
         for path in [
@@ -97,6 +116,7 @@ mod tests {
             SHARE_SEED_FILE,
             SEEDED_PATH,
             SEED_EXPECTED_PATH,
+            RUNC_PATH,
         ] {
             let parent = Path::new(path).parent().expect("a share path has a parent");
             assert_eq!(
