@@ -23,7 +23,7 @@ controller:
     templateDefaults:
       imagePullPolicy: IfNotPresent
 
-  # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+  # Room for one driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
   # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
   # stay inside what the lima VM can schedule — a too-small ceiling once parked
@@ -31,8 +31,8 @@ controller:
   # but the fix here is the VM's capacity, not the stock default.
   #
   # Must stay inside what the lima VM can schedule (etc/lima/k3s.yaml) with
-  # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
-  # admitted workers drove the load average past 20 — kubelet probes timed
+  # headroom for the platform stack: at 8 CPU on an 8-CPU VM, a driver's
+  # admitted sub-agents drove the load average past 20 — kubelet probes timed
   # out, the node flapped NotReady, Keycloak crash-looped on liveness kills
   # and the UI lost auth. 6 of the VM's 10 CPUs caps agent burst so k3s,
   # Istio, Keycloak and the api-server always keep ~4; 14Gi + the ~5Gi

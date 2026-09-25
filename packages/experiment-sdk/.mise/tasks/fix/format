@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-uv run --frozen --group dev ruff format src tests "$@"

@@ -7,12 +7,6 @@ import {
 import { setupProviderPolicy } from "../../modules/sandboxes/lib/setup-policy.js";
 
 describe("setupProviderPolicy", () => {
-  test("experiment offers only the two credentials that reach Claude, steering to the proxy", () => {
-    const policy = setupProviderPolicy("experiment");
-    expect(policy.allow).toEqual(["ibm-litellm", "anthropic"]);
-    expect(policy.recommended).toBe("ibm-litellm");
-  });
-
   test.each(["coding-agent", "starter-kit"] as const)(
     "%s offers every provider, still steering to the proxy",
     (flow) => {
@@ -30,10 +24,11 @@ describe("offeredProviderRows", () => {
     );
   });
 
-  test("applies a kinded policy: only the allowed rows, recommended first", () => {
-    const { allow, recommended } = setupProviderPolicy("experiment");
+  test("applies an allow list: only the allowed rows, recommended first", () => {
     expect(
-      offeredProviderRows(allow, recommended).map((row) => row.type),
+      offeredProviderRows(["anthropic", "ibm-litellm"], "ibm-litellm").map(
+        (row) => row.type,
+      ),
     ).toEqual(["ibm-litellm", "anthropic"]);
   });
 

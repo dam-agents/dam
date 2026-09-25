@@ -339,11 +339,7 @@ flowchart LR
   Folder membership is mutable and advisory: any artifact can be filed into
   any folder, moved to another, or taken out again from the library itself, so
   organising a library is not tied to the moment each artifact was published.
-  Nothing reads membership as a claim about provenance — an
-  [experiment](experiments.md) lineage folder is an ordinary destination,
-  listed among the other folders under its plain name (its full name when that
-  would collide), and what a run produced is recorded by the experiment rather
-  than by where the artifact sits.
+  Nothing reads membership as a claim about provenance.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, grouped into the same collapsible folder groups as the
   library, with the same actions.
@@ -364,8 +360,7 @@ flowchart LR
   artifact a preview is showing closes that preview.
 - On the two agent-scoped surfaces a folder shows only that agent's artifacts,
   every user folder is listed even when empty (so there is always a filing
-  target), and an experiment lineage folder appears only while it holds one of
-  the agent's artifacts. The library itself lists every folder unconditionally.
+  target). The library itself lists every folder unconditionally.
 
 ## Lifecycle and cleanup
 
@@ -416,10 +411,7 @@ library section the artifact lands in — a person promoting a workspace file
 publishes with the sandbox's agent attached. The surface says who filed it:
 agent publishes arrive over the per-agent MCP server, person-driven ones over
 the browser's tRPC surface, so the person-or-agent question is asked of the
-surface, never of the attribution. Artifacts the platform writes for its own bookkeeping
-(an experiment's dashboard, script clone, or results snapshot) are marked
-internal by the caller and raise no publish at all: they are machinery, and
-counting them would report the platform's own writes as user activity.
+surface, never of the attribution.
 
 ## Where the code lives
 

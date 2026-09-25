@@ -8,7 +8,7 @@ import {
   AGENT_WORK_DIR,
   type AppRouter,
 } from "agent-runtime-api";
-import type { ExperimentsService, SatelliteView } from "api-server-api";
+import type { SatelliteView } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -122,7 +122,6 @@ export interface McpSessionDeps {
   } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
-  experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -988,8 +987,6 @@ export function createMcpSession(
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
-    attachToExperiment: (artifactId, experimentId) =>
-      deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
 
   if (deps.kbShares) {
@@ -1060,7 +1057,6 @@ export interface MountMcpDeps {
   onboardingChecklist: OnboardingChecklistOps;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
-  experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1093,7 +1089,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const experiments = deps.experimentsServiceFor(verified.owner);
     const [ownerIsInspector, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
@@ -1124,7 +1119,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         : null,
       artifactLibrary,
       invocations,
-      experiments,
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

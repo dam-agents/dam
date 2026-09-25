@@ -57,4 +57,3 @@ The pin is **level-based**. Spawn sets it synchronously, so a Driver cannot hibe
 
 The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the pod's platform URL: spawn and wait, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand. A failure raises with the platform's reason. Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate. The HTTP routes are the contract; the clients stay thin. Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).
 
-[Experiments](experiments.md) additionally attach spawns made inside a span to that span.

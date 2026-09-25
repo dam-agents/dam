@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-09-23
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -78,7 +78,6 @@ What each measurement counts, and what it cannot answer:
 - **File imports** — one per import attempt, by **surface** and **outcome**, beside a **bytes** counter that advances only on success, so a failed transfer never inflates the volume.
 - **Skill changes** — one per skill installed on or uninstalled from an agent, by **action** and **origin**. The skill's name is deliberately not a dimension: it is user-authored and unbounded, so *which* skills people install stays a question for the activity log.
 - **Relay attachments** — one per interactive attachment to a running agent, by **relay** and surface: the measurement that tells whether a way of reaching an agent earns its keep. Background read-only sockets, which the browser opens to follow a session it is not driving, are not attachments anyone made and are not counted. This is the one signal whose two sinks count different units: the activity log keeps one row per person, agent and relay per day, while this counts every attachment, so the two are not comparable head to head.
-- **Experiment transitions** — one per transition an actor drove, whether a person or an agent acting for its owner. A transition the platform drove itself, such as a sweep reaping an idle experiment, is not someone using the feature and is not counted.
 - **Invocation spawns** — one per target an agent spawned, carrying no dimension: the driver and target would multiply series by the fleet size, and the owner is the identifier this whole section exists to keep out. Delegation volume is the question it answers.
 - **Entry-point choices** — one per way-in chosen on the empty home screen, by **choice**. It counts clicks rather than people: the activity log keeps one row per person and so answers *how many chose*, while this answers *how often it was chosen*.
 

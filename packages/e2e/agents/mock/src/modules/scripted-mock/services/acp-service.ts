@@ -19,8 +19,6 @@ const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const ASK_TIMEOUT_MS = 30_000;
-const EXPERIMENT_LAUNCH_DIRECTIVE =
-  /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
@@ -134,19 +132,6 @@ export function startAcpService(deps: AcpServiceDeps): void {
 
     for (const file of deps.state.scriptFiles) {
       await deps.workspace.writeFile(file.path, file.content);
-    }
-
-    const launch = EXPERIMENT_LAUNCH_DIRECTIVE.exec(promptStr);
-    if (launch) {
-      deps.processRunner.spawnDetached({
-        command: "python3",
-        args: [launch[2]!],
-        env: { PLATFORM_EXPERIMENT_ID: launch[1]! },
-        logPath: `${launch[2]!}.log`,
-      });
-      emitText(sid, `experiment ${launch[1]!} started`);
-      respond(id, { stopReason: "end_turn" });
-      return;
     }
 
     const asked = ASK_DIRECTIVE.exec(promptStr);

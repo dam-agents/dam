@@ -28,10 +28,4 @@ export interface ProcessRunner {
     env?: Record<string, string>;
     timeoutMs: number;
   }): Promise<{ code: number; output: string }>;
-  spawnDetached(args: {
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-    logPath: string;
-  }): void;
 }

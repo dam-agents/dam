@@ -30,9 +30,6 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
-    listByExperiment: async () => [],
-    countRunningByDriver: async () => new Map(),
-    failAllRunningByExperiment: async () => [],
     delete: async () => {},
     ...overrides,
   };

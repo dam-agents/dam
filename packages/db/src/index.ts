@@ -30,8 +30,6 @@ export {
   actorRoles,
   termsAcceptances,
   apiKeys,
-  experiments,
-  experimentSpans,
   userFeatures,
   artifactFolders,
   libraryArtifacts,

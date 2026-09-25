@@ -10,9 +10,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SectionLabel } from "@/components/ui/section-label";
-import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -70,8 +67,6 @@ export function SessionsSidebar({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
-  const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
@@ -85,20 +80,6 @@ export function SessionsSidebar({
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
     [sessions, sessionFilter],
-  );
-  const launchingRun =
-    pendingLaunch &&
-    pendingLaunch.agentId === selectedAgent &&
-    !sessions.some((s) => s.experimentId === pendingLaunch.runId)
-      ? pendingLaunch
-      : null;
-
-  const [conversationSessions, runSessions] = useMemo(
-    () => [
-      visibleSessions.filter((s) => sessionCategory(s) !== "experiments"),
-      visibleSessions.filter((s) => sessionCategory(s) === "experiments"),
-    ],
-    [visibleSessions],
   );
 
   const { data: features } = useFeatures();
@@ -256,27 +237,7 @@ export function SessionsSidebar({
             No sessions match the filter
           </p>
         )}
-        {conversationSessions.map(renderRow)}
-        {(runSessions.length > 0 || launchingRun) && (
-          <SectionLabel className="block px-4 pb-1 pt-4">
-            Experiment runs
-          </SectionLabel>
-        )}
-        {launchingRun && (
-          <Tooltip content="Show the launch progress">
-            <button
-              type="button"
-              onClick={focusPendingLaunch}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
-            >
-              <Spinner />
-              <span className="min-w-0 flex-1 truncate">
-                Starting run — waking the agent…
-              </span>
-            </button>
-          </Tooltip>
-        )}
-        {runSessions.map(renderRow)}
+        {visibleSessions.map(renderRow)}
       </div>
     </SidebarSection>
   );

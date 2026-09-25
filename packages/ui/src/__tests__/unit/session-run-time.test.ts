@@ -11,7 +11,6 @@ function session(over: Partial<SessionView>): SessionView {
     mode: SessionMode.Chat,
     createdAt: "2026-01-01T00:00:00Z",
     scheduleId: null,
-    experimentId: null,
     threadTs: null,
     title: null,
     updatedAt: null,

@@ -5,11 +5,9 @@ import type { AgentView, TemplateView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { useDriverSummaries } from "../../experiments/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
-import { isExperimentSandbox } from "../utils/agent-kind.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import {
   sandboxSubtitle,
@@ -31,7 +29,6 @@ export function useAgentRows() {
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
   const { data: budget } = useBudgetReserved();
-  const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
@@ -52,16 +49,6 @@ export function useAgentRows() {
     [pausingAgents],
   );
 
-  const experimentCountByDriver = useMemo(() => {
-    if (!driverSummaries) return undefined;
-    return new Map(
-      driverSummaries.map((summary) => [
-        summary.driverAgentId,
-        new Set(summary.experiments.map((e) => e.name)).size,
-      ]),
-    );
-  }, [driverSummaries]);
-
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
     () => ({
       templateNameById: new Map(templates.map((t) => [t.id, t.name])),
@@ -76,12 +63,7 @@ export function useAgentRows() {
   const rowProps = (agent: AgentView) => ({
     agent,
     display: resolveAgentDisplay(agent, restartingIds, pausingIds),
-    subtitle: sandboxSubtitle(agent, subtitleLookup, {
-      experimentCount:
-        isExperimentSandbox(agent) && experimentCountByDriver
-          ? (experimentCountByDriver.get(agent.id) ?? 0)
-          : undefined,
-    }),
+    subtitle: sandboxSubtitle(agent, subtitleLookup),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,

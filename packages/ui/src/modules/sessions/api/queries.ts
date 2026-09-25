@@ -36,7 +36,6 @@ export function optimisticInsertSession(
     mode,
     createdAt: new Date().toISOString(),
     scheduleId: null,
-    experimentId: null,
     title: null,
     updatedAt: null,
     running,
@@ -106,11 +105,7 @@ export function useAcpSessions(
               sessions.map((s) => s.sessionId),
             );
           }
-          const allowed: string[] = [
-            SessionType.Regular,
-            SessionType.ExperimentExecute,
-            SessionType.CliRun,
-          ];
+          const allowed: string[] = [SessionType.Regular, SessionType.CliRun];
           if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
           if (include.scheduled) allowed.push(SessionType.ScheduleCron);

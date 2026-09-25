@@ -151,7 +151,6 @@ const configSchema = z.object({
   kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
   kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
   kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
-  experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
   links: linksSchema,
   terms: z.object({
@@ -299,7 +298,6 @@ export function loadConfig(): Config {
     kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
     kbShareMaxConnectionsPerOwner:
       process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
-    experimentInactivitySeconds: process.env.EXPERIMENT_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

@@ -30,9 +30,6 @@ function makeService(opts: {
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
-    listByExperiment: async () => [],
-    countRunningByDriver: async () => new Map(),
-    failAllRunningByExperiment: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
     },

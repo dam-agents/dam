@@ -2,7 +2,6 @@ import type { Meter } from "@opentelemetry/api";
 import type { EntryPointChoice } from "api-server-api";
 import type {
   ConnectionKind,
-  ExperimentChanged,
   ScheduleFired,
   SkillChangeAction,
   SkillOrigin,
@@ -15,8 +14,6 @@ import type {
 } from "../domain/vocabulary.js";
 
 export type ScheduleMode = ScheduleFired["mode"];
-
-export type ExperimentAction = NonNullable<ExperimentChanged["action"]>;
 
 export interface UsageRecorder {
   turn(input: { surface: UsageSurface; template: string }): void;
@@ -38,7 +35,6 @@ export interface UsageRecorder {
   }): void;
   skillChange(input: { action: SkillChangeAction; origin: SkillOrigin }): void;
   relayAttach(input: { relay: RelayKind; surface: UsageSurface }): void;
-  experimentChange(input: { action: ExperimentAction }): void;
   invocationSpawn(): void;
   entryPointChoice(input: { choice: EntryPointChoice }): void;
 }
@@ -72,10 +68,6 @@ export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
   const relayAttaches = meter.createCounter("platform.relay.attach.total", {
     description: "Attachments to a running agent, by relay",
   });
-  const experimentChanges = meter.createCounter(
-    "platform.experiment.change.total",
-    { description: "Experiment transitions a person drove" },
-  );
   const invocationSpawns = meter.createCounter(
     "platform.invocation.spawn.total",
     { description: "Invocation targets spawned by a driving agent" },
@@ -128,9 +120,6 @@ export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
         "platform.relay.kind": relay,
         "platform.relay.surface": surface,
       });
-    },
-    experimentChange({ action }) {
-      experimentChanges.add(1, { "platform.experiment.action": action });
     },
     invocationSpawn() {
       invocationSpawns.add(1);

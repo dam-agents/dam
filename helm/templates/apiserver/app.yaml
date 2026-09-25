@@ -557,7 +557,7 @@ spec:
           # drivers polling through it with a 503 ("upstream connect error ...
           # connection termination"); a missed liveness check restarts the
           # container and kills every in-flight mesh connection at once. Both
-          # read as an api-server outage to an experiment loop, which has no
+          # read as an api-server outage to a driver's spawn, which has no
           # retry. Slow must degrade, not restart — same intent as the Keycloak
           # note above, which a 1s timeout silently defeats.
           readinessProbe:

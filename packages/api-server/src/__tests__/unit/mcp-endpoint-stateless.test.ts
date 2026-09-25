@@ -33,7 +33,6 @@ function replica() {
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),
     invocationsServiceFor: () => ({}),
-    experimentsServiceFor: () => ({}),
     carriesInspectorRole: async () => false,
     caseStudySubmissions: {},
     caseStudyInspection: {},

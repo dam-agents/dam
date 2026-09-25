@@ -12,7 +12,7 @@ images:
 # Pending forever with FailedScheduling: Insufficient cpu.
 #
 # 10 is the host's full logical-CPU count (vz time-shares vCPUs, so the host
-# stays responsive). At 8, an experiment fanning out workers within the old
+# stays responsive). At 8, a driver fanning out sub-agents within the old
 # 8-CPU budget ceiling drove the VM's load average past 20: kubelet probes
 # timed out, the node flapped NotReady, and Keycloak crash-looped on liveness
 # kills until the UI lost auth entirely. The per-user budget ceiling in
@@ -23,7 +23,7 @@ images:
 # every host core, a sustained CPU hog on the host (a forgotten dev server,
 # a runaway build) stalls the guest's vCPUs long enough to blow 3-second
 # liveness probes — postgres/redis get SIGTERMed while "Completed", the
-# api-server 500s, and a running experiment dies with it, all while the VM's
+# api-server 500s, and a running fan-out dies with it, all while the VM's
 # own load average looks innocent. When probes time out cluster-wide but
 # `free`/`df` inside the VM look fine, check `uptime` and top CPU consumers
 # on the host first, not the cluster.

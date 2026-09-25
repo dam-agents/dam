@@ -30,7 +30,6 @@ export const KIND_AGENT = "Agent";
 
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
-export const EXPERIMENT_ACTIVE_KEY = "agent-platform.ai/experiment-active";
 export const INVOCATIONS_ACTIVE_KEY = "agent-platform.ai/invocations-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";

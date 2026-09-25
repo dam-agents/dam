@@ -13,7 +13,7 @@ All images but k-search are built with [`mise oci`](https://mise.jdx.dev/dev-too
 - **k-search** is the one Dockerfile image, `FROM` the Claude Code image, because it clones and patches two repositories at build time.
 - **The e2e mock** is an environment too, kept beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/).
 
-Only the agent-runtime, driver-sdk and the experiment SDK come from the rest of the repo; the build compiles them into each image.
+Only the agent-runtime and the driver SDK (JS and Python) come from the rest of the repo; the build compiles them into each image.
 
 ## Building
 

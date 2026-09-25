@@ -1,7 +1,5 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 
-import { isExperimentFolder } from "./folders.js";
-
 export const UNGROUPED_KEY = "ungrouped";
 
 export interface ArtifactFolderGroup {
@@ -13,13 +11,7 @@ export interface ArtifactFolderGroup {
 export function groupArtifactsByFolder(
   artifacts: readonly LibraryArtifact[],
   folders: readonly ArtifactFolder[],
-  {
-    includeEmptyUngrouped = false,
-    includeEmptyExperimentFolders = false,
-  }: {
-    includeEmptyUngrouped?: boolean;
-    includeEmptyExperimentFolders?: boolean;
-  } = {},
+  { includeEmptyUngrouped = false }: { includeEmptyUngrouped?: boolean } = {},
 ): ArtifactFolderGroup[] {
   const byFolder = new Map<string | null, LibraryArtifact[]>();
   for (const artifact of artifacts) {
@@ -27,18 +19,11 @@ export function groupArtifactsByFolder(
     byFolder.set(key, [...(byFolder.get(key) ?? []), artifact]);
   }
 
-  const groups: ArtifactFolderGroup[] = folders
-    .filter(
-      (folder) =>
-        !isExperimentFolder(folder) ||
-        includeEmptyExperimentFolders ||
-        (byFolder.get(folder.id) ?? []).length > 0,
-    )
-    .map((folder) => ({
-      key: folder.id,
-      folder,
-      artifacts: byFolder.get(folder.id) ?? [],
-    }));
+  const groups: ArtifactFolderGroup[] = folders.map((folder) => ({
+    key: folder.id,
+    folder,
+    artifacts: byFolder.get(folder.id) ?? [],
+  }));
 
   const knownFolderIds = new Set(folders.map((f) => f.id));
   const ungrouped = artifacts.filter(
