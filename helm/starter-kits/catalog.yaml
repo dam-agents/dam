@@ -14,3 +14,5 @@ kits:
   - path: kits/k-search
   - id: software-developer
     url: https://github.com/dam-agents/software-developer
+  - id: micro-manager
+    url: https://github.com/dam-agents/micro-manager
