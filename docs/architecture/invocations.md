@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -46,6 +46,12 @@ sequenceDiagram
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
+
+## The Invocation Pin
+
+A Driver usually waits on its sub-agents from a script, and the signals that keep an Agent awake see sessions, connections and background work its harness reports — not a detached loop, and not a harness that reports nothing. Hibernating a waiting Driver kills the loop, and the results then have nobody to collect them. So while an Agent drives at least one running Invocation it carries a pin the controller's idle checker and early reclaim both honour ([agent-lifecycle](agent-lifecycle.md#hibernate)); a hard stop or pause still wins.
+
+The pin is **level-based**. Spawn sets it synchronously, so a Driver cannot hibernate between its spawn and the next reconcile; a periodic reconcile then pins exactly the Drivers with a running Invocation and releases the rest. No terminal path has to remember to release it, whichever of them ended the last Invocation. A release bumps the Driver's activity, so its ordinary idle window starts from the last result and a chained spawn never finds it asleep. A Driver that crashed mid-fan-out stays up until its targets' deadlines end their Invocations.
 
 ## Driver SDK
 

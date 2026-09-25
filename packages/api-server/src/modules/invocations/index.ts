@@ -6,6 +6,7 @@ export {
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
   type DriverResolution,
 } from "./compose.js";

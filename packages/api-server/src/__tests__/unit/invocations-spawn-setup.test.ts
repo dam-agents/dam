@@ -26,6 +26,7 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     listExpiredRunning: async () => [],
     listRunning: async () => [],
     listRunningByDriver: async () => [],
+    listRunningDriverIds: async () => [],
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
@@ -43,6 +44,7 @@ function makeService() {
   const bumped: Array<Array<{ id: string; kind: string; payload: unknown }>> =
     [];
   const skillsApplied: unknown[] = [];
+  const pinned: string[] = [];
   const service = createInvocationsService({
     owner: "owner-1",
     repo: repoStub().repo,
@@ -68,8 +70,11 @@ function makeService() {
         return { installed: [], skipped: [], added: 0 } as never;
       },
     },
+    pinDriver: async (id) => {
+      pinned.push(id);
+    },
   });
-  return { service, created, bumped, skillsApplied };
+  return { service, created, bumped, skillsApplied, pinned };
 }
 
 const baseInput: SpawnInput = {
@@ -155,6 +160,30 @@ describe("spawn applies an Agent Setup", () => {
     });
 
     expect(skillsApplied).toEqual([{ agentId: id, skills }]);
+  });
+});
+
+describe("spawn pins its driver", () => {
+  // TEST_SCENARIO: the driver must not hibernate between its spawn call and the next pin reconcile, so the spawn itself pins it before the target is created.
+  test("the driver is pinned before the target is created", async () => {
+    const { service, pinned, created } = makeService();
+
+    await service.spawn(baseInput);
+
+    expect(pinned).toEqual(["driver-1"]);
+    expect(created).toHaveLength(1);
+  });
+
+  test("a refused spawn does not pin", async () => {
+    const { service, pinned } = makeService();
+
+    await expect(
+      service.spawn({
+        ...baseInput,
+        target: { templateId: "codex", runsOn: ["openai"] },
+      }),
+    ).rejects.toBeInstanceOf(ProviderMismatchError);
+    expect(pinned).toEqual([]);
   });
 });
 

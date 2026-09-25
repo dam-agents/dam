@@ -21,6 +21,11 @@ import {
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
 import { createSetupFailure } from "./services/setup-failure.js";
+import {
+  createInvocationPinReconciler,
+  type DriverPin,
+  type InvocationPinReconciler,
+} from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -32,6 +37,7 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
   targetAdmission?: TargetAdmission;
   skills?: Pick<SkillsService, "applyEntries">;
+  pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
@@ -44,6 +50,7 @@ export function composeInvocationsForOwner(opts: {
     wakeAgent: opts.wakeAgent,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
+    ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
     isExperimentRunning: async (experimentId, driverAgentId) => {
       const row = await experimentsRepo.get(experimentId, opts.owner);
       return row?.status === "running" && row.driverAgentId === driverAgentId;
@@ -96,6 +103,21 @@ export function createInvocationSetupFailure(opts: {
   return createSetupFailure({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
+  });
+}
+
+export function composeInvocationPinReconciler(opts: {
+  db: Db;
+  listPinnedAgentIds: () => Promise<string[]>;
+  pin: DriverPin;
+  log?: (msg: string) => void;
+}): InvocationPinReconciler {
+  const repo = createInvocationsRepository(opts.db);
+  return createInvocationPinReconciler({
+    listRunningDriverIds: () => repo.listRunningDriverIds(),
+    listPinnedAgentIds: opts.listPinnedAgentIds,
+    pin: opts.pin,
+    ...(opts.log ? { log: opts.log } : {}),
   });
 }
 
