@@ -2,6 +2,7 @@ import {
   ARTIFACT_PROMPT_MAX_LENGTH,
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_REQUEST_TYPE,
+  ARTIFACT_REQUEST_TIMEOUT_MS,
   ARTIFACT_RESPONSE_TYPE,
 } from "api-server-api";
 import { artifactApiMethodSchema } from "agent-runtime-api";
@@ -18,6 +19,7 @@ window.platform = (() => {
     const call = pending.get(data.id);
     if (!call) return;
     pending.delete(data.id);
+    clearTimeout(call.timer);
     if (data.ok) call.resolve({ status: data.status, contentType: data.contentType, body: data.body });
     else call.reject(Object.assign(new Error("Artifact API request failed: " + data.reason), { reason: data.reason }));
   });
@@ -36,7 +38,11 @@ window.platform = (() => {
         throw new Error("Provide the body as a string.");
       const id = ++nextId + "-" + Math.random().toString(36).slice(2);
       return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(Object.assign(new Error("Artifact API request failed: timeout"), { reason: "timeout" }));
+        }, ${ARTIFACT_REQUEST_TIMEOUT_MS});
+        pending.set(id, { resolve, reject, timer });
         window.parent.postMessage({ type: ${JSON.stringify(ARTIFACT_REQUEST_TYPE)}, id, method, path, body, contentType }, "*");
       });
     },

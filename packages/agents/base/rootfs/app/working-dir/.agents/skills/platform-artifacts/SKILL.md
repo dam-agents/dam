@@ -74,7 +74,8 @@ only when the platform cannot deliver the request, with an `Error` whose `reason
 is one of:
 
 - `app-not-listening`: nothing answers on the port. Retryable.
-- `timeout`: your server took longer than 30 seconds.
+- `timeout`: your server took longer than 30 seconds, or the platform gave no
+  answer within 3 minutes.
 - `response-too-large`: your response body is over 1 MiB.
 - `too-many-requests`: the page already has 8 requests waiting.
 - `agent-unreachable`, `unsupported-runtime`, `not-allowed`, `invalid-request`.
@@ -107,18 +108,8 @@ cookies, auth headers or custom headers.
 The same rules as `sendPrompt`: only in the owner's docked preview beside a chat
 with the publishing agent, on the latest version, with the feature enabled. It
 never works on shared pages, library previews or historical versions. There, the
-call gets no answer at all, so wrap requests in your own timeout:
-
-```js
-function withTimeout(promise, ms = 35000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(Object.assign(new Error("No answer"), { reason: "timeout" })), ms),
-    ),
-  ]);
-}
-```
+call rejects with `timeout` after 3 minutes. The wait is that long because waking a
+hibernated agent can take up to 2 minutes. Show a loading state while you wait.
 
 ### Build the page for a missing server
 

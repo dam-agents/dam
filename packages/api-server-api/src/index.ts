@@ -266,6 +266,7 @@ export {
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
+  ARTIFACT_REQUEST_TIMEOUT_MS,
   artifactRequestEnvelopeSchema,
   artifactRequestMessageSchema,
   type ArtifactRequestMessage,

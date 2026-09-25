@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ARTIFACT_PROMPT_MAX_LENGTH,
   ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_REQUEST_TIMEOUT_MS,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
 } from "api-server-api";
@@ -25,7 +26,11 @@ function page() {
     addEventListener: (_type: string, listener: (typeof listeners)[number]) =>
       listeners.push(listener),
   };
-  runInNewContext(ARTIFACT_BRIDGE_SHIM_BODY, { window });
+  runInNewContext(ARTIFACT_BRIDGE_SHIM_BODY, {
+    window,
+    setTimeout,
+    clearTimeout,
+  });
   const deliver = (data: unknown, source: unknown = parent) => {
     for (const listener of listeners) listener({ source, data });
   };
@@ -117,6 +122,50 @@ describe("artifact API requests", () => {
     deliver({ ...ok, id, status: 200, body: "real" });
     deliver({ ...ok, id, status: 500, body: "late duplicate" });
     await expect(answer).resolves.toMatchObject({ status: 200, body: "real" });
+  });
+
+  it("rejects with a timeout when the host never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const { platform, postMessage, deliver } = page();
+      const answer = platform.request({ method: "GET", path: "/" });
+      const settled = expect(answer).rejects.toMatchObject({
+        reason: "timeout",
+      });
+      vi.advanceTimersByTime(ARTIFACT_REQUEST_TIMEOUT_MS);
+      await settled;
+      deliver({
+        type: ARTIFACT_RESPONSE_TYPE,
+        id: sentRequestId(postMessage),
+        ok: true,
+        status: 200,
+        contentType: null,
+        body: "too late",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an answered request settled after the timeout passes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { platform, postMessage, deliver } = page();
+      const answer = platform.request({ method: "GET", path: "/" });
+      deliver({
+        type: ARTIFACT_RESPONSE_TYPE,
+        id: sentRequestId(postMessage),
+        ok: true,
+        status: 200,
+        contentType: null,
+        body: "on time",
+      });
+      vi.advanceTimersByTime(ARTIFACT_REQUEST_TIMEOUT_MS);
+      await expect(answer).resolves.toMatchObject({ body: "on time" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("gives every request its own id", () => {

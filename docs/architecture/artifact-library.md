@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -98,7 +98,9 @@ serves only artifacts that are owned by the caller, HTML, interactive and
 private, whatever the feature flag says. Any HTTP status the server returns is a
 normal answer; a typed failure reason reports only what the platform could not
 deliver, such as nothing listening on the port, a timeout, a body over the size
-cap or too many requests in flight from one frame. Bodies are text only and
+cap or too many requests in flight from one frame. The bridge also rejects any
+request the host has not answered within three minutes, longer than a wake plus
+the relay timeout, so every call settles even when the host drops it. Bodies are text only and
 capped both ways, and only the content type crosses in either direction. The
 Agent starts and keeps its server alive itself; the platform never starts,
 supervises or restarts it, so after hibernation the page reports nothing
