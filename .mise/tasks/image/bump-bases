@@ -3,8 +3,8 @@
 #USAGE flag "--check" help="Change nothing: print each stale pin as '<file> <tag> <pinned> <current>' and exit 1 if there is one"
 # The images image:pack builds take their base by tag and digest, so an image's
 # source sha names its whole content and image:resolve can reuse it. Base
-# updates therefore land as commits: this task writes them, and cd.yml's
-# nightly run checks for them with --check.
+# updates therefore land as commits: this task writes them, and security.yml,
+# in CI/CD's nightly run, checks for them with --check.
 #
 # By path too, with crane on PATH.
 set -euo pipefail

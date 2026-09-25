@@ -1,0 +1,36 @@
+name: Set up mise
+description: >-
+  mise at the repo's pinned version with the tools this job needs, and, given
+  credentials, crane logged in to quay.io.
+
+inputs:
+  install_args:
+    description: The tools to install; empty installs every tool mise.lock pins.
+    default: ""
+  cache:
+    description: Whether mise-action restores its tool cache.
+    default: "true"
+  quay-username:
+    description: quay.io user; empty skips the login.
+    default: ""
+  quay-password:
+    description: quay.io password or robot token.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # A PR never saves the tool cache: a branch must not write an entry main
+    # then restores.
+    - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        version: "2026.9.13"
+        install_args: ${{ inputs.install_args }}
+        cache: ${{ inputs.cache }}
+        cache_save: ${{ github.event_name != 'pull_request' }}
+    - if: inputs.quay-username != ''
+      shell: bash
+      env:
+        QUAY_USERNAME: ${{ inputs.quay-username }}
+        QUAY_PASSWORD: ${{ inputs.quay-password }}
+      run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin

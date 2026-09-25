@@ -19,7 +19,7 @@
 #   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
 #   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
-#   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
+#   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
