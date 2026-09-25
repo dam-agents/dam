@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Pull the published images a local install needs and write them where
 # cluster:install imports them from (each component's dist/oci/<component>.tar,
-# named platform-<component>:latest), for hosts where
-# `docker build` cannot run: RUN steps there do not trust the agent proxy's CA.
+# named platform-<component>:latest), which is faster than building them.
 # Run from the repo root, then install with SKIP_IMAGE_BUILD=1.
 #
 # Usage: pull-images [agent-component ...]    (default agent: mock, the e2e harness)

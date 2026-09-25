@@ -20,7 +20,7 @@
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
-#   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
+#   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
@@ -183,7 +183,7 @@ self_check() {
   has "$(effective_paths skydiscover)" packages/agents/skydiscover
   has "$(effective_paths skydiscover)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
-  # git/docker.
+  # git or a registry.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'

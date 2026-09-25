@@ -6,8 +6,8 @@
 # this in the background, and cluster:install waits on the status file
 # (CI_IMAGES_STATUS) right before it loads the images into k3s.
 #
-# With CI_IMAGES_BUILD=1 (a PR) it builds the images on this runner, from the
-# registry buildcache, while the cluster comes up; see image:ci-build. A
+# With CI_IMAGES_BUILD=1 (a PR) it builds the images on this runner while the
+# cluster comes up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
 # would pull what it pushed.
 #

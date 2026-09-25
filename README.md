@@ -141,12 +141,13 @@ The hosted deployment provides IBM internal model endpoints and integrations tha
 ### Prerequisites
 
 * [mise](https://mise.jdx.dev)
-* Docker compatible runtime such as Docker Desktop, Rancher Desktop, or Colima
 * macOS or Linux
 
-Podman is not supported.
+Images build without a container runtime: each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM.
 
 On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+
+On Linux, the agent and VM runner images build with sudo, and the VM runner's build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu).
 
 ### Setup
 

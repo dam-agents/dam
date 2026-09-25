@@ -1,7 +1,7 @@
 ---
 name: ccweb
 description: |
-  Run and verify this repo inside a Claude Code on the web sandbox — the cloud container with no systemd, no KVM, no IPv6, a TLS-intercepting egress proxy and a fixed disk allowance. Use when a session there needs mise, docker, the local k3s cluster (`cluster:install` / `e2e:install` with `IS_SANDBOX=1`), platform images, or to drive the UI with agent-browser. Triggers on "ccweb", "Claude Code on the web", "cloud sandbox", "IS_SANDBOX", "agent-browser", and on these symptoms there - `failed to update /proc/self/oom_score_adj: Permission denied`, istio-cni `failed to Statfs "/host/proc/1/ns/net": permission denied`, ztunnel `Address family not supported by protocol`, `x509: certificate signed by unknown authority` inside `docker build`, pods `Evicted` with DiskPressure while `df` shows room, `kubectl logs` failing with `EOF` through the agent proxy.
+  Run and verify this repo inside a Claude Code on the web sandbox — the cloud container with no systemd, no KVM, no IPv6, a TLS-intercepting egress proxy and a fixed disk allowance. Use when a session there needs mise, the local k3s cluster (`cluster:install` / `e2e:install` with `IS_SANDBOX=1`), platform images, or to drive the UI with agent-browser. Triggers on "ccweb", "Claude Code on the web", "cloud sandbox", "IS_SANDBOX", "agent-browser", and on these symptoms there - `failed to update /proc/self/oom_score_adj: Permission denied`, istio-cni `failed to Statfs "/host/proc/1/ns/net": permission denied`, ztunnel `Address family not supported by protocol`, pods `Evicted` with DiskPressure while `df` shows room, `kubectl logs` failing with `EOF` through the agent proxy.
 ---
 
 # Claude Code on the web sandbox
@@ -22,7 +22,6 @@ You are here when `CLAUDE_CODE_REMOTE=true`, PID 1 is `process_api`, and `/run/s
 | PID 1 not inspectable | istio-cni: `Statfs /host/proc/1/ns/net: permission denied` | `k3s-launcher`: k3s in its own PID namespace |
 | cgroup v1 | kubelet ≥ 1.35 refuses to start | `k3s-launcher`: `fail-cgroupv1=false` |
 | Fixed disk allowance far below the 252G the device reports | kubelet's 5% threshold evicts everything, then GCs images | `k3s-launcher`: absolute 2Gi eviction thresholds |
-| The proxy's CA is trusted on the host only | `RUN` steps in `docker build` fail TLS | [`pull-images`](scripts/pull-images) instead of building |
 | No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off |
 
 The launcher's workarounds are sandbox-only on purpose. Each one turns on only when its probe says it is needed, but clamping OOM scores or lowering eviction thresholds would change behavior on a real host.
@@ -43,7 +42,7 @@ Run the install with a long timeout or in the background: the first run takes ab
 
 ## Images
 
-`docker build` cannot work here: the builder's `RUN` steps reach the network through the proxy but do not trust its CA. Do not edit Dockerfiles to inject it. Do not shadow `/usr/local/bin/docker` with a wrapper either: the permission classifier treats that as persistence and refuses it.
+No image build runs a container, so each builds here like on any Linux host. [`pull-images`](scripts/pull-images) is still the faster path for the images your change leaves alone.
 
 - **Unchanged code:** `pull-images` pulls CI's images. api-server, ui and controller come from the newest main commit at or behind your merge base. keycloak and agents come via `image:resolve`.
 - **Changed controller, ui, api-server or keycloak:** `mise run //packages/<pkg>:oci` (keycloak's package is `keycloak-theme`), then `mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path <component>)"`. None of these builds runs a container.

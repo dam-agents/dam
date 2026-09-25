@@ -234,8 +234,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      # For the keycloak theme build.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -245,14 +243,9 @@ jobs:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
         run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
-      # Only the registry buildcache, written here and read by every PR. A gha
-      # cache export, once also written on PR runs with mode=max, put gigabytes
-      # per run into the 10 GB GitHub gives the whole repository and evicted
-      # the Go, mise-tool and Playwright caches every run reads.
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
-          CACHE_TO: "1"
         run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
       # The keycloak theme build, for e2e on a PR. This job starts from an
       # empty task cache, so the entry holds this run's artifacts alone.
@@ -575,8 +568,6 @@ jobs:
           persist-credentials: false
           # e2e:ci-images reads the vm-runner's source history on a PR.
           fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-      - if: github.event_name == 'pull_request'
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       # See build-images. Before mise-action, like check-test's.
       - if: github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
