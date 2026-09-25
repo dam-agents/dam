@@ -185,14 +185,13 @@ export function createSchedulesService(deps: {
     },
 
     async delete(id) {
-      const current = await deps.repo.get(id, deps.owner);
       await deps.runner.cancel(id);
-      await deps.repo.delete(id, deps.owner);
-      if (current) {
+      const deleted = await deps.repo.delete(id, deps.owner);
+      if (deleted) {
         emit({
           type: EventType.ScheduleDeleted,
           scheduleId: id,
-          agentId: current.agentId,
+          agentId: deleted.agentId,
           ownerSub: deps.owner,
         });
       }

@@ -14,6 +14,7 @@ import type {
   CounterWrite,
   ScheduleStatusPatch,
 } from "../domain/status-transitions.js";
+import { getLogger } from "../../../core/logger.js";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
@@ -54,7 +55,7 @@ export interface SchedulesRepository {
     spec: ScheduleSpec,
   ): Promise<Schedule | null>;
   updateName(id: string, owner: string, name: string): Promise<Schedule | null>;
-  delete(id: string, owner: string): Promise<void>;
+  delete(id: string, owner: string): Promise<{ agentId: string } | null>;
   listIdsByAgent(agentId: string): Promise<string[]>;
   deleteByAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -66,7 +67,7 @@ export interface SchedulesRepository {
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
-interface InternalRow {
+export interface InternalRow {
   id: string;
   agentId: string;
   owner: string;
@@ -82,9 +83,12 @@ interface InternalRow {
   precheckFailedCount: number;
 }
 
-function rowToSchedule(row: InternalRow): Schedule {
-  const spec = scheduleSpecSchema.parse(row.spec);
-  spec.enabled = row.enabled;
+export function rowToSchedule(row: InternalRow): Schedule {
+  const raw =
+    typeof row.spec === "object" && row.spec !== null
+      ? { ...row.spec, enabled: row.enabled }
+      : row.spec;
+  const spec = scheduleSpecSchema.parse(raw);
   const status: Schedule["status"] = {
     ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
     ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
@@ -109,6 +113,21 @@ function rowToSchedule(row: InternalRow): Schedule {
   };
 }
 
+export function rowsToSchedules(rows: readonly InternalRow[]): Schedule[] {
+  const out: Schedule[] = [];
+  for (const row of rows) {
+    try {
+      out.push(rowToSchedule(row));
+    } catch (err) {
+      getLogger().warn(
+        { scheduleId: row.id, agentId: row.agentId, err },
+        "schedule.row.invalid",
+      );
+    }
+  }
+  return out;
+}
+
 export function createSchedulesRepository(db: Db): SchedulesRepository {
   return {
     async listForOwner(owner, opts): Promise<Schedule[]> {
@@ -127,7 +146,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         )
         .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt))
         .limit(clampLimit(opts?.limit))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return rowsToSchedules(rows);
     },
 
     async list(agentId, owner): Promise<Schedule[]> {
@@ -141,7 +160,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           ),
         )
         .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return rowsToSchedules(rows);
     },
 
     async get(id, owner): Promise<Schedule | null> {
@@ -175,7 +194,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .select()
         .from(schedulesTable)
         .where(eq(schedulesTable.enabled, true))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return rowsToSchedules(rows);
     },
 
     async create(input): Promise<Schedule> {
@@ -214,10 +233,12 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
       return this.get(id, owner);
     },
 
-    async delete(id, owner): Promise<void> {
-      await db
+    async delete(id, owner): Promise<{ agentId: string } | null> {
+      const rows = await db
         .delete(schedulesTable)
-        .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)));
+        .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)))
+        .returning({ agentId: schedulesTable.agentId });
+      return rows[0] ?? null;
     },
 
     async listIdsByAgent(agentId): Promise<string[]> {

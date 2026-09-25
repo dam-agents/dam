@@ -213,3 +213,30 @@ describe("updateRRule precheck status", () => {
     expect(getCleared()).toBe(0);
   });
 });
+
+describe("delete", () => {
+  // TEST_SCENARIO: The owner deletes a schedule whose stored spec no longer parses. Delete must not read the spec, so it still removes the row and names the agent in the deleted event.
+  it("deletes without reading the schedule spec", async () => {
+    const deleted: string[] = [];
+    const repo = {
+      async get() {
+        throw new Error("spec must not be read on delete");
+      },
+      async delete(id: string) {
+        deleted.push(id);
+        return { agentId: "agent-1" };
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async cancel() {} } as unknown as SchedulerRunner;
+    const service = createSchedulesService({
+      repo,
+      runner,
+      owner: OWNER,
+      agentBinding: "*",
+    });
+
+    await service.delete(SCHEDULE_ID);
+
+    expect(deleted).toEqual([SCHEDULE_ID]);
+  });
+});
