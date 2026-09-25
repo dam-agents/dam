@@ -6,11 +6,11 @@ The container images an agent runs in: one per harness (Claude Code, Codex, pi, 
 
 ## One base, one environment per image
 
-All images but k-search are built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) on Debian, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
+Every image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) on Debian, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
 
 - **A harness image** is a mise config environment over the base: its own tools and env, and a `rootfs/` of its files at their image paths. Its files replace the base's where both ship one (harness scripts, runtime manifest).
 - **A workload** is an environment over Claude Code's. Its Python package is a baked tool with its own venv, linked at a fixed path and named in an environment variable; the entrypoint and login shells put that venv first on `PATH`, so `python` is the workload's.
-- **k-search** is the one Dockerfile image, `FROM` the Claude Code image, because it clones and patches two repositories at build time.
+- **k-search** runs from upstream source trees rather than a package: they are baked tools too, pinned by commit and checksum, patched by a postinstall and linked at a fixed path (`oci_link`).
 - **The e2e mock** is an environment too, kept beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/).
 
 Only the agent-runtime, driver-sdk and the experiment SDK come from the rest of the repo; the build compiles them into each image.
@@ -19,10 +19,10 @@ Only the agent-runtime, driver-sdk and the experiment SDK come from the rest of 
 
 One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), builds any agent image as a tar in the agent's `dist/oci/`, named `platform-<agent>:latest`, or reuses it from the registry while its source is unchanged (the same source hash [`image:resolve`](../../.mise/tasks/image/resolve) keys CI on). CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes each architecture's OCI layout by digest with crane.
 
-- **Linux of the image's architecture only.** `mise oci` packages the build host's own tool installs and runs its `apt-get` into a side rootfs, under root. On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back. The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with the `manifest.json` of a `docker save` beside it for crane and `docker load`. k-search builds `FROM` that layout as a named build context, not from docker's store.
+- **Linux of the image's architecture only.** `mise oci` packages the build host's own tool installs and runs its `apt-get` into a side rootfs, under root. On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back. The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with the `manifest.json` of a `docker save` beside it for crane and `docker load`.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
 - **One system-package layer.** `mise oci` installs system packages afresh in every build and takes a base image only from a registry, so the task builds the shared Debian packages once as their own image, again when their list changes and once a day, and serves it to every build from a registry on localhost. The images share that layer's digest, so a node stores it once.
-- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it. There are no build-arg overrides.
+- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it. k-search's GPU venv is gigabytes the repository's cache cannot hold, so its build installs it afresh. There are no build-arg overrides.
 
 ## Ownership and the two Backends
 

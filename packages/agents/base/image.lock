@@ -118,6 +118,38 @@ url = "https://download.docker.com/linux/static/stable/aarch64/docker-29.8.1.tgz
 [tools."http:docker"."platforms.linux-x64"]
 url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.8.1.tgz"
 
+[[tools."http:k-search"]]
+version = "53c8fab9a5e8fab2c86610d24fbec5067f90e115"
+backend = "http:k-search"
+specifiers = ["53c8fab9a5e8fab2c86610d24fbec5067f90e115"]
+
+[tools."http:k-search".options]
+strip_components = "1"
+
+[tools."http:k-search"."platforms.linux-arm64"]
+checksum = "sha256:dd6c4283828aab225901a5ede98c05695df924160484fed74b0d4594c86ef554"
+url = "https://github.com/caoshiyi/K-Search/archive/53c8fab9a5e8fab2c86610d24fbec5067f90e115.tar.gz"
+
+[tools."http:k-search"."platforms.linux-x64"]
+checksum = "sha256:dd6c4283828aab225901a5ede98c05695df924160484fed74b0d4594c86ef554"
+url = "https://github.com/caoshiyi/K-Search/archive/53c8fab9a5e8fab2c86610d24fbec5067f90e115.tar.gz"
+
+[[tools."http:kernelbench"]]
+version = "423217d9fda91e0c2d67e4a43bf62f96f6d104f1"
+backend = "http:kernelbench"
+specifiers = ["423217d9fda91e0c2d67e4a43bf62f96f6d104f1"]
+
+[tools."http:kernelbench".options]
+strip_components = "1"
+
+[tools."http:kernelbench"."platforms.linux-arm64"]
+checksum = "sha256:13daba046457c912cd37808209de2264b059d004ad708880dac996cc88019495"
+url = "https://github.com/ScalingIntelligence/KernelBench/archive/423217d9fda91e0c2d67e4a43bf62f96f6d104f1.tar.gz"
+
+[tools."http:kernelbench"."platforms.linux-x64"]
+checksum = "sha256:13daba046457c912cd37808209de2264b059d004ad708880dac996cc88019495"
+url = "https://github.com/ScalingIntelligence/KernelBench/archive/423217d9fda91e0c2d67e4a43bf62f96f6d104f1.tar.gz"
+
 [[tools.jq]]
 version = "1.8.2"
 backend = "aqua:jqlang/jq"
@@ -181,6 +213,12 @@ version = "0.75.1"
 aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.75.1", digest = "sha256:cf4f2df6b37ff9e2606347b9ec138aeb2c3b00273f4c0c5257094b1ef9df173c" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.75.1"]
+
+[[tools."npm:@agentclientprotocol/sdk"]]
+version = "0.17.1"
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/0.17.1", digest = "sha256:8f3b7b2f629a827ac92623afc328f19f35218b2368d717e182c896c6cac7e880" }
+backend = "npm:@agentclientprotocol/sdk"
+specifiers = ["0.17.1"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
 version = "0.85.1"

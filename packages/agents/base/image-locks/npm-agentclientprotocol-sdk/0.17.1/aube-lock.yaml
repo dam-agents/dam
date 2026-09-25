@@ -1,0 +1,31 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.17.1
+        version: 0.17.1(zod@4.6.5)
+
+packages:
+
+  '@agentclientprotocol/sdk@0.17.1':
+    resolution: {integrity: sha512-yjyIn8POL18IOXioLySYiL0G44kZ/IZctAls7vS3AC3X+qLhFXbWmzABSZehwRnWFShMXT+ODa/HJG1+mGXZ1A==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
+snapshots:
+
+  '@agentclientprotocol/sdk@0.17.1(zod@4.6.5)':
+    dependencies:
+      zod: 4.6.5
+
+  zod@4.6.5: {}

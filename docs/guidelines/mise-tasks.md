@@ -36,7 +36,7 @@ extends = "ts:check:tsc"
 
 Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge. Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root. Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
 
-Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which builds the `mise oci` images one at a time, claude-code first, and the Dockerfile workloads on it in parallel. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
+Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which builds the `mise oci` images one at a time. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
 
 ## Artifact cache
 
@@ -46,7 +46,7 @@ A task with `sources` and `outputs` (`outputs = []` for a pure check) and `cache
 - **Never depend on an install step.** Installs are `[deps]` providers, not tasks; a dependency that runs without a cache key makes every dependent uncacheable.
 - **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster.
 
-Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`. Flags go before the task name. CI restores the artifact directory between runs; there is no remote cache yet (`task.cache.remote_url` is the upgrade path).
+Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`. Flags go before the task name. CI restores the artifact directory between runs, and a main push saves only the artifacts that run read or wrote, since nothing else ever evicts one; there is no remote cache yet (`task.cache.remote_url` is the upgrade path).
 
 ## Sandboxing
 

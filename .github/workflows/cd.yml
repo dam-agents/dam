@@ -42,17 +42,33 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: ${{ env.MISE_VERSION }}
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The caches restore before mise-action: its cold install of the go:
+      # tools fills ~/go/pkg/mod with read-only files the go cache's tar then
+      # cannot overwrite, and that restore fails.
+      - id: task-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
           restore-keys: |
             mise-task-artifacts-${{ runner.os }}-${{ github.job }}-
             mise-task-artifacts-${{ runner.os }}-
+      # The Rust target is only compiled into when a vm-runner task misses the
+      # task cache, which takes a change to its crate or its tools since the
+      # commit that cache was saved at.
+      - id: rust-needed
+        env:
+          MATCHED: ${{ steps.task-cache.outputs.cache-matched-key }}
+        run: |
+          sha="${MATCHED##*-}"
+          if [ -n "$sha" ] && git cat-file -e "$sha" 2>/dev/null &&
+            git diff --quiet "$sha" HEAD -- packages/vm-runner mise.lock .mise/config.toml; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
       - id: rust-cache
+        if: steps.rust-needed.outputs.needed == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -74,16 +90,45 @@ jobs:
           restore-keys: |
             go-${{ runner.os }}-${{ github.job }}-
             go-${{ runner.os }}-
+      - id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      # Every artifact's atime goes back to the epoch, so the ones this run
+      # reads stand out afterwards; see the prune below.
+      - run: |
+          find ~/.cache/mise/task-artifacts -type f -exec touch -a -d @0 {} + 2>/dev/null || true
+          touch "$RUNNER_TEMP/check-start"
       - env:
           TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           if [ "$TAG" = true ]; then mise run check; else mise run --continue-on-error check ::: test; fi
+      # Main saves only what this run compiled or read. A Rust or Go cache
+      # saved after every task came from the task cache would hold an empty
+      # target under the new key, and the next miss would compile from scratch.
+      # The task cache otherwise keeps every artifact it ever held.
+      - id: built
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          newer() { [ -n "$(find "$1" -newer "$RUNNER_TEMP/check-start" -type f -print -quit 2>/dev/null)" ]; }
+          newer packages/vm-runner/target && echo "rust=true" >> "$GITHUB_OUTPUT"
+          newer ~/.cache/go-build && echo "go=true" >> "$GITHUB_OUTPUT"
+          cd ~/.cache/mise/task-artifacts
+          find . -type f -anewer "$RUNNER_TEMP/check-start" | sed 's|.*/||; s|\..*||' | sort -u > "$RUNNER_TEMP/used"
+          find . -type f | while read -r f; do b="${f##*/}"; grep -qxF "${b%%.*}" "$RUNNER_TEMP/used" || rm -f "$f"; done
+          du -sh .
       - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mise/task-artifacts
           key: mise-task-artifacts-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true' }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true' && steps.built.outputs.go == 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -91,7 +136,7 @@ jobs:
             ~/.cache/staticcheck
             ~/go/pkg/mod
           key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
-      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true' }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true' && steps.built.outputs.rust == 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -99,6 +144,11 @@ jobs:
             ~/.cargo/git
             packages/vm-runner/target
           key: rust-${{ runner.os }}-${{ github.job }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
   # a tag: e2e pulls by digest, and publishing and scanning run on main and
@@ -141,7 +191,6 @@ jobs:
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
       workloads: ${{ steps.d.outputs.workloads }}
-      claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
       source_shas: ${{ steps.d.outputs.source_shas }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,6 +206,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: crane
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - id: d
         env:
           EVENT: ${{ github.event_name }}
@@ -194,6 +244,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
       # Only the registry buildcache, written here and read by every PR. A gha
       # cache export, once also written on PR runs with mode=max, put gigabytes
       # per run into the 10 GB GitHub gives the whole repository and evicted
@@ -203,6 +254,13 @@ jobs:
           ARCH: ${{ matrix.arch }}
           CACHE_TO: "1"
         run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
+      # The keycloak theme build, for e2e on a PR. This job starts from an
+      # empty task cache, so the entry holds this run's artifacts alone.
+      - if: ${{ matrix.arch == 'amd64' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-images-${{ matrix.arch }}
@@ -229,6 +287,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -270,6 +329,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -331,6 +391,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -346,10 +407,11 @@ jobs:
           SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge /tmp/digests "${agents[@]}"
 
   build-workloads:
-    # One job per arch, one workload after another, like build-agents. Every
-    # workload builds even after one fails, but merge-workloads then merges
-    # none.
-    needs: [merge-agents, changes]
+    # One job per arch, one workload after another, like build-agents, and
+    # beside it: a workload builds claude-code's environment in, not on a
+    # published claude-code image. Every workload builds even after one fails,
+    # but merge-workloads then merges none.
+    needs: [changes]
     if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 45
@@ -363,8 +425,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # buildx for k-search, mise for the rest; see build-agents.
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -374,6 +434,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -401,11 +462,9 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
-          BASE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          CACHE_TO: "1"
         run: |
           read -r -a workloads <<< "$WORKLOADS"
-          .mise/tasks/image/ci-build --serial --base-image "$BASE" "$ARCH" "${workloads[@]}"
+          .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-workloads-${{ matrix.arch }}
@@ -415,7 +474,7 @@ jobs:
 
   merge-workloads:
     name: merge multi-arch workload manifests
-    needs: [build-workloads, appversion, changes]
+    needs: [build-workloads, appversion, changes, check-test]
     if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -432,6 +491,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: quay.io
@@ -466,6 +526,7 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
+          cache_save: ${{ github.event_name != 'pull_request' }}
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -519,9 +580,24 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
+      # See build-images. Before mise-action, like check-test's.
+      - if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mise/task-artifacts
+          key: mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-keycloak-theme-
+      # check-test saves it.
+      - if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
       # The keycloak image bakes in the theme JAR. Built here, before the
       # background build starts, so it does not race e2e:install's own run of
       # the same task, which is then a cache hit.
@@ -727,6 +803,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
 
       - name: Detect vulnerabilities
         run: |
@@ -774,6 +851,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
 
       - name: Detect vulnerabilities
         run: |
@@ -814,6 +892,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
@@ -932,6 +1011,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
 
       - name: Detect vulnerabilities
         id: scan
