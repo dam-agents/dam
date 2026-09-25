@@ -92,6 +92,8 @@ SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
+# apt-get on a machine never waits on a prompt nobody can answer.
+DEBIAN_FRONTEND = "noninteractive"
 # The one Chromium both use; containers have no user namespaces for its sandbox.
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 AGENT_BROWSER_ARGS = "--no-sandbox"
