@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-#MISE description="Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent --test=<playwright file/title filter, e.g. prompt-delivery; smoke specs still run their dependency chain>"
+#MISE description="Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite"
 #MISE raw=true
+#USAGE flag "--headed" help="Run Playwright headed"
+#USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; the pipeline runs smoke only"
+#USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
+#USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
 set -eo pipefail
 
 VM_NAME="platform-k3s-test"
@@ -12,27 +16,17 @@ else
 fi
 
 PLAYWRIGHT_TASK="//packages/e2e/playwright:run"
-REBUILD=""
-REBUILD_SET=false
-TEST_FILTER=""
-for arg in "$@"; do
-  case "$arg" in
-    --headed) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed" ;;
-    # Full suite: smoke plus the slow on-demand specs under src/tests/full/.
-    # The pipeline default is smoke only; this flag is the manual trigger.
-    --full) PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full" ;;
-    --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
-    # Positional Playwright filter (file/title substring or regex). It fully
-    # narrows the run only for full-only projects, which have no dependencies
-    # — e.g. --full --test=prompt-delivery runs just the four prompt-delivery
-    # specs. A smoke spec still pulls in its whole dependency chain: Playwright
-    # always runs a selected project's dependencies, and here they're needed
-    # anyway because e2e:reset (step 3) wipes the state the chain builds up.
-    # Full-only specs also need --full, or their project doesn't exist and
-    # the filter matches nothing.
-    --test=*) TEST_FILTER="${arg#--test=}" ;;
-  esac
-done
+[ "${usage_headed:-}" != true ] || PLAYWRIGHT_TASK="//packages/e2e/playwright:run-headed"
+[ "${usage_full:-}" != true ] || PLAYWRIGHT_TASK="//packages/e2e/playwright:run-full"
+# --test fully narrows the run only for full-only projects, which have no
+# dependencies — e.g. --full --test=prompt-delivery runs just the four
+# prompt-delivery specs. A smoke spec still pulls in its whole dependency
+# chain: Playwright always runs a selected project's dependencies, and here
+# they're needed anyway because e2e:reset (step 3) wipes the state the chain
+# builds up. Full-only specs also need --full, or their project doesn't exist
+# and the filter matches nothing.
+TEST_FILTER="${usage_test:-}"
+REBUILD="${usage_rebuild:-}"
 
 # 1. Ensure a warm cluster exists. Bootstrap once if it's missing; never try to
 # heal a broken one — fail loud and let the operator decide.
@@ -50,25 +44,11 @@ fi
 # 2. Optional rebuild. Interactive prompt unless --rebuild was passed. Default
 # none: just reset data and rerun. The build tasks honor LIMA_INSTANCE so they
 # target the test VM rather than the dev cluster.
-if [ "$REBUILD_SET" = false ] && [ -t 0 ]; then
-  read -r -p "Rebuild which? [apiserver,ui,controller,keycloak,mock-agent] (default: none): " REBUILD || true
+if [ -z "${usage_rebuild+set}" ] && [ -t 0 ]; then
+  read -r -p "Rebuild which? [controller,api-server,ui,keycloak,agents] (default: none): " REBUILD || true
 fi
-if [ -n "$REBUILD" ]; then
-  export LIMA_INSTANCE="$VM_NAME"
-  IFS=',' read -ra COMPONENTS <<< "$REBUILD"
-  for c in "${COMPONENTS[@]}"; do
-    c="${c//[[:space:]]/}"
-    case "$c" in
-      "") ;;
-      apiserver)              mise run cluster:build-apiserver ;;
-      ui)                     mise run cluster:build-ui ;;
-      controller)             mise run cluster:build-controller ;;
-      keycloak)               mise run cluster:build-keycloak ;;
-      mock-agent|mock|agent)  mise run cluster:build-agent ;;
-      *) echo "WARN: unknown component '$c' — skipping" >&2 ;;
-    esac
-  done
-fi
+IFS=', ' read -ra COMPONENTS <<< "$REBUILD"
+[ ${#COMPONENTS[@]} -eq 0 ] || LIMA_INSTANCE="$VM_NAME" mise run cluster:build -- "${COMPONENTS[@]}"
 
 # 3. Wipe data to the specs' expected preconditions.
 mise run e2e:reset

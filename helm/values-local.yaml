@@ -162,7 +162,7 @@ terms:
 
 # Workload kits run on images this checkout builds (packages/agents/<image>),
 # the way the harness templates above do: each kit points at the local tag,
-# and cluster:install / cluster:build-agent build and load the image of every
+# and cluster:install / cluster:build -- agents build and load the image of every
 # enabled kit. Off by default — the research images are large; flip `enabled`
 # (or pass --set=starterKits.builtin.kits.<id>.enabled=true) to bring one in.
 starterKits:

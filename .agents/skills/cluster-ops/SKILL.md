@@ -12,20 +12,20 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 `mise tasks` lists every `cluster:*` task with its description. The ones you'll reach for most:
 
 - `cluster:install` — create the k3s VM, build images, install cert-manager + the Platform chart (upgrades in place if already installed)
-- `cluster:build-apiserver` / `build-ui` / `build-controller` / `build-agent` / `build-keycloak` — rebuild one image and restart just that pod
+- `cluster:build -- <controller|api-server|ui|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image)
 - `cluster:status` — pods and cluster state
 - `cluster:logs` — api-server pod logs
 - `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
 - `cluster:stop` / `cluster:uninstall` / `cluster:delete`
 
-The `cluster:build-*`, `cluster:fix-certs`, and `cluster:status` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
+The `cluster:build`, `cluster:fix-certs`, and `cluster:status` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
 
 Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
 
 ## E2E tests (Playwright)
 
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
-- `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs. Options: `--headed --rebuild=apiserver,ui,controller,keycloak,mock-agent`
+- `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs. Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking)
 - `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs), clear stored Playwright auth. Leaves the cluster running
 
 `e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.

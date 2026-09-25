@@ -66,14 +66,14 @@ skill's Step 1.
 
 ```sh
 mise run //packages/agents:oci -- skydiscover   # claude-code plus this workload's mise environment
-mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
+mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
 The pinned commit is the `version` in [`image.toml`](image.toml).
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
 `platform-skydiscover:latest` but keeps them `enabled: false`; flip one to
-`true` to show it in the local catalog. `cluster:install`/`cluster:build-agent`
+`true` to show it in the local catalog. `cluster:install`/`cluster:build -- agents`
 resolve the build from the image repository basename, so both presets build
 (and load) the one skydiscover image.
 

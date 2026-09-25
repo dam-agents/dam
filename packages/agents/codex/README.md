@@ -66,7 +66,7 @@ Codex mints its own thread id on the first turn, so the platform session id cann
 
 ```sh
 mise run cluster:install        # first time
-mise run cluster:build-agent    # rebuild after changes
+mise run cluster:build -- agents    # rebuild after changes
 ```
 
 Create an agent from the **codex** template in the Platform UI, attach an OpenAI credential, and open a session.

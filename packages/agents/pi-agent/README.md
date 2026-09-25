@@ -202,7 +202,7 @@ memory --action list
 
 ```sh
 mise run cluster:install        # first time
-mise run cluster:build-agent    # rebuild after changes
+mise run cluster:build -- agents    # rebuild after changes
 ```
 
 Create an agent from the **pi-agent** template in the Platform UI, open a session, and the bootstrap flow runs automatically.

@@ -79,15 +79,19 @@ lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
 # enforce it: mise cannot lock the workloads' pipx tools.
 # mise cannot verify the provenance docker publishes for buildx and compose,
 # the github: tools; the lockfile's checksums still pin them.
-stage_project() {
+isolate_mise() {
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
   export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
-    MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
+    MISE_TRUSTED_CONFIG_PATHS="$stage:$work/apt" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
     MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0 MISE_GITHUB_SLSA=false
   : > "$MISE_GLOBAL_CONFIG_FILE"
+}
+
+stage_project() {
+  isolate_mise
 
   # In the repo every agent dir is a mise config root, so the stage renames
   # the fragments to names mise loads.
@@ -213,11 +217,10 @@ build_mise() (
   # next build can remove it.
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"
-  sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
   # Two warnings say nothing here: mise judges every absolute symlink against a
   # tool's install dir, though the apt layer's targets ship in the same image,
   # and it flags every copy, though each is a directory of this repo.
-  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out" 2>&1 1>&3 3>&- |
+  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build --from "$apt_base" -o "$out" 2>&1 1>&3 3>&- |
     { grep -vE 'oci layer: symlink [^ ]*/mise-oci-apt-rootfs-[^ ]*/diff/[^ ]* .* has an absolute target outside|mise oci build: copying host path ' || true; } >&2; } 3>&1
   [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
   # The re-owned layer cache grows with every distinct layer; remove
@@ -226,6 +229,32 @@ build_mise() (
   "$root/.mise/tasks/image/name-layout" "$out" "platform-$harness:latest"
   echo "OCI layout: $out"
 )
+
+sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
+
+# base/apt.toml as an image, rebuilt when it changes and once a day for
+# updates, and served to mise oci, which pulls a base from a registry only.
+# Ceiling: one agent build per host at a time, on the registry's fixed port.
+serve_apt_base() {
+  local layout="$state/apt-base" key port="${AGENT_APT_REGISTRY_PORT:-5123}"
+  key="$(sha256sum "$agents/base/apt.toml" | cut -c1-16)-$(date -u +%F)"
+  if [ "$(cat "$layout.key" 2>/dev/null)" != "$key" ]; then
+    rm -rf "$layout" "$work/apt"
+    mkdir -p "$work/apt"
+    cp "$agents/base/apt.toml" "$work/apt/mise.toml"
+    (isolate_mise && cd "$work/apt" && ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise -o "$layout")
+    [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$layout"
+    echo "$key" > "$layout.key"
+  fi
+  crane registry serve --address "127.0.0.1:$port" > "$work/registry.log" 2>&1 &
+  local pid=$!
+  trap "kill $pid 2>/dev/null" EXIT
+  until crane catalog "127.0.0.1:$port" >/dev/null 2>&1; do
+    kill -0 "$pid" 2>/dev/null || { cat "$work/registry.log" >&2; exit 1; }
+    sleep 0.2
+  done
+  apt_base="$(crane push "$layout" "127.0.0.1:$port/apt-base")"
+}
 
 # `mise oci` needs a Linux host of the image's arch; elsewhere the Lima VM
 # builds from a copy of the working tree (the host's node_modules are not
@@ -253,7 +282,7 @@ build_in_vm() {
     export PATH="$HOME/.local/bin:$PATH"
     cd ~/platform-src
     mise trust -q
-    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm usage -- packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$(mise config get -f .mise/config.toml min_version)" "$@"
+    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm usage crane -- packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$(mise config get -f .mise/config.toml min_version)" "$@"
 }
 layout() {
   if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c $(ls -A "$oci_out/$1")
@@ -272,7 +301,8 @@ if [ ${#todo[@]} -gt 0 ]; then
   echo "⚒ build ${todo[*]}"
   if [ "$(uname -s)" = Linux ]; then
     build_runtime
-    # One at a time: they share the stage and the host's apt caches.
+    serve_apt_base
+    # One at a time: they share the stage.
     for a in "${todo[@]}"; do build_mise "$a"; done
   else
     [ "$write_tar" = true ] || { echo "--no-tar builds on Linux only" >&2; exit 2; }
