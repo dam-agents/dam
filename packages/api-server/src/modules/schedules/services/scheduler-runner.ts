@@ -103,10 +103,10 @@ export function createSchedulerRunner(
     await deps.runtimeMutator.bump(sched.agentId, [
       { id: eventId, kind: "trigger", payload, expiresAt },
     ]);
-    await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
   }
 
   async function pokeAgent(sched: Schedule, eventId: string): Promise<void> {
+    await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
     const stamp = await deps.wakeAgent(sched.agentId);
     if (stamp && sched.spec.precheck && deps.activityStamps)
       await deps.activityStamps
@@ -240,7 +240,9 @@ export function createSchedulerRunner(
         await pokeAgent(sched, eventId);
       } catch (err) {
         const result = (err as Error).message ?? String(err);
-        log(`run-now: schedule ${scheduleId} poke failed: ${result}`);
+        log(
+          `run-now: schedule ${scheduleId} delivery after commit failed: ${result}`,
+        );
         await deps.repo.stampFire(scheduleId, result).catch(() => {});
         await emitFired(sched, "failure");
         throw err;

@@ -49,6 +49,7 @@ function makeSchedule(
 function makeDeps(opts?: {
   wakeError?: Error;
   bumpError?: Error;
+  enqueueError?: Error;
   storedNextRun?: string;
   cron?: string;
   precheck?: string;
@@ -125,6 +126,7 @@ function makeDeps(opts?: {
     },
     async enqueueAfterCommit(agentId) {
       calls.push(`enqueue:${agentId}`);
+      if (opts?.enqueueError) throw opts.enqueueError;
     },
   };
 
@@ -582,6 +584,19 @@ describe("scheduler-runner runNow", () => {
 
     expect(stampedFires).toEqual(["k8s api unreachable"]);
     expect(nextRuns).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the event is durable once the outbox commits and the cron sweep re-enqueues it, so an enqueue that fails afterwards is still a run and must be stamped like a failed poke.
+  it("stamps the run when the enqueue fails after the commit", async () => {
+    const { runner, stampedFires } = makeDeps({
+      enqueueError: new Error("queue unreachable"),
+    });
+
+    await expect(runner.runNow(SCHEDULE_ID)).rejects.toThrow(
+      "queue unreachable",
+    );
+
+    expect(stampedFires).toEqual(["queue unreachable"]);
   });
 
   // TEST_SCENARIO: a prechecked fire normally leaves the stamp to its verdict report, but a failed poke may mean no report ever arrives — so the failure is recorded against the fire rather than lost, exactly as a scheduled fire records its own.
