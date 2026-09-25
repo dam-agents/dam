@@ -1,163 +1,153 @@
 ---
 name: dam-invoke
-description: Spawn ephemeral DAM agents (Invocations) and get back a schema-validated result. Use when asked to spawn an ephemeral/throwaway agent, fan work out to a fresh agent, or run a make/test/eval step in isolation and expect a typed result (a number, a verdict, an object). Provides a small node SDK (spawn / listImages / listConnections).
-allowed-tools: Bash(node *), Write
+description: Spawn sub-agents (Invocations) on DAM and get back a schema-validated result. Use when asked to spawn a sub-agent or a throwaway agent, fan work out to fresh agents, or run a make/test/eval step in isolation and expect a typed result (a number, a verdict, an object). Provides a driver SDK in Python (driver_sdk) and JS (driver-sdk.mjs) — spawn / list_images / list_connections / budget.
+allowed-tools: Bash(python3 *), Bash(node *), Write
 ---
 
 # DAM invoke
 
-The platform can spawn an **ephemeral agent** (an *Invocation*): a fresh agent
-that runs one prompt to completion, reports one result, and is then reaped. You
-(the driver) create it, hand it a prompt plus the result shape you expect, and
-get the validated result back. It starts empty, runs unattended, and cannot ask
-you anything.
+The platform can spawn a **sub-agent** (an *Invocation*): a fresh agent that runs
+one prompt to completion, reports one result, and is then deleted. You (the
+driver) create it, hand it a prompt plus the result shape you expect, and get
+the validated result back. It runs unattended and cannot ask you anything.
 
-Use this to fan work out to fresh agents: a "make" step that produces something,
-a "test" or "eval" step that judges it, or any task you want run in isolation
-with a typed answer.
+Use this to fan work out: a "make" step that produces something, a "test" or
+"eval" step that judges it, or any task you want run in isolation with a typed
+answer.
 
 ## The SDK
 
-A dependency-free node module ships in the image at:
+The same SDK ships in two languages, both dependency-free and self-configuring
+from the pod (no URL or token to pass):
 
+- **Python** — `import driver_sdk as d` works in any `python3` on this image.
+- **JS** — `import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
+
+Write a small script and run it. Examples below are Python; the JS names are the
+camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
+
+## Before you spawn: choose what it runs on — do not guess
+
+1. Run `d.list_images()` and `d.list_connections()` and show the human what is
+   available. If it is not obvious which to use, **ask them**.
+2. **What it runs on** — `harness="claude-code"` (or `codex`, `pi`, `bob`; each
+   `list_images()` entry names its `harness`). The sub-agent runs on that
+   harness's template. `image="<full ref>"` runs a custom image instead, with
+   `harness` saying which harness is inside it; prefer `seed` and `install`
+   below over building an image.
+3. **Model** — nothing to pass. The sub-agent runs on *your* model provider.
+   A harness that cannot run on it is refused at spawn.
+4. **Connections** — pass what the task needs beyond the model (a repository, an
+   API). Everything you pass must be one of your own grants. Its network access
+   follows your egress rules, so what you can reach, it can reach.
+
+## Quickstart: a sub-agent that returns a single integer
+
+```python
+# spawn_demo.py
+import driver_sdk as d
+
+answer = d.spawn(
+    "Compute 6 * 7 and report the result as a single integer.",
+    "integer",               # the result must be one integer
+    harness="claude-code",
+    label="demo",
+)
+print("returned:", answer)   # 42
 ```
-/usr/local/lib/driver-sdk.mjs
-```
-
-It self-configures from the pod environment (no URL or token to pass). Write a
-small `.mjs` script that imports it and run it with `node`.
-
-```js
-import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";
-```
-
-## Before you spawn: choose the image and connections — do not guess
-
-What the Invocation can do depends entirely on which image it runs and which
-connections it gets. Never just take `listImages()[0]`. Instead:
-
-1. Run `listImages()` and `listConnections()` and show the human what is
-   available. If it is not obvious which to use, **ask them** which image and
-   which connections it should get.
-2. **Image:** an Invocation that has to reason (compute, write code, judge) needs
-   an **LLM-capable** harness such as `claude-code`. A non-LLM image (for example
-   a plain shell image) has no model and cannot even start a session — its
-   trigger fails immediately with an auth error and it just hangs until its
-   deadline.
-3. **Connections:** any Invocation that runs a model needs a **model connection**
-   in `connections`, or it fails to start. Add whatever else the task needs (a
-   repo, an API). Everything you pass must be a subset of your own grants.
-
-## Quickstart: an Invocation that returns a single integer
-
-Discover what is available, confirm the image and a model connection with the
-human, then spawn:
-
-```js
-// spawn-demo.mjs
-import { spawn, listImages, listConnections } from "/usr/local/lib/driver-sdk.mjs";
-
-const images = await listImages();
-const conns = await listConnections();
-console.log("images:", images.map((i) => i.id).join(", "));
-console.log("connections:", conns.map((c) => `${c.name} (${c.id})`).join(", "));
-
-// Pick an LLM image and a model connection — confirm these with the human rather
-// than guessing. The find() calls are a starting hint, not a guarantee.
-const image = images.find((i) => /claude|codex|gpt|gemini/i.test(i.id)) ?? images[0];
-const model = conns.find((c) => /model|anthropic|openai|gemini|key/i.test(c.name));
-if (!model) throw new Error("no model connection granted — ask the human to grant one to this agent");
-
-const answer = await spawn({
-  template: image.id,
-  connections: [model.id],
-  prompt: "Compute 6 * 7 and report the result as a single integer.",
-  schema: "integer", // it must return one integer
-});
-
-console.log("returned:", answer); // 42
-```
-
-Run it:
 
 ```bash
-node ~/spawn-demo.mjs
+python3 ~/spawn_demo.py
 ```
 
-`spawn()` blocks until the Invocation reports a result that passes validation,
-then resolves with that result. Progress lines (`[invoke] spawned ... -> agent-xxx`,
-`[invoke] done ...`) print to stderr so you can watch it run.
+`spawn()` blocks until the sub-agent reports a result that passes validation,
+then returns it. Progress lines (`[invoke] spawned demo (agent-xxx)`, `… done`)
+print to stderr.
 
-## `spawn(opts)`
+## Setting up the sub-agent
+
+A sub-agent is set up the way a starter kit sets up an agent, so it does not
+need a custom image for tooling:
+
+```python
+result = d.spawn(
+    "Run one evaluation cell and report its verdict.",
+    {"passed": "boolean", "note": "string?"},
+    harness="claude-code",
+    connections=[ghe_connection_id],             # clone access, from list_connections()
+    seed={"url": "https://github.example/acme/tool", "commit": my_commit},
+    install="uv venv && uv pip install ./tool",  # runs in the workspace before the prompt
+    env={"MODE": "cell"},
+    resources={"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
+    ttl_ms=4 * 3600_000,
+    label="cell:persona/task",
+)
+```
 
 | option | meaning |
 |---|---|
-| `template` | Template id from `listImages()`. **Preferred.** |
-| `image` | Full image ref (advanced). A bare name fails to pull — use `template`. |
-| `prompt` | What the Invocation should do (required). |
-| `schema` | Result shape it must return (required). Shorthand or raw JSON Schema. |
-| `connections` | Connection ids to grant it. Must be a subset of `listConnections()`. Default none. |
-| `label` | Log label. Defaults to the template/image. |
-| `memory` | Memory limit, e.g. `"4Gi"`. Raise it for a heavy node. See below. |
-| `cpu` | CPU limit, e.g. `"2"` or `"500m"`. Inherits the template when omitted. |
-| `ttlMs` | Server-side liveness deadline for this node. Default ~60 min, bounded ~1 min..6 h. See below. |
-| `pollMs` | Poll interval, default 5000. |
-| `timeoutMs` | Client backstop. Defaults to just past `ttlMs` so the server fails first. |
+| `seed` | Repository cloned into the workspace: `url`, optional `ref` or `commit`, `into` (`"work"` default or `"home"`). Pin `commit` to the commit you are running from, so it runs the same code. |
+| `install` | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image. |
+| `env` | Environment variables (Python: a dict; JS: `[{ name, value }]`). |
+| `resources` | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's template. |
+| `backend` | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside. |
+| `skills` | External skills to install: `[{"source": <skill source url>, "name": ...}]`. |
+| `connections` | Connection ids to grant, a subset of your own. |
+| `image` | A custom image to run instead of the harness's template. |
+| `label` | Names the sub-agent in your script's log lines. |
+| `ttl_ms` | Deadline, ~1 min..6 h, default ~60 min. See below. |
 
-Returns the validated result. Throws `InvocationFailed` if it fails (silent exit
-past its deadline, or an internal error). Let it throw to abort, or wrap in
-`try/catch` to retry.
+A **seed or install that fails fails the spawn at once** with the reason (for
+example `install failed: …`), so a broken setup costs seconds, not the whole
+deadline.
 
-**Give a heavy node more `memory`.** The template's default (often 1Gi) is fine
-for a quick compute or a gate, but a Make that clones a repo and runs an install
-or build will OOM-kill at 1Gi and be reaped. Pass `memory: "4Gi"` (or more) for
-those. An OOM-killed node is failed fast by the platform, not left to idle, so if
-a node keeps dying, raise its memory.
+**Pick `ttl_ms` per sub-agent — it is your fast-fail lever.** It is a kill
+deadline, not pacing: the sub-agent is removed the moment it lapses, mid-work or
+not. A quick compute or gate gets a short one (`10 * 60_000`); a clone + build +
+large change gets a long one. Time spent queued for compute counts too.
 
-**Pick `ttlMs` per node — it is your fast-fail lever.** A node that should reply
-quickly (a gate, a small compute) should get a short `ttlMs` (say `10 * 60_000`),
-so a misconfigured or wedged one fails in minutes instead of hanging to the
-default hour. A heavy node (clone + build + a large change) should get a longer
-`ttlMs` so it is not guillotined mid-work. If a node keeps hitting the deadline,
-it is either under-resourced on time or wedged (often waiting on tooling its image
-or egress can't provide) — shorten the task, not just the timeout.
+**Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills
+a clone plus install or build. An OOM-killed sub-agent fails fast with its reason.
+
+## Failures
+
+`spawn()` raises `InvocationFailed` when the sub-agent fails. Its `reason` says
+why — setup failed, deadline exceeded, the sub-agent restarted mid-turn, the
+provider does not fit. The sub-agent is already deleted by then, so **print or
+log the reason**; it is the only diagnosis there is. Let it raise to abort, or
+catch it to retry or skip that item.
 
 ## Schema shorthand (`s`)
 
-The server validates the result against JSON Schema. `s()` expands a tiny
-shorthand so the intent stays readable; you can also pass raw JSON Schema and it
-is used as-is.
+The server validates the result against JSON Schema. `s()` expands shorthand;
+raw JSON Schema passes through unchanged.
 
-```js
-"integer"                              // a single integer (also: string, number, boolean, null)
-{ pass: "boolean", note: "string" }    // object, both fields required, no extras allowed
-{ score: "number?" }                   // trailing "?" makes a field optional
-["string"]                             // array of strings
-{ verdict: s.enum(["passed", "continue"]), score: "number?" } // enum field
+```python
+"integer"                              # a single integer (also: string, number, boolean, null)
+{"pass": "boolean", "note": "string"}  # object, both fields required, no extras
+{"score": "number?"}                   # trailing "?" makes a field optional
+["string"]                             # array of strings
+{"verdict": d.s.enum(["passed", "continue"])}  # enum field
 ```
 
-`spawn({ schema })` runs this for you; call `s(...)` directly only if you want to
-inspect the JSON Schema it produces.
+## Fan-out and compute
 
-## Discovery
-
-- `listImages()` -> `[{ id, name, image, description }]`. Use `id` as `template`.
-- `listConnections()` -> `[{ id, name, hosts }]`. The Invocation may carry any
-  subset of these and nothing more (**attenuation**). Requesting a connection you
-  don't hold returns 403. If it needs a connection you lack, ask the human to
-  grant it to this agent first.
+- `d.budget()` returns your compute ceiling and what is reserved now; each
+  `list_images()` entry carries its `size`. Spawns past the free room queue and
+  start as room frees, so a wide fan-out runs slower, not dead.
+- Run parallel spawns from threads (Python) or `Promise.all` (JS).
+- **You stay awake while your sub-agents run.** The platform keeps this agent
+  from hibernating while any sub-agent it spawned is still running. Still, run a
+  long fan-out script as a background task, not detached with `nohup`, so the
+  session can watch it.
 
 ## Things to know
 
-- **An Invocation is unattended.** No human answers it, so its prompt must let it
-  make its own calls and run end to end. It reports via a `report_result` tool
-  that the platform injects — you don't wire that up, and it's told how in its
-  prompt.
-- **Validation is structural, not truth.** The platform checks the result has the
-  right shape, never that it's correct. Judging correctness is your prompt's job.
-- **No resumability.** If this agent's turn crashes mid-run, any in-memory state
-  (a variable you were threading across spawns) is lost. Results already returned
-  are gone with it unless your prompt pushed durable output to a connection (e.g.
-  a git ref). Design long runs so a rerun is cheap.
-- **Attenuation is real security.** An Invocation can never exceed the connections
-  you grant it, and never exceed your own grants.
+- **A sub-agent is unattended.** Its prompt must let it make its own calls and
+  run end to end. It reports through a `report_result` tool the platform injects.
+- **Validation is structural, not truth.** The platform checks the shape, never
+  that it's correct. Judging correctness is your prompt's job.
+- **No resumability.** If your script dies mid-run, its in-memory state is lost.
+  Write durable output (a file in `~/work`, a git ref) so a rerun is cheap.
+- **Never retry a spawn call itself on a network error** without checking: a
+  duplicated spawn is a second sub-agent.

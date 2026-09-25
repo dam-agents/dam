@@ -141,6 +141,7 @@ func TestReclaimEligibility(t *testing.T) {
 		{"never-hibernate declares always run", map[string]string{annLastActivity: idle(time.Hour)}, 0, false},
 		{"attached session", map[string]string{annLastActivity: idle(10 * time.Minute), annActiveSession: "true"}, time.Hour, false},
 		{"driving an experiment", map[string]string{annLastActivity: idle(10 * time.Minute), annExperimentActive: "true"}, time.Hour, false},
+		{"waiting on its sub-agents", map[string]string{annLastActivity: idle(10 * time.Minute), annInvocationsActive: "true"}, time.Hour, false},
 		{"invocation target with a blocked driver", map[string]string{annLastActivity: idle(10 * time.Minute), annSweepable: "true"}, time.Hour, false},
 		{"already hard-stopped", map[string]string{annLastActivity: idle(10 * time.Minute), annStopRequested: "now"}, time.Hour, false},
 		{"migrating storage", map[string]string{annLastActivity: idle(10 * time.Minute), annStorageMigration: "now"}, time.Hour, false},

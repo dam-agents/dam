@@ -10,6 +10,7 @@ const (
 	annActiveSession              = "agent-platform.ai/active-session"
 	annLastActivity               = "agent-platform.ai/last-activity"
 	annExperimentActive           = "agent-platform.ai/experiment-active"
+	annInvocationsActive          = "agent-platform.ai/invocations-active"
 	annStopRequested              = "agent-platform.ai/stop-requested"
 	annStorageMigration           = "agent-platform.ai/storage-migration"
 	annStorageMigrationWasRunning = "agent-platform.ai/storage-migration-was-running"
@@ -27,7 +28,7 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	if annotations[annActiveSession] == "true" {
 		return true
 	}
-	if annotations[annExperimentActive] == "true" {
+	if annotations[annExperimentActive] == "true" || annotations[annInvocationsActive] == "true" {
 		return true
 	}
 	last := annotations[annLastActivity]

@@ -22,6 +22,7 @@ function makeService(row: InvocationRow) {
     listExpiredRunning: async () => [],
     listRunning: async () => [],
     listRunningByDriver: async () => [],
+    listRunningDriverIds: async () => [],
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
