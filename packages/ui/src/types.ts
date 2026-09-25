@@ -2,8 +2,8 @@ import type { PromptBlock, ProviderPresetType } from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
-  HarnessFamily,
   SlackChannel,
+  TemplateHarness,
 } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -106,7 +106,7 @@ export interface TemplateView {
   image: string;
   description?: string;
   category: "harness";
-  harness?: HarnessFamily;
+  harness?: TemplateHarness;
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;

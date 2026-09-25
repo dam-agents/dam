@@ -40,6 +40,11 @@ export const harnessFamilySchema = z.enum([
   "bob",
 ]);
 
+export const templateHarnessSchema = z.enum([
+  ...harnessFamilySchema.options,
+  "mock",
+]);
+
 export const templateSpecSchema = z
   .object({
     version: z.string(),
@@ -47,7 +52,7 @@ export const templateSpecSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     category: templateCategorySchema,
-    harness: harnessFamilySchema.optional(),
+    harness: templateHarnessSchema.optional(),
     providers: z
       .array(
         z.custom<ProviderPresetType>(

@@ -80,7 +80,7 @@ export const e2eSpawnInvocationInputSchema = z
     agentId: z.string().min(1),
     prompt: z.string().min(1),
     schema: z.record(z.string(), z.unknown()),
-    templateId: z.string().min(1).optional(),
+    harness: z.string().min(1).optional(),
     image: z.string().min(1).optional(),
     connections: z.array(z.string()).optional(),
     ttlMs: z.number().int().positive().optional(),

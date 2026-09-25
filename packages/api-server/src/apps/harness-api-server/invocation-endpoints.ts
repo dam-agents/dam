@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import type { z } from "zod";
 import {
+  providerTypeForTemplateId,
   spawnInvocationRequestSchema,
   type BudgetsService,
   type ConnectionsService,
@@ -16,8 +17,10 @@ import {
   AttenuationError,
   ExperimentNotRunningError,
   InvalidSchemaError,
+  ProviderMismatchError,
   UnresolvableDriverError,
   type InvocationsService,
+  type SpawnInput,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { resolveAgent } from "./agent-auth.js";
@@ -47,45 +50,71 @@ export function mountInvocationRoutes(
       return c.json({ error: (err as Error).message }, 400);
     }
 
-    if (body.templateId) {
+    const target: SpawnInput["target"] = body.image
+      ? { image: body.image }
+      : {};
+    if (body.harness) {
       const templates = await deps.templates.list();
-      if (!templates.some((t) => t.id === body.templateId)) {
-        const available = templates
-          .map((t) => t.id)
+      const matches = templates.filter((t) => t.spec.harness === body.harness);
+      if (matches.length !== 1) {
+        const available = [
+          ...new Set(templates.flatMap((t) => t.spec.harness ?? [])),
+        ]
           .sort()
           .join(", ");
-        return c.json(
-          {
-            error: `unknown template "${body.templateId}" — available: ${available}`,
-          },
-          400,
-        );
+        const problem =
+          matches.length === 0
+            ? `no harness "${body.harness}" on this install`
+            : `the "${body.harness}" harness has several templates on this install`;
+        return c.json({ error: `${problem} — available: ${available}` }, 400);
       }
+      const [template] = matches;
+      if (!body.image) target.templateId = template!.id;
+      if (template!.spec.providers) target.runsOn = template!.spec.providers;
     }
 
     const connections = body.connections ?? [];
-    const size =
-      body.cpu !== undefined || body.memory !== undefined
+    const resources =
+      body.resources ??
+      (body.cpu !== undefined || body.memory !== undefined
         ? {
             ...(body.cpu !== undefined ? { cpu: body.cpu } : {}),
             ...(body.memory !== undefined ? { memory: body.memory } : {}),
           }
-        : undefined;
+        : undefined);
     const conns = deps.connectionsServiceFor(verified.owner);
-    const granted = await conns.getAgentConnections(driverId);
+    const [granted, owned] = await Promise.all([
+      conns.getAgentConnections(driverId),
+      conns.listConnections(),
+    ]);
     const driverGrantIds = granted.connections.map((g) => g.connectionId);
+    const grantSet = new Set(driverGrantIds);
+    const driverProviders = owned.flatMap((cn) => {
+      const type = grantSet.has(cn.id)
+        ? providerTypeForTemplateId(cn.templateId)
+        : null;
+      return type ? [{ id: cn.id, type }] : [];
+    });
 
     try {
       const { id } = await deps.invocationsServiceFor(verified.owner).spawn({
         driverAgentId: driverId,
         driverGrantIds,
-        ...(body.image ? { image: body.image } : {}),
-        ...(body.templateId ? { templateId: body.templateId } : {}),
+        driverProviders,
+        target,
+        setup: {
+          ...(body.seed ? { seed: body.seed } : {}),
+          ...(body.install ? { install: body.install } : {}),
+          ...(body.backend ? { backend: body.backend } : {}),
+          ...(resources ? { resources } : {}),
+          env: body.env,
+          skills: body.skills,
+        },
         connections,
         prompt: body.prompt,
         schema: body.schema,
+        ...(body.label !== undefined ? { label: body.label } : {}),
         ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
-        ...(size ? { size } : {}),
         ...(body.experimentSpanId !== undefined
           ? { experimentSpanId: body.experimentSpanId }
           : {}),
@@ -106,6 +135,9 @@ export function mountInvocationRoutes(
         return c.json({ error: err.message }, 403);
       }
       if (err instanceof InvalidSchemaError) {
+        return c.json({ error: err.message }, 400);
+      }
+      if (err instanceof ProviderMismatchError) {
         return c.json({ error: err.message }, 400);
       }
       if (err instanceof SizeNeverFitsError) {
@@ -162,6 +194,7 @@ export function mountInvocationRoutes(
       name: t.name,
       image: t.spec.image,
       description: t.spec.description,
+      ...(t.spec.harness ? { harness: t.spec.harness } : {}),
       size: concreteResources(t.spec.resources, undefined, deps.defaultLimits)
         .limits,
     }));

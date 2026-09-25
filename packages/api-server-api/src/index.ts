@@ -12,11 +12,13 @@ export {
   mountSchema,
   resourcesSchema,
   skillSourceSeedSchema,
+  templateHarnessSchema,
   templateSpecSchema,
 } from "./modules/templates/schemas.js";
 export type {
   HarnessFamily,
   Template,
+  TemplateHarness,
   TemplateSpec,
   TemplatesService,
   Mount,
@@ -110,6 +112,14 @@ export {
   agentUpgradeInputSchema,
   agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
+export {
+  agentSetupSchema,
+  agentSetupSeedSchema,
+  agentSetupShape,
+  type AgentSetup,
+  type AgentSetupResources,
+  type AgentSetupSeed,
+} from "./modules/agents/setup.js";
 export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,

@@ -5,6 +5,7 @@ export {
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
+  createInvocationSetupFailure,
   listInvocationAgentIds,
   type DriverResolution,
 } from "./compose.js";
@@ -12,6 +13,7 @@ export {
   AttenuationError,
   ExperimentNotRunningError,
   InvalidSchemaError,
+  ProviderMismatchError,
   UnresolvableDriverError,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
