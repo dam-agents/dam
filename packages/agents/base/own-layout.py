@@ -3,9 +3,7 @@
 Usage: own-layout.py <layout-dir> <cache-dir>
 
 The cache keeps each rewritten layer under its input digest, so the layers
-images share (the base, apt, the common tools) are rewritten once. Tool layers
-go to <cache-dir>/tools, which depends on the mise lockfile alone; the rest to
-<cache-dir>/other.
+images share (the base, apt, the common tools) are rewritten once.
 """
 
 import concurrent.futures
@@ -104,17 +102,15 @@ def main(layout, cache):
     manifest = load(desc["digest"])
     config = load(manifest["config"]["digest"])
     stale = {desc["digest"], manifest["config"]["digest"]}
-    dirs = [os.path.join(cache, "tools" if "dev.mise.tool.short" in l.get("annotations", {}) else "other") for l in manifest["layers"]]
-    for d in set(dirs):
-        os.makedirs(d, exist_ok=True)
+    os.makedirs(cache, exist_ok=True)
     with concurrent.futures.ProcessPoolExecutor() as pool:
-        owned = list(pool.map(own, [blob(l["digest"]) for l in manifest["layers"]], dirs))
-    for i, (layer, done, d) in enumerate(zip(manifest["layers"], owned, dirs)):
+        owned = list(pool.map(own, [blob(l["digest"]) for l in manifest["layers"]], [cache] * len(manifest["layers"])))
+    for i, (layer, done) in enumerate(zip(manifest["layers"], owned)):
         if done is None:
             continue
         stale.add(layer["digest"])
         if not os.path.exists(blob(done["digest"])):
-            shutil.copyfile(os.path.join(d, done["digest"].split(":", 1)[1]), blob(done["digest"]))
+            shutil.copyfile(os.path.join(cache, done["digest"].split(":", 1)[1]), blob(done["digest"]))
         layer.update(digest=done["digest"], size=done["size"], mediaType="application/vnd.oci.image.layer.v1.tar+gzip")
         layer.get("annotations", {}).pop("dev.mise.layer.owner", None)
         config["rootfs"]["diff_ids"][i] = done["diff_id"]
