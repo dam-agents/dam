@@ -2,36 +2,87 @@
 #MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
 #MISE hide=true
 #MISE dir="{{cwd}}"
-#USAGE arg "<base>" help="Base image reference"
+#USAGE arg "<base>" help="Base image reference, pinned by digest"
 #USAGE arg "<root>" help="Directory whose tree becomes the layer, at / or --at"
 #USAGE arg "<tar>" help="Image tar to write"
 #USAGE arg "<tag>" help="Tag the tar carries"
-#USAGE flag "--entrypoint <entrypoint>"
+#USAGE flag "--entrypoint <entrypoint>" help="The image's ENTRYPOINT, its words separated by commas; it clears the base's CMD"
 #USAGE flag "--cmd <cmd>" help="The image's CMD, its words separated by commas"
 #USAGE flag "--workdir <workdir>"
 #USAGE flag "--user <user>"
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
+# The tar holds an OCI layout, like every other image tar: the base's layers as
+# the registry serves them, then the new layers as plain tars, which no step
+# spends time compressing. The base is kept as a layout per reference and arch,
+# so a rebuild downloads nothing; the reference carries its digest, so an entry
+# never goes stale.
 set -euo pipefail
-work="$(mktemp -d)"
+arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack"
+mkdir -p "$cache"
+base="$cache/$(printf '%s %s' "$usage_base" "$arch" | sha256sum | cut -c1-32)"
+if [ ! -f "$base/index.json" ]; then
+  rm -rf "$base.$$"
+  crane pull --format=oci --platform "linux/$arch" "$usage_base" "$base.$$"
+  mv -T "$base.$$" "$base" 2>/dev/null || rm -rf "$base.$$"
+fi
+# In the cache, so the base's blobs are hard links rather than copies.
+work="$(mktemp -d "$cache/work.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
+out="$work/oci"
+mkdir -p "$out/blobs/sha256"
+cp -l "$base"/blobs/sha256/* "$out/blobs/sha256/" 2>/dev/null || cp "$base"/blobs/sha256/* "$out/blobs/sha256/"
+
+blob() { echo "$out/blobs/${1/://}"; }
 # One owner, mtime 0, sorted: the layer's digest follows its content alone.
 # Its top-level entries, not ".", so the layer never resets / itself.
+layers='[]'
 layer() {
+  local t="$work/layer.tar" h
   tar --sort=name --owner="${2%:*}" --group="${2#*:}" --numeric-owner --mtime=@0 --format=gnu \
-    ${4:+--transform "s|^|$4/|S"} -C "$1" -cf "$3" $(ls -A "$1")
+    ${3:+--transform "s|^|$3/|S"} -C "$1" -cf "$t" $(ls -A "$1")
+  h="$(sha256sum "$t" | cut -c1-64)"
+  mv "$t" "$out/blobs/sha256/$h"
+  layers="$(jq -c --arg d "sha256:$h" --argjson s "$(wc -c < "$out/blobs/sha256/$h")" \
+    '. + [{mediaType: "application/vnd.oci.image.layer.v1.tar", digest: $d, size: $s}]' <<< "$layers")"
 }
 eval "root_layers=(${usage_root_layer:-})"
-appends=()
-for i in "${!root_layers[@]}"; do
-  layer "${root_layers[$i]}" 0:0 "$work/$i.tar"
-  appends+=(--append "$work/$i.tar")
-done
+for d in ${root_layers[@]+"${root_layers[@]}"}; do layer "$d" 0:0; done
 at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
-layer "$usage_root" "$usage_owner" "$work/layer.tar" "$at"
+layer "$usage_root" "$usage_owner" "$at"
+
+put() {
+  local h
+  h="$(printf '%s' "$1" | sha256sum | cut -c1-64)"
+  printf '%s' "$1" > "$out/blobs/sha256/$h"
+  jq -cn --arg d "sha256:$h" --argjson s "${#1}" '{digest: $d, size: $s}'
+}
+manifest="$(cat "$(blob "$(jq -r '.manifests[0].digest' "$base/index.json")")")"
+# OCI layers under a Docker manifest are what quay refuses.
+[ "$(jq -r .mediaType <<< "$manifest")" = application/vnd.oci.image.manifest.v1+json ] ||
+  { echo "image:pack: $usage_base is not an OCI image manifest" >&2; exit 1; }
+config="$(jq -c --argjson l "$layers" --arg ep "${usage_entrypoint:-}" --arg cmd "${usage_cmd:-}" \
+  --arg wd "${usage_workdir:-}" --arg user "${usage_user:-}" '
+  .rootfs.diff_ids += [$l[].digest]
+  | .history = (.history // []) + [$l[] | {created_by: "image:pack"}]
+  | if $ep != "" then .config.Entrypoint = ($ep | split(",")) | del(.config.Cmd) else . end
+  | if $cmd != "" then .config.Cmd = ($cmd | split(",")) else . end
+  | if $wd != "" then .config.WorkingDir = $wd else . end
+  | if $user != "" then .config.User = $user else . end' \
+  "$(blob "$(jq -r .config.digest <<< "$manifest")")")"
+manifest="$(jq -c --argjson c "$(put "$config")" --argjson l "$layers" \
+  '.config += $c | .layers += $l | del(.annotations)' <<< "$manifest")"
+jq -n --argjson m "$(put "$manifest")" --arg a "$arch" \
+  '{schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json",
+    manifests: [$m + {mediaType: "application/vnd.oci.image.manifest.v1+json", platform: {architecture: $a, os: "linux"}}]}' \
+  > "$out/index.json"
+echo '{"imageLayoutVersion":"1.0.0"}' > "$out/oci-layout"
+# Only the blobs the image names: a base layout may hold more.
+jq -r '.config.digest, .layers[].digest' <<< "$manifest" | sed 's/^sha256://' | sort > "$work/keep"
+jq -r '.manifests[0].digest' "$out/index.json" | sed 's/^sha256://' >> "$work/keep"
+(cd "$out/blobs/sha256" && ls | sort | comm -23 - <(sort "$work/keep") | xargs -r rm -f)
+"$(dirname "$0")/name-layout" "$out" "$usage_tag"
 mkdir -p "$(dirname "$usage_tar")"
-crane mutate "$usage_base" ${appends[@]+"${appends[@]}"} --append "$work/layer.tar" -t "$usage_tag" -o "$usage_tar" \
-  --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" \
-  ${usage_entrypoint:+--entrypoint "$usage_entrypoint"} ${usage_cmd:+--cmd "$usage_cmd"} \
-  ${usage_workdir:+--workdir "$usage_workdir"} ${usage_user:+--user "$usage_user"}
+tar --sort=name --mtime=@0 -C "$out" -cf "$usage_tar" $(ls -A "$out")

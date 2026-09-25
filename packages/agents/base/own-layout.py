@@ -3,11 +3,12 @@
 Usage: own-layout.py <layout-dir> <cache-dir>
 
 The cache keeps each rewritten layer under its input digest, so the layers
-images share (the base, apt, the common tools) are rewritten once.
+images share (the base, apt, the common tools) are rewritten once. A rewritten
+layer is a plain tar: gzipping it again cost a build minutes, and a registry
+serves it the same.
 """
 
 import concurrent.futures
-import gzip
 import hashlib
 import json
 import os
@@ -64,19 +65,17 @@ def own(path, cache):
     if not right:
         fd, tmp = tempfile.mkstemp(dir=cache)
         with os.fdopen(fd, "wb") as raw:
-            packed = Hashing(raw)
-            with gzip.GzipFile(filename="", mode="wb", fileobj=packed, mtime=0, compresslevel=6) as gz:
-                plain = Hashing(gz)
-                with tarfile.open(path, "r|*") as src, \
-                        tarfile.open(fileobj=plain, mode="w|", format=tarfile.PAX_FORMAT) as dst:
-                    for m in src:
-                        if dropped(m.name):
-                            continue
-                        m.uid, m.gid = owner(m.name)
-                        m.uname = m.gname = ""
-                        dst.addfile(m, src.extractfile(m) if m.isreg() else None)
-        os.replace(tmp, os.path.join(cache, packed.sha.hexdigest()))
-        done = {"digest": packed.digest(), "size": packed.size, "diff_id": plain.digest()}
+            plain = Hashing(raw)
+            with tarfile.open(path, "r|*") as src, \
+                    tarfile.open(fileobj=plain, mode="w|", format=tarfile.PAX_FORMAT) as dst:
+                for m in src:
+                    if dropped(m.name):
+                        continue
+                    m.uid, m.gid = owner(m.name)
+                    m.uname = m.gname = ""
+                    dst.addfile(m, src.extractfile(m) if m.isreg() else None)
+        os.replace(tmp, os.path.join(cache, plain.sha.hexdigest()))
+        done = {"digest": plain.digest(), "size": plain.size, "diff_id": plain.digest()}
     with open(memo, "w") as f:
         json.dump(done, f)
     return done
@@ -111,7 +110,7 @@ def main(layout, cache):
         stale.add(layer["digest"])
         if not os.path.exists(blob(done["digest"])):
             shutil.copyfile(os.path.join(cache, done["digest"].split(":", 1)[1]), blob(done["digest"]))
-        layer.update(digest=done["digest"], size=done["size"], mediaType="application/vnd.oci.image.layer.v1.tar+gzip")
+        layer.update(digest=done["digest"], size=done["size"], mediaType="application/vnd.oci.image.layer.v1.tar")
         layer.get("annotations", {}).pop("dev.mise.layer.owner", None)
         config["rootfs"]["diff_ids"][i] = done["diff_id"]
     manifest["config"]["digest"], manifest["config"]["size"] = put(json.dumps(config).encode())

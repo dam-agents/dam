@@ -23,20 +23,25 @@ Standalone scripts are tasks too: an executable under a root's `.mise/tasks/` is
 
 pnpm itself is a mise tool (`pnpm = "…"` in `.mise/config.toml`, the single pin), so `package.json` carries no `packageManager` field and a `corepack enable` shim on the machine must be removed (`corepack disable`) or it shadows the pinned version.
 
-Project dependencies are not tasks. Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. Nothing needs to call them explicitly before a `mise run`; `mise deps --monorepo` installs them all without running a task (CI uses `mise -C helm deps` where a bare `helm package` follows), and `mise run --no-deps <task>` skips them. `mise deps --monorepo` installs every provider, so something only a few tasks need and expensive to fetch (Playwright's Chromium) stays a task those tasks depend on. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
+Project dependencies are not tasks. Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the experiment SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. Nothing needs to call them explicitly before a `mise run`; `mise deps --monorepo` installs them all without running a task (a provider whose script CI also needs runs it by path, like the chart's [`helm/.mise/deps`](../../helm/.mise/deps): `mise deps`, `mise run` and `mise x` all install every tool of the toolset first, which costs a job that needs one tool a minute and more), and `mise run --no-deps <task>` skips them. `mise deps --monorepo` installs every provider, so something only a few tasks need and expensive to fetch (Playwright's Chromium) stays a task those tasks depend on. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
 
 ## Templates
 
-Repeated task shapes are `[task_templates]` in `.mise/config.toml`; a package task picks one with `extends`. A TypeScript package is typically five one-liners:
+Repeated task shapes are `[task_templates]` in `.mise/config.toml`; a package task picks one with `extends`. A TypeScript package takes its whole standard set (`check`, `fix`, and the `check:*` and `fix:*` leaves) from [`.mise/ts-package.toml`](../../.mise/ts-package.toml), and adds `test` if it has a suite:
 
 ```toml
-[tasks."check:tsc"]
-extends = "ts:check:tsc"
+[task_config]
+includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
+
+[tasks.test]
+extends = "ts:test"
 ```
+
+`includes` replaces the default task sources, so it names the package's own `.mise/tasks` too. A task the package's config defines replaces the included one of the same name, so an override still `extends` its template.
 
 Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge. Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root. Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
 
-Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which builds the `mise oci` images one at a time. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
+Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which builds the `mise oci` images one at a time. The other images' `:oci` tasks pack a tree onto a base pinned by digest with `image:pack`, which keeps each base as a local OCI layout, so a rebuild downloads nothing, and adds its layers as plain tars. Every image tar is an OCI layout. Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `cd.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
 
 ## Artifact cache
 

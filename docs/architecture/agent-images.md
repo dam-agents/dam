@@ -26,7 +26,7 @@ One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), buil
 
 ## Ownership and the two Backends
 
-The image is built root-owned, and the agent user is then given only the paths it must write: its home, the mise data dir and system config, the runtime's directory and the trust store. Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships.
+The image is built root-owned, and the agent user is then given only the paths it must write: its home, the mise data dir and system config, the runtime's directory and the trust store. Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships. Each layer the re-owning rewrites is kept as a plain tar, not compressed again: gzipping a venv of gigabytes took longer than packaging it.
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA ([vm-runner](vm-runner.md)). The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
