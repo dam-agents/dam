@@ -96,7 +96,7 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(fd --hidden --type f --full-path --exclude node_modules '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
+bad=$(fd --hidden --type f --full-path '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []
