@@ -73,8 +73,11 @@ own_paths() {
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it, image.toml and the task that builds the image
-    # from it all. Beside it, only the task that names the image.
-    vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout" ;;
+    # from it all. Beside it, the task that names the image and the Rust
+    # toolchain that compiles it: its pin in the root config, its exact
+    # version in mise.lock. A lockfile bump for another tool re-tags it too,
+    # which errs toward rebuilds.
+    vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
     # image:pack. The theme build also depends on dev-config and (any)
     # lockfile change — lockfile bumps re-tag it even when unrelated, which
@@ -170,6 +173,7 @@ self_check() {
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
   has "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api

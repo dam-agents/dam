@@ -10,10 +10,11 @@ out=dist/oci/vm-runner.tar
 if [ "$(uname -s)" != Linux ]; then
   . "$repo/.mise/lib/lima-build.sh"
   # build-essential: the linker cargo needs, and glibc's static archive for
-  # platform-init. The VM's copy of the tree is made afresh every build, so
-  # cargo's target lives beside it.
-  lima_build build-essential "rust crane jq" \
-    sh -c 'CARGO_TARGET_DIR="$HOME/.cache/platform-vm-runner/target" exec packages/vm-runner/.mise/tasks/oci' 
+  # platform-init; git clones smolvm, and usage runs image:name-layout. The
+  # VM's copy of the tree is made afresh every build, so cargo's target lives
+  # beside it.
+  lima_build "build-essential git" "rust crane jq usage" \
+    sh -c 'CARGO_TARGET_DIR="$HOME/.cache/platform-vm-runner/target" exec packages/vm-runner/.mise/tasks/oci'
   mkdir -p "$(dirname "$out")"
   lima_cat "packages/vm-runner/$out" > "$out"
   exit
