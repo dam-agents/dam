@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan, --lock refreshes packages/agents/base/image.lock and image-locks/ (with --bump, re-resolving `latest` pins) and builds nothing."
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as platform-<agent>:latest in docker: all of packages/agents, or the ones named (the e2e mock too). image.toml agents build with `mise oci`, off Linux in the cluster tasks' Lima VM ($LIMA_INSTANCE, default platform-k3s); Dockerfile agents (k-search) with docker build on claude-code. Options: --build never reuses, --no-load (Linux) keeps a mise image as its OCI layout only, --dry-run prints the plan, --lock refreshes packages/agents/base/image.lock and image-locks/ (with --bump, re-resolving `latest` pins), --warm installs every image's tools for CI's cache; both build nothing."
 #MISE dir="{{vars.repo_root}}"
 set -euo pipefail
 
@@ -7,13 +7,14 @@ resolve=.mise/tasks/image/resolve
 agents=packages/agents
 workloads=" $($resolve list-workloads) "
 root="$PWD"
-dry=false reuse=true load=true lock=false bump=() named=()
+dry=false reuse=true load=true lock=false warm=false bump=() named=()
 for a in "$@"; do
   case "$a" in
     --dry-run) dry=true ;;
     --build) reuse=false ;;
     --no-load) load=false ;;
     --lock) lock=true ;;
+    --warm) warm=true ;;
     --bump) bump=(--bump) ;;
     -*) echo "unknown option: $a" >&2; exit 2 ;;
     *) named+=("$a") ;;
@@ -108,9 +109,10 @@ stage_project() {
 # One lockfile for every image: mise lock only resolves, so any host can run it.
 # A pipx tool with uvx_args stays out: mise cannot lock it, and its image.toml
 # pins it exactly.
+all_images() { local f d; for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; echo "${d##*/}"; done; }
+
 lock_mise() (
-  all=()
-  for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; all+=("${d##*/}"); done
+  all=($(all_images))
   stage_project "${all[@]}"
   cd "$stage"
   envs="${all[*]}"
@@ -123,6 +125,17 @@ lock_mise() (
   cp mise/mise.lock "$root/$lockfile"
   rm -rf "${root:?}/$deplocks"
   [ ! -d mise/.mise/locks ] || cp -R mise/.mise/locks "$root/$deplocks"
+)
+
+# Every image's tools and Chromium, which is what CI caches per arch; each
+# build then installs only what it lacks.
+warm_mise() (
+  all=($(all_images))
+  stage_project "${all[@]}"
+  cd "$stage"
+  envs="${all[*]}"
+  mise -E "${envs// /,}" install
+  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "${envs// /,}" exec -- playwright install chromium
 )
 
 # Subshell: it leaves the repo's mise context and directory.
@@ -205,7 +218,7 @@ build_in_vm() {
   limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
   git ls-files -z --cached --others --exclude-standard |
     while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
-    COPYFILE_DISABLE=1 tar --null -T - -cf - |
+    COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf - |
     limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
   # The tools CI's build-agents job sets up, not the repo's whole toolchain.
   limactl shell --workdir / "$vm" sh -c '
@@ -226,6 +239,10 @@ layout() {
 }
 
 if [ "$lock" = true ]; then lock_mise; exit; fi
+if [ "$warm" = true ]; then
+  [ "$(uname -s)" = Linux ] || { echo "--warm installs Linux tools: run it on Linux" >&2; exit 2; }
+  warm_mise; exit
+fi
 
 todo=()
 for a in ${mise_images[@]+"${mise_images[@]}"}; do reused "$a" || todo+=("$a"); done
