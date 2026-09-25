@@ -27,9 +27,7 @@ export AGENT_OCI_OUT=/tmp/ci-build/oci
 spec() {
   if [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; then echo mise; return; fi
   case "$1" in
-    controller | ui | api-server | keycloak) echo crane ;;
-    # The runner image is built from its crate alone, platform-init included.
-    vm-runner) echo "packages/vm-runner/Dockerfile packages/vm-runner" ;;
+    controller | ui | api-server | keycloak | vm-runner) echo crane ;;
     *) echo "ci-build: unknown component $1" >&2; return 1 ;;
   esac
 }

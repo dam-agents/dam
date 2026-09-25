@@ -4,7 +4,7 @@
 # at runtime, and a guest agent from one version talking to a library from
 # another is not a combination anybody tests. So this file is the one place the
 # version is named — .mise/fetch-smolvm clones the source at tag= and refuses a
-# tree that is not commit=, and the Dockerfile installs the release tarball of
+# tree that is not commit=, and the image build installs the release tarball of
 # the same tag, refusing one whose digest is not the sha256- line for its
 # architecture (the release's own checksums.sha256).
 tag=v1.16.0

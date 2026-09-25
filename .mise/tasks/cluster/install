@@ -17,7 +17,7 @@ set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-  mise run //packages/controller:oci ::: //packages/vm-runner:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
+  mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
 fi
 
 LIMA_TEMPLATE="$usage_lima_template"
@@ -547,6 +547,8 @@ else
     fi
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
+  # Like the agents', off Linux its build runs in the VM, so it waits for one.
+  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ] && mise run //packages/vm-runner:oci
 
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background; this is where they are first

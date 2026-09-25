@@ -25,11 +25,16 @@ set -e
 LOADED="controller api-server ui keycloak"
 if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   # e2e does not run the vm-runner, so a PR only proves it builds, and the
-  # cluster does not wait for it: a cold build of its Rust stage takes
-  # minutes. The e2e job's last step reads CI_VM_RUNNER_STATUS.
+  # cluster does not wait for it: a cold build of its Rust crate takes
+  # minutes. One whose source is already published needs no proof. The e2e
+  # job's last step reads CI_VM_RUNNER_STATUS.
   (
     code=0
-    .mise/tasks/image/ci-build amd64 vm-runner:cacheonly || code=$?
+    decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
+    case "$decision" in
+      "REUSE "*) echo "vm-runner unchanged: ${decision#REUSE }" ;;
+      *) .mise/tasks/image/ci-build amd64 vm-runner:cacheonly || code=$? ;;
+    esac
     echo "$code" > "${CI_VM_RUNNER_STATUS:?}"
   ) > /tmp/vm-runner-build.log 2>&1 &
   SECONDS=0

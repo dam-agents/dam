@@ -1,4 +1,128 @@
 #!/usr/bin/env bash
-#MISE description="Build the VM runner image: the runner, the image cache service and platform-init, all from this directory"
-#MISE dir="{{vars.repo_root}}"
-docker build -o type=docker,name=platform-vm-runner:latest,dest=packages/vm-runner/dist/oci/vm-runner.tar packages/vm-runner/
+#MISE description="Build the VM runner image to dist/oci/vm-runner.tar with mise oci: the runner, the image cache service and platform-init, compiled from this crate, on Debian with the smolvm release smolvm.pin names. Off Linux it builds in the dev cluster's Lima VM."
+# By path too: the Lima VM runs it with only the tools it names.
+set -euo pipefail
+pkg="$(cd "$(dirname "$0")/../.." && pwd)"
+repo="$(cd "$pkg/../.." && pwd)"
+cd "$pkg"
+out=dist/oci/vm-runner.tar
+
+if [ "$(uname -s)" != Linux ]; then
+  . "$repo/.mise/lib/lima-build.sh"
+  # build-essential: the linker cargo needs, and glibc's static archive for
+  # platform-init. The VM's copy of the tree is made afresh every build, so
+  # cargo's target lives beside it.
+  lima_build build-essential "rust crane jq" \
+    sh -c 'CARGO_TARGET_DIR="$HOME/.cache/platform-vm-runner/target" exec packages/vm-runner/.mise/tasks/oci' 
+  mkdir -p "$(dirname "$out")"
+  lima_cat "packages/vm-runner/$out" > "$out"
+  exit
+fi
+
+sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+b="$work/build"
+install -d "$b/usr/local/bin" "$b/usr/local/libexec" "$b/opt/smolvm"
+
+# Built for the host's arch rather than cross-compiled: CI builds each
+# architecture on a runner of that architecture. The runner links the host's
+# glibc dynamically; the check at the end runs it against the image's.
+./.mise/fetch-smolvm
+target="${CARGO_TARGET_DIR:-target}"
+cargo build --release --locked -p vm-runner
+install -m 755 "$target/release/vm-runner" "$target/release/vm-image-cache" "$b/usr/local/bin/"
+# platform-init runs inside the agent's image, which shares no libc with this
+# one, so it is linked statically, against glibc's static archive. The static
+# flag is scoped to platform-init's own target triple, so it reaches neither
+# the runner nor the build scripts cargo runs on the host.
+host="$(rustc -vV | sed -n 's/^host: //p')"
+RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p platform-init --target "$host"
+init="$target/$host/release/platform-init"
+ldd "$init" 2>&1 | grep -qE 'statically linked|not a dynamic executable' ||
+  { echo "platform-init is linked dynamically, and would fail inside a guest" >&2; exit 1; }
+install -m 755 "$init" "$b/usr/local/libexec/platform-init"
+
+case "$(uname -m)" in
+  x86_64) arch=x86_64 crane_sha=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 ;;
+  aarch64) arch=arm64 crane_sha=898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-vm-runner"
+mkdir -p "$cache"
+# <url> <sha256> -> a cached file with that digest.
+fetch() {
+  local f="$cache/$2"
+  if ! echo "$2  $f" | sha256sum -c --status - 2>/dev/null; then
+    curl -fsSL "$1" -o "$f.part"
+    echo "$2  $f.part" | sha256sum -c --quiet - || { rm -f "$f.part"; exit 1; }
+    mv "$f.part" "$f"
+  fi
+  echo "$f"
+}
+
+# The smolvm release is refused unless it has the digest smolvm.pin records for
+# this architecture. It is already the layout the runner reads — the launcher,
+# with its libraries, the guest agent's rootfs and the compressed disk
+# templates beside it — so only those are unpacked, and the release's
+# Kubernetes shim, which the runner does not use, is left out.
+version="$(sed -n 's/^tag=v//p' smolvm.pin)"
+sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
+[ -n "$version" ] && [ -n "$sha" ] || { echo "smolvm.pin names no release for linux-${arch}" >&2; exit 1; }
+release="smolvm-${version}-linux-${arch}"
+tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" "$sha")" \
+  -C "$b/opt/smolvm" --strip-components=1 --no-same-owner \
+  "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
+  "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
+
+# smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
+# v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
+# from this one file. Upstream has not rebuilt it as of 1.16.1, so replace it here.
+# Drop this once a smolvm release ships a current crane.
+#
+# The same binary serves the runner: a machine may reach only its gateway, so the
+# guest cannot fetch its own image: the runner fetches it into its own cache, or
+# the image cache service into a node cache.
+crane_version=v0.22.1
+tar -xzf "$(fetch "https://github.com/google/go-containerregistry/releases/download/${crane_version}/go-containerregistry_Linux_${arch}.tar.gz" "$crane_sha")" \
+  -C "$b/opt/smolvm/agent-rootfs/usr/local/bin" --no-same-owner crane
+install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bin/crane"
+
+# A mise project of its own, outside the repo, whose config is image.toml and
+# the copies of the tree above; it names no tools.
+project="$work/project"
+mkdir -p "$project" "$work"/{data,cache,state,config}
+cp image.toml "$project/mise.toml"
+for d in usr opt; do printf '\n[[oci.copy]]\nhost = "../build/%s"\nimage = "/%s"\n' "$d" "$d" >> "$project/mise.toml"; done
+(
+  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
+  export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
+    MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
+    MISE_TRUSTED_CONFIG_PATHS="$project" MISE_EXPERIMENTAL=1
+  : > "$MISE_GLOBAL_CONFIG_FILE"
+  cd "$project"
+  # The apt bootstrap needs root. Three warnings say nothing here: mise judges
+  # every absolute symlink against a tool's install dir, though the apt
+  # layer's resolve inside the image and those in smolvm's guest rootfs inside
+  # the guest; it flags the copies, though both are this build's own tree; and
+  # an image with no tools is the point.
+  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise -o "$work/layout" 2>&1 1>&3 3>&- |
+    { grep -vE 'oci layer: symlink [^ ]*(/mise-oci-apt-rootfs-[^ ]*/diff|/agent-rootfs)/[^ ]* .* has an absolute target outside|mise oci build: (copying host path |no tools in the toolset)' || true; } >&2; } 3>&1
+)
+[ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work"
+"$repo/.mise/tasks/image/name-layout" "$work/layout" platform-vm-runner:latest
+tar -C "$work/layout" -cf "$work/image.tar" $(ls -A "$work/layout")
+
+# The runner and the image cache service link glibc dynamically, and one that
+# needs a newer glibc than the image ships would fail the runner pod at start,
+# so both run once here, inside the image's own tree.
+mkdir "$work/rootfs"
+crane export - - < "$work/image.tar" | tar -C "$work/rootfs" -xf -
+for bin in vm-runner vm-image-cache; do
+  ${sudo[@]+"${sudo[@]}"} chroot "$work/rootfs" "/usr/local/bin/$bin" --help >/dev/null
+done
+
+mkdir -p "$(dirname "$out")"
+mv "$work/image.tar" "$out"
+echo "$out"

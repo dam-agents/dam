@@ -72,9 +72,9 @@ own_paths() {
     mock) echo "$MISE_IMAGE_PATHS packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
-    # script that fetches it and the Dockerfile. It is also the image's only
-    # build context, so nothing the image compiles in can live outside it.
-    vm-runner) echo "packages/vm-runner" ;;
+    # script that fetches it, image.toml and the task that builds the image
+    # from it all. Beside it, only the task that names the image.
+    vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout" ;;
     # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
     # image:pack. The theme build also depends on dev-config and (any)
     # lockfile change — lockfile bumps re-tag it even when unrelated, which
@@ -169,7 +169,7 @@ self_check() {
   chk "$(base_of keycloak)" ""
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
-  chk "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths vm-runner)" packages/vm-runner
   has "$PINNED_TAGS" vm-runner
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
