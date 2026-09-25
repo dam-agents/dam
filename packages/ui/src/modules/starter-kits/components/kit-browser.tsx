@@ -1,6 +1,6 @@
 import { Close, Search } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -154,6 +154,7 @@ export function KitFilterBar({
   onFilterChange: (f: Filter) => void;
   tabs: readonly { value: Filter; label: string }[];
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
       <div className="relative mb-4">
@@ -162,6 +163,7 @@ export function KitFilterBar({
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
         />
         <Input
+          ref={inputRef}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Search starter kits…"
@@ -170,10 +172,14 @@ export function KitFilterBar({
         />
         {query && (
           <Button
+            type="button"
             variant="ghost"
             size="icon-xs"
             aria-label="Clear search"
-            onClick={() => onQueryChange("")}
+            onClick={() => {
+              onQueryChange("");
+              inputRef.current?.focus();
+            }}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
           >
             <Close size={16} />
