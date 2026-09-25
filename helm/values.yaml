@@ -685,6 +685,8 @@ keycloak:
   # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
   # single `--features=` arg (a second `--features` would override, not merge).
   # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  # The image is pre-built for the base alone, so with any extra Keycloak
+  # re-runs its build at every start, which takes about 25 seconds.
   extraFeatures: []
 
   # -- Admin credentials (for Keycloak admin console)

@@ -5,7 +5,8 @@
 set -euo pipefail
 eval "tars=($usage_tar)"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-for t in "${tars[@]}"; do
+import_one() {
+  local t=$1 g
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$t"
   else
@@ -14,4 +15,13 @@ for t in "${tars[@]}"; do
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$g"
     limactl shell "$LIMA_INSTANCE" rm -f "$g"
   fi
+}
+# Side by side: each import is mostly unpacking its own layers.
+pids=()
+for t in "${tars[@]}"; do
+  import_one "$t" &
+  pids+=($!)
 done
+failed=0
+for p in "${pids[@]}"; do wait "$p" || failed=1; done
+exit "$failed"

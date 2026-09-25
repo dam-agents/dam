@@ -58,7 +58,7 @@ test("an unmentioned channel message gets an ambient reply", async () => {
         },
         {
           timeout: 180_000,
-          intervals: [5_000],
+          intervals: [1_000],
           message: "the ambient reply did not land under the message",
         },
       )

@@ -42,6 +42,7 @@ import {
 } from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
+import { retryWhileUnreachable } from "./core/retry-unreachable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -257,7 +258,16 @@ export async function bootstrap() {
       ? readFileSync(config.databaseCaCertPath, "utf8")
       : undefined,
   };
-  await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
+  const bootRetry = {
+    budgetMs: 120_000,
+    delayMs: 2_000,
+    log: (msg: string) => getLogger().warn(msg),
+  };
+  await retryWhileUnreachable(
+    "migrations",
+    () => runMigrations(config.databaseUrl, config.migrationsPath, dbTls),
+    bootRetry,
+  );
   const { db, sql } = createDb(config.databaseUrl, {
     tls: dbTls,
     poolMax: config.databasePoolMax,
@@ -286,7 +296,11 @@ export async function bootstrap() {
         }
       : null,
   });
-  await artifactsModule.ensureReady();
+  await retryWhileUnreachable(
+    "object storage",
+    () => artifactsModule.ensureReady(),
+    bootRetry,
+  );
   const artifacts = artifactsModule.service;
 
   if (!config.redisUrl)

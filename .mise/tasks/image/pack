@@ -13,6 +13,7 @@
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
+#USAGE flag "--layer <spec>" var=#true help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents"
 # The tar holds an OCI layout, like every other image tar: the base's layers as
 # the registry serves them, then the new layers as plain tars, which a local
 # cluster imports as they are and image:ci-build gzips as it publishes them. The base is kept as a layout per reference and arch,
@@ -52,6 +53,12 @@ eval "root_layers=(${usage_root_layer:-})"
 for d in ${root_layers[@]+"${root_layers[@]}"}; do layer "$d" 0:0; done
 at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
 layer "$usage_root" "$usage_owner" "$at"
+eval "extra_layers=(${usage_layer:-})"
+for spec in ${extra_layers[@]+"${extra_layers[@]}"}; do
+  owner="${spec%%=*}" rest="${spec#*=}"
+  dir="${rest#*=}" at="${rest%%=*}"; at="${at#/}"; at="${at%/}"
+  layer "$dir" "$owner" "$at"
+done
 
 put() {
   local h

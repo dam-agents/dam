@@ -35,7 +35,7 @@ spec:
   # new one is ready, so a Keycloak roll is not an auth outage. In production
   # mode (`start`, scheme https) the overlapping pods form an Infinispan
   # cluster via jdbc-ping through the shared DB, so in-flight login flows
-  # survive the roll too; start-dev (local/e2e) uses a local cache, where an
+  # survive the roll too; scheme http (local/e2e) uses a local cache, where an
   # in-flight login may bounce once. A failed startup (e.g. schema migration)
   # leaves the old pod serving instead of taking auth down.
   strategy:
@@ -73,7 +73,16 @@ spec:
         - name: keycloak
           image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy | default "IfNotPresent" }}
+          # The image is pre-built with the base features and the KC_DB and
+          # KC_HEALTH_ENABLED set below (packages/keycloak-theme/.mise/tasks/oci),
+          # so an optimized start skips the Quarkus augmentation a plain start
+          # runs first. Extra features differ from that build, and then
+          # Keycloak augments at every start as before.
+          {{- if .Values.keycloak.extraFeatures }}
           args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1{{ range .Values.keycloak.extraFeatures }},{{ . }}{{ end }}"]
+          {{- else }}
+          args: ["start", "--optimized"{{ if ne .Values.scheme "https" }}, "--cache=local"{{ end }}]
+          {{- end }}
           ports:
             - containerPort: {{ .Values.keycloak.port }}
               name: http
@@ -114,10 +123,8 @@ spec:
               value: "true"
             - name: KC_PROXY_HEADERS
               value: "xforwarded"
-            {{- if eq .Values.scheme "https" }}
             - name: KC_HTTP_ENABLED
               value: "true"
-            {{- end }}
             # Login-theme knobs — resolved by theme.properties `${env.…}`
             # placeholders in the Keycloakify-built theme.
             - name: PLATFORM_ALLOW_PASSWORD
@@ -132,11 +139,13 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- if .Values.probes.enabled }}
+          # An optimized start is up in about ten seconds; a failed readiness
+          # check only holds traffic back.
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 9000
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:

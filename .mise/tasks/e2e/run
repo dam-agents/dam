@@ -92,18 +92,15 @@ mise run //packages/e2e/playwright:install-browsers
 echo "Nuking any pre-existing test cluster..."
 mise run cluster:delete -- --force
 
-# Provision a fresh e2e cluster. Install args + the apiserver race-fix live in
+# Provision a fresh e2e cluster. Install args live in
 # e2e:install, shared with e2e:loop so the two never drift.
 mise run e2e:install
 
-# Wipe data to the specs' expected clean slate. The nuke above means the
-# cluster is brand new by the time we get here and this is a fast no-op; it
-# stays because nothing should depend on that being true, and a cluster that
-# did survive still carries the previous run's data, which the specs'
-# clean-slate assertions fail on. Re-gate afterwards — the reset bounces the
-# apiserver.
-mise run e2e:reset
-mise run e2e:gate
+# No e2e:reset: the nuke above failed the run unless it removed the cluster,
+# so its data is brand new, and the reset would only bounce the apiserver and
+# gate on it again. The stored login is the one piece of the reset that lives
+# outside the cluster.
+rm -f packages/e2e/playwright/.auth/user.json
 
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
