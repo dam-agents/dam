@@ -212,7 +212,11 @@ build_mise() (
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"
   sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
-  ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out"
+  # Two warnings say nothing here: mise judges every absolute symlink against a
+  # tool's install dir, though the apt layer's targets ship in the same image,
+  # and it flags every copy, though each is a directory of this repo.
+  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" -E "$envs" oci build -o "$out" 2>&1 1>&3 3>&- |
+    { grep -vE 'oci layer: symlink [^ ]*/mise-oci-apt-rootfs-[^ ]*/diff/[^ ]* .* has an absolute target outside|mise oci build: copying host path ' || true; } >&2; } 3>&1
   [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$out"
   # The re-owned layer cache grows with every distinct layer; remove
   # $state/owned to reclaim it.

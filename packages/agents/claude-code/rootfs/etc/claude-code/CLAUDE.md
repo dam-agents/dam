@@ -1,1 +1,1 @@
-/etc/AGENTS.md
+../AGENTS.md
