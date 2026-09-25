@@ -137,7 +137,7 @@ func reclaimEligible(annotations map[string]string, idleTimeout time.Duration, n
 	if idleTimeout <= 0 {
 		return time.Time{}, false
 	}
-	if annotations[annActiveSession] == "true" || annotations[annExperimentActive] == "true" {
+	if annotations[annActiveSession] == "true" || annotations[annExperimentActive] == "true" || annotations[annInvocationsActive] == "true" {
 		return time.Time{}, false
 	}
 	if annotations[annSweepable] == "true" {
