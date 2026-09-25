@@ -12,6 +12,14 @@ export const refreshBackoff = z.object({
 });
 export type RefreshBackoff = z.infer<typeof refreshBackoff>;
 
+export const githubUserTokenScope = z.object({
+  targetId: z.number().int(),
+  targetLogin: z.string().min(1).optional(),
+  repositoryIds: z.array(z.number().int()).nonempty().optional(),
+  permissions: z.record(z.string(), z.string()).optional(),
+});
+export type GitHubUserTokenScope = z.infer<typeof githubUserTokenScope>;
+
 export const oauthAuth = z.object({
   kind: z.literal("oauth"),
   clientId: z.string(),
@@ -29,6 +37,7 @@ export const oauthAuth = z.object({
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
+  githubUserTokenScope: githubUserTokenScope.optional(),
 });
 
 export const clientCredentialsAuth = z.object({
@@ -135,6 +144,9 @@ export const connectionView = z.object({
       permissions: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  githubUserToken: z
+    .object({ scope: githubUserTokenScope.optional() })
+    .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
 
@@ -206,6 +218,17 @@ export interface GitHubAppInstallationProbe {
   repositoriesTruncated?: boolean;
 }
 
+export interface GitHubUserTokenInstallation extends GitHubAppInstallationProbe {
+  installationId: number;
+  targetId: number;
+  accountLogin: string;
+}
+
+export interface GitHubUserTokenProbe {
+  installations: GitHubUserTokenInstallation[];
+  installationsTruncated?: boolean;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -242,6 +265,17 @@ export interface ConnectionsService {
   updateGitHubAppScope(input: {
     id: string;
     repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<void>;
+
+  probeGitHubUserTokenForConnection(input: {
+    connectionId: string;
+  }): Promise<GitHubUserTokenProbe>;
+
+  updateGitHubUserTokenScope(input: {
+    id: string;
+    targetId?: number;
     repositoryIds?: string;
     permissions?: string;
   }): Promise<void>;

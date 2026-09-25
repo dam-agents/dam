@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -285,8 +285,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   stored identity, not a one-time argument** — every renewal and every key
   rotation re-mints against the same subset, so a Connection cannot silently
   widen back to the whole installation between renewals. Narrowing is opt-in:
-  a Connection that names no subset carries the installation's full authority,
-  which is what every Connection made before the capability existed does. Once
+  a Connection that names no subset carries the installation's full authority. Once
   a subset stops being covered — the organization drops a repository from the
   installation, or revokes a permission — renewal is *rejected* rather than
   merely failing, so the Connection reads expired and waits for someone to
@@ -309,6 +308,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   replaces the live one; a subset the installation cannot cover fails the edit
   rather than parking the Connection at its next renewal. Nothing else moves,
   and because the token is read gateway-side the change needs no pod roll.
+
+  A GitHub sign-in through a GitHub App narrows its user token the same way
+  ([connections](connections.md)).
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per

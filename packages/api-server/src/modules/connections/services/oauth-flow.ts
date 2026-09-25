@@ -16,10 +16,13 @@ import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js
 import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
 import { upsertGitconfigContribution } from "../domain/gitconfig-contribution.js";
 import { resolveGitHubIdentity } from "../infrastructure/github-identity.js";
+import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
+import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
+import { scopeGitHubUserToken } from "./github-user-token.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -45,6 +48,7 @@ export interface OAuthFlowPendingCtx {
 
 export function createOAuthFlowService(deps: {
   engine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   repo: ConnectionsRepository;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
@@ -115,26 +119,44 @@ export function createOAuthFlowService(deps: {
         const fresh = await deps.repo.get(conn.id, pending.ctx.ownerId);
         if (!fresh || fresh.auth.kind !== "oauth") return;
 
-        const sdsFields = buildConnectionSdsFields(
-          fresh.contributions,
-          tokens.accessToken,
-        );
         const fields: Record<string, string> = {
           access_token: tokens.accessToken,
-          ...sdsFields,
         };
         if (tokens.refreshToken && fresh.auth.refreshTokenRef) {
           fields.refresh_token = tokens.refreshToken;
         }
-        await deps.secretStore.putFields(fresh.auth.accessTokenRef, fields);
+        const scope = fresh.auth.githubUserTokenScope;
+        await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
+          ...fields,
+          ...(scope
+            ? {}
+            : buildConnectionSdsFields(
+                fresh.contributions,
+                tokens.accessToken,
+              )),
+        });
+        const scoped = scope
+          ? await scopeGitHubUserToken(deps.githubAppEngine, {
+              connectionRef: provider.id,
+              auth: fresh.auth,
+              scope,
+              clientSecret: provider.clientSecret,
+              accessToken: tokens.accessToken,
+            })
+          : undefined;
+        if (scoped) {
+          await deps.secretStore.putFields(
+            fresh.auth.accessTokenRef,
+            buildConnectionSdsFields(fresh.contributions, scoped.accessToken),
+          );
+        }
 
+        const expiresAt = earliestExpiry(tokens.expiresAt, scoped?.expiresAt);
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(fresh.auth),
           connectedAt: Math.floor(Date.now() / 1000),
           scopes: tokens.scopes ?? pending.provider.scopes ?? fresh.auth.scopes,
-          ...(tokens.expiresAt !== undefined
-            ? { expiresAt: tokens.expiresAt }
-            : {}),
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
         };
         await deps.repo.updateAuth(conn.id, updatedAuth);
       });

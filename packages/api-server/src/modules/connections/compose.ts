@@ -116,6 +116,7 @@ export function composeConnectionsForOwner(opts: {
 
   const oauthFlow = createOAuthFlowService({
     engine: opts.oauthEngine,
+    githubAppEngine: opts.githubAppEngine,
     repo,
     templates: opts.templates,
     secretStore: opts.secretStore,
