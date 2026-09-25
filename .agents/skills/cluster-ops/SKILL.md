@@ -38,7 +38,7 @@ The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple sili
 
 ## Disk space (the k3s VM)
 
-No image build uses a docker daemon. Each `:oci` task writes a tar to its package's
+No image build uses a container runtime, on the host or in the VM. Each `:oci` task writes a tar to its package's
 `dist/oci/`, and `cluster:import` copies it into the k3s VM (`platform-k3s`, 200 GiB per
 `etc/lima/k3s.yaml`) for `k3s ctr images import`. On macOS the images that need Linux —
 the agent images and the VM runner — also build inside that VM, so its one disk holds
@@ -57,6 +57,8 @@ mise run cluster:shell -- sh -c 'du -sh ~/.cache/platform-agent-oci ~/.cache/pla
 tars. Inside the VM, the agent build's re-owned layer cache (`~/.cache/platform-agent-oci/owned`)
 and the VM runner's cargo target (`~/.cache/platform-vm-runner/target`) only grow; removing
 either costs the next build its warm start. Growing the VM's disk is the other lever.
+On the host, `~/.cache/platform-image-pack` keeps every base `image:pack` has used, one
+per pin, and a bumped pin leaves the old one there until you remove it.
 
 ## Cluster debugging (pre-approved in .claude/settings.json)
 
