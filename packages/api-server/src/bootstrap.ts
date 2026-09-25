@@ -214,6 +214,7 @@ import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
+  createAgentApiPodClient,
 } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -1088,6 +1089,8 @@ export async function bootstrap() {
       owner,
       surface: "system",
       shareBaseUrl: config.shareBaseUrl,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      agentApi: createAgentApiPodClient(config.namespace),
     }).artifactLibrary;
 
   const agentCleanupSources: AgentCleanupSource[] = [

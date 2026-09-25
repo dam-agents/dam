@@ -255,11 +255,22 @@ export type {
   ArtifactLibraryService,
   ArtifactTouch,
   ArtifactTouchService,
+  ArtifactApiFailureReason,
+  ArtifactCallAgentApiInput,
+  ArtifactCallAgentApiResult,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  ARTIFACT_REQUEST_TYPE,
+  ARTIFACT_RESPONSE_TYPE,
+  ARTIFACT_REQUEST_MAX_IN_FLIGHT,
+  ARTIFACT_REQUEST_TIMEOUT_MS,
+  artifactRequestEnvelopeSchema,
+  artifactRequestMessageSchema,
+  type ArtifactRequestMessage,
+  type ArtifactResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,
@@ -273,6 +284,9 @@ export {
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
   VIEWER_ALLOWLIST_MAX,
+  artifactApiFailureReasonSchema,
+  artifactCallAgentApiInputSchema,
+  artifactCallAgentApiResultSchema,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,

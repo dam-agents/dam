@@ -25,7 +25,10 @@ import {
 } from "../../../modules/invocations/index.js";
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
-import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  createAgentApiPodClient,
+} from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
@@ -214,6 +217,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      agentApi: createAgentApiPodClient(config.namespace),
     });
     const { experiments } = composeExperimentsForOwner({
       db,

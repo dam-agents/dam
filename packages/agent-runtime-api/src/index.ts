@@ -211,3 +211,19 @@ export type {
   KbPublishSegmentReport,
   KbPublishService,
 } from "./modules/kb-publish/types.js";
+export {
+  ARTIFACT_API_MAX_BODY_BYTES,
+  ARTIFACT_API_PORT,
+  ARTIFACT_API_TIMEOUT_MS,
+  artifactApiBodySchema,
+  artifactApiMethodSchema,
+  artifactApiPathSchema,
+  artifactApiRelayFailureReasonSchema,
+  artifactApiRequestInputSchema,
+  artifactApiRequestResultSchema,
+  type ArtifactApiMethod,
+  type ArtifactApiRelayFailureReason,
+  type ArtifactApiRequestInput,
+  type ArtifactApiRequestResult,
+} from "./modules/artifact-api/schemas.js";
+export type { ArtifactApiService } from "./modules/artifact-api/types.js";

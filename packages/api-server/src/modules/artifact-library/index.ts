@@ -4,6 +4,7 @@ export {
   composeArtifactExpirySweeper,
 } from "./compose.js";
 export type { ComposeArtifactLibraryForOwnerOpts } from "./compose.js";
+export { createAgentApiPodClient } from "./infrastructure/agent-api-pod-client.js";
 export type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 export type { ShareViewerService } from "./services/share-viewer-service.js";
 export type { ArtifactExpirySweeper } from "./services/expiry-sweeper.js";

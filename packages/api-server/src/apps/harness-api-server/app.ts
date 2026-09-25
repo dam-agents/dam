@@ -19,7 +19,10 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  createAgentApiPodClient,
+} from "../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import {
   composeInvocationsForOwner,
@@ -130,6 +133,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }),
     });
 
+  const harnessAgentsRepo = createAgentsRepository(
+    k8sClient,
+    deps.agentStateCache,
+  );
   const artifactLibraryFor = (owner: string) =>
     composeArtifactLibraryForOwner({
       db,
@@ -137,12 +144,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       owner,
       surface: "mcp",
       shareBaseUrl: config.shareBaseUrl,
+      ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      agentApi: createAgentApiPodClient(config.namespace),
     }).artifactLibrary;
 
-  const harnessAgentsRepo = createAgentsRepository(
-    k8sClient,
-    deps.agentStateCache,
-  );
   const kbShareOpsFor = (owner: string) =>
     composeKbShareAgentOps({
       owner,

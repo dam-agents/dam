@@ -13,6 +13,7 @@ import {
   SHARE_LOGIN_TTL_MS,
   SHARE_SESSION_TTL_MS,
 } from "./domain/share-session.js";
+import type { AgentApiPodClient } from "./infrastructure/agent-api-pod-client.js";
 import { createArtifactLibraryRepository } from "./infrastructure/artifact-library-repository.js";
 import {
   createKeycloakShareIdentity,
@@ -46,6 +47,8 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   surface: string;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
+  ensureReady: (agentId: string) => Promise<void>;
+  agentApi: AgentApiPodClient;
 }
 
 export function composeArtifactLibraryForOwner(
@@ -62,6 +65,8 @@ export function composeArtifactLibraryForOwner(
         .parse(opts.surface),
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
+      ensureReady: opts.ensureReady,
+      agentApi: opts.agentApi,
     }),
   };
 }

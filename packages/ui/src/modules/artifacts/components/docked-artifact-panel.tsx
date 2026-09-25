@@ -25,7 +25,7 @@ import {
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
-import { canSendArtifactPrompt } from "../lib/artifact-prompt.js";
+import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -106,6 +106,12 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
 
+  const bridgeOpen = canUseArtifactBridge(
+    artifact,
+    enabled,
+    agentId,
+    shownVersion,
+  );
   const frame =
     artifact && preview.data ? (
       <DeferredFrame
@@ -115,11 +121,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         className="h-full w-full bg-white"
         deferMs={0}
         postData={feedPostForShown}
-        onSendPrompt={
-          canSendArtifactPrompt(artifact, enabled, agentId, shownVersion)
-            ? onSendPrompt
-            : undefined
-        }
+        onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
+        agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
       />
     ) : null;
   const frameFallback = (
