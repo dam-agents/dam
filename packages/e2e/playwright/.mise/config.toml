@@ -1,23 +1,14 @@
-[tasks.check]
-depends = [":check:*"]
-
-[tasks.fix]
-depends = [":fix:*"]
+[task_config]
+includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
 
 [tasks."check:tsc"]
 extends = "ts:check:tsc"
 sources = ["{src/**/*,playwright.config}.ts", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 
-[tasks."check:lint"]
-extends = "ts:check:lint"
-
 [tasks."check:format"]
 extends = "ts:check:format"
 run = "pnpm exec prettier --check 'src/**/*.ts' 'playwright.config.ts'"
 sources = ["{src/**/*,playwright.config}.ts", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
-
-[tasks."fix:lint"]
-extends = "ts:fix:lint"
 
 [tasks."fix:format"]
 extends = "ts:fix:format"
