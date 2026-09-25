@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Pull the published images a local install needs and write them where
 # cluster:install imports them from (each component's dist/oci/<component>.tar,
-# named platform-<component>:latest), for hosts where
-# `docker build` cannot run: RUN steps there do not trust the agent proxy's CA.
+# named platform-<component>:latest), which is faster than building them.
 # Run from the repo root, then install with SKIP_IMAGE_BUILD=1.
 #
 # Usage: pull-images [agent-component ...]    (default agent: mock, the e2e harness)
@@ -37,7 +36,7 @@ for candidate in $(git rev-list --first-parent -n 30 "$BASE"); do
   fi
 done
 [ -n "$SHA" ] || { echo "no main commit in the last 30 has published api-server/ui/controller images" >&2; exit 1; }
-[ "$SHA" = "$(git rev-parse HEAD)" ] || echo "note: HEAD is not $SHA; api-server/ui/controller images predate your changes (see the ccweb skill's overlay recipe)"
+[ "$SHA" = "$(git rev-parse HEAD)" ] || echo "note: HEAD is not $SHA; api-server/ui/controller images predate your changes (rebuild the changed ones with their :oci task)"
 for c in api-server ui controller; do pull_tag "$PREFIX/$c:$SHA" "$c"; done
 
 for c in keycloak "${AGENTS[@]}"; do

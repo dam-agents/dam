@@ -1,4 +1,4 @@
-# Local dev: images built with docker and loaded into k3s directly.
+# Local dev: images built by each package's :oci task and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
 
 ui:

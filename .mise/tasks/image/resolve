@@ -20,7 +20,7 @@
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
-#   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
+#   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
@@ -72,15 +72,19 @@ own_paths() {
     mock) echo "$MISE_IMAGE_PATHS packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
-    # script that fetches it and the Dockerfile. It is also the image's only
-    # build context, so nothing the image compiles in can live outside it.
-    vm-runner) echo "packages/vm-runner" ;;
-    # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
-    # build also depends on dev-config and (any) lockfile change — lockfile
-    # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
-    # source-sha tag is what the published chart pins as the image tag, so a
-    # release that doesn't touch these paths doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml" ;;
+    # script that fetches it, image.toml and the task that builds the image
+    # from it all. Beside it, the task that names the image and the Rust
+    # toolchain that compiles it: its pin in the root config, its exact
+    # version in mise.lock. A lockfile bump for another tool re-tags it too,
+    # which errs toward rebuilds.
+    vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
+    # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
+    # image:pack. The theme build also depends on dev-config and (any)
+    # lockfile change — lockfile bumps re-tag it even when unrelated, which
+    # errs toward rebuilds. Its source-sha tag is what the published chart
+    # pins as the image tag, so a release that doesn't touch these paths
+    # doesn't roll the Keycloak pod.
+    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack" ;;
     claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -168,7 +172,8 @@ self_check() {
   chk "$(base_of keycloak)" ""
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
-  chk "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
@@ -182,7 +187,7 @@ self_check() {
   has "$(effective_paths skydiscover)" packages/agents/skydiscover
   has "$(effective_paths skydiscover)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
-  # git/docker.
+  # git or a registry.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'

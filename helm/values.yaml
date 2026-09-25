@@ -668,7 +668,7 @@ keycloak:
   podAnnotations: {}
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
-  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  # version is pinned in the keycloak-theme package's `oci` task.
   # In published charts CI replaces the empty tag with the image's content
   # tag (the commit that last touched its inputs — see cd.yml `publish`),
   # so a release that doesn't change the image doesn't roll the pod.
@@ -1405,7 +1405,7 @@ controller:
       # Relaxing them gives the agent container privileges that bypass the
       # paired-pod credential split and the L7 ext_authz gate.
       # Agent ConfigMaps cannot set these — chart-only by design.
-      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      # UID 65532 is the agent user every agent image is built with.
       podSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532

@@ -41,7 +41,7 @@ By ecosystem:
 - GitHub Actions: use `pinact`
 - Go: fix manually, run `mise -C packages/controller x -- govulncheck ./...` to verify
 - Agent images (`mise oci`, see `docs/architecture/agent-images.md`): tools are pinned in `packages/agents/base/base.toml` and each `packages/agents/*/image.toml` (plus `packages/e2e/agents/mock/image.toml`), resolved in `packages/agents/base/image.lock`, with the npm tools' dependency trees in `packages/agents/base/image-locks/<tool>/<version>/aube-lock.yaml`. Bump the pin, then `mise run //packages/agents:oci --lock`; for a `latest` pin, `mise run //packages/agents:oci --lock --bump` (re-resolves every `latest`). A vulnerable npm transitive is fixed by bumping its tool. A workload `pipx:` tool is locked like any other (its Python tree in `image-locks/pipx-<tool>/<version>/uv.lock`) unless it has `uvx_args`: mise cannot lock those, so their `image.toml` pin, `uvx_args` included, is the only pin. `apt.toml` packages are `latest` and rebuilt daily: no action. The image's release-age gate is `packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`.
-- Keycloak: `FROM` tag+digest in `packages/keycloak-theme/Dockerfile`. Before bumping, scan the candidate (`mise x --no-deps -- trivy image quay.io/keycloak/keycloak:<tag>`) to confirm it fixes the findings.
+- Keycloak: the base image's tag+digest in `packages/keycloak-theme/.mise/tasks/oci`. Before bumping, scan the candidate (`mise x --no-deps -- trivy image quay.io/keycloak/keycloak:<tag>`) to confirm it fixes the findings.
 
 ## Trivy findings in images
 

@@ -1,0 +1,39 @@
+# The VM runner image, built with `mise oci` by //packages/vm-runner:oci: smolvm
+# plus the platform's vm-runner agent, run as one pod that holds /dev/kvm (a
+# device-plugin resource, or privileged locally) and hosts vm-backend agents as
+# microVMs. Same image everywhere; only the pod's device grant differs per
+# cluster. The task compiles the runner, the image cache service and
+# platform-init from this crate, fetches the smolvm release smolvm.pin names
+# and crane, and copies them in.
+
+# tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
+# expands the ext4 templates onto the runner's claim, once per release, so the
+# first agent created after a roll does not wait for it. crane fetches images
+# over TLS, against the system trust store.
+[bootstrap.packages]
+"apt:ca-certificates" = "latest"
+"apt:catatonit" = "latest"
+"apt:e2fsprogs" = "latest"
+"apt:tar" = "latest"
+"apt:util-linux" = "latest"
+"apt:zstd" = "latest"
+
+# smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
+# chart mounts the disks: one of three mounts under /var/lib/platform, beside the
+# per-machine bookkeeping and the image cache, each with a lifetime of its own.
+# catatonit reaps whatever is orphaned to PID 1; the runner reaps the VMMs it
+# spawned itself. The entrypoint names every path that is this image's layout
+# and not the controller's to choose — the smolvm release's launcher, beside
+# which the runner finds the libraries its VMMs load, the guest agent and the
+# disk templates; crane; platform-init — so the runner relies on no default for
+# any of them. The controller passes the rest. The runner's tests read the
+# entrypoint from this line, so it stays one line of JSON-compatible TOML.
+[oci]
+# Google's mirror: no Docker Hub rate limit on CI.
+from = "mirror.gcr.io/library/debian:trixie-slim"
+workdir = "/"
+cmd = []
+entrypoint = ["/usr/bin/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init"]
+
+[oci.env]
+HOME = "/var/lib/platform/disks"

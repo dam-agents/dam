@@ -197,16 +197,16 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: crane
           cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       - id: d
         env:
           EVENT: ${{ github.event_name }}
@@ -234,26 +234,54 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      # The vm-runner's release build: its crates, cargo's target and the smolvm
+      # and crane downloads, per arch.
+      # Keyed by the exact Rust version and the crate's lock and pins, with no
+      # older entry to fall back on, so an entry holds one lockfile's build and
+      # never piles up the artifacts of the crates a bump replaced. The
+      # workspace's own crates recompile every run anyway: cargo fingerprints a
+      # path dependency by mtime, and a fresh checkout moves every one.
+      - id: rust-release-key
+        run: |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - id: rust-release
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      # For the keycloak theme build.
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
           cache_save: ${{ github.event_name != 'pull_request' }}
-      # Only the registry buildcache, written here and read by every PR. A gha
-      # cache export, once also written on PR runs with mode=max, put gigabytes
-      # per run into the 10 GB GitHub gives the whole repository and evicted
-      # the Go, mise-tool and Playwright caches every run reads.
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
-          CACHE_TO: "1"
         run: .mise/tasks/image/ci-build "$ARCH" controller vm-runner api-server ui keycloak
+      # Main writes it on a miss, once the build has compiled into it; a PR's e2e
+      # job reads the amd64 one.
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       # The keycloak theme build, for e2e on a PR. This job starts from an
       # empty task cache, so the entry holds this run's artifacts alone.
       - if: ${{ matrix.arch == 'amd64' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -288,11 +316,11 @@ jobs:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       - name: Create manifest lists and push
         env:
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
@@ -320,16 +348,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -392,11 +420,11 @@ jobs:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       - name: Create manifest lists and push
         env:
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
@@ -425,16 +453,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -492,11 +520,11 @@ jobs:
           version: ${{ env.MISE_VERSION }}
           install_args: crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       - name: Create manifest lists and push
         env:
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
@@ -517,16 +545,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: nodejs pnpm crane usage
           cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       # Every mise image's tools and Chromium for this arch, which the lockfile and
       # the image files fix; each build installs only what it lacks. A miss
       # restores the newest older entry, so a lockfile change reinstalls only
@@ -573,13 +601,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - if: github.event_name == 'pull_request'
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+          # e2e:ci-images reads the vm-runner's source history on a PR.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # See build-images. Before mise-action, like check-test's.
       - if: github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -598,6 +621,11 @@ jobs:
         with:
           version: ${{ env.MISE_VERSION }}
           cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
       # The keycloak image bakes in the theme JAR. Built here, before the
       # background build starts, so it does not race e2e:install's own run of
       # the same task, which is then a cache hit.
@@ -606,10 +634,27 @@ jobs:
       # Before the background build: its pnpm install would race e2e:install's.
       - if: github.event_name == 'pull_request'
         run: mise deps install --only pnpm
+      # build-images' vm-runner release build, for the one e2e:ci-images proves.
+      - id: rust-release-key
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cache/platform-vm-runner
+            packages/vm-runner/target
+          key: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
       - name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
-          KEYCLOAK_THEME_BUILT: "1"
           CI_VM_RUNNER_STATUS: /tmp/vm-runner-build.status
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
@@ -1026,7 +1071,7 @@ jobs:
           echo "artifact=findings-trivy-${COMPONENT}" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           if [ -n "${QUAY_USERNAME:-}" ] && [ -n "${QUAY_PASSWORD:-}" ]; then
-            echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
+            echo "${QUAY_PASSWORD}" | mise x --no-deps -- crane auth login quay.io --username "${QUAY_USERNAME}" --password-stdin
           fi
           # trivy.yaml at the repo root sets ignore-unfixed.
           report=$(mise x --no-deps -- trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {

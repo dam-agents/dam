@@ -1,6 +1,6 @@
 ---
 name: cluster-ops
-description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "colima", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283".
+description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283".
 ---
 
 # Cluster operations
@@ -36,52 +36,27 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 
 The vm backend needs `/dev/kvm` in the k3s VM (nested virtualization: Apple silicon M3+, macOS 15+), so nothing in CI exercises it live. To test it on a host that has it, `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` and stages the mock image for the VM runners, which un-skips `smoke/19-vm-agent.spec.ts`. Without it that spec skips itself.
 
-## Disk space (two independent VMs)
+## Disk space (the k3s VM)
 
-Local dev spans **two** VMs with separate, fixed-size virtual disks that cannot see each
-other's filesystems:
+No image build uses a docker daemon. Each `:oci` task writes a tar to its package's
+`dist/oci/`, and `cluster:import` copies it into the k3s VM (`platform-k3s`, 200 GiB per
+`etc/lima/k3s.yaml`) for `k3s ctr images import`. On macOS the images that need Linux —
+the agent images and the VM runner — also build inside that VM, so its one disk holds
+their build caches beside the cluster's containerd.
 
-- the **docker daemon VM** (colima, or Docker Desktop) — builds the images; holds the
-  buildkit cache and the local `platform-*:latest` tags
-- the **k3s VM** (`platform-k3s`, 200 GiB per `etc/lima/k3s.yaml`) — runs the cluster
-  and has its **own** containerd
-
-Images cross the gap by copy, not by mount: each `:oci` task writes a tar to its
-package's `dist/oci/`, and `cluster:import` copies it into the guest for
-`k3s ctr images import`. So every image is stored on both disks, and neither
-`docker system prune` nor a cluster-side prune helps the other side.
-
-**Symptom.** An image build fails with `no space left on device` (often mid-`unpacking`,
-naming a path under `/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs`) while
-the Mac still reports plenty free. The full disk is the **docker daemon VM's**, not the
-host's and not the cluster's. Check the daemon's own view — `df -h /` on the host is
-about the wrong filesystem:
+**Symptom.** An image build or import fails with `no space left on device` while the Mac
+still reports plenty free. The full disk is the VM's; `df -h /` on the host is about the
+wrong filesystem:
 
 ```
-docker system df                      # images + build cache; build cache is usually the bulk
-colima ssh -- df -h /                 # the daemon VM's actual disk (if using colima)
+mise run cluster:shell -- df -h /
+mise run cluster:shell -- sh -c 'du -sh ~/.cache/platform-agent-oci ~/.cache/platform-vm-runner'
 ```
 
-**Reclaim.** `mise run cluster:prune` prunes both sides: buildkit cache (capped, default
-`--keep=10GB`), dangling docker images, dangling k3s images, and leftover import tars.
-
-**Prevent.** Buildkit's default policy keeps cache until the disk is nearly full, which on
-a fixed-size VM disk shows up as a mid-build ENOSPC instead of a clean eviction. Cap it
-once in the daemon config so it can never fill the disk. For colima, in
-`~/.colima/default/colima.yaml` (survives restarts, then `colima restart`):
-
-```yaml
-docker:
-  builder:
-    gc:
-      enabled: true
-      defaultKeepStorage: "20GB"
-```
-
-Docker Desktop has the same setting under Settings → Builders → disk usage limit. Growing
-the VM disk is the other lever (`colima stop && colima start --disk 200`) — colima can
-grow but never shrink it, and the image is sparse, so it needs real host space to expand
-into.
+**Reclaim.** `mise run cluster:prune` removes dangling k3s images and leftover import
+tars. Inside the VM, the agent build's re-owned layer cache (`~/.cache/platform-agent-oci/owned`)
+and the VM runner's cargo target (`~/.cache/platform-vm-runner/target`) only grow; removing
+either costs the next build its warm start. Growing the VM's disk is the other lever.
 
 ## Cluster debugging (pre-approved in .claude/settings.json)
 

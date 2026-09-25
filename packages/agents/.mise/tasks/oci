@@ -259,39 +259,16 @@ serve_apt_base() {
 }
 
 # `mise oci` needs a Linux host of the image's arch; elsewhere the Lima VM
-# builds from a copy of the working tree (the host's node_modules are not
-# Linux's).
-# The dev VM whichever cluster the tars go to: its disk holds the build cache,
-# which the e2e VM's has no room for.
-vm="${AGENT_BUILD_VM:-platform-k3s}"
-limactl list -q 2>/dev/null | grep -qx "$vm" || vm="${LIMA_INSTANCE:-$vm}"
+# builds, and the tars are read out of its OCI layouts.
+. .mise/lib/lima-build.sh
 build_in_vm() {
-  limactl list -q 2>/dev/null | grep -qx "$vm" || { echo "no Lima VM $vm: run mise run cluster:install first" >&2; exit 1; }
-  git ls-files -z --cached --others --exclude-standard |
-    while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
-    tar --null -T - -cf - |
-    limactl shell --workdir / "$vm" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
-  # The tools CI's build-agents job sets up, not the repo's whole toolchain.
-  # The host's GitHub token for the VM's mise, on stdin to stay out of
-  # process lists.
-  printf '%s\n' "${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}" |
-  limactl shell --workdir / "$vm" sh -c '
-    set -e
-    read -r GITHUB_TOKEN || true
-    [ -z "$GITHUB_TOKEN" ] || export GITHUB_TOKEN
-    want=$1; shift
-    [ -x ~/.local/bin/mise ] || curl -fsSL https://mise.run | sh
-    ~/.local/bin/mise self-update --yes "$want" >/dev/null
-    # mise runs the arm64 node it installs, which links libatomic.
-    dpkg -s libatomic1 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq libatomic1; }
-    export PATH="$HOME/.local/bin:$PATH"
-    cd ~/platform-src
-    mise trust -q
-    AGENT_OCI_OUT=~/platform-agent-oci mise exec node pnpm usage crane -- packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$(mise config get -f .mise/config.toml min_version)" "$@"
+  # mise runs the arm64 node it installs, which links libatomic.
+  lima_build libatomic1 "node pnpm usage crane" \
+    sh -c 'AGENT_OCI_OUT="$HOME/platform-agent-oci" exec packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$@"
 }
 layout() {
   if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c $(ls -A "$oci_out/$1")
-  else limactl shell --workdir / "$vm" sh -c 'cd ~/platform-agent-oci/"$1" && tar -c $(ls -A)' _ "$1"; fi
+  else limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'cd ~/platform-agent-oci/"$1" && tar -c $(ls -A)' _ "$1"; fi
 }
 
 if [ "$lock" = true ]; then lock_mise; exit; fi

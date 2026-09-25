@@ -355,18 +355,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint passes ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
     fn entrypoint_args() -> Vec<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile");
-        let dockerfile = std::fs::read_to_string(path)
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/image.toml");
+        let config = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
-        let line = dockerfile
+        let line = config
             .lines()
-            .find(|line| line.starts_with("ENTRYPOINT "))
-            .expect("the runner image has an ENTRYPOINT");
+            .find(|line| line.starts_with("entrypoint = "))
+            .expect("the runner image has an entrypoint");
         let words: Vec<String> =
-            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
-                .expect("the ENTRYPOINT is in exec form");
+            serde_json::from_str(line.trim_start_matches("entrypoint = ").trim())
+                .expect("the entrypoint is one line of strings");
         let runner = words
             .iter()
             .position(|word| word == "vm-runner")

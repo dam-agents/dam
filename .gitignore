@@ -8,7 +8,7 @@ dist/
 # Vite
 packages/ui/.vite/
 
-# Docker
+# Image tars
 *.tar
 
 # Environment
