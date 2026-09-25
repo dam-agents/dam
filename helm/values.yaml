@@ -1244,6 +1244,9 @@ apiServer:
     - export.arxiv.org
     # Debian packages: apt-get on a machine, where the agent is root.
     - deb.debian.org
+    # Kernel sources and Alpine packages, for images built on them.
+    - "*.kernel.org"
+    - "*.alpinelinux.org"
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding

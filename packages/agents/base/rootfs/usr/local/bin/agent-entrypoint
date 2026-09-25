@@ -10,6 +10,14 @@ if [ "$(id -u)" = 0 ]; then
 	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
 	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 	install -d -m 0755 /run/sshd
+	# docker runs only on a machine. Its client passes the agent's gateway to
+	# every container and build; the file sits outside the home, rewritten
+	# each boot, so logins last until a restart.
+	if [ -n "${HTTPS_PROXY:-}" ]; then
+		printf '{"proxies":{"default":{"httpProxy":"%s","httpsProxy":"%s","noProxy":"%s"}}}\n' \
+			"${HTTP_PROXY:-$HTTPS_PROXY}" "$HTTPS_PROXY" "${NO_PROXY:-}" >/etc/docker/config.json
+		export DOCKER_CONFIG=/etc/docker
+	fi
 fi
 
 mitm_ca=/etc/platform/ca/ca.crt
