@@ -72,9 +72,6 @@ export function EntryPointButtons({
   if (!lead) return null;
   return (
     <>
-      <Button onClick={() => enter(lead)} data-testid="entry-point-lead">
-        {lead.label}
-      </Button>
       {second && (
         <Button
           variant="outline"
@@ -84,6 +81,9 @@ export function EntryPointButtons({
           {second.label}
         </Button>
       )}
+      <Button onClick={() => enter(lead)} data-testid="entry-point-lead">
+        {lead.label}
+      </Button>
       {browsing && (
         <BrowseKitsModal
           initialFilter={browsing}
