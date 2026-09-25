@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { ProviderPresetType } from "../connections/providers.js";
 import type { EnvVar } from "../shared.js";
-import type { harnessFamilySchema } from "./schemas.js";
+import type { harnessFamilySchema, templateHarnessSchema } from "./schemas.js";
 
 export interface Mount {
   path: string;
@@ -20,6 +20,8 @@ export type TemplateCategory = "harness";
 
 export type HarnessFamily = z.infer<typeof harnessFamilySchema>;
 
+export type TemplateHarness = z.infer<typeof templateHarnessSchema>;
+
 export interface SkillSourceSeed {
   name: string;
   gitUrl: string;
@@ -32,7 +34,7 @@ export interface TemplateSpec {
   name?: string;
   description?: string;
   category?: TemplateCategory;
-  harness?: HarnessFamily;
+  harness?: TemplateHarness;
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;

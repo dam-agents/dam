@@ -156,6 +156,110 @@ describe("spawn applies an Agent Setup", () => {
 
     expect(skillsApplied).toEqual([{ agentId: id, skills }]);
   });
+
+  // TEST_SCENARIO: the label a driver passes names the sub-agent, so it is minted into the target's name; the name still carries the entropy and the prefix the recognizer reads.
+  test("a label names the target", async () => {
+    const { service, created } = makeService();
+
+    await service.spawn({ ...baseInput, label: "Summarize README" });
+
+    expect(String(created[0]?.name)).toMatch(
+      /^invocation-summarize-readme-[0-9a-f]{12}$/,
+    );
+  });
+});
+
+function makeFailingSkillsService(
+  applyEntries: (input: {
+    agentId: string;
+    skills: unknown[];
+  }) => Promise<unknown>,
+) {
+  const { repo, failed } = repoStub({
+    get: async () =>
+      ({ id: "agent-1", owner: "owner-1", status: "running" }) as never,
+  });
+  const deleted: string[] = [];
+  const service = createInvocationsService({
+    owner: "owner-1",
+    repo,
+    agents: {
+      create: async (input: Record<string, unknown>) => ({
+        id: input.id as string,
+      }),
+      delete: async (id: string) => {
+        deleted.push(id);
+      },
+    } as never,
+    driverResolution: { resolveRoot: async () => "root-1" },
+    runtimeMutator: {
+      bump: async () => 0,
+      enqueueAfterCommit: async () => {},
+    } as never,
+    wakeAgent: async () => {},
+    skills: { applyEntries } as never,
+  });
+  return { service, failed, deleted };
+}
+
+const withSkills: SpawnInput = {
+  ...baseInput,
+  setup: {
+    env: [],
+    skills: [{ source: "https://github.example/acme/skills", name: "triage" }],
+  },
+};
+
+describe("a skills apply that does not land fails the Invocation", () => {
+  // TEST_SCENARIO: a declared skill the target never received is a setup step that did not happen. The driver is polling and would otherwise read a success whose turn ran without the skill, so the Invocation fails with the reason and the target is deleted, exactly as a failed seed or install does.
+  test("an apply that raises fails the Invocation and deletes the target", async () => {
+    const { service, failed, deleted } = makeFailingSkillsService(async () => {
+      throw new Error("agent never became reachable");
+    });
+
+    const { id } = await service.spawn(withSkills);
+
+    expect(failed).toEqual([
+      [id, "skills failed: agent never became reachable"],
+    ]);
+    expect(deleted).toEqual([id]);
+  });
+
+  // TEST_SCENARIO: a skipped skill raises nothing — the apply reports which entries it left out, and why. That list is the reason the driver gets.
+  test("a skipped skill fails the Invocation with its reason", async () => {
+    const { service, failed } = makeFailingSkillsService(async () => ({
+      installed: [],
+      added: 0,
+      skipped: [
+        {
+          source: "https://github.example/acme/skills",
+          name: "triage",
+          reason: "source-not-connected",
+        },
+      ],
+    }));
+
+    const { id } = await service.spawn(withSkills);
+
+    expect(failed).toEqual([
+      [id, "skills failed: triage (source-not-connected)"],
+    ]);
+  });
+
+  test("an apply that installs everything fails nothing", async () => {
+    const { service, failed, deleted } = makeFailingSkillsService(async () => ({
+      installed: [
+        { source: "https://github.example/acme/skills", name: "triage" },
+      ],
+      added: 1,
+      skipped: [],
+    }));
+
+    await service.spawn(withSkills);
+
+    expect(failed).toEqual([]);
+    expect(deleted).toEqual([]);
+  });
 });
 
 describe("spawn inherits the driver's provider", () => {
@@ -340,6 +444,17 @@ describe("the spawn endpoint", () => {
       image: "registry.example/worker:1",
       runsOn: ["openai"],
     });
+  });
+
+  test("a label reaches the spawn", async () => {
+    const { app, spawned } = makeApp(catalog);
+
+    await app.request(
+      "/api/agents/driver-1/invocations",
+      post({ harness: "claude-code", label: "summarize-readme" }),
+    );
+
+    expect(spawned[0]).toMatchObject({ label: "summarize-readme" });
   });
 
   test("an image alone narrows nothing", async () => {

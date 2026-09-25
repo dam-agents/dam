@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -217,26 +217,27 @@ at once before the human approves. Fan-out past that number queues rather than
 fails, but the wait burns each invocation's deadline, so the deadline is sized
 with the queue in mind.
 
-Two checks keep a wrong id from surfacing as an empty
-result hours in: `require_image()` resolves the id against the catalogue during
-the declaration section, so plan mode fails while the human is still reviewing
-the design, and the spawn route rejects an unknown `templateId` with a `400`
-naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
-does not extend to naming an image that isn't there. The route applies the same
-fail-fast to a worker sized past the owner's budget Ceiling: such a target could
-never be admitted and would otherwise park until its deadline, so the first
-spawn fails with the figures instead. A worker that fits the Ceiling but not the
-room currently free is not an error — it queues and starts when room frees
-([budgets](budgets.md)), so a loop wider than the Ceiling runs slower, not dead.
+Two checks keep a wrong id from surfacing as an empty result hours in:
+`require_image()` resolves the id against the catalogue during the declaration
+section, so plan mode fails while the human is still reviewing the design, and
+the spawn route rejects a harness this install does not have with a `400`
+naming the harnesses it does — the lenient-skeleton rule is about *stage* drift
+and does not extend to naming an image that isn't there. The route applies the
+same fail-fast to a worker sized past the owner's budget Ceiling: such a target
+could never be admitted and would otherwise park until its deadline, so the
+first spawn fails with the figures instead. A worker that fits the Ceiling but
+not the room currently free is not an error — it queues and starts when room
+frees ([budgets](budgets.md)), so a loop wider than the Ceiling runs slower,
+not dead.
 
 **A failed spawn says why.** Polling an invocation returns its status and, once
 the target reports, the schema-validated result. A `failed` row additionally
-carries the platform's own reason — deadline exceeded, target pod restarted
-mid-turn, stopped with the run — because it is the one line of diagnosis the
-platform holds and the loop cannot reconstruct: the target is already gone by
-the time the driver sees the failure. A loop that only ever read a bare
-`failed` would have to guess whether to retry, back off, or shrink its
-workload.
+carries the platform's own reason — a setup step that failed, deadline
+exceeded, target pod restarted mid-turn, stopped with the run — because it is
+the one line of diagnosis the platform holds and the loop cannot reconstruct:
+the target is already gone by the time the driver sees the failure. A loop that
+only ever read a bare `failed` would have to guess whether to retry, back off,
+or shrink its workload.
 
 **Span ↔ spawn attach.** A spawn made inside a span carries
 `experimentSpanId` ("experimentId/spanId") on the invocation request; the

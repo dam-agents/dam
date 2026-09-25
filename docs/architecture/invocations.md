@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -28,6 +28,8 @@ sequenceDiagram
 
 **A spawn names a harness.** The target runs on that harness's Template — its image, size, env and mounts — exactly as an Agent created on it would. A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size. A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it. Either way the harness's Template states the providers it can run on, which is what Provider Inheritance checks.
 
+**A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed. The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
+
 **The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)). External skills are applied the way kit apply applies them, after the target is woken.
 
 **Provider Inheritance.** A target runs on its Driver's model provider; a spawn never names one. The platform takes the provider connections granted to the Driver and gives the target the first one its Template can run on. A Template that declares providers none of the Driver's match is refused before anything is created, since the target would otherwise fail its first model call and sit until its deadline. An image target declares nothing, so nothing is narrowed.
@@ -42,7 +44,7 @@ sequenceDiagram
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it. The reasons:
 
-- **Setup failed.** A seed or install the target's runtime reports as failed fails the Invocation the first time, naming the step and the tail of its error, and deletes the target. There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
+- **Setup failed.** A setup step that does not land fails the Invocation the first time, naming the step and the tail of its error, and deletes the target. That covers a seed or install the target's runtime reports as failed, and a declared skill the apply could neither install nor account for: a turn that runs without a skill the Driver asked for would otherwise return a result the Driver cannot read as incomplete. There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.

@@ -8,6 +8,7 @@ import {
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
   type ProviderPresetType,
+  type SkillSetApplyResult,
   type SkillsService,
 } from "api-server-api";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import { invocationTargetName } from "../domain/target-name.js";
+import { createSetupFailure } from "./setup-failure.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
 import type {
@@ -100,6 +102,7 @@ export interface SpawnInput {
   connections: string[];
   prompt: string;
   schema: unknown;
+  label?: string;
   ttlMs?: number;
   experimentSpanId?: string;
 }
@@ -116,6 +119,13 @@ export interface InvocationsService {
     driverAgentId: string,
   ): Promise<{ status: InvocationStatus; result: unknown } | null>;
   recordResult(invocationId: string, result: unknown): Promise<RecordResult>;
+}
+
+function skillsSkippedReason(
+  skipped: SkillSetApplyResult["skipped"],
+): string | null {
+  if (skipped.length === 0) return null;
+  return skipped.map((s) => `${s.name} (${s.reason})`).join(", ");
 }
 
 export function createInvocationsService(deps: {
@@ -135,6 +145,10 @@ export function createInvocationsService(deps: {
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
   const ajv = new Ajv({ allErrors: true, strict: false });
+  const failSetup = createSetupFailure({
+    repo: deps.repo,
+    agentsFor: () => deps.agents,
+  });
 
   function compileSchema(schema: unknown): ValidateFunction {
     try {
@@ -215,7 +229,10 @@ export function createInvocationsService(deps: {
       try {
         agent = await deps.agents.create({
           id: targetId,
-          name: invocationTargetName(randomBytes(6).toString("hex")),
+          name: invocationTargetName(
+            randomBytes(6).toString("hex"),
+            input.label,
+          ),
           sweepable: true,
           egressPreset: "none",
           telemetryAttributionId: rootId,
@@ -273,16 +290,22 @@ export function createInvocationsService(deps: {
       await deps.wakeAgent(agent.id);
 
       if (input.setup.skills.length > 0 && deps.skills) {
+        let reason: string | null = null;
         try {
-          await deps.skills.applyEntries({
+          const applied = await deps.skills.applyEntries({
             agentId: agent.id,
             skills: input.setup.skills,
           });
+          reason = skillsSkippedReason(applied.skipped);
         } catch (err) {
+          reason = err instanceof Error ? err.message : String(err);
+        }
+        if (reason !== null) {
           getLogger().warn(
-            { err, agentId: agent.id },
+            { agentId: agent.id, reason },
             "invocations: the target's skills could not be applied",
           );
+          await failSetup(agent.id, "skills", reason);
         }
       }
 

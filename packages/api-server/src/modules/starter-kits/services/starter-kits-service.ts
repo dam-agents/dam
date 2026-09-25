@@ -5,7 +5,7 @@ import { securityLog } from "../../../core/security-log.js";
 import type {
   ResolvedStarterKit,
   StarterKit,
-  HarnessFamily,
+  TemplateHarness,
   Agent,
   AgentCreateInput,
   AgentsService,
@@ -182,7 +182,7 @@ export function createStarterKitsService(
     created: Agent,
     loaded: LoadedKit,
     version: string,
-    harness: HarnessFamily | undefined,
+    harness: TemplateHarness | undefined,
   ): Promise<void> {
     if (loaded.kit.onboarding === false) return;
     const agentId = created.id;

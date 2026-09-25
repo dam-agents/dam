@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentSetupSeedSchema, agentSetupShape } from "../agents/setup.js";
-import { harnessFamilySchema } from "../templates/schemas.js";
+import { templateHarnessSchema } from "../templates/schemas.js";
 
 export const DEFAULT_INVOCATION_TTL_MS = 60 * 60 * 1000;
 export const MIN_INVOCATION_TTL_MS = 60 * 1000;
@@ -8,11 +8,12 @@ export const MAX_INVOCATION_TTL_MS = 6 * 60 * 60 * 1000;
 
 export const spawnInvocationRequestSchema = z
   .object({
-    harness: harnessFamilySchema.optional(),
+    harness: templateHarnessSchema.optional(),
     image: z.string().min(1).optional(),
     connections: z.array(z.string().min(1)).optional(),
     prompt: z.string().min(1),
     schema: z.unknown(),
+    label: z.string().min(1).max(100).optional(),
     ttlMs: z
       .number()
       .int()
