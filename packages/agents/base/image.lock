@@ -49,6 +49,47 @@ url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
 provenance = "github-attestations"
 
+[[tools."github:docker/buildx"]]
+version = "0.37.1"
+backend = "github:docker/buildx"
+specifiers = ["latest"]
+
+[tools."github:docker/buildx".options]
+asset_pattern = "buildx-v{{ version }}.linux-arm64"
+
+[tools."github:docker/buildx"."platforms.linux-arm64"]
+checksum = "sha256:e5cc9fe3bbff5cbc91230981f7860e06076110730a2db997082652199042a1f2"
+url = "https://github.com/docker/buildx/releases/download/v0.37.1/buildx-v0.37.1.linux-arm64"
+url_api = "https://api.github.com/repos/docker/buildx/releases/assets/557511552"
+
+[[tools."github:docker/buildx"]]
+version = "0.37.1"
+backend = "github:docker/buildx"
+specifiers = ["latest"]
+
+[tools."github:docker/buildx".options]
+asset_pattern = "buildx-v{{ version }}.linux-amd64"
+
+[tools."github:docker/buildx"."platforms.linux-x64"]
+checksum = "sha256:9447199cdb435f25880548343c128a4b6650e8891ee598905d8d29d39a8e359b"
+url = "https://github.com/docker/buildx/releases/download/v0.37.1/buildx-v0.37.1.linux-amd64"
+url_api = "https://api.github.com/repos/docker/buildx/releases/assets/557511570"
+
+[[tools."github:docker/compose"]]
+version = "5.5.1"
+backend = "github:docker/compose"
+specifiers = ["latest"]
+
+[tools."github:docker/compose"."platforms.linux-arm64"]
+checksum = "sha256:732e3a84c1a0f67256ce80bc2598a24546b10ca05f9faa97efceb1171ece2ef7"
+url = "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-aarch64"
+url_api = "https://api.github.com/repos/docker/compose/releases/assets/542966295"
+
+[tools."github:docker/compose"."platforms.linux-x64"]
+checksum = "sha256:db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576"
+url = "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64"
+url_api = "https://api.github.com/repos/docker/compose/releases/assets/542966285"
+
 [[tools."http:bob"]]
 version = "2.0.3"
 backend = "http:bob"

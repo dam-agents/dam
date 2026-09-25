@@ -77,6 +77,8 @@ lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
 # Stages the mise project for the named agents, outside the repo, and points
 # mise at it alone. Call it in a subshell. Installs use the lockfile but do not
 # enforce it: mise cannot lock the workloads' pipx tools.
+# mise cannot verify the provenance docker publishes for buildx and compose,
+# the github: tools; the lockfile's checksums still pin them.
 stage_project() {
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
@@ -84,7 +86,7 @@ stage_project() {
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
-    MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0
+    MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0 MISE_GITHUB_SLSA=false
   : > "$MISE_GLOBAL_CONFIG_FILE"
 
   # In the repo every agent dir is a mise config root, so the stage renames
@@ -119,8 +121,9 @@ lock_mise() (
   envs="${envs// /,}"
   unlockable="$(awk '/^\[tools\./ { t = $0; sub(/^\[tools\./, "", t); sub(/\]$/, "", t); gsub(/"/, "", t) } /^uvx_args/ { print t }' mise/conf.d/harness.*.toml)"
   read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r --arg skip "$unlockable" '[keys[] | select(. as $k | $skip | split("\n") | index($k) | not)] | join(" ")')"
-  # Python dependency locks run the image's uv.
-  mise -E "$envs" install uv
+  # Python dependency locks run the image's uv. Its own install stays out of
+  # the lockfile, which would otherwise gain this host's platform.
+  MISE_LOCKFILE=0 mise -E "$envs" install uv
   mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
   cp mise/mise.lock "$root/$lockfile"
   rm -rf "${root:?}/$deplocks"
@@ -180,10 +183,17 @@ build_mise() (
   # PLAYWRIGHT_BROWSERS_PATH; the download is kept between builds.
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
   cp -a "$work/ms-playwright" build/opt/
-  # agent-browser does not look for the arm64 build's directory name.
-  set -- build/opt/ms-playwright/chromium-[0-9]*/chrome-linux*/chrome
-  [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
-  ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/chrome
+  # agent-browser runs the headless shell: full Chrome calls Google's services
+  # at startup, which the gateway would hold for approval.
+  set -- build/opt/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
+  [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
+  ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/headless-shell
+  # docker finds a CLI plugin in its plugin directory, not on PATH.
+  install -d build/usr/local/lib/docker/cli-plugins
+  for p in buildx compose; do
+    ln -s "../../../share/mise/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")/docker-$p" \
+      "build/usr/local/lib/docker/cli-plugins/docker-$p"
+  done
   # A workload's venv, at the /opt path its *_VENV names and as /opt/venv. A
   # locked install's directory carries a hash, so the link is made here.
   for f in mise/conf.d/harness.*.toml; do

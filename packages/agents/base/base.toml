@@ -23,7 +23,21 @@ version = "29.8.1"
 linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
 linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/docker-{{version}}.tgz" }
 
-# libatomic1 for node 26, libnss-extrausers for the agent account, and from
+# docker's CLI plugins, which the image task links where docker looks for them.
+# buildx's releases carry a provenance file mise would otherwise pick.
+[tools."github:docker/buildx"]
+version = "latest"
+bin = "docker-buildx"
+
+[tools."github:docker/buildx".platforms]
+linux-x64 = { asset_pattern = "buildx-v{{ version }}.linux-amd64" }
+linux-arm64 = { asset_pattern = "buildx-v{{ version }}.linux-arm64" }
+
+[tools."github:docker/compose"]
+version = "latest"
+
+# libatomic1 for node 26, libnss-extrausers for the agent account,
+# libnss3-tools for Chromium's trust store, and from
 # libasound2t64 on, what Playwright lists for its Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
@@ -35,6 +49,7 @@ linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/d
 "apt:iptables" = "latest"
 "apt:libatomic1" = "latest"
 "apt:libnss-extrausers" = "latest"
+"apt:libnss3-tools" = "latest"
 "apt:openssh-server" = "latest"
 "apt:openssl" = "latest"
 "apt:patch" = "latest"
@@ -97,4 +112,4 @@ DEBIAN_FRONTEND = "noninteractive"
 # The one Chromium both use; containers have no user namespaces for its sandbox.
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 AGENT_BROWSER_ARGS = "--no-sandbox"
-AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chrome"
+AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"

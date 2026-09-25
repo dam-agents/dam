@@ -21,6 +21,13 @@ if [ -s "$mitm_ca" ]; then
 	cp "$mitm_ca" /usr/local/share/ca-certificates/platform-mitm-ca.crt &&
 		update-ca-certificates >/dev/null 2>&1 ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	# Chromium trusts its own NSS store in the home, not the system bundle.
+	nssdb="$home/.pki/nssdb"
+	if ! { mkdir -p "$nssdb" && { [ -f "$nssdb/cert9.db" ] || certutil -d "sql:$nssdb" -N --empty-password; } &&
+		{ certutil -d "sql:$nssdb" -D -n platform-mitm-ca 2>/dev/null || true; } &&
+		certutil -d "sql:$nssdb" -A -t "C,," -n platform-mitm-ca -i "$mitm_ca"; } 2>/dev/null; then
+		echo "agent-entrypoint: WARNING: could not trust the platform CA in Chromium; its intercepted hosts may fail TLS" >&2
+	fi
 fi
 
 # /app/working-dir stays pristine: the runtime reconciles image skills against it.
