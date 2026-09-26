@@ -281,24 +281,21 @@ checksum = "sha256:d3870437e1e95b67f8edbde964156c84a26503f560821d40c542441658934
 url = "https://get.helm.sh/helm-v4.3.0-darwin-arm64.tar.gz"
 
 [[tools.java]]
-version = "21.0.2"
+version = "temurin-25.0.4+101.0.LTS"
 backend = "core:java"
-specifiers = ["21"]
-
-[tools.java.options]
-shorthand_vendor = "openjdk"
+specifiers = ["temurin-25"]
 
 [tools.java."platforms.linux-arm64"]
-checksum = "sha256:08db1392a48d4eb5ea5315cf8f18b89dbaf36cda663ba882cf03c704c9257ec2"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-aarch64_bin.tar.gz"
+checksum = "sha256:69df11a02cfa3ef7d7ca645e03edce6778ec090e100f6ae2b42097865730ac52"
+url = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.4.1_1.tar.gz"
 
 [tools.java."platforms.linux-x64"]
-checksum = "sha256:a2def047a73941e01a73739f92755f86b895811afb1f91243db214cff5bdac3f"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-x64_bin.tar.gz"
+checksum = "sha256:dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e"
+url = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz"
 
 [tools.java."platforms.macos-arm64"]
-checksum = "sha256:b3d588e16ec1e0ef9805d8a696591bd518a5cea62567da8f53b5ce32d11d22e4"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_macos-aarch64_bin.tar.gz"
+checksum = "sha256:61979887f7506a24a57439ff99adb8b3a7fc89977d9cfe3b8984f58a981b7b9d"
+url = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_aarch64_mac_hotspot_25.0.4.1_1.tar.gz"
 
 [[tools.jq]]
 version = "1.8.2"
