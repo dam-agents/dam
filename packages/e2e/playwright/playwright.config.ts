@@ -9,7 +9,7 @@ const full = process.env.E2E_FULL === "1";
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   expect: { timeout: 15_000 },
@@ -51,7 +51,7 @@ export default defineConfig({
     {
       name: "experiments",
       testMatch: /12-.*\.spec\.ts$/,
-      dependencies: ["messages"],
+      dependencies: ["messages", "user-env"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
@@ -63,7 +63,7 @@ export default defineConfig({
     {
       name: "api-keys",
       testMatch: /06-.*\.spec\.ts$/,
-      dependencies: ["auth"],
+      dependencies: ["auth", "connection"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
@@ -81,13 +81,13 @@ export default defineConfig({
     {
       name: "kb-share",
       testMatch: /17-.*\.spec\.ts$/,
-      dependencies: ["auth"],
+      dependencies: ["auth", "slack-ambient"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "satellites",
       testMatch: /18-.*\.spec\.ts$/,
-      dependencies: ["auth"],
+      dependencies: ["auth", "slack-inchat"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
@@ -123,13 +123,13 @@ export default defineConfig({
     {
       name: "session-delete",
       testMatch: /08-session-delete\.spec\.ts$/,
-      dependencies: ["agent"],
+      dependencies: ["agent", "messages"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
       name: "user-env",
       testMatch: /09-user-env\.spec\.ts$/,
-      dependencies: ["agent"],
+      dependencies: ["agent", "session-delete"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
