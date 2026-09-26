@@ -540,8 +540,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							{Name: "metrics", ContainerPort: vmRunnerMetricsPort},
 						},
 						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-								Command: []string{"curl", "-skf", "-m", "3", fmt.Sprintf("https://127.0.0.1:%d/healthz", vmRunnerPort)},
+							ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+								Path:   "/healthz",
+								Port:   intstr.FromString("machine-api"),
+								Scheme: corev1.URISchemeHTTPS,
 							}},
 							TimeoutSeconds: 5,
 						},
