@@ -40,15 +40,15 @@ function harness(
     ensureReady,
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => OWNER } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => OWNER } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
@@ -58,19 +58,19 @@ function harness(
         },
       ],
     } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    (e) => events.push(e),
-    0,
-    { patienceMs, sleep: async () => {} },
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: (e) => events.push(e),
+    settleMs: 0,
+    wakeWait: { patienceMs, sleep: async () => {} },
+  });
 
   return {
     gw,

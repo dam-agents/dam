@@ -878,38 +878,38 @@ export async function bootstrap() {
     });
 
   const slackWorker = slackGatewayFactory
-    ? createSlackWorker(
+    ? createSlackWorker({
         makeAcpClient,
-        slackGatewayFactory,
-        () => systemAgents,
-        identityLinkService,
-        {
+        createGateway: slackGatewayFactory,
+        agents: () => systemAgents,
+        identityLinks: identityLinkService,
+        oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: slackOauthCallbackUrl,
         },
-        pendingSlackOAuthFlows,
-        (agentId) => agentsRepo.getOwner(agentId),
+        pendingOAuthFlows: pendingSlackOAuthFlows,
+        getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
-        deleteSlackChannelBinding(db),
-        setSlackChannelAmbient(db),
-        setSlackChannelDefault(db),
-        { name: config.brand.name, short: config.brand.short },
+        unbindSlackChannel: deleteSlackChannelBinding(db),
+        setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackDefault: setSlackChannelDefault(db),
+        brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
-        config.uiBaseUrl,
-        turnAttendance,
-        (agentId) =>
+        uiBaseUrl: config.uiBaseUrl,
+        attendance: turnAttendance,
+        workspaceFiles: (agentId) =>
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
-        slackInstalls.canonicalWorkspaceName,
-        undefined,
-        DEFAULT_SETTLE_MS,
-        undefined,
-        config.imgbbApiKey ? createImgbbAgentIcons(config.imgbbApiKey) : null,
-      )
+        canonicalWorkspace: slackInstalls.canonicalWorkspaceName,
+        settleMs: DEFAULT_SETTLE_MS,
+        agentIcon: config.imgbbApiKey
+          ? createImgbbAgentIcons(config.imgbbApiKey)
+          : null,
+      })
     : undefined;
 
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
