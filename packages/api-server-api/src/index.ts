@@ -126,6 +126,7 @@ export {
   scheduleSpecSchema,
   scheduleStatusSchema,
   scheduleResetSessionInputSchema,
+  scheduleRunNowInputSchema,
   precheckVerdictSchema,
   precheckSchema,
   PRECHECK_MAX_LENGTH,

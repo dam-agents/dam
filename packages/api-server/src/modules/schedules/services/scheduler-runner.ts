@@ -1,4 +1,4 @@
-import type { EventOutcome, PrecheckVerdict } from "api-server-api";
+import type { EventOutcome, PrecheckVerdict, Schedule } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
@@ -10,6 +10,8 @@ import { emit, EventType } from "../../../events.js";
 
 export type ActivityStamp = AgentActivityStamp;
 
+export type RunNowResult = "started" | "onboarding-pending";
+
 export interface SchedulerRunner {
   buildFireHandler(): (
     scheduleId: string,
@@ -19,6 +21,7 @@ export interface SchedulerRunner {
   sync(scheduleId: string): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
+  runNow(scheduleId: string): Promise<RunNowResult>;
   restoreAll(): Promise<void>;
   reportFire(input: {
     scheduleId: string;
@@ -55,6 +58,76 @@ export function createSchedulerRunner(
   const now = deps.now ?? (() => new Date());
   const ttlSec = deps.triggerTtlSeconds ?? 3600;
 
+  function triggerPayload(
+    sched: Schedule,
+    fireAt: Date,
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      scheduleId: sched.id,
+      task: sched.spec.task ?? "",
+      fireAt: fireAt.toISOString(),
+    };
+    if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
+    if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
+    if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
+    return payload;
+  }
+
+  async function emitFired(
+    sched: Schedule,
+    outcome: "success" | "failure",
+  ): Promise<void> {
+    try {
+      const ownerSub = await deps.repo.getOwnerById(sched.id);
+      if (ownerSub) {
+        emit({
+          type: EventType.ScheduleFired,
+          scheduleId: sched.id,
+          agentId: sched.agentId,
+          ownerSub,
+          mode: sched.spec.sessionMode ?? "fresh",
+          outcome,
+        });
+      }
+    } catch (err) {
+      log(`fire: schedule ${sched.id} emit failed: ${(err as Error).message}`);
+    }
+  }
+
+  async function commitTrigger(
+    sched: Schedule,
+    eventId: string,
+    payload: Record<string, unknown>,
+    expiresAt: Date,
+  ): Promise<void> {
+    await deps.runtimeMutator.bump(sched.agentId, [
+      { id: eventId, kind: "trigger", payload, expiresAt },
+    ]);
+  }
+
+  async function pokeAgent(sched: Schedule, eventId: string): Promise<void> {
+    await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
+    const stamp = await deps.wakeAgent(sched.agentId);
+    if (stamp && sched.spec.precheck && deps.activityStamps)
+      await deps.activityStamps
+        .set(eventId, stamp)
+        .catch((err: Error) =>
+          log(
+            `fire: stamp stash failed: ${err.message}; no restore on decline`,
+          ),
+        );
+  }
+
+  async function deliverTrigger(
+    sched: Schedule,
+    eventId: string,
+    payload: Record<string, unknown>,
+    expiresAt: Date,
+  ): Promise<void> {
+    await commitTrigger(sched, eventId, payload, expiresAt);
+    await pokeAgent(sched, eventId);
+  }
+
   async function fire(
     scheduleId: string,
     fireAt: Date,
@@ -86,49 +159,14 @@ export function createSchedulerRunner(
       nextFireAt(sched.spec, firedAt),
       ttlSec,
     );
-    const payload: Record<string, unknown> = {
-      scheduleId,
-      task: sched.spec.task ?? "",
-      fireAt: fireAt.toISOString(),
-    };
-    if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
-    if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
-    if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
-
-    const emitFired = async (outcome: "success" | "failure") => {
-      try {
-        const ownerSub = await deps.repo.getOwnerById(scheduleId);
-        if (ownerSub) {
-          emit({
-            type: EventType.ScheduleFired,
-            scheduleId,
-            agentId: sched.agentId,
-            ownerSub,
-            mode: sched.spec.sessionMode ?? "fresh",
-            outcome,
-          });
-        }
-      } catch (err) {
-        log(
-          `fire: schedule ${scheduleId} emit failed: ${(err as Error).message}`,
-        );
-      }
-    };
 
     try {
-      await deps.runtimeMutator.bump(sched.agentId, [
-        { id: eventId, kind: "trigger", payload, expiresAt },
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-      const stamp = await deps.wakeAgent(sched.agentId);
-      if (stamp && sched.spec.precheck && deps.activityStamps)
-        await deps.activityStamps
-          .set(eventId, stamp)
-          .catch((err: Error) =>
-            log(
-              `fire: stamp stash failed: ${err.message}; no restore on decline`,
-            ),
-          );
+      await deliverTrigger(
+        sched,
+        eventId,
+        triggerPayload(sched, fireAt),
+        expiresAt,
+      );
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
@@ -136,7 +174,7 @@ export function createSchedulerRunner(
       await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (lastAttempt) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
-        await emitFired("failure");
+        await emitFired(sched, "failure");
       }
       throw err;
     }
@@ -145,7 +183,7 @@ export function createSchedulerRunner(
     if (sched.spec.precheck) await deps.repo.setNextRun(scheduleId, next);
     else await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
-    await emitFired("success");
+    await emitFired(sched, "success");
   }
 
   return {
@@ -167,6 +205,53 @@ export function createSchedulerRunner(
     async cancel(scheduleId: string): Promise<void> {
       await deps.queue.cancel(scheduleId);
       await deps.repo.setNextRun(scheduleId, null);
+    },
+
+    async runNow(scheduleId: string): Promise<RunNowResult> {
+      const sched = await deps.repo.getById(scheduleId);
+      if (!sched) throw new Error(`schedule ${scheduleId} not found`);
+      if (await deps.onboardingPending?.(sched.agentId)) {
+        log(
+          `run-now: agent ${sched.agentId} has not finished onboarding; refusing`,
+        );
+        return "onboarding-pending";
+      }
+
+      const firedAt = now();
+      const eventId = `run:${scheduleId}:${firedAt.getTime()}`;
+      const expiresAt = new Date(firedAt.getTime() + ttlSec * 1000);
+
+      try {
+        await commitTrigger(
+          sched,
+          eventId,
+          triggerPayload(sched, firedAt),
+          expiresAt,
+        );
+      } catch (err) {
+        log(
+          `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
+        );
+        await emitFired(sched, "failure");
+        throw err;
+      }
+
+      try {
+        await pokeAgent(sched, eventId);
+      } catch (err) {
+        const result = (err as Error).message ?? String(err);
+        log(
+          `run-now: schedule ${scheduleId} delivery after commit failed: ${result}`,
+        );
+        await deps.repo.stampFire(scheduleId, result).catch(() => {});
+        await emitFired(sched, "failure");
+        throw err;
+      }
+
+      if (!sched.spec.precheck)
+        await deps.repo.stampFire(scheduleId, "success");
+      await emitFired(sched, "success");
+      return "started";
     },
 
     async resetSession(scheduleId: string): Promise<void> {

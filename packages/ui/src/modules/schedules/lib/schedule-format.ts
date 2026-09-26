@@ -29,6 +29,22 @@ export function scheduleCadenceText(schedule: Schedule): string {
   return schedule.cron ?? "";
 }
 
+export function runNowConfirmText(schedule: Schedule): string {
+  const decides = schedule.precheck
+    ? "The precheck decides it first, just as it would on a scheduled occurrence."
+    : "The task runs once, just as it would on a scheduled occurrence.";
+  const cadence = schedule.enabled
+    ? "The next run is not moved."
+    : "The schedule stays paused afterwards.";
+  return `Run "${schedule.name}" now? ${decides} ${cadence}`;
+}
+
+export function runNowStartedText(schedule: Schedule): string {
+  return schedule.precheck
+    ? `Started "${schedule.name}" — the precheck decides next. A run appears under View results only if it allows.`
+    : `Started "${schedule.name}" — the run appears under View results.`;
+}
+
 export interface LastRunStatus {
   label: string;
   className: string;

@@ -71,6 +71,10 @@ export const scheduleResetSessionInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const scheduleRunNowInputSchema = z.object({
+  id: z.string().min(1),
+});
+
 const quietWindowConfigMapSchema = z.object({
   startTime: z.string(),
   endTime: z.string(),
