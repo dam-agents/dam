@@ -2,7 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
-import type { AgentsService } from "api-server-api";
+import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
@@ -191,5 +191,27 @@ export function composePublicAgentPage(deps: {
       retireProfile: retire,
       log: deps.log,
     }),
+  };
+}
+
+export function connectionGrantProvisioner(
+  connections: Pick<
+    ConnectionsService,
+    "validateProviderConnection" | "validateGrantSet" | "setAgentConnections"
+  >,
+): NonNullable<AgentsServiceDeps["grantProvisioner"]> {
+  return {
+    async resolveSpecGrants(sel) {
+      if (sel.providerConnectionId)
+        await connections.validateProviderConnection(sel.providerConnectionId);
+      await connections.validateGrantSet(sel.connectionIds);
+      return {
+        grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
+      };
+    },
+    async applyAfterCreate(agentId, sel) {
+      if (sel.connectionIds.length)
+        await connections.setAgentConnections(agentId, sel.connectionIds);
+    },
   };
 }

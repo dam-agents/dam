@@ -11,21 +11,22 @@ import type {
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
-import type { RuntimeProgressPort } from "../../modules/agents/index.js";
+import type {
+  AgentsRepository,
+  RuntimeProgressPort,
+} from "../../modules/agents/index.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
-import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
-import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
+import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import {
-  composeArtifactLibraryForOwner,
-  createAgentApiPodClient,
-} from "../../modules/artifact-library/index.js";
-import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
+  composeExperimentsForOwner,
+  type ExperimentPinPort,
+} from "../../modules/experiments/index.js";
 import {
   composeInvocationsForOwner,
   createTargetAdmission,
@@ -43,8 +44,7 @@ import {
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import { createKubernetesSecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
-import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
-import { composeTemplatesModule } from "../../modules/templates/compose.js";
+import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
@@ -73,6 +73,11 @@ export interface HarnessApiServerAppDeps {
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
+  k8sClient: K8sClient;
+  agentsRepo: AgentsRepository;
+  templatesRepo: TemplatesRepository;
+  artifactLibraryFor: ArtifactLibraryFor;
+  experimentPin: ExperimentPinPort;
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -98,6 +103,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     schedulesBoot,
     runtimeMutator,
     artifacts,
+    k8sClient,
+    agentsRepo,
+    templatesRepo,
+    artifactLibraryFor,
+    experimentPin,
     agentsServiceFor,
     connectionsServiceFor,
     markOnboardingComplete,
@@ -123,9 +133,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     totalMaxBytes: config.kbShareTotalMaxBytes,
     maxFiles: config.kbShareMaxFiles,
   };
-  const k8sClient = createK8sClient(api, config.namespace);
-  const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
-  const { templates } = composeTemplatesModule(templatesRepo);
 
   const invocationsServiceFor = (owner: string) =>
     composeInvocationsForOwner({
@@ -146,20 +153,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }),
     });
 
-  const harnessAgentsRepo = createAgentsRepository(
-    k8sClient,
-    deps.agentStateCache,
-  );
-  const artifactLibraryFor = (owner: string) =>
-    composeArtifactLibraryForOwner({
-      db,
-      artifacts,
-      owner,
-      surface: "mcp",
-      shareBaseUrl: config.shareBaseUrl,
-      ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
-      agentApi: createAgentApiPodClient(config.namespace),
-    }).artifactLibrary;
+  const mcpArtifactLibraryFor = (owner: string) =>
+    artifactLibraryFor(owner, "mcp");
 
   const kbShareOpsFor = (owner: string) =>
     composeKbShareAgentOps({
@@ -168,7 +163,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       agents: agentsServiceFor(owner),
       namespace: config.namespace,
       store: artifacts,
-      ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       workspace: {
         agentHome: config.agentHome,
         agentWorkDir: config.agentWorkDir,
@@ -176,12 +171,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       objectStoreConfigured: Boolean(config.objectStorageEndpoint),
       publishLimits,
     });
-  const experimentPin = {
-    set: (agentId: string) =>
-      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-    clear: (agentId: string) =>
-      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-  };
 
   const connectionsRepo = createConnectionsRepository(db);
   const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
@@ -216,7 +205,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       db,
       owner,
       surface: "mcp",
-      artifactLibrary: artifactLibraryFor(owner),
+      artifactLibrary: mcpArtifactLibraryFor(owner),
       pin: experimentPin,
       agents: agentsServiceFor(owner),
     }).experiments;
@@ -234,7 +223,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).schedules,
     markOnboardingComplete,
     onboardingChecklist,
-    artifactLibraryFor,
+    artifactLibraryFor: mcpArtifactLibraryFor,
     invocationsServiceFor,
     experimentsServiceFor,
     kbShareOpsFor,
@@ -257,12 +246,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     invocationsServiceFor,
     connectionsServiceFor,
-    templates,
+    templates: templatesRepo,
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,
         owner,
-        listAgents: () => harnessAgentsRepo.list(owner),
+        listAgents: () => agentsRepo.list(owner),
         defaultCeiling,
         slotSize: defaultLimits,
       }).budgets,
@@ -274,7 +263,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     hello: runtimeHello,
     sessionDirectory,
     artifactTouchesFor: (owner): ArtifactTouchService => ({
-      recordTouch: (input) => artifactLibraryFor(owner).recordTouch(input),
+      recordTouch: (input) => mcpArtifactLibraryFor(owner).recordTouch(input),
     }),
     kbPublish: kbPublishGate,
   });

@@ -1,4 +1,8 @@
-export { composeAgentsModule, composePublicAgentPage } from "./compose.js";
+export {
+  composeAgentsModule,
+  composePublicAgentPage,
+  connectionGrantProvisioner,
+} from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,

@@ -1,13 +1,12 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType } from "api-server-api";
-import { composeAgentsModule } from "../../../modules/agents/index.js";
 import {
-  ANN_STARTER_KIT_ONBOARDED,
-  EXPERIMENT_ACTIVE_KEY,
-} from "../../../modules/agents/infrastructure/labels.js";
+  composeAgentsModule,
+  connectionGrantProvisioner,
+} from "../../../modules/agents/index.js";
+import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
-import { composeTemplatesModule } from "../../../modules/templates/index.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -25,10 +24,6 @@ import {
 } from "../../../modules/invocations/index.js";
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
-import {
-  composeArtifactLibraryForOwner,
-  createAgentApiPodClient,
-} from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
@@ -88,19 +83,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     apiKeysModule,
     satellitesBoot,
     liveEvents,
+    wakeAgent,
+    experimentPin,
+    artifactLibraryFor,
   } = boot;
 
   const defaultLimits = {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
-  const wakeAgent = async (agentId: string): Promise<void> => {
-    await agentsRepo.wakeIfHibernated(agentId);
-  };
 
   return (user: UserIdentity, surface: string): ApiContext => {
-    const { templates, readSpec: readTemplateSpec } =
-      composeTemplatesModule(templatesRepo);
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
@@ -161,28 +154,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
       resolveSlackChannelNames: (refs) =>
         channelManager.resolveSlackConversationNames(refs),
-      readTemplateSpec,
+      readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsProgress,
       onboardingChecklists,
-      grantProvisioner: {
-        async resolveSpecGrants(sel) {
-          if (sel.providerConnectionId)
-            await connections.validateProviderConnection(
-              sel.providerConnectionId,
-            );
-          await connections.validateGrantSet(sel.connectionIds);
-          return {
-            grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          };
-        },
-        async applyAfterCreate(agentId, sel) {
-          if (sel.connectionIds.length)
-            await connections.setAgentConnections(agentId, sel.connectionIds);
-        },
-      },
+      grantProvisioner: connectionGrantProvisioner(connections),
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -214,15 +192,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const { artifactLibrary } = composeArtifactLibraryForOwner({
-      surface,
-      db,
-      artifacts,
-      owner: user.sub,
-      shareBaseUrl: config.shareBaseUrl,
+    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
       agentExists,
-      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: createAgentApiPodClient(config.namespace),
     });
     const { experiments } = composeExperimentsForOwner({
       db,
@@ -230,12 +201,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       artifactLibrary,
       agents,
-      pin: {
-        set: (agentId) =>
-          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-        clear: (agentId) =>
-          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-      },
+      pin: experimentPin,
       runtimeMutator,
       wakeAgent,
     });
@@ -265,7 +231,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connections,
       skills,
       surface,
-      readTemplateSpec,
+      readTemplateSpec: templatesRepo.readSpec,
       wakeAgent,
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
@@ -301,11 +267,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           ?.ownerSub === user.sub,
     });
     const files = composeFilesModule(
-      api,
+      agentsRepo,
       config.namespace,
       user.sub,
       surface,
-      boot.agentStateCache,
     );
     const apiKeys = apiKeysModule.createService({
       ownerSub: user.sub,
@@ -367,7 +332,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       : createDisabledTelemetryService();
 
     return {
-      templates,
+      templates: templatesRepo,
       repos: reposService,
       agents,
       schedules,

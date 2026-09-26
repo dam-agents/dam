@@ -51,6 +51,12 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   agentApi: AgentApiPodClient;
 }
 
+export type ArtifactLibraryFor = (
+  owner: string,
+  surface: string,
+  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists">,
+) => ArtifactLibraryServiceImpl;
+
 export function composeArtifactLibraryForOwner(
   opts: ComposeArtifactLibraryForOwnerOpts,
 ): { artifactLibrary: ArtifactLibraryServiceImpl } {
