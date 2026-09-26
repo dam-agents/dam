@@ -415,8 +415,10 @@ CERT_MANAGER_PID=$!
 # Pinned: Gateway API standard channel, at exactly the bundle k3s's own
 # `traefik-crd` chart ships (v1.5.1 in k3s v1.36.4, Traefik chart v40). That
 # chart owns these CRDs too and rewrites them to its bundle whenever its job
-# runs, so a newer pin here does not stick: from v1.6.0 the bundle's
-# safe-upgrades ValidatingAdmissionPolicy denies the rewrite down to v1.5.1,
+# runs. Since v1.5 the bundle also installs the cluster-scoped safe-upgrades
+# ValidatingAdmissionPolicy and its binding, which deny any CRD older than the
+# policy's floor (v1.5.0 here) and experimental over standard CRDs. So a newer
+# pin does not stick either: v1.6.0's policy denies the rewrite down to v1.5.1,
 # the `traefik-crd` job fails, and Traefik never installs. Traefik v40's own
 # install also checks for the v1 BackendTLSPolicy, ListenerSet, ReferenceGrant
 # and TLSRoute kinds, which the old v1.2.0 pin lacked. Move this pin with k3s.
