@@ -55,9 +55,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          # By path: --check exits 1 when a pin is stale, which is not a failure here.
-          stale="$(.mise/tasks/image/bump-bases --check)"
-          code=$?
+          # By path: --check exits 1 when a pin is stale, which is not a failure
+          # here — the step shell runs with `-e`, so the capture takes it itself.
+          code=0
+          stale="$(.mise/tasks/image/bump-bases --check)" || code=$?
           if [ "$code" -ne 0 ] && [ -z "$stale" ]; then exit "$code"; fi
           title="Base image pins are behind (automated)"
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
