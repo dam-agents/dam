@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -69,10 +69,7 @@ export function buildReauthCommand(deps: {
         const svc = deps.createConnectionService(host);
 
         const listed = await svc.list();
-        if (!listed.ok) {
-          printServiceError(listed.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(listed, host);
         const match = resolveConnectionRef(listed.value, ref);
         if (!match) {
           process.stderr.write(
@@ -96,10 +93,7 @@ export function buildReauthCommand(deps: {
         const connectedAtBefore = match.connectedAt;
 
         const started = await svc.startOAuth(match.id);
-        if (!started.ok) {
-          printServiceError(started.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(started, host);
         const { authUrl } = started.value;
 
         const noBrowser = opts.browser === false;

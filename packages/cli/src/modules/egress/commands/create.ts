@@ -3,13 +3,9 @@ import { formatEgressRuleInline, gatewayRestartImpact } from "api-server-api";
 import { gatewayRestartNotice } from "../domain/restart-notice.js";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import type { EgressService } from "../services/egress-service.js";
@@ -67,10 +63,7 @@ export function buildCreateCommand(deps: {
         const egress = deps.createEgressService(host);
         if (!opts.yes) {
           const existing = await egress.listForAgent(agent.id);
-          if (!existing.ok) {
-            printServiceError(existing.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          exitOnServiceError(existing, host);
           const impact = gatewayRestartImpact({
             current: existing.value,
             adds: [
@@ -101,10 +94,7 @@ export function buildCreateCommand(deps: {
           pathPattern: opts.path,
           verdict: opts.verdict,
         });
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(result.value)}\n`);

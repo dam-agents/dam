@@ -5,7 +5,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../../agent/index.js";
 import type { EgressService } from "../../egress/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import {
   resolveActiveHost,
   resolveHostFromConfig,
@@ -162,10 +162,7 @@ export function buildSshCommand(deps: SshDeps): Command {
 
         if (opts.all) {
           const listed = await deps.createAgentService(host).list();
-          if (!listed.ok) {
-            printServiceError(listed.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          exitOnServiceError(listed, host);
           const rows: { name: string; alias: string }[] = [];
           for (const a of listed.value)
             rows.push({

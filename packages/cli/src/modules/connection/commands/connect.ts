@@ -6,7 +6,7 @@ import {
   type ConnectionTemplateView,
   connectionNameSchema,
 } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -175,10 +175,7 @@ export function buildConnectCommand(deps: {
       const svc = deps.createConnectionService(host);
 
       const templatesRes = await svc.listTemplates();
-      if (!templatesRes.ok) {
-        printServiceError(templatesRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(templatesRes, host);
       const templates = templatesRes.value;
 
       const mcpUrl = parseHttpUrl(providerOrUrl);
@@ -228,10 +225,7 @@ export function buildConnectCommand(deps: {
       }
 
       const createRes = await svc.createConnection(payload);
-      if (!createRes.ok) {
-        printServiceError(createRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(createRes, host);
       const { id } = createRes.value;
 
       const presetNames = presetsApplied.map((i) => i.name);
@@ -255,10 +249,7 @@ export function buildConnectCommand(deps: {
       }
 
       const oauthRes = await svc.startOAuth(id);
-      if (!oauthRes.ok) {
-        printServiceError(oauthRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(oauthRes, host);
       const { authUrl } = oauthRes.value;
 
       const noBrowser = opts.browser === false;
@@ -361,10 +352,7 @@ async function resolveMcpTemplate(args: {
   let auth = authOverride;
   if (!auth) {
     const res = await svc.discoverMcp(url);
-    if (!res.ok) {
-      printServiceError(res.error, host);
-      process.exit(EXIT_RUNTIME_FAILURE);
-    }
+    exitOnServiceError(res, host);
     auth = res.value.auth;
   }
 

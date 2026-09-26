@@ -2,7 +2,10 @@ import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -63,10 +66,7 @@ export function buildSlackConnectCommand(deps: {
 
         const svc = deps.createChannelService(host);
         const available = await svc.available();
-        if (!available.ok) {
-          printServiceError(available.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(available, host);
         if (!available.value[ChannelType.Slack]) {
           process.stderr.write("error: Slack app token not configured\n");
           process.exit(EXIT_INVALID_INPUT);

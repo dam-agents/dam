@@ -1,5 +1,8 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_RUNTIME_FAILURE,
@@ -57,10 +60,7 @@ export function buildResetSessionCommand(deps: {
       }
 
       const result = await svc.resetSession(id);
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         process.stdout.write(

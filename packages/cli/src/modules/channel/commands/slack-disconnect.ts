@@ -2,13 +2,9 @@ import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ChannelService } from "../services/channel-service.js";
 
@@ -70,10 +66,7 @@ export function buildSlackDisconnectCommand(deps: {
 
         const svc = deps.createChannelService(host);
         const res = await svc.disconnectSlack(agent.id, channelId);
-        if (!res.ok) {
-          printServiceError(res.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(res, host);
 
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);

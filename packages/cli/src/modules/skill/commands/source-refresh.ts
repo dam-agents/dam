@@ -1,5 +1,8 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -39,10 +42,7 @@ export function buildSourceRefreshCommand(deps: {
 
       const svc = deps.createSkillsService(host);
       const sources = await svc.listSources();
-      if (!sources.ok) {
-        printServiceError(sources.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(sources, host);
       const source = resolveSourceRef(sources.value, ref);
       if (!source) {
         process.stderr.write(

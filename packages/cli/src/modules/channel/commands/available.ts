@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { ChannelType } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ChannelService } from "../services/channel-service.js";
@@ -37,10 +37,7 @@ export function buildAvailableCommand(deps: {
       const svc = deps.createChannelService(host);
 
       const res = await svc.available();
-      if (!res.ok) {
-        printServiceError(res.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(res, host);
 
       if (opts.json) {
         return writeStdoutAndExit(

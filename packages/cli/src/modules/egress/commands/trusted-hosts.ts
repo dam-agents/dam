@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { EgressService } from "../services/egress-service.js";
@@ -26,10 +26,7 @@ export function buildTrustedHostsCommand(deps: {
       const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createEgressService(host).trustedHosts();
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       const out = opts.json
         ? `${JSON.stringify(result.value)}\n`

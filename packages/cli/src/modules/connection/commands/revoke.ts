@@ -1,13 +1,9 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   CONNECTION_ID_PREFIX,
@@ -69,10 +65,7 @@ export function buildRevokeCommand(deps: {
         const svc = deps.createConnectionService(host);
 
         const allRes = await svc.list();
-        if (!allRes.ok) {
-          printServiceError(allRes.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(allRes, host);
         const connectionIds: string[] = [];
         const unknown: string[] = [];
         for (const r of requested) {
@@ -92,10 +85,7 @@ export function buildRevokeCommand(deps: {
         }
 
         const res = await svc.revoke(agent.id, connectionIds);
-        if (!res.ok) {
-          printServiceError(res.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(res, host);
 
         if (opts.json) {
           process.stdout.write(

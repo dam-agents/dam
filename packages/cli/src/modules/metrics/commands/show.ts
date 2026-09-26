@@ -4,11 +4,11 @@ import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { TokenProvider } from "../../auth/index.js";
 import type { SessionsPort } from "../../chat/services/sessions-service.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderFittedTable, renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { MetricsService } from "../services/metrics-service.js";
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
@@ -85,10 +85,7 @@ export function buildMetricsCommand(deps: {
           }),
           fetchTitles().catch(() => new Map<string, string>()),
         ]);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
         const { tokenSpendByModel, contextPerCall } = result.value;
         const runtimeBySession = result.value.runtimeBySession.map((r) => ({
           ...r,

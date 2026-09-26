@@ -4,8 +4,8 @@ import type { AgentService } from "../services/agent-service.js";
 import { renderTable } from "../../shared/render-table.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -27,10 +27,7 @@ export function buildListCommand(deps: {
       const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createAgentService(host).list();
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         return writeStdoutAndExit(

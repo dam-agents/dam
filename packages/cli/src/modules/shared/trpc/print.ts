@@ -1,4 +1,6 @@
 import { TRPCClientError } from "@trpc/client";
+import type { Result } from "../../../result.js";
+import { EXIT_RUNTIME_FAILURE } from "../exit-codes.js";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import { formatAuthRejection } from "../auth-message.js";
 import { classifyTrpcError } from "./classify.js";
@@ -27,6 +29,15 @@ export function printServiceError(
     return;
   }
   process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
+}
+
+export function exitOnServiceError<T>(
+  result: Result<T, TransportError | AuthRequiredError>,
+  host: string,
+): asserts result is { ok: true; value: T } {
+  if (result.ok) return;
+  printServiceError(result.error, host);
+  process.exit(EXIT_RUNTIME_FAILURE);
 }
 
 export function printTrpcError(e: unknown, host: string): void {

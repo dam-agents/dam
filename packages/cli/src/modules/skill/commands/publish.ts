@@ -2,7 +2,10 @@ import { isCancel, text } from "@clack/prompts";
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_AGENT_NOT_REACHABLE,
@@ -83,10 +86,7 @@ export function buildPublishCommand(deps: {
         const svc = deps.createSkillsService(host);
 
         const sourcesRes = await svc.listSources(agentId);
-        if (!sourcesRes.ok) {
-          printServiceError(sourcesRes.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(sourcesRes, host);
         const source = resolveSourceRef(sourcesRes.value, opts.source);
         if (!source) {
           process.stderr.write(

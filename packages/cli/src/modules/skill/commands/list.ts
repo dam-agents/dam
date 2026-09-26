@@ -2,9 +2,9 @@ import { Command } from "commander";
 import type { LocalSkill, SkillsState } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -47,14 +47,8 @@ export function buildListCommand(deps: {
         svc.state(agent.id),
         svc.listSources(agent.id),
       ]);
-      if (!stateRes.ok) {
-        printServiceError(stateRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
-      if (!sourcesRes.ok) {
-        printServiceError(sourcesRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(stateRes, host);
+      exitOnServiceError(sourcesRes, host);
       const state = stateRes.value;
 
       if (opts.json) {

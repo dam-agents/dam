@@ -5,7 +5,10 @@ import {
   gatewayRestartImpact,
 } from "api-server-api";
 import { gatewayRestartNotice } from "../domain/restart-notice.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -94,10 +97,7 @@ export function buildUpdateCommand(deps: {
         if (current.ok) {
           const rule = current.value;
           const siblings = await egress.listForAgent(rule.agentId);
-          if (!siblings.ok) {
-            printServiceError(siblings.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          exitOnServiceError(siblings, host);
           const impact = gatewayRestartImpact({
             current: siblings.value,
             removeIds: [id],

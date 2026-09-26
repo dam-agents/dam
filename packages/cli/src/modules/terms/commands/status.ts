@@ -1,13 +1,12 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
   EXIT_TERMS_NOT_ACCEPTED,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { TermsService } from "../services/terms-service.js";
 
 export function buildStatusCommand(deps: {
@@ -31,14 +30,8 @@ export function buildStatusCommand(deps: {
         service.current(),
         service.latestAcceptance(),
       ]);
-      if (!current.ok) {
-        printServiceError(current.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
-      if (!latest.ok) {
-        printServiceError(latest.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(current, host);
+      exitOnServiceError(latest, host);
 
       const acceptedVersion = latest.value?.version ?? null;
       const accepted = acceptedVersion === current.value.version;

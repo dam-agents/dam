@@ -16,7 +16,7 @@ import {
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type {
   ExportOutcome,
   ExportRequest,
@@ -124,10 +124,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
           spanLimit: 1000,
           logLimit: 1000,
         });
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
         if (!result.value.available) {
           process.stderr.write(`${result.value.reason}\n`);
           process.exit(EXIT_RUNTIME_FAILURE);

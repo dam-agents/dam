@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import { gatewayRestartImpact } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -80,10 +83,7 @@ export function buildRevokeCommand(deps: {
         }
 
         const result = await egress.revoke(id);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(`${JSON.stringify({ ok: true, id })}\n`);

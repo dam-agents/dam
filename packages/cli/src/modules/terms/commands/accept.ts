@@ -4,7 +4,10 @@ import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { TermsService } from "../services/terms-service.js";
 
 export function buildAcceptCommand(deps: {
@@ -46,10 +49,7 @@ export function buildAcceptCommand(deps: {
 
         const service = deps.createTermsService(host);
         const doc = await service.document();
-        if (!doc.ok) {
-          printServiceError(doc.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(doc, host);
         const currentVersion = doc.value.version;
 
         if (opts.expectVersion && opts.expectVersion !== currentVersion) {

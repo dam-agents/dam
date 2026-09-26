@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { EgressService } from "../services/egress-service.js";
 
@@ -37,10 +37,7 @@ export function buildPresetCommand(deps: {
       const result = await deps
         .createEgressService(host)
         .currentPreset(agent.id);
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify({ preset: result.value })}\n`);

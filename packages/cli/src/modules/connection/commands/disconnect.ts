@@ -1,11 +1,7 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
@@ -38,10 +34,7 @@ export function buildDisconnectCommand(deps: {
       const svc = deps.createConnectionService(host);
 
       const listed = await svc.list();
-      if (!listed.ok) {
-        printServiceError(listed.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(listed, host);
       const match = resolveConnectionRef(listed.value, ref);
       if (!match) {
         process.stderr.write(`error: no connection with id or name '${ref}'\n`);
@@ -52,10 +45,7 @@ export function buildDisconnectCommand(deps: {
       }
 
       const result = await svc.disconnect(match.id);
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         process.stdout.write(

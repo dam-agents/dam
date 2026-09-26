@@ -15,6 +15,7 @@ import { waitForRunning } from "../services/wait-for-state.js";
 import {
   formatTransportError,
   printServiceError,
+  exitOnServiceError,
 } from "../../shared/trpc/print.js";
 import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
 import {
@@ -167,10 +168,7 @@ async function runCreate(
   const host = await resolveActiveHost(deps, opts.server);
 
   const tmplResult = await deps.createTemplateService(host).list();
-  if (!tmplResult.ok) {
-    printServiceError(tmplResult.error, host);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  exitOnServiceError(tmplResult, host);
   const selectedTemplate = tmplResult.value.find((t) => t.id === template);
   if (!selectedTemplate) {
     process.stderr.write(

@@ -1,11 +1,7 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { resolveSourceRef, sourceKind } from "../domain/source-ref.js";
@@ -46,10 +42,7 @@ export function buildSourceRemoveCommand(deps: {
 
         const svc = deps.createSkillsService(host);
         const sources = await svc.listSources();
-        if (!sources.ok) {
-          printServiceError(sources.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(sources, host);
         const source = resolveSourceRef(sources.value, ref);
         if (!source) {
           process.stderr.write(
@@ -85,10 +78,7 @@ export function buildSourceRemoveCommand(deps: {
         }
 
         const result = await svc.removeSource(source.id);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(
