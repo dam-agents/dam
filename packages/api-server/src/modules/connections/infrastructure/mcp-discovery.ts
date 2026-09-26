@@ -146,10 +146,8 @@ export async function registerOAuthClient(opts: {
   registrationEndpoint: string;
   clientName: string;
   redirectUris: string[];
-  fetchImpl?: typeof fetch;
 }): Promise<DcrResult> {
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const res = await fetchImpl(opts.registrationEndpoint, {
+  const res = await fetch(opts.registrationEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

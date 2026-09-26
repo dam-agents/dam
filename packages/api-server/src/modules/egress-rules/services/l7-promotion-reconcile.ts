@@ -7,6 +7,17 @@ interface AgentL7State {
   current: readonly string[];
 }
 
+export async function reconvergeAgentL7Hosts(
+  deps: {
+    repo: Pick<EgressRulesRepository, "listForAgent">;
+    l7Hosts: Pick<AgentL7HostsPort, "set">;
+  },
+  agentId: string,
+): Promise<void> {
+  const rows = await deps.repo.listForAgent(agentId);
+  await deps.l7Hosts.set(agentId, promotedHosts(rows));
+}
+
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(a);

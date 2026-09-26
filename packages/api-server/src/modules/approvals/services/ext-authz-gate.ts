@@ -5,13 +5,14 @@ import {
   buildExtAuthzSynthFrame,
   injectChannelOf,
 } from "../infrastructure/acp-frames.js";
-import { approvalChannelOf } from "../infrastructure/redis-approvals-bus.js";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
+
+export const approvalChannelOf = (id: string) => `approval:${id}`;
 
 interface ExtAuthzGateInput {
   agentId: string;

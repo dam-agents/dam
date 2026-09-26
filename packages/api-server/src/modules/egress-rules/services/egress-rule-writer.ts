@@ -1,10 +1,11 @@
-import { promotedHosts, type EgressRuleSource } from "api-server-api";
+import type { EgressRuleSource } from "api-server-api";
 import type {
   EgressRulesRepository,
   NewEgressRule,
 } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
+import { reconvergeAgentL7Hosts } from "./l7-promotion-reconcile.js";
 
 export type EgressRuleWriteOutcome =
   | { kind: "inserted"; row: EgressRuleRow }
@@ -21,7 +22,7 @@ export interface EgressRuleWriter {
 
 export function createEgressRuleWriter(deps: {
   repo: EgressRulesRepository;
-  l7Hosts?: AgentL7HostsPort;
+  l7Hosts: AgentL7HostsPort;
 }): EgressRuleWriter {
   return {
     async insert(input) {
@@ -51,10 +52,7 @@ export function createEgressRuleWriter(deps: {
       } else {
         outcome = { kind: "duplicate", row };
       }
-      if (deps.l7Hosts) {
-        const rows = await deps.repo.listForAgent(input.agentId);
-        await deps.l7Hosts.set(input.agentId, promotedHosts(rows));
-      }
+      await reconvergeAgentL7Hosts(deps, input.agentId);
       return outcome;
     },
   };

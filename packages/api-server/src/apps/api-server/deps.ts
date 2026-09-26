@@ -11,17 +11,15 @@ import type {
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
+  AgentCleanupHook,
   AgentsRepository,
   ContributionsProgressPort,
   OnboardingChecklistReader,
+  PresetSeeder,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
-import type {
-  AgentCleanupHook,
-  PresetSeeder,
-} from "../../modules/agents/compose.js";
 import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import type {
