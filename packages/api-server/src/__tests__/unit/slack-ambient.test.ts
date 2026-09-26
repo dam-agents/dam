@@ -105,7 +105,7 @@ function harness(opts: {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
-    (teamId) => teamId,
+    async () => [],
     (e) => events.push(e),
     0,
     { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },

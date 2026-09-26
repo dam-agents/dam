@@ -1,10 +1,6 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import {
-  FileTooLargeError,
-  ORIGINAL_WORKSPACE,
-  THREAD_TAIL_MAX_PAGES,
-} from "./slack-gateway.js";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
@@ -28,8 +24,10 @@ type ChatStopStreamArgs = Parameters<
 
 export interface BoltSlackGatewayDeps {
   resolveBotToken: SlackTokenResolver;
-  setOriginalWorkspace: (teamId: SlackWorkspace) => void;
-  envBotToken: string;
+  importHelmToken: (teamId: string, token: string) => Promise<void>;
+  renewTokens: () => Promise<void>;
+  forgetBotToken: (teamId: string) => void;
+  helmBotToken: string | null;
   appToken: string;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
@@ -43,6 +41,7 @@ interface WorkspaceAuth {
 }
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
+const NO_WORKSPACE: SlackWorkspace = "";
 const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
 const DEAD_CREDENTIAL = new Set([
   "invalid_auth",
@@ -128,45 +127,36 @@ export function createBoltSlackGateway(
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: Which workspace the operator's credential
-   * belongs to. Slack names that workspace on every event it sends, while the
-   * bindings made before this platform could connect a second workspace name it
-   * by the empty string, and both have to reach one credential. A workspace
-   * connected over OAuth needs none of this — Slack returns its id beside its
-   * token — so this is asked once, for the one credential that arrives without
-   * its workspace. It is asked before the socket opens, so no message is ever
-   * served while the answer is unknown.
+   * UNIT_BOUNDARY_DESCRIPTION: Importing a bot token still set in Helm values.
+   * It is the one credential that arrives without naming its workspace, so
+   * Slack is asked which one it is before the socket opens, and the install
+   * service turns it into that workspace's row and moves the bindings made
+   * before multi-workspace support onto it. Doing it before the socket opens
+   * means no message is ever routed while those bindings still name no
+   * workspace.
    *
-   * The credential is read from the operator's own configuration rather than
-   * through the resolver, because the resolver's answer is what this question
-   * decides: letting it answer before the question is settled would mean
-   * handing out the operator's token under a name whose workspace is unknown.
-   *
-   * Not getting an answer is two different states. When Slack answers that the
-   * credential is no good, that credential could not have served its workspace
-   * anyway, so the socket opens and every workspace holding an install row of
-   * its own is served as usual. What goes dark is the empty-string name alone —
-   * a workspace that has since re-authorized keeps being served under the real
-   * team id Slack puts on its events. When Slack does not answer at all,
-   * nothing has been learned about the credential, so this stays a failure to
-   * start and the worker retries it.
+   * When Slack answers that the token is no good, it could not have served its
+   * workspace anyway: nothing is imported, the socket opens, and every
+   * workspace with a row is served as usual. When Slack does not answer at all,
+   * nothing has been learned, so this stays a failure to start and the worker
+   * retries it.
    */
-  async function learnOriginalWorkspace(bolt: BoltApp): Promise<void> {
+  async function importHelmToken(bolt: BoltApp, token: string): Promise<void> {
     let identity;
     try {
-      identity = await bolt.client.auth.test({ token: deps.envBotToken });
+      identity = await bolt.client.auth.test({ token });
     } catch (err) {
       const refusal = slackRefusal(err);
       if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
       process.stderr.write(
-        `[slack] Slack refuses the operator's bot token (${refusal}); bindings that name the original workspace by the empty string are served by nothing until it is replaced\n`,
+        `[slack] Slack refuses the Helm bot token (${refusal}); it was not imported, and bindings that name no workspace stay unserved\n`,
       );
       return;
     }
     if (typeof identity.team_id !== "string") {
-      throw new Error("Slack did not name the original workspace");
+      throw new Error("Slack did not name the Helm bot token's workspace");
     }
-    deps.setOriginalWorkspace(identity.team_id);
+    await deps.importHelmToken(identity.team_id, token);
   }
 
   return {
@@ -178,7 +168,7 @@ export function createBoltSlackGateway(
         socketMode: true,
         logLevel: LogLevel.DEBUG,
         authorize: async ({ teamId }) => {
-          const auth = await testedAuthFor(teamId ?? ORIGINAL_WORKSPACE);
+          const auth = await testedAuthFor(teamId ?? NO_WORKSPACE);
           if (!auth) throw new Error(`${INSTALL_TOKEN_MISSING}: ${teamId}`);
           return {
             botToken: auth.token,
@@ -195,7 +185,7 @@ export function createBoltSlackGateway(
           threadTs: event.thread_ts,
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
-          teamId: event.team ?? context.teamId ?? ORIGINAL_WORKSPACE,
+          teamId: event.team ?? context.teamId ?? NO_WORKSPACE,
           channelType: (event as { channel_type?: string }).channel_type,
         });
       });
@@ -215,7 +205,7 @@ export function createBoltSlackGateway(
         };
         if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
         if (msg.bot_id || !msg.user) return;
-        const workspace = msg.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
+        const workspace = msg.team ?? context.teamId ?? NO_WORKSPACE;
         const payload = {
           user: msg.user,
           channel: msg.channel,
@@ -246,7 +236,7 @@ export function createBoltSlackGateway(
           inviter?: string;
           team?: string;
         };
-        const workspace = joined.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
+        const workspace = joined.team ?? context.teamId ?? NO_WORKSPACE;
         const selfId =
           context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
         if (!selfId || joined.user !== selfId) return;
@@ -263,7 +253,7 @@ export function createBoltSlackGateway(
             text: command.text,
             userId: command.user_id,
             channelId: command.channel_id,
-            teamId: command.team_id ?? ORIGINAL_WORKSPACE,
+            teamId: command.team_id ?? NO_WORKSPACE,
           },
           (response) =>
             ack({ response_type: "ephemeral", text: response.text }),
@@ -280,8 +270,21 @@ export function createBoltSlackGateway(
       });
       bolt.event("tokens_revoked", async ({ event, context }) => {
         const revoked = (event as { tokens?: { bot?: string[] } }).tokens;
-        if (!revoked?.bot?.length) return;
-        await forgetWorkspace(context.teamId);
+        const teamId = context.teamId;
+        if (!revoked?.bot?.length || !teamId) return;
+        workspaces.delete(teamId);
+        deps.forgetBotToken(teamId);
+        const token = await deps.resolveBotToken(teamId);
+        if (token) {
+          try {
+            await bolt.client.auth.test({ token });
+            return;
+          } catch (err) {
+            const refusal = slackRefusal(err);
+            if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) return;
+          }
+        }
+        await forgetWorkspace(teamId);
       });
 
       bolt.error(async (error) => {
@@ -290,7 +293,7 @@ export function createBoltSlackGateway(
 
       app = bolt;
       try {
-        await learnOriginalWorkspace(bolt);
+        if (deps.helmBotToken) await importHelmToken(bolt, deps.helmBotToken);
         await bolt.start();
       } catch (err) {
         app = null;
@@ -299,6 +302,7 @@ export function createBoltSlackGateway(
         );
         return false;
       }
+      void deps.renewTokens();
 
       return true;
     },

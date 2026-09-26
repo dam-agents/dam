@@ -86,7 +86,7 @@ function harness(opts: { binding: Binding }) {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
-    (teamId) => teamId,
+    async () => [],
     (e) => events.push(e),
   );
 

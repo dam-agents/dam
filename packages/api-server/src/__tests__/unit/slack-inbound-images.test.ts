@@ -7,7 +7,10 @@ import {
   createSlackWorker,
   type SlackOAuthPending,
 } from "../../modules/channels/infrastructure/slack.js";
-import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import {
+  createFakeSlackGateway,
+  FAKE_WORKSPACE,
+} from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
@@ -110,7 +113,7 @@ function harness() {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
-    (teamId) => teamId,
+    async () => [FAKE_WORKSPACE],
     (e) => events.push(e),
   );
 

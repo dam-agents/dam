@@ -5,6 +5,7 @@ import type { TtlStore } from "../../../core/ttl-store.js";
 import type { SlackInstallService } from "../services/slack-install-service.js";
 import { securityLog } from "../../../core/security-log.js";
 import { formatError } from "../../../core/format-error.js";
+import { rotatingTokenFrom } from "./slack-token-rotation.js";
 
 const EXCHANGE_TIMEOUT_MS = 10_000;
 
@@ -69,6 +70,8 @@ interface SlackOAuthAccessResponse {
   ok?: boolean;
   error?: string;
   access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
   team?: { id?: string; name?: string };
   enterprise?: { id?: string; name?: string } | null;
 }
@@ -217,10 +220,15 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
       );
     }
 
+    const rotating = rotatingTokenFrom(result, Date.now());
     await deps.installs.record({
       teamId,
       teamName: result.team?.name ?? null,
       botToken: result.access_token,
+      rotation: rotating && {
+        refreshToken: rotating.refreshToken,
+        expiresAt: rotating.expiresAt,
+      },
       installedBy: pending.startedBy || null,
     });
 

@@ -105,7 +105,7 @@ function harness(opts?: {
     "http://ui",
     stubTurnAttendance(),
     workspace.factory,
-    (teamId) => teamId,
+    async () => [],
     (e) => events.push(e),
   );
 

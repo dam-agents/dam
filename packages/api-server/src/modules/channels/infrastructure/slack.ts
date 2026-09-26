@@ -85,7 +85,7 @@ import {
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
-import { FileTooLargeError, ORIGINAL_WORKSPACE } from "./slack-gateway.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
   SlackBotJoinedChannelEvent,
@@ -978,6 +978,7 @@ async function reportMissingPermissions(
   if (missing.length === 0) return;
   getLogger().warn(
     {
+      teamId,
       missing: missing.map((m) => m.scope),
       affects: missing.map((m) => m.backs),
     },
@@ -1038,7 +1039,7 @@ export function createSlackWorker(
   uiBaseUrl: string,
   attendance: ChannelTurnAttendance,
   workspaceFiles: AgentWorkspaceFilesFactory,
-  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace,
+  listWorkspaces: () => Promise<SlackWorkspace[]>,
   emit: (event: DomainEvent) => void = defaultEmit,
   settleMs = 0,
   wakeWait: WakeWaitOptions = {},
@@ -2296,7 +2297,7 @@ export function createSlackWorker(
     await pendingOAuthFlows.set(state, {
       slackUserId,
       channelId,
-      teamId: canonicalWorkspace(teamId),
+      teamId,
       codeVerifier,
       intent: "bind",
       createdAt: Date.now(),
@@ -2391,7 +2392,7 @@ export function createSlackWorker(
         await pendingOAuthFlows.set(state, {
           slackUserId: command.userId,
           channelId: command.channelId,
-          teamId: canonicalWorkspace(command.teamId),
+          teamId: command.teamId,
           codeVerifier,
           intent: "login",
           createdAt: Date.now(),
@@ -3627,7 +3628,9 @@ export function createSlackWorker(
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
-      await reportMissingPermissions(gw, ORIGINAL_WORKSPACE);
+      for (const teamId of await listWorkspaces().catch(() => [])) {
+        await reportMissingPermissions(gw, teamId);
+      }
       return gateway;
     } finally {
       gatewayStarting = null;
