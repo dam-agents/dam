@@ -1,5 +1,5 @@
 [tools]
-"npm:@openai/codex" = "0.153.4"
+"npm:@openai/codex" = "0.155.1"
 "npm:@zed-industries/codex-acp" = "0.16.0"
 
 [oci.env]

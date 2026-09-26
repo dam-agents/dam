@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-09-17T20:32:51.054492Z"
+exclude-newer = "2026-09-19T10:52:25.63127884Z"
 
 [[package]]
 name = "annotated-types"
@@ -396,7 +396,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "openevolve", specifier = "==0.2.27" }]
+requires-dist = [{ name = "openevolve", specifier = "==0.3.2" }]
 
 [[package]]
 name = "numpy"
@@ -623,7 +623,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.14.1"
+version = "3.16.2"
 source = { registry = "https://pypi.org/simple/" }
 dependencies = [
     { name = "anyio" },
@@ -633,14 +633,14 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/a5/bc3681f645a0d026332047cc19a703315979740a11a5763f46c163abd614/openai-3.14.1.tar.gz", hash = "sha256:2f3423a71af767d9071b059cf6df1e97a721c3a8d19417375ad7993d4df0d346", size = 1634770, upload-time = "2026-09-15T23:13:35.708Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/c6/770171ef28854d8092ee2c3df68ef97d127362b28771e6b423c948894e07/openai-3.16.2.tar.gz", hash = "sha256:e129455fc6a744276cda63a9e2f0759207bc0cf24afc4cf356bf5029e631e955", size = 1696266, upload-time = "2026-09-18T21:27:23.586Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/13/d1caa2b2385ed22a1e10e1fd7fc09a92e282cffadad49c569827315f468a/openai-3.14.1-py3-none-any.whl", hash = "sha256:a6758739282f3b1cafe8df1204f7a2f7b1e9edbbcfa41c0efba687448fbc51cf", size = 2003545, upload-time = "2026-09-15T23:13:33.164Z" },
+    { url = "https://files.pythonhosted.org/packages/17/72/2b1fe3e303db76ab2ba0c2de2b57822869bcb588db82334d4ff3aea8acf2/openai-3.16.2-py3-none-any.whl", hash = "sha256:660a7f8307e6605342ae84ff4425412e7cd19e5e9b298f975502df2a1a9a5d5f", size = 2053568, upload-time = "2026-09-18T21:27:20.885Z" },
 ]
 
 [[package]]
 name = "openevolve"
-version = "0.2.27"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple/" }
 dependencies = [
     { name = "dacite" },
@@ -652,9 +652,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/07/bb97a0fa001dc9eae80a3c23e8c50df679173489a12a27f006a31361dafc/openevolve-0.2.27.tar.gz", hash = "sha256:efe3bccfdcfeb0b01c6438ece43332eacf0fc6a844a4f5d7f9cbb9edaa2e47e0", size = 183150, upload-time = "2026-03-18T12:26:07.954Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/29/2186f38b76f5edac9094c3c1df67fc2a0d71e405afab9a4875dc37b3b56c/openevolve-0.3.2.tar.gz", hash = "sha256:cd41800ab54734d02a895892615a7f4b9240a6f307c82fc1df7335e89b546599", size = 197049, upload-time = "2026-07-18T13:16:40.27Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/07/5a6ae5a79449e57f79c096c2de79007fc5a4b1e0cf49fa19291d2b9e8cea/openevolve-0.2.27-py3-none-any.whl", hash = "sha256:0bc678ce456eb4dac9f22ffe9b062498599fb7e6596d85a14da7277550d29b9c", size = 115911, upload-time = "2026-03-18T12:26:06.625Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/ab/c08b84f9f2f676a0a6000c785a315205b9e2da640c9964d703d02990e8af/openevolve-0.3.2-py3-none-any.whl", hash = "sha256:df998b0731d9c1a80883b4aae452cc43405a3e9c61b46d676d06235b4db49366", size = 119381, upload-time = "2026-07-18T13:16:38.886Z" },
 ]
 
 [[package]]

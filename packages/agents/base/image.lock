@@ -91,21 +91,21 @@ url = "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose
 url_api = "https://api.github.com/repos/docker/compose/releases/assets/542966285"
 
 [[tools."http:bob"]]
-version = "2.0.3"
+version = "2.0.4"
 backend = "http:bob"
-specifiers = ["2.0.3"]
+specifiers = ["2.0.4"]
 
 [tools."http:bob".options]
 rename_exe = "bob"
 strip_components = "1"
 
 [tools."http:bob"."platforms.linux-arm64"]
-checksum = "sha256:c0f65ca2ad1166e5506d42781b474637796fd5f64cdd707d4c0eba7bc800da19"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.3.tgz"
+checksum = "sha256:10de047ffdc23a50f3e1ef69fad3b6313ff6dda0010589a22efe26b24685254b"
+url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.4.tgz"
 
 [tools."http:bob"."platforms.linux-x64"]
-checksum = "sha256:c0f65ca2ad1166e5506d42781b474637796fd5f64cdd707d4c0eba7bc800da19"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.3.tgz"
+checksum = "sha256:10de047ffdc23a50f3e1ef69fad3b6313ff6dda0010589a22efe26b24685254b"
+url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.4.tgz"
 
 [[tools."http:docker"]]
 version = "29.8.1"
@@ -209,16 +209,16 @@ checksum = "sha256:03d9104fc4f19652e74480fed11c023d75981464b7292f21a601c3f95ce7d
 url = "https://nodejs.org/dist/v26.9.0/node-v26.9.0-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
-version = "0.75.1"
-aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.75.1", digest = "sha256:cf4f2df6b37ff9e2606347b9ec138aeb2c3b00273f4c0c5257094b1ef9df173c" }
+version = "0.79.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.79.0", digest = "sha256:65515b48527bb401663e8e9c3a668d2b8814a46e099836822671657ea5d64eef" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
-specifiers = ["0.75.1"]
+specifiers = ["0.79.0"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
-version = "0.17.1"
-aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/0.17.1", digest = "sha256:8f3b7b2f629a827ac92623afc328f19f35218b2368d717e182c896c6cac7e880" }
+version = "1.4.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.4.0", digest = "sha256:75677de80278b61005d8a9132b416fc82b76ec930421eb5e900ffb42c092cb0e" }
 backend = "npm:@agentclientprotocol/sdk"
-specifiers = ["0.17.1"]
+specifiers = ["1.4.0"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
 version = "0.85.1"
@@ -227,10 +227,10 @@ backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["0.85.1"]
 
 [[tools."npm:@openai/codex"]]
-version = "0.153.4"
-aube = { path = ".mise/locks/npm-openai-codex/0.153.4", digest = "sha256:dfc57655e9da491a3c9ced0d6c2ff749011b09f72a5f04880ca09ecdb60db0d6" }
+version = "0.155.1"
+aube = { path = ".mise/locks/npm-openai-codex/0.155.1", digest = "sha256:fb4c9ddab45aefa223a5b6242781a49e8bf7afa5bc1ef5cfc120d283efbc7a2f" }
 backend = "npm:@openai/codex"
-specifiers = ["0.153.4"]
+specifiers = ["0.155.1"]
 
 [[tools."npm:@zed-industries/codex-acp"]]
 version = "0.16.0"
@@ -262,10 +262,10 @@ backend = "pipx:AI-native-Systems-Research/agentic-strategy-evolution"
 specifiers = ["v0.4.0"]
 
 [[tools."pipx:openevolve"]]
-version = "0.2.27"
+version = "0.3.2"
 backend = "pipx:openevolve"
-specifiers = ["0.2.27"]
-uv = { path = ".mise/locks/pipx-openevolve/0.2.27", digest = "sha256:6c645b9efbc250420f1730d6179b44b7833b61813a13735b19663d0cfe275a18" }
+specifiers = ["0.3.2"]
+uv = { path = ".mise/locks/pipx-openevolve/0.3.2", digest = "sha256:23266b9722ed0a05c562e3d9f7573f8bfa7444d841c968979bedab57fca91a9a" }
 
 [[tools.python]]
 version = "3.12.14"

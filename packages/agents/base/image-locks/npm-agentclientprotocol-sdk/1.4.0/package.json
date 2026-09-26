@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.75.1"
+    "@agentclientprotocol/sdk": "1.4.0"
   }
 }
