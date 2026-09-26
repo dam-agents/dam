@@ -330,10 +330,3 @@ function toUpstreamError(
 function isErrorBody(value: unknown): value is GitHubErrorBody {
   return typeof value === "object" && value !== null;
 }
-
-export function isUpstreamStatus(
-  error: SkillsDomainError,
-  status: number,
-): boolean {
-  return error.kind === "UpstreamGitHubError" && error.status === status;
-}
