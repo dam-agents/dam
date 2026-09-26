@@ -34,7 +34,7 @@ const CLIENT_ANSWERED_REQUESTS: Record<string, unknown> = {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A raw JSON-RPC connection to an agent's ACP relay
- * for headless runs (`dam run`). The SDK's ClientSideConnection hides frame
+ * for headless runs (`dam run`). The SDK's client connection hides frame
  * `_meta` and the `platform/*` extension methods this verb depends on, so this
  * speaks frames directly: it matches responses to request ids, hands every
  * notification to the caller, and answers the agent's own requests the way the

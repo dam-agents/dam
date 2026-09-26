@@ -1,16 +1,20 @@
 import {
   type AnyMessage,
-  ClientSideConnection,
+  client,
+  type ClientConnection,
   PROTOCOL_VERSION,
   type RequestPermissionRequest,
-  type SessionNotification,
   type Stream,
 } from "@agentclientprotocol/sdk";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
 import { withCloseRace } from "./close-race.js";
-import { frameMetaOf, routeExtNotification } from "./ext-notifications.js";
+import {
+  frameMetaOf,
+  PLATFORM_NOTIFICATION_METHODS,
+  routeExtNotification,
+} from "./ext-notifications.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -72,6 +76,13 @@ async function wsUrl(agentId: string, passive: boolean): Promise<string> {
 
 const SYNTH_EGRESS_PREFIX = "_egress:";
 
+const asExtParams = {
+  parse: (value: unknown): Record<string, unknown> =>
+    typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>)
+      : {},
+};
+
 function awaitPermission(
   params: RequestPermissionRequest,
 ): Promise<PermissionOutcome> {
@@ -94,10 +105,10 @@ export async function openInitializedConnection(
   agentId: string,
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean; clientInfo?: { name: string; version: string } },
-): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+): Promise<{ connection: ClientConnection; ws: WebSocket }> {
   const { connection, ws } = await openConnection(agentId, onUpdate, opts);
   try {
-    await connection.initialize({
+    await connection.agent.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       ...(opts?.clientInfo ? { clientInfo: opts.clientInfo } : {}),
@@ -115,30 +126,24 @@ export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
-): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+): Promise<{ connection: ClientConnection; ws: WebSocket }> {
   const { stream, ws, closeReason } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );
-  const raw = new ClientSideConnection(
-    () => ({
-      async requestPermission(params: RequestPermissionRequest) {
-        return awaitPermission(params);
-      },
-      async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update, params.sessionId, frameMetaOf(params._meta));
-      },
-      async writeTextFile() {
-        return {};
-      },
-      async readTextFile() {
-        return { content: "" };
-      },
-      async extNotification(method: string, params: Record<string, unknown>) {
-        const routed = routeExtNotification(method, params);
-        if (routed) onUpdate(routed.update, routed.sessionId, routed.frame);
-      },
-    }),
-    stream,
-  );
-  return { connection: withCloseRace(raw, closeReason), ws };
+  const app = client()
+    .onRequest("session/request_permission", (ctx) =>
+      awaitPermission(ctx.params),
+    )
+    .onNotification("session/update", ({ params }) => {
+      onUpdate(params.update, params.sessionId, frameMetaOf(params._meta));
+    })
+    .onRequest("fs/write_text_file", () => ({}))
+    .onRequest("fs/read_text_file", () => ({ content: "" }));
+  for (const method of PLATFORM_NOTIFICATION_METHODS) {
+    app.onNotification(method, asExtParams, ({ params }) => {
+      const routed = routeExtNotification(method, params);
+      if (routed) onUpdate(routed.update, routed.sessionId, routed.frame);
+    });
+  }
+  return { connection: withCloseRace(app.connect(stream), closeReason), ws };
 }
