@@ -61,7 +61,6 @@ export interface StarterKitsServiceDeps {
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   virtualizationEnabled?: boolean;
-  now?: () => Date;
 }
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
@@ -111,7 +110,6 @@ function toView(loaded: LoadedKit): StarterKitView {
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  const now = deps.now ?? (() => new Date());
   async function requireKit(
     catalog: string,
     kitId: string,
@@ -239,7 +237,7 @@ export function createStarterKitsService(
       harness,
     );
     if (task === null) return;
-    const at = now();
+    const at = new Date();
     await deps.runtimeMutator.bump(agentId, [
       initializationEvent(agentId, task, at),
     ]);
@@ -324,7 +322,7 @@ export function createStarterKitsService(
               "kit-install",
               agent.id,
               kit.install.command,
-              now(),
+              new Date(),
             ),
           ]);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
@@ -341,7 +339,7 @@ export function createStarterKitsService(
           kit.onboarding !== false &&
           !(kit.onboarding && "command" in kit.onboarding);
         if (!briefs)
-          await deps.markAgentOnboarded(agent.id, now().toISOString());
+          await deps.markAgentOnboarded(agent.id, new Date().toISOString());
         await enqueueOnboardingTurn(agent, loaded, version, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch((cleanupErr: unknown) => {
