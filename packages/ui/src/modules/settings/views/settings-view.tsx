@@ -17,10 +17,10 @@ import { FeaturesTab } from "../../features/components/features-tab.js";
 import { isFeaturesMenuRevealed } from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
+import { ProviderSection } from "../../providers/components/provider-section.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { AppVersionRow } from "../components/app-version-row.js";
-import { ProvidersView } from "./providers-view.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -182,7 +182,16 @@ export function SettingsView() {
 
         {activeTab === "providers" && (
           <div className="anim-in">
-            <ProvidersView />
+            <div className="w-full max-w-2xl">
+              <PageHeader
+                title="Providers"
+                description="Agents need an API key from a provider to reach a model."
+              />
+
+              <section className="mb-8">
+                <ProviderSection />
+              </section>
+            </div>
           </div>
         )}
 

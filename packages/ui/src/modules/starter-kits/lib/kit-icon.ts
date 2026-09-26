@@ -41,5 +41,3 @@ export function kitIcon(
   const named = kit.icon ? BY_NAME[kit.icon.toLowerCase()] : undefined;
   return named ?? BY_CATEGORY[kit.category];
 }
-
-export const KIT_ICON_NAMES = Object.keys(BY_NAME);

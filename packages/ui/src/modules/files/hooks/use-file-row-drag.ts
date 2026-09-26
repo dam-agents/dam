@@ -20,7 +20,7 @@ function hasFiles(e: ReactDragEvent): boolean {
   return !!e.dataTransfer?.types?.includes("Files");
 }
 
-export function hasMove(e: ReactDragEvent): boolean {
+function hasMove(e: ReactDragEvent): boolean {
   return !!e.dataTransfer?.types?.includes(MOVE_MIME);
 }
 

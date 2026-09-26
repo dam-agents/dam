@@ -16,7 +16,7 @@ export function sessionPath(
   });
 }
 
-export interface ChatLocation {
+interface ChatLocation {
   pathname: string;
   search: string;
   hash: string;

@@ -39,7 +39,6 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
-import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
@@ -109,7 +108,6 @@ import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
-import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
@@ -129,6 +127,7 @@ import { draftKey } from "../lib/draft-key.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+import type { SessionError } from "../store/sessions.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
@@ -762,10 +761,16 @@ export function ChatView() {
                     {items.map((item) => {
                       if (item.kind === "divider") {
                         return (
-                          <ThreadDivider
+                          <div
                             key={item.key}
-                            label={dividerLabel(item, now)}
-                          />
+                            className="flex items-center gap-3 py-2"
+                          >
+                            <span className="h-px flex-1 bg-border/60" />
+                            <span className="text-[11px] text-muted-foreground">
+                              {dividerLabel(item, now)}
+                            </span>
+                            <span className="h-px flex-1 bg-border/60" />
+                          </div>
                         );
                       }
                       const turn = turnForMessage.get(item.message.id);

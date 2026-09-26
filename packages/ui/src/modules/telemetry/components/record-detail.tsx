@@ -5,11 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDurationMs } from "../../metrics/lib/format.js";
 import { placementOf } from "../lib/waterfall.js";
 
-export function AttributeRows({
-  attributes,
-}: {
-  attributes: Record<string, string>;
-}) {
+function AttributeRows({ attributes }: { attributes: Record<string, string> }) {
   const entries = Object.entries(attributes).sort(([a], [b]) =>
     a.localeCompare(b),
   );

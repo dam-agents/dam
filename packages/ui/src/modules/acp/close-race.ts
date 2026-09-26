@@ -1,6 +1,6 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
 
-export class ConnectionClosedError extends Error {
+class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
   readonly closeReason: string | null;
   constructor(closeReason: string | null) {

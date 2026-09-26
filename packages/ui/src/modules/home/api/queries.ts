@@ -16,7 +16,7 @@ export interface ArtifactTouched {
   fileName: string;
 }
 
-export interface SessionArtifacts {
+interface SessionArtifacts {
   bySession: ReadonlyMap<string, readonly ArtifactTouched[]>;
 }
 
@@ -70,7 +70,7 @@ export function useAttention() {
   });
 }
 
-export interface Feed {
+interface Feed {
   items: FeedItem[];
   workingAgentIds: ReadonlySet<string>;
   /** UNIT_BOUNDARY_DESCRIPTION: absent until the attention record has loaded. */

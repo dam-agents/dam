@@ -8,14 +8,6 @@ export function useKbShareStatus(agentId: string | null) {
   );
 }
 
-export function useKbShareList(enabled: boolean) {
-  return useQuery({
-    ...trpc.kbShares.list.queryOptions(),
-    enabled,
-    meta: { errorToast: "Couldn't load knowledge base shares" },
-  });
-}
-
 export function useKbShareDefaults(agentId: string | null, enabled: boolean) {
   return useQuery(
     trpc.kbShares.defaults.queryOptions(

@@ -10,7 +10,7 @@ import {
 } from "../../../lib/safe-storage.js";
 import type { SessionDraft } from "./draft-key.js";
 
-export const DRAFT_STORAGE_PREFIX = "platform-draft:";
+const DRAFT_STORAGE_PREFIX = "platform-draft:";
 
 const DRAFT_OWNER_KEY = "platform-draft-owner";
 
@@ -96,13 +96,13 @@ function writeDraftEntry(
   }
 }
 
-export interface DraftWriter {
+interface DraftWriter {
   write(key: string, draft: SessionDraft | null): void;
   flush(): void;
   clearAll(): void;
 }
 
-export function createDraftWriter(
+function createDraftWriter(
   store: KeyValueStore = browserStorage,
   batchMs: number = WRITE_BATCH_MS,
 ): DraftWriter {

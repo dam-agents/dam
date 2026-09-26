@@ -3,9 +3,9 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 
-export const THEME_STORAGE_KEY = "platform-theme";
+const THEME_STORAGE_KEY = "platform-theme";
 
-export const themeSchema = z.enum(["light", "dark", "system"]);
+const themeSchema = z.enum(["light", "dark", "system"]);
 export type Theme = z.infer<typeof themeSchema>;
 
 export interface ThemeSlice {

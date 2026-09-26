@@ -8,7 +8,8 @@ import {
 } from "@agentclientprotocol/sdk";
 
 import { getAccessToken } from "../../auth.js";
-import { type PermissionOutcome, useStore } from "../../store.js";
+import { useStore } from "../../store.js";
+import type { PermissionOutcome } from "../sessions/store/permissions.js";
 import { withCloseRace } from "./close-race.js";
 import {
   frameMetaOf,

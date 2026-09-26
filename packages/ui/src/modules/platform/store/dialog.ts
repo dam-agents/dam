@@ -6,16 +6,16 @@ import type { ConfirmDialogKind } from "@/components/ui/confirm-dialog";
 
 import type { PlatformStore } from "../../../store.js";
 
-export interface ConfirmOptions {
+interface ConfirmOptions {
   kind?: ConfirmDialogKind;
   icon?: ConfirmDialogProps["icon"];
   confirmLabel?: string;
   cancelLabel?: string;
 }
 
-export type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
+type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
 
-export interface DialogState {
+interface DialogState {
   type: "alert" | "confirm";
   title: string;
   message: ReactNode;

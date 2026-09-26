@@ -1,9 +1,14 @@
-import type { SpendBySessionType } from "api-server-api";
+import type { SpendBySessionType, SpendCategory } from "api-server-api";
 
+import { SESSION_CATEGORY_LABELS } from "../../sessions/lib/session-category.js";
 import { formatUsd } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
-import { SESSION_TYPE_LABELS } from "../lib/session-type-label.js";
 import { SpendBar } from "./spend-bar.js";
+
+const SESSION_TYPE_LABELS: Record<SpendCategory, string> = {
+  ...SESSION_CATEGORY_LABELS,
+  unknown: "Unattributed",
+};
 
 export function SessionTypeSpendBars({ rows }: { rows: SpendBySessionType[] }) {
   const max = rows[0]?.costUsd ?? 0;

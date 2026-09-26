@@ -3,7 +3,7 @@ import type { ApprovalView, PromotionRule } from "api-server-api";
 import { useStore } from "../../../store.js";
 import { confirmStagedGatewayRestart } from "../../egress-rules/gateway-restart.js";
 
-export interface EgressApprovalRestart {
+interface EgressApprovalRestart {
   confirmNarrow: (confirmLabel: string) => Promise<boolean>;
   confirmHost: (confirmLabel: string) => Promise<boolean>;
   permanentTooltip: string;

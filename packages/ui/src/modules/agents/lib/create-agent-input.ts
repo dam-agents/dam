@@ -48,7 +48,7 @@ export interface CodingAgentSetupDraft {
   vm: boolean;
 }
 
-export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
+function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
   return draft.customImage.trim().length > 0;
 }
 

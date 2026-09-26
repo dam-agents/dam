@@ -12,7 +12,7 @@ const BACKGROUND_WORK_POLL_MS = 30_000;
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 const NO_SESSIONS: readonly SessionBackgroundWork[] = Object.freeze([]);
 
-export const backgroundWorkKeys = {
+const backgroundWorkKeys = {
   agent: (agentId: string | null) => ["background-work", agentId] as const,
 };
 

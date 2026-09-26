@@ -75,7 +75,7 @@ export interface StartedSession {
   finish: () => void;
 }
 
-export interface UseAcpConnectionResult {
+interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
   beginSession: () => Promise<StartedSession>;

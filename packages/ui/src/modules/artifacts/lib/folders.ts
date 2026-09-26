@@ -5,17 +5,16 @@ export function isExperimentFolder(folder: ArtifactFolder): boolean {
   return folder.name.startsWith(EXPERIMENT_FOLDER_PREFIX);
 }
 
-export function folderDisplayName(folder: ArtifactFolder): string {
-  return isExperimentFolder(folder)
-    ? folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)
-    : folder.name;
-}
-
 export function folderDisplayNames(
   folders: readonly ArtifactFolder[],
 ): Map<string, string> {
   const stripped = new Map(
-    folders.map((folder) => [folder.id, folderDisplayName(folder)]),
+    folders.map((folder) => [
+      folder.id,
+      isExperimentFolder(folder)
+        ? folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)
+        : folder.name,
+    ]),
   );
   const counts = new Map<string, number>();
   for (const name of stripped.values()) {

@@ -15,7 +15,7 @@ import {
 } from "../../../lib/safe-storage.js";
 import type { Attachment } from "../../../types.js";
 
-export const UNDELIVERED_STORAGE_PREFIX = "platform-undelivered:";
+const UNDELIVERED_STORAGE_PREFIX = "platform-undelivered:";
 
 const RECORDS_CAP = 32;
 

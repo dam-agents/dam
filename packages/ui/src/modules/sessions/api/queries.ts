@@ -10,7 +10,7 @@ import { useStore } from "../../../store.js";
 import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
-export interface SessionListInclude {
+interface SessionListInclude {
   channels: boolean;
   scheduled: boolean;
 }

@@ -2,7 +2,7 @@ import { getErrorMessage } from "./errors.js";
 import { emitToast } from "./toast.js";
 
 export const ACTION_FAILED: unique symbol = Symbol("humr:ACTION_FAILED");
-export type ActionResult<T> = T | typeof ACTION_FAILED;
+type ActionResult<T> = T | typeof ACTION_FAILED;
 
 export async function runAction<T>(
   fn: () => Promise<T>,

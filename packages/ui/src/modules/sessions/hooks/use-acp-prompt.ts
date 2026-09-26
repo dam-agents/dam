@@ -21,7 +21,6 @@ import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
-import { resolvePromptTarget } from "../lib/prompt-target.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
 import {
   forgetUndelivered,
@@ -34,7 +33,7 @@ import type {
   StartedSession,
 } from "./use-acp-connection.js";
 
-export type PromptInitiator = "user" | "system";
+type PromptInitiator = "user" | "system";
 
 export interface SendPromptOptions {
   hidden?: boolean;
@@ -43,7 +42,7 @@ export interface SendPromptOptions {
   blocks?: PromptBlock[];
 }
 
-export interface UseAcpPromptOptions {
+interface UseAcpPromptOptions {
   selectedAgent: string | null;
   agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;
@@ -255,10 +254,12 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         if (intendedSessionId !== null) {
           const live = await ensureConnection();
           if (!live) throw new Error("Failed to establish connection");
-          const target = resolvePromptTarget(intendedSessionId, live.sessionId);
-          if (!target.ok) throw new Error(target.reason);
-          ({ connection, isOpen } = live);
-          sessionId = target.sessionId;
+          if (live.sessionId !== intendedSessionId) {
+            throw new Error(
+              "Couldn't send — the conversation changed while the message was on its way.",
+            );
+          }
+          ({ connection, isOpen, sessionId } = live);
         } else {
           started = await beginSession();
           startedRef.current = started;

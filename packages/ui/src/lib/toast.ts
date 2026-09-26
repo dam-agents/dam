@@ -1,6 +1,6 @@
 import { toast as sonner } from "sonner";
 
-export type ToastKind = "error" | "warning" | "success" | "info";
+type ToastKind = "error" | "warning" | "success" | "info";
 
 export interface Toast {
   kind: ToastKind;
