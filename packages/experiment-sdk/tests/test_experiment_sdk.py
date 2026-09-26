@@ -462,7 +462,7 @@ def test_long_outage_keeps_the_retained_batch_within_the_server_cap(
         assert len(exp._buffer) <= x._EVENT_BATCH_MAX
 
     exp._flush_blocked_until = 0.0
-    exp._flush(force=True, ignore_backoff=True)
+    exp._flush(ignore_backoff=True)
     assert exp._buffer == []
     assert all(
         len(body["events"]) <= x._EVENT_BATCH_MAX

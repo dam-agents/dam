@@ -111,8 +111,8 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _config() -> tuple[str, str]:
-    """Resolve (root_url, agent_id) from PLATFORM_MCP_URL, per call so tests
+def _config() -> str:
+    """Resolve the agent's API root from PLATFORM_MCP_URL, per call so tests
     can point the SDK at a stub server via the environment."""
     mcp_url = os.environ.get("PLATFORM_MCP_URL")
     if not mcp_url:
@@ -122,8 +122,7 @@ def _config() -> tuple[str, str]:
     m = re.match(r"^(https?://[^/]+)/api/agents/([^/]+)/mcp$", mcp_url)
     if not m:
         raise RuntimeError(f"unexpected PLATFORM_MCP_URL shape: {mcp_url}")
-    base, agent_id = m.group(1), m.group(2)
-    return f"{base}/api/agents/{agent_id}", agent_id
+    return f"{m.group(1)}/api/agents/{m.group(2)}"
 
 
 # 500 is transient here too: the api-server returns it while its own
@@ -146,7 +145,7 @@ def _request(
     server (spans upsert by id, a repeated finish answers 409), so they
     retry; ``spawn`` never does — a duplicated POST /invocations is a
     second worker, not a dup."""
-    root, _ = _config()
+    root = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
     if retry is None:
         retry = method == "GET"
@@ -686,7 +685,7 @@ class Experiment:
         if error:
             body["error"] = error[:2000]
         try:
-            self._flush(force=True, ignore_backoff=True)
+            self._flush(ignore_backoff=True)
             _request(
                 "POST", f"/experiments/{self._experiment_id}/finish", body, retry=True
             )
@@ -725,9 +724,9 @@ class Experiment:
             self._dropped_events += 1
         stale = time.monotonic() - self._last_flush > _EVENT_FLUSH_SECONDS
         if flush or stale or len(self._buffer) >= _EVENT_FLUSH_MAX:
-            self._flush(force=True)
+            self._flush()
 
-    def _flush(self, force: bool = False, ignore_backoff: bool = False) -> None:
+    def _flush(self, ignore_backoff: bool = False) -> None:
         """Report buffered events; the buffer is drained only once the POST
         lands. Reports are observability, so a transient outage costs
         latency, never the run: on failure the events stay buffered (the next
@@ -744,8 +743,6 @@ class Experiment:
         ladder per window instead of one per emit. ``finish`` passes
         ``ignore_backoff`` to buy the tail one last honest attempt."""
         if not self._buffer or self._experiment_id is None:
-            return
-        if not force and len(self._buffer) < _EVENT_FLUSH_MAX:
             return
         if not ignore_backoff and time.monotonic() < self._flush_blocked_until:
             return
