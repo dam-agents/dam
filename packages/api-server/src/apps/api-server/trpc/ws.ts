@@ -11,11 +11,30 @@ import {
   logWsAttach,
   upgradeSourceIp,
   type Authenticate,
+  type AuthDenialKind,
   type SurfaceAttribution,
 } from "../admission/auth.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
 import { logInternalError } from "./log-internal-error.js";
-import { trpcDenial } from "./mappers.js";
+
+const trpcDenial: Record<
+  AuthDenialKind,
+  {
+    code: "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_SERVER_ERROR";
+    message: string;
+  }
+> = {
+  "missing-token": {
+    code: "UNAUTHORIZED",
+    message: "missing connection token",
+  },
+  unauthorized: { code: "UNAUTHORIZED", message: "authentication failed" },
+  forbidden: { code: "FORBIDDEN", message: "authentication failed" },
+  "auth-unavailable": {
+    code: "INTERNAL_SERVER_ERROR",
+    message: "authentication unavailable",
+  },
+};
 
 const API_KEY_REAUTH_MS = 5 * 60_000;
 const RECONNECT_NUDGE_BEFORE_MS = 30_000;

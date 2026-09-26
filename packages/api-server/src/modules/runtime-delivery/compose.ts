@@ -48,7 +48,7 @@ import {
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import { emit, EventType } from "../../events.js";
-import { workspaceEvent } from "./domain/workspace-event.js";
+import { workspaceEvent } from "./domain/outbox-events.js";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {
@@ -94,13 +94,12 @@ export interface ComposeRuntimeDeliveryOpts {
   harnessServerUrl: string;
   resolveOwner: (agentId: string) => Promise<string | null>;
   deliveryConcurrency: number;
-  log?: (msg: string) => void;
 }
 
 export function composeRuntimeDelivery(
   opts: ComposeRuntimeDeliveryOpts,
 ): RuntimeDeliveryComposition {
-  const log = opts.log ?? ((m) => getLogger().info(`[runtime] ${m}`));
+  const log = (m: string) => getLogger().info(`[runtime] ${m}`);
 
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);

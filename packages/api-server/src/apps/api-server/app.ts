@@ -3,33 +3,31 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {
   authenticatePrincipal,
-  createAuthMiddleware,
-  createTermsGate,
-  isTermsOnlyTrpcCall,
   type Authenticate,
   type AuthSite,
-} from "./admission/index.js";
+} from "./admission/auth.js";
+import { createAuthMiddleware } from "./admission/auth-middleware.js";
 import {
-  createAcpRelay,
-  createAgentTrpcRelay,
-  createAgentTrpcProxy,
-  createImportProxy,
+  createTermsGate,
+  isTermsOnlyTrpcCall,
+} from "./admission/terms-middleware.js";
+import { createAcpRelay } from "./agent-proxies/acp-relay.js";
+import { createAgentTrpcRelay } from "./agent-proxies/agent-trpc-relay.js";
+import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
+import { createImportProxy } from "./agent-proxies/import-proxy.js";
+import { createSshRelay } from "./agent-proxies/ssh-relay.js";
+import { createTerminalRelay } from "./agent-proxies/terminal-relay.js";
+import {
   createRelayAdmission,
-  createSshRelay,
-  createTerminalRelay,
   createUpgradeHandler,
   relayRoute,
   selfAuthenticated,
-} from "./agent-proxies/index.js";
+} from "./agent-proxies/upgrade.js";
 import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
-import {
-  createApiContextFactory,
-  createTrpcHttpHandler,
-  createTrpcWsEndpoint,
-} from "./trpc/index.js";
-
-export type { ApiServerDeps } from "./deps.js";
+import { createApiContextFactory } from "./trpc/context.js";
+import { createTrpcHttpHandler } from "./trpc/http.js";
+import { createTrpcWsEndpoint } from "./trpc/ws.js";
 
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
   await next();

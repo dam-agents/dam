@@ -1,6 +1,6 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 
-export const SCHEDULES_QUEUE = "schedules";
+const SCHEDULES_QUEUE = "schedules";
 
 interface ScheduleJob {
   scheduleId: string;

@@ -4,7 +4,6 @@ export {
   listApiKeyAgentIds,
 } from "./compose.js";
 export {
-  type ApiKeyValidator,
   type ApiKeyValidationFailure,
   type ValidatedApiKey,
 } from "./services/api-key-validator.js";

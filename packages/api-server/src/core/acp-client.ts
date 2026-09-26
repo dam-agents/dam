@@ -25,7 +25,6 @@ import { securityLog } from "./security-log.js";
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
-const DEFAULT_STALL_PROBE_MS = 30 * 60 * 1000;
 const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
 const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
@@ -455,28 +454,13 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-export interface AcpTurnWatchConfig {
-  stallProbeMs?: number;
-}
-
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
-  turnWatch?: AcpTurnWatchConfig;
+  stallProbeMs: number;
 }): AcpClient {
-  return createAcpClientForUrl(
-    `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
-    opts.instanceName,
-    opts.turnWatch ?? {},
-  );
-}
-
-function createAcpClientForUrl(
-  url: string,
-  agentId: string,
-  turnWatch: AcpTurnWatchConfig,
-): AcpClient {
-  const stallProbeMs = turnWatch.stallProbeMs ?? DEFAULT_STALL_PROBE_MS;
+  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
+  const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       const { stream, ws } = await wsStream(url);

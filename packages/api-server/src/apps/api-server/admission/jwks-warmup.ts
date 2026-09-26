@@ -1,9 +1,9 @@
 import { getLogger } from "../../../core/logger.js";
 import { pollUntilReady } from "../../../modules/agents/infrastructure/poll-until-ready.js";
 
-export const JWKS_WARM_INITIAL_MS = 1_000;
-export const JWKS_WARM_MAX_MS = 2_000;
-export const JWKS_WARM_TIMEOUT_MS = 240_000;
+const JWKS_WARM_INITIAL_MS = 1_000;
+const JWKS_WARM_MAX_MS = 2_000;
+const JWKS_WARM_TIMEOUT_MS = 240_000;
 
 export interface JwksWarmup {
   ready: () => boolean;

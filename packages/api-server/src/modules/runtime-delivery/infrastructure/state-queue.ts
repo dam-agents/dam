@@ -6,7 +6,7 @@ import {
 } from "bullmq";
 import IORedis from "ioredis";
 
-export const RUNTIME_STATE_QUEUE = "runtime-state";
+const RUNTIME_STATE_QUEUE = "runtime-state";
 
 export interface StateJob {
   agentId: string;

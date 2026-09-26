@@ -1,1 +1,1 @@
-export { composeLiveEventsModule, type LiveEventsModule } from "./compose.js";
+export { composeLiveEventsModule } from "./compose.js";

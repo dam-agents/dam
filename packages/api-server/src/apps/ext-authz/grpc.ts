@@ -6,7 +6,6 @@ import {
   AuthorizationService,
   type AuthorizationServer,
   type CheckResponse,
-  type Status,
 } from "../../proto-gen/external_auth.gen.js";
 
 const GRPC_STATUS_OK = 0;
@@ -76,7 +75,12 @@ export async function startExtAuthzGrpcApp(
           method: httpReq?.method?.toUpperCase() || "*",
           path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
         });
-        callback(null, verdict === "allow" ? ok() : denied("policy denied"));
+        callback(
+          null,
+          verdict === "allow"
+            ? { status: { code: GRPC_STATUS_OK, message: "" } }
+            : denied("policy denied"),
+        );
       } catch (err) {
         securityLog("error", "egress.decision", {
           category: "egress",
@@ -138,14 +142,6 @@ function stripPort(host: string): string {
   return idx === -1 ? host : host.slice(0, idx);
 }
 
-function makeStatus(code: number, message?: string): Status {
-  return { code, message: message ?? "" };
-}
-
-function ok(): CheckResponse {
-  return { status: makeStatus(GRPC_STATUS_OK) };
-}
-
 function denied(message: string): CheckResponse {
-  return { status: makeStatus(GRPC_STATUS_PERMISSION_DENIED, message) };
+  return { status: { code: GRPC_STATUS_PERMISSION_DENIED, message } };
 }

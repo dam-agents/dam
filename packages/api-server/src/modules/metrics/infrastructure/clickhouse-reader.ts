@@ -1,4 +1,4 @@
-import { type ClickHouseClient, createClient } from "@clickhouse/client";
+import type { ClickHouseClient } from "@clickhouse/client";
 import type {
   CallContext,
   SessionRuntime,
@@ -13,20 +13,6 @@ import type {
   TelemetryEvent,
   TraceSpan,
 } from "../services/metrics-service.js";
-
-export function createClickhouseClient(cfg: {
-  url: string;
-  username: string;
-  password: string;
-  database: string;
-}): ClickHouseClient {
-  return createClient({
-    url: cfg.url,
-    username: cfg.username,
-    password: cfg.password,
-    database: cfg.database,
-  });
-}
 
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
@@ -73,17 +59,15 @@ export const ownedApiRequests = (w: MetricsWindow): string =>
 
 export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
-export const foldedTraceIds = (w: MetricsWindow): string =>
-  `SELECT DISTINCT TraceId FROM otel_logs
-       WHERE ${ownedApiRequests(w)}
-         AND TraceId != ''`;
-
 export const ownedAgentSpans = (w: MetricsWindow): string => {
   const base = [AGENT_GATE, ...timeBounds(w)];
   if (w.sessionId === undefined) return base.join("\n  AND ");
-  return [...base, `TraceId IN (\n       ${foldedTraceIds(w)})`].join(
-    "\n  AND ",
-  );
+  return [
+    ...base,
+    `TraceId IN (\n       SELECT DISTINCT TraceId FROM otel_logs
+       WHERE ${ownedApiRequests(w)}
+         AND TraceId != '')`,
+  ].join("\n  AND ");
 };
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({

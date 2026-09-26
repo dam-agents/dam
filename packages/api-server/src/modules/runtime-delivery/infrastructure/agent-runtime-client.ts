@@ -3,7 +3,7 @@ import type { AppRouter } from "agent-runtime-api";
 import type { ApplyStateInput, ApplyStateResult } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
-export const APPLY_STATE_TIMEOUT_MS = 60_000;
+const APPLY_STATE_TIMEOUT_MS = 60_000;
 
 type FetchLike = NonNullable<Parameters<typeof httpLink>[0]["fetch"]>;
 

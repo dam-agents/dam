@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityEvents, actorRoles, sql, type Db } from "db";
+import { activityEvents, actorRoles, lt, sql, type Db } from "db";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
 import type { ActivityEventRow } from "../domain/types.js";
 
@@ -34,5 +34,19 @@ export function upsertActorRole(db: Db, pseudo: SubPseudonymizer) {
         set: { isCore, updatedAt: sql`now()` },
         setWhere: sql`${actorRoles.updatedAt} < CURRENT_DATE or ${actorRoles.isCore} is distinct from excluded.is_core`,
       });
+  };
+}
+
+export function deleteActivityEventsOlderThan(db: Db) {
+  return async (days: number): Promise<number> => {
+    const result = await db
+      .delete(activityEvents)
+      .where(
+        lt(
+          activityEvents.occurredAt,
+          sql`now() - make_interval(days => ${days})`,
+        ),
+      );
+    return (result as unknown as { rowCount?: number }).rowCount ?? 0;
   };
 }

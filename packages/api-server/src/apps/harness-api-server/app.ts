@@ -1,7 +1,9 @@
 import { serve } from "@hono/node-server";
+import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type {
   AgentsService,
+  ArtifactTouchService,
   ConnectionsService,
   RuntimeDeliveryService,
   SessionDirectoryService,
@@ -44,7 +46,11 @@ import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
-import { createHarnessRouter } from "./harness-router.js";
+import { mountMcpRoutes } from "./mcp-endpoint.js";
+import { mountAgentKbRoutes } from "./kb-endpoint.js";
+import { mountRuntimeTrpc } from "./runtime-trpc.js";
+import { mountInvocationRoutes } from "./invocation-endpoints.js";
+import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import { createAgentImageReader } from "./agent-image.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -192,61 +198,70 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     },
   });
 
-  const app = createHarnessRouter({
-    satelliteOps: deps.satellitesBoot.agentOps,
-    satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
+  const composeSkills = (owner: string) =>
+    composeSkillsModule({
+      agentStateCache: deps.agentStateCache,
+      surface: "mcp",
+      api,
+      namespace: config.namespace,
+      owner,
+      db,
+      seedSources,
+      brandName: config.brand.name,
+      runtimeMutator,
+      templatesRepo,
+      runtimeProgress,
+    });
+  const experimentsServiceFor = (owner: string) =>
+    composeExperimentsForOwner({
+      db,
+      owner,
+      surface: "mcp",
+      artifactLibrary: artifactLibraryFor(owner),
+      pin: experimentPin,
+      agents: agentsServiceFor(owner),
+    }).experiments;
+  const defaultLimits = {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  };
+
+  const app = new Hono();
+  mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
-    runtimeHello,
-    sessionDirectory,
-    kbPublishGate,
-    composeSkills: (owner) =>
-      composeSkillsModule({
-        agentStateCache: deps.agentStateCache,
-        surface: "mcp",
-        api,
-        namespace: config.namespace,
-        owner,
-        db,
-        seedSources,
-        brandName: config.brand.name,
-        runtimeMutator,
-        templatesRepo,
-        runtimeProgress,
-      }),
+    composeSkills,
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({
         boot: schedulesBoot,
         owner,
         agentBinding: "*",
       }).schedules,
-    markOnboardingComplete: markOnboardingComplete,
+    markOnboardingComplete,
     onboardingChecklist,
-    experimentsServiceFor: (owner) =>
-      composeExperimentsForOwner({
-        db,
-        owner,
-        surface: "mcp",
-        artifactLibrary: artifactLibraryFor(owner),
-        pin: experimentPin,
-        agents: agentsServiceFor(owner),
-      }).experiments,
     artifactLibraryFor,
     invocationsServiceFor,
-    connectionsServiceFor,
+    experimentsServiceFor,
     kbShareOpsFor,
     agentHome: config.agentHome,
-    agentKb: {
-      k8s: k8sClient,
-      kbMcp,
-      connections: connectionsRepo,
-      secretStore,
-    },
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
     agentImage: createAgentImageReader(k8sClient),
     agentTelemetry,
+    satelliteOps: deps.satellitesBoot.agentOps,
+    satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
+  });
+  mountAgentKbRoutes(app, {
+    k8s: k8sClient,
+    kbMcp,
+    connections: connectionsRepo,
+    secretStore,
+  });
+  mountInvocationRoutes(app, {
+    k8s: k8sClient,
+    invocationsServiceFor,
+    connectionsServiceFor,
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({
@@ -257,15 +272,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           cpu: config.defaultUserCpuBudget,
           memory: config.defaultUserMemoryBudget,
         },
-        slotSize: {
-          cpu: config.agentDefaultCpuLimit,
-          memory: config.agentDefaultMemoryLimit,
-        },
+        slotSize: defaultLimits,
       }).budgets,
-    defaultLimits: {
-      cpu: config.agentDefaultCpuLimit,
-      memory: config.agentDefaultMemoryLimit,
-    },
+    defaultLimits,
+  });
+  mountExperimentRoutes(app, { k8s: k8sClient, experimentsServiceFor });
+  mountRuntimeTrpc(app, {
+    k8s: k8sClient,
+    hello: runtimeHello,
+    sessionDirectory,
+    artifactTouchesFor: (owner): ArtifactTouchService => ({
+      recordTouch: (input) => artifactLibraryFor(owner).recordTouch(input),
+    }),
+    kbPublish: kbPublishGate,
   });
 
   const server = serve(
