@@ -37,7 +37,7 @@
     "agent-runtime-api": "workspace:*",
     "ajv": "^8.17.1",
     "api-server-api": "workspace:*",
-    "argon2": "^0.44.0",
+    "argon2": "^0.45.1",
     "bullmq": "^5.66.0",
     "chat": "^4.41.0",
     "cron-parser": "^5.10.1",
