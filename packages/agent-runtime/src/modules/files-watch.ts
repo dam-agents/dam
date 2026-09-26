@@ -10,7 +10,7 @@ export interface WatchHandle {
   close(): void;
 }
 
-function coalescing(onChange: () => void, coalesceMs: number) {
+function coalescing(onChange: () => void) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return {
     fire() {
@@ -18,7 +18,7 @@ function coalescing(onChange: () => void, coalesceMs: number) {
       timer = setTimeout(() => {
         timer = undefined;
         onChange();
-      }, coalesceMs);
+      }, COALESCE_MS);
       timer.unref?.();
     },
     cancel() {
@@ -40,18 +40,12 @@ async function entrySignature(abs: string): Promise<string | null> {
   }
 }
 
-export function createFilesWatcher(
-  workingDir: string,
-  opts: { coalesceMs?: number; retryMs?: number } = {},
-) {
-  const coalesceMs = opts.coalesceMs ?? COALESCE_MS;
-  const retryMs = opts.retryMs ?? RETRY_MS;
-
+export function createFilesWatcher(workingDir: string) {
   function watchDirs(
     paths: readonly string[],
     onChange: () => void,
   ): WatchHandle {
-    const sink = coalescing(onChange, coalesceMs);
+    const sink = coalescing(onChange);
     const watchers = new Map<string, FSWatcher>();
     const diffed = new Map<string, string | null>();
     let closed = false;
@@ -93,7 +87,7 @@ export function createFilesWatcher(
         }
         if (changed) sink.fire();
       })();
-    }, retryMs);
+    }, RETRY_MS);
     sweep.unref?.();
 
     return {
@@ -117,7 +111,7 @@ export function createFilesWatcher(
    * correctness, the watch only adds freshness.
    */
   function watchTree(rel: string, onChange: () => void): WatchHandle {
-    const sink = coalescing(onChange, coalesceMs);
+    const sink = coalescing(onChange);
     let watcher: FSWatcher | undefined;
     let closed = false;
     let unsupported = false;
@@ -149,7 +143,7 @@ export function createFilesWatcher(
 
     attach();
 
-    const sweep = setInterval(() => attach(), retryMs);
+    const sweep = setInterval(() => attach(), RETRY_MS);
     sweep.unref?.();
 
     return {
@@ -164,7 +158,7 @@ export function createFilesWatcher(
   }
 
   function watchFile(rel: string, onChange: () => void): WatchHandle {
-    const sink = coalescing(onChange, coalesceMs);
+    const sink = coalescing(onChange);
     let watcher: FSWatcher | undefined;
     let closed = false;
 
@@ -192,7 +186,7 @@ export function createFilesWatcher(
 
     attach();
 
-    const sweep = setInterval(() => attach(), retryMs);
+    const sweep = setInterval(() => attach(), RETRY_MS);
     sweep.unref?.();
 
     return {
@@ -208,5 +202,3 @@ export function createFilesWatcher(
 
   return { watchDirs, watchFile, watchTree };
 }
-
-export type FilesWatcher = ReturnType<typeof createFilesWatcher>;

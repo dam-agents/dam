@@ -4,10 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import type { KbPublishService, KbPublishSyncInput } from "agent-runtime-api";
-import {
-  kbPublishCapsSchema,
-  type KbPublishFailure,
-} from "agent-runtime-api/kb-snapshot";
+import { kbPublishCapsSchema } from "agent-runtime-api/kb-snapshot";
 
 import { createFilesWatcher, type WatchHandle } from "../files-watch.js";
 import type { HarnessClient } from "../runtime-channel/index.js";
@@ -29,18 +26,6 @@ type FlusherState = z.infer<typeof stateSchema>;
 export interface KbPublishRuntime {
   service: KbPublishService;
   isBusy: () => boolean;
-}
-
-function toWireFailure(failure: KbPublishFailure): {
-  code: string;
-  root?: string;
-  detail?: string;
-} {
-  return {
-    code: failure.code,
-    ...("root" in failure ? { root: failure.root } : {}),
-    ...("detail" in failure ? { detail: failure.detail } : {}),
-  };
 }
 
 /**
@@ -140,7 +125,7 @@ export function composeKbPublish(opts: {
       if (!planned.ok) {
         await opts.harness.kbPublish.request.mutate({
           kind: "failure",
-          failure: toWireFailure(planned.error),
+          failure: planned.error,
         });
         return;
       }
