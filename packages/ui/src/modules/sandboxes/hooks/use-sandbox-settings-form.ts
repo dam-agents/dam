@@ -25,8 +25,6 @@ import { useProviderStaging } from "./use-provider-staging.js";
 import { useSandboxSettingsSave } from "./use-sandbox-settings-save.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
-export type { SandboxSettingsStatus } from "./sandbox-settings-schema.js";
-
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
 

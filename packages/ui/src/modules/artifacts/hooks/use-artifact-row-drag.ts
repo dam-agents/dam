@@ -1,7 +1,7 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import { useMemo } from "react";
 
-export const ARTIFACT_MOVE_MIME = "application/x-platform-artifact-move";
+const ARTIFACT_MOVE_MIME = "application/x-platform-artifact-move";
 
 interface ArtifactDragSource {
   id: string;
@@ -18,13 +18,11 @@ export interface FolderDropCallbacks extends ArtifactDragCallbacks {
   onDrop: (folderId: string | null, artifactId: string) => void;
 }
 
-export function hasArtifactMove(e: ReactDragEvent): boolean {
+function hasArtifactMove(e: ReactDragEvent): boolean {
   return !!e.dataTransfer?.types?.includes(ARTIFACT_MOVE_MIME);
 }
 
-export function readArtifactMoveSource(
-  e: ReactDragEvent,
-): ArtifactDragSource | null {
+function readArtifactMoveSource(e: ReactDragEvent): ArtifactDragSource | null {
   const raw = e.dataTransfer?.getData(ARTIFACT_MOVE_MIME);
   if (!raw) return null;
   try {

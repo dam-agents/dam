@@ -9,7 +9,7 @@ const CONTRIBUTION_KIND_LABELS: Record<ContributionKind, string> = {
   "skill-ref": "skills",
 };
 
-export function contributionKindLabel(kind: string): string {
+function contributionKindLabel(kind: string): string {
   return CONTRIBUTION_KIND_LABELS[kind as ContributionKind] ?? kind;
 }
 

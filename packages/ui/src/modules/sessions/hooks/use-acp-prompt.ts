@@ -33,7 +33,7 @@ import type {
   StartedSession,
 } from "./use-acp-connection.js";
 
-export type PromptInitiator = "user" | "system";
+type PromptInitiator = "user" | "system";
 
 export interface SendPromptOptions {
   hidden?: boolean;
@@ -42,7 +42,7 @@ export interface SendPromptOptions {
   blocks?: PromptBlock[];
 }
 
-export interface UseAcpPromptOptions {
+interface UseAcpPromptOptions {
   selectedAgent: string | null;
   agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;

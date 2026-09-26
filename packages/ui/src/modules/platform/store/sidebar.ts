@@ -6,7 +6,7 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../../store.js";
 
-export const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
+const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
@@ -15,7 +15,7 @@ export interface SidebarSlice {
   setActivityOpen: (open: boolean) => void;
 }
 
-export function readStoredSidebarExpanded(): boolean {
+function readStoredSidebarExpanded(): boolean {
   return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, false);
 }
 

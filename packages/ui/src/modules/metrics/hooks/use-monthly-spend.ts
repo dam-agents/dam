@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useSpendBreakdown } from "../api/queries.js";
 import { monthLabel, monthRange, monthStart } from "../lib/month-range.js";
 
-export type UsageState = "unavailable" | "failed" | "loading" | "ready";
+type UsageState = "unavailable" | "failed" | "loading" | "ready";
 
 export type UsageFreshness = "fresh" | "updating" | "failed";
 

@@ -32,7 +32,7 @@ export function kitSeedRemovable(
   return kit.seed !== undefined && kit.install === undefined;
 }
 
-export interface GrantedConnection {
+interface GrantedConnection {
   id: string;
   templateId: string;
   name?: string;
@@ -43,12 +43,12 @@ export type TemplateIndex = ReadonlyMap<
   Pick<ConnectionTemplateView, "id" | "name" | "family">
 >;
 
-export interface RequirementStatus {
+interface RequirementStatus {
   requirement: StarterKitConnectionRequirement;
   satisfied: boolean;
 }
 
-export function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
+function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
   return [
     ...new Set([
       ...draft.connectionIds,
@@ -257,7 +257,7 @@ const HARNESS_LABEL: Record<HarnessFamily, string> = {
   bob: "Bob",
 };
 
-export function harnessFamilyLabel(
+function harnessFamilyLabel(
   harness: HarnessFamily | undefined,
 ): string | undefined {
   return harness ? HARNESS_LABEL[harness] : undefined;

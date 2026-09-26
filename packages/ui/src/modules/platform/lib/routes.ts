@@ -1,7 +1,7 @@
 import { starterKitCategorySchema } from "api-server-api";
 import { z } from "zod";
 
-export const settingsTabSchema = z.enum([
+const settingsTabSchema = z.enum([
   "account",
   "appearance",
   "providers",
@@ -13,7 +13,7 @@ export const settingsTabSchema = z.enum([
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
-export const sandboxSectionSchema = z.enum([
+const sandboxSectionSchema = z.enum([
   "setup",
   "connections",
   "channels",

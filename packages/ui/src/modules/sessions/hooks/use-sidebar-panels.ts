@@ -52,13 +52,13 @@ function readWeights(): PanelWeights {
   };
 }
 
-export type SidebarPanelProps = {
+type SidebarPanelProps = {
   ref: RefCallback<HTMLDivElement>;
   style: CSSProperties;
   className: string | undefined;
 };
 
-export type SidebarDividerProps = {
+type SidebarDividerProps = {
   onResize: (delta: number) => void;
   onDragEnd: () => void;
 };

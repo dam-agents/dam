@@ -13,7 +13,7 @@ import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 import { WorkingDots } from "./working-dots.js";
 
-export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
+type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
 type Props = BaseProps & MessageTime;
 

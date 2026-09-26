@@ -39,7 +39,6 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
-import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
@@ -128,6 +127,7 @@ import { draftKey } from "../lib/draft-key.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+import type { SessionError } from "../store/sessions.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";

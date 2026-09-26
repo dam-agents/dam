@@ -14,7 +14,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export interface SkillTotals {
+interface SkillTotals {
   skills: number;
   sources: number;
   on: number;

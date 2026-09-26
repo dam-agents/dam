@@ -219,8 +219,7 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
-export const UNDELIVERED_MESSAGE =
-  "Not delivered — this never reached the agent.";
+const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
 function textOf(record: PlatformUndeliveredPrompt): string {
   return record.blocks

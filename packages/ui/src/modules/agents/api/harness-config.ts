@@ -18,7 +18,7 @@ export function useHarnessConfigStatus(agentId: string | null) {
   });
 }
 
-export const harnessConfigCurrentKey = (agentId: string) =>
+const harnessConfigCurrentKey = (agentId: string) =>
   ["harness-config-current", agentId] as const;
 
 export function useHarnessConfigCurrent(agentId: string | null) {
@@ -38,7 +38,7 @@ export function useHarnessConfigCurrent(agentId: string | null) {
   });
 }
 
-export function useHarnessConfigSnapshot(agentId: string | null) {
+function useHarnessConfigSnapshot(agentId: string | null) {
   return useQuery({
     ...trpc.harnessConfig.snapshot.queryOptions(
       agentId ? { agentId } : skipToken,
@@ -47,9 +47,9 @@ export function useHarnessConfigSnapshot(agentId: string | null) {
   });
 }
 
-export type HarnessConfigOrigin = "live" | "snapshot" | "none";
+type HarnessConfigOrigin = "live" | "snapshot" | "none";
 
-export interface ResolvedHarnessConfig {
+interface ResolvedHarnessConfig {
   values: HarnessConfigCurrent | null;
   origin: HarnessConfigOrigin;
   capturedAt: string | null;

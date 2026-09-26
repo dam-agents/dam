@@ -29,12 +29,12 @@ import { useWorkspaceWatch } from "../hooks/use-workspace-watch.js";
 import { downloadFileAt } from "../lib/download.js";
 import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
-export interface PendingNew {
+interface PendingNew {
   kind: FileEntryKind;
   dir: string;
 }
 
-export interface FilesPanelContextValue {
+interface FilesPanelContextValue {
   agentId: string;
   expandedDirs: ReadonlySet<string>;
   pendingNew: PendingNew | null;

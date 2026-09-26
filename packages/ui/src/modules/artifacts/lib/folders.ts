@@ -5,7 +5,7 @@ export function isExperimentFolder(folder: ArtifactFolder): boolean {
   return folder.name.startsWith(EXPERIMENT_FOLDER_PREFIX);
 }
 
-export function folderDisplayName(folder: ArtifactFolder): string {
+function folderDisplayName(folder: ArtifactFolder): string {
   return isExperimentFolder(folder)
     ? folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)
     : folder.name;

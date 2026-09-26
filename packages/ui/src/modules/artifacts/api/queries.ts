@@ -3,7 +3,7 @@ import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
 
-export interface ArtifactListFilter {
+interface ArtifactListFilter {
   folderId?: string | null;
   agentId?: string;
   search?: string;

@@ -143,7 +143,7 @@ export async function listAgentSessions(
     .sort(byRecencyThenId);
 }
 
-export async function listAgentSessionsOverAcp(
+async function listAgentSessionsOverAcp(
   agentId: string,
 ): Promise<SessionView[]> {
   return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {

@@ -49,7 +49,7 @@ export const PLATFORM_NOTIFICATION_METHODS = [
   "platform/runStarted",
 ] as const;
 
-export interface RoutedExtUpdate {
+interface RoutedExtUpdate {
   update: AcpUpdate;
   sessionId: string;
   frame: FrameMeta;

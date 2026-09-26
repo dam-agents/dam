@@ -175,7 +175,7 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
   buf[off + len - 1] = 0;
 }
 
-export type ImportBundleArgs = {
+type ImportBundleArgs = {
   agentId: string;
   entries: BundleEntry[];
 };
@@ -230,7 +230,7 @@ export async function importBundle({
   return postBundle(agentId, tar, "bundle.tar");
 }
 
-export type ImportRawBundleArgs = {
+type ImportRawBundleArgs = {
   agentId: string;
   bundle: Blob | File;
 };

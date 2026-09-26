@@ -42,7 +42,7 @@ export function ConnectionMaintenanceDialog({
   );
 }
 
-export function ConnectionUpdateCredentialDialog({
+function ConnectionUpdateCredentialDialog({
   connection,
   onClose,
 }: {

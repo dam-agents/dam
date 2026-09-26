@@ -1,13 +1,13 @@
 import type { AgentView } from "../../../../types.js";
 
-export const MOST_RECENT_COUNT = 3;
+const MOST_RECENT_COUNT = 3;
 
 export interface PickerSection {
   label: string;
   agents: readonly AgentView[];
 }
 
-export function matchesAgentQuery(agent: AgentView, query: string): boolean {
+function matchesAgentQuery(agent: AgentView, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return (

@@ -1,6 +1,6 @@
 import { type ConnectionView, unaddressableRivalHost } from "api-server-api";
 
-export interface GrantRivalry {
+interface GrantRivalry {
   connection: ConnectionView;
   rival: ConnectionView;
   host: string;

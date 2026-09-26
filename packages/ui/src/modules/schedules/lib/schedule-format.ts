@@ -29,7 +29,7 @@ export function scheduleCadenceText(schedule: Schedule): string {
   return schedule.cron ?? "";
 }
 
-export interface LastRunStatus {
+interface LastRunStatus {
   label: string;
   className: string;
 }
@@ -64,7 +64,7 @@ export function clampText(text: string, max: number = CLAMP_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-export interface PrecheckAlert {
+interface PrecheckAlert {
   text: string;
   reason: string;
   urgent: boolean;

@@ -21,28 +21,28 @@ export interface ToolChip {
   content?: ToolContent[];
 }
 
-export interface TextPart {
+interface TextPart {
   kind: "text";
   text: string;
 }
 
-export interface ThoughtPart {
+interface ThoughtPart {
   kind: "thought";
   text: string;
 }
 
-export interface HistoryPart {
+interface HistoryPart {
   kind: "history";
   text: string;
 }
 
-export interface ImagePart {
+interface ImagePart {
   kind: "image";
   data: string;
   mimeType: string;
 }
 
-export interface FilePart {
+interface FilePart {
   kind: "file";
   name: string;
   mimeType: string;
@@ -50,7 +50,7 @@ export interface FilePart {
   size?: number;
 }
 
-export interface UploadedFilePart extends FilePart {
+interface UploadedFilePart extends FilePart {
   data: string;
   size: number;
 }
@@ -173,7 +173,7 @@ export interface AgentView {
   kind?: AgentKind;
 }
 
-export interface QuietWindowView {
+interface QuietWindowView {
   startTime: string;
   endTime: string;
   enabled: boolean;
@@ -207,18 +207,7 @@ export interface Schedule {
 export type {
   BobModelPins,
   EgressPreset,
-  EnvMapping,
   EnvVar,
-  InjectionConfig,
-  ProviderPreset,
-  ProviderPresetMode,
   ProviderPresetType,
 } from "api-server-api";
-export {
-  BOB_CHAT_MODES,
-  DEFAULT_ENV_PLACEHOLDER,
-  isProviderPresetType,
-  isValidEnvName,
-  PROVIDER_PRESET_TYPES,
-  PROVIDERS,
-} from "api-server-api";
+export { BOB_CHAT_MODES, isValidEnvName, PROVIDERS } from "api-server-api";

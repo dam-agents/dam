@@ -2,7 +2,7 @@ import { useFeed } from "../api/queries.js";
 import type { FeedItem } from "../lib/feed-item.js";
 import { useDismissals } from "./use-dismissals.js";
 
-export type WaitingApproval = Extract<FeedItem, { kind: "approval" }>;
+type WaitingApproval = Extract<FeedItem, { kind: "approval" }>;
 
 export function useWaitingApprovals(): WaitingApproval[] {
   const { items } = useFeed();

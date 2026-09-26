@@ -1,5 +1,10 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import {
+  SESSION_CATEGORIES,
+  sessionCategoryOf,
+  SessionMode,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
 import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -25,11 +30,7 @@ import { downloadTelemetryExport } from "../../telemetry/api/download-export.js"
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
-import {
-  SESSION_CATEGORIES,
-  SESSION_CATEGORY_LABELS,
-  sessionCategory,
-} from "../lib/session-category.js";
+import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
@@ -83,7 +84,7 @@ export function SessionsSidebar({
   const loading = data === undefined && isFetching;
 
   const visibleSessions = useMemo(
-    () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
+    () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),
     [sessions, sessionFilter],
   );
   const launchingRun =
@@ -95,8 +96,8 @@ export function SessionsSidebar({
 
   const [conversationSessions, runSessions] = useMemo(
     () => [
-      visibleSessions.filter((s) => sessionCategory(s) !== "experiments"),
-      visibleSessions.filter((s) => sessionCategory(s) === "experiments"),
+      visibleSessions.filter((s) => sessionCategoryOf(s) !== "experiments"),
+      visibleSessions.filter((s) => sessionCategoryOf(s) === "experiments"),
     ],
     [visibleSessions],
   );

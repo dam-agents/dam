@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { useAgents } from "../../../agents/api/queries.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 
-export interface SetupChannelSelection {
+interface SetupChannelSelection {
   slack: boolean;
   telegram: boolean;
 }

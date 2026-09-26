@@ -24,7 +24,7 @@ export function sandboxSubtitleParts(
   return { harness, provider: providerLabel(agent, lookup) };
 }
 
-export function joinSubtitleSegments(
+function joinSubtitleSegments(
   segments: ReadonlyArray<string | null | undefined>,
 ): string {
   return segments.filter(Boolean).join(" · ");

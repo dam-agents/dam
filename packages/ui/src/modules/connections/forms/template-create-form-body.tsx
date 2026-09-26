@@ -24,7 +24,7 @@ import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
 import { TemplateFieldInput } from "./template-field-input.js";
 
-export interface TemplateCreateFormProps {
+interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
   onCancel: () => void;

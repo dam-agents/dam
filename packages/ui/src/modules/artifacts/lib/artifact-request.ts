@@ -4,9 +4,9 @@ import {
   artifactRequestMessageSchema,
 } from "api-server-api";
 
-export type ArtifactApiRequest = Omit<ArtifactCallAgentApiInput, "artifactId">;
+type ArtifactApiRequest = Omit<ArtifactCallAgentApiInput, "artifactId">;
 
-export interface ArtifactRequestRead {
+interface ArtifactRequestRead {
   id: string;
   request: ArtifactApiRequest | null;
 }

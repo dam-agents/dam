@@ -28,7 +28,7 @@ import {
 const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
-export type ScheduleFieldLayout = "stacked" | "rows";
+type ScheduleFieldLayout = "stacked" | "rows";
 
 interface FieldsProps {
   layout: ScheduleFieldLayout;

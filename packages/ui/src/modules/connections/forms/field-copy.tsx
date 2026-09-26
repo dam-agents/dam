@@ -84,7 +84,7 @@ const TEMPLATE_FIELD_HINTS: Record<string, Record<string, ReactNode>> = {
   },
 };
 
-export const CREDENTIAL_COPY: Record<
+const CREDENTIAL_COPY: Record<
   Exclude<ConnectionAuthKind, "none">,
   { action: string; label: string; hint: string; multiline?: boolean }
 > = {

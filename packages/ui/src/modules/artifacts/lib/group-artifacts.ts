@@ -4,7 +4,7 @@ import { isExperimentFolder } from "./folders.js";
 
 export const UNGROUPED_KEY = "ungrouped";
 
-export interface ArtifactFolderGroup {
+interface ArtifactFolderGroup {
   key: string;
   folder: ArtifactFolder | null;
   artifacts: LibraryArtifact[];

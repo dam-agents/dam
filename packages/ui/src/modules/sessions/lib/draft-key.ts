@@ -20,7 +20,7 @@ export function draftKey(agentId: string, sessionId: string | null): string {
   return `${agentId}:${sessionId ?? BLANK_CHAT}`;
 }
 
-export function draftHasContent(draft: SessionDraft): boolean {
+function draftHasContent(draft: SessionDraft): boolean {
   return draft.text.trim().length > 0 || draft.attachments.length > 0;
 }
 
