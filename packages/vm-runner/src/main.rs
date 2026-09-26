@@ -205,7 +205,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
             reserve_mib: i32::try_from(args.reserve_mib)?,
             listen: None,
         },
-        runtime.clone(),
+        runtime,
     )?;
 
     let install = args
@@ -218,12 +218,12 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         .unwrap_or_default();
     let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
     server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
-    let reaper = runtime.clone();
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
-            reaper.reap();
+            smolvm::process::reap_vm_children();
         }
     });
 

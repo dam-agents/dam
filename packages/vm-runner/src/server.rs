@@ -3,7 +3,7 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio_util::sync::CancellationToken;
@@ -190,7 +190,12 @@ impl Server {
             machines: Mutex::new(Machines::default()),
             settled: Condvar::new(),
             changed: Condvar::new(),
-            versions: AtomicU64::new(first_version()),
+            // UNIT_BOUNDARY_DESCRIPTION: the first version this process hands out is taken from the clock, so a version a caller holds from before a runner restart is not handed out again by the new process.
+            versions: AtomicU64::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_or(0, |since| u64::try_from(since.as_micros()).unwrap_or(0)),
+            ),
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             lifetime,
@@ -220,8 +225,18 @@ impl Server {
                 let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
             }
         });
+        // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
         let prober = Arc::downgrade(&server);
-        server.background(move |lifetime| probe_until_closed(&prober, &lifetime));
+        server.background(move |lifetime| {
+            while !lifetime.is_cancelled() {
+                let Some(server) = prober.upgrade() else {
+                    return;
+                };
+                server.probe_due();
+                drop(server);
+                std::thread::sleep(PROBE_TICK);
+            }
+        });
         Ok(server)
     }
 
@@ -270,7 +285,15 @@ impl Server {
             return Err(Rejected::bad_request("invalid machine id"));
         }
         admissible(&spec).map_err(Rejected::bad_request)?;
-        self.remember_secrets(id, &spec);
+        {
+            let mut machines = locked(&self.machines);
+            let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;
+            for value in spec.env.values() {
+                if !known.contains(value) {
+                    known.push(value.clone());
+                }
+            }
+        }
         loop {
             if !self.converging(id) {
                 self.observe(id, true);
@@ -702,16 +725,6 @@ impl Server {
         self.runtime.stop(id)
     }
 
-    fn remember_secrets(&self, id: &str, spec: &MachineSpec) {
-        let mut machines = locked(&self.machines);
-        let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;
-        for value in spec.env.values() {
-            if !known.contains(value) {
-                known.push(value.clone());
-            }
-        }
-    }
-
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
     fn console_tail(&self, id: &str) -> String {
         let remembered = locked(&self.machines)
@@ -1080,25 +1093,6 @@ impl Server {
             };
         }
         (state, status)
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the first version this process hands out, taken from the clock, so a version a caller holds from before a runner restart is not handed out again by the new process.
-fn first_version() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| u64::try_from(since.as_micros()).unwrap_or(0))
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
-fn probe_until_closed(server: &Weak<Server>, lifetime: &CancellationToken) {
-    while !lifetime.is_cancelled() {
-        let Some(server) = server.upgrade() else {
-            return;
-        };
-        server.probe_due();
-        drop(server);
-        std::thread::sleep(PROBE_TICK);
     }
 }
 

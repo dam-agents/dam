@@ -214,7 +214,9 @@ impl ImageCache {
             Ok(digest) => digest,
             Err(e) => return Lookup::failed(e),
         };
-        self.hold_one(&digest);
+        locked(&self.memory)
+            .holds
+            .insert(digest.clone(), Instant::now());
         let pinned = format!("{}@{digest}", repository(reference));
         let entry = self.digest_entry(&digest);
         let gate = self.fetch_gate(&digest);
@@ -263,12 +265,6 @@ impl ImageCache {
         let mut fetching = locked(&self.fetching);
         fetching.retain(|_, gate| Arc::strong_count(gate) > 1);
         fetching.entry(digest.to_string()).or_default().clone()
-    }
-
-    fn hold_one(&self, digest: &str) {
-        locked(&self.memory)
-            .holds
-            .insert(digest.to_string(), Instant::now());
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run is written beside the tree, and its presence is what marks the entry complete; the entry is renamed into place whole. `auths` are tried in order, and the layers come with the one that read the config. An entry fetched with no credential, or one an anonymous read also reaches, is public: any caller may boot it.
