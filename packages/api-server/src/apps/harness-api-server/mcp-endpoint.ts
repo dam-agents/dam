@@ -27,6 +27,13 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
+import {
+  errorResult,
+  json,
+  run,
+  textResult,
+  type ToolContent,
+} from "../../core/mcp-tool-result.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -52,14 +59,12 @@ import {
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 function resolveWorkspacePath(input: string): string {
-  const agentHome = AGENT_HOME_DIR;
-  const workDir = AGENT_WORK_DIR;
   if (input.startsWith("/")) {
-    return input.startsWith(`${agentHome}/`)
-      ? input.slice(agentHome.length + 1)
+    return input.startsWith(`${AGENT_HOME_DIR}/`)
+      ? input.slice(AGENT_HOME_DIR.length + 1)
       : input;
   }
-  const workRel = workDir.slice(agentHome.length + 1);
+  const workRel = AGENT_WORK_DIR.slice(AGENT_HOME_DIR.length + 1);
   return `${workRel}/${input}`;
 }
 
@@ -67,12 +72,6 @@ interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
 }
-
-import {
-  errorResult,
-  textResult,
-  type ToolContent,
-} from "../../core/mcp-tool-result.js";
 
 function errMessage(err: unknown, fallback: string): string {
   if (err instanceof TRPCError) {
@@ -160,6 +159,15 @@ export function createMcpSession(
       }),
     ],
   });
+
+  const channelAudit = (surface: ChannelType) =>
+    ({
+      category: "channel",
+      actor: agentId,
+      actorKind: "agent",
+      surface,
+      agentId,
+    }) as const;
 
   const attachmentInput = z
     .object({
@@ -287,11 +295,7 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
+        ...channelAudit(channel),
         result: failed ? "failure" : "success",
         detail: {
           ...(chatId ? { conversationId: chatId } : {}),
@@ -326,13 +330,7 @@ export function createMcpSession(
         channel,
         userIds,
       );
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.user_lookup", {
           ...audit,
@@ -378,13 +376,7 @@ export function createMcpSession(
         channel,
         { conversationId: chatId, messageTs },
       );
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.reaction_lookup", {
           ...audit,
@@ -441,13 +433,7 @@ export function createMcpSession(
         threadTs,
         ...(cursor !== undefined ? { cursor } : {}),
       });
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.thread_read", {
           ...audit,
@@ -527,11 +513,7 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
-        agentId,
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "reply",
@@ -573,11 +555,7 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
-        agentId,
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "react",
@@ -614,11 +592,7 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
-        agentId,
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "hand_off_to_agent",
@@ -732,14 +706,9 @@ export function createMcpSession(
       {},
       async () => {
         await markOnboardingComplete(agentId);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Onboarding marked complete. Schedules on this agent are now live.",
-            },
-          ],
-        };
+        return textResult(
+          "Onboarding marked complete. Schedules on this agent are now live.",
+        );
       },
     );
   }
@@ -784,14 +753,7 @@ export function createMcpSession(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
-    async () => {
-      const list = await schedules.list(agentId);
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(list, null, 2) },
-        ],
-      };
-    },
+    async () => json(await schedules.list(agentId)),
   );
 
   server.tool(
@@ -868,7 +830,7 @@ export function createMcpSession(
           "`cron` is UTC-only and ignores `timezone`/`quietHours` — use `rrule` with `timezone` to schedule in a local zone.",
         );
       }
-      try {
+      return run(async () => {
         const sched =
           rrule !== undefined
             ? await schedules.createRRule(
@@ -888,36 +850,15 @@ export function createMcpSession(
                 { name, agentId, cron: cron!, task, sessionMode, precheck },
                 "agent",
               );
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  id: sched.id,
-                  name: sched.name,
-                  ...(sched.spec.type === "rrule"
-                    ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
-                    : { cron: sched.spec.cron }),
-                  enabled: sched.spec.enabled,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      } catch (err) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: err instanceof Error ? err.message : String(err),
-            },
-          ],
-          isError: true,
-        };
-      }
+        return json({
+          id: sched.id,
+          name: sched.name,
+          ...(sched.spec.type === "rrule"
+            ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
+            : { cron: sched.spec.cron }),
+          enabled: sched.spec.enabled,
+        });
+      });
     },
   );
 
@@ -928,37 +869,11 @@ export function createMcpSession(
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `schedule ${id} not found on this agent`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`schedule ${id} not found on this agent`);
       }
       const updated = await schedules.toggle(id);
-      if (!updated) {
-        return {
-          content: [
-            { type: "text" as const, text: `schedule ${id} not found` },
-          ],
-          isError: true,
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              { id: updated.id, enabled: updated.spec.enabled },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      if (!updated) return errorResult(`schedule ${id} not found`);
+      return json({ id: updated.id, enabled: updated.spec.enabled });
     },
   );
 
@@ -969,18 +884,10 @@ export function createMcpSession(
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `schedule ${id} not found on this agent`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`schedule ${id} not found on this agent`);
       }
       await schedules.delete(id);
-      return { content: [{ type: "text" as const, text: `deleted ${id}` }] };
+      return textResult(`deleted ${id}`);
     },
   );
 
@@ -1029,9 +936,7 @@ export function createMcpSession(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
         );
       }
-      return {
-        content: [{ type: "text", text: JSON.stringify({ accepted: true }) }],
-      };
+      return textResult(JSON.stringify({ accepted: true }));
     },
   );
 

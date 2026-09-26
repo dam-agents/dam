@@ -304,16 +304,12 @@ export async function bootstrap() {
 
   if (!config.redisUrl)
     throw new Error("REDIS_URL is required (Redis is a platform primitive)");
-  const bullConnection = createBullConnection(
-    config.redisUrl,
-    config.redisPassword ?? undefined,
-  );
-  const redisBus = createRedisBus(config.redisUrl, {
-    password: config.redisPassword ?? undefined,
-  });
+  const redisPassword = config.redisPassword ?? undefined;
+  const bullConnection = createBullConnection(config.redisUrl, redisPassword);
+  const redisBus = createRedisBus(config.redisUrl, { password: redisPassword });
   const sharedRedis = createBullConnection(
     config.redisUrl,
-    config.redisPassword ?? undefined,
+    redisPassword,
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
@@ -400,9 +396,6 @@ export async function bootstrap() {
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
-      uiClientId: config.keycloakClientId,
-      cliClientId: config.keycloakCliClientId,
-      coreRole: config.keycloakInspectorRole,
     },
     {
       verifyApiKey: apiKeysModule.validator,
@@ -1373,10 +1366,9 @@ export async function bootstrap() {
     attentionRetentionTick(),
   );
 
+  const listRegisteredAgentIds = listAgentIdsByOwner(db, subPseudonymizer);
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
-    periodicJobs,
-    sharedRedis,
     config,
     api,
     db,
@@ -1413,12 +1405,12 @@ export async function bootstrap() {
           reader: telemetryReader,
           listLiveAgentIds: (ownerSub) =>
             liveAgentsRepo.list(ownerSub).then((list) => list.map((a) => a.id)),
-          listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+          listRegisteredAgentIds,
         }),
       ),
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
-    listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+    listRegisteredAgentIds,
     metricsReader,
     telemetryReader,
     sessionDirectory,
@@ -1433,7 +1425,6 @@ export async function bootstrap() {
     templatesRepo,
     starterKitsRepo,
     reposService,
-    userDirectory,
     apiKeysModule,
     satellitesBoot,
     auth,
@@ -1444,6 +1435,12 @@ export async function bootstrap() {
     publicAgentPageService,
     sessionPresence,
   };
+  const onboardingChecklistFor = (owner: string) =>
+    createOnboardingChecklist({
+      agents: harnessAgentsServiceFor(owner),
+      repo: onboardingChecklists,
+      ownerSub: owner,
+    });
   const harnessDeps = {
     satellitesBoot,
     agentStateCache,
@@ -1478,18 +1475,9 @@ export async function bootstrap() {
         agentId: string,
         owner: string,
         steps: readonly { id: string; label: string }[],
-      ) =>
-        createOnboardingChecklist({
-          agents: harnessAgentsServiceFor(owner),
-          repo: onboardingChecklists,
-          ownerSub: owner,
-        }).set(agentId, steps),
+      ) => onboardingChecklistFor(owner).set(agentId, steps),
       complete: (agentId: string, owner: string, id: string) =>
-        createOnboardingChecklist({
-          agents: harnessAgentsServiceFor(owner),
-          repo: onboardingChecklists,
-          ownerSub: owner,
-        }).complete(agentId, id),
+        onboardingChecklistFor(owner).complete(agentId, id),
     },
   };
   const extAuthzDeps = {

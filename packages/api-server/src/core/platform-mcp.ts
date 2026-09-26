@@ -8,7 +8,7 @@ function toolPrefix(server: string): string {
 }
 
 export const OUTBOUND_TOOL_PREFIX = toolPrefix(PLATFORM_OUTBOUND_MCP_SERVER);
-export const KB_TOOL_PREFIX = toolPrefix(KB_AGGREGATE_MCP_SERVER);
+const KB_TOOL_PREFIX = toolPrefix(KB_AGGREGATE_MCP_SERVER);
 
 const PLATFORM_MCP_TOOL_PREFIXES = [OUTBOUND_TOOL_PREFIX, KB_TOOL_PREFIX];
 

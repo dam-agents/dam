@@ -14,7 +14,6 @@ import { boundedSet } from "../../../core/bounded-map.js";
 
 const DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
-const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -79,7 +78,7 @@ function shouldUpdateActivity(agentId: string): boolean {
   const now = Date.now();
   const last = lastActivityTimestamps.get(agentId) ?? 0;
   if (now - last < DEBOUNCE_MS) return false;
-  boundedSet(lastActivityTimestamps, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
+  boundedSet(lastActivityTimestamps, agentId, now);
   return true;
 }
 
@@ -100,13 +99,6 @@ export function createAcpRelay(
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
 ) {
-  const resolveIdentity = (
-    agentId: string,
-  ): Promise<{ ownerSub: string; agentId: string } | null> =>
-    repo
-      .resolveIdentity(agentId)
-      .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null));
-
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
 
@@ -129,7 +121,7 @@ export function createAcpRelay(
           "passive",
         ) === "1";
 
-      let identity: { ownerSub: string; agentId: string } | null = null;
+      let identity: { owner: string; agentId: string } | null = null;
 
       const mirroredRows = new Map<string, string>();
 
@@ -165,7 +157,7 @@ export function createAcpRelay(
             agentId: identity.agentId,
             sessionId,
             rpcId: msg.id,
-            ownerSub: identity.ownerSub,
+            ownerSub: identity.owner,
             toolName,
             args: tc.rawInput,
             options,
@@ -234,7 +226,8 @@ export function createAcpRelay(
         passive ? "?passive=1" : ""
       }`;
 
-      resolveIdentity(agentId)
+      repo
+        .resolveIdentity(agentId)
         .then((resolved) => {
           if (!resolved) {
             client.close(1011, "instance not found");

@@ -11,7 +11,6 @@ import { boundedSet } from "../../../core/bounded-map.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_DEBOUNCE_MS = 30_000;
-const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 const PING_INTERVAL_MS = 30_000;
 
 export interface SshRelay {
@@ -35,7 +34,7 @@ export function createSshRelay(
   const bumpActivity = (id: string) => {
     const now = Date.now();
     if (now - (lastActivity.get(id) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
-      boundedSet(lastActivity, id, now, ACTIVITY_MAP_MAX_ENTRIES);
+      boundedSet(lastActivity, id, now);
       repo
         .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
         .catch(() => {});

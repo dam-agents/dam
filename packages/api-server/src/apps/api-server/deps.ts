@@ -2,22 +2,18 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
-import type { Redis } from "ioredis";
 import type {
   E2eService,
   LiveEventsService,
   ReposService,
   TermsService,
-  UserIdentity,
 } from "api-server-api";
-import type { PeriodicJobs } from "../../core/periodic-jobs.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentsRepository,
   ContributionsProgressPort,
   OnboardingChecklistReader,
-  KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
@@ -63,8 +59,6 @@ export type { ApiVariables };
 
 export interface ApiServerDeps {
   config: Config;
-  periodicJobs: PeriodicJobs;
-  sharedRedis: Redis;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
@@ -116,7 +110,6 @@ export interface ApiServerDeps {
   templatesRepo: TemplatesRepository;
   starterKitsRepo: StarterKitsRepository;
   reposService: ReposService;
-  userDirectory: KeycloakUserDirectory;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;
   auth: ReturnType<typeof createAuth>;

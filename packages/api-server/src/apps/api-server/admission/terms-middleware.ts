@@ -21,15 +21,15 @@ export function isTermsOnlyTrpcCall(rawPathname: string): boolean {
   return procs.length > 0 && procs.every((p) => PRE_TERMS_PROCEDURES.has(p));
 }
 
-export function createTermsGate(config: { terms: TermsService }) {
-  const middleware: MiddlewareHandler<{
-    Variables: { user: UserIdentity };
-  }> = async (c, next) => {
+export function createTermsGate(
+  terms: TermsService,
+): MiddlewareHandler<{ Variables: { user: UserIdentity } }> {
+  return async (c, next) => {
     const user = c.get("user");
     if (!user) return next();
-    const accepted = await config.terms.isAccepted(user.sub);
+    const accepted = await terms.isAccepted(user.sub);
     if (accepted) return next();
-    const current = config.terms.current();
+    const current = terms.current();
     return c.json(
       {
         error: "terms_stale",
@@ -39,5 +39,4 @@ export function createTermsGate(config: { terms: TermsService }) {
       412,
     );
   };
-  return { middleware };
 }
