@@ -116,25 +116,45 @@ export const slackFireCommandResultSchema = z
   .object({ ack: z.string() })
   .strict();
 
+const fakeSlackChannelSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    botIsMember: z.boolean(),
+  })
+  .strict();
+
 export const slackConnectWorkspaceInputSchema = z
   .object({
     teamId: z.string().min(1),
     teamName: z.string().optional(),
     botToken: z.string().min(1),
-    channels: z.array(
-      z
-        .object({
-          id: z.string().min(1),
-          name: z.string().min(1),
-          botIsMember: z.boolean(),
-        })
-        .strict(),
-    ),
+    channels: z.array(fakeSlackChannelSchema),
   })
+  .strict();
+
+export const slackSetChannelsInputSchema = z
+  .object({ channels: z.array(fakeSlackChannelSchema) })
   .strict();
 
 export const slackConnectWorkspaceResultSchema = z
   .object({ ok: z.literal(true), secretPath: z.string() })
+  .strict();
+
+export const slackImportHelmTokenInputSchema = z
+  .object({ teamId: z.string().min(1), botToken: z.string().min(1) })
+  .strict();
+
+export const slackRenewTokensInputSchema = z
+  .object({ advanceSeconds: z.number().int().min(0) })
+  .strict();
+
+export const slackTokenStateInputSchema = z
+  .object({ teamId: z.string().min(1) })
+  .strict();
+
+export const slackTokenStateResultSchema = z
+  .object({ token: z.string().nullable(), live: z.boolean() })
   .strict();
 
 export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [

@@ -84,7 +84,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     }),
   );
 
-  if ((config.slackBotToken && config.slackAppToken) || config.e2eEnabled) {
+  if (config.slackAppToken || config.e2eEnabled) {
     app.route(
       "/api/slack",
       createSlackOAuthRoutes({

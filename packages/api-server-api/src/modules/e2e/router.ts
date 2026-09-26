@@ -17,6 +17,11 @@ import {
   slackFireMentionInputSchema,
   slackFireMessageInputSchema,
   slackReadOutboundResultSchema,
+  slackImportHelmTokenInputSchema,
+  slackSetChannelsInputSchema,
+  slackRenewTokensInputSchema,
+  slackTokenStateInputSchema,
+  slackTokenStateResultSchema,
 } from "./schemas.js";
 
 function gate(ctx: { e2eEnabled: boolean }): void {
@@ -118,5 +123,44 @@ export const e2eRouter = t.router({
     .mutation(({ ctx }) => {
       gate(ctx);
       return ctx.e2e.slackResetOutbound();
+    }),
+
+  slackSetChannels: t.procedure
+    .input(slackSetChannelsInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackSetChannels(input);
+    }),
+
+  slackEnableTokenRotation: t.procedure
+    .output(resetResultSchema)
+    .mutation(({ ctx }) => {
+      gate(ctx);
+      return ctx.e2e.slackEnableTokenRotation();
+    }),
+
+  slackImportHelmToken: t.procedure
+    .input(slackImportHelmTokenInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackImportHelmToken(input);
+    }),
+
+  slackRenewTokens: t.procedure
+    .input(slackRenewTokensInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackRenewTokens(input);
+    }),
+
+  slackTokenState: t.procedure
+    .input(slackTokenStateInputSchema)
+    .output(slackTokenStateResultSchema)
+    .query(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackTokenState(input);
     }),
 });

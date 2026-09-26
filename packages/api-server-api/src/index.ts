@@ -752,6 +752,10 @@ export type {
   SlackFireMessageInput,
   SlackOutboundRecord,
   SlackReadOutboundResult,
+  SlackImportHelmTokenInput,
+  SlackRenewTokensInput,
+  SlackTokenStateInput,
+  SlackTokenStateResult,
 } from "./modules/e2e/types.js";
 export {
   e2eAgentIdInputSchema,

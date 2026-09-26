@@ -61,6 +61,7 @@ export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
+  claimUnscopedSlackBindings,
   findSlackChannelsByAgent,
   deleteSlackChannelByAgent,
   deleteSlackChannelBinding,

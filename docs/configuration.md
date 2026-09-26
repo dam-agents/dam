@@ -81,47 +81,52 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
 
 1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `reactions:read`, `commands`, `users:read`, `users:read.email`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel. The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`. `reactions:read` lets an agent look up who reacted to a message and with what emoji. All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
 2. Add slash command `/platform` pointing to your app.
-3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
+3. Generate an app-level token (`xapp-...`) with `connections:write` scope, register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL, and deploy with the app-level token and the app's client credentials (Basic Information → App Credentials). Slack never fetches the redirect URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
 
    ```sh
    mise run cluster:install -- \
-     --set=apiServer.slackBotToken=xoxb-... \
-     --set=apiServer.slackAppToken=xapp-...
-   ```
-
-4. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
-
-**Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's. The scope is opt-in. It is not in the provided manifest, and the install does not request it. To use it, add `chat:write.customize` to your Slack app's bot scopes and reinstall the app. It then takes effect for the workspace that the app's own bot token belongs to. For the agent's avatar to show too, set `--set=apiServer.imgbbApiKey=<key>` ([ImgBB API](https://api.imgbb.com)): Slack fetches message icons from the public internet, so the api-server uploads each avatar there as a PNG, named by a hash. Those images are public to anyone holding the URL.
-
-**Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing. Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and reinstall when Slack asks. The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
-
-### More than one workspace
-
-Slack hands the bot token over by copy-paste for the app's own workspace only. Every other workspace has to complete Slack's install handshake, so to serve more than one:
-
-1. In the Slack app, activate public distribution (Manage Distribution) and register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL. Slack never fetches that URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
-2. Deploy with the app's client credentials (Basic Information → App Credentials):
-
-   ```sh
-   mise run cluster:install -- \
+     --set=apiServer.slackAppToken=xapp-... \
      --set=apiServer.slackClientId=... \
      --set=apiServer.slackClientSecret=... \
      --set=apiServer.slackEnterpriseId=...   # Enterprise Grid only; see below
    ```
 
-   On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id — a workspace outside it is then refused at the moment its credential would be accepted. Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one. Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
+4. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
+5. Connect the app's own workspace the way every workspace is connected (below). No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
+6. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
-3. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough. Connecting a workspace is install-wide, so only an operator may start one.
-4. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of that role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
-5. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
+**Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's. The scope is opt-in. It is not in the provided manifest, and the install does not request it. To use it, add `chat:write.customize` to your Slack app's bot scopes and re-run the install flow for each workspace. For the agent's avatar to show too, set `--set=apiServer.imgbbApiKey=<key>` ([ImgBB API](https://api.imgbb.com)): Slack fetches message icons from the public internet, so the api-server uploads each avatar there as a PNG, named by a hash. Those images are public to anyone holding the URL.
+
+**Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing. Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks. The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
+
+### Connecting a workspace
+
+1. Open **Settings → Slack workspaces** and press *Connect a workspace*. The tab appears only for holders of the installer role. It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
+2. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once. It is approved **while on the VPN**, because Slack redirects the browser back to the platform's own host; the workspace's bot token is then stored in a Kubernetes Secret. That admin needs no platform account.
+
+Any workspace other than the app's own also needs public distribution activated on the app (Manage Distribution).
 
 This is an invitation rather than open enrollment, and the two are not interchangeable. Both sides consent: an operator decides the platform is willing to serve a workspace, and an admin of that workspace grants it. A consent redirect the platform did not invite is refused — including the "Sharable URL" Slack's own Manage Distribution page hands out, which carries no invitation, so that URL is not the way in.
 
-Leaving `keycloak.slackInstallerRole` empty disables the install surface entirely — no routes, no tab — and the workspace `slackBotToken` was issued for keeps working either way.
+On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id — a workspace outside it is then refused at the moment its credential would be accepted. Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one. Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
 
 Connecting a channel does not change: you still paste a conversation id. One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out. Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway. The platform works out which workspace it belongs to by asking each connected workspace about that conversation, preferring one the bot has been invited to. A channel shared into several workspaces is not a problem — they are the same conversation. Only an id no connected workspace can see is refused. A single-workspace install never makes that call.
 
-The workspace that `slackBotToken` was issued for keeps working without any of this — it stays the fallback. Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
+Re-running the flow for a workspace re-authorizes it in place, which is how a workspace picks up scopes added to the app later; bindings and linked identities are untouched.
+
+### Upgrading from a Helm bot token
+
+Installs set up before the install flow existed pasted the app's own workspace's bot token into `apiServer.slackBotToken`. Keep it set for one deploy: at boot the api-server asks Slack which workspace it belongs to, stores it as that workspace's Secret — unless that workspace already re-authorized through the flow, whose newer token is kept — and moves every channel binding made back then onto that workspace. The api-server never serves the Helm value itself; once it has been imported, remove it. The import is safe to repeat, so leaving the value set a while longer does no harm.
+
+### Token rotation
+
+Slack can issue bot tokens that expire after twelve hours and are renewed with a refresh token ([Slack's docs](https://docs.slack.dev/authentication/using-token-rotation/)). Slack will not let you turn this off again once it is on, so try it on a dev app first.
+
+1. Set `apiServer.slackClientId` and `apiServer.slackClientSecret` — renewing and exchanging tokens both sign with them.
+2. Register a redirect URL in the Slack app (the install callback above is fine — Slack only checks that one exists), then turn on **Token Rotation** under **OAuth & Permissions**.
+3. Set `--set=apiServer.slackTokenRotation=true`. Rotation is one switch on the app, but every workspace's existing token keeps not expiring until it is exchanged, one call per token. As soon as the Slack worker starts, the api-server exchanges each of them for a rotating one — every connected workspace, an imported Helm token included. Slack retires the old token as it answers, so from then on only the rotating pair in the workspace's Secret works.
+
+Rotating tokens are renewed whether or not the flag is set, so setting it back to `false` has no effect on tokens already exchanged. Do not paste a rotating token (`xoxe.xoxb-…`) from Slack's settings page into `slackBotToken`: it arrives without its refresh token, so the platform cannot renew it and it expires in twelve hours. Connect the workspace through the install flow instead.
 
 The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 

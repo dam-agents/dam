@@ -45,7 +45,7 @@ function harness(scopes: string[] | null, agentIcon: AgentIconUrl | null) {
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
-    (teamId) => teamId,
+    async () => [],
     () => {},
     0,
     {},

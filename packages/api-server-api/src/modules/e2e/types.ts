@@ -12,6 +12,11 @@ import type {
   slackConnectWorkspaceInputSchema,
   slackConnectWorkspaceResultSchema,
   slackFireMentionInputSchema,
+  slackImportHelmTokenInputSchema,
+  slackSetChannelsInputSchema,
+  slackRenewTokensInputSchema,
+  slackTokenStateInputSchema,
+  slackTokenStateResultSchema,
   slackOutboundRecordSchema,
   slackReadOutboundResultSchema,
   spawnInvocationResultSchema,
@@ -51,6 +56,14 @@ export type SlackReadOutboundResult = z.infer<
   typeof slackReadOutboundResultSchema
 >;
 
+export type SlackImportHelmTokenInput = z.infer<
+  typeof slackImportHelmTokenInputSchema
+>;
+export type SlackSetChannelsInput = z.infer<typeof slackSetChannelsInputSchema>;
+export type SlackRenewTokensInput = z.infer<typeof slackRenewTokensInputSchema>;
+export type SlackTokenStateInput = z.infer<typeof slackTokenStateInputSchema>;
+export type SlackTokenStateResult = z.infer<typeof slackTokenStateResultSchema>;
+
 export interface E2eService {
   setScript(agentId: string, input: SetScriptInput): Promise<ResetResult>;
   getReceivedPrompts(agentId: string): Promise<GetReceivedPromptsResult>;
@@ -74,4 +87,9 @@ export interface E2eService {
   slackConnectWorkspace(
     input: SlackConnectWorkspaceInput,
   ): Promise<SlackConnectWorkspaceResult>;
+  slackSetChannels(input: SlackSetChannelsInput): Promise<ResetResult>;
+  slackEnableTokenRotation(): Promise<ResetResult>;
+  slackImportHelmToken(input: SlackImportHelmTokenInput): Promise<ResetResult>;
+  slackRenewTokens(input: SlackRenewTokensInput): Promise<ResetResult>;
+  slackTokenState(input: SlackTokenStateInput): Promise<SlackTokenStateResult>;
 }

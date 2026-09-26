@@ -36,7 +36,10 @@ export function findSlackInstall(db: Db) {
 
 export function listSlackInstalls(db: Db) {
   return async (): Promise<SlackInstall[]> => {
-    const rows = await db.select().from(slackInstalls);
+    const rows = await db
+      .select()
+      .from(slackInstalls)
+      .orderBy(slackInstalls.createdAt, slackInstalls.teamId);
     return rows.map(toInstall);
   };
 }

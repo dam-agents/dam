@@ -710,15 +710,14 @@ keycloak:
   # upstream group to the `inspectors` group. Set to empty string to disable
   # usage-data access entirely (the endpoint will not be mounted).
   inspectorRole: "platform-inspector"
-  # -- Realm role required to connect another Slack workspace. Connecting a
+  # -- Realm role required to connect a Slack workspace. Connecting a
   # workspace is install-wide, not per-Agent, so it is an operator action
   # rather than something any user may start. The chart auto-creates this role
   # plus a `slack-installers` group mapped to it; grant access by adding users
   # to the group via the Keycloak admin UI. Holders also see the Slack
   # workspaces tab in Settings — it is hidden from everyone else. Leave empty
-  # to disable the install surface entirely (neither route is mounted) — the
-  # workspace the operator's `slackBotToken` was issued for keeps working
-  # either way.
+  # to disable the install surface entirely (neither route is mounted);
+  # workspaces already connected keep working either way.
   slackInstallerRole: "platform-slack-installer"
   # -- Confidential client for API server
   apiClientId: platform-api
@@ -936,21 +935,34 @@ apiServer:
   # call this port; the handler reads whichever attributes are populated.
   # Cluster-internal only; never routed via ingress.
   extAuthzPort: 4002
-  # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
+  # -- Legacy: the bot token (xoxb-...) of the app's own workspace, from installs
+  # set up before workspaces connected through the install flow. Never served:
+  # at boot it is imported into that workspace's K8s Secret and the channel
+  # bindings made back then are moved onto that workspace. Remove it once it
+  # has been imported; leave empty on a new install.
   slackBotToken: ""
-  # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
+  # -- Slack app-level token (xapp-...) for Socket Mode. Setting it enables
+  # Slack; every workspace, the app's own included, then connects through the
+  # install flow and keeps its bot token in a K8s Secret.
   slackAppToken: ""
-  # -- Slack app credentials (Basic Information -> App Credentials). Needed only
-  # to install the app into further workspaces: Slack hands the bot token over
-  # by copy-paste for the app's own workspace alone, and every other workspace
-  # must complete the OAuth exchange, which is what these sign. Leave empty to
-  # keep the install single-workspace — `slackBotToken` still serves it.
-  # The app must have public distribution activated and
-  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL. That
-  # URL is only ever fetched by the installing admin's browser, so it does not
-  # need to be reachable from the internet.
+  # -- Slack app credentials (Basic Information -> App Credentials). The install
+  # flow signs its exchange with them, and token rotation its refreshes, so
+  # Slack needs them to connect any workspace. The app must have
+  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL, and
+  # public distribution activated to connect workspaces other than its own.
+  # That URL is only ever fetched by the installing admin's browser, so it does
+  # not need to be reachable from the internet.
   slackClientId: ""
   slackClientSecret: ""
+  # -- Set once token rotation is turned on in the Slack app (OAuth &
+  # Permissions; it needs a redirect URL registered, and cannot be turned off
+  # again). Rotation is one switch on the app, but each workspace's existing
+  # token keeps not expiring until exchanged, so on boot the api-server
+  # exchanges every one of them for a rotating pair in its K8s Secret. Needs
+  # `slackClientId` and `slackClientSecret`. Refreshing rotating tokens does not
+  # depend on this flag, so setting it back to false changes nothing for tokens
+  # already exchanged.
+  slackTokenRotation: false
   # -- Slack enterprise (organization) id that a connecting workspace must
   # belong to, read from Slack's own install response. Empty means any
   # workspace an operator invites may connect, which is what a standalone
