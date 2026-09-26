@@ -149,7 +149,7 @@ export function createCommandBackend(
     args: Record<string, unknown>;
     approved: boolean;
   }): Promise<CallOutcome> {
-    const { sequence, approved } = input;
+    const { sequence } = input;
     if (input.tool !== RUN_TOOL)
       return refused(`this satellite has no tool called "${input.tool}"`);
 

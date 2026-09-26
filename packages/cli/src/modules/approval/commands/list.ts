@@ -2,11 +2,7 @@ import { Command, Option } from "commander";
 import type { ApprovalListOptions, ApprovalStatus } from "api-server-api";
 import { describeApprovalPayload } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -106,15 +102,12 @@ export function buildListCommand(deps: {
         if (ref === undefined) {
           result = await service.listForOwner(listOpts);
         } else {
-          const resolver = createAgentResolver({
-            agentService: deps.createAgentService(host),
-          });
-          const resolved = await resolver.resolve(ref);
-          if (!resolved.ok) {
-            printResolveError(resolved.error, host);
-            process.exit(exitCodeForResolveError(resolved.error));
-          }
-          result = await service.listForInstance(resolved.value.id, listOpts);
+          const agent = await resolveAgentOrExit(
+            deps.createAgentService(host),
+            ref,
+            host,
+          );
+          result = await service.listForInstance(agent.id, listOpts);
         }
         if (!result.ok) {
           printServiceError(result.error, host);

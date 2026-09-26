@@ -1,11 +1,7 @@
 import { Command, Option } from "commander";
 import type { EgressPreset } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -57,14 +53,11 @@ export function buildApplyPresetCommand(deps: {
       ) => {
         const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         process.stderr.write(
           `Applying preset '${opts.preset}' will replace existing preset rules. Manual and connection-derived rules are preserved.\n`,
@@ -85,7 +78,7 @@ export function buildApplyPresetCommand(deps: {
 
         const result = await deps
           .createEgressService(host)
-          .applyPreset(resolved.value.id, opts.preset);
+          .applyPreset(agent.id, opts.preset);
         if (!result.ok) {
           printServiceError(result.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);
@@ -95,7 +88,7 @@ export function buildApplyPresetCommand(deps: {
           process.stdout.write(
             `${JSON.stringify({
               ok: true,
-              agentId: resolved.value.id,
+              agentId: agent.id,
               preset: opts.preset,
             })}\n`,
           );

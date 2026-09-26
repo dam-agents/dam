@@ -1,9 +1,8 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
-import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { exitCodeForResolveError, printResolveError } from "./errors.js";
+import { resolveAgentOrExit } from "./errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import {
@@ -53,13 +52,7 @@ async function runDelete(
   const host = await resolveActiveHost(deps, opts.server);
 
   const svc = deps.createAgentService(host);
-  const resolver = createAgentResolver({ agentService: svc });
-  const resolved = await resolver.resolve(ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  const agent = resolved.value;
+  const agent = await resolveAgentOrExit(svc, ref, host);
 
   if (!opts.yes) {
     if (!process.stdin.isTTY) {

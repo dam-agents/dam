@@ -5,11 +5,8 @@ import { Command } from "commander";
 import type { FileReadResult } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import type { AgentService } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -58,13 +55,7 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
         const host = await resolveActiveHost(deps, opts.server);
 
         const svc = deps.createAgentService(host);
-        const resolver = createAgentResolver({ agentService: svc });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
+        const agent = await resolveAgentOrExit(svc, ref, host);
 
         let localPath: string | undefined;
         if (!opts.stdout) {

@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -55,28 +51,25 @@ export function buildSlackDisconnectCommand(deps: {
 
         const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
-        const bound = resolved.value.channels.filter(
+        const bound = agent.channels.filter(
           (c) => c.type === ChannelType.Slack,
         );
         if (!channelId && bound.length > 1) {
           process.stderr.write(
-            `error: ${resolved.value.name} has ${bound.length} Slack channels connected ` +
+            `error: ${agent.name} has ${bound.length} Slack channels connected ` +
               `(${bound.map((c) => c.slackChannelId).join(", ")}) — pass --channel-id to say which one\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }
 
         const svc = deps.createChannelService(host);
-        const res = await svc.disconnectSlack(resolved.value.id, channelId);
+        const res = await svc.disconnectSlack(agent.id, channelId);
         if (!res.ok) {
           printServiceError(res.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);
@@ -87,8 +80,8 @@ export function buildSlackDisconnectCommand(deps: {
         } else {
           process.stdout.write(
             channelId
-              ? `✓ Slack channel ${channelId} disconnected from ${resolved.value.name}.\n`
-              : `✓ Slack disconnected from ${resolved.value.name}.\n`,
+              ? `✓ Slack channel ${channelId} disconnected from ${agent.name}.\n`
+              : `✓ Slack disconnected from ${agent.name}.\n`,
           );
         }
         process.exit(EXIT_SUCCESS);

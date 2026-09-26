@@ -1,17 +1,22 @@
-import type { ResolveError } from "../services/agent-resolver.js";
+import type { AgentView } from "../domain/agent-view.js";
+import {
+  createAgentResolver,
+  type ResolveError,
+} from "../services/agent-resolver.js";
+import type { AgentService } from "../services/agent-service.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_RUNTIME_FAILURE,
 } from "../../shared/exit-codes.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 
-export function exitCodeForResolveError(error: ResolveError): number {
+function exitCodeForResolveError(error: ResolveError): number {
   return error.kind === "not-found" || error.kind === "ambiguous"
     ? EXIT_AGENT_NOT_RESOLVED
     : EXIT_RUNTIME_FAILURE;
 }
 
-export function printResolveError(error: ResolveError, host: string): void {
+function printResolveError(error: ResolveError, host: string): void {
   switch (error.kind) {
     case "not-found":
       if (error.via === "id") {
@@ -32,4 +37,17 @@ export function printResolveError(error: ResolveError, host: string): void {
       printServiceError(error, host);
       return;
   }
+}
+
+export async function resolveAgentOrExit(
+  agentService: AgentService,
+  ref: string,
+  host: string,
+): Promise<AgentView> {
+  const resolved = await createAgentResolver({ agentService }).resolve(ref);
+  if (!resolved.ok) {
+    printResolveError(resolved.error, host);
+    process.exit(exitCodeForResolveError(resolved.error));
+  }
+  return resolved.value;
 }

@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import { formatEgressRuleSource } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
@@ -35,18 +31,15 @@ export function buildListCommand(deps: {
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, opts.server);
 
-      const resolver = createAgentResolver({
-        agentService: deps.createAgentService(host),
-      });
-      const resolved = await resolver.resolve(ref);
-      if (!resolved.ok) {
-        printResolveError(resolved.error, host);
-        process.exit(exitCodeForResolveError(resolved.error));
-      }
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
 
       const result = await deps
         .createEgressService(host)
-        .listForAgent(resolved.value.id);
+        .listForAgent(agent.id);
       if (!result.ok) {
         printServiceError(result.error, host);
         process.exit(EXIT_RUNTIME_FAILURE);

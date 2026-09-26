@@ -1,10 +1,6 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { TokenProvider } from "../../auth/index.js";
 import type { SessionsPort } from "../../chat/services/sessions-service.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -60,14 +56,11 @@ export function buildMetricsCommand(deps: {
         },
       ) => {
         const host = await resolveActiveHost(deps, opts.server);
-        const resolved = await createAgentResolver({
-          agentService: deps.createAgentService(host),
-        }).resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const fetchTitles = async (): Promise<Map<string, string>> => {
           const tok = await deps.tokenProvider.getValidAccessToken(host);

@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { ConnectionView } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
@@ -93,17 +89,14 @@ export function buildListCommand(deps: {
           return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
         }
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const [idsRes, allRes] = await Promise.all([
-          svc.agentConnectionIds(resolved.value.id),
+          svc.agentConnectionIds(agent.id),
           svc.list(),
         ]);
         if (!idsRes.ok) {

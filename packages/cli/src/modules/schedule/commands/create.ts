@@ -5,11 +5,7 @@ import {
   hasVisibleOccurrence,
 } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -92,14 +88,11 @@ export function buildCreateCommand(deps: {
     .action(async (ref: string, opts: CreateOpts) => {
       const host = await resolveActiveHost(deps, opts.server);
 
-      const resolver = createAgentResolver({
-        agentService: deps.createAgentService(host),
-      });
-      const resolved = await resolver.resolve(ref);
-      if (!resolved.ok) {
-        printResolveError(resolved.error, host);
-        process.exit(exitCodeForResolveError(resolved.error));
-      }
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
 
       let rrule: string;
       let quietHours;
@@ -128,7 +121,7 @@ export function buildCreateCommand(deps: {
 
       const result = await deps.createScheduleService(host).createRRule({
         name: opts.name,
-        agentId: resolved.value.id,
+        agentId: agent.id,
         rrule,
         timezone,
         quietHours,

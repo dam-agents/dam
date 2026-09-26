@@ -2,11 +2,7 @@ import { Command, Option } from "commander";
 import { formatEgressRuleInline, gatewayRestartImpact } from "api-server-api";
 import { gatewayRestartNotice } from "../domain/restart-notice.js";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -62,18 +58,15 @@ export function buildCreateCommand(deps: {
       ) => {
         const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const egress = deps.createEgressService(host);
         if (!opts.yes) {
-          const existing = await egress.listForAgent(resolved.value.id);
+          const existing = await egress.listForAgent(agent.id);
           if (!existing.ok) {
             printServiceError(existing.error, host);
             process.exit(EXIT_RUNTIME_FAILURE);
@@ -102,7 +95,7 @@ export function buildCreateCommand(deps: {
         }
 
         const result = await egress.create({
-          agentId: resolved.value.id,
+          agentId: agent.id,
           host: opts.host,
           method: opts.method,
           pathPattern: opts.path,

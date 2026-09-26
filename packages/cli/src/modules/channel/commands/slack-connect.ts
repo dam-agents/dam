@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -59,14 +55,11 @@ export function buildSlackConnectCommand(deps: {
 
         const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const svc = deps.createChannelService(host);
         const available = await svc.available();
@@ -79,11 +72,7 @@ export function buildSlackConnectCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const res = await svc.connectSlack(
-          resolved.value.id,
-          channelId,
-          opts.ambient,
-        );
+        const res = await svc.connectSlack(agent.id, channelId, opts.ambient);
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
@@ -119,7 +108,7 @@ export function buildSlackConnectCommand(deps: {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
-            `✓ Slack channel ${channelId} connected to ${resolved.value.name}${
+            `✓ Slack channel ${channelId} connected to ${agent.name}${
               opts.ambient ? " with ambient on" : ""
             }.\n`,
           );

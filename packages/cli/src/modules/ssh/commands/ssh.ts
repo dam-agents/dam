@@ -2,12 +2,9 @@ import { spawn } from "node:child_process";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
+import type { AgentService } from "../../agent/index.js";
 import type { EgressService } from "../../egress/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import {
   resolveActiveHost,
@@ -262,15 +259,7 @@ async function resolveAgent(
   host: string,
   agentRef: string,
 ): Promise<{ id: string; name: string }> {
-  const resolver = createAgentResolver({
-    agentService: deps.createAgentService(host),
-  });
-  const resolved = await resolver.resolve(agentRef);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  return resolved.value;
+  return resolveAgentOrExit(deps.createAgentService(host), agentRef, host);
 }
 
 function die(msg: string): never {

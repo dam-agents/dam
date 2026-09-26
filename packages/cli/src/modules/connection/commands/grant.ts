@@ -1,10 +1,6 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -59,14 +55,11 @@ export function buildGrantCommand(deps: {
 
         const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const svc = deps.createConnectionService(host);
 
@@ -92,7 +85,7 @@ export function buildGrantCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const res = await svc.grant(resolved.value.id, connectionIds);
+        const res = await svc.grant(agent.id, connectionIds);
         if (!res.ok) {
           printServiceError(res.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);
@@ -100,11 +93,11 @@ export function buildGrantCommand(deps: {
 
         if (opts.json) {
           process.stdout.write(
-            `${JSON.stringify({ ok: true, agentId: resolved.value.id, connectionIds: res.value })}\n`,
+            `${JSON.stringify({ ok: true, agentId: agent.id, connectionIds: res.value })}\n`,
           );
         } else {
           process.stdout.write(
-            `✓ Granted to ${resolved.value.name}. Agent now has ${res.value.length} connection(s).\n`,
+            `✓ Granted to ${agent.name}. Agent now has ${res.value.length} connection(s).\n`,
           );
         }
         process.exit(EXIT_SUCCESS);

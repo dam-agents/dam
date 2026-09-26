@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { SkillSource } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
@@ -57,15 +53,12 @@ export function buildSourceListCommand(deps: {
 
         let agentId: string | undefined;
         if (opts.agent !== undefined) {
-          const resolver = createAgentResolver({
-            agentService: deps.createAgentService(host),
-          });
-          const resolved = await resolver.resolve(opts.agent);
-          if (!resolved.ok) {
-            printResolveError(resolved.error, host);
-            process.exit(exitCodeForResolveError(resolved.error));
-          }
-          agentId = resolved.value.id;
+          const agent = await resolveAgentOrExit(
+            deps.createAgentService(host),
+            opts.agent,
+            host,
+          );
+          agentId = agent.id;
         }
 
         const result = await deps

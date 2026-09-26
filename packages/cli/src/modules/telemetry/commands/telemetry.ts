@@ -5,11 +5,7 @@ import {
 } from "api-server-api";
 
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -70,14 +66,12 @@ interface Deps {
 
 async function hostAndAgent(deps: Deps, ref: string, server?: string) {
   const host = await resolveActiveHost(deps, server);
-  const resolved = await createAgentResolver({
-    agentService: deps.createAgentService(host),
-  }).resolve(ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  return { host, agent: resolved.value };
+  const agent = await resolveAgentOrExit(
+    deps.createAgentService(host),
+    ref,
+    host,
+  );
+  return { host, agent };
 }
 
 export function buildTelemetryCommand(deps: Deps): Command {

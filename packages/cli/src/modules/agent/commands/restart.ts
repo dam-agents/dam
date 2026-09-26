@@ -2,12 +2,11 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "../services/agent-service.js";
-import { createAgentResolver } from "../services/agent-resolver.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
-import { exitCodeForResolveError, printResolveError } from "./errors.js";
+import { resolveAgentOrExit } from "./errors.js";
 import {
   formatTransportError,
   printServiceError,
@@ -79,13 +78,7 @@ async function runRestart(
   const host = await resolveActiveHost(deps, opts.server);
 
   const svc = deps.createAgentService(host);
-  const resolver = createAgentResolver({ agentService: svc });
-  const resolved = await resolver.resolve(ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  const agent = resolved.value;
+  const agent = await resolveAgentOrExit(svc, ref, host);
 
   const restartResult = await svc.restart(agent.id);
   if (!restartResult.ok) {
