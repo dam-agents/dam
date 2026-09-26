@@ -5,9 +5,11 @@ import { pipeline } from "node:stream/promises";
 import { extract, type ReadEntry } from "tar";
 import { err, ok, type Result } from "agent-runtime-api";
 
-import type { ImportDomainError } from "./errors.js";
+export type ImportDomainError =
+  | { kind: "InvalidEntry"; path: string; reason: string }
+  | { kind: "TarParseError"; detail: string };
 
-export type ExtractResult = {
+type ExtractResult = {
   filesWritten: number;
   bytes: number;
 };

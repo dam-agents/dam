@@ -36,13 +36,6 @@ async function readCapped(
   return { ok: true, bytes };
 }
 
-function isTimeout(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.name === "TimeoutError" || error.name === "AbortError")
-  );
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the relay from the harness port to the Agent's
  * Artifact API on 127.0.0.1 at the Artifact API Port. The host is fixed and
@@ -81,7 +74,11 @@ export function composeArtifactApi(opts: {
         body: new TextDecoder().decode(read.bytes),
       };
     } catch (error) {
-      if (isTimeout(error)) return { ok: false, reason: "timeout" };
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError")
+      )
+        return { ok: false, reason: "timeout" };
       return { ok: false, reason: "app-not-listening" };
     }
   }

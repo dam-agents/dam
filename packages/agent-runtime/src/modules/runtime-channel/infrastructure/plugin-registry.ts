@@ -3,7 +3,6 @@ import type { Plugin } from "agent-runtime-api";
 export interface PluginRegistry {
   register(plugin: Plugin): void;
   get(name: string): Plugin | null;
-  names(): readonly string[];
 }
 
 export function createPluginRegistry(): PluginRegistry {
@@ -19,9 +18,6 @@ export function createPluginRegistry(): PluginRegistry {
     },
     get(name) {
       return byName.get(name) ?? null;
-    },
-    names() {
-      return Array.from(byName.keys());
     },
   };
 }

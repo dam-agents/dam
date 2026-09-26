@@ -13,7 +13,6 @@ import { z } from "zod";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 
 const docSchema = z.object({ count: z.number() });
-type Doc = z.infer<typeof docSchema>;
 
 describe("file document store backend", () => {
   let home: string;

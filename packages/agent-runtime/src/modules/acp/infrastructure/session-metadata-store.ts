@@ -39,7 +39,6 @@ const sessionMetadataStateSchema = z
 
 export type PlatformSessionMeta = z.infer<typeof platformSessionMetaSchema>;
 export type SessionMetaEntry = z.infer<typeof sessionMetaEntrySchema>;
-type SessionMetadataState = z.infer<typeof sessionMetadataStateSchema>;
 
 export interface SessionMetadataStore {
   get(sessionId: string): SessionMetaEntry | undefined;

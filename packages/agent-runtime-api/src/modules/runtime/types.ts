@@ -295,7 +295,6 @@ export const harnessConfigOptionGroup = z.object({
   category: z.string().min(1),
   choices: z.array(harnessConfigChoice),
 });
-export type HarnessConfigOptionGroup = z.infer<typeof harnessConfigOptionGroup>;
 
 export const harnessConfigCatalog = z.object({
   options: z.array(harnessConfigOptionGroup),

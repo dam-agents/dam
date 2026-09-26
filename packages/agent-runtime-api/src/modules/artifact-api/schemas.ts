@@ -66,12 +66,8 @@ export const artifactApiRequestResultSchema = z.discriminatedUnion("ok", [
   }),
 ]);
 
-export type ArtifactApiMethod = z.infer<typeof artifactApiMethodSchema>;
 export type ArtifactApiRequestInput = z.infer<
   typeof artifactApiRequestInputSchema
->;
-export type ArtifactApiRelayFailureReason = z.infer<
-  typeof artifactApiRelayFailureReasonSchema
 >;
 export type ArtifactApiRequestResult = z.infer<
   typeof artifactApiRequestResultSchema

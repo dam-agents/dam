@@ -1,25 +1,15 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
 import type { ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
 import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
-import type { ImportDomainError } from "./errors.js";
-import { extractBundle } from "./extract.js";
-import { finalize } from "./finalize.js";
+import { extractBundle, type ImportDomainError } from "./extract.js";
 
 const UPLOAD_INACTIVITY_MS = 30_000;
 
 const UPLOAD_DEADLINE_MS = 30 * 60_000;
-
-function statusForDomainError(error: ImportDomainError): number {
-  switch (error.kind) {
-    case "InvalidEntry":
-    case "TarParseError":
-      return 422;
-  }
-}
 
 function messageForDomainError(error: ImportDomainError): string {
   switch (error.kind) {
@@ -149,14 +139,15 @@ export function createImportHandlers(
         if (!extractPromise) return fail(400, "missing field: bundle");
         const extractResult = await extractPromise;
         if (!extractResult.ok) {
-          return fail(
-            statusForDomainError(extractResult.error),
-            messageForDomainError(extractResult.error),
-          );
+          return fail(422, messageForDomainError(extractResult.error));
         }
         if (!staging) return fail(500, "internal: staging dir not initialized");
         log(`finalize start (dest=${workDir})`);
-        await finalize(staging, workDir);
+        await mkdir(workDir, { recursive: true });
+        for (const name of await readdir(staging)) {
+          await rm(join(workDir, name), { recursive: true, force: true });
+          await rename(join(staging, name), join(workDir, name));
+        }
         await rm(staging, { recursive: true, force: true }).catch(() => {});
         if (finished) {
           log(

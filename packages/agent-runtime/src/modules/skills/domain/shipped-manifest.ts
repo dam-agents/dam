@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { err, ok, type Result } from "../../../core/result.js";
+import { err, ok, type Result } from "agent-runtime-api";
 
 export const shippedSkillManifestSchema = z.object({
   manifestVersion: z.literal(1),

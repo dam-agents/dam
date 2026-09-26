@@ -1,17 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
-import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
+import { applyFiles, type FileDesired } from "../infrastructure/file-ops.js";
 import {
-  createMcpEntryStateStore,
-  type McpEntryStateStore,
-} from "../infrastructure/mcp-entry-state-store.js";
+  openJsonFile,
+  type DocumentStore,
+} from "../../../core/document-store.js";
 import { expandHome } from "../../../core/expand-home.js";
 
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 const DEFAULT_HEADERS_KEY = "headers";
+
+const stateSchema = z.object({
+  installed: z.array(z.string()).catch([]).default([]),
+});
 
 function ownedKeys(
   urlKey: string | undefined,
@@ -47,8 +52,6 @@ const bindingSchema = z
   });
 
 export function createMcpEntryPlugin(): Plugin {
-  const fileOps = createFileOps();
-
   return {
     name: IMPL_NAME,
 
@@ -68,11 +71,14 @@ export function createMcpEntryPlugin(): Plugin {
         parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
       const effectiveHeadersKey = headersKey ?? DEFAULT_HEADERS_KEY;
-      let stateStore: McpEntryStateStore | undefined;
+      let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
 
       return async (contributions, ctx) => {
-        stateStore ??= createMcpEntryStateStore(ctx.pluginStateDir);
-        const installed = new Set(stateStore.getInstalled());
+        stateStore ??= openJsonFile(
+          join(ctx.pluginStateDir, "mcp-entry-state.json"),
+          { schema: stateSchema, initial: () => ({ installed: [] }) },
+        );
+        const installed = new Set(stateStore.read().installed);
 
         const entries: Record<string, unknown> = {};
         for (const c of contributions) {
@@ -113,12 +119,12 @@ export function createMcpEntryPlugin(): Plugin {
             ],
           ],
         ]);
-        await fileOps.apply(desired as Map<string, FileDesired[] | null>, {
+        await applyFiles(desired as Map<string, FileDesired[] | null>, {
           agentHome: ctx.agentHome,
           log: ctx.log,
           onUnparseable: "throw",
         });
-        stateStore.setInstalled(names);
+        stateStore.write({ installed: [...names].sort() });
       };
     },
   };

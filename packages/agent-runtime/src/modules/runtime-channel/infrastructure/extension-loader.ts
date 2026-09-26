@@ -16,34 +16,17 @@ export class ExtensionLoadError extends Error {
   }
 }
 
-export interface ExtensionLoader {
-  load(
-    impls: readonly ExtensionImpl[],
-    registry: PluginRegistry,
-  ): Promise<void>;
+export async function loadExtensions(
+  impls: readonly ExtensionImpl[],
+  registry: PluginRegistry,
+): Promise<void> {
+  for (const ext of impls) registry.register(await resolveExtension(ext));
 }
 
-export function createExtensionLoader(deps?: {
-  importModule?: (spec: string) => Promise<unknown>;
-}): ExtensionLoader {
-  const importModule = deps?.importModule ?? ((spec) => import(spec));
-  return {
-    async load(impls, registry) {
-      for (const ext of impls) {
-        const plugin = await resolveExtension(ext, importModule);
-        registry.register(plugin);
-      }
-    },
-  };
-}
-
-async function resolveExtension(
-  ext: ExtensionImpl,
-  importModule: (spec: string) => Promise<unknown>,
-): Promise<Plugin> {
+async function resolveExtension(ext: ExtensionImpl): Promise<Plugin> {
   let mod: unknown;
   try {
-    mod = await importModule(ext.module);
+    mod = await import(ext.module);
   } catch (err) {
     throw new ExtensionLoadError(
       `failed to import extension module "${ext.module}": ${(err as Error).message}`,

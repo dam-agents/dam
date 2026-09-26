@@ -26,88 +26,80 @@ export interface FileOpsContext {
   onUnparseable?: "rewrite-aside" | "throw";
 }
 
-export interface FileOps {
-  apply(
-    desired: Map<string, FileDesired[] | null>,
-    ctx: FileOpsContext,
-  ): Promise<void>;
-}
+export async function applyFiles(
+  desired: Map<string, FileDesired[] | null>,
+  ctx: FileOpsContext,
+): Promise<void> {
+  const home = stripTrailingSep(resolve(ctx.agentHome));
+  for (const [path, fragments] of desired) {
+    const target = resolve(path);
+    if (home === "" || !target.startsWith(home + "/")) {
+      ctx.log(
+        `[file-ops] refused ${JSON.stringify(path)} — must be under ${ctx.agentHome}`,
+      );
+      continue;
+    }
 
-export function createFileOps(): FileOps {
-  return {
-    async apply(desired, ctx): Promise<void> {
-      const home = stripTrailingSep(resolve(ctx.agentHome));
-      for (const [path, fragments] of desired) {
-        const target = resolve(path);
-        if (home === "" || !target.startsWith(home + "/")) {
-          ctx.log(
-            `[file-ops] refused ${JSON.stringify(path)} — must be under ${ctx.agentHome}`,
-          );
-          continue;
-        }
-
-        if (fragments === null) {
-          if (existsSync(target)) {
-            try {
-              unlinkSync(target);
-              ctx.log(`[file-ops] removed ${target}`);
-            } catch (err) {
-              ctx.log(
-                `[file-ops] failed to remove ${target}: ${(err as Error).message}`,
-              );
-            }
-          } else {
-            ctx.log(`[file-ops] remove ${target}: not present, noop`);
-          }
-          continue;
-        }
-
-        const existed = existsSync(target);
-        let existing = existed ? readFileSync(target, "utf8") : "";
-        if (existing && needsParse(fragments)) {
-          const parseErr = probeParse(fragments[0]!.format, existing);
-          if (parseErr && ctx.onUnparseable === "throw") {
-            throw new Error(
-              `[file-ops] ${target} is unparseable as ${fragments[0]!.format} (${parseErr}); refusing to overwrite`,
-            );
-          }
-          if (parseErr) {
-            const sidecar = `${target}.broken-${Date.now()}`;
-            ctx.log(
-              `[file-ops] ${target}: existing content is unparseable (${parseErr}); moving aside to ${sidecar} and rewriting from contributions`,
-            );
-            try {
-              renameSync(target, sidecar);
-            } catch (err) {
-              ctx.log(
-                `[file-ops] could not move ${target} → ${sidecar}: ${(err as Error).message}; overwriting in place`,
-              );
-            }
-            existing = "";
-          }
-        }
-        let merged: string;
+    if (fragments === null) {
+      if (existsSync(target)) {
         try {
-          merged = mergeFragments(existing, fragments);
+          unlinkSync(target);
+          ctx.log(`[file-ops] removed ${target}`);
         } catch (err) {
           ctx.log(
-            `[file-ops] merge failed for ${target}: ${(err as Error).message}`,
+            `[file-ops] failed to remove ${target}: ${(err as Error).message}`,
           );
-          continue;
         }
-        if (merged === existing) {
-          ctx.log(
-            `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B merged unchanged — skip`,
-          );
-          continue;
-        }
-        atomicWrite(target, merged);
-        ctx.log(
-          `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B → merged=${merged.length}B (${existed ? "updated" : "created"})`,
+      } else {
+        ctx.log(`[file-ops] remove ${target}: not present, noop`);
+      }
+      continue;
+    }
+
+    const existed = existsSync(target);
+    let existing = existed ? readFileSync(target, "utf8") : "";
+    if (existing && needsParse(fragments)) {
+      const parseErr = probeParse(fragments[0]!.format, existing);
+      if (parseErr && ctx.onUnparseable === "throw") {
+        throw new Error(
+          `[file-ops] ${target} is unparseable as ${fragments[0]!.format} (${parseErr}); refusing to overwrite`,
         );
       }
-    },
-  };
+      if (parseErr) {
+        const sidecar = `${target}.broken-${Date.now()}`;
+        ctx.log(
+          `[file-ops] ${target}: existing content is unparseable (${parseErr}); moving aside to ${sidecar} and rewriting from contributions`,
+        );
+        try {
+          renameSync(target, sidecar);
+        } catch (err) {
+          ctx.log(
+            `[file-ops] could not move ${target} → ${sidecar}: ${(err as Error).message}; overwriting in place`,
+          );
+        }
+        existing = "";
+      }
+    }
+    let merged: string;
+    try {
+      merged = mergeFragments(existing, fragments);
+    } catch (err) {
+      ctx.log(
+        `[file-ops] merge failed for ${target}: ${(err as Error).message}`,
+      );
+      continue;
+    }
+    if (merged === existing) {
+      ctx.log(
+        `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B merged unchanged — skip`,
+      );
+      continue;
+    }
+    atomicWrite(target, merged);
+    ctx.log(
+      `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B → merged=${merged.length}B (${existed ? "updated" : "created"})`,
+    );
+  }
 }
 
 function mergeFragments(existing: string, fragments: FileDesired[]): string {
