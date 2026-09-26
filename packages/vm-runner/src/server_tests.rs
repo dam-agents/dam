@@ -29,7 +29,7 @@ struct Updated {
 struct Fake {
     states: Mutex<HashMap<String, State>>,
     calls: Mutex<Vec<String>>,
-    created: Mutex<HashMap<String, (String, Option<ImageLaunch>)>>,
+    created: Mutex<HashMap<String, (String, ImageLaunch)>>,
     images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
@@ -64,7 +64,7 @@ impl Runtime for Fake {
         self.record(format!("create {id}"));
         locked(&self.created).insert(
             id.to_string(),
-            (machine.image.to_string(), machine.launch.cloned()),
+            (machine.image.to_string(), machine.launch.clone()),
         );
         locked(&self.images).insert(id.to_string(), machine.image.to_string());
         locked(&self.states).insert(id.to_string(), State::Stopped);
@@ -367,7 +367,6 @@ async fn an_absent_machine_is_created_and_started() {
 
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
-    let launch = launch.unwrap();
     assert_eq!(launch.entrypoint, vec!["/entry"]);
     assert_eq!(launch.working_dir, "/app");
 
@@ -894,7 +893,7 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.unwrap().entrypoint, vec!["/from-archive"]);
+    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
     assert_eq!(h.crane_calls(), 0);
     assert!(
         !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
@@ -927,7 +926,7 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), tree.join(ROOTFS_DIR));
-    assert_eq!(launch.unwrap().entrypoint, vec!["/from-tree"]);
+    assert_eq!(launch.entrypoint, vec!["/from-tree"]);
     assert_eq!(h.crane_calls(), 0);
 }
 
@@ -1479,7 +1478,7 @@ async fn a_machine_on_a_node_cache_boots_the_tree_the_service_unpacked() {
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
     assert!(h.entry("m1").join(ROOTFS_DIR).join("hello").exists());
-    assert_eq!(launch.unwrap().entrypoint, vec!["/entry"]);
+    assert_eq!(launch.entrypoint, vec!["/entry"]);
     assert_eq!(h.crane_log("export"), 1, "the service fetched it once");
 
     tokio::time::sleep(Duration::from_millis(400)).await;
