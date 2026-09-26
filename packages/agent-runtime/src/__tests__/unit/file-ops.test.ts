@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  createFileOps,
+  applyFiles,
   type FileDesired,
   type FileOpsContext,
 } from "../../modules/runtime-channel/infrastructure/file-ops.js";
@@ -33,7 +33,7 @@ describe("file-ops key-targeted merge", () => {
     fragments: FileDesired[],
     onUnparseable?: FileOpsContext["onUnparseable"],
   ) =>
-    createFileOps().apply(new Map([[target, fragments]]), {
+    applyFiles(new Map([[target, fragments]]), {
       agentHome: home,
       log: () => {},
       onUnparseable,

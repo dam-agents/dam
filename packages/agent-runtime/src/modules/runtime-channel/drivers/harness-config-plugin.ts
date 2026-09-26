@@ -8,7 +8,7 @@ import type {
 } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
 import {
-  createFileOps,
+  applyFiles,
   getNested,
   type FileDesired,
 } from "../infrastructure/file-ops.js";
@@ -43,7 +43,6 @@ export function createHarnessConfigPlugin(deps: {
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
-  const fileOps = createFileOps();
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
     if (!binding) {
@@ -95,7 +94,7 @@ export function createHarnessConfigPlugin(deps: {
       `[harness-config] → ${targetPath} (${format}): set ${[...toSet.keys()].join(", ") || "<none>"}${toUnset.length ? `; unset ${toUnset.join(", ")}` : ""}`,
     );
     const before = readCurrentValues(binding, agentHome, log);
-    await fileOps.apply(new Map([[targetPath, fragments]]), {
+    await applyFiles(new Map([[targetPath, fragments]]), {
       agentHome,
       log,
       onUnparseable: "throw",

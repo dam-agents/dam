@@ -35,7 +35,7 @@ import {
   type ContextEnv,
 } from "./dispatcher.js";
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
-import { createExtensionLoader } from "./infrastructure/extension-loader.js";
+import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
 import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
@@ -139,8 +139,7 @@ export async function composeRuntimeChannel(
   });
   if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);
 
-  const extensionLoader = createExtensionLoader();
-  await extensionLoader.load(manifest.extensions?.impls ?? [], registry);
+  await loadExtensions(manifest.extensions?.impls ?? [], registry);
 
   const dispatcher = createDispatcher({
     drivers: contributionDrivers(resolved),

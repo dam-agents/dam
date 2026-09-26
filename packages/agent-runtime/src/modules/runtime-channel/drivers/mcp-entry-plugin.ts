@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
-import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
+import { applyFiles, type FileDesired } from "../infrastructure/file-ops.js";
 import {
   openJsonFile,
   type DocumentStore,
@@ -52,8 +52,6 @@ const bindingSchema = z
   });
 
 export function createMcpEntryPlugin(): Plugin {
-  const fileOps = createFileOps();
-
   return {
     name: IMPL_NAME,
 
@@ -121,7 +119,7 @@ export function createMcpEntryPlugin(): Plugin {
             ],
           ],
         ]);
-        await fileOps.apply(desired as Map<string, FileDesired[] | null>, {
+        await applyFiles(desired as Map<string, FileDesired[] | null>, {
           agentHome: ctx.agentHome,
           log: ctx.log,
           onUnparseable: "throw",

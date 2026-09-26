@@ -147,10 +147,6 @@ const KNOWN_KINDS = new Set<string>([
   ...eventKind.options,
 ]);
 
-function defaultImpl(kind: string): string {
-  return BUILTIN_DRIVERS[kind]?.binding.impl ?? kind;
-}
-
 export function resolveDrivers(
   manifest: RuntimeManifest,
 ): Record<string, DriverBinding> {
@@ -168,7 +164,10 @@ export function resolveDrivers(
       delete out[kind];
       continue;
     }
-    out[kind] = { ...entry, impl: entry.impl ?? defaultImpl(kind) };
+    out[kind] = {
+      ...entry,
+      impl: entry.impl ?? BUILTIN_DRIVERS[kind]?.binding.impl ?? kind,
+    };
   }
   return out;
 }
