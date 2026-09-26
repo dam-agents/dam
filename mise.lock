@@ -181,26 +181,26 @@ url = "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-aarch6
 url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/530481346"
 
 [[tools.gh]]
-version = "2.100.0"
+version = "2.101.0"
 backend = "aqua:cli/cli"
 specifiers = ["latest"]
 
 [tools.gh."platforms.linux-arm64"]
-checksum = "sha256:ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
-url = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974279"
+checksum = "sha256:b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f"
+url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857147"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be"
-url = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974264"
+checksum = "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
+url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
 provenance = "github-attestations"
 
 [tools.gh."platforms.macos-arm64"]
-checksum = "sha256:45f9a62da2f6e641a7fad57e2ce39656dfd7ef331372d80a2a2aed65abb01642"
-url = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_macOS_arm64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974295"
+checksum = "sha256:e4303e39d8f07141c4bad4b99b01079f05029c59b27076e8fbc825c985ecdd8b"
+url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857200"
 provenance = "github-attestations"
 
 [[tools.go]]
@@ -221,7 +221,7 @@ checksum = "sha256:a012b25b571bd0138a03dcd25375ceba866fe5ca822f426d2c66a4de56fd3
 url = "https://dl.google.com/go/go1.26.8.darwin-arm64.tar.gz"
 
 [[tools."go:golang.org/x/vuln/cmd/govulncheck"]]
-version = "1.7.0"
+version = "1.8.0"
 backend = "go:golang.org/x/vuln/cmd/govulncheck"
 specifiers = ["latest"]
 
@@ -241,44 +241,44 @@ backend = "go:sigs.k8s.io/crdify"
 specifiers = ["latest"]
 
 [[tools.gum]]
-version = "2.0.0"
+version = "2.0.1"
 backend = "aqua:charmbracelet/gum"
 specifiers = ["latest"]
 
 [tools.gum."platforms.linux-arm64"]
-checksum = "sha256:ed51e91457a48f5681f67dd925bd40eb1794d41d1f48cf1d7e19e2517b7fac76"
-url = "https://github.com/charmbracelet/gum/releases/download/v2.0.0/gum_2.0.0_Linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/521957954"
+checksum = "sha256:6998202a8fea27bb2007f69e44ec5dcb4cff5268c62d995de857eee0e2cd52cb"
+url = "https://github.com/charmbracelet/gum/releases/download/v2.0.1/gum_2.0.1_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/556562997"
 provenance = "cosign"
 
 [tools.gum."platforms.linux-x64"]
-checksum = "sha256:c99b0005bb5b514770eea404b24c7987e08eba35bb0b2d7bc6545bb676c36861"
-url = "https://github.com/charmbracelet/gum/releases/download/v2.0.0/gum_2.0.0_Linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/521957928"
+checksum = "sha256:4dfe4547f960813864c803b3617aa64427fa32ca566707fde949e08975297c48"
+url = "https://github.com/charmbracelet/gum/releases/download/v2.0.1/gum_2.0.1_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/556563001"
 provenance = "cosign"
 
 [tools.gum."platforms.macos-arm64"]
-checksum = "sha256:20224bcddeda5b9146373862ca77be7b1592c46c271435e00a2d3ab3f7750bb0"
-url = "https://github.com/charmbracelet/gum/releases/download/v2.0.0/gum_2.0.0_Darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/521957955"
+checksum = "sha256:994662daab6fcfe9dcfc57d87ca42bcae2948d86fa864f9010a3848fa9bb7d6e"
+url = "https://github.com/charmbracelet/gum/releases/download/v2.0.1/gum_2.0.1_Darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/charmbracelet/gum/releases/assets/556563007"
 provenance = "cosign"
 
 [[tools.helm]]
-version = "4.2.0"
+version = "4.3.0"
 backend = "aqua:helm/helm"
-specifiers = ["4.2.0"]
+specifiers = ["4.3.0"]
 
 [tools.helm."platforms.linux-arm64"]
-checksum = "sha256:1f8de130dfbd04de64978e7b852a7a547be1404956a366608276d2520b678670"
-url = "https://get.helm.sh/helm-v4.2.0-linux-arm64.tar.gz"
+checksum = "sha256:31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08"
+url = "https://get.helm.sh/helm-v4.3.0-linux-arm64.tar.gz"
 
 [tools.helm."platforms.linux-x64"]
-checksum = "sha256:97dbeb971be4ac4b27e3839976d9564c0fb35c6f3b1da89dd1e292d236af4096"
-url = "https://get.helm.sh/helm-v4.2.0-linux-amd64.tar.gz"
+checksum = "sha256:86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb"
+url = "https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz"
 
 [tools.helm."platforms.macos-arm64"]
-checksum = "sha256:f13f959015447b6bc309f9fd506509926543988a39035c088b52522ec95e2acb"
-url = "https://get.helm.sh/helm-v4.2.0-darwin-arm64.tar.gz"
+checksum = "sha256:d3870437e1e95b67f8edbde964156c84a26503f560821d40c542441658934fba"
+url = "https://get.helm.sh/helm-v4.3.0-darwin-arm64.tar.gz"
 
 [[tools.java]]
 version = "21.0.2"
@@ -430,26 +430,26 @@ url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/4
 provenance = "github-attestations"
 
 [[tools.pnpm]]
-version = "12.3.4"
+version = "12.5.1"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["12.3.4"]
+specifiers = ["12.5.1"]
 
 [tools.pnpm."platforms.linux-arm64"]
-checksum = "sha256:95e71a2a30bbc0b77511f95cf096779068dcad6ffcbbfdf0cd4dde9de2b2b97c"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/544431953"
+checksum = "sha256:84e1290e82c800acd406b6db27e9650e15db3c2344d12162cc305ea1f942c6ff"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.5.1/pnpm-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/573486212"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:9705e5704b4679fb503c963a18d1ac4f105e39aafafca8a2ed346facdf820cd0"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/544431952"
+checksum = "sha256:5a397dfb6b3d4b07d3d7769586aeb471048faf04299a492e2808b95a9a1c701f"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.5.1/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/573486211"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.macos-arm64"]
-checksum = "sha256:9560243d4e92780c4466bac2ee6aac4166c8bb601ad3c63f070cdd701b28f360"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.3.4/pnpm-darwin-arm64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/544431956"
+checksum = "sha256:776b26182ea825d5846dc236d29773cf4b7568b7f0abe145c328a342284c8b75"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.5.1/pnpm-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/573486213"
 provenance = "github-attestations"
 
 [[tools.rust]]
@@ -550,24 +550,24 @@ url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/522028033"
 provenance = "cosign"
 
 [[tools.zizmor]]
-version = "1.30.0"
+version = "1.30.1"
 backend = "aqua:zizmorcore/zizmor"
 specifiers = ["latest"]
 
 [tools.zizmor."platforms.linux-arm64"]
-checksum = "sha256:018a024d6b6d09733b07f6ef42838d984c23ec04bc9b2acd55f7d67826aeafe5"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081734"
+checksum = "sha256:7ff1dce33bdd18fd2a4affe63bdd47efcccca97b2cec1c1863ec26e9e2647540"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067643"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64"]
-checksum = "sha256:ec8c95cd800845abb9bbc5f377ec7c57d2eb8e2386a00a201d3a74ee4092e5ed"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081732"
+checksum = "sha256:e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067642"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-arm64"]
-checksum = "sha256:c9c5d83730efb86f2cd71b487605c00a4d63903e4f9458485ed5eac3b1924ab1"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081737"
+checksum = "sha256:e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067640"
 provenance = "github-attestations"

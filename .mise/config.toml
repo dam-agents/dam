@@ -37,7 +37,7 @@ fd = "latest"
 gh = "latest"
 go = "1.26"
 gum = "latest"
-helm = "4.2.0"
+helm = "4.3.0"
 java = "21"
 jq = "latest"
 kubeconform = "latest"
@@ -45,7 +45,7 @@ lima = "2"
 maven = "latest"
 nodejs = "24"
 pinact = "latest"
-pnpm = "12.3.4" # the single pnpm pin
+pnpm = "12.5.1" # the single pnpm pin
 rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
 usage = "latest"
