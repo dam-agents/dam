@@ -989,39 +989,64 @@ async function turnContractContext(
   return { canLookupUsers: lookup, permalink, botUserId };
 }
 
-export function createSlackWorker(
-  makeAcpClient: AcpClientFactory,
-  createGateway: () => SlackGateway,
-  agents: () => AgentsService,
-  identityLinks: IdentityLinkService,
-  oauthConfig: KeycloakOAuthConfig,
-  pendingOAuthFlows: TtlStore<SlackOAuthPending>,
-  getInstanceOwner: (agentId: string) => Promise<string | null>,
-  channelRegistry: ChannelRegistry,
+export type SlackWorkerDeps = {
+  makeAcpClient: AcpClientFactory;
+  createGateway: () => SlackGateway;
+  agents: () => AgentsService;
+  identityLinks: IdentityLinkService;
+  oauthConfig: KeycloakOAuthConfig;
+  pendingOAuthFlows: TtlStore<SlackOAuthPending>;
+  getInstanceOwner: (agentId: string) => Promise<string | null>;
+  channelRegistry: ChannelRegistry;
   unbindSlackChannel: (
     agentId: string,
     slackChannelId: string,
-  ) => Promise<void>,
+  ) => Promise<void>;
   setSlackChannelAmbient: (
     agentId: string,
     slackChannelId: string,
     ambient: boolean,
-  ) => Promise<void>,
+  ) => Promise<void>;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
-  ) => Promise<boolean>,
-  brand: { name: string; short: string },
-  isTermsAccepted: (sub: string) => Promise<boolean>,
-  uiBaseUrl: string,
-  attendance: ChannelTurnAttendance,
-  workspaceFiles: AgentWorkspaceFilesFactory,
-  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace,
-  emit: (event: DomainEvent) => void = defaultEmit,
-  settleMs = 0,
-  wakeWait: WakeWaitOptions = {},
-  agentIcon: AgentIconUrl | null = null,
-): SlackWorker {
+  ) => Promise<boolean>;
+  brand: { name: string; short: string };
+  isTermsAccepted: (sub: string) => Promise<boolean>;
+  uiBaseUrl: string;
+  attendance: ChannelTurnAttendance;
+  workspaceFiles: AgentWorkspaceFilesFactory;
+  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace;
+  emit?: (event: DomainEvent) => void;
+  settleMs?: number;
+  wakeWait?: WakeWaitOptions;
+  agentIcon?: AgentIconUrl | null;
+};
+
+export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
+  const {
+    makeAcpClient,
+    createGateway,
+    agents,
+    identityLinks,
+    oauthConfig,
+    pendingOAuthFlows,
+    getInstanceOwner,
+    channelRegistry,
+    unbindSlackChannel,
+    setSlackChannelAmbient,
+    setSlackDefault,
+    brand,
+    isTermsAccepted,
+    uiBaseUrl,
+    attendance,
+    workspaceFiles,
+    canonicalWorkspace,
+    emit = defaultEmit,
+    settleMs = 0,
+    wakeWait = {},
+    agentIcon = null,
+  } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 

@@ -14,8 +14,8 @@ export const SLACK_HARNESS_OWNER = "kc|owner-1";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One bound Slack agent wired to the fake gateway,
- * capturing the prompts the relay sends. Specs share it so createSlackWorker's
- * positional argument list is spelled out in one place.
+ * capturing the prompts the relay sends. Specs share it so the stub deps for
+ * createSlackWorker are spelled out in one place.
  */
 export function slackWorkerHarness(
   opts: {
@@ -56,15 +56,15 @@ export function slackWorkerHarness(
       agentNames[id] ? { id, name: agentNames[id] } : null,
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => SLACK_HARNESS_OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => null } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => SLACK_HARNESS_OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
@@ -77,18 +77,18 @@ export function slackWorkerHarness(
         { id: boundChannelId, teamId: "" },
       ],
     } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-    opts.settleMs ?? 0,
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: () => {},
+    settleMs: opts.settleMs ?? 0,
+  });
 
   async function settled(done: () => boolean): Promise<boolean> {
     for (let i = 0; i < 100 && !done(); i++) {

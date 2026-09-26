@@ -80,36 +80,43 @@ function harness(opts: {
     ensureReady: opts.ensureReady ?? (async () => {}),
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => opts.linkedSub ?? null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => opts.linkedSub ?? null } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () =>
         toRoster(
           opts.resolveBinding ? await opts.resolveBinding() : opts.binding,
         ),
       resolveSlackChannelsByInstance: async () => [{ id: "C1", teamId: "" }],
     } as never,
-    async () => {},
-    async (agentId: string, channelId: string, ambient: boolean) => {
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async (
+      agentId: string,
+      channelId: string,
+      ambient: boolean,
+    ) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async (sub) => opts.termsAccepted?.(sub) ?? true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    (e) => events.push(e),
-    0,
-    { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },
-  );
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async (sub) => opts.termsAccepted?.(sub) ?? true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: (e) => events.push(e),
+    settleMs: 0,
+    wakeWait: {
+      patienceMs: opts.wakePatienceMs ?? 60_000,
+      sleep: async () => {},
+    },
+  });
 
   const start = () => worker.connect();
 
