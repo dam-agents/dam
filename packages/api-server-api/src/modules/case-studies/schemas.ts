@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { CASE_STUDY_CONTENT_MAX_CHARS } from "./constants.js";
 import type {
   CaseStudyInspectionFilter,
   CaseStudyInspectionFilterInput,
 } from "./types.js";
+
+export const CASE_STUDY_CONTENT_MAX_CHARS = 262_144;
 
 export const caseStudyStatusSchema = z.enum([
   "pending",

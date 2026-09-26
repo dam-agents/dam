@@ -11,11 +11,7 @@ import { createSlackReplyPoster } from "./infrastructure/slack-reply.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
 import { createWorkspaceWriter } from "./infrastructure/workspace-writer.js";
 
-export interface ScriptedMockComposition {
-  scriptedMock: ScriptedMockService;
-}
-
-export function composeScriptedMock(): ScriptedMockComposition {
+export function composeScriptedMock(): { scriptedMock: ScriptedMockService } {
   const state = createInitialState();
   const proxyFetch = createProxyFetch();
   const scriptedMock = createScriptedMockService({

@@ -5,11 +5,12 @@ import { useState } from "react";
 import { Button } from "../../components/button";
 import { Input } from "../../components/input";
 import { Label } from "../../components/label";
-import { LOGIN_DOCS_URL } from "../../constants";
 import { SocialProviderButton } from "../components/social-provider-button";
 import type { I18n } from "../i18n";
 import type { KcContext } from "../KcContext";
 import { BRAND_FALLBACK } from "../Template";
+
+const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
 export default function Login(
   props: PageProps<Extract<KcContext, { pageId: "login.ftl" }>, I18n>,

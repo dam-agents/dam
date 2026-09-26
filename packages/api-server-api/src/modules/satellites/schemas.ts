@@ -112,12 +112,6 @@ export const reportInputSchema = z.object({
   ]),
 });
 
-export const startJobInputSchema = z.object({
-  satellite: satelliteNameSchema,
-  tool: satelliteToolNameSchema,
-  args: toolArgsSchema,
-});
-
 export const jobRefSchema = z.object({
   satellite: satelliteNameSchema,
   job: z.number().int().positive(),

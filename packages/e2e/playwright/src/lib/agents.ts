@@ -72,12 +72,6 @@ export async function ensureAgentExists(
   await api.agents.create.mutate({ name: agentName, templateId });
 }
 
-export async function reloadUntilAgentVisible(page: Page): Promise<void> {
-  await page.reload();
-  await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await expect(page.getByText(AGENT_UP)).toBeVisible();
-}
-
 export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
 }
@@ -107,28 +101,7 @@ export async function setMockAgentReply(
   api: ApiClient,
   agentId: string,
   reply: string,
-): Promise<void> {
-  await api.e2e.setScript.mutate({
-    agentId,
-    script: {
-      entries: [
-        {
-          sessionUpdate: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: reply },
-          },
-        },
-      ],
-      stopReason: "end_turn",
-    },
-  });
-}
-
-export async function setMockReplyWithFiles(
-  api: ApiClient,
-  agentId: string,
-  reply: string,
-  files: { path: string; content: string }[],
+  files?: { path: string; content: string }[],
 ): Promise<void> {
   await api.e2e.setScript.mutate({
     agentId,
@@ -229,10 +202,6 @@ export async function readChatMessages(
   return rows;
 }
 
-export function agentNameHeading(page: Page, agentName: string): Locator {
-  return page.getByRole("heading", { name: agentName, exact: true });
-}
-
 export const AGENT_UP = /^(Running|Working|Idle)$/;
 
 export function agentCardStatus(
@@ -242,6 +211,8 @@ export function agentCardStatus(
 ): Locator {
   return page
     .getByTestId("agent-row")
-    .filter({ has: agentNameHeading(page, agentName) })
+    .filter({
+      has: page.getByRole("heading", { name: agentName, exact: true }),
+    })
     .getByText(label, { exact: true });
 }

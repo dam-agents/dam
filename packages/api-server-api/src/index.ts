@@ -1,37 +1,26 @@
 export type { AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 
-export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
+export { ChannelType, type EnvVar } from "./modules/shared.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
 export type { LiveEventsService } from "./modules/events/types.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
-export {
-  harnessFamilySchema,
-  mountSchema,
-  resourcesSchema,
-  skillSourceSeedSchema,
-  templateSpecSchema,
-} from "./modules/templates/schemas.js";
+export { templateSpecSchema } from "./modules/templates/schemas.js";
 export type {
   HarnessFamily,
   Template,
   TemplateSpec,
   TemplatesService,
-  Mount,
   Resources,
-  SkillSourceSeed,
 } from "./modules/templates/types.js";
-export { templateGetInputSchema } from "./modules/templates/schemas.js";
 
 export { repoSchema } from "./modules/repos/schemas.js";
-export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
+export type { Repo, ReposService } from "./modules/repos/types.js";
 
 export {
   spawnInvocationRequestSchema,
-  spawnInvocationResponseSchema,
-  invocationViewSchema,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
@@ -40,24 +29,16 @@ export type {
   SpawnInvocationRequest,
   SpawnInvocationResponse,
   InvocationView,
-  InvocationStatus,
-  InvocationTarget,
   InvocationsQueryService,
 } from "./modules/invocations/types.js";
 
 export type {
   HarnessConfigChange,
-  HarnessConfigStatus,
   HarnessConfigService,
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
-  HarnessConfigSnapshotResult,
 } from "./modules/harness-config/types.js";
-export {
-  agentConfigOptionsSchema,
-  harnessConfigApplyInputSchema,
-  harnessConfigSnapshotSchema,
-} from "./modules/harness-config/schemas.js";
+export { harnessConfigSnapshotSchema } from "./modules/harness-config/schemas.js";
 
 export type {
   Agent,
@@ -73,69 +54,41 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
-  UpgradeAgentResult,
-  ConnectSlackError,
   ConnectSlackResult,
-  BindSlackChannelError,
   BindSlackChannelResult,
-  BindTelegramChatError,
   BindTelegramChatResult,
-  ListTelegramChatsError,
-  TelegramChatView,
   ListTelegramChatsResult,
-  UnbindTelegramChatError,
   UnbindTelegramChatResult,
-  Channel,
   SlackChannel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
-  agentBackgroundWorkInputSchema,
-  agentBindSlackChannelInputSchema,
-  agentBindTelegramChatInputSchema,
-  agentListTelegramChatsInputSchema,
-  agentUnbindTelegramChatInputSchema,
-  agentConnectSlackInputSchema,
   AGENT_ID_RE,
-  agentNameSchema,
   agentCreateInputSchema,
   agentKindSchema,
-  agentDeleteInputSchema,
-  agentDisconnectSlackInputSchema,
-  agentGetInputSchema,
-  agentRestartInputSchema,
-  agentUpdateInputSchema,
-  agentPauseInputSchema,
-  agentStopInputSchema,
-  agentUpgradeInputSchema,
-  agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
-export {
-  PROTECTED_AGENT_ENV_NAMES,
-  isProtectedAgentEnvName,
-} from "./modules/agents/types.js";
+export { isProtectedAgentEnvName } from "./modules/agents/types.js";
 export { toAgentView } from "./modules/agents/view.js";
 export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
-export type { EventReportInput, EventOutcome } from "agent-runtime-api";
+export type {
+  EventReportInput,
+  EventOutcome,
+  HelloInput,
+  HelloResult,
+} from "agent-runtime-api";
 
 export {
   scheduleSpecSchema,
-  scheduleStatusSchema,
-  scheduleResetSessionInputSchema,
-  precheckVerdictSchema,
   precheckSchema,
   PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
   ScheduleSpec,
-  ScheduleSpecCron,
-  ScheduleSpecRRule,
-  ScheduleStatus,
   QuietWindow,
   ScheduleCreator,
   ScheduleCreateCronInput,
@@ -151,7 +104,6 @@ export type {
   TraceEvent,
   PlanRegisterInput,
   FinishInput,
-  AppendEventsInput,
   Experiment,
   ExperimentDriverSummary,
   ExperimentSandboxCreateInput,
@@ -163,18 +115,10 @@ export type {
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {
-  skeletonSchema,
-  traceEventSchema,
   planRegisterRequestSchema,
-  planRegisterResponseSchema,
   appendEventsRequestSchema,
-  appendEventsResponseSchema,
   finishRequestSchema,
-  experimentIdInputSchema,
-  experimentSandboxCreateInputSchema,
   EXPERIMENT_SKILL_NAME,
-  SCRIPT_CONTENT_MAX_BYTES,
-  DASHBOARD_CONTENT_MAX_BYTES,
   CUSTOM_DATA_MAX_BYTES,
   EXPERIMENT_FEED_MESSAGE_TYPE,
   EXPERIMENT_FOLDER_PREFIX,
@@ -183,19 +127,14 @@ export {
 export type {
   StarterKit,
   StarterKitApplyInput,
-  StarterKitBundledSkills,
   ResolvedSkill,
   StarterKitApplyResult,
-  StarterKitCatalog,
   StarterKitCatalogEntry,
-  StarterKitCategory,
   StarterKitConnectionRequirement,
   OnboardingStep,
-  StarterKitImage,
   StarterKitResources,
   StarterKitSchedule,
   StarterKitScheduleOverride,
-  StarterKitScheduleTiming,
   StarterKitView,
   StarterKitsService,
   ResolvedStarterKit,
@@ -208,8 +147,8 @@ export {
   starterKitCategorySchema,
   starterKitSchema,
 } from "./modules/starter-kits/schemas.js";
-export { requirementAccepts } from "./modules/starter-kits/requirements.js";
-export { resolveKitSchedulePrecheck } from "./modules/starter-kits/schedule-precheck.js";
+export { requirementAccepts } from "./modules/starter-kits/types.js";
+export { resolveKitSchedulePrecheck } from "./modules/starter-kits/types.js";
 export type {
   KbShareCreateInput,
   KbShareDefaults,
@@ -225,21 +164,11 @@ export type {
 } from "./modules/kb-shares/types.js";
 export {
   KB_SHARE_STRING_PREFIX,
-  kbShareAgentInputSchema,
-  kbShareCreateInputSchema,
-  kbSharePublicNameSchema,
-  kbSharePublishStateSchema,
-  kbShareRefreshInputSchema,
-  kbShareResolveInputSchema,
-  kbShareRootSchema,
-  kbShareSetNameInputSchema,
-  kbShareStringRegex,
   parseKbShareString,
 } from "./modules/kb-shares/schemas.js";
 export type {
   ArtifactKind,
   ArtifactVisibility,
-  ArtifactCreateVisibility,
   ArtifactFolder,
   LibraryArtifact,
   ArtifactVersionInfo,
@@ -255,7 +184,6 @@ export type {
   ArtifactLibraryService,
   ArtifactTouch,
   ArtifactTouchService,
-  ArtifactApiFailureReason,
   ArtifactCallAgentApiInput,
   ArtifactCallAgentApiResult,
 } from "./modules/artifact-library/types.js";
@@ -269,24 +197,18 @@ export {
   ARTIFACT_REQUEST_TIMEOUT_MS,
   artifactRequestEnvelopeSchema,
   artifactRequestMessageSchema,
-  type ArtifactRequestMessage,
   type ArtifactResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,
-  artifactCreateVisibilitySchema,
   viewerEmailSchema,
-  artifactVersionAuthorSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
   VIEWER_ALLOWLIST_MAX,
-  artifactApiFailureReasonSchema,
-  artifactCallAgentApiInputSchema,
-  artifactCallAgentApiResultSchema,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
@@ -299,16 +221,7 @@ export type {
   FeaturesService,
 } from "./modules/features/types.js";
 export { featureIdSchema } from "./modules/features/schemas.js";
-export {
-  quietWindowSchema,
-  scheduleCreateCronInputSchema,
-  scheduleCreateRRuleInputSchema,
-  scheduleDeleteInputSchema,
-  scheduleGetInputSchema,
-  scheduleListInputSchema,
-  scheduleToggleInputSchema,
-  scheduleUpdateRRuleInputSchema,
-} from "./modules/schedules/schemas.js";
+export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ALL_DAYS,
   buildRRule,
@@ -342,7 +255,6 @@ export {
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
-  bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
@@ -355,21 +267,17 @@ export {
 } from "./modules/connections/providers.js";
 
 export {
-  CONNECTION_EGRESS_PATH_SEGMENT,
   connectionEgressPathPrefix,
   stripConnectionEgressPrefix,
   applyConnectionEgressAddressing,
   unaddressableRivalHost,
 } from "./modules/connections/egress-addressing.js";
 
-export type { ChannelsService } from "./modules/channels/types.js";
-
 export type {
   CaseStudyStatus,
   CaseStudyContentSource,
   CaseStudySubmitInput,
   CaseStudyInspectionFilter,
-  CaseStudyInspectionFilterInput,
   CaseStudyEditionSummary,
   CaseStudyEdition,
   CaseStudiesService,
@@ -381,34 +289,22 @@ export {
   caseStudySubmitInputSchema,
   caseStudyInspectionFilterSchema,
   toCaseStudyInspectionFilter,
-} from "./modules/case-studies/schemas.js";
-export {
   CASE_STUDY_CONTENT_MAX_CHARS,
-  CASE_STUDY_SKILL_PATH,
-  CASE_STUDY_SCHEDULE_TASK,
-} from "./modules/case-studies/constants.js";
+} from "./modules/case-studies/schemas.js";
 
 export {
   agentMetricsInputSchema,
   agentTelemetryInputSchema,
 } from "./modules/metrics/schemas.js";
 export {
-  METRICS_MAX_SINCE_HOURS,
-  METRICS_MAX_LIMIT,
-  METRICS_DEFAULT_LIMIT,
   AGENT_TELEMETRY_MAX_DAYS,
-  AGENT_TELEMETRY_DEFAULT_DAYS,
   AGENT_TELEMETRY_MAX_LIMIT,
-  AGENT_TELEMETRY_DEFAULT_LIMIT,
 } from "./modules/metrics/constants.js";
 
 export type {
   MetricsService,
   MetricsQuery,
-  MetricsSpendQuery,
-  MetricsSpendBreakdownQuery,
   MetricsOverview,
-  SpendBreakdown,
   TokenSpendByModel,
   SpendByAgent,
   SpendByDay,
@@ -419,46 +315,22 @@ export type {
 } from "./modules/metrics/types.js";
 
 export type {
-  AgentAppConnections,
-  AppConnectionStatus,
-  AppConnectionView,
   ClusterCaProbe,
   GitHubAppInstallationProbe,
   ConnectionsService,
   Connection,
   ConnectionStatus,
   ConnectionView,
-  ConnectionFamilyView,
   ConnectionTemplateView,
   TemplateInput as ConnectionTemplateInput,
-  TemplateInputState as ConnectionTemplateInputState,
   ConnectionCategory,
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
-export {
-  authConfig as connectionAuthConfigSchema,
-  authKind as connectionAuthKindSchema,
-  connection as connectionWireSchema,
-  connectionView as connectionViewSchema,
-  connectionTemplateView as connectionTemplateViewSchema,
-  connectionStatus as connectionStatusSchema,
-  connectionCategory as connectionCategorySchema,
-} from "./modules/connections/types.js";
-export {
-  connectionCreateInputSchema,
-  connectionDiscoverMcpInputSchema,
-  connectionProbeClusterCaInputSchema,
-  connectionGetAgentConnectionsInputSchema,
-  connectionNameSchema,
-  connectionSetAgentConnectionsInputSchema,
-  connectionUpdateInputSchema,
-} from "./modules/connections/schemas.js";
-export type {
-  ConnectionCreateInput,
-  ConnectionUpdateInput,
-} from "./modules/connections/schemas.js";
+export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
+export { connectionNameSchema } from "./modules/connections/schemas.js";
+export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
 
 export {
   SessionType,
@@ -466,17 +338,14 @@ export {
   SESSION_CATEGORIES,
   sessionCategoryOf,
   sessionModeSchema,
-  AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
   slackChannelIdFromThreadKey,
   slackThreadKey,
 } from "./modules/sessions/types.js";
-export { attentionDismissInputSchema } from "./modules/attention/schemas.js";
 export type {
   AttentionDismissal,
   AttentionItem,
-  AttentionItemKind,
   AttentionList,
   AttentionService,
   DismissedEntry,
@@ -494,22 +363,6 @@ export {
   encodeExit,
   decodeFrame,
 } from "./modules/terminal/protocol.js";
-export type { TerminalFrame } from "./modules/terminal/protocol.js";
-
-export {
-  FileFragmentSchema,
-  FileSpecSchema,
-  MergeModeSchema,
-  PodFilesEventSchema,
-  EventKindSchema,
-} from "./modules/pod-files/types.js";
-export type {
-  FileFragment,
-  FileSpec,
-  MergeMode,
-  PodFilesEvent,
-  EventKind,
-} from "./modules/pod-files/types.js";
 
 export type {
   LocalSkill,
@@ -520,9 +373,7 @@ export type {
   SkillCreateSourceInput,
   SkillDeleteLocalInput,
   SkillInstallInput,
-  SkillListResult,
   SkillLocalFiles,
-  SkillOrigin,
   SkillPublishInput,
   SkillPublishRecord,
   SkillPublishResult,
@@ -530,11 +381,7 @@ export type {
   SkillRef,
   SkillApplyBatchInput,
   SkillSet,
-  SkillEntriesApplyInput,
-  SkillSetApplyInput,
   SkillSetApplyResult,
-  SkillSetCreateInput,
-  SkillSetDeleteInput,
   SkillSetEntry,
   SkillSetSkipReason,
   SkillSource,
@@ -549,57 +396,24 @@ export {
   scanFailureSchema,
   skillCreateSourceFieldsSchema,
   skillCreateSourceInputSchema,
-  skillDeleteSourceInputSchema,
-  skillInstallInputSchema,
   skillKey,
-  skillListInputSchema,
-  skillListLocalInputSchema,
-  skillListResultSchema,
-  skillListSourcesInputSchema,
-  skillPublishInputSchema,
-  skillPublishRecordSchema,
-  skillPublishResultSchema,
-  skillRefSchema,
-  skillRefreshSourceInputSchema,
-  skillSchema,
-  skillApplyBatchInputSchema,
-  skillSetApplyInputSchema,
-  skillSetApplyResultSchema,
-  skillSetCreateInputSchema,
-  skillSetDeleteInputSchema,
   skillSetEntrySchema,
   skillSetNameSchema,
-  skillSetSchema,
-  skillSetSkipReasonSchema,
   skillSourcePathSchema,
-  skillSourceSchema,
-  skillStateInputSchema,
-  skillStateOutputSchema,
-  skillUninstallInputSchema,
 } from "./modules/skills/schemas.js";
-export type {
-  PlatformFeatureId,
-  PlatformSkillFeature,
-} from "./modules/skills/platform-skills.js";
+export type { PlatformFeatureId } from "./modules/skills/platform-skills.js";
 export {
-  PLATFORM_SKILLS,
   platformSkillFeature,
   platformSkillsForFeature,
 } from "./modules/skills/platform-skills.js";
 
-export type {
-  FilesService,
-  UploadFileInput,
-  UploadFileResult,
-} from "./modules/files/router.js";
+export type { FilesService } from "./modules/files/router.js";
 
 export type {
   ApprovalType,
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
-  ExtAuthzPayload,
-  AcpNativePayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -607,21 +421,8 @@ export type {
   ApprovalListOptions,
   ApprovalActionOutcome,
 } from "./modules/approvals/types.js";
-export {
-  approvalActionOutcomeSchema,
-  approvalActionRuleSchema,
-  approvalApproveHostInputSchema,
-  approvalApproveOnceInputSchema,
-  approvalApprovePermanentInputSchema,
-  approvalDenyForeverInputSchema,
-  approvalDismissInputSchema,
-  approvalListForInstanceInputSchema,
-  approvalListForOwnerInputSchema,
-  approvalListOptionsSchema,
-  approvalStatusSchema,
-} from "./modules/approvals/schemas.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
-export { acpNativeRowId } from "./modules/approvals/ids.js";
+export { acpNativeRowId } from "./modules/approvals/format.js";
 
 export type {
   RuleVerdict,
@@ -632,44 +433,28 @@ export type {
   EgressRuleUpdateInput,
   EgressRulesService,
 } from "./modules/egress-rules/types.js";
-export {
-  egressPresetSchema,
-  egressRuleApplyPresetInputSchema,
-  egressRuleCreateInputSchema,
-  egressRuleCurrentPresetInputSchema,
-  egressRuleGetInputSchema,
-  egressRuleListForAgentInputSchema,
-  egressRuleRevokeInputSchema,
-  egressRuleUpdateInputSchema,
-  ruleVerdictSchema,
-} from "./modules/egress-rules/schemas.js";
+export { egressRuleCreateInputSchema } from "./modules/egress-rules/schemas.js";
 export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
 export type {
   GatewayRestartImpact,
-  GatewayRestartImpactInput,
   PromotionRule,
 } from "./modules/egress-rules/promotion.js";
 export {
   gatewayRestartImpact,
-  needsL7Promotion,
   promotedHosts,
 } from "./modules/egress-rules/promotion.js";
 
 export {
-  platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
-  platformPromptAcceptedNotificationSchema,
   platformPromptAcceptedParamsSchema,
   buildPlatformPromptAcceptedNotification,
-  platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
   platformRunStartsMetaSchema,
-  platformRunStartedNotificationSchema,
   platformRunStartedParamsSchema,
   buildPlatformRunStartedNotification,
   platformRunResultSchema,
@@ -681,24 +466,16 @@ export {
   platformUndeliveredPromptSchema,
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
-  UNDELIVERED_INLINE_IMAGE_BYTES_CAP,
   capInlineImages,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
 export type {
-  PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
-  PlatformPromptAcceptedNotification,
   PlatformPromptAcceptedParams,
-  PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
-  PlatformRunStartedNotification,
   PlatformRunStartedParams,
   PlatformRunResult,
-  PlatformRunResultResponse,
-  PlatformClippedReplayMeta,
-  PlatformFrameMeta,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
@@ -708,12 +485,8 @@ export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
 export { linksSchema } from "./modules/links/types.js";
-export type { Links } from "./modules/links/types.js";
 
-export {
-  publicAgentViewSchema,
-  publicAgentResponseSchema,
-} from "./modules/agents/public-agent.js";
+export { publicAgentResponseSchema } from "./modules/agents/public-agent.js";
 export type {
   PublicAgentView,
   PublicAgentResponse,
@@ -726,20 +499,10 @@ export type {
   AcceptedAcceptance,
   TermsService,
 } from "./modules/terms/types.js";
-export {
-  staleAcceptanceSchema,
-  termsAcceptInputSchema,
-  termsCurrentSchema,
-  termsDocumentSchema,
-  termsLatestAcceptanceSchema,
-} from "./modules/terms/schemas.js";
-export { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
+export { termsDocumentSchema } from "./modules/terms/schemas.js";
+export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
-export {
-  entryPointChoiceSchema,
-  entryPointChosenInputSchema,
-} from "./modules/usage/schemas.js";
 
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
@@ -747,53 +510,25 @@ export type { AuthConfig } from "./modules/auth/types.js";
 export type {
   E2eService,
   SlackFireCommandInput,
-  SlackFireCommandResult,
   SlackFireMentionInput,
   SlackFireMessageInput,
   SlackOutboundRecord,
-  SlackReadOutboundResult,
 } from "./modules/e2e/types.js";
-export {
-  e2eAgentIdInputSchema,
-  e2eSetScriptInputSchema,
-} from "./modules/e2e/schemas.js";
 
-export { secretRef } from "./modules/secret-store/types.js";
 export type { SecretRef } from "./modules/secret-store/types.js";
 
 export type { HarnessRouter } from "./harness-router.js";
 export type { HarnessContext } from "./harness-context.js";
-export { helloInput, helloResult } from "./modules/runtime/types.js";
-export type {
-  HelloInput,
-  HelloResult,
-  RuntimeDeliveryService,
-} from "./modules/runtime/types.js";
-export {
-  contribution,
-  contributionKind,
-  event as runtimeEvent,
-  eventKind as runtimeEventKind,
-  capabilities,
-  mergeMode as contributionMergeMode,
-  fileFormat,
-  applyStateInput,
-  applyStateResult,
-  driverFailure,
-  stateSlice,
-} from "agent-runtime-api";
+export type { RuntimeDeliveryService } from "./modules/runtime/types.js";
+export { contribution } from "agent-runtime-api";
 export type {
   Contribution,
   ContributionKind,
   Event as RuntimeEvent,
   EventKind as RuntimeEventKind,
-  Capabilities,
-  MergeMode as ContributionMergeMode,
-  FileFormat,
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
-  StateSlice,
 } from "agent-runtime-api";
 
 export {
@@ -804,54 +539,28 @@ export {
   CREDENTIAL_SCOPES,
 } from "./modules/api-keys/types.js";
 export type {
-  AgentBinding,
   ApiKeyCreateInput,
   ApiKeyCreateResult,
-  ApiKeyRevokeInput,
   ApiKeyView,
   ApiKeysService,
   Scope,
 } from "./modules/api-keys/types.js";
-export {
-  agentBindingSchema,
-  apiKeyCreateInputSchema,
-  apiKeyRevokeInputSchema,
-  scopeSchema,
-} from "./modules/api-keys/schemas.js";
+export { scopeSchema } from "./modules/api-keys/schemas.js";
 export {
   contentHashSchema,
-  kbPublishCompleteInputSchema,
-  kbPublishInventoryFileSchema,
-  kbPublishRequestInputSchema,
   type KbPublishCompleteReport,
   type KbPublishCompleteResult,
   type KbPublishGate,
   type KbPublishInventoryFile,
   type KbPublishRequestInput,
   type KbPublishRequestResult,
-  type KbPublishWorkCaps,
   type KbPublishWorkOrder,
 } from "./modules/kb-publish/harness.js";
 
-export {
-  telemetryTurnsInputSchema,
-  telemetryTurnInputSchema,
-  telemetryLogsInputSchema,
-  telemetryExportQuerySchema,
-  telemetryExportSignalSchema,
-} from "./modules/telemetry/schemas.js";
+export { telemetryExportQuerySchema } from "./modules/telemetry/schemas.js";
 export {
   TELEMETRY_MAX_SINCE_HOURS,
   TELEMETRY_DEFAULT_SINCE_HOURS,
-  TELEMETRY_MAX_TURNS,
-  TELEMETRY_DEFAULT_TURNS,
-  TELEMETRY_MAX_SPANS,
-  TELEMETRY_DEFAULT_SPANS,
-  TELEMETRY_MAX_LOGS,
-  TELEMETRY_DEFAULT_LOGS,
-  TELEMETRY_MAX_LOG_ROWS,
-  TELEMETRY_DEFAULT_LOG_ROWS,
-  TELEMETRY_MAX_TRACE_HOURS,
   TELEMETRY_EXPORT_MAX_ROWS,
 } from "./modules/telemetry/constants.js";
 export type {
@@ -859,7 +568,6 @@ export type {
   TelemetryTurnsQuery,
   TelemetryTurnQuery,
   TelemetryLogsQuery,
-  TelemetryExportQuery,
   TelemetryExportSignal,
   TurnSummary,
   TurnGrouping,
@@ -867,10 +575,6 @@ export type {
   TelemetrySpan,
   TelemetryLog,
   LogAttachment,
-  TelemetryUnavailable,
-  TelemetryTurns,
-  TelemetryTurn,
-  TelemetryLogs,
   TelemetryTurnsResult,
   TelemetryTurnResult,
   TelemetryLogsResult,
@@ -880,21 +584,11 @@ export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
   MAX_JOB_OUTPUT_BYTES,
-  MAX_TOOL_ARGS_BYTES,
-  claimInputSchema,
   formatJobRef,
-  heartbeatInputSchema,
-  jobRefSchema,
-  jobStatusSchema,
-  reportInputSchema,
-  satelliteConnectInputSchema,
-  satelliteGrantInputSchema,
-  satelliteManifestSchema,
   satelliteNameSchema,
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   satelliteToolSchema,
-  startJobInputSchema,
   toolArgsSchema,
 } from "./modules/satellites/schemas.js";
 export type {
@@ -905,11 +599,9 @@ export type {
   JobStatus,
   JobView,
   ReportInput,
-  SatelliteAgentOps,
   SatelliteManifest,
   SatelliteTool,
   SatelliteView,
-  SatelliteWorkerOps,
   SatellitesService,
   WorkItem,
 } from "./modules/satellites/types.js";

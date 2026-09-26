@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { contribution, type Contribution } from "agent-runtime-api";
+import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
 import type { ConnectionCreateInput } from "./schemas.js";
 
@@ -10,7 +10,6 @@ export const refreshBackoff = z.object({
   failures: z.number().int(),
   nextAttempt: z.number().int(),
 });
-export type RefreshBackoff = z.infer<typeof refreshBackoff>;
 
 export const oauthAuth = z.object({
   kind: z.literal("oauth"),
@@ -143,7 +142,6 @@ export const templateInputState = z.enum([
   "overridable",
   "optional",
 ]);
-export type TemplateInputState = z.infer<typeof templateInputState>;
 
 export const templateInput = z.object({
   name: z.string(),
@@ -164,7 +162,6 @@ export const connectionFamilyView = z.object({
   id: z.string(),
   title: z.string(),
 });
-export type ConnectionFamilyView = z.infer<typeof connectionFamilyView>;
 
 export const connectionTemplateView = z.object({
   id: z.string(),
@@ -258,8 +255,3 @@ export interface ConnectionsService {
   getAgentConnections(agentId: string): Promise<AgentConnections>;
   setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
 }
-
-export type AppConnectionStatus = ConnectionStatus;
-export type AppConnectionView = ConnectionView;
-export type AgentAppConnections = AgentConnections;
-export { connection as connectionSchema };

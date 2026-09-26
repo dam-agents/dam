@@ -14,8 +14,6 @@ const LoginOauth2DeviceVerifyUserCode = lazy(
 );
 const LoginOauthGrant = lazy(() => import("./pages/LoginOauthGrant.js"));
 
-const doMakeUserConfirmPassword = true;
-
 export default function KcPage({ kcContext }: { kcContext: KcContext }) {
   const { i18n } = useI18n({ kcContext });
 
@@ -76,7 +74,7 @@ export default function KcPage({ kcContext }: { kcContext: KcContext }) {
                 Template={Template}
                 doUseDefaultCss={true}
                 UserProfileFormFields={DefaultUserProfileFormFields}
-                doMakeUserConfirmPassword={doMakeUserConfirmPassword}
+                doMakeUserConfirmPassword={true}
               />
             );
         }

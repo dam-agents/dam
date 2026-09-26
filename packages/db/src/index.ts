@@ -1,10 +1,4 @@
-export {
-  createDb,
-  DEFAULT_DB_POOL_MAX,
-  type Db,
-  type DbOptions,
-  type DbTx,
-} from "./client.js";
+export { createDb, DEFAULT_DB_POOL_MAX, type Db, type DbTx } from "./client.js";
 export { runMigrations } from "./migrate.js";
 export {
   channels,
@@ -51,7 +45,6 @@ export {
   eq,
   and,
   or,
-  gt,
   gte,
   ilike,
   inArray,
@@ -64,6 +57,5 @@ export {
   lt,
   lte,
   ne,
-  not,
   sql,
 } from "drizzle-orm";

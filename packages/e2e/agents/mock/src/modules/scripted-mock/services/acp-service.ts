@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   isRequest,
   isResponse,
@@ -6,7 +7,7 @@ import {
   type JsonRpcId,
 } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
-import { recordPrompt, type ProxyFetch } from "./control-service.js";
+import type { ProxyFetch } from "./control-service.js";
 import type {
   AcpChannel,
   ProcessRunner,
@@ -28,17 +29,10 @@ export interface AcpServiceDeps {
   workspace: WorkspaceWriter;
   proxyFetch: ProxyFetch;
   processRunner: ProcessRunner;
-  slackReply?: SlackReplyPoster;
-  now?: () => Date;
-  sleep?: (ms: number) => Promise<void>;
-  newSessionId?: () => string;
+  slackReply: SlackReplyPoster;
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
-  const now = deps.now ?? (() => new Date());
-  const sleep =
-    deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
-  const newSessionId = deps.newSessionId ?? (() => randomUUID());
   const knownSessions = new Set<string>();
   const pendingAsks = new Map<JsonRpcId, (outcome: string) => void>();
 
@@ -68,7 +62,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
           respond(id, null);
           return;
         case "session/new": {
-          const sid = newSessionId();
+          const sid = randomUUID();
           knownSessions.add(sid);
           respond(id, { sessionId: sid });
           return;
@@ -115,9 +109,9 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
     const promptPayload = (params as { prompt?: unknown }).prompt;
-    recordPrompt(deps.state, {
+    deps.state.receivedPrompts.push({
       sessionId: sid,
-      receivedAt: now().toISOString(),
+      receivedAt: new Date().toISOString(),
       prompt: promptPayload,
     });
 
@@ -188,7 +182,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
     text: string,
     threadTs: string | undefined,
   ): Promise<void> {
-    if (!threadTs || !deps.slackReply || text.trim() === "") return;
+    if (!threadTs || text.trim() === "") return;
     await deps.slackReply({ text, threadTs });
   }
 
@@ -197,7 +191,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
     toolName: string,
     displayTitle?: string,
   ): Promise<string> {
-    const askId = `ask-${newSessionId()}`;
+    const askId = `ask-${randomUUID()}`;
     return new Promise<string>((resolve) => {
       const settle = (outcome: string) => {
         clearTimeout(timer);

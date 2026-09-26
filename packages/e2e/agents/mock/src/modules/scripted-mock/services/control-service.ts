@@ -4,7 +4,6 @@ import type {
   GetReceivedPromptsResult,
   PerformFetchInput,
   PerformFetchResult,
-  ReceivedPrompt,
   ScriptedMockService,
   SetScriptInput,
   SpawnInvocationInput,
@@ -53,8 +52,4 @@ export function createScriptedMockService(
       return harnessSpawn(input);
     },
   };
-}
-
-export function recordPrompt(state: MockState, prompt: ReceivedPrompt): void {
-  state.receivedPrompts.push(prompt);
 }

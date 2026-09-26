@@ -10,7 +10,6 @@ export const connectionUpdateInputSchema = z.object({
   id: z.string().min(1),
   value: z.string().min(1),
 });
-export type ConnectionUpdateInput = z.infer<typeof connectionUpdateInputSchema>;
 
 export const connectionStartOAuthInputSchema = z.object({
   connectionId: z.string().min(1),

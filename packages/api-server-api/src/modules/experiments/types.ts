@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import type { Agent } from "../agents/types.js";
 import type {
-  appendEventsRequestSchema,
   experimentSandboxCreateInputSchema,
   finishRequestSchema,
   planRegisterRequestSchema,
@@ -22,7 +21,6 @@ export type Skeleton = z.infer<typeof skeletonSchema>;
 export type TraceEvent = z.infer<typeof traceEventSchema>;
 export type PlanRegisterInput = z.infer<typeof planRegisterRequestSchema>;
 export type FinishInput = z.infer<typeof finishRequestSchema>;
-export type AppendEventsInput = z.infer<typeof appendEventsRequestSchema>;
 
 export interface Experiment {
   id: string;

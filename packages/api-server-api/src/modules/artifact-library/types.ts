@@ -1,6 +1,5 @@
 import type { z } from "zod";
 import type {
-  artifactApiFailureReasonSchema,
   artifactCallAgentApiInputSchema,
   artifactCallAgentApiResultSchema,
 } from "./schemas.js";
@@ -180,9 +179,6 @@ export interface ArtifactTouchService {
   }): Promise<boolean>;
 }
 
-export type ArtifactApiFailureReason = z.infer<
-  typeof artifactApiFailureReasonSchema
->;
 export type ArtifactCallAgentApiInput = z.infer<
   typeof artifactCallAgentApiInputSchema
 >;

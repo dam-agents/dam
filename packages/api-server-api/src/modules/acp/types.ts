@@ -37,14 +37,10 @@ export const platformFrameMetaSchema = z.object({
   replayFor: z.string().min(1).optional(),
   telemetryPromptId: z.string().min(1).optional(),
 });
-export type PlatformFrameMeta = z.infer<typeof platformFrameMetaSchema>;
 
 export const platformClippedReplayMetaSchema = z.object({
   older: z.string().min(1).optional(),
 });
-export type PlatformClippedReplayMeta = z.infer<
-  typeof platformClippedReplayMetaSchema
->;
 
 export const platformReplayTurnMetaSchema = z.object({
   inFlight: z.boolean(),
@@ -155,9 +151,6 @@ export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("interrupted") }),
   z.object({ status: z.literal("none") }),
 ]);
-export type PlatformRunResultResponse = z.infer<
-  typeof platformRunResultResponseSchema
->;
 
 export const platformRunStartsMetaSchema = z.array(
   z.string().datetime({ offset: true }),

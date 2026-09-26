@@ -77,32 +77,6 @@ export interface SatellitesService {
   cancelJob(name: string, sequence: number): Promise<void>;
 }
 
-export interface SatelliteAgentOps {
-  granted(agentId: string): Promise<SatelliteView[]>;
-  start(
-    agentId: string,
-    satellite: string,
-    tool: string,
-    args: Record<string, unknown>,
-  ): Promise<JobStarted>;
-  read(
-    agentId: string,
-    satellite: string,
-    sequence: number,
-  ): Promise<JobOutcome>;
-  wait(
-    agentId: string,
-    satellite: string,
-    sequence: number,
-    deadlineMs: number,
-  ): Promise<JobOutcome>;
-  cancel(
-    agentId: string,
-    satellite: string,
-    sequence: number,
-  ): Promise<JobOutcome>;
-}
-
 export interface SatelliteWorkerOps {
   connect(
     owner: string,

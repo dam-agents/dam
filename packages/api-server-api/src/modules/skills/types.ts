@@ -34,7 +34,6 @@ export type SkillSource = z.infer<typeof skillSourceSchema>;
 export type Skill = z.infer<typeof skillSchema>;
 export type SkillListResult = z.infer<typeof skillListResultSchema>;
 export type LocalSkill = z.infer<typeof localSkillSchema>;
-export type SkillOrigin = NonNullable<LocalSkill["origin"]>;
 
 export type SkillCreateSourceInput = z.infer<
   typeof skillCreateSourceInputSchema

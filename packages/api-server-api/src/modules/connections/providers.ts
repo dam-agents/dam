@@ -75,25 +75,6 @@ export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   return out;
 }
 
-export function bobPinsFromEnvMappings(
-  envMappings: readonly EnvMapping[] | undefined,
-): BobModelPins {
-  const lookup = (name: string) =>
-    envMappings?.find((m) => m.envName === name)?.placeholder;
-  const pins: BobModelPins = {};
-  const model = lookup("BOB_SHELL_MODEL");
-  const agentId = lookup("BOB_INSTANCE_ID");
-  const teamId = lookup("BOB_TEAM_ID");
-  const maxCost = lookup("BOB_MAX_COINS");
-  const chatMode = lookup("BOB_CHAT_MODE");
-  if (model) pins.model = model;
-  if (agentId) pins.agentId = agentId;
-  if (teamId) pins.teamId = teamId;
-  if (maxCost) pins.maxCost = maxCost;
-  if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
-  return pins;
-}
-
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
 
 const BOB_LEGACY_CHAT_MODES: Record<string, (typeof BOB_CHAT_MODES)[number]> = {

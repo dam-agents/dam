@@ -112,16 +112,6 @@ export const scheduleSpecSchema = z.discriminatedUnion("type", [
   scheduleSpecRRuleSchema,
 ]);
 
-export const scheduleStatusSchema = z.object({
-  lastRun: z.string().optional(),
-  nextRun: z.string().optional(),
-  lastResult: z.string().optional(),
-  lastDeclinedAt: z.string().optional(),
-  declinedCount: z.number().int().nonnegative().optional(),
-  lastPrecheckError: z.string().optional(),
-  precheckFailedCount: z.number().int().nonnegative().optional(),
-});
-
 export const precheckVerdictSchema = z.enum([
   "allowed",
   "declined",
