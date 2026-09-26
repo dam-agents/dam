@@ -49,7 +49,7 @@ pnpm = "12.5.1" # the single pnpm pin
 rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
 usage = "latest"
-uv = "0.9"
+uv = "0.12"
 yq = "latest"
 zizmor = "latest"
 
