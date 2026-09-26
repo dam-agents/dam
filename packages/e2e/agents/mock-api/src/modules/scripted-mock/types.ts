@@ -32,7 +32,6 @@ export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
 export interface ScriptedMockService {
   setScript(input: SetScriptInput): ResetResult;
   getReceivedPrompts(): GetReceivedPromptsResult;
-  reset(): ResetResult;
   getEnv(input: GetEnvInput): GetEnvResult;
   performFetch(input: PerformFetchInput): Promise<PerformFetchResult>;
   spawnInvocation(input: SpawnInvocationInput): Promise<SpawnInvocationResult>;

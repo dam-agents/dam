@@ -51,7 +51,7 @@ With the API key present Bob never asks to authenticate, so the `sso` auth metho
 
 ### Endpoints that read the key from the URL
 
-Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query parameter. The provider preset's `extraInjections` automatically creates a second "twin" K8s Secret on the same host with `queryParamName: key`; the platform-side service cascades grants/updates/deletes onto it. See [ADR-044](../../../docs/adrs/044-provider-twin-secrets.md) for the twin-secret pattern and [ADR-033 §Credential injection](../../../docs/adrs/033-envoy-credential-gateway.md#credential-injection) for the Envoy URL-rewrite path.
+Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query parameter. The Bob Connection Template therefore carries a second `egress-inject` Contribution on the same host with `queryParamName: key`, so the gateway injects the same credential there too. See [ADR-033 §Credential injection](../../../docs/adrs/033-envoy-credential-gateway.md#credential-injection) for the Envoy URL-rewrite path.
 
 ## Autonomy posture
 
