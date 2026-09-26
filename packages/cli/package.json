@@ -31,7 +31,6 @@
     "@trpc/client": "^11.19.0",
     "@trpc/server": "^11.19.0",
     "@types/node": "^24.0.0",
-    "@types/tar-stream": "^3.1.4",
     "@types/ws": "^8.18.1",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
