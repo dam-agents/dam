@@ -32,7 +32,6 @@ const (
 	envoyQueryParamAnn          = "agent-platform.ai/injection-query-param"
 	envoyInjectionHTTP2Ann      = "agent-platform.ai/injection-http2"
 	envoyInjectionHostsAnn      = "agent-platform.ai/injection-hosts"
-	envoyEnvMappingsAnn         = "agent-platform.ai/env-mappings"
 	credentialSecretNamePrefix  = "platform-cred-"
 	envoyBootstrapVolume        = "envoy-bootstrap"
 	envoyBootstrapMount         = "/etc/envoy"
@@ -165,15 +164,6 @@ func (c envoyHostChain) ContestedAt(scope string) bool {
 			return true
 		}
 		owners[cred.HeaderName] = cred.ConnectionID
-	}
-	return false
-}
-
-func (c envoyHostChain) Contested() bool {
-	for _, scope := range c.PathScopes() {
-		if c.ContestedAt(scope) {
-			return true
-		}
 	}
 	return false
 }
@@ -354,46 +344,6 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	items := append([]corev1.Secret(nil), list.Items...)
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items, nil
-}
-
-type envMapping struct {
-	EnvName     string `json:"envName"`
-	Placeholder string `json:"placeholder"`
-}
-
-func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
-	const fallbackPlaceholder = "dummy-placeholder"
-	seen := map[string]struct{}{}
-	add := func(envs []corev1.EnvVar, name, value string) []corev1.EnvVar {
-		if name == "" {
-			return envs
-		}
-		if _, dup := seen[name]; dup {
-			return envs
-		}
-		if value == "" {
-			value = fallbackPlaceholder
-		}
-		seen[name] = struct{}{}
-		return append(envs, corev1.EnvVar{Name: name, Value: value})
-	}
-	var envs []corev1.EnvVar
-	for _, s := range secrets {
-		raw := s.Annotations[envoyEnvMappingsAnn]
-		if raw == "" {
-			continue
-		}
-		var mappings []envMapping
-		if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
-			slog.Warn("invalid env-mappings annotation; skipping",
-				"namespace", s.Namespace, "secret", s.Name, "error", err)
-			continue
-		}
-		for _, m := range mappings {
-			envs = add(envs, m.EnvName, m.Placeholder)
-		}
-	}
-	return envs
 }
 
 type connectionHostInjection struct {

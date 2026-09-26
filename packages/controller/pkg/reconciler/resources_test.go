@@ -68,9 +68,6 @@ func credSecret(name, host string) corev1.Secret {
 			`","headerName":"Authorization","valueFormat":"Bearer {value}","sdsKey":"` +
 			sdsFileKeyForHost(host) + `"}]`,
 	}
-	if host == "api.github.com" || host == "github.com" || host == "raw.githubusercontent.com" {
-		ann["agent-platform.ai/env-mappings"] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
-	}
 	return corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
