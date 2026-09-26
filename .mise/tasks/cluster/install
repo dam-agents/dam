@@ -207,7 +207,46 @@ else
   fi
 fi
 
-# 1c. Traefik app entrypoint — on lima this rides the provision script's
+# 1c. Pull every third-party image the rest of the install runs, side by side,
+# while the steps below wait on other things. Otherwise the kubelet pulls each
+# only once its chart is applied: the Istio charts install one after another,
+# each waiting for its pods, and Keycloak waits on Postgres. The chart's
+# dependencies are resolved into charts/ (gitignored) here, first: rendering
+# needs them even with clickstack.enabled=false, and the build refreshes both
+# repositories. Best effort: the kubelet still pulls whatever this misses.
+ISTIO_VERSION="1.29.1"
+helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
+helm dependency build helm
+prepull_images() {
+  local images
+  images=$(
+    {
+      for chart in istiod cni ztunnel; do
+        helm template "$chart" "istio/$chart" --version "$ISTIO_VERSION" --set profile=ambient
+      done
+      helm template platform helm -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
+    } | yq -r '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' |
+      grep -v '^---$' | grep -vE '(^|/)platform-' | sort -u
+  ) || return 0
+  # istiod injects the waypoint's proxy at run time, from beside its own image.
+  images+=$'\n'$(printf '%s\n' "$images" | sed -n 's|/pilot:|/proxyv2:|p' | head -n1)
+  printf '%s\n' "$images" | grep . | xargs -P 6 -I{} bash -c 'pull_one "$1"' _ {}
+}
+pull_one() {
+  local start=$SECONDS cmd=(timeout 300 k3s crictl pull "$1")
+  if [ -n "${IS_SANDBOX:-}" ]; then cmd=(sudo "${cmd[@]}"); else cmd=(limactl shell "$LIMA_INSTANCE" sudo "${cmd[@]}"); fi
+  if "${cmd[@]}" >/dev/null 2>&1; then
+    echo "pulled $1 in $((SECONDS - start))s"
+  else
+    echo "could not pull $1; the kubelet will"
+  fi
+}
+export -f pull_one
+prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
+PREPULL_PID=$!
+
+# 1d. Traefik app entrypoint — on lima this rides the provision script's
 # k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
 # so the app port silently doesn't exist. HelmChartConfig via kubectl apply
 # is idempotent and works on both. The port follows `--set=port=…` so the
@@ -269,7 +308,6 @@ CERT_MANAGER_PID=$!
 # and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
 # floor for ambient L7 with locked-down waypoint HCM.
 GATEWAY_API_VERSION="v1.2.0"
-ISTIO_VERSION="1.29.1"
 
 if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
@@ -300,9 +338,6 @@ kubectl --kubeconfig="$KUBECONFIG" annotate crd "${GATEWAY_CRDS[@]}" \
   --overwrite >/dev/null 2>&1 || true
 
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
-helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
-helm repo update istio >/dev/null
-
 # Install-only path. Avoids helm upgrade conflicts with istiod, which
 # patches `istiod-default-validator` ValidatingWebhookConfiguration's
 # `failurePolicy` after start; a subsequent `helm upgrade istio-base`
@@ -328,9 +363,15 @@ istio_install_if_missing istio-base istio/base
 # (and well under Istio's 90d MAX_WORKLOAD_CERT_TTL default) takes the
 # rotation race off the critical path for normal dev work; the
 # ztunnel-cert-watchdog CronJob below covers the residual.
+#
+# istiod, istio-cni and ztunnel install side by side once istio-base has
+# created the namespace and CRDs. Each install's --wait is what took the time,
+# and nothing in one chart needs another installed first: ztunnel's pods keep
+# retrying istiod until it serves, and its wait covers that.
 istio_install_if_missing istiod istio/istiod \
   --set profile=ambient \
-  --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h
+  --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h > >(sed -u 's/^/[istiod] /') 2>&1 &
+ISTIOD_PID=$!
 # A node kernel without IPv6 (no /proc/net/if_inet6 — some container
 # sandboxes) fails ztunnel's dual-stack bind with EAFNOSUPPORT, so it
 # crash-loops; install the dataplane IPv4-only there. Probed on the node,
@@ -354,7 +395,8 @@ istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
   --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
-  ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"}
+  ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"} > >(sed -u 's/^/[istio-cni] /') 2>&1 &
+ISTIO_CNI_PID=$!
 # ztunnel proxies every mesh hop, including the experiment SDK's status polls
 # from a driver to the api-server harness. Its chart default requests only
 # 200m, so a bursting agent pod (a nous worker boots with a large upstream
@@ -365,6 +407,8 @@ istio_install_if_missing ztunnel istio/ztunnel \
   --set resources.requests.cpu=1 \
   --set resources.requests.memory=512Mi \
   ${ZTUNNEL_IPV4_ONLY[@]+"${ZTUNNEL_IPV4_ONLY[@]}"}
+wait "$ISTIOD_PID" || { echo "FATAL: istiod install failed" >&2; exit 1; }
+wait "$ISTIO_CNI_PID" || { echo "FATAL: istio-cni install failed" >&2; exit 1; }
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 wait "$CERT_MANAGER_PID" || { echo "FATAL: cert-manager install failed" >&2; exit 1; }
@@ -500,11 +544,6 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
-# clickstack.enabled=false.
-helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
-helm dependency build helm
-
 # 3. Load images into k3s (built at the top, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
@@ -562,36 +601,43 @@ else
 
   COMPONENTS=(controller api-server ui keycloak)
   [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
-  COMPONENTS+=(${AGENT_TASKS[@]+"${AGENT_TASKS[@]}"})
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background; this is where they are first
   # needed. Each one it has finished is imported while the rest are still on
   # their way, so only the last to land is imported after the wait.
-  if [ -n "${CI_IMAGES_STATUS:-}" ]; then
-    echo "Waiting for this run's images (e2e:ci-images)..."
-    REMAINING=("${COMPONENTS[@]}")
-    until [ -s "$CI_IMAGES_STATUS" ]; do
-      LEFT=()
-      for c in "${REMAINING[@]}"; do
-        if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
-          echo "Loading $c into k3s..."
-          mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
-        else
-          LEFT+=("$c")
+  load_images() {
+    local c remaining=("$@") left tars=()
+    if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+      echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
+      while [ ${#remaining[@]} -gt 0 ]; do
+        left=()
+        for c in "${remaining[@]}"; do
+          if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
+            echo "Loading $c into k3s..."
+            mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
+          else
+            left+=("$c")
+          fi
+        done
+        remaining=(${left[@]+"${left[@]}"})
+        if [ ${#remaining[@]} -gt 0 ] && [ -s "$CI_IMAGES_STATUS" ]; then
+          [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; return 1; }
+          break
         fi
+        [ ${#remaining[@]} -eq 0 ] || sleep 2
       done
-      REMAINING=(${LEFT[@]+"${LEFT[@]}"})
-      sleep 2
-    done
-    [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; exit 1; }
-    COMPONENTS=(${REMAINING[@]+"${REMAINING[@]}"})
-  fi
-
-  if [ ${#COMPONENTS[@]} -gt 0 ]; then
-    echo "Loading images into k3s: ${COMPONENTS[*]}"
-    TARS=()
-    for c in "${COMPONENTS[@]}"; do TARS+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-    mise run cluster:import -- "${TARS[@]}"
+    fi
+    [ ${#remaining[@]} -gt 0 ] || return 0
+    echo "Loading images into k3s: ${remaining[*]}"
+    for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
+    mise run cluster:import -- "${tars[@]}"
+  }
+  load_images "${COMPONENTS[@]}"
+  # No pod the chart starts runs an agent image, so those load beside the
+  # install below. The mock's is the largest image the e2e cluster loads.
+  if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
+    load_images "${AGENT_TASKS[@]}" > >(sed -u 's/^/[agent images] /') 2>&1 &
+    AGENT_LOAD_PID=$!
   fi
 fi
 
@@ -632,6 +678,10 @@ fi
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
 helm --kubeconfig="$KUBECONFIG" upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+
+if [ -n "${AGENT_LOAD_PID:-}" ]; then
+  wait "$AGENT_LOAD_PID" || { echo "FATAL: loading the agent images failed" >&2; exit 1; }
+fi
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
@@ -696,6 +746,8 @@ else
   limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
+wait "$PREPULL_PID" 2>/dev/null || true
+
 echo ""
 echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
@@ -753,3 +805,11 @@ for _, name, ready, restarts, killed in sorted(rows, reverse=True):
         ("  last exit: " + killed) if killed else "",
     ))
 ' 2>/dev/null || echo "  (readiness timeline unavailable)"
+
+# The pulls the kubelet still made itself, which the pre-pull in step 1c did
+# not already finish. An image it found on the node logs nothing here.
+echo ""
+echo "--- Image pulls left to the kubelet ---"
+kubectl --kubeconfig="$KUBECONFIG" get events -A --field-selector reason=Pulled \
+    -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' 2>/dev/null |
+  sed -n 's/^Successfully pulled image "\([^"]*\)" in \([^ ]*\) .*/  \2  \1/p' || true
