@@ -55,7 +55,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     "/api/oauth",
     createOAuthRoutes({
       db: boot.db,
-      secretStore: boot.secretStores.default(),
+      secretStore: boot.secretStore,
       engine: boot.connectionsBoot.oauthEngine,
       templates: boot.connectionsBoot.templates,
       runtimeMutator: boot.runtimeMutator,

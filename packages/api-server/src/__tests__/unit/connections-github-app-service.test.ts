@@ -67,7 +67,6 @@ function makeSecretStoreFake() {
     put: async (ref, fields) => {
       stored.set(ref.path, { ...fields });
     },
-    putField: async () => {},
     putFields: async (ref, fields) => {
       stored.set(ref.path, { ...(stored.get(ref.path) ?? {}), ...fields });
     },
@@ -77,7 +76,6 @@ function makeSecretStoreFake() {
       deleted.push(ref.path);
       stored.delete(ref.path);
     },
-    list: async () => [],
   };
   return { store, stored, deleted };
 }

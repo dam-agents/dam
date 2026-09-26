@@ -97,29 +97,6 @@ export function createKubernetesSecretStore(opts: {
       await k8sClient.replaceSecret(ref.path, body);
     },
 
-    async putField(ref, value): Promise<void> {
-      ensureOwn(ref);
-      const existing = await k8sClient.getSecret(ref.path);
-      const data: Record<string, string> = {
-        ...((existing?.data ?? {}) as Record<string, string>),
-        ...encodeFields({ [ref.field]: value }),
-      };
-      const body: k8s.V1Secret = {
-        ...(existing ?? { apiVersion: "v1", kind: "Secret", type: "Opaque" }),
-        metadata: existing?.metadata ?? {
-          name: ref.path,
-          namespace: k8sClient.namespace,
-          labels: { [LABEL_MANAGED_BY]: MANAGED_BY_VALUE },
-        },
-        data,
-      };
-      if (existing) {
-        await k8sClient.replaceSecret(ref.path, body);
-      } else {
-        await k8sClient.createSecret(body);
-      }
-    },
-
     async get(ref): Promise<Record<string, string> | null> {
       ensureOwn(ref);
       const secret = await k8sClient.getSecret(ref.path);
@@ -142,31 +119,6 @@ export function createKubernetesSecretStore(opts: {
     async delete(ref): Promise<void> {
       ensureOwn(ref);
       await k8sClient.deleteSecret(ref.path);
-    },
-
-    async list(scope): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]> {
-      const selectors = [
-        `${LABEL_MANAGED_BY}=${MANAGED_BY_VALUE}`,
-        `${LABEL_OWNER}=${scope.owner}`,
-      ];
-      if (scope.purpose) {
-        selectors.push(`${LABEL_PURPOSE}=${sanitizeLabel(scope.purpose)}`);
-      }
-      const secrets = await k8sClient.listSecrets(selectors.join(","));
-      const out: { ref: SecretRef; metadata: SecretMetadata }[] = [];
-      for (const s of secrets) {
-        const name = s.metadata?.name;
-        if (!name) continue;
-        const purpose =
-          s.metadata?.annotations?.[LABEL_PURPOSE] ??
-          s.metadata?.labels?.[LABEL_PURPOSE] ??
-          "";
-        out.push({
-          ref: { storeId, path: name, field: "" },
-          metadata: { owner: scope.owner, purpose },
-        });
-      }
-      return out;
     },
   };
 }

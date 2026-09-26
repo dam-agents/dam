@@ -97,10 +97,7 @@ import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
 } from "./modules/schedules/index.js";
-import {
-  createKubernetesSecretStore,
-  createSecretStoreRegistry,
-} from "./modules/secret-store/index.js";
+import { createKubernetesSecretStore } from "./modules/secret-store/index.js";
 import {
   composeAttentionRetention,
   composeSessionWatcher,
@@ -568,15 +565,14 @@ export async function bootstrap() {
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
-  const secretStores = createSecretStoreRegistry();
-  secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const SLACK_INSTALL_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
-    secretStore: secretStores.default(),
+    secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
       "oauth:connections",
@@ -625,7 +621,7 @@ export async function bootstrap() {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
-      secretStore: secretStores.default(),
+      secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
@@ -834,7 +830,7 @@ export async function bootstrap() {
     find: findSlackInstall(db),
     upsert: upsertSlackInstall(db),
     setState: setSlackCredentialState(db),
-    secrets: secretStores.default(),
+    secrets: secretStore,
     installLock: createXactLock(db),
     envBotToken: config.slackBotToken,
   });
@@ -1389,7 +1385,7 @@ export async function bootstrap() {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
-    secretStores,
+    secretStore,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
     onboardingChecklists,
@@ -1443,6 +1439,7 @@ export async function bootstrap() {
     });
   const harnessDeps = {
     satellitesBoot,
+    secretStore,
     agentStateCache,
     config,
     api,
