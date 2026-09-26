@@ -1,14 +1,11 @@
 package reconciler
 
 import (
-	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/util/retry"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
@@ -133,25 +130,4 @@ func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, owne
 		"app.kubernetes.io/component":  "apiserver",
 	}
 	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
-}
-
-func (r *AgentReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
-	if r.dynamic == nil {
-		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")
-	}
-	ns := desired.GetNamespace()
-	cli := r.dynamic.Resource(authzPolicyGVR).Namespace(ns)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		desired.SetResourceVersion(existing.GetResourceVersion())
-		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
-		return err
-	})
 }

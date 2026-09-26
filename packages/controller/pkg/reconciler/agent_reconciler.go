@@ -58,16 +58,11 @@ type AgentReconciler struct {
 	preflightDone  bool
 }
 
-func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
-	r := &AgentReconciler{client: client, config: cfg}
+func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
+	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg}
 	r.busyProbe = func(ctx context.Context, name string) bool {
 		return agentPodIsBusy(ctx, r.config.Namespace, name)
 	}
-	return r
-}
-
-func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
-	r.dynamic = d
 	return r
 }
 
@@ -134,10 +129,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("extAuthzService")
 
-	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 	timer.mark("authzPolicies")
@@ -370,7 +365,7 @@ func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 }
 
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return "PodNotReady", ""
 	}
@@ -394,17 +389,12 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 	if ss.Status.ObservedGeneration != ss.Generation {
 		return false
 	}
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return false
 	}
 	return isPodReady(*pod) &&
 		pod.Labels["controller-revision-hash"] == ss.Status.UpdateRevision
-}
-
-func (r *AgentReconciler) getPod(ctx context.Context, ssName string) *corev1.Pod {
-	pod, _ := r.readPod(ctx, ssName)
-	return pod
 }
 
 func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
@@ -458,9 +448,6 @@ func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, age
 	svcName := r.config.ExtAuthzServiceName(agentName)
 	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		slog.Warn("deleting per-agent ext-authz Service", "service", svcName, "agent", agentName, "error", err)
-	}
-	if r.dynamic == nil {
-		return
 	}
 	for _, name := range []string{agentName + "-harness-allow", agentName + "-extauthz-allow"} {
 		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
@@ -786,9 +773,6 @@ var certificateGVR = schema.GroupVersionResource{
 }
 
 func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
-	if r.dynamic == nil {
-		return fmt.Errorf("dynamic client not configured (cert-manager Certificate cannot be applied)")
-	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
 	if err != nil {
 		return fmt.Errorf("encoding Certificate: %w", err)
@@ -796,18 +780,22 @@ func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Ce
 	desiredU := &unstructured.Unstructured{Object: raw}
 	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
 	desiredU.SetKind("Certificate")
-	cli := r.dynamic.Resource(certificateGVR).Namespace(desired.Namespace)
+	return r.applyUnstructured(ctx, certificateGVR, desiredU)
+}
+
+func (r *AgentReconciler) applyUnstructured(ctx context.Context, gvr schema.GroupVersionResource, desired *unstructured.Unstructured) error {
+	cli := r.dynamic.Resource(gvr).Namespace(desired.GetNamespace())
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			_, err = cli.Create(ctx, desiredU, metav1.CreateOptions{})
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
 		}
-		desiredU.SetResourceVersion(existing.GetResourceVersion())
-		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

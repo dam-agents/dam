@@ -36,6 +36,17 @@ func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }
 
+func agentToUnstructured(agent *apiv1.Agent) (*unstructured.Unstructured, error) {
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(agent)
+	if err != nil {
+		return nil, fmt.Errorf("converting Agent to unstructured: %w", err)
+	}
+	u := &unstructured.Unstructured{Object: raw}
+	u.SetAPIVersion(apiv1.GroupVersion.String())
+	u.SetKind("Agent")
+	return u, nil
+}
+
 func agentCR() *apiv1.Agent {
 	return &apiv1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
@@ -89,7 +100,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		require.NoError(t, err)
 		dynObjs = append(dynObjs, u)
 	}
-	r := NewAgentReconciler(client, cfg).WithDynamicClient(newFakeDynamic(dynObjs...))
+	r := NewAgentReconciler(client, newFakeDynamic(dynObjs...), cfg)
 	return r, client
 }
 

@@ -29,17 +29,6 @@ func FromCacheObject[T any](obj interface{}) (*T, error) {
 	return out, nil
 }
 
-func agentToUnstructured(agent *apiv1.Agent) (*unstructured.Unstructured, error) {
-	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(agent)
-	if err != nil {
-		return nil, fmt.Errorf("converting Agent to unstructured: %w", err)
-	}
-	u := &unstructured.Unstructured{Object: raw}
-	u.SetAPIVersion(apiv1.GroupVersion.String())
-	u.SetKind("Agent")
-	return u, nil
-}
-
 func agentOwnerRef(agent *apiv1.Agent) metav1.OwnerReference {
 	return *metav1.NewControllerRef(agent, agentGVK)
 }

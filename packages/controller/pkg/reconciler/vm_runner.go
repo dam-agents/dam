@@ -116,7 +116,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerPVC(ctx, owner, demand); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyRunnerService(ctx, owner); err != nil {
+	if err := r.applyService(ctx, r.buildRunnerService(owner, r.runnerOwnerRef(ctx))); err != nil {
 		return nil, false, err
 	}
 	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
@@ -295,22 +295,15 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 	return err
 }
 
-func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.Namespace
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
+func (r *AgentReconciler) buildRunnerService(owner string, ownerRefs []metav1.OwnerReference) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: r.runnerName(owner), Namespace: r.config.Namespace, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: ownerRefs},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  vmRunnerSelector(owner),
 			Ports:     []corev1.ServicePort{{Name: "machine-api", Port: vmRunnerPort, TargetPort: intstr.FromInt(vmRunnerPort)}},
 		},
 	}
-	cli := r.client.CoreV1().Services(ns)
-	if _, err := cli.Get(ctx, name, metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
-		return err
-	}
-	_, err := cli.Create(ctx, svc, metav1.CreateOptions{})
-	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
@@ -613,9 +606,6 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	}
 	for _, del := range []func() error{
 		func() error {
-			if r.dynamic == nil {
-				return nil
-			}
 			return r.dynamic.Resource(certificateGVR).Namespace(ns).Delete(ctx, r.runnerTLSName(owner), opts)
 		},
 		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },
