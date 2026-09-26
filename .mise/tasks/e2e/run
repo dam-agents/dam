@@ -89,8 +89,16 @@ mise run //packages/e2e/playwright:install-browsers
 # missing and every pod sandbox — k3s's own bootstrap included — fails to get a
 # network. On a GitHub-hosted runner, a fresh VM per job, this finds nothing.
 # In a sandbox this uninstalls k3s from the host; locally it deletes the VM.
-echo "Nuking any pre-existing test cluster..."
-mise run cluster:delete -- --force
+#
+# E2E_HOST_PROVISIONED says the caller provisioned k3s on this host for this
+# run, so there is nothing stale to nuke: CI's e2e job starts k3s on its fresh
+# runner at the top of the job, beside its own setup (see cd.yml).
+if [ -n "${E2E_HOST_PROVISIONED:-}" ]; then
+  echo "Keeping the k3s this run provisioned (E2E_HOST_PROVISIONED)."
+else
+  echo "Nuking any pre-existing test cluster..."
+  mise run cluster:delete -- --force
+fi
 
 # Provision a fresh e2e cluster. Install args live in
 # e2e:install, shared with e2e:loop so the two never drift.
