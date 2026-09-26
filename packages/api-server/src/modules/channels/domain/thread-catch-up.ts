@@ -22,10 +22,6 @@ export function laterTs(a: string, b: string): string {
   return isAfterTs(a, b) ? a : b;
 }
 
-export function earlierTs(a: string, b: string): string {
-  return isAfterTs(a, b) ? b : a;
-}
-
 export function newestOf(tss: readonly (string | undefined)[]): string | null {
   let found: string | null = null;
   for (const ts of tss) {
@@ -70,7 +66,9 @@ export function nextBoundary(
   const capped =
     read.newestReadTs === null
       ? null
-      : earlierTs(read.newestReadTs, read.coveredUpTo);
+      : isAfterTs(read.newestReadTs, read.coveredUpTo)
+        ? read.coveredUpTo
+        : read.newestReadTs;
   const reached = read.hasMore ? capped : read.coveredUpTo;
   if (reached === null) return stored;
   if (stored === null) return reached;
@@ -83,16 +81,6 @@ export interface TailFold<T> {
   opener: T | null;
   trimmed: boolean;
   reachedBefore: boolean;
-}
-
-export function emptyTailFold<T>(): TailFold<T> {
-  return {
-    window: [],
-    seen: new Set(),
-    opener: null,
-    trimmed: false,
-    reachedBefore: false,
-  };
 }
 
 /**
@@ -203,7 +191,13 @@ export async function foldThreadPages<T extends { ts?: string }, C>(
   hasEarlier: boolean;
   hasMore: boolean;
 }> {
-  let fold = emptyTailFold<T>();
+  let fold: TailFold<T> = {
+    window: [],
+    seen: new Set(),
+    opener: null,
+    trimmed: false,
+    reachedBefore: false,
+  };
   let from: C | undefined;
   for (let page = 0; page < args.maxPages; page += 1) {
     const read = await readPage(from);

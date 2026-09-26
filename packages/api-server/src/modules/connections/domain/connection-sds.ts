@@ -1,7 +1,6 @@
 import type { Contribution } from "api-server-api";
-import { encodeAccessToken } from "./host-injection.js";
 
-const PLACEHOLDER_TOKEN = "dummy-placeholder";
+export const CONNECTION_TOKEN_PLACEHOLDER = "dummy-placeholder";
 
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
@@ -10,7 +9,7 @@ export function sdsFileKeyForHost(host: string): string {
   return `host-${slug}.sds.yaml`;
 }
 
-export function sdsFileKeyForInjection(c: {
+function sdsFileKeyForInjection(c: {
   host: string;
   headerName: string;
   queryParamName?: string;
@@ -22,7 +21,7 @@ export function sdsFileKeyForInjection(c: {
   return `host-${slug}.sds.yaml`;
 }
 
-export function sdsYamlContent(inlineString: string): string {
+function sdsYamlContent(inlineString: string): string {
   return [
     "resources:",
     '- "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
@@ -41,12 +40,15 @@ export function buildConnectionSdsFields(
   const out: Record<string, string> = {};
   for (const c of contributions) {
     if (c.kind !== "egress-inject") continue;
+    const encoded =
+      c.encoding === "basic-x-access-token"
+        ? Buffer.from(`x-access-token:${accessToken}`, "utf8").toString(
+            "base64",
+          )
+        : accessToken;
     const inlineString = c.queryParamName
       ? accessToken
-      : c.valueFormat.replaceAll(
-          "{value}",
-          encodeAccessToken(accessToken, c.encoding),
-        );
+      : c.valueFormat.replaceAll("{value}", encoded);
     out[sdsFileKeyForInjection(c)] = sdsYamlContent(inlineString);
   }
   return out;
@@ -90,5 +92,3 @@ export function connectionSecretAnnotations(
   }
   return out;
 }
-
-export const CONNECTION_TOKEN_PLACEHOLDER = PLACEHOLDER_TOKEN;

@@ -52,11 +52,6 @@ const DEAD_CREDENTIAL = new Set([
   "token_expired",
 ]);
 
-function slackRefusal(err: unknown): string | null {
-  const data = (err as { data?: { error?: unknown } } | null)?.data;
-  return typeof data?.error === "string" ? data.error : null;
-}
-
 function toSlackMessage(m: {
   ts?: string;
   user?: string;
@@ -156,7 +151,8 @@ export function createBoltSlackGateway(
     try {
       identity = await bolt.client.auth.test({ token: deps.envBotToken });
     } catch (err) {
-      const refusal = slackRefusal(err);
+      const data = (err as { data?: { error?: unknown } } | null)?.data;
+      const refusal = typeof data?.error === "string" ? data.error : null;
       if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
       process.stderr.write(
         `[slack] Slack refuses the operator's bot token (${refusal}); bindings that name the original workspace by the empty string are served by nothing until it is replaced\n`,

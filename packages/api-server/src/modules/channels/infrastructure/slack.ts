@@ -19,7 +19,6 @@ import {
   SessionType,
   type AgentsService,
 } from "api-server-api";
-import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   classifyInboundAttachment,
   type InboundAttachment,
@@ -179,7 +178,12 @@ function framePrompt(opts: {
   }
   parts.push(opts.text);
   const delivered = opts.files ?? [];
-  if (delivered.length > 0) parts.push(renderDeliveredFiles(delivered));
+  if (delivered.length > 0) {
+    const list = delivered.map((f) => `- ${f.name} → ${f.path}`).join("\n");
+    parts.push(
+      `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`,
+    );
+  }
   const text = parts.join("\n\n");
   if (opts.images.length === 0 && delivered.length === 0) return text;
   return [
@@ -203,11 +207,6 @@ function promptSafeName(name: string): string {
       .trim()
       .slice(0, 120) || "file"
   );
-}
-
-function renderDeliveredFiles(files: DeliveredFile[]): string {
-  const list = files.map((f) => `- ${f.name} → ${f.path}`).join("\n");
-  return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
 }
 
 function isDirectMessageId(channelId: string): boolean {
@@ -446,7 +445,7 @@ async function fetchSlackAttachments(
         const refused =
           looksLikeSignInPage(head) ||
           (classifyInboundAttachment(bytes).kind === "web_page" &&
-            !(await canReadFiles(gateway, teamId)));
+            !(await hasScope(gateway, teamId, "files:read")));
         if (bytes.length === 0 || refused) {
           getLogger().warn(
             {
@@ -555,10 +554,6 @@ const CHANNEL_LOOKBACK = 50;
 const CHANNEL_CATCH_UP_CAP = 500;
 
 const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function windowFloorTs(nowMs: number): string {
-  return ((nowMs - CATCH_UP_WINDOW_MS) / 1000).toFixed(6);
-}
 
 async function readConversation(
   gateway: SlackGateway,
@@ -739,7 +734,7 @@ export interface SlackWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
-  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
+  start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
@@ -924,28 +919,13 @@ async function grantedScopes(
   }
 }
 
-async function canLookupUsers(
+async function hasScope(
   gw: SlackGateway,
   teamId: SlackWorkspace,
+  scope: string,
 ): Promise<boolean> {
   const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("users:read");
-}
-
-async function canReadFiles(
-  gw: SlackGateway,
-  teamId: SlackWorkspace,
-): Promise<boolean> {
-  const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("files:read");
-}
-
-async function canReadReactions(
-  gw: SlackGateway,
-  teamId: SlackWorkspace,
-): Promise<boolean> {
-  const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("reactions:read");
+  return !scopes || scopes.has(scope);
 }
 
 const SCOPE_WITHHELD_USERS =
@@ -1000,7 +980,7 @@ async function turnContractContext(
   botUserId: string | null;
 }> {
   const [lookup, permalink, botUserId] = await Promise.all([
-    canLookupUsers(gw, teamId),
+    hasScope(gw, teamId, "users:read"),
     opts?.batched
       ? Promise.resolve(null)
       : gw.getPermalink(channel, eventTs, teamId).catch(() => null),
@@ -2115,7 +2095,7 @@ export function createSlackWorker(
     );
     const attribution =
       hasAgentAuthored || hasUnattributedBot
-        ? historyLegend(await canLookupUsers(gw, ctx.teamId), {
+        ? historyLegend(await hasScope(gw, ctx.teamId, "users:read"), {
             botLabel: hasUnattributedBot ? bot.label : null,
           })
         : null;
@@ -2185,7 +2165,7 @@ export function createSlackWorker(
       })),
       ctx.instanceName,
     );
-    const floor = windowFloorTs(Date.now());
+    const floor = ((Date.now() - CATCH_UP_WINDOW_MS) / 1000).toFixed(6);
     if (own === null) return floor;
     return ctx.conversationTs !== undefined ? own : laterTs(own, floor);
   }
@@ -2258,7 +2238,7 @@ export function createSlackWorker(
       return {
         frame: {
           context: lines,
-          contextLegend: catchUpLegend(await canLookupUsers(gw, ctx.teamId), {
+          contextLegend: catchUpLegend(await hasScope(gw, ctx.teamId, "users:read"), {
             botLabel: hasUnattributedBot ? bot.label : null,
             someOmitted: readHasMore,
             hasThreadMarker,
@@ -3642,7 +3622,7 @@ export function createSlackWorker(
         throw new Error("Slack gateway failed to connect");
     },
 
-    async start(instanceName: string, _channel: StoredChannelConfig) {
+    async start(instanceName: string) {
       serving = true;
       const started = await ensureGateway();
       if (!started) {
@@ -4102,7 +4082,7 @@ export function createSlackWorker(
         requested.push({ raw, id });
       }
 
-      const lookupGranted = await canLookupUsers(gw, workspace);
+      const lookupGranted = await hasScope(gw, workspace, "users:read");
       const users = await Promise.all(
         requested.map(async ({ raw, id }): Promise<ChannelUser> => {
           if (id && !lookupGranted) {
@@ -4207,7 +4187,7 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      if (!(await canReadReactions(gw, target.teamId)))
+      if (!(await hasScope(gw, target.teamId, "reactions:read")))
         return { error: SCOPE_WITHHELD_REACTIONS };
 
       try {

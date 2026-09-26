@@ -25,19 +25,6 @@ export interface CoalescingState<T> {
   maxBatch?: number;
 }
 
-function leadingSteerable<T>(
-  pending: readonly T[],
-  canSteer: (item: T) => boolean,
-  cap: number,
-): T[] {
-  const run: T[] = [];
-  for (const item of pending) {
-    if (run.length >= cap || !canSteer(item)) break;
-    run.push(item);
-  }
-  return run;
-}
-
 /** UNIT_BOUNDARY_DESCRIPTION: Decides what a conversation's queued messages do
  *  next, so both channel workers coalesce the same way. A conversation runs one
  *  turn at a time. With no turn running, the queue starts one carrying every
@@ -59,11 +46,11 @@ export function planCoalescedDelivery<T>(
   const cap = Math.max(1, state.maxBatch ?? DEFAULT_MAX_COALESCED_BATCH);
 
   if (state.turnInFlight) {
-    const batch = leadingSteerable(
-      state.pending,
-      state.canSteer ?? (() => true),
-      cap,
-    );
+    const batch: T[] = [];
+    for (const item of state.pending) {
+      if (batch.length >= cap || state.canSteer?.(item) === false) break;
+      batch.push(item);
+    }
     if (batch.length === 0) return { kind: "hold" };
     return {
       kind: "steer",

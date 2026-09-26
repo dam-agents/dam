@@ -10,7 +10,6 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import { agentContextBlock } from "../../modules/channels/infrastructure/agent-footer.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -182,7 +181,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("hands a resuming agent the peer's post that arrived while it was away", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -219,7 +218,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("leaves out what the resuming agent has already seen", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -246,7 +245,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("adds no history block when nothing arrived since the last turn", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -273,7 +272,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("falls back to the agent's own last post when the watermark is lost", async () => {
     const h = harness([boundSession()]);
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([
       { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
@@ -300,7 +299,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("carries a human's untagged thread message that was never relayed", async () => {
     const h = harness([], true);
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -330,7 +329,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("still gives an agent opening a fresh session the whole thread", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([
       { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
@@ -357,7 +356,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("finds the peer's post in a thread longer than one page of replies", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const filler = Array.from({ length: 55 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(2, "0")}`,
@@ -402,7 +401,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("keeps the unseen boundary where it was when the read fails", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -439,7 +438,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("moves the boundary no further than a capped read reached", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const flood = Array.from({ length: 59 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(3, "0")}`,
@@ -488,7 +487,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("moves the boundary no further than a cold read reached", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const filler = Array.from({ length: 60 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(3, "0")}`,
@@ -533,7 +532,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("keeps the boundary where it was when the send fails", async () => {
     const h = harness();
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
     await h.gw.fireMention(
@@ -568,7 +567,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("keeps a rolling window across pages of the tail read", async () => {
     const h = harness([boundSession()]);
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const before = Array.from({ length: 79 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(3, "0")}`,
@@ -607,7 +606,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("counts distinct messages against the window, not the repeated parent", async () => {
     const h = harness([boundSession()]);
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const before = Array.from({ length: 71 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(3, "0")}`,
@@ -646,7 +645,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
    */
   it("derives a lost boundary from the tail of a long thread", async () => {
     const h = harness([boundSession()]);
-    await h.worker.start(SELF, {} as StoredChannelConfig);
+    await h.worker.start(SELF);
 
     const filler = Array.from({ length: 57 }, (_, i) => ({
       ts: `1.${String(i + 1).padStart(3, "0")}`,

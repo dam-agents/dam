@@ -11,7 +11,6 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 /**
  * TEST_OVERVIEW: several agents connected to one Slack conversation — which one
@@ -135,7 +134,7 @@ function harness(
       prompts.filter((p) => p.agent === agent).map((p) => p.text),
     async start() {
       for (const spec of agentSpecs)
-        await worker.start(spec.instanceName, {} as StoredChannelConfig);
+        await worker.start(spec.instanceName);
     },
     async mention(text: string, threadTs?: string) {
       await this.start();
