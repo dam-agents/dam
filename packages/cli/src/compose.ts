@@ -33,13 +33,14 @@ export function compose(): Command {
     compatService,
   });
   const agent = composeAgentModule({
-    tokenProvider,
+    buildTrpc,
     configService,
     compatService,
     templateService: template.exports.createService,
   });
   const base = {
     tokenProvider,
+    buildTrpc,
     configService,
     compatService,
     createAgentService: agent.exports.createService,

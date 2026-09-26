@@ -1,7 +1,6 @@
 import { Command } from "commander";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import { createTrpcClient } from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildAcceptCommand } from "./commands/accept.js";
 import { buildShowCommand } from "./commands/show.js";
 import { buildStatusCommand } from "./commands/status.js";
@@ -11,7 +10,7 @@ import {
 } from "./services/terms-service.js";
 
 export interface TermsModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
 }
@@ -23,7 +22,7 @@ export interface TermsModule {
 export function composeTermsModule(opts: TermsModuleOptions): TermsModule {
   const createService = (host: string): TermsService =>
     createTermsService({
-      trpc: createTrpcClient({ host, tokenProvider: opts.tokenProvider }),
+      trpc: opts.buildTrpc(host),
       host,
     });
   const scoped = {

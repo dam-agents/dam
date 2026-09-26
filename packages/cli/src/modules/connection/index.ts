@@ -1,5 +1,3 @@
-export type { ConnectionService } from "./services/connection-service.js";
-export { createConnectionService } from "./services/connection-service.js";
 export {
   configInputsOf,
   validateConfigInputValue,
