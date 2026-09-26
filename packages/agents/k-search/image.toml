@@ -32,7 +32,7 @@ echo 'import dam_modal_proxy_patch' > zz_dam_modal_proxy.pth
 
 # The ACP shim harness-chat runs; it resolves the SDK from the install it sits in.
 [tools."npm:@agentclientprotocol/sdk"]
-version = "0.17.1"
+version = "1.4.0"
 postinstall = 'cp {{config_root}}/k-search/ksearch-acp-shim.mjs "$MISE_TOOL_INSTALL_PATH/"'
 oci_link = "/opt/ksearch-acp"
 

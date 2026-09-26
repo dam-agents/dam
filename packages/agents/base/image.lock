@@ -215,10 +215,10 @@ backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.79.0"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
-version = "0.17.1"
-aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/0.17.1", digest = "sha256:8f3b7b2f629a827ac92623afc328f19f35218b2368d717e182c896c6cac7e880" }
+version = "1.4.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.4.0", digest = "sha256:75677de80278b61005d8a9132b416fc82b76ec930421eb5e900ffb42c092cb0e" }
 backend = "npm:@agentclientprotocol/sdk"
-specifiers = ["0.17.1"]
+specifiers = ["1.4.0"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
 version = "0.85.1"
