@@ -1091,6 +1091,11 @@ export async function bootstrap() {
       ? [new URL(config.objectStorageAgentEndpoint).hostname]
       : [],
   });
+  if (config.slackAppToken) {
+    await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
+      slackInstalls.renewAll(),
+    );
+  }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
     deliverySweeper.tick(),
   );

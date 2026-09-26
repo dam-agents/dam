@@ -209,14 +209,14 @@ describe("slack install service — rotating tokens", () => {
   }
 
   /**
-   * TEST_SCENARIO: A rotating token well before its expiry is served as it is;
+   * TEST_SCENARIO: A rotating token less than an hour old is served as it is;
    * nothing is spent refreshing it.
    */
-  it("serves a rotating token that is not close to expiry", async () => {
+  it("serves a rotating token less than an hour old", async () => {
     let refreshed = 0;
     const { svc } = service({
       installs: { "T-SECOND": installRow("T-SECOND", "secret-second") },
-      secrets: { "secret-second": rotating(T0 + 6 * HOUR) },
+      secrets: { "secret-second": rotating(T0 + 11.5 * HOUR) },
       now: () => T0,
       refreshToken: async () => {
         refreshed++;
@@ -229,11 +229,11 @@ describe("slack install service — rotating tokens", () => {
   });
 
   /**
-   * TEST_SCENARIO: Close to expiry, the token is exchanged for a new one, and
+   * TEST_SCENARIO: Once the token is an hour old it is swapped for a new one, and
    * the new refresh token is stored beside it — the old one is single-use, so
    * losing the new one would strand the workspace at the next expiry.
    */
-  it("refreshes a token close to expiry and stores the new pair", async () => {
+  it("refreshes a token an hour old and stores the new pair", async () => {
     const spent: string[] = [];
     const { svc, stored } = service({
       installs: { "T-SECOND": installRow("T-SECOND", "secret-second") },
