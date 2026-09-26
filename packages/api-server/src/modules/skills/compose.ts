@@ -36,8 +36,7 @@ import { wireScanCacheBus } from "./infrastructure/scan-cache.js";
 const sharedScanCache = createScanCache();
 
 let broadcastScanInvalidation:
-  | ((gitUrl: string, path?: string) => void)
-  | null = null;
+  ((gitUrl: string, path?: string) => void) | null = null;
 
 export function connectScanCacheBus(bus: RedisBus): void {
   broadcastScanInvalidation = wireScanCacheBus(sharedScanCache, bus);

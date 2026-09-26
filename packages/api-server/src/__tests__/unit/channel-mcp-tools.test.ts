@@ -110,8 +110,7 @@ describe("outbound MCP tools — Slack unfurls (#3499)", () => {
     for (const name of ["send_channel_message", "reply"]) {
       const tool = tools.find((candidate) => candidate.name === name);
       const properties = tool?.inputSchema.properties as
-        | Record<string, { type?: string }>
-        | undefined;
+        Record<string, { type?: string }> | undefined;
       expect(properties?.unfurlLinks).toMatchObject({ type: "boolean" });
       expect(properties?.unfurlMedia).toMatchObject({ type: "boolean" });
       expect(tool?.inputSchema.required ?? []).not.toContain("unfurlLinks");
@@ -168,8 +167,7 @@ describe("reply MCP tool — broadcast to channel (#2973)", () => {
     const reply = tools.find((t) => t.name === "reply");
 
     const properties = reply?.inputSchema.properties as
-      | Record<string, { type?: string }>
-      | undefined;
+      Record<string, { type?: string }> | undefined;
     expect(properties?.alsoSendToChannel).toMatchObject({ type: "boolean" });
     expect(reply?.inputSchema.required ?? []).not.toContain(
       "alsoSendToChannel",

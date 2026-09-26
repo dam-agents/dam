@@ -149,10 +149,7 @@ export interface TriggerSessionResult {
 }
 
 export type SteerOutcome =
-  | "injected"
-  | "no-running-turn"
-  | "unsupported"
-  | "failed";
+  "injected" | "no-running-turn" | "unsupported" | "failed";
 
 const steerResponseSchema = z.object({
   outcome: z.string().optional(),
@@ -205,8 +202,7 @@ export function toPromptUpdate(update: unknown): PromptUpdate | null {
 }
 
 export type SendPromptOpts = (
-  | { resumeSessionId: string }
-  | { platformMeta?: PlatformSessionMeta }
+  { resumeSessionId: string } | { platformMeta?: PlatformSessionMeta }
 ) & {
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;

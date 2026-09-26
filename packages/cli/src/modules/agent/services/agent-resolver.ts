@@ -11,10 +11,7 @@ import type { AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "./agent-service.js";
 
 export type ResolveError =
-  | NotFoundError
-  | AmbiguousError
-  | TransportError
-  | AuthRequiredError;
+  NotFoundError | AmbiguousError | TransportError | AuthRequiredError;
 
 export interface AgentResolver {
   resolve(ref: string): Promise<Result<AgentView, ResolveError>>;

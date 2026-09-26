@@ -84,12 +84,10 @@ async function listDir(
           !RESERVED.has(ent.name) &&
           !ent.name.startsWith(IMPORT_STAGING_PREFIX),
       )
-      .map(
-        (ent): DirEntry => ({
-          name: ent.name,
-          type: ent.isDirectory() ? "dir" : "file",
-        }),
-      )
+      .map((ent): DirEntry => ({
+        name: ent.name,
+        type: ent.isDirectory() ? "dir" : "file",
+      }))
       .sort(compareEntries);
     return { path: rel, ok: true, entries };
   } catch {

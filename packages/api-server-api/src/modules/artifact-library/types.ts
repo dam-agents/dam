@@ -14,12 +14,7 @@ export function artifactInternalLink(id: string): string {
 }
 
 export type ArtifactKind =
-  | "html"
-  | "jsx"
-  | "markdown"
-  | "code"
-  | "text"
-  | "binary";
+  "html" | "jsx" | "markdown" | "code" | "text" | "binary";
 
 export type ArtifactVisibility = "private" | "restricted" | "public";
 

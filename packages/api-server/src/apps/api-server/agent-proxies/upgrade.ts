@@ -27,9 +27,7 @@ import { upgradeDenial } from "./mappers.js";
 export type RelayDenialKind = "not-owner" | "not-permitted";
 
 export type RelayAdmissionDenialKind =
-  | AuthDenialKind
-  | TermsDenialKind
-  | RelayDenialKind;
+  AuthDenialKind | TermsDenialKind | RelayDenialKind;
 
 export type RelayAdmissionResult =
   | { ok: true; user: UserIdentity; surface: string }

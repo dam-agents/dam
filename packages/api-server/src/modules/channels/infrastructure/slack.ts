@@ -185,15 +185,13 @@ function framePrompt(opts: {
   return [
     { type: "text", text },
     ...opts.images.map((i) => i.block),
-    ...delivered.map(
-      (f): ContentBlock => ({
-        type: "resource_link",
-        uri: `file://${f.path}`,
-        name: f.name,
-        size: f.size,
-        ...(f.contentType ? { mimeType: f.contentType } : {}),
-      }),
-    ),
+    ...delivered.map((f): ContentBlock => ({
+      type: "resource_link",
+      uri: `file://${f.path}`,
+      name: f.name,
+      size: f.size,
+      ...(f.contentType ? { mimeType: f.contentType } : {}),
+    })),
   ];
 }
 

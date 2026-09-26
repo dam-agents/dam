@@ -9,8 +9,7 @@ export interface JsonRpcError {
 }
 
 export type RpcOutcome =
-  | { ok: true; result: unknown }
-  | { ok: false; error: JsonRpcError };
+  { ok: true; result: unknown } | { ok: false; error: JsonRpcError };
 
 export interface RunConnection {
   request(method: string, params: unknown): Promise<RpcOutcome>;

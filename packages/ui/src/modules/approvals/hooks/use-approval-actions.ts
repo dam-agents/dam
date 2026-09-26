@@ -20,11 +20,7 @@ import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 import { isHeldCallStillLive } from "../lib/hold.js";
 
 export type ApprovalActionId =
-  | "allow-once"
-  | "allow-permanent"
-  | "allow-host"
-  | "dismiss"
-  | "deny-forever";
+  "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
 
 export interface ApprovalAction {
   id: ApprovalActionId;

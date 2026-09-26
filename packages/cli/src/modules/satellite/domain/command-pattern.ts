@@ -5,8 +5,7 @@ export const MAX_MATCH_STEPS = 20_000;
 export const MAX_MANIFEST_TOKENS = 2048;
 
 export type ParseResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string };
+  { ok: true; value: T } | { ok: false; error: string };
 
 interface TokenElement {
   kind: "token";

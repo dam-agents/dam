@@ -113,8 +113,7 @@ export type UpgradeAgentError =
   | { type: "TemplateMoved" };
 
 export type UpgradeAgentResult =
-  | { ok: true; value: Agent }
-  | { ok: false; error: UpgradeAgentError };
+  { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
@@ -123,8 +122,7 @@ export type ConnectSlackError =
   | { type: "WorkspaceUnreachable" };
 
 export type ConnectSlackResult =
-  | { ok: true; value: Agent }
-  | { ok: false; error: ConnectSlackError };
+  { ok: true; value: Agent } | { ok: false; error: ConnectSlackError };
 
 export type BindSlackChannelError =
   | { type: "FlowInvalid" }
@@ -147,8 +145,7 @@ export type BindTelegramChatResult =
   | { ok: false; error: BindTelegramChatError };
 
 export type ListTelegramChatsError =
-  | { type: "AgentNotFound" }
-  | { type: "TelegramUnavailable" };
+  { type: "AgentNotFound" } | { type: "TelegramUnavailable" };
 
 export interface TelegramChatView {
   conversationId: string;
@@ -160,12 +157,10 @@ export type ListTelegramChatsResult =
   | { ok: false; error: ListTelegramChatsError };
 
 export type UnbindTelegramChatError =
-  | { type: "AgentNotFound" }
-  | { type: "ChatNotFound" };
+  { type: "AgentNotFound" } | { type: "ChatNotFound" };
 
 export type UnbindTelegramChatResult =
-  | { ok: true; value: null }
-  | { ok: false; error: UnbindTelegramChatError };
+  { ok: true; value: null } | { ok: false; error: UnbindTelegramChatError };
 
 export interface AgentsService {
   list: () => Promise<Agent[]>;

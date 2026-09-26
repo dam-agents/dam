@@ -95,13 +95,7 @@ export type HeadShape = (typeof HEAD_SHAPES)[number];
 export type Face = "eyes" | "visor" | "happy" | "wink" | "shades" | "dots";
 export type Sides = "none" | "block" | "round" | "wings" | "fins" | "double";
 export type Top =
-  | "none"
-  | "hat"
-  | "bolt"
-  | "cap"
-  | "antennas"
-  | "crown"
-  | "siren";
+  "none" | "hat" | "bolt" | "cap" | "antennas" | "crown" | "siren";
 export type Banding = "none" | "chin" | "bands" | "belt";
 export type Bottom = "none" | "neck" | "stripes" | "stand" | "wheels";
 export type Mouth = "none" | "line" | "smile" | "o" | "grin" | "cat";

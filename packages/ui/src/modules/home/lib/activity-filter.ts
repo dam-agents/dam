@@ -4,11 +4,7 @@ import type { AgentView } from "../../../types.js";
 import type { FeedItem } from "./feed-item.js";
 
 export type ChannelType =
-  | "chat"
-  | "slack"
-  | "telegram"
-  | "schedule"
-  | "terminal";
+  "chat" | "slack" | "telegram" | "schedule" | "terminal";
 
 export const CHANNEL_TYPES: readonly ChannelType[] = [
   "chat",

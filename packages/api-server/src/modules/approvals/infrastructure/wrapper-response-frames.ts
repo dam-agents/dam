@@ -32,8 +32,7 @@ export interface WrapperResponseFrame {
   id: number | string;
   result: {
     outcome:
-      | { outcome: "selected"; optionId: string }
-      | { outcome: "cancelled" };
+      { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
   };
 }
 

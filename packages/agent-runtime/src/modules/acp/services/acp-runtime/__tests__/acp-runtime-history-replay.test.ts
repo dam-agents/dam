@@ -53,8 +53,7 @@ function replayForsOf(client: Client): (string | undefined)[] {
 
 function clippedOf(client: Client, id: number): unknown {
   const reply = client.reply(id) as
-    | { result?: { _meta?: { platform?: { clipped?: unknown } } } }
-    | undefined;
+    { result?: { _meta?: { platform?: { clipped?: unknown } } } } | undefined;
   return reply?.result?._meta?.platform?.clipped;
 }
 

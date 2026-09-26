@@ -15,10 +15,7 @@ export interface MalformedAuthStoreError {
 }
 
 export type AuthConfigProbeErrorCode =
-  | "network"
-  | "non-ok-status"
-  | "malformed-response"
-  | "missing-cli-client-id";
+  "network" | "non-ok-status" | "malformed-response" | "missing-cli-client-id";
 
 export interface AuthConfigProbeError {
   kind: "auth-config-probe";
@@ -39,9 +36,7 @@ export interface OidcDiscoveryError {
 }
 
 export type DeviceFlowErrorCode =
-  | "network"
-  | "non-ok-status"
-  | "malformed-response";
+  "network" | "non-ok-status" | "malformed-response";
 
 export interface DeviceFlowError {
   kind: "device-flow";

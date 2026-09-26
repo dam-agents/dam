@@ -105,10 +105,7 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
 }
 
 export type SessionFailureKind =
-  | "unavailable"
-  | "orphaned"
-  | "connection"
-  | "other";
+  "unavailable" | "orphaned" | "connection" | "other";
 
 export type SessionListing = "listed" | "absent" | "unknown";
 

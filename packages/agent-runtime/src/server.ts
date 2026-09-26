@@ -82,8 +82,7 @@ try {
 
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
   const binding = resolveDrivers(manifest)["skill-ref"] as
-    | { paths?: unknown }
-    | undefined;
+    { paths?: unknown } | undefined;
   const raw = Array.isArray(binding?.paths) ? binding.paths : [];
   return raw
     .filter((p): p is string => typeof p === "string")

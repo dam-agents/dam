@@ -4,8 +4,7 @@ import type { ArtifactRow } from "../infrastructure/artifact-library-repository.
 import type { SharedResolution } from "../services/share-viewer-service.js";
 
 export type Authorized =
-  | { ok: true; artifact: ArtifactRow }
-  | { ok: false; response: Response };
+  { ok: true; artifact: ArtifactRow } | { ok: false; response: Response };
 
 export type Authorize = (
   c: Context,

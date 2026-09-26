@@ -345,8 +345,7 @@ export function createChannelManager(deps: {
     attachment: ChannelAttachment | undefined,
   ): Promise<ChannelAttachment | undefined | { error: string }> {
     const wire = attachment as
-      | (ChannelAttachment & Partial<WireAttachment>)
-      | undefined;
+      (ChannelAttachment & Partial<WireAttachment>) | undefined;
     if (!wire?.dataKey) return attachment;
     const data = await blobs?.take(wire.dataKey);
     if (!data)
@@ -595,8 +594,7 @@ export function createChannelManager(deps: {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
           const handler = localHandlers[req.method] as
-            | ((...a: unknown[]) => Promise<unknown>)
-            | undefined;
+            ((...a: unknown[]) => Promise<unknown>) | undefined;
           if (!handler)
             throw new Error(`unknown channel rpc method ${req.method}`);
           return handler(
