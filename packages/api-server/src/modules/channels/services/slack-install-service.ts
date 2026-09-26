@@ -22,7 +22,7 @@ const SECRET_OWNER = "platform";
 const SECRET_FIELD = "botToken";
 const REFRESH_TOKEN_FIELD = "refreshToken";
 const EXPIRES_AT_FIELD = "expiresAt";
-const REFRESH_AHEAD_MS = 30 * 60_000;
+const REFRESH_AHEAD_MS = 11 * 60 * 60_000;
 const EXCHANGE_RETRY_MS = 10 * 60_000;
 
 export interface SlackInstallRecord {
@@ -80,7 +80,10 @@ export interface SlackInstallService {
  *
  * Where the app has token rotation on, a row's token expires and comes with a
  * single-use refresh token; both are replaced together, under the workspace's
- * lock, shortly before expiry. The lock is what keeps two replicas from spending
+ * lock, once the token is an hour old — eleven hours before it would expire,
+ * so an outage of Slack or of this platform has most of a day to pass before
+ * any workspace goes dark. Slack keeps two tokens live per workspace, which an
+ * hourly refresh stays within. The lock is what keeps two replicas from spending
  * the same refresh token, and the re-read inside it lets the later one pick up
  * what the earlier one wrote. A refresh Slack refuses once the token has
  * expired marks the credential, like any other rejection.
