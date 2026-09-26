@@ -183,12 +183,13 @@ async function proxy(req, res) {
     });
   } catch (err) {
     if (!ac.signal.aborted) {
-      log(`upstream request failed (${err.cause?.message ?? err.message})`);
+      const reason = err.cause?.message ?? err.message;
+      log(`upstream request failed (${reason})`);
       res.writeHead(502, { "content-type": "application/json" }).end(
         JSON.stringify({
           error: {
             type: "api_error",
-            message: `model-gateway: upstream unreachable: ${err.cause?.message ?? err.message}`,
+            message: `model-gateway: upstream unreachable: ${reason}`,
           },
         }),
       );

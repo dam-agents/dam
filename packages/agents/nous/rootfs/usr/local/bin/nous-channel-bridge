@@ -129,8 +129,6 @@ def _resolve_chat_id(channel: str, session_id: str | None) -> str | None:
 
 def send_channel_message(channel: str, text: str, chat_id: str | None) -> None:
     """Run the MCP handshake and call send_channel_message."""
-    if not MCP_URL:
-        raise RuntimeError("PLATFORM_MCP_URL not set — not inside a platform agent pod?")
     # 1. initialize -> mints the session id (returned in the mcp-session-id header).
     headers, _ = _mcp_post(
         {
