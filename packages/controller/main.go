@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -176,17 +177,19 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 	})
 
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			enqueuePodOwner(obj, agentQueue)
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if !resourceVersionChanged(oldObj, newObj) {
+	podInformer.TypedInformer().AddTypedEventHandler(coreinformers.PodHandlerFuncs{
+		AddFunc: func(pod *corev1.Pod) { enqueuePodOwner(pod, agentQueue) },
+		UpdateFunc: func(oldPod, newPod *corev1.Pod) {
+			if oldPod.ResourceVersion == newPod.ResourceVersion {
 				return
 			}
-			enqueuePodOwner(newObj, agentQueue)
+			enqueuePodOwner(newPod, agentQueue)
 		},
-		DeleteFunc: func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
+		DeleteFunc: func(deleted coreinformers.DeletedPod) {
+			if deleted.OptionalObj != nil {
+				enqueuePodOwner(deleted.OptionalObj, agentQueue)
+			}
+		},
 	})
 
 	dynFactory.Start(ctx.Done())
@@ -307,17 +310,7 @@ func runDriftSweep(ctx context.Context, store cache.Store, queue workqueue.Typed
 	}
 }
 
-func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return
-		}
-		if pod, ok = tombstone.Obj.(*corev1.Pod); !ok {
-			return
-		}
-	}
+func enqueuePodOwner(pod *corev1.Pod, queue workqueue.TypedRateLimitingInterface[string]) {
 	if name := pod.Labels[reconciler.LabelAgent]; name != "" {
 		queue.Add(name)
 	}
