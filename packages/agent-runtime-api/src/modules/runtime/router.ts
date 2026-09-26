@@ -1,8 +1,8 @@
-import { protectedProcedure, t } from "../../trpc.js";
+import { t } from "../../trpc.js";
 import { applyStateInput } from "./types.js";
 
 const v1Router = t.router({
-  applyState: protectedProcedure
+  applyState: t.procedure
     .input(applyStateInput)
     .mutation(async ({ ctx, input }) => ctx.runtime.applyState(input)),
 });
