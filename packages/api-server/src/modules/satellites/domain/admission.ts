@@ -1,4 +1,4 @@
-import { formatJobRef, type SatelliteTool } from "api-server-api";
+import type { SatelliteTool } from "api-server-api";
 import type { SatelliteRow } from "./types.js";
 
 export const OFFLINE_AFTER_MS = 90_000;
@@ -80,5 +80,3 @@ function describeAge(ms: number): string {
   if (minutes < 60) return `${minutes}m`;
   return `${Math.round(minutes / 60)}h`;
 }
-
-export { formatJobRef };

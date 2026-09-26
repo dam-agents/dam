@@ -85,7 +85,6 @@ export interface MetricsReader {
     window: MetricsWindow,
     limit: number,
   ): Promise<TraceSpan[]>;
-  close(): Promise<void>;
 }
 
 export interface OwnedAgent {

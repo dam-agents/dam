@@ -394,9 +394,5 @@ export function createClickhouseReader(
         attributes: attrs(x.attributes),
       })) satisfies TraceSpan[];
     },
-
-    async close() {
-      await client.close();
-    },
   };
 }

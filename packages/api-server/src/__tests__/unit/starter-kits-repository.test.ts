@@ -18,7 +18,6 @@ import {
 } from "../../modules/starter-kits/infrastructure/catalog-refresh.js";
 import { parseCatalogSeeds } from "../../modules/starter-kits/infrastructure/catalog-seeds.js";
 import type { RefResolution } from "../../modules/starter-kits/infrastructure/git-ref-resolver.js";
-import { createStarterKitsRepository } from "../../modules/starter-kits/infrastructure/kits-repository.js";
 import type {
   ResolvedCatalogRepository,
   ResolvedKitRow,
@@ -74,7 +73,7 @@ function harness(
       opts.sourceForEntry ??
       ((gitUrl, ref) => createGitCatalogSource(PUBLIC_HOSTS, gitUrl, ref)),
   });
-  return { refresh, repo: createStarterKitsRepository({ resolved }) };
+  return { refresh, repo: resolved };
 }
 
 const APP_VERSION = "1.4.2";
