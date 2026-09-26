@@ -25,7 +25,6 @@ auto = true
 
 [tools]
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
-"conda:tar" = "1.35" # GNU tar on every host: image:pack's layers need its owner, mtime and sort options
 "conda:pigz" = "2.8" # parallel gzip: image:ci-build compresses a published image's plain-tar layers
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
@@ -52,8 +51,6 @@ usage = "latest"
 uv = "0.12"
 yq = "latest"
 zizmor = "latest"
-"conda:coreutils" = { version = "latest", os = ["macos"] }
-"conda:bash" = { version = "latest", os = ["macos"] }
 
 [settings]
 experimental = true

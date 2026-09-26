@@ -41,7 +41,7 @@ Collect the outdated set for each ecosystem. The ecosystems are independent, so 
 
 | Ecosystem | Pinned in | Find outdated | Bump |
 |---|---|---|---|
-| Repo toolchain (mise) | `.mise/config.toml` `[tools]` and `min_version`; resolved in `mise.lock` | `mise outdated --bump --json` | Edit the pin, then `mise lock --minimum-release-age 7d`. `mise lock --bump` re-resolves `latest` pins. |
+| Repo toolchain (mise) | `.mise/config.toml` `[tools]` and `min_version`, resolved in `mise.lock`; macOS-only tools in `.mise/config.macos.toml`, resolved in `mise.macos.lock` | `mise outdated --bump --json`, and again with `MISE_ENV=macos` | Edit the pin, then `mise lock --minimum-release-age 7d`, and `MISE_ENV=macos mise lock --minimum-release-age 7d --platform macos-arm64` for the macOS file. `mise lock --bump` re-resolves `latest` pins. |
 | npm | every workspace `package.json` (`pnpm-workspace.yaml` lists them); `pnpm-lock.yaml` | `mise x -- pnpm outdated -r --format json` | `mise x -- pnpm update -r --latest <pkg>…` |
 | Go | `packages/controller/go.mod` | `mise x -- go list -m -u -json all` in `packages/controller`; keep entries that are not `Indirect` and have an `Update` | `go get <mod>@<ver>`, then `go mod tidy` |
 | Rust | `packages/vm-runner/Cargo.toml`, `platform-init/Cargo.toml`; `Cargo.lock` | `mise x -- cargo info <crate>` for each `[dependencies]` entry | Edit `Cargo.toml`, then `cargo update -p <crate>` |
