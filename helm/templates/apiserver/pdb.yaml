@@ -6,7 +6,7 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+  name: {{ include "platform.apiserver.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}

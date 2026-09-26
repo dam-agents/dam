@@ -1,4 +1,4 @@
-{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{- if and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
 {{/*
 Cluster issuers backing the experimental Envoy credential-injector path.
 The bootstrap issuer signs the platform-mitm-ca Certificate; the CA

@@ -1,4 +1,4 @@
-{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{- if and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
 {{/*
 The platform MITM CA. Self-signed via the bootstrap issuer; the resulting Secret
 in cert-manager's cluster-resource-namespace backs the platform-mitm-ca-issuer
