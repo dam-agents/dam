@@ -6,7 +6,7 @@
     "./prompt-delivery": "./src/modules/sessions/lib/prompt-delivery.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.17.1",
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@carbon/icons-react": "^11.88.0",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-javascript": "^6.2.5",

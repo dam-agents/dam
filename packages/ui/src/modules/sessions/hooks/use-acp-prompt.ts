@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientSideConnection } from "@agentclientprotocol/sdk";
 import type { AgentState, PromptBlock } from "api-server-api";
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef } from "react";

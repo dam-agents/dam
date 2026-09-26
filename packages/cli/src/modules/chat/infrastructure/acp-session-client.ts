@@ -1,6 +1,8 @@
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import {
+  ClientSideConnection,
+  type AnyMessage,
+  type Stream,
+} from "@agentclientprotocol/sdk";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
@@ -183,7 +185,7 @@ export function createAcpSessionClient(opts: {
     },
     async setMode(agentId, sessionId, mode) {
       await withConnection(acpUrl(opts.host, agentId, opts.token), (conn) =>
-        conn.unstable_resumeSession({
+        conn.resumeSession({
           sessionId,
           cwd: ".",
           mcpServers: [],

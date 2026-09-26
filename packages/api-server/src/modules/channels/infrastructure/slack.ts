@@ -49,7 +49,7 @@ import type {
   ThreadQuery,
   ThreadResult,
 } from "../services/channel-manager.js";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
   AcpTurnAbandonedError,

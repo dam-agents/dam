@@ -164,8 +164,8 @@ importers:
   packages/api-server:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.17.1
-        version: 0.17.1(zod@4.6.5)
+        specifier: ^1.4.0
+        version: 1.4.0(zod@4.6.5)
       '@aws-sdk/client-s3':
         specifier: ^3.1136.0
         version: 3.1136.0
@@ -373,8 +373,8 @@ importers:
   packages/cli:
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.17.1
-        version: 0.17.1(zod@4.6.5)
+        specifier: ^1.4.0
+        version: 1.4.0(zod@4.6.5)
       '@clack/prompts':
         specifier: 1.8.1
         version: 1.8.1
@@ -609,8 +609,8 @@ importers:
   packages/ui:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.17.1
-        version: 0.17.1(zod@4.6.5)
+        specifier: ^1.4.0
+        version: 1.4.0(zod@4.6.5)
       '@carbon/icons-react':
         specifier: ^11.88.0
         version: 11.88.0(react@19.3.0)
@@ -786,8 +786,8 @@ importers:
 
 packages:
 
-  '@agentclientprotocol/sdk@0.17.1':
-    resolution: {integrity: sha512-yjyIn8POL18IOXioLySYiL0G44kZ/IZctAls7vS3AC3X+qLhFXbWmzABSZehwRnWFShMXT+ODa/HJG1+mGXZ1A==}
+  '@agentclientprotocol/sdk@1.4.0':
+    resolution: {integrity: sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -7286,7 +7286,7 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/sdk@0.17.1(zod@4.6.5)':
+  '@agentclientprotocol/sdk@1.4.0(zod@4.6.5)':
     dependencies:
       zod: 4.6.5
 

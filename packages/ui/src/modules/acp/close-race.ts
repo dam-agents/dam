@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientSideConnection } from "@agentclientprotocol/sdk";
 
 export class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";

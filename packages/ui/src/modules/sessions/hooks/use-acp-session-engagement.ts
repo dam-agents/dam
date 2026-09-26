@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientSideConnection } from "@agentclientprotocol/sdk";
 import { useCallback, useRef } from "react";
 
 import { useStore } from "../../../store.js";
@@ -19,7 +19,7 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
 
       const sid = useStore.getState().sessionId;
       if (!sid) return null;
-      await conn.unstable_resumeSession({
+      await conn.resumeSession({
         sessionId: sid,
         cwd: ".",
         mcpServers: [],

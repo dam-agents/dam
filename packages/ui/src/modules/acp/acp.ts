@@ -1,13 +1,11 @@
 import {
+  type AnyMessage,
   ClientSideConnection,
   PROTOCOL_VERSION,
-} from "@agentclientprotocol/sdk/dist/acp.js";
-import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type {
-  RequestPermissionRequest,
-  SessionNotification,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+  type RequestPermissionRequest,
+  type SessionNotification,
+  type Stream,
+} from "@agentclientprotocol/sdk";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";

@@ -1,7 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { deflateSync } from "node:zlib";
 import {
   createSlackWorker,
