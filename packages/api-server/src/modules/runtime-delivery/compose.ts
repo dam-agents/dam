@@ -15,6 +15,7 @@ import {
   createAgentsRuntimeRepo,
   type AgentsRuntimeRepo,
   type OutboxRepo,
+  type OutboxRow,
 } from "./infrastructure/outbox-repo.js";
 import { createAgentRuntimeClient } from "./infrastructure/agent-runtime-client.js";
 import {
@@ -23,14 +24,8 @@ import {
   type RunningWorker,
   type StateQueue,
 } from "./infrastructure/state-queue.js";
-import {
-  createStateBuilder,
-  type StateBuilder,
-} from "./services/state-builder.js";
-import {
-  createBuiltinContributions,
-  type BuiltinContributions,
-} from "./services/builtin-contributions.js";
+import { createStateBuilder } from "./services/state-builder.js";
+import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
   type IsAgentRunning,
@@ -59,8 +54,6 @@ export interface RuntimeDeliveryComposition {
   sweep: CronSweep;
   hello: RuntimeDeliveryService;
   runtimeMutator: RuntimeMutator;
-  stateBuilder: StateBuilder;
-  builtin: BuiltinContributions;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -83,6 +76,24 @@ export interface ContributionsStatus {
   workspaceFailures: WorkspaceFailure[];
   features: RuntimeFeatures;
   unsupportedKinds: ContributionKind[];
+}
+
+function statusOf(
+  agentId: string,
+  row: OutboxRow | null,
+  preparing: ReadonlySet<string>,
+  features: ReadonlyMap<string, RuntimeFeatures>,
+  workspace: ReadonlyMap<string, WorkspaceFailure[]>,
+): ContributionsStatus {
+  const { settled, failures } = progressOf(row);
+  return {
+    settled,
+    failures,
+    preparingWorkspace: preparing.has(agentId),
+    workspaceFailures: workspace.get(agentId) ?? [],
+    features: features.get(agentId) ?? runtimeFeaturesOf(null),
+    unsupportedKinds: row?.droppedContributionKinds ?? [],
+  };
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -181,8 +192,6 @@ export function composeRuntimeDelivery(
     sweep,
     hello,
     runtimeMutator,
-    stateBuilder,
-    builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
       const [row, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRow(agentId),
@@ -190,15 +199,7 @@ export function composeRuntimeDelivery(
         outboxRepo.runtimeFeaturesMany([agentId]),
         outboxRepo.workspaceFailures([agentId]),
       ]);
-      const { settled, failures } = progressOf(row);
-      return {
-        settled,
-        failures,
-        preparingWorkspace: preparing.has(agentId),
-        workspaceFailures: workspace.get(agentId) ?? [],
-        features: features.get(agentId) ?? runtimeFeaturesOf(null),
-        unsupportedKinds: row?.droppedContributionKinds ?? [],
-      };
+      return statusOf(agentId, row, preparing, features, workspace);
     },
 
     async retryWorkspaceMutation(agentId, kind): Promise<boolean> {
@@ -235,16 +236,10 @@ export function composeRuntimeDelivery(
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const row = byId.get(id) ?? null;
-        const { settled, failures } = progressOf(row);
-        result.set(id, {
-          settled,
-          failures,
-          preparingWorkspace: preparing.has(id),
-          workspaceFailures: workspace.get(id) ?? [],
-          features: features.get(id) ?? runtimeFeaturesOf(null),
-          unsupportedKinds: row?.droppedContributionKinds ?? [],
-        });
+        result.set(
+          id,
+          statusOf(id, byId.get(id) ?? null, preparing, features, workspace),
+        );
       }
       return result;
     },

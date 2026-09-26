@@ -6,25 +6,16 @@ import type {
   ApiKeyCreateResult,
   ApiKeysService,
   ApiKeyView,
-  Scope,
 } from "api-server-api";
-import type { ApiKeyRow } from "../domain/types.js";
+import type { ApiKeyRow, NewApiKey } from "../domain/types.js";
 
 const MAX_ACTIVE_KEYS_PER_OWNER = 50;
 
-export interface ApiKeysServiceDeps {
+interface ApiKeysServiceDeps {
   ownerSub: string;
   surface: string;
   list: (ownerSub: string) => Promise<ApiKeyRow[]>;
-  insert: (row: {
-    id: string;
-    ownerSub: string;
-    name: string;
-    hash: string;
-    scopes: readonly Scope[];
-    agentIds: readonly string[] | null;
-    expiresAt: Date | null;
-  }) => Promise<ApiKeyRow>;
+  insert: (row: NewApiKey) => Promise<ApiKeyRow>;
   revoke: (id: string, ownerSub: string) => Promise<boolean>;
   mintToken: () => { token: string; hash: string };
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;

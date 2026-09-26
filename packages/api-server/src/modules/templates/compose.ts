@@ -1,6 +1,5 @@
 import type { TemplatesService, TemplateSpec } from "api-server-api";
 import type { TemplatesRepository } from "./infrastructure/templates-repository.js";
-import { createTemplatesService } from "./services/templates-service.js";
 
 export type ReadTemplateSpec = (
   id: string,
@@ -11,7 +10,10 @@ export function composeTemplatesModule(repo: TemplatesRepository): {
   readSpec: ReadTemplateSpec;
 } {
   return {
-    templates: createTemplatesService({ repo }),
+    templates: {
+      list: () => repo.list(),
+      get: (id) => repo.get(id),
+    },
     readSpec: (id) => repo.readSpec(id),
   };
 }

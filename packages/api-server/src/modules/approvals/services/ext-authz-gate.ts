@@ -5,6 +5,7 @@ import {
   buildExtAuthzSynthFrame,
   injectChannelOf,
 } from "../infrastructure/acp-frames.js";
+import { approvalChannelOf } from "../infrastructure/redis-approvals-bus.js";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
@@ -12,7 +13,7 @@ import { emit, EventType } from "../../../events.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
-export interface ExtAuthzGateInput {
+interface ExtAuthzGateInput {
   agentId: string;
   host: string;
   method: string;
@@ -43,7 +44,7 @@ export interface EgressAttendance {
   hasInteractiveSession(agentId: string): Promise<boolean>;
 }
 
-export interface CreateExtAuthzGateDeps {
+interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
@@ -234,7 +235,7 @@ async function waitForVerdict(
     };
 
     const unsubscribe = deps.bus.subscribe(
-      `approval:${id}`,
+      approvalChannelOf(id),
       () => void checkResolved(),
     );
     void checkResolved();

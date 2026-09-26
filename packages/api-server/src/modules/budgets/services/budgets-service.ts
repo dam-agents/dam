@@ -8,7 +8,7 @@ export interface BudgetedAgent {
   overBudget: boolean;
 }
 
-export interface BudgetsServiceDeps {
+interface BudgetsServiceDeps {
   listAgents(): Promise<BudgetedAgent[]>;
   readCeilingOverride(): Promise<{ cpu: string; memory: string } | null>;
   defaultCeiling: { cpu: string; memory: string };
@@ -41,13 +41,9 @@ export function createResizeGate(
         deps.readCeilingOverride(),
       ]);
       const ceiling = override ?? deps.defaultCeiling;
-      let cpuMilli = 0;
-      let memoryBytes = 0;
-      for (const a of agents) {
-        if (a.id === agent.id || a.hibernated || a.overBudget) continue;
-        cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
-        memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
-      }
+      const { cpuMilli, memoryBytes } = reservedBy(
+        agents.filter((a) => a.id !== agent.id),
+      );
       const totalCpu = cpuMilli + newCpu;
       const totalMemory = memoryBytes + newMemory;
       const ceilCpu = parseCpuMilli(ceiling.cpu);
@@ -104,13 +100,7 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.listAgents(),
         deps.readCeilingOverride(),
       ]);
-      let cpuMilli = 0;
-      let memoryBytes = 0;
-      for (const a of agents) {
-        if (a.hibernated || a.overBudget) continue;
-        cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
-        memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
-      }
+      const { cpuMilli, memoryBytes } = reservedBy(agents);
       const ceiling = override ?? deps.defaultCeiling;
       return {
         cpu: {
@@ -128,6 +118,20 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
       };
     },
   };
+}
+
+function reservedBy(agents: readonly BudgetedAgent[]): {
+  cpuMilli: number;
+  memoryBytes: number;
+} {
+  let cpuMilli = 0;
+  let memoryBytes = 0;
+  for (const a of agents) {
+    if (a.hibernated || a.overBudget) continue;
+    cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
+    memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
+  }
+  return { cpuMilli, memoryBytes };
 }
 
 const cores = (n: number) => `${(n / 1000).toFixed(1)} CPU`;

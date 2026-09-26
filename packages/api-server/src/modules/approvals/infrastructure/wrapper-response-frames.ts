@@ -27,7 +27,7 @@ export function pickOptionId(
   return options[0]?.optionId ?? null;
 }
 
-export interface WrapperResponseFrame {
+interface WrapperResponseFrame {
   jsonrpc: "2.0";
   id: number | string;
   result: {

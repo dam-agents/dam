@@ -6,12 +6,10 @@ export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
 }
 
-export interface CreatePresetSeederDeps {
+export function createPresetSeeder(deps: {
   repo: EgressRulesRepository;
   trustedHosts: readonly string[];
-}
-
-export function createPresetSeeder(deps: CreatePresetSeederDeps): PresetSeeder {
+}): PresetSeeder {
   return {
     async seed(agentId, preset, decidedBy) {
       await deps.repo.revokePresetRowsForAgent(agentId);

@@ -11,6 +11,12 @@ export interface TermsAcceptancesRepository {
   ): Promise<AcceptedAcceptance | null>;
 }
 
+const acceptanceColumns = {
+  version: termsAcceptances.version,
+  hash: termsAcceptances.hash,
+  acceptedAt: termsAcceptances.acceptedAt,
+};
+
 export function createTermsAcceptancesRepository(
   db: Db,
 ): TermsAcceptancesRepository {
@@ -26,23 +32,17 @@ export function createTermsAcceptancesRepository(
 
     async findLatest(sub) {
       const rows = await db
-        .select()
+        .select(acceptanceColumns)
         .from(termsAcceptances)
         .where(eq(termsAcceptances.sub, sub))
         .orderBy(desc(termsAcceptances.acceptedAt))
         .limit(1);
-      const row = rows[0];
-      if (!row) return null;
-      return {
-        version: row.version,
-        hash: row.hash,
-        acceptedAt: row.acceptedAt,
-      };
+      return rows[0] ?? null;
     },
 
     async findForVersion(sub, version) {
       const rows = await db
-        .select()
+        .select(acceptanceColumns)
         .from(termsAcceptances)
         .where(
           and(
@@ -51,13 +51,7 @@ export function createTermsAcceptancesRepository(
           ),
         )
         .limit(1);
-      const row = rows[0];
-      if (!row) return null;
-      return {
-        version: row.version,
-        hash: row.hash,
-        acceptedAt: row.acceptedAt,
-      };
+      return rows[0] ?? null;
     },
   };
 }

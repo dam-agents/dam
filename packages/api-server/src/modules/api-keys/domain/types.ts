@@ -12,3 +12,8 @@ export interface ApiKeyRow {
   lastUsedAt: Date | null;
   revokedAt: Date | null;
 }
+
+export type NewApiKey = Pick<
+  ApiKeyRow,
+  "id" | "ownerSub" | "name" | "hash" | "scopes" | "agentIds" | "expiresAt"
+>;

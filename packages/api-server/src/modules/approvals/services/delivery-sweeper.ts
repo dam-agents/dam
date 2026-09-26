@@ -12,7 +12,7 @@ export interface DeliverySweeper {
   tick(): Promise<void>;
 }
 
-export interface CreateDeliverySweeperDeps {
+interface CreateDeliverySweeperDeps {
   repo: ApprovalsRepository;
   wrapperFrameSender: WrapperFrameSender;
   staleMs: number;
