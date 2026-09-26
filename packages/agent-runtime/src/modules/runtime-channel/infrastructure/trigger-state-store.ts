@@ -6,8 +6,6 @@ const triggerStateSchema = z.object({
   scheduleSessions: z.record(z.string(), z.string()).catch({}).default({}),
 });
 
-export type TriggerState = z.infer<typeof triggerStateSchema>;
-
 export interface TriggerStateStore {
   getSessionForSchedule(scheduleId: string): string | undefined;
   setSessionForSchedule(scheduleId: string, sessionId: string): void;
