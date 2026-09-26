@@ -8,6 +8,7 @@ import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface ManageDeps {
   compatService: CompatService;
@@ -34,9 +35,7 @@ async function attempt<T>(at: string, call: () => Promise<T>): Promise<T> {
   try {
     return await call();
   } catch (err) {
-    process.stderr.write(
-      `${err instanceof Error ? err.message : String(err)} (${at})\n`,
-    );
+    process.stderr.write(`${errorMessage(err)} (${at})\n`);
     return process.exit(EXIT_RUNTIME_FAILURE);
   }
 }

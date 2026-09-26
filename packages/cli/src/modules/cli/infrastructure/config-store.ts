@@ -4,6 +4,7 @@ import { parse, stringify, type TomlTable } from "smol-toml";
 import { configSchema, type Config } from "../domain/config.js";
 import { err, ok, type Result } from "../../../result.js";
 import type { FileWriteError, MalformedConfigError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface ConfigStore {
   read(): Promise<Result<Partial<Config>, MalformedConfigError>>;
@@ -11,10 +12,6 @@ export interface ConfigStore {
 }
 
 const partialConfigSchema = configSchema.partial();
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 function errnoCode(e: unknown): string | undefined {
   return e instanceof Error && "code" in e && typeof e.code === "string"

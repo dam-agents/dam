@@ -5,7 +5,11 @@ import type {
   EgressRuleView,
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AuthRequiredError,
@@ -13,6 +17,7 @@ import type {
   RuleNotFoundError,
   TransportError,
 } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface EgressService {
   listForAgent(
@@ -67,8 +72,8 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
         const view = await deps.trpc.egressRules.get.query({ id });
         return ok(view);
       } catch (e) {
-        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
-          const reason = e instanceof Error ? e.message : String(e);
+        if (trpcErrorCode(e) === "NOT_FOUND") {
+          const reason = errorMessage(e);
           return /egress rule not found/i.test(reason)
             ? err({ kind: "rule-not-found", id })
             : err({ kind: "rule-lookup-unsupported", reason });
@@ -92,7 +97,7 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
         const view = await deps.trpc.egressRules.update.mutate(input);
         return ok(view);
       } catch (e) {
-        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
+        if (trpcErrorCode(e) === "NOT_FOUND") {
           return err({ kind: "rule-not-found", id: input.id });
         }
         return classifyTrpcError(e);

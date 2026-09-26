@@ -9,9 +9,7 @@ import type {
 } from "../../cli/index.js";
 import type {
   AuthConfigProbeError,
-  AuthStoreReadError,
   DeviceFlowError,
-  MalformedAuthStoreError,
 } from "../domain/errors.js";
 import { nextFlowStep, type DeviceFlowFailure } from "../domain/flow.js";
 import type { HostAuth } from "../domain/host-auth.js";
@@ -168,18 +166,9 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
   const now = deps.now ?? (() => new Date());
   const sleepMs = deps.sleepMs ?? ((ms) => sleep(ms));
 
-  async function readAuthStore(): Promise<
-    Result<
-      ReadonlyMap<HostUrl, HostAuth>,
-      AuthStoreReadError | MalformedAuthStoreError
-    >
-  > {
-    return deps.authStore.read();
-  }
-
   return {
     async login(input) {
-      const existing = await readAuthStore();
+      const existing = await deps.authStore.read();
       if (!existing.ok) {
         return err({ kind: "auth-store", detail: existing.error.reason });
       }
@@ -192,12 +181,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         flag: { server: input.host },
       });
       if (!compat.ok) {
-        const desc = describeCompatError(compat.error);
-        return err({
-          kind: "preflight",
-          reason: desc.reason,
-          detail: desc.detail,
-        });
+        return err({ kind: "preflight", ...describeCompatError(compat.error) });
       }
       const warnings: string[] = [];
       switch (compat.value.kind) {
@@ -218,11 +202,9 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
 
       const cfg = await deps.authConfigProbe.probe(input.host);
       if (!cfg.ok) {
-        const desc = describeAuthConfigError(cfg.error);
         return err({
           kind: "preflight",
-          reason: desc.reason,
-          detail: desc.detail,
+          ...describeAuthConfigError(cfg.error),
         });
       }
 
@@ -249,17 +231,16 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         });
       }
 
+      const verificationUri =
+        auth.value.verificationUriComplete ?? auth.value.verificationUri;
       let openedBrowser = false;
       if (input.openBrowser) {
-        const opened = await deps.browserOpener.open(
-          auth.value.verificationUriComplete ?? auth.value.verificationUri,
-        );
+        const opened = await deps.browserOpener.open(verificationUri);
         openedBrowser = opened.ok;
       }
       input.onPromptUser?.({
         userCode: auth.value.userCode,
-        verificationUri:
-          auth.value.verificationUriComplete ?? auth.value.verificationUri,
+        verificationUri,
         openedBrowser,
       });
 
@@ -338,8 +319,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           username,
           warnings,
           openedBrowser,
-          verificationUri:
-            auth.value.verificationUriComplete ?? auth.value.verificationUri,
+          verificationUri,
           userCode: auth.value.userCode,
         });
       }

@@ -5,7 +5,11 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
@@ -219,13 +223,13 @@ async function runCreate(
   try {
     agent = await trpc.agents.create.mutate(createInput);
   } catch (e) {
-    if ((e as any)?.data?.code === "BAD_REQUEST") {
+    if (trpcErrorCode(e) === "BAD_REQUEST") {
       process.stderr.write(
         `error: failed to create agent: ${errorReason(e)}\n`,
       );
       process.exit(EXIT_INVALID_INPUT);
     }
-    if ((e as any)?.data?.code === "NOT_FOUND") {
+    if (trpcErrorCode(e) === "NOT_FOUND") {
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
       );

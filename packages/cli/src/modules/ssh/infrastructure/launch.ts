@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SshPaths } from "./ssh-keys.js";
 
-export const REMOTE_WORK_DIR = "/home/agent/work";
+const REMOTE_WORK_DIR = "/home/agent/work";
 const REMOTE_USER = "agent";
 
 export function editorLaunchArgs(
@@ -20,7 +20,7 @@ export function editorLaunchArgs(
 
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-export function proxyCommandString(
+function proxyCommandString(
   agentRef: string,
   serverFlag?: string,
   bin: { node?: string; script?: string } = {},

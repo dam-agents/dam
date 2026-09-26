@@ -11,15 +11,9 @@ import {
   type TrpcClient,
 } from "../shared/trpc/trpc-client.js";
 import { createAuthConfigProbe } from "./infrastructure/auth-config-probe.js";
-import {
-  createProcessAuthEnvReader,
-  type AuthEnvReader,
-} from "./infrastructure/auth-env-reader.js";
+import { createProcessAuthEnvReader } from "./infrastructure/auth-env-reader.js";
 import { defaultAuthPath } from "./infrastructure/auth-path.js";
-import {
-  createTomlAuthStore,
-  type AuthStore,
-} from "./infrastructure/auth-store.js";
+import { createTomlAuthStore } from "./infrastructure/auth-store.js";
 import { createBrowserOpener } from "./infrastructure/browser-opener.js";
 import { createDeviceFlowClient } from "./infrastructure/device-flow-client.js";
 import { createOidcDiscovery } from "./infrastructure/oidc-discovery.js";
@@ -34,9 +28,7 @@ import {
   type HostMetadataResolver,
   type TokenProvider,
 } from "./services/token-provider.js";
-import type { AuthConfig } from "./infrastructure/auth-config-probe.js";
-import type { OidcMetadata } from "./infrastructure/oidc-discovery.js";
-import { ok } from "../../result.js";
+import { err, ok } from "../../result.js";
 
 export interface AuthModuleOptions {
   authPath?: string;
@@ -48,11 +40,6 @@ export interface AuthModuleOptions {
 export interface AuthModule {
   commands: ReadonlyArray<Command>;
   exports: { tokenProvider: TokenProvider };
-  internals: {
-    authStore: AuthStore;
-    authPath: string;
-    authEnvReader: AuthEnvReader;
-  };
 }
 
 function createTokenEndpointResolver(
@@ -66,17 +53,15 @@ function createTokenEndpointResolver(
       if (cached) return ok(cached);
       const cfg = await authConfigProbe.probe(host);
       if (!cfg.ok) {
-        return {
-          ok: false,
-          error: { kind: "refresh-failed", host, reason: cfg.error.message },
-        };
+        return err({ kind: "refresh-failed", host, reason: cfg.error.message });
       }
       const oidc = await oidcDiscovery.discover(cfg.value.issuer);
       if (!oidc.ok) {
-        return {
-          ok: false,
-          error: { kind: "refresh-failed", host, reason: oidc.error.message },
-        };
+        return err({
+          kind: "refresh-failed",
+          host,
+          reason: oidc.error.message,
+        });
       }
       const value = { tokenEndpoint: oidc.value.tokenEndpoint };
       cache.set(host, value);
@@ -169,8 +154,5 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
   return {
     commands: [authParent],
     exports: { tokenProvider },
-    internals: { authStore, authPath, authEnvReader },
   };
 }
-
-export type { AuthConfig, OidcMetadata };

@@ -7,6 +7,10 @@ import {
   TermsStaleAtTransportError,
 } from "./trpc-client.js";
 
+export function trpcErrorCode(e: unknown): string | undefined {
+  return (e as { data?: { code?: string } } | null | undefined)?.data?.code;
+}
+
 export function classifyTrpcError(
   e: unknown,
 ): Result<never, TransportError | AuthRequiredError> {

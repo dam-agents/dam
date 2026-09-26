@@ -3,6 +3,7 @@ import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import type { AcpSessionClient } from "../infrastructure/acp-session-client.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export type TerminalStrategy =
   | { kind: "new" }
@@ -32,7 +33,7 @@ export interface SessionsPort {
 function transportError(e: unknown): TransportError {
   return {
     kind: "transport",
-    reason: e instanceof Error ? e.message : String(e),
+    reason: errorMessage(e),
   };
 }
 

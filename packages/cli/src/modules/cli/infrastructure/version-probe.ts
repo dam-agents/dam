@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { ProbeError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 const versionInfoSchema = z.object({
   serverVersion: z.string(),
@@ -77,8 +78,4 @@ export function createHttpVersionProbe(
       return ok(parsed.data);
     },
   };
-}
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
 }

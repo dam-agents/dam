@@ -42,6 +42,7 @@ import {
   configInputsOf,
   validateConfigInputValue,
 } from "../../connection/index.js";
+import { trpcErrorCode } from "../../shared/trpc/classify.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
@@ -65,13 +66,8 @@ interface Cleanup {
   agentId: string | null;
 }
 
-function trpcCode(e: unknown): string | undefined {
-  if (typeof e !== "object" || e === null) return undefined;
-  return (e as { data?: { code?: string } }).data?.code;
-}
-
 function classifyFailure(e: unknown): "rollback" | "ambiguous" {
-  const code = trpcCode(e);
+  const code = trpcErrorCode(e);
   return code !== undefined && ROLLBACK_CODES.has(code)
     ? "rollback"
     : "ambiguous";
@@ -590,7 +586,7 @@ async function createConnectionWithRename(
       cleanup.newConnectionIds.push(created.id);
       return { id: created.id, name };
     } catch (e) {
-      if (trpcCode(e) === "CONFLICT") {
+      if (trpcErrorCode(e) === "CONFLICT") {
         const renamed = await text({
           message: `A connection named "${name}" already exists. Choose a different name`,
           validate(v) {
