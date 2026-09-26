@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -439,9 +440,9 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 		}
 
 		switch {
-		case jobSucceeded(job):
+		case jobConditionTrue(job, batchv1.JobComplete):
 			return m.flip(ctx, agent, pairs, job.Name)
-		case jobFailed(job):
+		case jobConditionTrue(job, batchv1.JobFailed):
 			if m.now().Sub(job.CreationTimestamp.Time) < migrationJobRetryAfter {
 				return fmt.Errorf("copy job %s failed; retrying after %s", job.Name, migrationJobRetryAfter)
 			}
@@ -657,22 +658,10 @@ func patchPVCLabels(ctx context.Context, client kubernetes.Interface, namespace,
 	return err
 }
 
-func jobSucceeded(job *batchv1.Job) bool {
-	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-func jobFailed(job *batchv1.Job) bool {
-	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
+func jobConditionTrue(job *batchv1.Job, condType batchv1.JobConditionType) bool {
+	return slices.ContainsFunc(job.Status.Conditions, func(c batchv1.JobCondition) bool {
+		return c.Type == condType && c.Status == corev1.ConditionTrue
+	})
 }
 
 func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Config, ownerRef metav1.OwnerReference) *batchv1.Job {

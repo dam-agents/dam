@@ -1,7 +1,7 @@
 package reconciler
 
 import (
-	"sort"
+	"slices"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
@@ -19,36 +19,17 @@ func EnvoyLeafSecretName(instanceName string) string {
 	return instanceName + envoyLeafSecretSuffix
 }
 
-func dnsNamesFromChains(chains []envoyHostChain) []string {
-	out := make([]string, 0, len(chains))
-	for _, c := range chains {
-		out = append(out, c.Host)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func containsHost(hosts []string, host string) bool {
-	for _, h := range hosts {
-		if h == host {
-			return true
-		}
-	}
-	return false
-}
-
-func leafPlaceholderDNS(instanceName string) string {
-	return instanceName + ".mitm-placeholder.invalid"
-}
-
 func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) *cmv1.Certificate {
-	hosts := dnsNamesFromChains(chainsFromSecrets(secrets, l7Hosts))
-	if cfg.TelemetryEnabled() && !containsHost(hosts, cfg.TelemetryCollectorHost) {
-		hosts = append(hosts, cfg.TelemetryCollectorHost)
-		sort.Strings(hosts)
+	var hosts []string
+	for _, c := range chainsFromSecrets(secrets, l7Hosts) {
+		hosts = append(hosts, c.Host)
 	}
+	if cfg.TelemetryEnabled() && !slices.Contains(hosts, cfg.TelemetryCollectorHost) {
+		hosts = append(hosts, cfg.TelemetryCollectorHost)
+	}
+	slices.Sort(hosts)
 	if len(hosts) == 0 {
-		hosts = []string{leafPlaceholderDNS(instanceName)}
+		hosts = []string{instanceName + ".mitm-placeholder.invalid"}
 	}
 	cert := &cmv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{

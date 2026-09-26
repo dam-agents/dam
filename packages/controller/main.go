@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/crdcheck"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
@@ -138,7 +139,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	)
 	podInformer := podFactory.Core().V1().Pods()
 
-	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient).WithAgentCache(agentInformer.Lister())
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
@@ -203,12 +203,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	go runDriftSweep(ctx, agentInformer.Informer().GetStore(), agentQueue, 5*time.Minute)
 	go runParkedRetry(ctx, agentReconciler, agentQueue, 30*time.Second)
 
-	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
+	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)
 }
 
 const maxReconcileRetries = 15
 
-func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter reconciler.AgentGetter, queue workqueue.TypedRateLimitingInterface[string]) {
+func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents cache.GenericNamespaceLister, queue workqueue.TypedRateLimitingInterface[string]) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
@@ -218,7 +218,11 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 		func() {
 			defer queue.Done(name)
 			rctx, finish := telemetry.StartReconcile(ctx, "agent", name)
-			agent, err := getter.Get(name)
+			obj, err := agents.Get(name)
+			var agent *apiv1.Agent
+			if err == nil {
+				agent, err = reconciler.FromCacheObject[apiv1.Agent](obj)
+			}
 			if err != nil {
 				queue.Forget(name)
 				finish(telemetry.OutcomeNotFound, nil)

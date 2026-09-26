@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 var testConfig = &config.Config{
@@ -40,15 +40,15 @@ var testConfig = &config.Config{
 	RequestsMinMemory:  resource.MustParse("128Mi"),
 }
 
-var testAgent = &types.AgentSpec{
+var testAgent = &apiv1.AgentSpec{
 	Image: "ghcr.io/myorg/agent:latest",
-	Mounts: []types.Mount{
+	Mounts: []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},
 	},
 	Init: "#!/bin/bash\necho hello",
-	Env:  []types.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
-	Resources: types.ResourceSpec{
+	Env:  []apiv1.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
+	Resources: apiv1.ResourceSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
 	},
@@ -88,8 +88,8 @@ func credSecret(name, host string) corev1.Secret {
 
 func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	agent := *testAgent
-	agent.Env = append([]types.EnvVar{}, testAgent.Env...)
-	agent.Env = append(agent.Env, types.EnvVar{Name: "GITHUB_ORG", Value: "alpha"})
+	agent.Env = append([]apiv1.EnvVar{}, testAgent.Env...)
+	agent.Env = append(agent.Env, apiv1.EnvVar{Name: "GITHUB_ORG", Value: "alpha"})
 	agent.SecretRef = "my-secrets"
 	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
 
@@ -164,7 +164,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 		},
 	}
 	spec := *testAgent
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits: map[string]string{"cpu": "2", "memory": "2Gi"},
 	}
 	ss := BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
@@ -174,7 +174,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 	assert.Equal(t, "1", c.Resources.Requests.Cpu().String())
 	assert.Equal(t, "1Gi", c.Resources.Requests.Memory().String())
 
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits: map[string]string{"cpu": "150m", "memory": "64Mi"},
 	}
 	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
@@ -182,7 +182,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 	assert.Equal(t, "100m", c.Resources.Requests.Cpu().String())
 	assert.Equal(t, "64Mi", c.Resources.Requests.Memory().String())
 
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits:   map[string]string{"cpu": "500m"},
 		Requests: map[string]string{"cpu": "250m"},
 	}
@@ -245,9 +245,9 @@ func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
-	agent := types.AgentSpec{
+	agent := apiv1.AgentSpec{
 		Image: "platform-test:latest",
-		Mounts: []types.Mount{
+		Mounts: []apiv1.Mount{
 			{Path: "/home/agent", Persist: true, Size: "2Gi"},
 			{Path: "/cache", Persist: true},
 		},
@@ -450,7 +450,7 @@ func TestApplyPoolClaims_NilIsNoop(t *testing.T) {
 
 func TestApplyPoolClaims_PartialMultiMount(t *testing.T) {
 	agent := *testAgent
-	agent.Mounts = []types.Mount{
+	agent.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true, Size: "2Gi"},
 		{Path: "/cache", Persist: true},
 	}
@@ -465,4 +465,19 @@ func TestApplyPoolClaims_PartialMultiMount(t *testing.T) {
 	claim, ok := podClaimName(ss, "home-agent")
 	require.True(t, ok)
 	assert.Equal(t, "platform-pool-xyz", claim)
+}
+
+func TestSanitizeMountName(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"/workspace", "workspace"},
+		{"/home/agent", "home-agent"},
+		{"/tmp", "tmp"},
+		{"/var/lib/data", "var-lib-data"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, sanitizeMountName(tt.path))
+	}
 }
