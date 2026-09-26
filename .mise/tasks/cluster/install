@@ -322,7 +322,7 @@ else
         done
         if [ ${#tars[@]} -gt 0 ]; then
           echo "Loading into k3s: ${tars[*]}"
-          mise run cluster:import -- "${tars[@]}"
+          mise run cluster:import -- "${tars[@]}" || return 1
         fi
         tars=()
         remaining=(${left[@]+"${left[@]}"})
@@ -336,17 +336,27 @@ else
     [ ${#remaining[@]} -gt 0 ] || return 0
     echo "Loading images into k3s: ${remaining[*]}"
     for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-    mise run cluster:import -- "${tars[@]}"
+    mise run cluster:import -- "${tars[@]}" || return 1
   }
   # Both loads run beside the mesh install below, which spends most of its time
   # waiting, and the chart install waits only for the platform images: no pod
-  # the chart starts runs an agent image. The mock's is the largest image the
-  # e2e cluster loads, and importing it beside Keycloak's first boot slowed
-  # that boot down.
-  load_images "${COMPONENTS[@]}" > >(sed -u 's/^/[images] /') 2>&1 &
+  # the chart starts runs an agent image. The agent images load after the
+  # platform images, not beside them: the mock's is the largest image the e2e
+  # cluster loads, and its import took 32s alone but 71s beside the others,
+  # then still ran into Keycloak's first boot and slowed that down.
+  PLATFORM_IMAGES_LOADED=$(mktemp)
+  {
+    rc=0
+    load_images "${COMPONENTS[@]}" || rc=$?
+    echo "$rc" > "$PLATFORM_IMAGES_LOADED"
+    exit "$rc"
+  } > >(sed -u 's/^/[images] /') 2>&1 &
   IMAGE_LOAD_PID=$!
   if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
-    load_images "${AGENT_TASKS[@]}" > >(sed -u 's/^/[agent images] /') 2>&1 &
+    {
+      until [ -s "$PLATFORM_IMAGES_LOADED" ]; do sleep 1; done
+      load_images "${AGENT_TASKS[@]}"
+    } > >(sed -u 's/^/[agent images] /') 2>&1 &
     AGENT_LOAD_PID=$!
   fi
 fi
