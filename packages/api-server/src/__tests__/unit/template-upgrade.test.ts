@@ -48,7 +48,6 @@ function harness(opts?: {
             spec: templateSpec(
               opts?.templateImage ?? "quay.io/dam-agents/claude-code:0.2.8",
             ),
-            isOwned: false,
           },
     patchImage,
   });

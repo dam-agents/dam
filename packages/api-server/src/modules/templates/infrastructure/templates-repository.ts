@@ -7,9 +7,7 @@ import { templateSpecSchema } from "api-server-api";
 export interface TemplatesRepository {
   list(): Promise<Template[]>;
   get(id: string): Promise<Template | null>;
-  readSpec(
-    id: string,
-  ): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readSpec(id: string): Promise<{ spec: TemplateSpec } | null>;
 }
 
 export function createTemplatesRepository(dir: string): TemplatesRepository {
@@ -23,7 +21,7 @@ export function createTemplatesRepository(dir: string): TemplatesRepository {
     },
     async readSpec(id) {
       const tmpl = byId.get(id);
-      return tmpl ? { spec: tmpl.spec, isOwned: false } : null;
+      return tmpl ? { spec: tmpl.spec } : null;
     },
   };
 }

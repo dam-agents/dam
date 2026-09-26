@@ -17,7 +17,10 @@ export {
   createCatalogSourceFromLocator,
   createGitCatalogSource,
 } from "./infrastructure/catalog-source.js";
-export { catalogEntryHosts, createGitHosts } from "./infrastructure/git-hosts.js";
+export {
+  catalogEntryHosts,
+  createGitHosts,
+} from "./infrastructure/git-hosts.js";
 export {
   createOnboardingMarker,
   type OnboardingMarker,
