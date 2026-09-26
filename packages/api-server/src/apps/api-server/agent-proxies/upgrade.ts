@@ -18,15 +18,10 @@ import {
   type WsAuthSite,
 } from "../admission/auth.js";
 import { emit, EventType } from "../../../events.js";
-import {
-  checkWsTermsAccepted,
-  type TermsDenialKind,
-} from "../admission/terms.js";
 
-export type RelayDenialKind = "not-owner" | "not-permitted";
+export type RelayDenialKind = "not-owner" | "not-permitted" | "terms-stale";
 
-export type RelayAdmissionDenialKind =
-  AuthDenialKind | TermsDenialKind | RelayDenialKind;
+export type RelayAdmissionDenialKind = AuthDenialKind | RelayDenialKind;
 
 const upgradeDenial: Record<RelayAdmissionDenialKind, string> = {
   "missing-token": "401 Unauthorized",
@@ -90,12 +85,20 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       return { ok: false, kind: "not-permitted" };
     }
 
-    const termsDenied = await checkWsTermsAccepted(
-      deps.isTermsAccepted,
-      user.sub,
-      site,
-    );
-    if (termsDenied) return { ok: false, kind: termsDenied };
+    if (!(await deps.isTermsAccepted(user.sub))) {
+      securityLog("warn", "ws.terms_block", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "terms-not-accepted",
+        sourceIp: site.sourceIp,
+        detail: { relay: relayKind },
+      });
+      return { ok: false, kind: "terms-stale" };
+    }
 
     const surface = clientSurface(admitted.principal, deps.surfaceAttribution);
     logWsAttach(user.sub, site);

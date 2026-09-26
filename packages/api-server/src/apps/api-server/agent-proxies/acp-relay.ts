@@ -4,15 +4,13 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { createActivityStamper } from "./activity-stamper.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import { acpNativeRowId } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
-import { boundedSet } from "../../../core/bounded-map.js";
 
-const DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
 interface JsonRpcRequest {
@@ -58,8 +56,6 @@ function isResponse(msg: unknown): msg is JsonRpcResponse {
   return m.result !== undefined || m.error !== undefined;
 }
 
-const lastActivityTimestamps = new Map<string, number>();
-
 export function sanitizeCloseCode(code: number): number {
   if (
     code === 1000 ||
@@ -72,14 +68,6 @@ export function sanitizeCloseCode(code: number): number {
     return code;
   if (code >= 3000 && code <= 4999) return code;
   return 1011;
-}
-
-function shouldUpdateActivity(agentId: string): boolean {
-  const now = Date.now();
-  const last = lastActivityTimestamps.get(agentId) ?? 0;
-  if (now - last < DEBOUNCE_MS) return false;
-  boundedSet(lastActivityTimestamps, agentId, now);
-  return true;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
@@ -101,6 +89,7 @@ export function createAcpRelay(
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
+  const stamper = createActivityStamper(repo);
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -266,15 +255,7 @@ export function createAcpRelay(
             const parsed = isBinary ? null : tryParse(data);
             if (parsed !== null) trackIfPrompt(parsed);
 
-            if (!passive && shouldUpdateActivity(agentId)) {
-              repo
-                .patchAnnotation(
-                  agentId,
-                  LAST_ACTIVITY_KEY,
-                  new Date().toISOString(),
-                )
-                .catch(() => {});
-            }
+            if (!passive) stamper.bump(agentId);
 
             if (isBinary) {
               upstream.send(data, { binary: true });

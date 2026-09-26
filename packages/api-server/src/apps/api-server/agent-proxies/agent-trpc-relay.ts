@@ -5,10 +5,9 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { agentStreamable } from "../../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { createActivityStamper } from "./activity-stamper.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
-const ACTIVITY_DEBOUNCE_MS = 30_000;
 const ACTIVITY_INTERVAL_MS = 30_000;
 const PING_INTERVAL_MS = 30_000;
 
@@ -27,22 +26,16 @@ export function createAgentTrpcRelay(
 ): AgentTrpcRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
-  const lastActivity = new Map<string, number>();
+  const stamper = createActivityStamper(repo);
 
-  const stampNow = (id: string) => {
-    lastActivity.set(id, Date.now());
-    repo
-      .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
-      .catch(() => {});
-  };
   const bumpActivity = async (id: string) => {
-    if (Date.now() - (lastActivity.get(id) ?? 0) < ACTIVITY_DEBOUNCE_MS) return;
+    if (!stamper.isDue(id)) return;
     try {
       if (!agentStreamable(await repo.get(id))) return;
     } catch {
       return;
     }
-    stampNow(id);
+    stamper.stamp(id);
   };
   const pipe = (from: WebSocket, to: WebSocket) =>
     from.on(
@@ -123,7 +116,7 @@ export function createAgentTrpcRelay(
         return;
       }
       if (clientGone || overflow) return;
-      stampNow(agentId);
+      stamper.stamp(agentId);
 
       upstream = new WebSocket(
         `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,

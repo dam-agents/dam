@@ -74,11 +74,12 @@ import {
   allConversationAgentIds,
   deleteConversationsByAgent,
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
-import {
-  createTelegramBindFlowStore,
-  type TelegramOAuthPending,
+import type {
+  TelegramOAuthPending,
+  TelegramPendingBind,
 } from "./modules/channels/infrastructure/telegram-flows.js";
-import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
+import type { SlackPendingBind } from "./modules/channels/infrastructure/slack-flows.js";
+import { createFlowStore } from "./modules/channels/infrastructure/bind-flow-store.js";
 import type { SlackInstallPending } from "./modules/channels/infrastructure/slack-install-routes.js";
 import {
   findSlackInstall,
@@ -806,7 +807,7 @@ export async function bootstrap() {
     OAUTH_FLOW_TTL_MS,
   );
   const telegramBindFlows = config.telegramBotToken
-    ? createTelegramBindFlowStore({
+    ? createFlowStore<TelegramPendingBind>({
         store: createRedisTtlStore(
           sharedRedis,
           "bind:telegram",
@@ -814,7 +815,7 @@ export async function bootstrap() {
         ),
       })
     : undefined;
-  const slackBindFlows = createSlackBindFlowStore({
+  const slackBindFlows = createFlowStore<SlackPendingBind>({
     store: createRedisTtlStore(sharedRedis, "bind:slack", OAUTH_FLOW_TTL_MS),
   });
   const slackOauthCallbackUrl =

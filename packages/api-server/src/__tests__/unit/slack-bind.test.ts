@@ -6,7 +6,8 @@ import {
   executeSlackBind,
   type SlackBindingPort,
 } from "../../modules/agents/services/agents-service.js";
-import { createSlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
+import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
+import type { SlackPendingBind } from "../../modules/channels/infrastructure/slack-flows.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -20,7 +21,7 @@ async function harness(opts?: {
   connectError?: ConnectSlackResult & { ok: false };
   postError?: string;
 }) {
-  const store = createSlackBindFlowStore({
+  const store = createFlowStore<SlackPendingBind>({
     now: () => 1_000,
     store: createMemoryTtlStore(600_000, () => 1_000),
   });
