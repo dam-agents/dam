@@ -8,7 +8,10 @@ export default tseslint.config([
     extends: [tseslint.configs.base],
     plugins: { unicorn },
     rules: {
-      "unicorn/filename-case": ["error", { case: "kebabCase" }],
+      "unicorn/filename-case": [
+        "error",
+        { case: "kebabCase", directoryRoots: [/(^|\/)__tests__$/] },
+      ],
     },
   },
 ]);
