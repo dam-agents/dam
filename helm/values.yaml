@@ -1232,6 +1232,10 @@ apiServer:
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
+    # Istio's release host, which redirects every download to its R2 bucket.
+    # The Google Cloud Storage bucket still serves releases up to 1.30.
+    - blob.istio.io
+    - istio-release.r2.istio.io
     - istio-release.storage.googleapis.com
     - mirror.openshift.com
     # Supply-chain signing (cosign's TUF root)
