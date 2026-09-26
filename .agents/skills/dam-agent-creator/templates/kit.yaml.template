@@ -81,6 +81,10 @@ resources:
   storage: 5Gi
   note: TODO(creator) — why this size.
 
+# TODO(creator): keep only when the job needs other web access than the platform
+# default (trusted sites): none | trusted | all.
+egressPreset: trusted
+
 # TODO(creator): keep only when a heartbeat fires finer than the install's idle
 # timeout — otherwise the agent is paid for a wake-up round trip every tick.
 hibernationTimeoutMin: 30

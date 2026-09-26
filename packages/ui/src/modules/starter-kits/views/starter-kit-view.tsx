@@ -30,7 +30,13 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
-import { CATEGORY_LABEL, VM_BACKEND_LABEL } from "../lib/catalog-cards.js";
+import {
+  CATEGORY_LABEL,
+  EGRESS_PRESET_DETAIL,
+  EGRESS_PRESET_LABEL,
+  kitEgressPreset,
+  VM_BACKEND_LABEL,
+} from "../lib/catalog-cards.js";
 import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
@@ -411,6 +417,13 @@ function KitDetail({
               />
             </Section>
           )}
+
+          <Section label="Network access">
+            <Row
+              title={EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
+              detail={EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]}
+            />
+          </Section>
 
           {size && (
             <Section label="Compute">

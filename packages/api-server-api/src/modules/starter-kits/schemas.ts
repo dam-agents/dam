@@ -8,6 +8,7 @@ import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
+import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { precheckSchema, quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
@@ -121,6 +122,7 @@ export const starterKitSchema = z.object({
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
   backend: z.literal("vm").optional(),
+  egressPreset: egressPresetSchema.optional(),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   install: starterKitInstallSchema.optional(),

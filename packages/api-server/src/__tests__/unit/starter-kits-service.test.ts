@@ -1079,6 +1079,22 @@ describe("starter kits: domain helpers", () => {
   });
 });
 
+describe("starter kits: egress preset", () => {
+  // TEST_SCENARIO: the kit's egress preset seeds the agent's network rules at create, and a kit that names none leaves the create's own default in place rather than overriding it.
+  it("passes the kit's egress preset to the create only when it declares one", async () => {
+    const strict = makeHarness({
+      ...LOADED,
+      kit: kit({ egressPreset: "none" }),
+    });
+    await strict.service.apply(APPLY);
+    expect(strict.calls.created[0]).toMatchObject({ egressPreset: "none" });
+
+    const plain = makeHarness(LOADED);
+    await plain.service.apply(APPLY);
+    expect(plain.calls.created[0]).not.toHaveProperty("egressPreset");
+  });
+});
+
 describe("starter kits: backend", () => {
   const VM_KIT: LoadedKit = {
     ...LOADED,

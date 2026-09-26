@@ -1,8 +1,30 @@
-import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
+import type {
+  ConnectionTemplateView,
+  EgressPreset,
+  StarterKitView,
+} from "api-server-api";
 
 import { connectionRequirements, describeAccepts } from "./setup.js";
 
 export const VM_BACKEND_LABEL = "New sandbox runtime";
+
+export const EGRESS_PRESET_LABEL: Record<EgressPreset, string> = {
+  none: "No web access",
+  trusted: "Trusted sites only",
+  all: "Full web access",
+};
+
+export const EGRESS_PRESET_DETAIL: Record<EgressPreset, string> = {
+  none: "Strict default-deny: no rules are added, so every host needs your approval.",
+  trusted: "Trusted defaults: npm, PyPI, GitHub, Anthropic and similar.",
+  all: "Every host is allowed.",
+};
+
+export function kitEgressPreset(
+  kit: Pick<StarterKitView, "egressPreset">,
+): EgressPreset {
+  return kit.egressPreset ?? "trusted";
+}
 
 export const CATEGORY_ORDER: StarterKitView["category"][] = [
   "software",
@@ -34,6 +56,7 @@ export function kitBadges(
     | "skillsInKit"
     | "knowledgeBase"
     | "backend"
+    | "egressPreset"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
@@ -72,6 +95,12 @@ export function kitBadges(
 
   if (kit.backend === "vm")
     badges.push({ key: "backend", label: VM_BACKEND_LABEL });
+
+  if (kit.egressPreset && kit.egressPreset !== "trusted")
+    badges.push({
+      key: "egress",
+      label: EGRESS_PRESET_LABEL[kit.egressPreset],
+    });
 
   const skills = kit.skillsInKit.length + kit.skills.length;
   if (skills > 0) {
