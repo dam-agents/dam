@@ -5,7 +5,6 @@ import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendi
 
 declare const process: { env: Record<string, string | undefined> };
 
-
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
@@ -126,7 +125,7 @@ async function discoverModels(url: string): Promise<DiscoveredModel[]> {
 			if (!entry || typeof entry !== "object") continue;
 			const id = (entry as { id?: unknown }).id;
 			const idLower = typeof id === "string" ? id.toLowerCase() : undefined;
-			if (!idLower || idLower.length === 0 || seen.has(idLower)) continue;
+			if (!idLower || seen.has(idLower)) continue;
 			seen.add(idLower);
 			const rawLen = (entry as { max_model_len?: unknown }).max_model_len;
 			const contextWindow = typeof rawLen === "number" && Number.isFinite(rawLen) && rawLen > 0 ? rawLen : undefined;

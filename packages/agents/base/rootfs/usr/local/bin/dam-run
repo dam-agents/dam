@@ -2,6 +2,8 @@
 
 import { spawn } from "node:child_process";
 
+const SIGNAL_NUMBERS = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
+
 const argv = process.argv.slice(2);
 if (argv.length === 0) {
   process.stderr.write("usage: dam-run <command> [args...]\n");
@@ -14,9 +16,5 @@ child.on("error", (err) => {
   process.exit(127);
 });
 child.on("exit", (code, signal) => {
-  process.exit(code ?? (signal ? 128 + (signalNumber(signal) ?? 0) : 0));
+  process.exit(code ?? (signal ? 128 + (SIGNAL_NUMBERS[signal] ?? 0) : 0));
 });
-
-function signalNumber(sig) {
-  return { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 }[sig];
-}

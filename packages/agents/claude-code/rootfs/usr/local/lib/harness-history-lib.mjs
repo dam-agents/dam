@@ -20,11 +20,10 @@ async function loadModules() {
   const agent = await import(
     pathToFileURL(`${adapter}/dist/acp-agent.js`).href
   );
-  const sdkCandidates = [
+  const sdkPath = [
     `${adapter}/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`,
     `${adapter}/../../@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-  ];
-  const sdkPath = sdkCandidates.find((candidate) => existsSync(candidate));
+  ].find((candidate) => existsSync(candidate));
   if (!sdkPath) {
     throw new Error("claude-agent-sdk not found next to the adapter");
   }
@@ -33,10 +32,8 @@ async function loadModules() {
 }
 
 function parentToolUseIdOf(message) {
-  if (!("parent_tool_use_id" in message)) return null;
-  return typeof message.parent_tool_use_id === "string"
-    ? message.parent_tool_use_id
-    : null;
+  const id = message.parent_tool_use_id;
+  return typeof id === "string" ? id : null;
 }
 
 function stripSubagentTextAndThinking(content) {
@@ -52,8 +49,9 @@ function stripSubagentTextAndThinking(content) {
 
 function stampOf(message) {
   const timestamp = message.timestamp;
-  if (typeof timestamp !== "string") return null;
-  return Number.isFinite(Date.parse(timestamp)) ? timestamp : null;
+  return typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
+    ? timestamp
+    : null;
 }
 
 function objectOr(value) {

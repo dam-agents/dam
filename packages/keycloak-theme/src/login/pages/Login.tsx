@@ -37,6 +37,9 @@ export default function Login(
   const isShareSignIn =
     kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
   const brand = realm.displayName || BRAND_FALLBACK;
+  const providerButtons = providers.map((p) => (
+    <SocialProviderButton key={p.alias} provider={p} />
+  ));
 
   return (
     <Template
@@ -142,9 +145,7 @@ export default function Login(
 
       {isSsoOnly ? (
         <div className="mt-14 max-w-[var(--width-login-col)] space-y-2">
-          {providers.map((p) => (
-            <SocialProviderButton key={p.alias} provider={p} />
-          ))}
+          {providerButtons}
         </div>
       ) : (
         providers.length > 0 && (
@@ -162,11 +163,7 @@ export default function Login(
               </div>
             )}
 
-            <div className="space-y-2">
-              {providers.map((p) => (
-                <SocialProviderButton key={p.alias} provider={p} />
-              ))}
-            </div>
+            <div className="space-y-2">{providerButtons}</div>
           </div>
         )
       )}
