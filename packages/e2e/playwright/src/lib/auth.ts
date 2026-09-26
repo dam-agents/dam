@@ -1,6 +1,4 @@
-import { rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createServer, type Server } from "node:net";
 
 import { expect, type Page } from "@playwright/test";
 
@@ -19,42 +17,53 @@ interface TokenResponse {
   expires_in: number;
 }
 
-const passwordGrantLockPath = join(
-  tmpdir(),
-  "platform-e2e-keycloak-password-grant.lock",
+const keycloakLoginLockPort = Number(
+  process.env.PLATFORM_E2E_LOGIN_LOCK_PORT ?? 47_319,
 );
-const passwordGrantLockPollMs = 50;
-const passwordGrantLockStaleMs = 30_000;
+const keycloakLoginLockPollMs = 50;
+const keycloakLoginLockWaitMs = 120_000;
+const passwordGrantTimeoutMs = 30_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function acquirePasswordGrantLock(): Promise<void> {
-  for (;;) {
-    try {
-      await writeFile(passwordGrantLockPath, String(process.pid), {
-        flag: "wx",
-      });
-      return;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    }
-    const held = await stat(passwordGrantLockPath).catch(() => undefined);
-    if (held && Date.now() - held.mtimeMs > passwordGrantLockStaleMs) {
-      await rm(passwordGrantLockPath, { force: true });
-      continue;
-    }
-    await sleep(passwordGrantLockPollMs);
-  }
+function listenOnLoginLockPort(): Promise<Server | undefined> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") resolve(undefined);
+      else reject(err);
+    });
+    server.listen(
+      { port: keycloakLoginLockPort, host: "127.0.0.1", exclusive: true },
+      () => {
+        server.unref();
+        resolve(server);
+      },
+    );
+  });
 }
 
-async function oneWorkerAtATime<T>(grant: () => Promise<T>): Promise<T> {
-  await acquirePasswordGrantLock();
+export async function oneKeycloakLoginAtATime<T>(
+  login: () => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + keycloakLoginLockWaitMs;
+  let lock = await listenOnLoginLockPort();
+  while (!lock) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `no turn to log in to Keycloak after ${keycloakLoginLockWaitMs}ms: 127.0.0.1:${keycloakLoginLockPort} stayed taken`,
+      );
+    }
+    await sleep(keycloakLoginLockPollMs);
+    lock = await listenOnLoginLockPort();
+  }
+  const held = lock;
   try {
-    return await grant();
+    return await login();
   } finally {
-    await rm(passwordGrantLockPath, { force: true });
+    await new Promise<void>((resolve) => held.close(() => resolve()));
   }
 }
 
@@ -62,7 +71,7 @@ export async function getAccessToken(
   user: { username: string; password: string } = testUser,
 ): Promise<string> {
   const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
-  const res = await oneWorkerAtATime(() =>
+  const res = await oneKeycloakLoginAtATime(() =>
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -72,6 +81,7 @@ export async function getAccessToken(
         username: user.username,
         password: user.password,
       }),
+      signal: AbortSignal.timeout(passwordGrantTimeoutMs),
     }),
   );
   if (!res.ok) {
@@ -100,13 +110,15 @@ export async function loginViaUi(page: Page): Promise<void> {
   await expect(usernameField.or(termsButton).or(appSidebar)).toBeVisible();
 
   if (await usernameField.isVisible()) {
-    await usernameField.fill(testUser.username);
-    await page.locator("#password").fill(testUser.password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(
-      (url) =>
-        url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
-    );
+    await oneKeycloakLoginAtATime(async () => {
+      await usernameField.fill(testUser.username);
+      await page.locator("#password").fill(testUser.password);
+      await page.getByRole("button", { name: /sign in/i }).click();
+      await page.waitForURL(
+        (url) =>
+          url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
+      );
+    });
     await expect(termsButton.or(appSidebar)).toBeVisible();
   }
 
