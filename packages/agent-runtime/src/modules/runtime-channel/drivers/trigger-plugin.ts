@@ -38,7 +38,7 @@ export function createTriggerPlugin(deps: {
   stateStore: TriggerStateStore;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
-  reporter?: EventReporter;
+  reporter: EventReporter;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
@@ -89,7 +89,7 @@ export function createTriggerPlugin(deps: {
       `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
     );
     try {
-      await deps.reporter?.report({
+      await deps.reporter.report({
         eventId,
         outcome: WIRE_OUTCOME[outcome.verdict],
         ...(outcome.detail ? { detail: outcome.detail } : {}),
