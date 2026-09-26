@@ -14,14 +14,12 @@ import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
 import type { AgentService } from "../services/agent-service.js";
-import { fetchOrFallback } from "../services/fetch-or-fallback.js";
-import { waitForRunning } from "../services/wait-for-state.js";
 import {
-  formatTransportError,
   printServiceError,
   exitOnServiceError,
 } from "../../shared/trpc/print.js";
 import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
+import { waitForRunningOrExit } from "./wait-or-exit.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -244,60 +242,17 @@ async function runCreate(
     process.exit(EXIT_RUNTIME_FAILURE);
   }
 
-  let finalAgent = agent;
-  if (opts.wait) {
-    const svc = deps.createAgentService(host);
-    let firstStateSeen = false;
-    const waitResult = await waitForRunning(svc, agent.id, {
-      timeoutSeconds,
-      graceSeconds: 0,
-      onStateChange: (state) => {
-        if (opts.json) return;
-        if (!firstStateSeen) {
-          process.stderr.write(`Waiting for "${name}"… state: ${state}\n`);
-          firstStateSeen = true;
-        } else {
-          process.stderr.write(`state: ${state}\n`);
-        }
-      },
-    });
-
-    switch (waitResult.kind) {
-      case "ready":
-        finalAgent = waitResult.agent;
-        break;
-      case "error":
-        finalAgent = waitResult.agent;
-        if (opts.json) {
-          process.stdout.write(`${JSON.stringify(finalAgent)}\n`);
-        } else {
-          const reason = waitResult.agent.error ?? "unknown";
-          process.stderr.write(
-            `error: agent "${name}" (${waitResult.agent.id}) entered error state: ${reason}\n`,
-          );
-        }
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-      case "timeout":
-        if (opts.json) {
-          process.stdout.write(
-            `${JSON.stringify(await fetchOrFallback(svc, agent, "after wait timeout"))}\n`,
-          );
-        } else {
-          process.stderr.write(
-            `error: timed out waiting for "${name}" to reach running (current: ${waitResult.lastState})\n`,
-          );
-        }
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-      case "transport":
-        process.stderr.write(
-          `error: ${formatTransportError(waitResult.reason, host)}\n`,
-        );
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-    }
-  }
+  const finalAgent = opts.wait
+    ? await waitForRunningOrExit(deps.createAgentService(host), agent, {
+        host,
+        name,
+        timeoutSeconds,
+        graceSeconds: 0,
+        json: opts.json,
+        showIdOnError: true,
+        refreshContext: "after wait timeout",
+      })
+    : agent;
 
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(finalAgent)}\n`);

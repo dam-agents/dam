@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildDeleteCommand } from "./commands/delete.js";
 import { buildGetCommand } from "./commands/get.js";
@@ -19,7 +15,7 @@ import {
 } from "./services/schedule-service.js";
 
 export interface ScheduleModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -33,11 +29,8 @@ export interface ScheduleModule {
 export function composeScheduleModule(
   opts: ScheduleModuleOptions,
 ): ScheduleModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): ScheduleService =>
-    createScheduleService({ trpc: buildTrpc(host) });
+    createScheduleService({ trpc: opts.buildTrpc(host) });
 
   const agentScoped = {
     compatService: opts.compatService,

@@ -1,11 +1,7 @@
 import { Command } from "commander";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
@@ -18,7 +14,7 @@ import {
 } from "./services/agent-service.js";
 
 export interface AgentModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   templateService: (host: string) => TemplateService;
@@ -30,11 +26,8 @@ export interface AgentModule {
 }
 
 export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): AgentService =>
-    createAgentService({ trpc: buildTrpc(host) });
+    createAgentService({ trpc: opts.buildTrpc(host) });
 
   const shared = {
     compatService: opts.compatService,
@@ -50,7 +43,7 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   const createDeps = {
     ...shared,
     createTemplateService: opts.templateService,
-    createTrpcClient: buildTrpc,
+    createTrpcClient: opts.buildTrpc,
   };
   parent.addCommand(buildCreateCommand(createDeps));
   parent.addCommand(buildCreateInteractiveCommand(createDeps));

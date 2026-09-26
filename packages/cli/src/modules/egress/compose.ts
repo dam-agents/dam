@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildApplyPresetCommand } from "./commands/apply-preset.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildListCommand } from "./commands/list.js";
@@ -19,7 +15,7 @@ import {
 } from "./services/egress-service.js";
 
 export interface EgressModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -31,11 +27,8 @@ export interface EgressModule {
 }
 
 export function composeEgressModule(opts: EgressModuleOptions): EgressModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): EgressService =>
-    createEgressService({ trpc: buildTrpc(host) });
+    createEgressService({ trpc: opts.buildTrpc(host) });
 
   const agentScoped = {
     compatService: opts.compatService,

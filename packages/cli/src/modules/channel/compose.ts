@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildAvailableCommand } from "./commands/available.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildSlackConnectCommand } from "./commands/slack-connect.js";
@@ -16,7 +12,7 @@ import {
 } from "./services/channel-service.js";
 
 export interface ChannelModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -30,11 +26,8 @@ export interface ChannelModule {
 export function composeChannelModule(
   opts: ChannelModuleOptions,
 ): ChannelModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): ChannelService =>
-    createChannelService({ trpc: buildTrpc(host) });
+    createChannelService({ trpc: opts.buildTrpc(host) });
 
   const agentScoped = {
     compatService: opts.compatService,
