@@ -14,3 +14,11 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
   }
   return { title: payload.toolName ?? "tool call", subtitle: "" };
 }
+
+export function acpNativeRowId(
+  agentId: string,
+  sessionId: string,
+  rpcId: number | string,
+): string {
+  return `acpnative:${agentId}:${sessionId}:${rpcId}`;
+}

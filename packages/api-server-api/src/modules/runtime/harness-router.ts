@@ -1,5 +1,5 @@
 import { harnessT } from "../../harness-trpc.js";
-import { eventReportInput, helloInput } from "./types.js";
+import { eventReportInput, helloInput } from "agent-runtime-api";
 
 const v1Router = harnessT.router({
   hello: harnessT.procedure

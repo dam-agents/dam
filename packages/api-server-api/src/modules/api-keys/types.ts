@@ -1,9 +1,5 @@
 import type { z } from "zod";
-import type {
-  apiKeyCreateInputSchema,
-  apiKeyRevokeInputSchema,
-  scopeSchema,
-} from "./schemas.js";
+import type { apiKeyCreateInputSchema, scopeSchema } from "./schemas.js";
 
 export {
   AGENT_SCOPES,
@@ -27,7 +23,6 @@ export interface ApiKeyView {
 }
 
 export type ApiKeyCreateInput = z.infer<typeof apiKeyCreateInputSchema>;
-export type ApiKeyRevokeInput = z.infer<typeof apiKeyRevokeInputSchema>;
 
 export interface ApiKeyCreateResult {
   key: ApiKeyView;

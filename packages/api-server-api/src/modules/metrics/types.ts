@@ -3,11 +3,9 @@ import type { SessionCategory } from "../sessions/types.js";
 import type {
   metricsOverviewInputSchema,
   metricsSpendBreakdownInputSchema,
-  metricsSpendInputSchema,
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
-export type MetricsSpendQuery = z.infer<typeof metricsSpendInputSchema>;
 export type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;

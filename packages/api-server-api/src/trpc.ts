@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
-import { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
+import { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
 
 function extractScanFailure(cause: unknown): unknown {

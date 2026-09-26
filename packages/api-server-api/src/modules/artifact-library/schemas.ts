@@ -26,8 +26,6 @@ export const viewerEmailSchema = z
   .toLowerCase()
   .pipe(z.email().max(254));
 
-export const artifactVersionAuthorSchema = z.enum(["user", "agent"]);
-
 export const ARTIFACT_TITLE_MAX_LENGTH = 300;
 
 const titleSchema = z
