@@ -2,6 +2,7 @@
 
 import urllib.error
 import urllib.request
+from typing import Self
 
 import pytest
 
@@ -15,7 +16,7 @@ class _Resp:
     def read(self) -> bytes:
         return self._text.encode()
 
-    def __enter__(self) -> "_Resp":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
