@@ -623,8 +623,8 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       # k3s comes up in about twenty seconds and needs nothing the steps
       # below set up, so it starts here, beside them. `mise run e2e` waits
-      # for it and keeps the cluster instead of nuking it first. If this
-      # provision fails, cluster:install finds no kubeconfig and runs it again.
+      # for it and keeps the cluster instead of nuking it first; if this
+      # provision fails, it nukes whatever is left and provisions again.
       - name: Provision k3s in the background
         run: |
           nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
@@ -664,7 +664,11 @@ jobs:
       - run: |
           timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done' ||
             { echo "::error::the background k3s provision is still running after 3 minutes"; exit 1; }
-          echo "k3s provision exited $(cat /tmp/k3s-provision.status)"
+          status="$(cat /tmp/k3s-provision.status)"
+          if [ "$status" != 0 ]; then
+            echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
+            unset E2E_HOST_PROVISIONED
+          fi
           mise run e2e
         timeout-minutes: 35
         env:

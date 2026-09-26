@@ -1,3 +1,7 @@
+import { rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, type Page } from "@playwright/test";
 
 import {
@@ -15,46 +19,68 @@ interface TokenResponse {
   expires_in: number;
 }
 
-const loginAttemptsWhileBruteForceLockHolds = 10;
-const bruteForceLockBackoffMs = 1_000;
+const passwordGrantLockPath = join(
+  tmpdir(),
+  "platform-e2e-keycloak-password-grant.lock",
+);
+const passwordGrantLockPollMs = 50;
+const passwordGrantLockStaleMs = 30_000;
 
-function requestToken(user: {
-  username: string;
-  password: string;
-}): Promise<Response> {
-  const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "password",
-      client_id: keycloakClientId,
-      username: user.username,
-      password: user.password,
-    }),
-  });
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquirePasswordGrantLock(): Promise<void> {
+  for (;;) {
+    try {
+      await writeFile(passwordGrantLockPath, String(process.pid), {
+        flag: "wx",
+      });
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
+    const held = await stat(passwordGrantLockPath).catch(() => undefined);
+    if (held && Date.now() - held.mtimeMs > passwordGrantLockStaleMs) {
+      await rm(passwordGrantLockPath, { force: true });
+      continue;
+    }
+    await sleep(passwordGrantLockPollMs);
+  }
+}
+
+async function oneWorkerAtATime<T>(grant: () => Promise<T>): Promise<T> {
+  await acquirePasswordGrantLock();
+  try {
+    return await grant();
+  } finally {
+    await rm(passwordGrantLockPath, { force: true });
+  }
 }
 
 export async function getAccessToken(
   user: { username: string; password: string } = testUser,
 ): Promise<string> {
-  for (let attempt = 1; ; attempt++) {
-    const res = await requestToken(user);
-    if (res.ok) {
-      const data = (await res.json()) as TokenResponse;
-      return data.access_token;
-    }
-    const body = await res.text();
-    const refusedAsInvalidGrant =
-      res.status === 400 && body.includes("invalid_grant");
-    if (
-      !refusedAsInvalidGrant ||
-      attempt >= loginAttemptsWhileBruteForceLockHolds
-    ) {
-      throw new Error(`Keycloak token request failed: ${res.status} ${body}`);
-    }
-    await new Promise((r) => setTimeout(r, bruteForceLockBackoffMs));
+  const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
+  const res = await oneWorkerAtATime(() =>
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "password",
+        client_id: keycloakClientId,
+        username: user.username,
+        password: user.password,
+      }),
+    }),
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Keycloak token request failed: ${res.status} ${await res.text()}`,
+    );
   }
+  const data = (await res.json()) as TokenResponse;
+  return data.access_token;
 }
 
 export async function acceptTerms(api: ApiClient): Promise<void> {
