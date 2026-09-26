@@ -41,7 +41,7 @@ import type { SlackInstallService } from "../../modules/channels/services/slack-
 import type { ConnectionsBootCompose } from "../../modules/connections/compose.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type { SchedulesBoot } from "../../modules/schedules/index.js";
-import type { SecretStoreRegistry } from "../../modules/secret-store/index.js";
+import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import type { MetricsReader } from "../../modules/metrics/index.js";
 import type { TelemetryReader } from "../../modules/telemetry/index.js";
@@ -84,7 +84,7 @@ export interface ApiServerDeps {
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
-  secretStores: SecretStoreRegistry;
+  secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;

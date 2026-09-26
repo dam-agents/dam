@@ -42,7 +42,7 @@ import {
   composeKbShareServing,
 } from "../../modules/kb-shares/index.js";
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
-import { createKubernetesSecretStore } from "../../modules/secret-store/index.js";
+import type { SecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -89,6 +89,7 @@ export interface HarnessApiServerAppDeps {
   onboardingChecklist: OnboardingChecklistOps;
   runtimeProgress: RuntimeProgressPort;
   satellitesBoot: SatellitesComposition;
+  secretStore: SecretStore;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -118,6 +119,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentTelemetry,
     wakeAgent,
     runtimeProgress,
+    secretStore,
   } = deps;
 
   const defaultLimits = {
@@ -173,7 +175,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     });
 
   const connectionsRepo = createConnectionsRepository(db);
-  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
   const kbMcp = composeKbShareServing({
     db,
     store: artifacts,
