@@ -4,7 +4,7 @@ import type { QuietWindow } from "./types.js";
 
 const rrulePkg = (Reflect.get(rruleModule, "default") ??
   rruleModule) as typeof rruleModule;
-const { Frequency, RRule } = rrulePkg;
+const { Frequency, RRule, RRuleSet } = rrulePkg;
 
 export type FrequencyPreset =
   | { kind: "minutely"; interval: number; days: number[] }
@@ -154,6 +154,123 @@ export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
   return false;
 }
 
+type RRuleOptions = ReturnType<typeof RRule.parseString>;
+
+const DAY_MINUTES = 24 * 60;
+
+export function occurrenceRule(
+  options: RRuleOptions,
+  dtstart: Date,
+): InstanceType<typeof RRule> | null {
+  if (!canOccur(options)) return null;
+  if (!pinsTimeOfDay(options)) return new RRule({ dtstart, ...options });
+  const set = new RRuleSet();
+  for (const [minutes, hours] of hoursByMinutes(options)) {
+    set.rrule(
+      new RRule({
+        dtstart,
+        ...options,
+        freq: Frequency.DAILY,
+        interval: 1,
+        byhour: hours,
+        byminute: minutes,
+      }),
+    );
+  }
+  return set;
+}
+
+export function canOccur(options: RRuleOptions): boolean {
+  if (!dayFiltersMatchSomeDate(options)) return false;
+  if (!pinsTimeOfDay(options)) return true;
+  if (toNumArray(options.bysetpos).length > 0) return false;
+  if (DAY_MINUTES % stepMinutes(options) !== 0) return false;
+  return hoursByMinutes(options).size > 0;
+}
+
+function pinsTimeOfDay(options: RRuleOptions): boolean {
+  return (
+    (options.freq === Frequency.HOURLY ||
+      options.freq === Frequency.MINUTELY) &&
+    (toNumArray(options.byhour).length > 0 ||
+      toNumArray(options.byminute).length > 0)
+  );
+}
+
+function stepMinutes(options: RRuleOptions): number {
+  const interval =
+    typeof options.interval === "number" && options.interval > 0
+      ? options.interval
+      : 1;
+  return options.freq === Frequency.HOURLY ? interval * 60 : interval;
+}
+
+function hoursByMinutes(options: RRuleOptions): Map<number[], number[]> {
+  const step = stepMinutes(options);
+  const hourly = options.freq === Frequency.HOURLY;
+  const byminute = toNumArray(options.byminute);
+  const minutes = byminute.length > 0 || !hourly ? orAll(byminute, 60) : [0];
+  const groups = new Map<string, { minutes: number[]; hours: number[] }>();
+  for (const h of orAll(toNumArray(options.byhour), 24)) {
+    const onStep = hourly
+      ? minutes.filter(() => (h * 60) % step === 0)
+      : minutes.filter((m) => (h * 60 + m) % step === 0);
+    if (onStep.length === 0) continue;
+    const key = onStep.join(",");
+    const group = groups.get(key) ?? { minutes: onStep, hours: [] };
+    group.hours.push(h);
+    groups.set(key, group);
+  }
+  return new Map([...groups.values()].map((g) => [g.minutes, g.hours]));
+}
+
+const PROBE_START = new Date(Date.UTC(2000, 0, 1));
+
+function dayFiltersMatchSomeDate(options: RRuleOptions): boolean {
+  if (options.freq === undefined || options.freq < Frequency.WEEKLY)
+    return true;
+  const { bymonth, bymonthday, byyearday, byweekno, byeaster } = options;
+  const filtered =
+    toNumArray(bymonth).length > 0 ||
+    toNumArray(bymonthday).length > 0 ||
+    toNumArray(byyearday).length > 0 ||
+    toNumArray(byweekno).length > 0 ||
+    typeof byeaster === "number";
+  if (!filtered) return true;
+  const probe = new RRule({
+    freq: Frequency.YEARLY,
+    dtstart: PROBE_START,
+    ...(options.wkst != null && { wkst: options.wkst }),
+    bymonth,
+    bymonthday,
+    byyearday,
+    byweekno,
+    byeaster: byeaster ?? null,
+    byweekday: plainWeekdays(options.byweekday),
+    byhour: 0,
+    byminute: 0,
+    bysecond: 0,
+  });
+  return probe.after(PROBE_START, true) !== null;
+}
+
+function plainWeekdays(value: RRuleOptions["byweekday"]): number[] | null {
+  if (value === null || value === undefined) return null;
+  const days = Array.isArray(value) ? value : [value];
+  return days.map((d) => {
+    if (typeof d === "number") return d;
+    return typeof d === "string"
+      ? rrulePkg.Weekday.fromStr(d).weekday
+      : d.weekday;
+  });
+}
+
+function orAll(values: number[], count: number): number[] {
+  return values.length > 0
+    ? values
+    : Array.from({ length: count }, (_, i) => i);
+}
+
 export function hasVisibleOccurrence(
   rruleBody: string,
   windows: QuietWindow[],
@@ -161,10 +278,13 @@ export function hasVisibleOccurrence(
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return true;
   try {
-    const rule = RRule.fromString(rruleBody);
+    const dtstart = new Date();
+    dtstart.setUTCSeconds(0, 0);
+    const rule = occurrenceRule(RRule.parseString(rruleBody), dtstart);
+    if (!rule) return true;
     let visible = false;
     rule.all((date, i) => {
-      if (i >= 1440) return false;
+      if (visible || i >= 1440) return false;
       if (!isInQuietHours(date, enabled)) {
         visible = true;
         return false;
