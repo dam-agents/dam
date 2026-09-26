@@ -4,7 +4,7 @@ import type {
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 
-export const CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS = 3600;
+const CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS = 3600;
 
 export type ClientCredentialsAuth = Extract<
   ConnectionAuthConfig,

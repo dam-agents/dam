@@ -2238,11 +2238,14 @@ export function createSlackWorker(
       return {
         frame: {
           context: lines,
-          contextLegend: catchUpLegend(await hasScope(gw, ctx.teamId, "users:read"), {
-            botLabel: hasUnattributedBot ? bot.label : null,
-            someOmitted: readHasMore,
-            hasThreadMarker,
-          }),
+          contextLegend: catchUpLegend(
+            await hasScope(gw, ctx.teamId, "users:read"),
+            {
+              botLabel: hasUnattributedBot ? bot.label : null,
+              someOmitted: readHasMore,
+              hasThreadMarker,
+            },
+          ),
         },
         commit,
       };

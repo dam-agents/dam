@@ -83,7 +83,7 @@ export function looksLikeSignInPage(head: string): boolean {
   );
 }
 
-export const INBOUND_FILE_ROOT = ".uploads";
+const INBOUND_FILE_ROOT = ".uploads";
 
 function sanitizeSegment(s: string): string {
   return s.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "") || "file";

@@ -22,7 +22,7 @@ export function laterTs(a: string, b: string): string {
   return isAfterTs(a, b) ? a : b;
 }
 
-export function newestOf(tss: readonly (string | undefined)[]): string | null {
+function newestOf(tss: readonly (string | undefined)[]): string | null {
   let found: string | null = null;
   for (const ts of tss) {
     if (ts === undefined) continue;
@@ -97,7 +97,7 @@ export interface TailFold<T> {
  * boundary, so the pages after it hold nothing a backward read wants and the
  * caller can stop asking the messenger for them.
  */
-export function foldTailPage<T extends { ts?: string }>(
+function foldTailPage<T extends { ts?: string }>(
   state: TailFold<T>,
   page: readonly T[],
   args: { limit: number; opener?: string; before?: string },

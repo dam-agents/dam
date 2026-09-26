@@ -133,8 +133,7 @@ function harness(
     promptsFor: (agent: string) =>
       prompts.filter((p) => p.agent === agent).map((p) => p.text),
     async start() {
-      for (const spec of agentSpecs)
-        await worker.start(spec.instanceName);
+      for (const spec of agentSpecs) await worker.start(spec.instanceName);
     },
     async mention(text: string, threadTs?: string) {
       await this.start();

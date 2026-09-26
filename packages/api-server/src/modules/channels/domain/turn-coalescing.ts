@@ -2,7 +2,7 @@ export const DEFAULT_MAX_COALESCED_BATCH = 20;
 
 export const DEFAULT_SETTLE_MS = 400;
 
-export const SETTLE_ROUNDS_CAP = 6;
+const SETTLE_ROUNDS_CAP = 6;
 
 export function settleRoundsRemaining(
   roundsTaken: number,

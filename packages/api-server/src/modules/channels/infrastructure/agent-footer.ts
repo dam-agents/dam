@@ -72,7 +72,7 @@ export function parseAgentFooter(
   return null;
 }
 
-export const THREAD_MARKER_NOTE =
+const THREAD_MARKER_NOTE =
   "A line ending in a [thread: ...] tag opened a thread: the tag gives how " +
   "many replies it has, when it last moved, and the ts that reads it. Those " +
   "replies are not shown here — read them with " +
