@@ -44,7 +44,7 @@
     "db": "workspace:*",
     "hono": "^4.13.8",
     "import-in-the-middle": "^3.5.1",
-    "ioredis": "^5.10.1",
+    "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "js-yaml": "^5.4.2",
     "mock-agent-api": "workspace:*",
