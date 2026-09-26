@@ -77,9 +77,7 @@ export type KbPublishRequestResult =
   | { outcome: "work"; order: KbPublishWorkOrder };
 
 export type KbPublishCompleteResult =
-  | { outcome: "committed" }
-  | { outcome: "retry" }
-  | { outcome: "failed" };
+  { outcome: "committed" } | { outcome: "retry" } | { outcome: "failed" };
 
 export interface KbPublishGate {
   request(

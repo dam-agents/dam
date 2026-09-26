@@ -6,11 +6,7 @@ export interface PermissionOption {
   optionId: string;
   name: string;
   kind?:
-    | "allow_once"
-    | "allow_always"
-    | "reject_once"
-    | "reject_always"
-    | string;
+    "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
 }
 
 export interface PermissionOutcome {

@@ -77,8 +77,7 @@ export function createImportHandlers(
 
     let staging: string | undefined;
     let extractPromise:
-      | Promise<Awaited<ReturnType<typeof extractBundle>>>
-      | undefined;
+      Promise<Awaited<ReturnType<typeof extractBundle>>> | undefined;
     let sawFile = false;
     let finished = false;
 

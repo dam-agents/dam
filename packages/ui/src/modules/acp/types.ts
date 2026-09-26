@@ -1,4 +1,4 @@
-import type { SessionUpdate } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,

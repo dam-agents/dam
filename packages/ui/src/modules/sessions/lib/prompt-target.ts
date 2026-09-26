@@ -1,6 +1,5 @@
 export type PromptTarget =
-  | { ok: true; sessionId: string }
-  | { ok: false; reason: string };
+  { ok: true; sessionId: string } | { ok: false; reason: string };
 
 export function resolvePromptTarget(
   intendedSessionId: string,

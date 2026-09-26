@@ -49,7 +49,7 @@ import type {
   ThreadQuery,
   ThreadResult,
 } from "../services/channel-manager.js";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
   AcpTurnAbandonedError,
@@ -185,15 +185,13 @@ function framePrompt(opts: {
   return [
     { type: "text", text },
     ...opts.images.map((i) => i.block),
-    ...delivered.map(
-      (f): ContentBlock => ({
-        type: "resource_link",
-        uri: `file://${f.path}`,
-        name: f.name,
-        size: f.size,
-        ...(f.contentType ? { mimeType: f.contentType } : {}),
-      }),
-    ),
+    ...delivered.map((f): ContentBlock => ({
+      type: "resource_link",
+      uri: `file://${f.path}`,
+      name: f.name,
+      size: f.size,
+      ...(f.contentType ? { mimeType: f.contentType } : {}),
+    })),
   ];
 }
 

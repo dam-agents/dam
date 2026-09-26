@@ -120,8 +120,7 @@ async function callTool(
     : [JSON.parse(raw) as { id?: number; result?: unknown }];
   const reply = messages.find((m) => m.id === 2);
   const result = reply?.result as
-    | { content: { text: string }[]; isError?: boolean }
-    | undefined;
+    { content: { text: string }[]; isError?: boolean } | undefined;
   expect(result, raw).toBeDefined();
   expect(result!.isError ?? false, raw).toBe(false);
   return result!.content.map((c) => c.text).join("\n");

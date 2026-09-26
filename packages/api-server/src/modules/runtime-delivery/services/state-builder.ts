@@ -106,13 +106,11 @@ async function readUserEnvContributions(
     .from(agentEnv)
     .where(eq(agentEnv.agentId, agentId))
     .orderBy(asc(agentEnv.name));
-  return rows.map(
-    (r): Contribution => ({
-      kind: "env",
-      name: r.name,
-      placeholder: r.value,
-    }),
-  );
+  return rows.map((r): Contribution => ({
+    kind: "env",
+    name: r.name,
+    placeholder: r.value,
+  }));
 }
 
 async function readGrantedContributions(
@@ -166,15 +164,13 @@ async function readSkillRefContributions(
     .from(agentSkills)
     .where(eq(agentSkills.agentId, agentId))
     .orderBy(asc(agentSkills.source), asc(agentSkills.name));
-  return rows.map(
-    (r): Contribution => ({
-      kind: "skill-ref",
-      sourceUrl: r.source,
-      name: r.name,
-      version: r.version,
-      ...(r.path !== null ? { path: r.path } : {}),
-    }),
-  );
+  return rows.map((r): Contribution => ({
+    kind: "skill-ref",
+    sourceUrl: r.source,
+    name: r.name,
+    version: r.version,
+    ...(r.path !== null ? { path: r.path } : {}),
+  }));
 }
 
 function toEvent(row: PendingEventRow): Event | null {

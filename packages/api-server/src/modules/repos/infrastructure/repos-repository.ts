@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import yaml from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import type { Repo, ReposService } from "api-server-api";
 import { repoSchema } from "api-server-api";
 
@@ -19,7 +19,7 @@ function loadRepos(dir: string): Repo[] {
   if (!dir) return [];
   let raw: unknown;
   try {
-    raw = yaml.load(readFileSync(join(dir, REPOS_FILE), "utf8"));
+    raw = loadYamlDocument(readFileSync(join(dir, REPOS_FILE), "utf8"));
   } catch (err) {
     process.stderr.write(
       `git-repos: ${join(dir, REPOS_FILE)}: ${err instanceof Error ? err.message : err}\n`,

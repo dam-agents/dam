@@ -801,9 +801,8 @@ export function createConnectionsService(deps: {
       );
 
       const id = input.id ?? newConnectionId();
-      const contributions = built.contributions.map(
-        (c): Contribution =>
-          c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
+      const contributions = built.contributions.map((c): Contribution =>
+        c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
       const secretPath = connectionSecretPath(built.auth);
 

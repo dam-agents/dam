@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/index.ts", "src/telemetry.ts"],
   format: "esm",
-  target: "node24",
+  target: "node26",
   platform: "node",
   outDir: "dist/js",
   splitting: false,

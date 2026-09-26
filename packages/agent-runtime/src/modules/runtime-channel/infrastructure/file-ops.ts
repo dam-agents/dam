@@ -7,7 +7,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { load as parseYaml, dump as stringifyYaml } from "js-yaml";
+import { dump as stringifyYaml } from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import type { FileFormat, MergeMode } from "agent-runtime-api";
 import { parseFile, serializeFile } from "./file-codec.js";
 
@@ -197,7 +198,8 @@ function mergeYamlFillIfMissing(
   existing: string,
   fragments: FileDesired[],
 ): string {
-  const base = (existing ? (parseYaml(existing) as unknown) : null) ?? {};
+  const base =
+    (existing ? (loadYamlDocument(existing) as unknown) : null) ?? {};
   const next = (
     typeof base === "object" && base !== null ? { ...(base as object) } : {}
   ) as Record<string, unknown>;

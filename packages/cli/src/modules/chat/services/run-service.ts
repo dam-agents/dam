@@ -25,8 +25,7 @@ export const DEFAULT_RUN_TIMEOUT_SECONDS = 3600;
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
 export type RunError =
-  | BootstrapError
-  | { kind: "run-failed"; reason: string; sessionId?: string };
+  BootstrapError | { kind: "run-failed"; reason: string; sessionId?: string };
 
 export type RunOutcome =
   | { kind: "completed"; sessionId: string; stopReason: string | null }

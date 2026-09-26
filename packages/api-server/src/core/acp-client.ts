@@ -5,13 +5,13 @@ import {
   type AcpPermissionOption,
 } from "api-server-api";
 import { z } from "zod";
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type {
-  ContentBlock,
-  InitializeResponse,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import {
+  ClientSideConnection,
+  type Stream,
+  type AnyMessage,
+  type ContentBlock,
+  type InitializeResponse,
+} from "@agentclientprotocol/sdk";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
 import { isPlatformMcpTool } from "./platform-mcp.js";
@@ -149,10 +149,7 @@ export interface TriggerSessionResult {
 }
 
 export type SteerOutcome =
-  | "injected"
-  | "no-running-turn"
-  | "unsupported"
-  | "failed";
+  "injected" | "no-running-turn" | "unsupported" | "failed";
 
 const steerResponseSchema = z.object({
   outcome: z.string().optional(),
@@ -205,8 +202,7 @@ export function toPromptUpdate(update: unknown): PromptUpdate | null {
 }
 
 export type SendPromptOpts = (
-  | { resumeSessionId: string }
-  | { platformMeta?: PlatformSessionMeta }
+  { resumeSessionId: string } | { platformMeta?: PlatformSessionMeta }
 ) & {
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
@@ -681,7 +677,7 @@ function createAcpClientForUrl(
 
           if ("resumeSessionId" in triggerOpts) {
             try {
-              await connection.unstable_resumeSession({
+              await connection.resumeSession({
                 sessionId: triggerOpts.resumeSessionId,
                 cwd: ".",
                 mcpServers,

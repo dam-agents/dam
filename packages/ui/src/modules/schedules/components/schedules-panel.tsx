@@ -15,9 +15,7 @@ import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
 type FormState =
-  | { mode: "create" }
-  | { mode: "edit"; schedule: Schedule }
-  | null;
+  { mode: "create" } | { mode: "edit"; schedule: Schedule } | null;
 
 export function SchedulesPanel({
   agentId,

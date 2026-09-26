@@ -184,10 +184,7 @@ export type AuthSite =
 export type WsAuthSite = Extract<AuthSite, { edge: "ws" }>;
 
 export type AuthDenialKind =
-  | "missing-token"
-  | "auth-unavailable"
-  | "unauthorized"
-  | "forbidden";
+  "missing-token" | "auth-unavailable" | "unauthorized" | "forbidden";
 
 export type AuthenticateResult =
   | { ok: true; principal: VerifiedPrincipal }

@@ -14,11 +14,7 @@ export type ExperimentSandboxCreateInput = z.infer<
 >;
 
 export type ExperimentStatus =
-  | "draft"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped";
+  "draft" | "running" | "completed" | "failed" | "stopped";
 
 export type SpanStatus = "running" | "ok" | "error";
 

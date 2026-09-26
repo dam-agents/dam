@@ -6,8 +6,7 @@ const FRESH_TTL_MS = 5 * 60 * 1000;
 const STALE_TTL_MS = 30 * 60 * 1000;
 
 export type ScanScope =
-  | { kind: "shared" }
-  | { kind: "agent"; owner: string; agentId: string };
+  { kind: "shared" } | { kind: "agent"; owner: string; agentId: string };
 
 interface CacheEntry {
   skills: Skill[];

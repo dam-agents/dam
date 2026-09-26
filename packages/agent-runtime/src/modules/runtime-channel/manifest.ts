@@ -5,7 +5,7 @@ import {
   harnessConfigCatalog,
   type DriverBinding,
 } from "agent-runtime-api";
-import { load as parseYaml } from "js-yaml";
+import { loadYamlDocument } from "../../core/yaml-document.js";
 import { z } from "zod";
 
 const driverEntry = z.union([
@@ -90,7 +90,7 @@ export function loadManifest(path: string): RuntimeManifest {
   }
   let raw: unknown;
   try {
-    raw = parseYaml(readFileSync(path, "utf8"));
+    raw = loadYamlDocument(readFileSync(path, "utf8"));
   } catch (err) {
     throw new ManifestLoadError(
       `failed to parse ${path}: ${(err as Error).message}`,

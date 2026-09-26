@@ -41,12 +41,10 @@ export function useArtifactRequest(
       }
       inFlight += 1;
       void callAgentApi({ artifactId, ...read.request })
-        .catch(
-          (): ArtifactCallAgentApiResult => ({
-            ok: false,
-            reason: "agent-unreachable",
-          }),
-        )
+        .catch((): ArtifactCallAgentApiResult => ({
+          ok: false,
+          reason: "agent-unreachable",
+        }))
         .then(reply)
         .finally(() => {
           inFlight -= 1;

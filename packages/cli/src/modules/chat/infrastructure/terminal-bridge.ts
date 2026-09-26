@@ -11,8 +11,7 @@ import {
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
 
 export type BridgeResult =
-  | { kind: "exited"; code: number }
-  | { kind: "disconnected"; reason: string };
+  { kind: "exited"; code: number } | { kind: "disconnected"; reason: string };
 
 export const TERMINAL_MODE_RESET =
   "\x1b[<u" +

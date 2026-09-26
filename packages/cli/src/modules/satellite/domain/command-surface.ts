@@ -24,8 +24,7 @@ export interface CommandSurface {
 }
 
 export type SurfaceResult =
-  | { ok: true; value: CommandSurface }
-  | { ok: false; error: string };
+  { ok: true; value: CommandSurface } | { ok: false; error: string };
 
 export interface SurfaceDefaults {
   name: string;

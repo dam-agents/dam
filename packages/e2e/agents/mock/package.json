@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@trpc/server": "^11.16.0",
-    "zod": "^4.4.3"
+    "@trpc/server": "^11.19.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.2",
     "dev-config": "workspace:*",
     "mock-agent-api": "workspace:*",
     "tsup": "^8.5.1",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3"
   }
 }

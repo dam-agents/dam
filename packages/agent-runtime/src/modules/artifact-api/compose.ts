@@ -7,8 +7,7 @@ import {
 } from "agent-runtime-api";
 
 type ReadOutcome =
-  | { ok: true; bytes: Uint8Array }
-  | { ok: false; reason: "response-too-large" };
+  { ok: true; bytes: Uint8Array } | { ok: false; reason: "response-too-large" };
 
 async function readCapped(
   body: ReadableStream<Uint8Array> | null,

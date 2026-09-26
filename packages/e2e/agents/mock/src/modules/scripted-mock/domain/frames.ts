@@ -21,9 +21,7 @@ export interface JsonRpcNotification {
 }
 
 export type JsonRpcFrame =
-  | JsonRpcRequest
-  | JsonRpcResponse
-  | JsonRpcNotification;
+  JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
 
 export function parseFrame(line: string): JsonRpcFrame | null {
   try {

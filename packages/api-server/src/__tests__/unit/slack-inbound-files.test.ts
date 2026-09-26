@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";

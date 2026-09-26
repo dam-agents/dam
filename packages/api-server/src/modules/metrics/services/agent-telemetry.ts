@@ -48,8 +48,7 @@ export type AgentMetricsResult =
   | Unavailable;
 
 export type AgentLogsResult =
-  | (Measured & { logs: TelemetryEvent[]; truncated: boolean })
-  | Unavailable;
+  (Measured & { logs: TelemetryEvent[]; truncated: boolean }) | Unavailable;
 
 export type AgentSpansResult =
   | (Measured & { spans: TraceSpan[]; truncated: boolean })

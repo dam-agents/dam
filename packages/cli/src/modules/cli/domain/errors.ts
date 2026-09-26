@@ -30,10 +30,7 @@ export interface FileWriteError {
 }
 
 export type ProbeErrorCode =
-  | "network"
-  | "timeout"
-  | "non-ok-status"
-  | "malformed-response";
+  "network" | "timeout" | "non-ok-status" | "malformed-response";
 
 export interface ProbeError {
   kind: "probe-error";

@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientSideConnection } from "@agentclientprotocol/sdk";
 import type { PodSession } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
@@ -187,7 +187,7 @@ export async function setSessionMode(
   mode: SessionMode,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.unstable_resumeSession({
+    conn.resumeSession({
       sessionId,
       cwd: ".",
       mcpServers: [],

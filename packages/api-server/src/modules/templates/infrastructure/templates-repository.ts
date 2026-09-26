@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import yaml from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import type { Template, TemplateSpec } from "api-server-api";
 import { templateSpecSchema } from "api-server-api";
 
@@ -47,7 +47,7 @@ function loadTemplates(dir: string): Map<string, Template> {
     const id = entry.slice(0, -".yaml".length);
     try {
       const spec = templateSpecSchema.parse(
-        yaml.load(readFileSync(join(dir, entry), "utf8")),
+        loadYamlDocument(readFileSync(join(dir, entry), "utf8")),
       );
       byId.set(id, { id, name: spec.name ?? id, spec });
     } catch (err) {

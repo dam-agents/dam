@@ -1,7 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import { type AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";

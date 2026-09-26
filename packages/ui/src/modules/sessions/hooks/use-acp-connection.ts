@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientSideConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,

@@ -10,12 +10,12 @@
     "./kb-snapshot": "./src/modules/kb-snapshot/index.ts"
   },
   "dependencies": {
-    "@trpc/server": "^11.16.0",
-    "zod": "^4.4.3"
+    "@trpc/server": "^11.19.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.2",
     "dev-config": "workspace:*",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   }
 }

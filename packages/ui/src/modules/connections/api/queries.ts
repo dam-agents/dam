@@ -26,7 +26,7 @@ export function useConnectionTemplates(options?: { enabled?: boolean }) {
 }
 
 export function fetchConnection(id: string) {
-  return queryClient.fetchQuery({
+  return queryClient.query({
     ...trpc.connections.get.queryOptions({ id }),
     staleTime: 0,
   });

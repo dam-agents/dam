@@ -3,7 +3,7 @@ import type {
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+} from "@agentclientprotocol/sdk";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 import type {

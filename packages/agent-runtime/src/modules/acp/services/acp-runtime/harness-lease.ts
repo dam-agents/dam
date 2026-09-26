@@ -60,10 +60,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let gateOpen = envReady && bootWorkDone;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRecycle:
-    | "config-recycle"
-    | "env-recycle"
-    | "harness-unresponsive"
-    | null = null;
+    "config-recycle" | "env-recycle" | "harness-unresponsive" | null = null;
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function releaseWaiters(): void {
