@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-09-25
+Last verified: 2026-09-26
 
 The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily, and no baked tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
 
@@ -21,7 +21,7 @@ One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), buil
 
 - **Linux of the image's architecture only.** `mise oci` packages the build host's own tool installs and runs its `apt-get` into a side rootfs, under root. On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back. The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with a `docker save`-style `manifest.json` beside it, by which crane reads the tar.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
-- **One system-package layer.** `mise oci` installs system packages afresh in every build and takes a base image only from a registry, so the task builds the shared Debian packages once as their own image, again when their list changes and once a day, and serves it to every build from a registry on localhost. The images share that layer's digest, so a node stores it once.
+- **One system-package layer.** `mise oci` installs system packages afresh in every build and takes a base image only from a registry, so the task builds the shared Debian packages once as their own image on the repo's pinned Debian base, again when their list or that base changes and once a day, and serves it to every build from a registry on localhost. The images share that layer's digest, so a node stores it once.
 - **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it. k-search's GPU venv is gigabytes the repository's cache cannot hold: the registry keeps its install with both packaged layers instead, keyed by what shapes them, so an unchanged venv is not packaged again. The nightly run installs it afresh, which picks up its unpinned dependencies' releases. There are no build-arg overrides.
 
 ## Ownership and the two Backends
