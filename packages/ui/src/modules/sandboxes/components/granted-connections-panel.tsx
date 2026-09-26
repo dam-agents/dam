@@ -18,7 +18,6 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
-  inset?: boolean;
   title?: string;
   leading?: React.ReactNode;
 }
@@ -29,7 +28,6 @@ export function GrantedConnectionsPanel({
   templateById,
   onToggleGrant,
   onOpenCatalog,
-  inset = true,
   title = "My connections",
   leading,
 }: Props) {
@@ -50,7 +48,7 @@ export function GrantedConnectionsPanel({
     </div>
   );
   const rivalryCallout = (
-    <GrantRivalryCallout granted={granted} inset={inset} className="mb-3" />
+    <GrantRivalryCallout granted={granted} className="mb-3" />
   );
 
   if (groups.length === 0)
@@ -58,7 +56,7 @@ export function GrantedConnectionsPanel({
       <>
         {header}
         {rivalryCallout}
-        {leading && <Wrap inset={inset}>{leading}</Wrap>}
+        {leading && <Inset className="flex flex-col gap-4">{leading}</Inset>}
         {!leading && (
           <EmptyStateCard
             message="You have not added any Connections to this Agent yet"
@@ -73,7 +71,7 @@ export function GrantedConnectionsPanel({
     <>
       {header}
       {rivalryCallout}
-      <Wrap inset={inset}>
+      <Inset className="flex flex-col gap-4">
         {leading}
         {groups.map((group) => (
           <ConnectionGroupCard
@@ -90,19 +88,8 @@ export function GrantedConnectionsPanel({
             maintenance={maintenance.rowActions}
           />
         ))}
-      </Wrap>
+      </Inset>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
     </>
   );
-}
-
-function Wrap({
-  inset,
-  children,
-}: {
-  inset: boolean;
-  children: React.ReactNode;
-}) {
-  if (inset) return <Inset className="flex flex-col gap-4">{children}</Inset>;
-  return <div className="flex flex-col gap-4">{children}</div>;
 }

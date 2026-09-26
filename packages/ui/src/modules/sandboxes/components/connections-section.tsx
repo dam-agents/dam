@@ -14,14 +14,9 @@ import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 interface Props {
   agentId: string;
   oauthReturnView: string;
-  inset?: boolean;
 }
 
-export function ConnectionsSection({
-  agentId,
-  oauthReturnView,
-  inset = false,
-}: Props) {
+export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
@@ -60,7 +55,6 @@ export function ConnectionsSection({
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}
-        inset={inset}
         leading={
           satellites.granted.length > 0 && (
             <SatellitesGroupCard
