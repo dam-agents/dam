@@ -47,7 +47,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
         <span className="text-sm font-medium text-foreground">
           Attach to the agent
         </span>
-        <CopyableCommand command={`${cli} chat ${agentId}`} size="compact" />
+        <CopyableCommand command={`${cli} chat ${agentId}`} />
         <CliQuickstartNote />
       </DialogBody>
     </Modal>
@@ -74,17 +74,11 @@ export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
         <span className="text-sm font-medium text-foreground">
           Open in VS Code
         </span>
-        <CopyableCommand
-          command={`${cli} ssh connect -x code ${agentId}`}
-          size="compact"
-        />
+        <CopyableCommand command={`${cli} ssh connect -x code ${agentId}`} />
         <span className="mt-1 text-sm font-medium text-foreground">
           Open in Zed
         </span>
-        <CopyableCommand
-          command={`${cli} ssh connect -x zed ${agentId}`}
-          size="compact"
-        />
+        <CopyableCommand command={`${cli} ssh connect -x zed ${agentId}`} />
         <CliQuickstartNote />
       </DialogBody>
     </Modal>

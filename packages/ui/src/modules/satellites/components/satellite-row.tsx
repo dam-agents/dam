@@ -1,5 +1,5 @@
 import { OverflowMenuHorizontal, Satellite } from "@carbon/icons-react";
-import type { SatelliteView } from "api-server-api";
+import type { SatelliteTool, SatelliteView } from "api-server-api";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -10,17 +10,49 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { timeAgo } from "@/lib/format-time";
 
 import type { RowGrantControls } from "../../connections/components/catalog-connection-row.js";
 import { RowGrantAction } from "../../connections/components/connection-row-actions.js";
-import { SatelliteStateBadge } from "./satellite-state-badge.js";
-import { SatelliteTools } from "./satellite-tools.js";
 
 interface Props {
   satellite: SatelliteView;
   grant?: RowGrantControls;
   onRemove?: () => void;
   removing?: boolean;
+}
+
+function SatelliteStateBadge({ satellite }: { satellite: SatelliteView }) {
+  if (!satellite.online)
+    return (
+      <Badge variant="muted" className="shrink-0 font-normal">
+        {satellite.lastSeenAt === null
+          ? "Never connected"
+          : `Offline · seen ${timeAgo(satellite.lastSeenAt)}`}
+      </Badge>
+    );
+  return (
+    <Badge variant="warning" className="shrink-0 font-normal">
+      Shutting down
+    </Badge>
+  );
+}
+
+function SatelliteTools({ tools }: { tools: SatelliteTool[] }) {
+  return (
+    <ul className="flex flex-col gap-3 border-t border-border px-4 py-3">
+      {tools.map((tool) => (
+        <li key={tool.name} className="flex flex-col gap-1">
+          <code className="text-sm text-foreground">{tool.name}</code>
+          {(tool.description ?? tool.title) && (
+            <p className="whitespace-pre-wrap font-mono text-xs text-muted-foreground">
+              {tool.description ?? tool.title}
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function toolCount(n: number): string {

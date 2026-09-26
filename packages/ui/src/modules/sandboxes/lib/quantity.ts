@@ -25,14 +25,3 @@ export function parseMemoryMi(q: string | undefined): number | null {
   const mi = Math.round(bytes / 1024 ** 2);
   return Number.isFinite(mi) && mi > 0 ? mi : null;
 }
-
-export function sizeToQuantities(
-  cpuMilli: number | null,
-  memoryMi: number | null,
-): { cpu?: string; memory?: string } | undefined {
-  if (cpuMilli === null && memoryMi === null) return undefined;
-  return {
-    ...(cpuMilli !== null ? { cpu: `${cpuMilli}m` } : {}),
-    ...(memoryMi !== null ? { memory: `${memoryMi}Mi` } : {}),
-  };
-}

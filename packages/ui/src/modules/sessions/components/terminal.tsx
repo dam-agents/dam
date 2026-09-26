@@ -11,7 +11,7 @@ import {
   OP_INPUT,
   OP_OUTPUT,
 } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -47,11 +47,11 @@ export function Terminal({
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
-  const handleReconnect = useCallback(() => {
+  const handleReconnect = () => {
     connectEnabled.current = true;
     setState("connecting");
     setReconnectKey((k) => k + 1);
-  }, []);
+  };
 
   useEffect(() => {
     const wasDisabled = !connectEnabled.current;

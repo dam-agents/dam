@@ -9,12 +9,12 @@ import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { useCopy } from "@/hooks/use-copy";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
-import { ProviderFormShell } from "../provider-form-shell.js";
+import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
 } from "./credential-schema.js";
-import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
+import { type Mode, MODE_KEYS, MODES } from "./modes.js";
 
 const MODE_TABS: readonly TabDef<Mode>[] = MODE_KEYS.map((mode) => ({
   value: mode,

@@ -515,16 +515,16 @@ export function ChatView() {
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
-  const handleShareKnowledgeBase = useCallback(() => {
+  const handleShareKnowledgeBase = () => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent, "setup", "knowledge");
-  }, [selectedAgent, navigateToSandboxHome]);
+  };
 
-  const handleRestartSandbox = useCallback(() => {
+  const handleRestartSandbox = () => {
     if (selectedAgent) restart(selectedAgent);
-  }, [selectedAgent, restart]);
+  };
 
-  const handleDeleteSandbox = useCallback(async () => {
+  const handleDeleteSandbox = async () => {
     if (!selectedAgent) return;
     const ok = await showConfirm(
       "Delete this agent? This also deletes all persistent data and cannot be undone.",
@@ -534,7 +534,7 @@ export function ChatView() {
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
     setView("home");
-  }, [selectedAgent, selectedAgentName, showConfirm, deleteAgent, setView]);
+  };
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {

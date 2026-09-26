@@ -2,27 +2,13 @@ import { Checkmark, Copy } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/hooks/use-copy";
-import { cn } from "@/lib/utils";
 
-type CopyableCommandSize = "default" | "compact";
-
-export function CopyableCommand({
-  command,
-  size = "default",
-}: {
-  command: string;
-  size?: CopyableCommandSize;
-}) {
+export function CopyableCommand({ command }: { command: string }) {
   const { copy, state: copyState } = useCopy();
 
   return (
     <div>
-      <div
-        className={cn(
-          "flex items-center gap-2 rounded-lg border border-border bg-muted",
-          size === "compact" ? "p-2" : "p-3",
-        )}
-      >
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2">
         <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
           <span className="select-none text-muted-foreground">$ </span>
           {command}
