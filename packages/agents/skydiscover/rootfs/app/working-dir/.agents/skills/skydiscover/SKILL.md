@@ -2,7 +2,7 @@
 name: skydiscover
 description: >-
   Run SkyDiscover's AdaEvolve and EvoX search strategies via the
-  `skydiscover-run` CLI. Use when the user wants to optimize / evolve a
+  `skydiscover optimize` CLI. Use when the user wants to optimize / evolve a
   function, program, or algorithm to improve a metric (speed, accuracy, size,
   error rate), author the SkyDiscover run inputs (evaluator, optional initial
   program with EVOLVE-BLOCK markers), pick the search model, or launch /
@@ -21,10 +21,16 @@ open-ended problems (math, systems, algorithm design).
 
 ## This is a SkyDiscover agent pod
 
-`skydiscover-run` is **pre-installed** (on `PATH`); the model endpoint and
-your own Claude model are reached through the platform's credential gateway —
-**no API key lives in this pod**. Never ask the user for a key, never write
-one to disk, never `pip install skydiscover` yourself.
+`skydiscover` is **pre-installed** (on `PATH`); its `optimize` subcommand
+runs the search. The model endpoint and your own Claude model are reached
+through the platform's credential gateway — **no API key lives in this pod**.
+Never ask the user for a key, never write one to disk, never
+`pip install skydiscover` yourself.
+
+The CLI's other subcommands are not for this pod: `skydiscover viewer` needs a
+UI port the pod doesn't expose, and **never run `skydiscover init`** — it is
+SkyDiscover's separate Synthesize module, and it writes a skill, agent roles
+and hooks into the project's `.claude/` (your own Claude Code config).
 
 The pod is preset to one of SkyDiscover's two own strategies via
 `$SKYDISCOVER_SEARCH` (that's what the user picked in the catalog):
@@ -73,18 +79,26 @@ curl -fsS "$base/v1/models" \
 
 Then wire the run with three rules:
 
-- **Plain model ids only, always with `--api-base "$base/v1"`** — that routes
-  through the OpenAI-compatible client against the injected endpoint.
-  Vendor-prefixed ids (`gemini/…`, `anthropic/…`) or a bare `-m` without
-  `--api-base` route through vendor SDKs/endpoints that demand keys this pod
-  doesn't hold.
+- **Pass `-m "openai/<id>"` for an id the endpoint lists, always with
+  `--api-base "$base/v1"`.** SkyDiscover reads the part before the first `/`
+  as a provider: it strips a provider it knows (`openai`, `azure`, `gemini`,
+  `anthropic`, `mistral`, `vllm` and a few more) and sends the rest. The `openai/` prefix makes it send the listed
+  id verbatim (`openai/aws/claude-sonnet-4-6` goes out as
+  `aws/claude-sonnet-4-6`) to `--api-base`, with `OPENAI_API_KEY`. Without
+  it, a listed id like `azure/gpt-5` goes out as `gpt-5` and fails every
+  proposal with a 403. One `Unknown model '<id>': no provider matched`
+  warning at startup is harmless: it comes from printing the active models,
+  after the prefix is gone. Without `--api-base`, an id SkyDiscover can't place
+  refuses to start ("requires an explicit api_base"), and one it can place
+  (`gpt-…`, `claude-…`, `gemini-…`) goes to that vendor's public API instead
+  of the injected endpoint.
 - **Export a non-empty key before launching**:
   `export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"`. The injected value
   is often an empty placeholder by design — the gateway overwrites the auth
   header on the wire, but the client refuses to send a request with no key at
   all.
 - If the endpoint can't list models, fall back to a pinned known-good id (for
-  IBM LiteLLM: `aws/claude-sonnet-4-6`).
+  IBM LiteLLM: `-m openai/aws/claude-sonnet-4-6`).
 
 **Sampling params:** at the pinned ref SkyDiscover sends `top_p` only when
 a config explicitly sets it (upstream fixed the old always-send-both
@@ -98,40 +112,42 @@ the config or switch models. Only reuse `--checkpoint` state if some
 iterations actually completed; a run that never got past the first proposal
 is cleaner started fresh.
 
-**Known quirk — EvoX's auxiliary models bypass `-m`:** EvoX's label
+**EvoX's auxiliary models bypass `-m` by default:** EvoX's label
 generation (`gpt-5-mini`) and search-strategy evolution (`gpt-5`) read their
-model ids from EvoX's **shipped strategy yaml**
-(`site-packages/skydiscover/search/evox/config/search.yaml`), not from
-`-m`/`--api-base`. Against an endpoint that doesn't serve those ids you'll
-see 403 retry warnings ("setting labels to empty strings", "Failed to
-generate search algorithm") — the solution loop keeps going, but the
-self-evolving strategy layer is dead, eroding EvoX's long-horizon advantage
-over AdaEvolve. **Workaround:** copy the shipped yaml into the task dir,
-replace its model ids with endpoint-served ones, and point
-`search.database.config_path` at the copy via a run config (`-c
-task/config.yaml`) — and the config's `search:` block **must carry
-`type: "evox"`**: without it the parser defaults to `topk`, builds the wrong
-database-config class, and silently discards `config_path` (the `--search
-evox` flag alone doesn't back-fill it and would replace a mismatched
-database config wholesale). Verify the fix took — after a couple of
-iterations the `gpt-5`/`gpt-5-mini` 403 retries must be gone from the run
-log; if they persist, the strategy layer is still on the shipped yaml. Even then the strategy layer's LLM-generated code can
-crash on upstream bugs (`name 'EvolveProgram' is not defined`-class errors)
-— still non-fatal for the solution loop, but if the run wedges, apply the
-stall guardrail (kill + resume from the latest checkpoint). Mention the
+model ids from EvoX's shipped strategy yaml, not from `-m`, and call them on
+`$OPENAI_BASE_URL`. If Step 1's catalog doesn't list both ids, EvoX probes
+them at startup, logs "Guide LLM (label generation) at … is not reachable"
+and "Meta-search LLM (search strategy evolution) at … is not reachable", and
+runs without its self-evolving strategy layer — the solution loop keeps
+going, but that erodes EvoX's long-horizon advantage over AdaEvolve. **Fix:**
+launch evox with a run config (`-c task/config.yaml`) that makes the strategy
+layer use the `-m` models:
+
+```yaml
+search:
+  type: "evox"
+  share_llm: true
+```
+
+Verify it took: neither "is not reachable" warning may appear in `run.log`.
+Even then the strategy layer's LLM-generated code can fail validation or
+crash on upstream bugs ("Failed to generate search algorithm",
+"Search-strategy evolution failed … continuing with the current strategy")
+— non-fatal for the solution loop, but if the run wedges, apply the stall
+guardrail (kill + resume from the latest checkpoint). Mention the
 degradation when a user picks evox; never kill a run over the warnings
 alone.
 
 **Model ensemble** (optional): a weighted mix goes in a config YAML instead of
 `-m` — `--api-base` still applies to all of them, so every name must be served
-by the endpoint:
+by the endpoint, with the same `openai/` prefix:
 
 ```yaml
 llm:
   models:
-    - name: "<fast-model-id>"
+    - name: "openai/<fast-model-id>"
       weight: 0.7
-    - name: "<strong-model-id>"
+    - name: "openai/<strong-model-id>"
       weight: 0.3
 ```
 
@@ -206,9 +222,9 @@ with `-o` on the persisted workspace (see `AGENTS.md`).
 ## CLI reference
 
 ```
-skydiscover-run [INITIAL_PROGRAM] EVALUATOR --search <type> \
-  -i <N> -m <model-id> --api-base <url> -o <dir> \
-  [-c <yaml>] [--checkpoint <dir>]
+skydiscover optimize [INITIAL_PROGRAM] EVALUATOR --search <type> \
+  -i <N> -m openai/<model-id> --api-base <url> -o <dir> \
+  [-c <yaml>] [--checkpoint <dir>] [--agentic]
 ```
 
 | Flag | Meaning |
@@ -217,31 +233,36 @@ skydiscover-run [INITIAL_PROGRAM] EVALUATOR --search <type> \
 | `EVALUATOR` | required — the `evaluate(program_path)` file |
 | `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
 | `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total |
-| `-m, --model` | plain model id served by the endpoint (Step 1); an ensemble goes in the config YAML instead |
+| `-m, --model` | `openai/<id>` for an id the endpoint serves (Step 1); an ensemble goes in the config YAML instead |
 | `--api-base` | the OpenAI-compatible endpoint (`"$base/v1"`) — **always pass it** in this pod |
 | `-o, --output` | output dir — **always** an explicit path on `$SKYDISCOVER_OUTPUT_ROOT`, outside the target repo |
-| `-c, --config` | YAML config (model ensemble, `search.*` tuning) — flags win over it |
+| `-c, --config` | YAML config (model ensemble, `search.*` tuning, `checkpoint_interval`) — flags win over it |
 | `--checkpoint` | resume from a prior `output/checkpoints/checkpoint_<N>` dir |
+| `--agentic` | off by default; see below |
 
-**Agentic mode (`--agentic`) is unsupported in this image**: the CLI
-advertises the flag, but the installed package ships without its tool
-schemas (`llm/tool_schemas/`), so it crashes at startup. Don't offer it;
-the image build asserts the gap so a ref bump that fixes upstream packaging
-will surface as a build failure prompting a docs update.
+**Agentic mode (`--agentic`)** turns each proposal into a short tool loop:
+before it answers, the model can call `read_file` and `search` (a regex grep)
+over the codebase root — the initial program's directory, or
+`agentic.codebase_root` in the config (point it at the run's `repo/` clone
+when the evolved code depends on the code around it). Each tool round is
+one more LLM call, up to `agentic.max_steps` (default 5) per proposal, so
+count that in the cost estimate. Leave it off unless the target needs that
+context.
 
 **Resume:** relaunch with `--checkpoint output/checkpoints/checkpoint_<N>`
 (the highest-numbered one). The checkpoint number is the iterations already
 done — set `-i` to the approved total minus that, never more; a bigger total
 is a budget increase, a new re-gated decision.
 
-**Checkpoint cadence differs by strategy**: `adaevolve` writes one per
-iteration; `evox` writes every 10 iterations plus one at run completion —
-so a *completed* short evox run has a resume point, but one interrupted
+**Checkpoint cadence**: both strategies write one every
+`checkpoint_interval` iterations (default 10) plus one at run completion —
+so a *completed* short run has a resume point, but one interrupted
 mid-flight before iteration 10 does not. A run interrupted
 before its first checkpoint has nothing to resume from — relaunching
 restarts from scratch and re-spends the lost iterations, which exceeds the
-originally approved spend: say so and get a fresh go-ahead. For short evox
-runs, warn up front that a hibernation before iteration 10 loses the run.
+originally approved spend: say so and get a fresh go-ahead. For short runs,
+warn up front that a hibernation before iteration 10 loses the run (a
+config's `checkpoint_interval: 1` gives a resume point per iteration).
 
 **Triage errors by class, not by count.** Deterministic 4xx bodies (403
 "team not allowed…", 400 unsupported-parameter — e.g. `temperature` on a
@@ -255,7 +276,7 @@ answers again. Never rewire models over a transient.
 
 **Monitoring:** tail `run.log`; read `output/best/best_program_info.json` and
 list `output/checkpoints/` to count completed iterations. Leave the live dashboard (`monitor.enabled`) off and skip
-`skydiscover-viewer` — this pod exposes no UI ports. A run doesn't advance
+`skydiscover viewer` — this pod exposes no UI ports. A run doesn't advance
 faster because you look at it — poll infrequently, and if it stops advancing,
 follow the stall guardrail in `AGENTS.md`.
 
@@ -266,8 +287,9 @@ Under `-o`:
   lineage): the source of truth for "best so far".
 - `checkpoints/checkpoint_<N>/` — the resume points; the numbering is the
   iterations completed.
-- `logs/` — the search's own log (your `run.log` mirrors stdout/stderr), plus
-  a per-run iteration-stats `.jsonl` at the output root.
+- `logs/` — the search's own log (your `run.log` mirrors stdout/stderr).
+  AdaEvolve also writes an iteration-stats `.jsonl` at the output root; EvoX
+  keeps its strategy-evolution state under `search/`.
 
 ## Worked example — approximate sin(x) on [0, π]
 
@@ -319,13 +341,15 @@ open('/tmp/cheat.py','w').write('import math\ndef approx(x):\n    return math.si
 print('cheat   :', evaluate('/tmp/cheat.py'))"
 ```
 
-Run it (after Step 1 resolved `$base` and a model id):
+Run it (with the model id Step 1 picked; launch it backgrounded, per
+`AGENTS.md`):
 
 ```sh
+base="${OPENAI_BASE_URL%/}"; base="${base%/v1}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"
-skydiscover-run task/initial.py task/evaluator.py \
+skydiscover optimize task/initial.py task/evaluator.py \
   --search "${SKYDISCOVER_SEARCH:-adaevolve}" \
-  -i 10 -m <model-id> --api-base "$base/v1" \
+  -i 10 -m "openai/<model-id>" --api-base "$base/v1" \
   -o "$SKYDISCOVER_OUTPUT_ROOT/sin-approx/output"
 ```
 

@@ -1,10 +1,10 @@
 # The skydiscover config environment over claude-code's: mise -E claude-code,skydiscover.
 
-# A pinned commit: the released wheels predate EvoX's config data files. scipy
-# rides along for the tasks. The postinstall fails the build once upstream
-# packaging changes what the skill says.
+# A pinned commit: the released wheels predate EvoX's config data files and the
+# `skydiscover optimize` CLI. scipy rides along for the tasks. The postinstall
+# fails the build once upstream packaging changes what the skill says.
 [tools."pipx:skydiscover-ai/skydiscover"]
-version = "e221cde39a787351df7e52c656ad3f00add402fe"
+version = "0d932b690670a7e544388ad362e9876c8bd256a0"
 uvx_args = "--with scipy"
 postinstall = '"$MISE_TOOL_INSTALL_PATH/skydiscover/bin/python" {{config_root}}/skydiscover/check-packaging.py'
 
