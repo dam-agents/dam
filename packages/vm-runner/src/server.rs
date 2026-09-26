@@ -915,40 +915,37 @@ impl Server {
         seen
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind, and a probe answering after its machine was deleted puts no entry back. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it.
+    // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind, and a probe answering after its machine was deleted puts no entry back. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it, before the status moves, so a reader that sees the machine ready also sees how long it took.
     fn record(&self, id: &str, seen: Seen, guard: Option<u64>) {
-        let answered = {
-            let mut machines = locked(&self.machines);
-            let known = machines.entries.get(id).map(|e| e.looked);
-            if guard.is_some_and(|looked| looked != known.unwrap_or(0)) {
-                return;
-            }
-            if seen.state == State::Absent && known.is_none() {
-                return;
-            }
-            let entry = machines.entries.entry(id.to_string()).or_default();
-            let answered = if seen.ready { entry.boot.take() } else { None };
-            let mut seen = seen;
-            let now = SystemTime::now();
-            let settled = entry.action.is_none() && seen.state == State::Running;
-            // UNIT_BOUNDARY_DESCRIPTION: an answer counts whatever the machine is doing — a guest that answered while its start call still ran has answered, and would otherwise flap on the first miss after the call returned. A miss counts only for a settled machine: during an action, and in every other state, silence is expected.
-            if seen.ready || settled {
-                entry.health.observed_running(seen.ready, now);
-            }
-            seen.ready |= settled && entry.boot.is_none() && entry.health.within_grace(now);
-            let mut changed = entry.seen.as_ref() != Some(&seen);
-            changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
-            entry.seen = Some(seen);
-            entry.looked += 1;
-            entry.probed = Some(Instant::now());
-            if changed {
-                self.bump(entry);
-            }
-            answered
-        };
-        if let Some(boot) = answered {
+        let mut machines = locked(&self.machines);
+        let known = machines.entries.get(id).map(|e| e.looked);
+        if guard.is_some_and(|looked| looked != known.unwrap_or(0)) {
+            return;
+        }
+        if seen.state == State::Absent && known.is_none() {
+            return;
+        }
+        let entry = machines.entries.entry(id.to_string()).or_default();
+        let answered = if seen.ready { entry.boot.take() } else { None };
+        if let Some(boot) = &answered {
             self.metrics
                 .became_ready(boot.action.label(), boot.at.elapsed());
+        }
+        let mut seen = seen;
+        let now = SystemTime::now();
+        let settled = entry.action.is_none() && seen.state == State::Running;
+        // UNIT_BOUNDARY_DESCRIPTION: an answer counts whatever the machine is doing — a guest that answered while its start call still ran has answered, and would otherwise flap on the first miss after the call returned. A miss counts only for a settled machine: during an action, and in every other state, silence is expected.
+        if seen.ready || settled {
+            entry.health.observed_running(seen.ready, now);
+        }
+        seen.ready |= settled && entry.boot.is_none() && entry.health.within_grace(now);
+        let mut changed = entry.seen.as_ref() != Some(&seen);
+        changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
+        entry.seen = Some(seen);
+        entry.looked += 1;
+        entry.probed = Some(Instant::now());
+        if changed {
+            self.bump(entry);
         }
     }
 

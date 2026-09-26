@@ -88,7 +88,7 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
-# from this one file. Upstream has not rebuilt it as of 1.16.1, so replace it here.
+# from this one file. Upstream has not rebuilt it as of 1.16.2, so replace it here.
 # Drop this once a smolvm release ships a current crane.
 #
 # The same binary serves the runner: a machine may reach only its gateway, so the

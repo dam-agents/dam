@@ -14,8 +14,8 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, discard_overlay, grown_storage, kill_orphans, timed, updated_env, workload,
-    Machine, Runtime, Update, GUEST_AGENT_PORT,
+    clear_for_start, discard_overlay, grown_storage, kill_orphans, orphan_pids, timed, updated_env,
+    vmm_gone, workload, Machine, Runtime, Update, GUEST_AGENT_PORT, VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -46,6 +46,21 @@ impl Smolvm {
 
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
         Ok(self.db.get_vm(id)?)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: runs a smolvm stop or delete, and powers the machine off when smolvm refuses it. smolvm stops a running guest only once the guest confirms its disks are quiesced, and when the guest does not confirm, it leaves the VMM running and fails the call. The runner still has to end the machine: the controller asked for the stop, a restart cannot apply a change without it, and a delete of a machine that never confirms would never finish. So a refusal while a VMM still holds the machine's directory kills that VMM, which is what a stop did before smolvm asked for the confirmation, and the call is made once more, against a machine that is now down.
+    fn ended(&self, id: &str, end: impl Fn() -> smolvm::Result<()>) -> anyhow::Result<()> {
+        let Err(refused) = end() else {
+            return Ok(());
+        };
+        let dir = vm_data_dir(id);
+        if orphan_pids(&self.proc_root, &dir).is_empty() {
+            return Err(refused.into());
+        }
+        tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
+        kill_orphans(&self.proc_root, &dir);
+        vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT);
+        Ok(end()?)
     }
 }
 
@@ -165,13 +180,17 @@ impl Runtime for Smolvm {
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
-        timed("stop", id, &[], || Ok(self.runtime.stop_machine(id)?))?;
+        timed("stop", id, &[], || {
+            self.ended(id, || self.runtime.stop_machine(id))
+        })?;
         discard_overlay(id, &self.proc_root, &vm_data_dir(id));
         Ok(())
     }
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
-        timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
+        timed("delete", id, &[], || {
+            self.ended(id, || self.runtime.delete_machine(id))
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a `local-dir:` or `local:` reference is mapped back to its host directory the way a start maps it, so this answers exactly what that start would find.
@@ -557,6 +576,64 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+    }
+
+    // TEST_SCENARIO: smolvm refuses to stop a running guest that does not confirm its disks are quiesced, and leaves its VMM up. A stop the controller asked for must still end the machine, so the runner powers that VMM off and the machine reads stopped. Here the guest agent never answers at all.
+    #[test]
+    fn a_guest_that_does_not_confirm_its_stop_is_powered_off() {
+        let home = Home::new("unconfirmed");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let spec = spec();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: Some(&launch),
+                },
+            )
+            .unwrap();
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .arg(format!("{}/", vm_data_dir("m1").display()))
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        smolvm
+            .db
+            .update_vm("m1", |r| {
+                r.state = RecordState::Running;
+                r.pid = Some(pid);
+                r.pid_start_time = smolvm::process::process_start_time(pid);
+            })
+            .unwrap();
+        let started = smolvm::process::process_start_time(pid).unwrap();
+        fs::write(
+            vm_data_dir("m1").join("agent.pid"),
+            format!("{pid}\n{started}\n"),
+        )
+        .unwrap();
+        assert!(
+            smolvm.runtime.stop_machine("m1").is_err(),
+            "smolvm stopped a guest that never confirmed, so this fallback is not needed"
+        );
+        assert!(vmm.try_wait().unwrap().is_none());
+
+        smolvm.stop("m1").unwrap();
+        assert!(
+            vmm.try_wait().unwrap().is_some(),
+            "the unconfirmed guest's VMM was left running"
+        );
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().actual_state(),
+            RecordState::Stopped
+        );
     }
 
     // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its directory gone.

@@ -95,10 +95,10 @@ fn unauthorized() -> Response {
 
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
-) -> Result<T, Response> {
+) -> Result<T, Box<Response>> {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|e| plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
+        .map_err(|e| Box::new(plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string())))
 }
 
 async fn list(State(api): State<Api>, headers: HeaderMap) -> Response {
@@ -109,7 +109,7 @@ async fn list(State(api): State<Api>, headers: HeaderMap) -> Response {
     match blocking(move || server.list()).await {
         Ok(Ok(ids)) => Json(ids).into_response(),
         Ok(Err(e)) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -141,7 +141,7 @@ async fn status(
     match blocking(read).await {
         Ok(Ok(status)) => Json(status).into_response(),
         Ok(Err(e)) => rejected(e),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -165,7 +165,7 @@ async fn ensure(
     match blocking(move || server.put(&id, spec)).await {
         Ok(Ok(status)) => Json(status).into_response(),
         Ok(Err(e)) => rejected(e),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -177,7 +177,7 @@ async fn remove(State(api): State<Api>, headers: HeaderMap, Path(id): Path<Strin
     match blocking(move || server.delete(&id)).await {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => rejected(e),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
