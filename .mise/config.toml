@@ -52,6 +52,8 @@ usage = "latest"
 uv = "0.12"
 yq = "latest"
 zizmor = "latest"
+"conda:coreutils" = { version = "latest", os = ["macos"] }
+"conda:bash" = { version = "latest", os = ["macos"] }
 
 [settings]
 experimental = true
