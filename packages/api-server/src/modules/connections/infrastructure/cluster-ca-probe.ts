@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import type { ClusterCaProbe } from "api-server-api";
 import { parseClusterEndpoint } from "../domain/kubernetes-contributions.js";
@@ -19,7 +20,12 @@ export async function probeClusterCa(host: string): Promise<ClusterCaProbe> {
     };
 
     const socket = tlsConnect(
-      { host: hostname, port, servername: hostname, timeout: PROBE_TIMEOUT_MS },
+      {
+        host: hostname,
+        port,
+        servername: isIP(hostname) ? undefined : hostname,
+        timeout: PROBE_TIMEOUT_MS,
+      },
       () => done({ reachable: true, trusted: true }),
     );
 

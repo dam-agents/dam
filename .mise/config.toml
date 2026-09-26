@@ -11,7 +11,7 @@ repo_root = "{{config_root}}"
 # `mise config get -f .mise/config.toml vars.<name>`, since some run by path.
 # image:pack's bases are pinned by tag and digest, so a rebuild never picks up
 # a base update by itself: image:bump-bases re-pins the digests.
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:24@sha256:17ce4f31d2671b2cbfcca600e483d2284dd4f45b11e4665ab24d4f93e71cc1eb"
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:7a744630841040b345674186e3c54e5cafa1955b7ef0c21870e905cb8dd3814a"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:58f9030ce520821c61798d41ca52aa2b10ba5f20c49245f63ecffcfcaa3d464f"
 base_image_keycloak = "quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4"
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:b1a78d4e21c3d3d820918253b4a260009c7cd5f5edf1831c8f490f1afac3b064"
@@ -43,7 +43,7 @@ jq = "latest"
 kubeconform = "latest"
 lima = "2"
 maven = "latest"
-nodejs = "24"
+nodejs = "26"
 pinact = "latest"
 pnpm = "12.5.1" # the single pnpm pin
 rust = { version = "1.98", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them

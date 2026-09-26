@@ -173,7 +173,9 @@ export function createWorkerHistoryProvider(
         };
         worker.once("message", onFirst);
         worker.once("error", (error) => {
-          deps.log(`history provider worker error: ${error.message}`);
+          deps.log(
+            `history provider worker error: ${error instanceof Error ? error.message : String(error)}`,
+          );
           resolve(false);
         });
       }),

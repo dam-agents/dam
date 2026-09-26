@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.2",
     "@types/ws": "^8.18.1",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",

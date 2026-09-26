@@ -14,7 +14,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.2",
     "dev-config": "workspace:*",
     "typescript": "^6.0.3"
   }
