@@ -24,7 +24,7 @@ export function classifyTrpcError(
   }
 
   if (e instanceof TRPCClientError) {
-    const serverCode = e.data?.code as string | undefined;
+    const serverCode = trpcErrorCode(e);
     if (serverCode)
       return err({ kind: "transport", reason: e.message, serverCode });
   }

@@ -79,7 +79,7 @@ spec:
                   "image" (printf "%s:%s" $r.image.repository ($r.image.tag | default .Chart.AppVersion))
                   "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
                   "imagePullSecrets" (.Values.imagePullSecrets | default list)
-                  "serviceAccountName" (printf "%s-vm-runner" (include "platform.fullname" .))
+                  "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
@@ -120,7 +120,7 @@ spec:
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: {{ include "platform.apiserver.harnessUrl" . | quote }}
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             # SPIFFE trust domain — used to render the principal
@@ -142,7 +142,7 @@ spec:
             # this host and stamps the trusted x-platform-agent-id header. Empty
             # otherwise, so the chain (and the leaf SAN entry) are not rendered.
             - name: PLATFORM_TELEMETRY_COLLECTOR_HOST
-              value: "{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+              value: {{ include "platform.clickstack.collector.host" . | quote }}
             - name: PLATFORM_TELEMETRY_COLLECTOR_PORT
               value: "4318"
             # The controller's own operational telemetry (reconcile traces,
@@ -151,7 +151,7 @@ spec:
             # AuthorizationPolicy already admits this namespace. The SDK only
             # activates when this endpoint env is present.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+              value: "http://{{ include "platform.clickstack.collector.host" . }}:4318"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "http/protobuf"
             - name: OTEL_SERVICE_NAME
@@ -162,14 +162,14 @@ spec:
             # all three gateway signals. Separate vars so the two consumers
             # never constrain each other (the Go SDK is OTLP/HTTP-only).
             - name: PLATFORM_GATEWAY_OTLP_ENDPOINT
-              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4317"
+              value: "http://{{ include "platform.clickstack.collector.host" . }}:4317"
             - name: PLATFORM_GATEWAY_OTLP_PROTOCOL
               value: "grpc"
             {{- end }}
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"
             - name: ENVOY_IMAGE
-              value: {{ .Values.controller.envoyImage | default "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1" | quote }}
+              value: {{ .Values.controller.envoyImage | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             # ext-authz uses per-agent Services rendered by the

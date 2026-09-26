@@ -13,10 +13,8 @@
   override is no longer needed and is treated as a UI override fallback.
 */ -}}
 {{- $uiHost := "" -}}
-{{- if .Values.urls.ui -}}
-{{- $uiHost = include "platform.url.host" .Values.urls.ui -}}
-{{- else if .Values.urls.api -}}
-{{- $uiHost = include "platform.url.host" .Values.urls.api -}}
+{{- if or .Values.urls.ui .Values.urls.api -}}
+{{- $uiHost = include "platform.url.host" (include "platform.url.ui" .) -}}
 {{- end -}}
 {{- $keycloakHost := "" -}}
 {{- if .Values.urls.keycloak -}}
@@ -24,8 +22,8 @@
 {{- end -}}
 {{- $shareHost := include "platform.url.host" (include "platform.url.share" .) -}}
 {{- $contentHost := include "platform.url.host" (include "platform.url.content" .) -}}
-{{- $uiSvc := printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- $apiSvc := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- $uiSvc := include "platform.ui.fullname" . -}}
+{{- $apiSvc := include "platform.apiserver.fullname" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -47,9 +45,12 @@ spec:
   {{- end }}
   rules:
     {{- /* Public share host — artifact-library content and the read-only
-           knowledge-base MCP endpoint (/mcp/kb), all paths to the api-server
-           (which host-gates them onto the share-host app). */}}
-    - host: {{ $shareHost }}
+           knowledge-base MCP endpoint (/mcp/kb) — and the content host — the
+           artifact documents and raw bytes the share page frames. All paths
+           of both go to the api-server, which host-gates each onto its own
+           app; the content app has no other routes. */}}
+    {{- range $host := list $shareHost $contentHost }}
+    - host: {{ $host }}
       http:
         paths:
           - path: /
@@ -59,19 +60,7 @@ spec:
                 name: {{ $apiSvc }}
                 port:
                   name: http
-    {{- /* Content host — the artifact documents and raw bytes the share page
-           frames. Same backend; the api-server host-gates it onto the
-           content app, which has no other routes. */}}
-    - host: {{ $contentHost }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $apiSvc }}
-                port:
-                  name: http
+    {{- end }}
     {{- if $uiHost }}
     - host: {{ $uiHost }}
       http:

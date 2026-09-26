@@ -13,12 +13,12 @@ export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema
 >;
 
-export const platformTurnEndedNotificationSchema = z.object({
+const platformTurnEndedNotificationSchema = z.object({
   jsonrpc: z.literal("2.0"),
   method: z.literal("platform/turnEnded"),
   params: platformTurnEndedParamsSchema,
 });
-export type PlatformTurnEndedNotification = z.infer<
+type PlatformTurnEndedNotification = z.infer<
   typeof platformTurnEndedNotificationSchema
 >;
 
@@ -67,7 +67,7 @@ export const promptBlockSchema = z.discriminatedUnion("type", [
 ]);
 export type PromptBlock = z.infer<typeof promptBlockSchema>;
 
-export const UNDELIVERED_INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
+const UNDELIVERED_INLINE_IMAGE_BYTES_CAP = 4 * 1024 * 1024;
 
 export function capInlineImages(blocks: PromptBlock[]): {
   blocks: PromptBlock[];
@@ -117,12 +117,12 @@ export type PlatformPromptAcceptedParams = z.infer<
   typeof platformPromptAcceptedParamsSchema
 >;
 
-export const platformPromptAcceptedNotificationSchema = z.object({
+const platformPromptAcceptedNotificationSchema = z.object({
   jsonrpc: z.literal("2.0"),
   method: z.literal("platform/promptAccepted"),
   params: platformPromptAcceptedParamsSchema,
 });
-export type PlatformPromptAcceptedNotification = z.infer<
+type PlatformPromptAcceptedNotification = z.infer<
   typeof platformPromptAcceptedNotificationSchema
 >;
 
@@ -164,12 +164,12 @@ export type PlatformRunStartedParams = z.infer<
   typeof platformRunStartedParamsSchema
 >;
 
-export const platformRunStartedNotificationSchema = z.object({
+const platformRunStartedNotificationSchema = z.object({
   jsonrpc: z.literal("2.0"),
   method: z.literal("platform/runStarted"),
   params: platformRunStartedParamsSchema,
 });
-export type PlatformRunStartedNotification = z.infer<
+type PlatformRunStartedNotification = z.infer<
   typeof platformRunStartedNotificationSchema
 >;
 
@@ -191,12 +191,12 @@ export type PlatformPromptStartedParams = z.infer<
   typeof platformPromptStartedParamsSchema
 >;
 
-export const platformPromptStartedNotificationSchema = z.object({
+const platformPromptStartedNotificationSchema = z.object({
   jsonrpc: z.literal("2.0"),
   method: z.literal("platform/promptStarted"),
   params: platformPromptStartedParamsSchema,
 });
-export type PlatformPromptStartedNotification = z.infer<
+type PlatformPromptStartedNotification = z.infer<
   typeof platformPromptStartedNotificationSchema
 >;
 

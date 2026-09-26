@@ -1,6 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
+import { harnessName } from "./fixtures.js";
 
 const AGENT_RUNNING_TIMEOUT_MS = 180_000;
 
@@ -22,21 +24,37 @@ export async function waitForAgentRunning(
     )
     .toBe(true);
 
-  await expect
-    .poll(
-      async () => {
-        const agent = await api.agents.get.query({ id: agentId });
-        return agent.state;
-      },
-      {
-        timeout: timeoutMs,
-        intervals: [2_000],
-        message: `agent ${agentId} did not reach running state`,
-      },
-    )
-    .toBe("running");
-
+  await waitForAgentIdRunning(api, agentId, { timeoutMs });
   return agentId;
+}
+
+export async function waitForAgentIdRunning(
+  api: ApiClient,
+  agentId: string,
+  { timeoutMs = AGENT_RUNNING_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<void> {
+  await expect
+    .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
+      timeout: timeoutMs,
+      intervals: [2_000],
+      message: `agent ${agentId} did not reach running state`,
+    })
+    .toBe("running");
+}
+
+export async function wakeAgent(
+  api: ApiClient,
+  agentName: string,
+): Promise<string> {
+  const listed = (await api.agents.list.query()).find(
+    (a) => a.name === agentName,
+  );
+  expect(
+    listed,
+    `agent ${agentName} must exist from earlier specs`,
+  ).toBeTruthy();
+  await api.agents.wake.mutate({ id: listed!.id });
+  return waitForAgentRunning(api, agentName);
 }
 
 export async function deleteAgentIfPresent(
@@ -62,14 +80,38 @@ export async function deleteAgentIfPresent(
     .toBe(false);
 }
 
-export async function ensureAgentExists(
+export async function ensureAgentRunning(
   api: ApiClient,
   agentName: string,
-  templateId: string,
-): Promise<void> {
+): Promise<string> {
   const list = await api.agents.list.query();
-  if (list.some((a) => a.name === agentName)) return;
-  await api.agents.create.mutate({ name: agentName, templateId });
+  if (!list.some((a) => a.name === agentName))
+    await api.agents.create.mutate({
+      name: agentName,
+      templateId: harnessName,
+    });
+  return waitForAgentRunning(api, agentName);
+}
+
+export async function expectAgentEnv(
+  api: ApiClient,
+  agentId: string,
+  name: string,
+  expected: string,
+  message: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        try {
+          return (await api.e2e.getEnv.query({ agentId, name })).value;
+        } catch {
+          return undefined;
+        }
+      },
+      { timeout: 120_000, intervals: [2_000], message },
+    )
+    .toBe(expected);
 }
 
 export function chatInput(page: Page): Locator {
@@ -85,6 +127,21 @@ export async function gotoAgentChat(
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
+}
+
+export async function openAgentChat(
+  page: Page,
+  agentName: string,
+  agentId: string,
+  { cardTimeoutMs }: { cardTimeoutMs?: number } = {},
+): Promise<void> {
+  await page.goto(baseUrl);
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible({
+    timeout: cardTimeoutMs,
+  });
+  await gotoAgentChat(page, agentName, agentId);
+  await expect(chatInput(page)).toBeVisible();
 }
 
 export async function sendMessageToAgent(

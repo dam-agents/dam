@@ -14,16 +14,11 @@ echo "== k3s VM =="
 # cluster:import and image:stage-vm copy image tars into the guest's /tmp and
 # remove them after, but a run interrupted in between leaves one behind. In
 # the sandbox they import in place, from the repo.
-RM_TARS='sudo rm -f /tmp/*.tar'
-# Same dangling-layer prune the load tasks run: old `:latest` SHAs that lost
-# their tag to a freshly imported one. Not `crictl rmi --prune`, which would also
-# wipe loaded-but-unpinned images when no instance pods are running. (issue #244)
-PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+[ -n "${IS_SANDBOX:-}" ] || limactl shell "$LIMA_INSTANCE" bash -c 'sudo rm -f /tmp/*.tar'
+# The same prune the load tasks run.
+prune_dangling_images
 if [ -n "${IS_SANDBOX:-}" ]; then
-  bash -c "$PRUNE_DANGLING"
   df -h /
 else
-  limactl shell "$LIMA_INSTANCE" bash -c "$RM_TARS"
-  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
   limactl shell "$LIMA_INSTANCE" df -h /
 fi

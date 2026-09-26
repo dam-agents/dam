@@ -21,10 +21,7 @@ import {
   ensureManagedSshHost,
   pruneManagedHosts,
 } from "../infrastructure/launch.js";
-import {
-  ensureEditorEgress,
-  VSCODE_REMOTE_HOSTS,
-} from "../infrastructure/editor-egress.js";
+import { ensureEditorEgress } from "../infrastructure/editor-egress.js";
 
 export interface SshDeps {
   tokenProvider: TokenProvider;
@@ -85,7 +82,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           }
         }
 
-        const host = await resolveSshHost(deps, opts.server);
+        const host = await resolveActiveHost(deps, opts.server);
         const paths = sshPaths();
         const [agent] = await Promise.all([
           resolveAgent(deps, host, agentRef),
@@ -104,7 +101,6 @@ export function buildSshCommand(deps: SshDeps): Command {
           await ensureEditorEgress({
             egress: deps.createEgressService(host),
             agentId: agent.id,
-            hosts: VSCODE_REMOTE_HOSTS,
             note: (m) => process.stderr.write(`dam ssh: ${m}\n`),
           });
 
@@ -156,7 +152,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           process.exit(0);
         }
 
-        const host = await resolveSshHost(deps, opts.server);
+        const host = await resolveActiveHost(deps, opts.server);
         const paths = sshPaths();
         await orExit(ensureKeyPair(paths), (e) => e.message);
 
@@ -245,10 +241,6 @@ export function buildSshCommand(deps: SshDeps): Command {
   ssh.addCommand(proxy, { hidden: true });
 
   return ssh;
-}
-
-function resolveSshHost(deps: SshDeps, serverFlag?: string) {
-  return resolveActiveHost(deps, serverFlag);
 }
 
 async function resolveAgent(

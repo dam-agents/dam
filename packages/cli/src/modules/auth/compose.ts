@@ -31,8 +31,6 @@ import {
 import { err, ok } from "../../result.js";
 
 export interface AuthModuleOptions {
-  authPath?: string;
-  env?: NodeJS.ProcessEnv;
   compatService: CompatService;
   configService: ConfigService;
 }
@@ -71,11 +69,8 @@ function createTokenEndpointResolver(
 }
 
 export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
-  const env = opts.env ?? process.env;
-  const authPath = opts.authPath ?? defaultAuthPath(env);
-
-  const authStore = createTomlAuthStore(authPath);
-  const authEnvReader = createProcessAuthEnvReader(env);
+  const authStore = createTomlAuthStore(defaultAuthPath());
+  const authEnvReader = createProcessAuthEnvReader();
   const authConfigProbe = createAuthConfigProbe();
   const oidcDiscovery = createOidcDiscovery();
   const deviceFlowClient = createDeviceFlowClient();

@@ -57,12 +57,6 @@ export function buildConnectionSdsFields(
 export function connectionSecretAnnotations(
   contributions: Contribution[],
 ): Record<string, string> {
-  const envMappings = contributions
-    .filter(
-      (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
-    )
-    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
-
   const injectionHosts = contributions
     .filter(
       (c): c is Extract<Contribution, { kind: "egress-inject" }> =>
@@ -84,9 +78,6 @@ export function connectionSecretAnnotations(
     }));
 
   const out: Record<string, string> = {};
-  if (envMappings.length > 0) {
-    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
-  }
   if (injectionHosts.length > 0) {
     out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
   }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { sha256Hex } from "./hash.js";
+import { contentHash } from "./hash.js";
 import { tokenize } from "./tokenize.js";
 
 export const INDEX_FORMAT_VERSION = 3;
@@ -81,7 +81,7 @@ export function segmentContentId(
 ): string {
   const sorted = [...members].sort((a, b) => a.path.localeCompare(b.path));
   const body = sorted.map((m) => `${m.path}\n${m.contentHash}`).join("\n");
-  return sha256Hex(`v${INDEX_FORMAT_VERSION}:${bucketCount}:${body}`);
+  return contentHash(`v${INDEX_FORMAT_VERSION}:${bucketCount}:${body}`);
 }
 
 export interface SegmentSourceFile {

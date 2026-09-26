@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
-import { waitForAgentRunning } from "../../lib/agents.js";
+import { wakeAgent } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import {
@@ -29,15 +29,7 @@ test("recreating a disconnected connection regrants cleanly", async ({
   let originalId = "";
 
   await test.step("grant a dedicated connection to the agent", async () => {
-    const listed = (await api.agents.list.query()).find(
-      (a) => a.name === agentName,
-    );
-    expect(
-      listed,
-      `agent ${agentName} must exist from earlier specs`,
-    ).toBeTruthy();
-    await api.agents.wake.mutate({ id: listed!.id });
-    agentId = await waitForAgentRunning(api, agentName);
+    agentId = await wakeAgent(api, agentName);
 
     for (const c of await api.connections.list.query()) {
       if (c.name === originalName || c.name === recreatedName)

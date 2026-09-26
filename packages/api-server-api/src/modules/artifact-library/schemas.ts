@@ -16,7 +16,7 @@ export const artifactVisibilitySchema = z.enum([
   "public",
 ]);
 
-export const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
+const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
 
 export const VIEWER_ALLOWLIST_MAX = 50;
 
@@ -128,7 +128,7 @@ export const folderIdInputSchema = z.object({ id: z.string().min(1) });
 
 export const ARTIFACT_TOUCH_MARKER_VERSION = 1;
 
-export const artifactTouchMarkerSchema = z.object({
+const artifactTouchMarkerSchema = z.object({
   v: z.literal(ARTIFACT_TOUCH_MARKER_VERSION),
   artifactId: z.string().min(1),
   version: z.number().int().positive(),
@@ -150,7 +150,7 @@ export const artifactTouchListInputSchema = z.object({
   limit: z.number().int().positive().max(200).optional(),
 });
 
-export const artifactApiFailureReasonSchema = z.enum([
+const artifactApiFailureReasonSchema = z.enum([
   "invalid-request",
   "not-allowed",
   "agent-unreachable",

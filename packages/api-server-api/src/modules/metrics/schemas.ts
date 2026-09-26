@@ -66,7 +66,7 @@ export const agentMetricsInputSchema = z.object({
     ),
 });
 
-export const metricsSpendInputSchema = z.object({
+const metricsSpendInputSchema = z.object({
   from: z.string().datetime(),
   to: z.string().datetime(),
 });

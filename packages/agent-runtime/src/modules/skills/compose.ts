@@ -25,7 +25,6 @@ export interface ComposeSkillsOptions {
   skillPaths: string[];
   pristineSkillPaths: string[];
   reconcile?: ReconcileOptions;
-  now?: () => Date;
   log: (msg: string) => void;
 }
 
@@ -49,7 +48,7 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsComposition {
     repo,
     skillPaths,
     pristineSkillPaths,
-    now: opts.now ?? (() => new Date()),
+    now: () => new Date(),
     log: opts.log,
   });
   const reconciler = opts.reconcile

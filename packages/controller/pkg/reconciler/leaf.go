@@ -52,11 +52,5 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef
 			},
 		},
 	}
-	if cfg.EnvoyMitmLeafDuration > 0 {
-		cert.Spec.Duration = &metav1.Duration{Duration: cfg.EnvoyMitmLeafDuration}
-	}
-	if cfg.EnvoyMitmLeafRenewBefore > 0 {
-		cert.Spec.RenewBefore = &metav1.Duration{Duration: cfg.EnvoyMitmLeafRenewBefore}
-	}
 	return cert
 }

@@ -72,16 +72,14 @@ export interface ComposeRuntimeChannelOpts {
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
-  log?: (msg: string) => void;
 }
 
 export async function composeRuntimeChannel(
   opts: ComposeRuntimeChannelOpts,
 ): Promise<RuntimeChannelComposition> {
-  const log =
-    opts.log ??
-    ((m) =>
-      process.stderr.write(`${new Date().toISOString()} [runtime] ${m}\n`));
+  const log = (m: string): void => {
+    process.stderr.write(`${new Date().toISOString()} [runtime] ${m}\n`);
+  };
 
   const { manifest, harnessClient } = opts;
   const stateStore = createStateStore(opts.stateBackend);

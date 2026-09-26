@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, t } from "../../trpc.js";
+import { t } from "../../trpc.js";
 import {
   skillDeleteLocalInputSchema,
   skillPublishInputSchema,
@@ -92,7 +92,7 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
 }
 
 export const skillsRouter = t.router({
-  scan: protectedProcedure
+  scan: t.procedure
     .input(skillScanInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.scan(input);
@@ -100,7 +100,7 @@ export const skillsRouter = t.router({
       return { skills: result.value };
     }),
 
-  publish: protectedProcedure
+  publish: t.procedure
     .input(skillPublishInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.publish(input);
@@ -108,7 +108,7 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  listLocal: protectedProcedure
+  listLocal: t.procedure
     .input(skillListLocalInputSchema.optional())
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.listLocal(input);
@@ -116,7 +116,7 @@ export const skillsRouter = t.router({
       return { skills: result.value };
     }),
 
-  readLocal: protectedProcedure
+  readLocal: t.procedure
     .input(skillReadLocalInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readLocal(input);
@@ -124,7 +124,7 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  readPullRequest: protectedProcedure
+  readPullRequest: t.procedure
     .input(skillReadPullRequestInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readPullRequest(input);
@@ -132,7 +132,7 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  readSkillFile: protectedProcedure
+  readSkillFile: t.procedure
     .input(skillReadSkillFileInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readSkillFile(input);
@@ -140,7 +140,7 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  writeLocal: protectedProcedure
+  writeLocal: t.procedure
     .input(skillWriteLocalInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.writeLocal(input);
@@ -148,7 +148,7 @@ export const skillsRouter = t.router({
       return { skills: result.value };
     }),
 
-  deleteLocal: protectedProcedure
+  deleteLocal: t.procedure
     .input(skillDeleteLocalInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.deleteLocal(input);

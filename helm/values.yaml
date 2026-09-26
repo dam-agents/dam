@@ -1689,10 +1689,10 @@ controller:
   # task does this).
   envoyMitm:
     enabled: true
-    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
-    # collisions with other charts.
+    # -- Name of the bootstrap cluster issuer. Cluster-scoped, so consider
+    # collisions with other charts. The CA issuer is always
+    # `platform-mitm-ca-issuer`, the name the controller mints leaves from.
     bootstrapIssuerName: platform-selfsigned-bootstrap
-    caIssuerName: platform-mitm-ca-issuer
     # -- Where the CA Secret lives. Must equal cert-manager's
     # --cluster-resource-namespace flag (default `cert-manager`).
     caSecretNamespace: cert-manager
@@ -1700,9 +1700,6 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h # 10y
     caRenewBefore: 720h # 30d
-    # -- Per-agent leaf cert validity.
-    leafDuration: 2160h # 90d
-    leafRenewBefore: 360h # 15d
   # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
   # data plane no SDK or zero-code instrumentation can reach, so the controller
   # configures it natively in the rendered bootstrap — the exporter target
@@ -1729,8 +1726,8 @@ controller:
 # offered exactly when the image changed. Pinning `tag` to a fixed value in an
 # override opts that template out of upgrade detection, and non-image drift
 # (mounts/env/resources) is never detected.
-# `$HOME` in mount paths is substituted at chart render time
-# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+# `$HOME` in mount paths is substituted at chart render time with the fixed
+# agent home, /home/agent.
 # Every entry is a harness image the platform delivers. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.

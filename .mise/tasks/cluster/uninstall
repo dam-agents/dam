@@ -2,7 +2,6 @@
 #MISE description="Uninstall Platform chart and clean up all resources"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
 # Drain agent workloads BEFORE helm uninstall. On a transitional install
 # still running the deprecated NFS provisioner (#2988), removing it while a
@@ -10,20 +9,20 @@ KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 # can't unmount from the dead NFS server) and blocks namespace deletion
 # forever; on RWO-only installs the pre-drain is merely tidy. Prunable with
 # the nfsProvisioner block.
-if "${KCTL[@]}" get ns platform-agents >/dev/null 2>&1; then
+if kubectl get ns platform-agents >/dev/null 2>&1; then
   echo "Draining platform-agents before uninstall..."
-  "${KCTL[@]}" -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
-  "${KCTL[@]}" -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
-  "${KCTL[@]}" -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
-  "${KCTL[@]}" delete ns platform-agents --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
+  kubectl -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
+  kubectl -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
+  kubectl -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
+  kubectl delete ns platform-agents --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
 fi
 
-helm --kubeconfig="$KUBECONFIG" uninstall platform || true
+helm uninstall platform || true
 
 # Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
 # and on transitional installs the nfs-provisioner export). These aren't owned by the helm release, so helm
 # leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
 # so pvc-protection finalizers clear immediately.
-"${KCTL[@]}" delete pvc --all --ignore-not-found 2>/dev/null || true
+kubectl delete pvc --all --ignore-not-found 2>/dev/null || true
 
 echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."

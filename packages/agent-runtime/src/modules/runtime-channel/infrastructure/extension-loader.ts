@@ -6,16 +6,6 @@ import {
 import type { ExtensionImpl } from "../manifest.js";
 import type { PluginRegistry } from "./plugin-registry.js";
 
-export class ExtensionLoadError extends Error {
-  constructor(
-    message: string,
-    public readonly extension: ExtensionImpl,
-  ) {
-    super(message);
-    this.name = "ExtensionLoadError";
-  }
-}
-
 export async function loadExtensions(
   impls: readonly ExtensionImpl[],
   registry: PluginRegistry,
@@ -28,35 +18,30 @@ async function resolveExtension(ext: ExtensionImpl): Promise<Plugin> {
   try {
     mod = await import(ext.module);
   } catch (err) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `failed to import extension module "${ext.module}": ${(err as Error).message}`,
-      ext,
     );
   }
   if (!mod || typeof mod !== "object") {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension module "${ext.module}" did not resolve to an object`,
-      ext,
     );
   }
   const namespace = mod as Record<string, unknown>;
   const exported = namespace[ext.export];
   if (exported === undefined) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension module "${ext.module}" has no export named "${ext.export}"`,
-      ext,
     );
   }
   if (!isPluginModule(exported)) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension "${ext.name}" export "${ext.export}" from "${ext.module}" is not a valid PluginModule (missing pluginProtocolVersion or createPlugin)`,
-      ext,
     );
   }
   if (exported.pluginProtocolVersion !== PLUGIN_PROTOCOL_VERSION) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension "${ext.name}" requires plugin protocol v${exported.pluginProtocolVersion}; runtime channel expects v${PLUGIN_PROTOCOL_VERSION}`,
-      ext,
     );
   }
 
@@ -64,21 +49,18 @@ async function resolveExtension(ext: ExtensionImpl): Promise<Plugin> {
   try {
     plugin = exported.createPlugin();
   } catch (err) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension "${ext.name}" createPlugin() threw: ${(err as Error).message}`,
-      ext,
     );
   }
   if (!isPlugin(plugin)) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension "${ext.name}" createPlugin() returned an invalid Plugin (missing name or bind)`,
-      ext,
     );
   }
   if (plugin.name !== ext.name) {
-    throw new ExtensionLoadError(
+    throw new Error(
       `extension "${ext.name}" plugin.name="${plugin.name}" — must match the manifest entry name`,
-      ext,
     );
   }
   return plugin;

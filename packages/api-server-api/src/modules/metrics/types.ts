@@ -6,7 +6,7 @@ import type {
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
-export type MetricsSpendBreakdownQuery = z.infer<
+type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
 
@@ -73,7 +73,7 @@ export interface MetricsOverview {
   contextPerCall: CallContext[];
 }
 
-export interface SpendBreakdown {
+interface SpendBreakdown {
   byModel: TokenSpendByModel[];
   byAgent: SpendByAgent[];
   byDay: SpendByDay[];

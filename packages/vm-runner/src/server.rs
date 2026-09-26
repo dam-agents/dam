@@ -162,6 +162,14 @@ impl Rejected {
     }
 }
 
+fn check_id(id: &str) -> Result<(), Rejected> {
+    if is_machine_id(id) {
+        Ok(())
+    } else {
+        Err(Rejected::bad_request("invalid machine id"))
+    }
+}
+
 impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
@@ -281,9 +289,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it.
     pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
-        if !is_machine_id(id) {
-            return Err(Rejected::bad_request("invalid machine id"));
-        }
+        check_id(id)?;
         admissible(&spec).map_err(Rejected::bad_request)?;
         {
             let mut machines = locked(&self.machines);
@@ -370,17 +376,13 @@ impl Server {
     }
 
     pub fn get(&self, id: &str) -> Result<MachineStatus, Rejected> {
-        if !is_machine_id(id) {
-            return Err(Rejected::bad_request("invalid machine id"));
-        }
+        check_id(id)?;
         Ok(self.status(id))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a status read: answers as soon as the machine's status version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes with no change. A different version rather than a greater one ends the wait, so a caller holding a version from before a runner restart or a delete is answered at once.
     pub fn wait(&self, id: &str, since: u64, timeout: Duration) -> Result<MachineStatus, Rejected> {
-        if !is_machine_id(id) {
-            return Err(Rejected::bad_request("invalid machine id"));
-        }
+        check_id(id)?;
         let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
         let mut machines = locked(&self.machines);
         while !machines.closed && machines.entries.get(id).map_or(0, |e| e.version) == since {
@@ -402,11 +404,15 @@ impl Server {
         self.changed.notify_all();
     }
 
+    fn end_worker(&self, entry: &mut MachineEntry) {
+        entry.converging = false;
+        entry.action = None;
+        self.bump(entry);
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, then waits for the action in flight to return.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
-        if !is_machine_id(id) {
-            return Err(Rejected::bad_request("invalid machine id"));
-        }
+        check_id(id)?;
         {
             let mut machines = locked(&self.machines);
             machines.entries.entry(id.to_string()).or_default().deleting = true;
@@ -534,12 +540,12 @@ impl Server {
             Action::Start | Action::Restart { .. } => self.reshape(id, &spec, &auths, action),
         };
         self.metrics
-            .operation(action.label(), started.elapsed(), result.is_ok());
+            .operation(action, started.elapsed(), result.is_ok());
         let failure = result.err().map(|e| {
             let mut message = format!("{e:#}");
             tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
             let reason = failure_reason(&e);
-            self.metrics.failed(action.label(), reason);
+            self.metrics.failed(action, reason);
             if reason == REASON_BOOT_FAILED {
                 message = with_console(&message, &self.console_tail(id));
             }
@@ -568,8 +574,7 @@ impl Server {
         };
         let (image, launch, digest) = self.resolve(spec, auths)?;
         self.record_digest(id, digest.as_deref())?;
-        let dir = machine_dir(&self.config.state_dir, id)
-            .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
+        let dir = state::require_machine_dir(&self.config.state_dir, id)?;
         self.runtime.create(
             id,
             &Machine {
@@ -577,7 +582,7 @@ impl Server {
                 image: &image,
                 host_port: port + LOOPBACK_OFFSET,
                 share: &dir.join(SHARE_DIR),
-                launch: Some(&launch),
+                launch: &launch,
             },
         )?;
         write_spec(&self.config.state_dir, id, spec)?;
@@ -711,7 +716,7 @@ impl Server {
         let started = Instant::now();
         let result = self.runtime.start(id);
         self.metrics
-            .start(action.label(), started.elapsed(), result.is_ok());
+            .start(action, started.elapsed(), result.is_ok());
         result
     }
 
@@ -790,9 +795,7 @@ impl Server {
     pub fn metrics_text(&self) -> String {
         let committed = self
             .capacity()
-            .committed(None, &self.committing(), &|other: &str| {
-                matches!(self.known_state(other), Ok(State::Running))
-            })
+            .committed(None, &self.committing(), &|other| self.known_running(other))
             .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
@@ -819,9 +822,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots from a staged archive and holds no cache entry.
     fn record_digest(&self, id: &str, digest: Option<&str>) -> anyhow::Result<()> {
-        let dir = machine_dir(&self.config.state_dir, id)
-            .ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
-        let path = dir.join(IMAGE_DIGEST_FILE);
+        let path = state::require_machine_dir(&self.config.state_dir, id)?.join(IMAGE_DIGEST_FILE);
         match digest {
             None => match fs::remove_file(&path) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
@@ -887,8 +888,8 @@ impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine.
     fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
         self.capacity()
-            .room_for(id, spec.memory_mib, &self.committing(), &|other: &str| {
-                matches!(self.known_state(other), Ok(State::Running))
+            .room_for(id, spec.memory_mib, &self.committing(), &|other| {
+                self.known_running(other)
             })
     }
 
@@ -941,8 +942,7 @@ impl Server {
         let entry = machines.entries.entry(id.to_string()).or_default();
         let answered = if seen.ready { entry.boot.take() } else { None };
         if let Some(boot) = &answered {
-            self.metrics
-                .became_ready(boot.action.label(), boot.at.elapsed());
+            self.metrics.became_ready(boot.action, boot.at.elapsed());
         }
         let mut seen = seen;
         let now = SystemTime::now();
@@ -1036,6 +1036,10 @@ impl Server {
         }
     }
 
+    fn known_running(&self, id: &str) -> bool {
+        matches!(self.known_state(id), Ok(State::Running))
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
     pub fn status(&self, id: &str) -> MachineStatus {
         self.report(id).1
@@ -1114,9 +1118,7 @@ impl Settle<'_> {
         if !closed && !entry.deleting && asked != Some(entry.asked) {
             return false;
         }
-        entry.converging = false;
-        entry.action = None;
-        self.server.bump(entry);
+        self.server.end_worker(entry);
         self.armed = false;
         true
     }
@@ -1126,9 +1128,7 @@ impl Drop for Settle<'_> {
     fn drop(&mut self) {
         if self.armed {
             if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
-                entry.converging = false;
-                entry.action = None;
-                self.server.bump(entry);
+                self.server.end_worker(entry);
             }
         }
         self.server.settled.notify_all();

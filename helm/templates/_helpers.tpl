@@ -97,18 +97,6 @@ annotations:
 {{- end }}
 {{- end }}
 
-{{/*
-nameList — comma-separated .name values from a list of objects.
-Usage: {{ include "platform.nameList" .Values.someList }}
-*/}}
-{{- define "platform.nameList" -}}
-{{- $names := list }}
-{{- range . }}
-{{- $names = append $names .name }}
-{{- end }}
-{{- join "," $names }}
-{{- end }}
-
 {{/* ---- Public URLs (derived from domain + port + scheme) ---- */}}
 
 {{/*
@@ -221,6 +209,13 @@ Shared Redis fullname (StatefulSet + Service)
 {{- end }}
 
 {{/*
+Shared Redis password Secret name
+*/}}
+{{- define "platform.redis.authSecretName" -}}
+{{- printf "%s-auth" (include "platform.redis.fullname" .) }}
+{{- end }}
+
+{{/*
 Redis URL exposed to consumers. With the bundled Redis disabled, an external
 URL must be provided — silently pointing at a non-existent bundled Service
 was the old failure mode.
@@ -320,6 +315,21 @@ The endpoint must carry an explicit port for the exact :authority match.
 {{- end }}
 
 {{/*
+API Server app name (Deployment + public Service)
+*/}}
+{{- define "platform.apiserver.fullname" -}}
+{{- printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+In-cluster URL of the waypoint-fronted harness Service, which the api-server
+and the controller both hand to agents.
+*/}}
+{{- define "platform.apiserver.harnessUrl" -}}
+{{- printf "http://%s-apiserver-harness.%s.svc.cluster.local:%v" (include "platform.fullname" .) .Release.Namespace .Values.apiServer.harnessServerPort }}
+{{- end }}
+
+{{/*
 API Server database host — uses external host if set, otherwise shared postgres
 */}}
 {{- define "platform.apiserver.db.host" -}}
@@ -360,13 +370,6 @@ sslrootcert from the connection string.
 {{- $dsn = printf "%s?sslmode=%s" $dsn .Values.apiServer.db.sslmode -}}
 {{- end -}}
 {{- $dsn -}}
-{{- end }}
-
-{{/*
-Keycloak OIDC issuer URL (external, for iss claim matching in JWTs)
-*/}}
-{{- define "platform.keycloak.issuer" -}}
-{{- printf "%s/realms/%s" (include "platform.url.keycloak" .) .Values.keycloak.realm }}
 {{- end }}
 
 {{/* ---- Keycloak resources ---- */}}
@@ -436,12 +439,32 @@ Controller ServiceAccount name
 API Server ServiceAccount name
 */}}
 {{- define "platform.apiserver.serviceAccountName" -}}
-{{- printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "platform.apiserver.fullname" . }}
+{{- end }}
+
+{{/*
+UI app name (Deployment + Service)
+*/}}
+{{- define "platform.ui.fullname" -}}
+{{- printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+VM runner ServiceAccount name. The controller stamps it on every runner it
+creates, so it has to match the ServiceAccount vm-runner.yaml renders.
+*/}}
+{{- define "platform.vmRunner.serviceAccountName" -}}
+{{- printf "%s-vm-runner" (include "platform.fullname" .) }}
 {{- end }}
 
 {{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
 {{- define "platform.clickstack.collector.fullname" -}}
 {{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* In-cluster host of the collector Service, without scheme or port. */}}
+{{- define "platform.clickstack.collector.host" -}}
+{{- printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .) .Release.Namespace }}
 {{- end }}
 
 {{/* HTTP endpoint of the ClickStack ClickHouse store — the api-server's
@@ -476,7 +499,7 @@ API Server ServiceAccount name
      indistinguishable in the exploration UI — so name the service after the
      template. */}}
 {{- define "platform.agentTelemetry.env.claudeCode" -}}
-{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .root) .root.Release.Namespace }}
+{{- $host := include "platform.clickstack.collector.host" .root }}
 - name: OTEL_SERVICE_NAME
   value: {{ .templateName | quote }}
 - name: CLAUDE_CODE_ENABLE_TELEMETRY
@@ -521,7 +544,7 @@ API Server ServiceAccount name
        - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is not
          read), so templates off this image share one name in the UI. */}}
 {{- define "platform.agentTelemetry.env.bob" -}}
-{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .root) .root.Release.Namespace }}
+{{- $host := include "platform.clickstack.collector.host" .root }}
 - name: BOB_TELEMETRY_PROVIDER
   value: "langfuse"
 - name: BOB_TELEMETRY_URL
@@ -572,4 +595,14 @@ defaulting to true when the kit has no entry. Usage:
 {{- define "platform.starterKits.kitEnabled" -}}
 {{- $cfg := index (.root.Values.starterKits.builtin.kits | default dict) .id -}}
 {{- if or (not $cfg) (ne $cfg.enabled false) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Name of the chart-managed pull Secret for a harness template that declares
+`imagePullSecret`. harness-templates.yaml references it and
+harness-template-pull-secrets.yaml renders it, so both take it from here.
+Usage: {{ include "platform.harnessTemplate.pullSecretName" (dict "root" $ "name" $name) }}
+*/}}
+{{- define "platform.harnessTemplate.pullSecretName" -}}
+{{- printf "%s-tmpl-%s-pull" (include "platform.fullname" .root) .name }}
 {{- end -}}

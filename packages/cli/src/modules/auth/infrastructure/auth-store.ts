@@ -16,7 +16,7 @@ import type {
   AuthStoreWriteError,
   MalformedAuthStoreError,
 } from "../domain/errors.js";
-import { errorMessage } from "../../shared/error-message.js";
+import { errnoCode, errorMessage } from "../../shared/error-message.js";
 
 export type HostUrl = string;
 
@@ -51,12 +51,6 @@ const fileSchema = z
   .passthrough();
 
 const FILE_MODE = 0o600;
-
-function errnoCode(e: unknown): string | undefined {
-  return e instanceof Error && "code" in e && typeof e.code === "string"
-    ? e.code
-    : undefined;
-}
 
 function toHostAuth(
   raw: z.infer<typeof hostEntrySchema>,

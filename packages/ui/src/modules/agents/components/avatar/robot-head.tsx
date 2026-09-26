@@ -8,7 +8,6 @@ import { getUser } from "../../../../auth.js";
 export interface RobotHeadProps {
   name: string;
   size?: number;
-  label?: string;
   sleeping?: boolean;
   className?: string;
 }
@@ -16,7 +15,6 @@ export interface RobotHeadProps {
 export function RobotHead({
   name,
   size = 24,
-  label,
   sleeping = false,
   className,
 }: RobotHeadProps) {
@@ -29,8 +27,8 @@ export function RobotHead({
       )}
       width={size}
       height={size}
-      alt={label ?? ""}
-      aria-hidden={label ? undefined : true}
+      alt=""
+      aria-hidden
       draggable={false}
       decoding="async"
       className={cn("shrink-0 select-none", className)}

@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import {
   mkdir,
   open,
@@ -23,10 +23,9 @@ import { err, ok } from "agent-runtime-api";
 import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
 import { noticeStream } from "../core/notice-stream.js";
 import { createFilesWatcher } from "./files-watch.js";
+import { RESERVED, safePath, touchesReserved } from "./workspace-path.js";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-
-const RESERVED = new Set([".triggers", ".initialized"]);
 
 const TEXT_BASED_DETECTIONS = new Set(["xml", "vtt", "vcf", "ics"]);
 
@@ -34,17 +33,6 @@ function hasNullBytes(buf: Buffer): boolean {
   const len = Math.min(buf.length, 8192);
   for (let i = 0; i < len; i++) if (buf[i] === 0) return true;
   return false;
-}
-
-export function safePath(workingDir: string, rel: string): string | null {
-  const resolved = resolve(workingDir, rel);
-  if (!resolved.startsWith(resolve(workingDir))) return null;
-  return resolved;
-}
-
-export function touchesReserved(rel: string): boolean {
-  if (!rel) return false;
-  return rel.split("/").some((seg) => RESERVED.has(seg));
 }
 
 function isWritablePath(rel: string): boolean {

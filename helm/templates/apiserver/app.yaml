@@ -1,4 +1,4 @@
-{{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $appName := include "platform.apiserver.fullname" . }}
 {{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
 # Public Service. Carries only the public HTTP/tRPC port; harness
@@ -182,7 +182,7 @@ spec:
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: {{ include "platform.apiserver.harnessUrl" . | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -425,7 +425,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ printf "%s-auth" (include "platform.redis.fullname" .) }}
+                  name: {{ include "platform.redis.authSecretName" . }}
                   key: password
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
@@ -529,7 +529,7 @@ spec:
             # namespace. The SDK only activates when this endpoint env is
             # present.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+              value: "http://{{ include "platform.clickstack.collector.host" . }}:4318"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "http/protobuf"
             - name: OTEL_SERVICE_NAME

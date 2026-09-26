@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createAgentResolver } from "../modules/agent/services/agent-resolver.js";
+import { resolveAgent } from "../modules/agent/services/agent-resolver.js";
 import type { AgentService } from "../modules/agent/services/agent-service.js";
 import type { AgentView } from "../modules/agent/domain/agent-view.js";
 import { ok, type Result } from "../result.js";
@@ -38,21 +38,17 @@ describe("agent-resolver", () => {
   describe("ID branch (ref has the shape of an agent ID)", () => {
     it("returns the agent on a happy-path ID lookup", async () => {
       const agent = makeAgent({ id: "agent-000000000000002a", name: "prod" });
-      const resolver = createAgentResolver({
-        agentService: makeService({ get: () => ok(agent) }),
-      });
+      const agentService = makeService({ get: () => ok(agent) });
 
-      const result = await resolver.resolve("agent-000000000000002a");
+      const result = await resolveAgent(agentService, "agent-000000000000002a");
 
       expect(result).toEqual({ ok: true, value: agent });
     });
 
     it("maps the service's null (NOT_FOUND-equivalent) to NotFoundError via 'id'", async () => {
-      const resolver = createAgentResolver({
-        agentService: makeService({ get: () => ok(null) }),
-      });
+      const agentService = makeService({ get: () => ok(null) });
 
-      const result = await resolver.resolve("agent-00000000deadbeef");
+      const result = await resolveAgent(agentService, "agent-00000000deadbeef");
 
       expect(result).toEqual({
         ok: false,
@@ -64,26 +60,22 @@ describe("agent-resolver", () => {
   describe("name branch (ref is not an agent ID)", () => {
     it("returns the single matching agent", async () => {
       const agent = makeAgent({ name: "prod" });
-      const resolver = createAgentResolver({
-        agentService: makeService({
-          list: () =>
-            ok([makeAgent({ id: "agent-other", name: "staging" }), agent]),
-        }),
+      const agentService = makeService({
+        list: () =>
+          ok([makeAgent({ id: "agent-other", name: "staging" }), agent]),
       });
 
-      const result = await resolver.resolve("prod");
+      const result = await resolveAgent(agentService, "prod");
 
       expect(result).toEqual({ ok: true, value: agent });
     });
 
     it("returns NotFoundError via 'name' when zero matches", async () => {
-      const resolver = createAgentResolver({
-        agentService: makeService({
-          list: () => ok([makeAgent({ name: "staging" })]),
-        }),
+      const agentService = makeService({
+        list: () => ok([makeAgent({ name: "staging" })]),
       });
 
-      const result = await resolver.resolve("prod");
+      const result = await resolveAgent(agentService, "prod");
 
       expect(result).toEqual({
         ok: false,
@@ -95,11 +87,9 @@ describe("agent-resolver", () => {
       const a = makeAgent({ id: "agent-A", name: "prod" });
       const b = makeAgent({ id: "agent-B", name: "prod" });
       const c = makeAgent({ id: "agent-C", name: "other" });
-      const resolver = createAgentResolver({
-        agentService: makeService({ list: () => ok([a, b, c]) }),
-      });
+      const agentService = makeService({ list: () => ok([a, b, c]) });
 
-      const result = await resolver.resolve("prod");
+      const result = await resolveAgent(agentService, "prod");
 
       expect(result).toEqual({
         ok: false,
@@ -115,13 +105,11 @@ describe("agent-resolver", () => {
     });
 
     it("matches exact case (no normalization) — 'Prod' does not match 'prod'", async () => {
-      const resolver = createAgentResolver({
-        agentService: makeService({
-          list: () => ok([makeAgent({ name: "prod" })]),
-        }),
+      const agentService = makeService({
+        list: () => ok([makeAgent({ name: "prod" })]),
       });
 
-      const result = await resolver.resolve("Prod");
+      const result = await resolveAgent(agentService, "Prod");
 
       expect(result).toEqual({
         ok: false,

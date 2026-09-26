@@ -20,21 +20,10 @@ import { composeTemplateModule } from "./modules/template/compose.js";
 import { composeTermsModule } from "./modules/terms/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
-export interface ComposeOptions {
-  configPath?: string;
-  authPath?: string;
-  env?: NodeJS.ProcessEnv;
-}
-
-export function compose(opts: ComposeOptions = {}): Command {
-  const cli = composeCliModule({ configPath: opts.configPath });
+export function compose(): Command {
+  const cli = composeCliModule();
   const { compatService, configService } = cli.services;
-  const auth = composeAuthModule({
-    authPath: opts.authPath,
-    env: opts.env,
-    compatService,
-    configService,
-  });
+  const auth = composeAuthModule({ compatService, configService });
   const { tokenProvider } = auth.exports;
   const buildTrpc = (host: string) => createTrpcClient({ host, tokenProvider });
 

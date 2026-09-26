@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const schema = z.object({
   PORT: z.coerce.number().default(8080),
