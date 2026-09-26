@@ -15,7 +15,6 @@ import { appRouter } from "agent-runtime-api/router";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
-  ARTIFACT_API_PORT,
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   type AgentRuntimeContext,
@@ -107,10 +106,7 @@ const kbPublish = composeKbPublish({
   harness: harnessClient,
   log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
 });
-const artifactApi = composeArtifactApi({
-  port: ARTIFACT_API_PORT,
-  fetch: globalThis.fetch,
-});
+const artifactApi = composeArtifactApi();
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const seedRoots = skillRefPaths(

@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "node:fs";
 import { readdir } from "node:fs/promises";
 
-import { safePath, touchesReserved } from "./files.js";
+import { safePath, touchesReserved } from "./workspace-path.js";
 
 const COALESCE_MS = 250;
 const RETRY_MS = 2_000;

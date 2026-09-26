@@ -1,5 +1,6 @@
 import {
   ARTIFACT_API_MAX_BODY_BYTES,
+  ARTIFACT_API_PORT,
   ARTIFACT_API_TIMEOUT_MS,
   type ArtifactApiRequestInput,
   type ArtifactApiRequestResult,
@@ -45,11 +46,8 @@ async function readCapped(
  * gives is a success; nothing listening, a timeout and a too-large body come
  * back as failure reasons, never as thrown errors.
  */
-export function composeArtifactApi(opts: {
-  port: number;
-  fetch: typeof globalThis.fetch;
-}): ArtifactApiService {
-  const origin = `http://127.0.0.1:${opts.port}`;
+export function composeArtifactApi(): ArtifactApiService {
+  const origin = `http://127.0.0.1:${ARTIFACT_API_PORT}`;
 
   async function request(
     input: ArtifactApiRequestInput,
@@ -58,7 +56,7 @@ export function composeArtifactApi(opts: {
       input.contentType ??
       (input.body !== undefined ? "application/json" : undefined);
     try {
-      const response = await opts.fetch(`${origin}${input.path}`, {
+      const response = await fetch(`${origin}${input.path}`, {
         method: input.method,
         headers: contentType ? { "content-type": contentType } : {},
         body: input.body,

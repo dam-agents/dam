@@ -13,7 +13,7 @@ export interface ArtifactTouchReporter {
 
 export function createArtifactTouchReporter(opts: {
   client: HarnessClient;
-  log?: (msg: string) => void;
+  log: (msg: string) => void;
 }): ArtifactTouchReporter {
   async function send(touch: {
     sessionId: string;
@@ -27,7 +27,7 @@ export function createArtifactTouchReporter(opts: {
       } catch (err) {
         if (attempt === ATTEMPTS) {
           const reason = err instanceof Error ? err.message : String(err);
-          opts.log?.(
+          opts.log(
             `giving up on ${touch.artifactId}@${touch.version}: ${reason}`,
           );
           return;
