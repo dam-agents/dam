@@ -262,10 +262,10 @@ backend = "pipx:AI-native-Systems-Research/agentic-strategy-evolution"
 specifiers = ["v0.4.0"]
 
 [[tools."pipx:openevolve"]]
-version = "0.2.27"
+version = "0.3.2"
 backend = "pipx:openevolve"
-specifiers = ["0.2.27"]
-uv = { path = ".mise/locks/pipx-openevolve/0.2.27", digest = "sha256:6c645b9efbc250420f1730d6179b44b7833b61813a13735b19663d0cfe275a18" }
+specifiers = ["0.3.2"]
+uv = { path = ".mise/locks/pipx-openevolve/0.3.2", digest = "sha256:23266b9722ed0a05c562e3d9f7573f8bfa7444d841c968979bedab57fca91a9a" }
 
 [[tools.python]]
 version = "3.12.14"
