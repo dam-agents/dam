@@ -19,7 +19,7 @@ never ask the user for a key, and never write credentials to disk.
 SkyDiscover (Berkeley Sky lab) is a unified framework for LLM-driven
 optimization: an LLM proposes candidate programs, an **evaluator** scores each
 one, and the search loops toward better solutions. You drive it through the
-`skydiscover-run` CLI; SkyDiscover drives the search loop.
+`skydiscover optimize` CLI; SkyDiscover drives the search loop.
 
 **This pod is preset to one of SkyDiscover's two own strategies** via
 `$SKYDISCOVER_SEARCH`:
@@ -46,14 +46,14 @@ program). Consult it whenever you set up a run. This file is the
 
 - **You, the driver** — Claude Code. Your own model calls authenticate through
   the inherited model gateway; you do not configure or pick that model here.
-- **The search loop** — `skydiscover-run` calls an **OpenAI-compatible**
+- **The search loop** — `skydiscover optimize` calls an **OpenAI-compatible**
   endpoint injected by the attached model-provider connection as
   `OPENAI_BASE_URL` + `OPENAI_API_KEY`. *This* is the model you configure, by
-  discovering what the endpoint serves and passing `--api-base` plus a plain
-  model id the endpoint actually lists (the skill's Step 1 defines the exact
-  procedure). A single IBM-LiteLLM-class connection feeds both paths; a
-  pure-OpenAI provider feeds only the loop. If `OPENAI_BASE_URL` is unset,
-  stop and tell the user to attach a model-provider connection.
+  discovering what the endpoint serves and passing `--api-base` plus
+  `-m openai/<id>` for an id the endpoint actually lists (the skill's Step 1
+  defines the exact procedure). A single IBM-LiteLLM-class connection feeds
+  both paths; a pure-OpenAI provider feeds only the loop. If `OPENAI_BASE_URL`
+  is unset, stop and tell the user to attach a model-provider connection.
 
 ## Starting a conversation
 
@@ -67,7 +67,7 @@ existing runs and offer to act on them. Scan `$SKYDISCOVER_OUTPUT_ROOT`
 
   ```sh
   pid=$(cat run.pid) && kill -0 "$pid" 2>/dev/null \
-    && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q skydiscover-run
+    && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q 'skydiscover optimize'
   ```
 
   The cmdline check is not optional: a pod restart resets the PID namespace,
@@ -106,7 +106,8 @@ estimate, but an informed user may pre-authorize it (see below).
    the wrong thing.
 4. **You've presented an iteration/cost estimate.** State the iteration budget
    (`-i`), the resulting rough LLM-call count (≈ one proposal plus one
-   evaluation per iteration; EvoX adds occasional strategy-evolution calls),
+   evaluation per iteration; EvoX adds occasional strategy-evolution calls;
+   `--agentic` makes each proposal up to `agentic.max_steps` calls, default 5),
    that it runs autonomously, and that the running work holds the pod awake
    (no scale-to-zero) until it finishes. Then **wait
    for an explicit go-ahead — unless the user already pre-authorized this
@@ -141,10 +142,12 @@ estimate, but an informed user may pre-authorize it (see below).
   # would SIGTERM the whole process group, run included, mid-flight
   dir="$SKYDISCOVER_OUTPUT_ROOT/<run-id>"
   cd "$dir"
+  # a new shell: Step 1's $base does not carry over, so derive it again
+  base="${OPENAI_BASE_URL%/}"; base="${base%/v1}"
   export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"   # gateway overwrites it on the wire
-  skydiscover-run task/initial.py task/evaluator.py \
+  skydiscover optimize task/initial.py task/evaluator.py \
     --search "${SKYDISCOVER_SEARCH:-adaevolve}" \
-    -i <N> -m <model-id> --api-base "$base/v1" \
+    -i <N> -m "openai/<model-id>" --api-base "$base/v1" \
     -o "$dir/output" \
     > run.log 2>&1 &
   pid=$!; echo "$pid" > run.pid
@@ -193,7 +196,7 @@ skip the resume) and it hasn't reached its budget, reinstall the run's deps
 checkpoint under `output/checkpoints/`. Read how many iterations already
 completed from the checkpoint numbering (`checkpoint_40` → 40 done) and set
 `-i` to the **remainder** of the user-approved total — never more. If **no
-checkpoint exists yet** (evox writes its first only at iteration 10), a
+checkpoint exists yet** (both strategies write their first at iteration 10), a
 relaunch restarts from scratch and re-spends the lost iterations — that
 exceeds the originally approved spend, so say so and wait for a fresh
 go-ahead instead of silently relaunching. The same rule covers a run you
@@ -211,10 +214,12 @@ first place.
 
 ## Hard guardrails
 
-- **Only use plain model ids the endpoint serves, always with `--api-base`**
-  (the skill's Step 1 format). Vendor-prefixed ids (`gemini/…`,
-  `anthropic/…`) route through vendor SDKs that demand keys this pod doesn't
-  hold. Never leave the run on SkyDiscover's default model.
+- **Only use ids the endpoint serves, as `-m openai/<id>`, always with
+  `--api-base`** (the skill's Step 1 format). Without the `openai/` prefix
+  SkyDiscover strips a leading provider segment it knows (`azure/gpt-5` goes
+  out as `gpt-5`); without `--api-base` it refuses an id it can't place or
+  sends one it can to the vendor's public API instead of the injected
+  endpoint. Never leave the run on SkyDiscover's default model.
 - **Export a non-empty `OPENAI_API_KEY`** before launching (the
   `${OPENAI_API_KEY:-placeholder}` idiom above). The injected value is often
   an empty placeholder by design — the gateway overwrites the header on the
@@ -227,8 +232,11 @@ first place.
 - **Every evaluator must return `combined_score`** in its result dict. That is
   the score the search selects on; without it candidates can't be ranked.
 - **Leave the live monitor dashboard off** (`monitor.enabled` in config) and
-  don't reach for `skydiscover-viewer` — this pod exposes no UI ports; report
+  don't reach for `skydiscover viewer` — this pod exposes no UI ports; report
   progress from `run.log` and the checkpoint files instead.
+- **Never run `skydiscover init`.** It is SkyDiscover's separate Synthesize
+  module, not part of this pod, and it writes a skill, agent roles and hooks
+  into the project's `.claude/` — your own Claude Code config.
 - **Discover and validate the model before launching.** A model name the
   endpoint doesn't serve fails every proposal. See the skill's model-setup
   step.

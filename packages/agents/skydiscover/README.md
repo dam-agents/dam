@@ -51,15 +51,21 @@ with every pod restart, and nearly every numerical task was paying a
 minutes-long runtime install for it). The install is a git ref rather than a PyPI pin because
 the 0.1.0 wheel (latest release) predates EvoX's config data files — its code
 loads `search/evox/config/search.yaml`, which landed upstream only after the
-release, so `--search evox` crashes on every released wheel; a build-time
-assertion keeps the gap from regressing. Switch back to a version pin on the
-next release that carries the config. Both
+release, so `--search evox` crashes on every released wheel — and the
+`skydiscover optimize` CLI the skill drives. A build-time check
+([`check-packaging.py`](check-packaging.py)) fails the build when upstream
+packaging drifts from what the skill says: the EvoX config and the agentic
+tool schemas ship, `search.share_llm` exists, and the CLI is `skydiscover`.
+Switch back to a version pin on the next release that carries them.
+SkyDiscover's Synthesize module (`skydiscover init`) ships in the same
+package but is not part of this workload; the skill tells the agent never to
+run it. Both
 harnesses (chat and terminal) are inherited unchanged from the base;
 SkyDiscover customizes behavior via `AGENTS.md` + the `skydiscover` skill, not
 the harness scripts.
 
-How the pod reaches models without holding keys (plain model ids +
-`--api-base`, the placeholder-key idiom) is defined once in the `skydiscover`
+How the pod reaches models without holding keys (`openai/`-prefixed model ids
++ `--api-base`, the placeholder-key idiom) is defined once in the `skydiscover`
 skill's Step 1.
 
 ## Build
