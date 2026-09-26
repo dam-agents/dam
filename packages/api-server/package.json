@@ -31,7 +31,7 @@
     "@opentelemetry/instrumentation-undici": "^0.32.0",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@resvg/resvg-js": "^2.6.2",
-    "@slack/bolt": "^4.7.0",
+    "@slack/bolt": "^5.1.0",
     "@trpc/client": "^11.19.0",
     "@trpc/server": "^11.19.0",
     "agent-runtime-api": "workspace:*",
