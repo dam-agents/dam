@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ConfigService } from "../../cli/index.js";
-import type { AuthService, LogoutError } from "../services/auth-service.js";
+import type { AuthService } from "../services/auth-service.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -39,7 +39,9 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
 
       const result = await deps.authService.logout(host);
       if (!result.ok) {
-        printLogoutError(result.error);
+        process.stderr.write(
+          `error: failed to update credential store: ${result.error.detail}\n`,
+        );
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
@@ -54,14 +56,4 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
         `✓ Logged out of ${result.value.host}${result.value.revoked ? "" : " (local clear only)"}\n`,
       );
     });
-}
-
-function printLogoutError(e: LogoutError): void {
-  switch (e.kind) {
-    case "auth-store":
-      process.stderr.write(
-        `error: failed to update credential store: ${e.detail}\n`,
-      );
-      return;
-  }
 }

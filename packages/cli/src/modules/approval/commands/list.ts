@@ -2,26 +2,32 @@ import { Command, Option } from "commander";
 import type { ApprovalListOptions, ApprovalStatus } from "api-server-api";
 import { describeApprovalPayload } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { formatRelative } from "../../shared/relative-time.js";
 import { renderFittedTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ApprovalService } from "../services/approval-service.js";
 
 type StatusFlag = ApprovalStatus | "all";
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+function formatRelative(iso: string, now: Date): string {
+  const diffMs = Date.parse(iso) - now.getTime();
+  const abs = Math.abs(diffMs);
+  const value =
+    abs >= DAY_MS
+      ? `${Math.floor(abs / DAY_MS)}d`
+      : abs >= HOUR_MS
+        ? `${Math.floor(abs / HOUR_MS)}h`
+        : `${Math.max(1, Math.floor(abs / MINUTE_MS))}m`;
+  return diffMs >= 0 ? `in ${value}` : `${value} ago`;
+}
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -80,13 +86,7 @@ export function buildListCommand(deps: {
           limit = n;
         }
 
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const listOpts: ApprovalListOptions = {
           ...(opts.status === "all" ? {} : { status: opts.status }),
@@ -98,20 +98,14 @@ export function buildListCommand(deps: {
         if (ref === undefined) {
           result = await service.listForOwner(listOpts);
         } else {
-          const resolver = createAgentResolver({
-            agentService: deps.createAgentService(host),
-          });
-          const resolved = await resolver.resolve(ref);
-          if (!resolved.ok) {
-            printResolveError(resolved.error, host);
-            process.exit(exitCodeForResolveError(resolved.error));
-          }
-          result = await service.listForInstance(resolved.value.id, listOpts);
+          const agent = await resolveAgentOrExit(
+            deps.createAgentService(host),
+            ref,
+            host,
+          );
+          result = await service.listForInstance(agent.id, listOpts);
         }
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           return writeStdoutAndExit(

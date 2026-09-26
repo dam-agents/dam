@@ -4,15 +4,10 @@ import { ChannelType } from "api-server-api";
 import type { AgentView } from "../domain/agent-view.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
-import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { exitCodeForResolveError, printResolveError } from "./errors.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { resolveAgentOrExit } from "./errors.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 export function buildGetCommand(deps: {
   compatService: CompatService;
@@ -32,30 +27,16 @@ export function buildGetCommand(deps: {
       "\nExamples:\n  dam agent get my-agent\n  dam agent get agent-3f9c2b7e41d08a65 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const svc = deps.createAgentService(host);
-      const resolver = createAgentResolver({ agentService: svc });
-      const result = await resolver.resolve(ref);
-      if (!result.ok) {
-        printResolveError(result.error, host);
-        process.exit(exitCodeForResolveError(result.error));
-      }
+      const agent = await resolveAgentOrExit(svc, ref, host);
 
       if (opts.json) {
-        return writeStdoutAndExit(
-          `${JSON.stringify(result.value)}\n`,
-          EXIT_SUCCESS,
-        );
+        return writeStdoutAndExit(`${JSON.stringify(agent)}\n`, EXIT_SUCCESS);
       }
 
-      return writeStdoutAndExit(renderAgent(result.value), EXIT_SUCCESS);
+      return writeStdoutAndExit(renderAgent(agent), EXIT_SUCCESS);
     });
 }
 

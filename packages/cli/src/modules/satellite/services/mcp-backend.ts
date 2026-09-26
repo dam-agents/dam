@@ -99,11 +99,6 @@ async function connectClient(spec: McpServerSpec): Promise<Client> {
   }
 }
 
-function describeArgs(tool: string, args: Record<string, unknown>): string {
-  const text = `${tool} ${JSON.stringify(args)}`;
-  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
-}
-
 export async function createMcpBackend(
   spec: McpServerSpec,
 ): Promise<SatelliteBackend> {
@@ -134,7 +129,10 @@ export async function createMcpBackend(
   return {
     tools,
 
-    describeCall: describeArgs,
+    describeCall(tool, args) {
+      const text = `${tool} ${JSON.stringify(args)}`;
+      return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+    },
 
     async call(input): Promise<CallOutcome> {
       const controller = new AbortController();

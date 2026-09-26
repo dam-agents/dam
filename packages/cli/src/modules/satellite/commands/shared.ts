@@ -4,7 +4,6 @@ import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -167,13 +166,7 @@ export async function activeHost(
   deps: ConnectDeps,
   opts: CommonConnectOpts,
 ): Promise<string> {
-  return resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  return resolveActiveHost(deps, opts.server);
 }
 
 function transportFor(trpc: TrpcClient): WorkerTransport {

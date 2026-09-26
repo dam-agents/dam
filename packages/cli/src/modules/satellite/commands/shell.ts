@@ -8,7 +8,6 @@ import {
 import {
   connectOptions,
   fail,
-  log,
   readStdin,
   serve,
   shellDefaultName,

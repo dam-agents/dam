@@ -31,7 +31,6 @@ import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -126,7 +125,6 @@ export interface CreateAgentInteractiveCommandDeps {
   createAgentService: (host: string) => AgentService;
   createTemplateService: (host: string) => TemplateService;
   createTrpcClient: (host: string) => TrpcClient;
-  serverEnvVar: string;
 }
 
 interface CliOpts {
@@ -160,15 +158,7 @@ async function runCreate(
 
   intro("dam agent create-interactive");
 
-  const flag = opts.server ? { server: opts.server } : undefined;
-
-  const host = await resolveActiveHost(deps, {
-    flag,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, opts.server);
 
   const name = await text({
     message: "Agent name",

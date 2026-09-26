@@ -10,7 +10,6 @@ export interface ImportModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
-  serverEnvVar: string;
 }
 
 export interface ImportModule {
@@ -26,7 +25,6 @@ export function composeImportModule(opts: ImportModuleOptions): ImportModule {
         configService: opts.configService,
         createAgentService: opts.createAgentService,
         bundleBuilder: createBundleBuilder(),
-        serverEnvVar: opts.serverEnvVar,
       }),
     ],
   };

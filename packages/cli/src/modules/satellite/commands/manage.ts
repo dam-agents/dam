@@ -1,16 +1,8 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { renderTable } from "../../shared/render-table.js";
@@ -38,31 +30,6 @@ function serverOption(command: Command): Command {
     .option("--json", "emit raw JSON instead of the default table");
 }
 
-async function host(deps: ManageDeps, opts: CommonOpts): Promise<string> {
-  return resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
-}
-
-async function resolveAgentId(
-  deps: ManageDeps,
-  at: string,
-  ref: string,
-): Promise<string> {
-  const resolved = await createAgentResolver({
-    agentService: deps.createAgentService(at),
-  }).resolve(ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, at);
-    return process.exit(exitCodeForResolveError(resolved.error));
-  }
-  return resolved.value.id;
-}
-
 async function attempt<T>(at: string, call: () => Promise<T>): Promise<T> {
   try {
     return await call();
@@ -78,7 +45,7 @@ export function buildListCommand(deps: ManageDeps): Command {
   return serverOption(
     new Command("list").description("List this account's satellites"),
   ).action(async (opts: CommonOpts) => {
-    const at = await host(deps, opts);
+    const at = await resolveActiveHost(deps, opts.server);
     const rows = await attempt(at, () =>
       deps.createTrpc(at).satellites.list.query(),
     );
@@ -114,7 +81,7 @@ export function buildJobsCommand(deps: ManageDeps): Command {
       .description("List a satellite's jobs")
       .argument("<satellite>", "satellite name"),
   ).action(async (name: string, opts: CommonOpts) => {
-    const at = await host(deps, opts);
+    const at = await resolveActiveHost(deps, opts.server);
     const rows = await attempt(at, () =>
       deps.createTrpc(at).satellites.jobs.query(name),
     );
@@ -152,8 +119,12 @@ export function buildGrantCommand(deps: ManageDeps, revoke: boolean): Command {
       .argument("<satellite>", "satellite name")
       .argument("<agent>", "Agent Ref — name or 'agent-…' ID"),
   ).action(async (name: string, ref: string, opts: CommonOpts) => {
-    const at = await host(deps, opts);
-    const agentId = await resolveAgentId(deps, at, ref);
+    const at = await resolveActiveHost(deps, opts.server);
+    const { id: agentId } = await resolveAgentOrExit(
+      deps.createAgentService(at),
+      ref,
+      at,
+    );
     const trpc = deps.createTrpc(at);
     await attempt(at, () =>
       revoke
@@ -176,7 +147,7 @@ export function buildCancelCommand(deps: ManageDeps): Command {
       .argument("<satellite>", "satellite name")
       .argument("<job>", "job number"),
   ).action(async (name: string, job: string, opts: CommonOpts) => {
-    const at = await host(deps, opts);
+    const at = await resolveActiveHost(deps, opts.server);
     await attempt(at, () =>
       deps
         .createTrpc(at)
@@ -210,7 +181,7 @@ export function buildRemoveCommand(deps: ManageDeps): Command {
       )
         exitCancelled(opts);
     }
-    const at = await host(deps, opts);
+    const at = await resolveActiveHost(deps, opts.server);
     await attempt(at, () => deps.createTrpc(at).satellites.remove.mutate(name));
     process.stderr.write(
       `Removed ${name}. Commands already running on the machine were not stopped.\n`,

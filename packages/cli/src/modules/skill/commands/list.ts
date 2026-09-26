@@ -1,18 +1,10 @@
 import { Command } from "commander";
-import type { LocalSkill, SkillRef, SkillsState } from "api-server-api";
+import type { LocalSkill, SkillsState } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -42,36 +34,21 @@ export function buildListCommand(deps: {
         "  dam skill list my-agent --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
-      const resolver = createAgentResolver({
-        agentService: deps.createAgentService(host),
-      });
-      const resolved = await resolver.resolve(ref);
-      if (!resolved.ok) {
-        printResolveError(resolved.error, host);
-        process.exit(exitCodeForResolveError(resolved.error));
-      }
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
 
       const svc = deps.createSkillsService(host);
       const [stateRes, sourcesRes] = await Promise.all([
-        svc.state(resolved.value.id),
-        svc.listSources(resolved.value.id),
+        svc.state(agent.id),
+        svc.listSources(agent.id),
       ]);
-      if (!stateRes.ok) {
-        printServiceError(stateRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
-      if (!sourcesRes.ok) {
-        printServiceError(sourcesRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(stateRes, host);
+      exitOnServiceError(sourcesRes, host);
       const state = stateRes.value;
 
       if (opts.json) {
@@ -102,11 +79,16 @@ function renderInstalled(
 ): string {
   const nameByUrl = new Map(sources.map((s) => [s.gitUrl, s.name]));
   const unresolved = new Set<string>();
-  const rows = [...installed].sort(bySourceThenName).map((r) => {
-    const name = nameByUrl.get(r.source);
-    if (name === undefined) unresolved.add(r.source);
-    return [name ?? r.source, r.name, r.version.slice(0, 7)];
-  });
+  const rows = [...installed]
+    .sort(
+      (a, b) =>
+        a.source.localeCompare(b.source) || a.name.localeCompare(b.name),
+    )
+    .map((r) => {
+      const name = nameByUrl.get(r.source);
+      if (name === undefined) unresolved.add(r.source);
+      return [name ?? r.source, r.name, r.version.slice(0, 7)];
+    });
   if (unresolved.size > 0) {
     process.stderr.write(
       `note: ${unresolved.size} source(s) no longer registered, shown by URL: ${[...unresolved].join(", ")}\n`,
@@ -132,9 +114,4 @@ function renderStandalone(
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((s: LocalSkill) => [s.name, prByName.get(s.name) ?? "—"]);
   return `Standalone skills:\n${renderTable([STANDALONE_HEADER, ...rows])}`;
-}
-
-function bySourceThenName(a: SkillRef, b: SkillRef): number {
-  const s = a.source.localeCompare(b.source);
-  return s !== 0 ? s : a.name.localeCompare(b.name);
 }

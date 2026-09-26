@@ -2,7 +2,6 @@ export const MAX_ARG_LENGTH = 4096;
 export const MAX_ARGV_LENGTH = 64;
 export const MAX_REPEAT = 16;
 export const MAX_MATCH_STEPS = 20_000;
-export const MAX_MANIFEST_TOKENS = 2048;
 
 export type ParseResult<T> =
   { ok: true; value: T } | { ok: false; error: string };
@@ -246,36 +245,6 @@ export type RegexOracle = (source: string, value: string) => boolean;
  */
 export const localOracle: RegexOracle = (source, value) =>
   new RegExp(source).test(value);
-
-export function countTokens(patterns: ParsedPattern[]): number {
-  let total = 0;
-  const walk = (elements: Element[]): void => {
-    for (const element of elements) {
-      if (element.kind === "token") {
-        total++;
-        continue;
-      }
-      for (const alternative of element.alternatives) walk(alternative);
-    }
-  };
-  for (const pattern of patterns) walk(pattern.elements);
-  return total;
-}
-
-export function regexSources(patterns: ParsedPattern[]): string[] {
-  const sources = new Set<string>();
-  const walk = (elements: Element[]): void => {
-    for (const element of elements) {
-      if (element.kind === "token") {
-        sources.add(element.regexSource);
-        continue;
-      }
-      for (const alternative of element.alternatives) walk(alternative);
-    }
-  };
-  for (const pattern of patterns) walk(pattern.elements);
-  return [...sources];
-}
 
 function checkValue(
   element: TokenElement,

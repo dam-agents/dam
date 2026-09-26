@@ -4,16 +4,12 @@ import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import type { AgentService } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -44,23 +40,10 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         remotePath: string,
         opts: { server?: string; overwrite?: boolean },
       ) => {
-        const flag = opts.server ? { server: opts.server } : undefined;
-        const host = await resolveActiveHost(deps, {
-          flag,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const svc = deps.createAgentService(host);
-        const resolver = createAgentResolver({ agentService: svc });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
+        const agent = await resolveAgentOrExit(svc, ref, host);
 
         const absLocal = resolve(localPath);
         let fh: FileHandle;

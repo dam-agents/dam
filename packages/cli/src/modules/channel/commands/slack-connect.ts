@@ -1,22 +1,19 @@
 import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ChannelService } from "../services/channel-service.js";
-import { ensureProviderAvailable } from "./precheck.js";
 
 export function buildSlackConnectCommand(deps: {
   compatService: CompatService;
@@ -59,31 +56,23 @@ export function buildSlackConnectCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const svc = deps.createChannelService(host);
-        await ensureProviderAvailable(svc, ChannelType.Slack, host);
+        const available = await svc.available();
+        exitOnServiceError(available, host);
+        if (!available.value[ChannelType.Slack]) {
+          process.stderr.write("error: Slack app token not configured\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
 
-        const res = await svc.connectSlack(
-          resolved.value.id,
-          channelId,
-          opts.ambient,
-        );
+        const res = await svc.connectSlack(agent.id, channelId, opts.ambient);
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
@@ -119,7 +108,7 @@ export function buildSlackConnectCommand(deps: {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
-            `✓ Slack channel ${channelId} connected to ${resolved.value.name}${
+            `✓ Slack channel ${channelId} connected to ${agent.name}${
               opts.ambient ? " with ambient on" : ""
             }.\n`,
           );

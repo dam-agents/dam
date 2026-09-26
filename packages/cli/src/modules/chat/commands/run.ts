@@ -37,10 +37,6 @@ export function resolvePrompt(opts: {
   }
 }
 
-function readPromptFile(path: string): string {
-  return readFileSync(path === "-" ? 0 : path, "utf8");
-}
-
 function fail(e: RunError): void {
   if (e.kind === "run-failed") {
     process.stderr.write(`error: ${e.reason}\n`);
@@ -96,7 +92,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
         const prompt = resolvePrompt({
           prompt: opts.prompt,
           promptFile: opts.promptFile,
-          readFile: readPromptFile,
+          readFile: (path) => readFileSync(path === "-" ? 0 : path, "utf8"),
         });
         if (!prompt.ok) {
           process.stderr.write(`error: ${prompt.error}\n`);
@@ -133,7 +129,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           process.exitCode = EXIT_RUN_TIMEOUT;
           return;
         }
-        endStdoutLine();
+        if (!stdoutEndedWithNewline) process.stdout.write("\n");
         process.stderr.write(
           `stopReason: ${outcome.stopReason ?? "unknown"}\n`,
         );
@@ -261,8 +257,4 @@ let stdoutEndedWithNewline = true;
 export function trackStdout(text: string): void {
   process.stdout.write(text);
   if (text.length > 0) stdoutEndedWithNewline = text.endsWith("\n");
-}
-
-function endStdoutLine(): void {
-  if (!stdoutEndedWithNewline) process.stdout.write("\n");
 }

@@ -10,12 +10,8 @@ import type {
 import type {
   AuthConfigProbeError,
   AuthStoreReadError,
-  AuthStoreWriteError,
-  BrowserOpenError,
   DeviceFlowError,
   MalformedAuthStoreError,
-  OidcDiscoveryError,
-  RevokeError,
 } from "../domain/errors.js";
 import { nextFlowStep, type DeviceFlowFailure } from "../domain/flow.js";
 import type { HostAuth } from "../domain/host-auth.js";
@@ -153,16 +149,6 @@ function describeAuthConfigError(e: AuthConfigProbeError): {
   }
 }
 
-function describeOidcError(e: OidcDiscoveryError): {
-  reason: PreflightReason;
-  detail: string;
-} {
-  if (e.code === "missing-device-endpoint") {
-    return { reason: "missing-device-endpoint", detail: e.message };
-  }
-  return { reason: "discovery-failed", detail: e.message };
-}
-
 function describeCompatError(
   e: MissingConfigError | MalformedConfigError | ProbeError,
 ): { reason: PreflightReason; detail: string } {
@@ -242,11 +228,13 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
 
       const oidc = await deps.oidcDiscovery.discover(cfg.value.issuer);
       if (!oidc.ok) {
-        const desc = describeOidcError(oidc.error);
         return err({
           kind: "preflight",
-          reason: desc.reason,
-          detail: desc.detail,
+          reason:
+            oidc.error.code === "missing-device-endpoint"
+              ? "missing-device-endpoint"
+              : "discovery-failed",
+          detail: oidc.error.message,
         });
       }
 
@@ -379,7 +367,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         if (revoke.ok) {
           revoked = true;
         } else {
-          revokeWarning = describeRevokeError(revoke.error);
+          revokeWarning = `token revocation failed (logout still cleared local creds): ${revoke.error.reason}`;
         }
       } else {
         revokeWarning = `cannot resolve revocation endpoint: ${oidc.error.message}`;
@@ -451,13 +439,3 @@ function describeDeviceFlowError(e: DeviceFlowError): string {
       return `device authorization endpoint returned unexpected response: ${e.message}`;
   }
 }
-
-function describeRevokeError(e: RevokeError): string {
-  return `token revocation failed (logout still cleared local creds): ${e.reason}`;
-}
-
-export type AuthServiceWriteError =
-  | AuthStoreReadError
-  | AuthStoreWriteError
-  | MalformedAuthStoreError
-  | BrowserOpenError;

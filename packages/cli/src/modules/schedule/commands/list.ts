@@ -1,28 +1,13 @@
 import { Command } from "commander";
 import { rruleToText } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
-import type {
-  ScheduleService,
-  ScheduleView,
-} from "../services/schedule-service.js";
-
-function recurrenceText(view: ScheduleView): string {
-  return view.rrule !== null ? rruleToText(view.rrule) : (view.cron ?? "");
-}
+import type { ScheduleService } from "../services/schedule-service.js";
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -43,30 +28,16 @@ export function buildListCommand(deps: {
       "\nExamples:\n  dam schedule list my-agent\n  dam schedule list agent-3f9c2b7e41d08a65 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
-      const resolver = createAgentResolver({
-        agentService: deps.createAgentService(host),
-      });
-      const resolved = await resolver.resolve(ref);
-      if (!resolved.ok) {
-        printResolveError(resolved.error, host);
-        process.exit(exitCodeForResolveError(resolved.error));
-      }
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
 
-      const result = await deps
-        .createScheduleService(host)
-        .list(resolved.value.id);
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      const result = await deps.createScheduleService(host).list(agent.id);
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
@@ -94,7 +65,7 @@ export function buildListCommand(deps: {
           ...result.value.map((v) => [
             v.id,
             v.createdBy === "agent" ? `${v.name} (agent)` : v.name,
-            recurrenceText(v),
+            v.rrule !== null ? rruleToText(v.rrule) : (v.cron ?? ""),
             v.timezone ?? "—",
             String(v.enabled),
             v.status?.nextRun ?? "—",

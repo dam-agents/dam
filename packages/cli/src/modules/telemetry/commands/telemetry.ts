@@ -5,15 +5,10 @@ import {
 } from "api-server-api";
 
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -21,7 +16,7 @@ import {
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type {
   ExportOutcome,
   ExportRequest,
@@ -70,21 +65,13 @@ interface Deps {
 }
 
 async function hostAndAgent(deps: Deps, ref: string, server?: string) {
-  const host = await resolveActiveHost(deps, {
-    flag: server ? { server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
-  const resolved = await createAgentResolver({
-    agentService: deps.createAgentService(host),
-  }).resolve(ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  return { host, agent: resolved.value };
+  const host = await resolveActiveHost(deps, server);
+  const agent = await resolveAgentOrExit(
+    deps.createAgentService(host),
+    ref,
+    host,
+  );
+  return { host, agent };
 }
 
 export function buildTelemetryCommand(deps: Deps): Command {
@@ -137,10 +124,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
           spanLimit: 1000,
           logLimit: 1000,
         });
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
         if (!result.value.available) {
           process.stderr.write(`${result.value.reason}\n`);
           process.exit(EXIT_RUNTIME_FAILURE);

@@ -1,19 +1,10 @@
 import { Command, Option } from "commander";
 import type { EgressPreset } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import type { EgressService } from "../services/egress-service.js";
@@ -56,22 +47,13 @@ export function buildApplyPresetCommand(deps: {
           json?: boolean;
         },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         process.stderr.write(
           `Applying preset '${opts.preset}' will replace existing preset rules. Manual and connection-derived rules are preserved.\n`,
@@ -92,17 +74,14 @@ export function buildApplyPresetCommand(deps: {
 
         const result = await deps
           .createEgressService(host)
-          .applyPreset(resolved.value.id, opts.preset);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+          .applyPreset(agent.id, opts.preset);
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(
             `${JSON.stringify({
               ok: true,
-              agentId: resolved.value.id,
+              agentId: agent.id,
               preset: opts.preset,
             })}\n`,
           );

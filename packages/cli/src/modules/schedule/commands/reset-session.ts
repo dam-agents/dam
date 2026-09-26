@@ -1,8 +1,10 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import {
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
   EXIT_SCHEDULE_NOT_FOUND,
   EXIT_SUCCESS,
@@ -30,13 +32,7 @@ export function buildResetSessionCommand(deps: {
       "\nExamples:\n  dam schedule reset-session sched-abc123\n",
     )
     .action(async (id: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
       const svc = deps.createScheduleService(host);
 
       const current = await svc.get(id);
@@ -64,10 +60,7 @@ export function buildResetSessionCommand(deps: {
       }
 
       const result = await svc.resetSession(id);
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         process.stdout.write(

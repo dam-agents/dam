@@ -21,7 +21,6 @@ export interface AgentModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  serverEnvVar: string;
   templateService: (host: string) => TemplateService;
 }
 
@@ -48,23 +47,13 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
   parent.addCommand(buildGetCommand(shared));
-  parent.addCommand(
-    buildCreateCommand({
-      ...shared,
-      createTemplateService: opts.templateService,
-      createTrpcClient: buildTrpc,
-    }),
-  );
-  parent.addCommand(
-    buildCreateInteractiveCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createAgentService: createService,
-      createTemplateService: opts.templateService,
-      createTrpcClient: buildTrpc,
-      serverEnvVar: opts.serverEnvVar,
-    }),
-  );
+  const createDeps = {
+    ...shared,
+    createTemplateService: opts.templateService,
+    createTrpcClient: buildTrpc,
+  };
+  parent.addCommand(buildCreateCommand(createDeps));
+  parent.addCommand(buildCreateInteractiveCommand(createDeps));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
 

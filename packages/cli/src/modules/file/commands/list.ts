@@ -1,20 +1,13 @@
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import type { AgentService } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printTrpcError } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 export interface FileListDeps {
   tokenProvider: TokenProvider;
@@ -81,23 +74,10 @@ export function buildFileListCommand(deps: FileListDeps): Command {
         remotePath: string | undefined,
         opts: { server?: string; json?: boolean; recursive?: boolean },
       ) => {
-        const flag = opts.server ? { server: opts.server } : undefined;
-        const host = await resolveActiveHost(deps, {
-          flag,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const svc = deps.createAgentService(host);
-        const resolver = createAgentResolver({ agentService: svc });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
+        const agent = await resolveAgentOrExit(svc, ref, host);
 
         const trpc = createAgentTrpcClient({
           host,
