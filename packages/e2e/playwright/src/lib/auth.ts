@@ -15,11 +15,15 @@ interface TokenResponse {
   expires_in: number;
 }
 
-export async function getAccessToken(
-  user: { username: string; password: string } = testUser,
-): Promise<string> {
+const loginAttemptsWhileBruteForceLockHolds = 10;
+const bruteForceLockBackoffMs = 1_000;
+
+function requestToken(user: {
+  username: string;
+  password: string;
+}): Promise<Response> {
   const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
-  const res = await fetch(url, {
+  return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -29,13 +33,28 @@ export async function getAccessToken(
       password: user.password,
     }),
   });
-  if (!res.ok) {
-    throw new Error(
-      `Keycloak token request failed: ${res.status} ${await res.text()}`,
-    );
+}
+
+export async function getAccessToken(
+  user: { username: string; password: string } = testUser,
+): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    const res = await requestToken(user);
+    if (res.ok) {
+      const data = (await res.json()) as TokenResponse;
+      return data.access_token;
+    }
+    const body = await res.text();
+    const refusedAsInvalidGrant =
+      res.status === 400 && body.includes("invalid_grant");
+    if (
+      !refusedAsInvalidGrant ||
+      attempt >= loginAttemptsWhileBruteForceLockHolds
+    ) {
+      throw new Error(`Keycloak token request failed: ${res.status} ${body}`);
+    }
+    await new Promise((r) => setTimeout(r, bruteForceLockBackoffMs));
   }
-  const data = (await res.json()) as TokenResponse;
-  return data.access_token;
 }
 
 export async function acceptTerms(api: ApiClient): Promise<void> {
