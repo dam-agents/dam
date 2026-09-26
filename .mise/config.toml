@@ -46,7 +46,7 @@ maven = "latest"
 nodejs = "24"
 pinact = "latest"
 pnpm = "12.5.1" # the single pnpm pin
-rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
+rust = { version = "1.98", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
 usage = "latest"
 uv = "0.12"
