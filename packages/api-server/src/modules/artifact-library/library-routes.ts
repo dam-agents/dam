@@ -5,6 +5,7 @@ import { securityLog } from "../../core/security-log.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import { downloadFileName } from "./domain/artifact-kind.js";
 import { stagingKey } from "./domain/storage-key.js";
+import { parseVersion } from "./viewer/authorize.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -61,8 +62,6 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
   routes.get("/:id/download", async (c) => {
     const user = c.get("user");
     const id = c.req.param("id");
-    const rawVersion = c.req.query("v");
-    const version = rawVersion ? Number.parseInt(rawVersion, 10) : undefined;
 
     const audit = (
       result: "success" | "failure",
@@ -85,10 +84,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
 
     const ref = await deps
       .artifactLibraryFor(user.sub, c.get("surface"))
-      .resolveContentRef(
-        id,
-        Number.isInteger(version) && version! >= 1 ? version : undefined,
-      );
+      .resolveContentRef(id, parseVersion(c.req.query("v")));
     if (!ref) {
       audit("failure", {}, "artifact or version not found");
       return c.json({ error: "not found" }, 404);

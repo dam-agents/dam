@@ -47,14 +47,14 @@ export function hasAnyBinding(db: Db) {
   };
 }
 
-async function upsertSlackChannel(
-  runner: Db | Tx,
+export async function upsertChannelTx(
+  tx: Tx,
   owner: string,
   agentId: string,
   channel: ChannelConfig,
 ): Promise<void> {
   const { type, ...config } = channel;
-  const updated = await runner
+  const updated = await tx
     .update(channels)
     .set({
       owner,
@@ -69,22 +69,7 @@ async function upsertSlackChannel(
     )
     .returning({ agentId: channels.agentId });
   if (updated.length > 0) return;
-  await runner.insert(channels).values({ agentId, owner, type, config });
-}
-
-export function upsertChannel(db: Db, owner: string) {
-  return async (agentId: string, channel: ChannelConfig): Promise<void> => {
-    await upsertSlackChannel(db, owner, agentId, channel);
-  };
-}
-
-export async function upsertChannelTx(
-  tx: Tx,
-  owner: string,
-  agentId: string,
-  channel: ChannelConfig,
-): Promise<void> {
-  await upsertSlackChannel(tx, owner, agentId, channel);
+  await tx.insert(channels).values({ agentId, owner, type, config });
 }
 
 export async function listChannelsByAgentTx(

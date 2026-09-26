@@ -26,10 +26,6 @@ export function seedSlug(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export function seedSourceId(name: string): string {
-  return `${SEED_ID_PREFIX}${seedSlug(name)}`;
-}
-
 export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
   if (!raw || raw.trim() === "") return [];
 

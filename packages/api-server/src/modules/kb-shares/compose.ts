@@ -210,7 +210,7 @@ export function createKbShareResolver(db: Db): (
     if (!row) return null;
     return {
       agentId: row.agentId,
-      name: row.publicName ?? null,
+      name: row.publicName,
       reachable:
         presentedSecret !== null && secretsEqual(row.secret, presentedSecret),
     };

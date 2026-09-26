@@ -1,27 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { json, run } from "../../core/mcp-tool-result.js";
 import type { KbShareAgentOps } from "./compose.js";
-
-interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-function json(value: unknown): ToolContent {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
-}
-
-function errorResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }], isError: true };
-}
-
-async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
-  try {
-    return await fn();
-  } catch (err) {
-    return errorResult(err instanceof Error ? err.message : String(err));
-  }
-}
 
 const OWNER_LINK_NOTE =
   "The owner copies the share link from the knowledge base page — it is never available to agents.";

@@ -75,8 +75,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
     if (!authorized.ok) return authorized.response;
 
     const artifact = authorized.artifact;
-    const requested = parseVersion(c.req.query("v"));
-    const version = requested ?? artifact.version;
+    const version = parseVersion(c.req.query("v")) ?? artifact.version;
     const versionArg = version === artifact.version ? undefined : version;
     const meta = await viewer.meta(artifact, versionArg);
     if (!meta) return c.text("not found", 404);

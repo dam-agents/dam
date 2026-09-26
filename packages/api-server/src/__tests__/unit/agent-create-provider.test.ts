@@ -109,7 +109,6 @@ function setup(rows: Connection[] = [provider]) {
     },
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
-    upsertChannel: async () => {},
     deleteChannelByType: async () => {},
     deleteSlackChannelByAgent: async () => false,
     deleteChannelsByAgentIds: async () => {},

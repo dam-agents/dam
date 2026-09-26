@@ -2,7 +2,7 @@ import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 import { ARTIFACT_BRIDGE_SHIM } from "./bridge-shim.js";
 
-export function escapeHtml(s: string): string {
+function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -138,7 +138,7 @@ const JSX_IMPORT_MAP = `{
   }
 }`;
 
-export function renderJsxInner(source: string, title: string): string {
+function renderJsxInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -204,7 +204,7 @@ try {
 </html>`;
 }
 
-export function renderMarkdownInner(source: string, title: string): string {
+function renderMarkdownInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -258,7 +258,7 @@ const HLJS_LANG_BY_EXT: Record<string, string> = {
   cs: "csharp",
 };
 
-export function renderCodeInner(
+function renderCodeInner(
   source: string,
   fileName: string,
   title: string,

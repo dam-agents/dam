@@ -63,6 +63,14 @@ export interface ArtifactAgentDownloadTicket {
   expiresSeconds: number;
 }
 
+interface ContentRef {
+  storageRef: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  version: number;
+}
+
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
@@ -72,16 +80,7 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
       internal?: boolean;
     },
   ): Promise<LibraryArtifact>;
-  resolveContentRef(
-    id: string,
-    version?: number,
-  ): Promise<{
-    storageRef: string;
-    fileName: string;
-    contentType: string;
-    sizeBytes: number;
-    version: number;
-  } | null>;
+  resolveContentRef(id: string, version?: number): Promise<ContentRef | null>;
   createAgentDownloadUrl(
     id: string,
     version?: number,
@@ -257,13 +256,7 @@ export function createArtifactLibraryService(
   async function resolveRef(
     id: string,
     version?: number,
-  ): Promise<{
-    storageRef: string;
-    fileName: string;
-    contentType: string;
-    sizeBytes: number;
-    version: number;
-  } | null> {
+  ): Promise<ContentRef | null> {
     const row = await repo.getArtifact(id, owner);
     if (!row) return null;
     if (version === undefined || version === row.version) {
@@ -344,19 +337,19 @@ export function createArtifactLibraryService(
       if (!ref) return null;
       const row = await repo.getArtifact(id, owner);
       const kind = (row?.kind ?? "binary") as ArtifactKind;
+      const binary = !isTextKind(kind);
       if (ref.sizeBytes > PREVIEW_MAX_BYTES) {
         return {
           kind,
           contentType: ref.contentType,
           fileName: ref.fileName,
           content: "",
-          binary: !isTextKind(kind),
+          binary,
           tooLarge: true,
         } satisfies ArtifactContent;
       }
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
-      const binary = !isTextKind(kind);
       return {
         kind,
         contentType: ref.contentType,
@@ -551,11 +544,10 @@ export function createArtifactLibraryService(
           ...(row.agentId ? { agentId: row.agentId } : {}),
         });
         return withViewers(advanced);
-      } else {
-        if (input.fileName !== undefined) patch.fileName = input.fileName;
-        if (input.contentType !== undefined)
-          patch.contentType = input.contentType;
       }
+      if (input.fileName !== undefined) patch.fileName = input.fileName;
+      if (input.contentType !== undefined)
+        patch.contentType = input.contentType;
 
       const updated = await repo.updateArtifact(id, owner, patch);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
