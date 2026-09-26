@@ -8,6 +8,7 @@ import {
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -24,7 +25,6 @@ import {
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { FilePreviewBody } from "./file-preview-body.js";
 import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
-import { RenderToggle } from "./render-toggle.js";
 
 interface Props {
   file: FileContent;
@@ -253,18 +253,21 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
+                className="text-sm"
               />
             )}
             {isMarkdown && (
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
+                className="text-sm"
               />
             )}
             {isHtml && (
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
+                className="text-sm"
               />
             )}
             {isRenderedPreview && (

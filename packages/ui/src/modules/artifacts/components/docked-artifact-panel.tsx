@@ -1,16 +1,15 @@
 import {
   Close,
-  Code,
   Download,
   Edit,
   Launch,
   Maximize,
   Save,
   Share,
-  View,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
@@ -200,14 +199,10 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
               </>
             )}
             {renderable && (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => setShowSource((s) => !s)}
-              >
-                {showSource ? <View size={14} /> : <Code size={14} />}
-                {showSource ? "Preview" : "Source"}
-              </Button>
+              <RenderToggle
+                rendered={!showSource}
+                onToggle={() => setShowSource((s) => !s)}
+              />
             )}
             {artifact && (
               <Button

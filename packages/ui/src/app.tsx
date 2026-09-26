@@ -20,6 +20,7 @@ import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import { isDarkTheme } from "./modules/platform/store/theme.js";
 import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -39,12 +40,10 @@ export default function App() {
 
   useEffect(() => {
     const apply = () => {
-      const t = useStore.getState().theme;
-      const isDark =
-        t === "dark" ||
-        (t === "system" &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.classList.toggle(
+        "dark",
+        isDarkTheme(useStore.getState().theme),
+      );
     };
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");

@@ -2,13 +2,10 @@ import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import type { TurnSummary } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import {
-  formatDurationMs,
-  formatTokens,
-  formatUsdCell,
-} from "../../metrics/lib/format.js";
+import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { useTurn } from "../api/queries.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";

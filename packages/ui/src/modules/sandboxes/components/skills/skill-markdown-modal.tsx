@@ -1,4 +1,4 @@
-import { Code, Download, Launch, View } from "@carbon/icons-react";
+import { Download, Launch } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
@@ -115,14 +116,10 @@ export function SkillMarkdownModal({
             </Button>
           )}
           {content && (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => setShowSource((s) => !s)}
-            >
-              {showSource ? <View size={14} /> : <Code size={14} />}
-              {showSource ? "Preview" : "Source"}
-            </Button>
+            <RenderToggle
+              rendered={!showSource}
+              onToggle={() => setShowSource((s) => !s)}
+            />
           )}
         </div>
 

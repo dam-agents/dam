@@ -29,7 +29,6 @@ export interface PermissionsSlice {
     outcome: PermissionOutcome,
   ) => void;
   dismissPendingPermission: (toolCallId: string) => void;
-  clearPendingPermissions: () => void;
 }
 
 export const createPermissionsSlice: StateCreator<
@@ -66,5 +65,4 @@ export const createPermissionsSlice: StateCreator<
       ),
     }));
   },
-  clearPendingPermissions: () => set({ pendingPermissions: [] }),
 });
