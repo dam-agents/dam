@@ -9,7 +9,6 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SteerOutcome } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const SESSION = "sess-1";
@@ -104,7 +103,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     steered,
     worker,
     async start() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
     },
     hold() {
       holdTurns = true;

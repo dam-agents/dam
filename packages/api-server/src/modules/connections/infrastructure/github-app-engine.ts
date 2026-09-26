@@ -49,7 +49,7 @@ export interface CreateGitHubAppEngineOptions {
   userAgent?: string;
 }
 
-export const GITHUB_APP_DEFAULT_TTL_SECONDS = 3600;
+const GITHUB_APP_DEFAULT_TTL_SECONDS = 3600;
 
 const JWT_LIFETIME_SECONDS = 600;
 const JWT_CLOCK_SKEW_SECONDS = 60;

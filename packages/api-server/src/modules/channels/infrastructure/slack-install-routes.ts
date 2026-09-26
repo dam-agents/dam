@@ -77,18 +77,22 @@ async function exchangeInstallCode(
   oauth: SlackInstallOAuthConfig,
   code: string,
 ): Promise<SlackOAuthAccessResponse> {
-  const res = await fetch("https://slack.com/api/oauth.v2.access", {
-    method: "POST",
-    signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: oauth.clientId,
-      client_secret: oauth.clientSecret,
-      redirect_uri: oauth.callbackUrl,
-    }),
-  });
-  return (await res.json()) as SlackOAuthAccessResponse;
+  try {
+    const res = await fetch("https://slack.com/api/oauth.v2.access", {
+      method: "POST",
+      signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: oauth.clientId,
+        client_secret: oauth.clientSecret,
+        redirect_uri: oauth.callbackUrl,
+      }),
+    });
+    return (await res.json()) as SlackOAuthAccessResponse;
+  } catch (err) {
+    return { ok: false, error: formatError(err) };
+  }
 }
 
 async function revokeToken(token: string): Promise<string | null> {
@@ -107,17 +111,6 @@ async function revokeToken(token: string): Promise<string | null> {
     return body.error ?? `http-${res.status}`;
   } catch (err) {
     return formatError(err);
-  }
-}
-
-async function exchangeOrError(
-  oauth: SlackInstallOAuthConfig,
-  code: string,
-): Promise<SlackOAuthAccessResponse> {
-  try {
-    return await exchangeInstallCode(oauth, code);
-  } catch (err) {
-    return { ok: false, error: formatError(err) };
   }
 }
 
@@ -181,7 +174,7 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
       return c.text("Invalid or expired install link. Ask for a new one.", 400);
     }
 
-    const result = await exchangeOrError(deps.oauth, code);
+    const result = await exchangeInstallCode(deps.oauth, code);
     const teamId = result.team?.id;
     if (!result.ok || !result.access_token || !teamId) {
       securityLog("error", "slack.install.failed", {

@@ -5,7 +5,6 @@ import {
 } from "../../modules/channels/infrastructure/agent-footer.js";
 import { configureLogger } from "../../core/logger.js";
 import { slackWorkerHarness } from "../helpers/slack-worker.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -98,7 +97,7 @@ describe("slack cross-agent history attribution", () => {
       },
     ]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.start("agent-1");
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",

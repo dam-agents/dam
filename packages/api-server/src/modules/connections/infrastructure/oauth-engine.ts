@@ -33,10 +33,6 @@ export class OAuthTokenEndpointError extends Error {
   }
 }
 
-function parseScopeList(raw: string | undefined): string[] {
-  return raw?.split(/[\s,]+/).filter(Boolean) ?? [];
-}
-
 function parseOAuthErrorCode(body: string): string | undefined {
   try {
     const json = JSON.parse(body) as { error?: unknown };
@@ -172,7 +168,7 @@ export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
     if (data.refresh_token) tokens.refreshToken = data.refresh_token;
     if (data.expires_in)
       tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
-    const grantedScopes = parseScopeList(data.scope);
+    const grantedScopes = data.scope?.split(/[\s,]+/).filter(Boolean) ?? [];
     if (grantedScopes.length > 0) tokens.scopes = grantedScopes;
     return tokens;
   }

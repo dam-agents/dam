@@ -555,10 +555,7 @@ export function createChannelManager(deps: {
       .pipe(ofType<SlackConnected>(EventType.SlackConnected))
       .subscribe((event) => {
         if (slackWorker && isLeader()) {
-          slackWorker.start(event.agentId, {
-            type: ChannelType.Slack,
-            slackChannelId: event.slackChannelId,
-          });
+          slackWorker.start(event.agentId);
         }
       }),
   );
@@ -609,7 +606,7 @@ export function createChannelManager(deps: {
         for (const channel of channels) {
           if (generationAtStart !== generation) return;
           if (channel.type === ChannelType.Slack && slackWorker) {
-            await slackWorker.start(agentId, channel);
+            await slackWorker.start(agentId);
           }
         }
       }

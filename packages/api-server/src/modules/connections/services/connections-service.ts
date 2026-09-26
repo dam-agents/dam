@@ -464,7 +464,7 @@ export function createConnectionsService(deps: {
           const conn = conns[i]!;
           if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
           if (conn.auth.kind !== "header") return;
-          const remembered = rememberedShareName(conn);
+          const remembered = rememberedInput(conn, SHARE_NAME_INPUT_KEY);
           if (remembered) view.name = remembered;
           const shareId = shareIdFromTokenHeader(conn.auth.headerName);
           if (!shareId) {
@@ -769,7 +769,7 @@ export function createConnectionsService(deps: {
           [SHARE_AGENT_INPUT_KEY]: share.agentId,
           ...(share.name ? { [SHARE_NAME_INPUT_KEY]: share.name } : {}),
         };
-        connectionName = sharedKbConnectionName(share.agentId);
+        connectionName = `kb-${share.agentId}`;
         const sharedKb = (await deps.repo.listByOwner(deps.ownerId)).filter(
           (c) => c.templateId === SHARED_KB_TEMPLATE_ID,
         );
@@ -800,7 +800,7 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      const id = input.id ?? newConnectionId();
+      const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
       const contributions = built.contributions.map((c): Contribution =>
         c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
@@ -1100,17 +1100,9 @@ function reviveFailureReason(err: unknown): string {
 const SHARE_NAME_INPUT_KEY = "sharedKbName";
 const SHARE_AGENT_INPUT_KEY = "sharedKbAgentId";
 
-function sharedKbConnectionName(agentId: string): string {
-  return `kb-${agentId}`;
-}
-
 function rememberedInput(conn: Connection, key: string): string | null {
   const value = conn.inputs[key];
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function rememberedShareName(conn: Connection): string | null {
-  return rememberedInput(conn, SHARE_NAME_INPUT_KEY);
 }
 
 function stripSecretsFromInputs(input: {
@@ -1151,10 +1143,6 @@ function isExpiredAuth(auth: {
     auth.expiresAt !== undefined &&
     auth.expiresAt < Math.floor(Date.now() / 1000)
   );
-}
-
-function newConnectionId(): string {
-  return `conn-${randomBytes(6).toString("hex")}`;
 }
 
 function connectionSecretPath(auth: Connection["auth"]): string | null {
