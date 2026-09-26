@@ -18,9 +18,8 @@ func googleWorkspaceChain() envoyHostChain {
 func TestChainScopes_DisjointPathScopesDoNotContestOneHeader(t *testing.T) {
 	c := googleWorkspaceChain()
 
-	assert.False(t, c.Contested(),
+	assert.False(t, c.ContestedAt("/gmail/"),
 		"Gmail and Calendar never apply to the same request, so neither shadows the other")
-	assert.False(t, c.ContestedAt("/gmail/"))
 	assert.False(t, c.ContestedAt("/calendar/"))
 }
 
@@ -120,5 +119,6 @@ func TestChainsFromSecrets_GoogleServicesOnOneHostBothSurvive(t *testing.T) {
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2,
 		"the second Google connection is no longer dropped as a duplicate header")
-	assert.False(t, chains[0].Contested())
+	assert.False(t, chains[0].ContestedAt("/gmail/"))
+	assert.False(t, chains[0].ContestedAt("/calendar/"))
 }
