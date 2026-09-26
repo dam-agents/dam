@@ -1,0 +1,7 @@
+# GNU tools a macOS host lacks, loaded there by .miserc.toml's auto_env and
+# locked in mise.macos.lock. image:pack's layers need GNU tar's owner, mtime and
+# sort options; the image builds' scripts need GNU coreutils and a modern bash.
+[tools]
+"conda:tar" = "1.35"
+"conda:coreutils" = "latest"
+"conda:bash" = "latest"
