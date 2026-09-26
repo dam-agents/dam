@@ -6,7 +6,7 @@ import { SessionMode, SessionType } from "api-server-api";
 import type { EventContext } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
-import { createInitializationPlugin } from "../../modules/runtime-channel/drivers/initialization-plugin.js";
+import { createInitializationPlugin } from "../../modules/runtime-channel/drivers/session-event-plugins.js";
 
 const ctx: EventContext = {
   eventId: "evt-1:1",

@@ -1,24 +1,17 @@
 export { composeRuntimeChannel, pluginStateRoot } from "./compose.js";
-export {
-  createArtifactTouchReporter,
-  type ArtifactTouchReporter,
-} from "./artifact-touch-reporter.js";
+export { createArtifactTouchReporter } from "./artifact-touch-reporter.js";
 export { createHarnessClient, type HarnessClient } from "./harness-client.js";
-export type { RuntimeChannelComposition } from "./compose.js";
-export type { RuntimeManifest } from "./manifest.js";
-
-export { createEnvPlugin, type EnvChange } from "./drivers/env-plugin.js";
 export {
-  createEnvStateStore,
-  type EnvStateStore,
-} from "./infrastructure/env-state-store.js";
+  loadManifest,
+  resolveDrivers,
+  type RuntimeManifest,
+} from "./manifest.js";
+
+export { createEnvPlugin } from "./drivers/env-plugin.js";
+export { createEnvStateStore } from "./infrastructure/env-state-store.js";
 export { createFilePlugin } from "./drivers/file-plugin.js";
 export { createMcpEntryPlugin } from "./drivers/mcp-entry-plugin.js";
 export {
   createSkillInstallPlugin,
-  type SkillInstallFn,
-} from "./drivers/skill-install-plugin.js";
-export {
   readSkillInstallBootState,
-  type SkillInstallBootState,
-} from "./infrastructure/skill-install-state-store.js";
+} from "./drivers/skill-install-plugin.js";

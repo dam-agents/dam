@@ -6,7 +6,10 @@ import type {
   DispatchContext,
   DriverBinding,
   DriverFailure,
+  EventHandler,
+  EventKind,
   KindHandler,
+  Plugin,
 } from "agent-runtime-api";
 import type { PluginRegistry } from "./infrastructure/plugin-registry.js";
 
@@ -16,29 +19,31 @@ export interface ContextEnv {
   log(msg: string): void;
 }
 
+interface DispatcherDeps {
+  drivers: Record<string, DriverBinding>;
+  registry: PluginRegistry;
+  env: ContextEnv;
+}
+
+function contextFor(env: ContextEnv, plugin: Plugin): DispatchContext {
+  const pluginStateDir = join(env.pluginStateRoot, plugin.name);
+  mkdirSync(pluginStateDir, { recursive: true });
+  return {
+    agentHome: env.agentHome,
+    pluginStateDir,
+    log: (msg) => env.log(`[${plugin.name}] ${msg}`),
+  };
+}
+
 export interface Dispatcher {
   apply(contributions: Contribution[]): Promise<DriverFailure[]>;
 }
 
-export function createDispatcher(deps: {
-  drivers: Record<string, DriverBinding>;
-  registry: PluginRegistry;
-  env: ContextEnv;
-}): Dispatcher {
+export function createDispatcher(deps: DispatcherDeps): Dispatcher {
   const handlers = new Map<
     ContributionKind,
     { handler: KindHandler; ctx: DispatchContext }
   >();
-  const ensuredDirs = new Set<string>();
-
-  function ensureStateDir(implName: string): string {
-    const dir = join(deps.env.pluginStateRoot, implName);
-    if (!ensuredDirs.has(dir)) {
-      mkdirSync(dir, { recursive: true });
-      ensuredDirs.add(dir);
-    }
-    return dir;
-  }
 
   for (const [kindRaw, binding] of Object.entries(deps.drivers)) {
     const kind = kindRaw as ContributionKind;
@@ -54,12 +59,7 @@ export function createDispatcher(deps: {
       );
     }
     const handler = plugin.bind(kind, binding);
-    const ctx: DispatchContext = {
-      agentHome: deps.env.agentHome,
-      pluginStateDir: ensureStateDir(plugin.name),
-      log: (msg) => deps.env.log(`[${plugin.name}] ${msg}`),
-    };
-    handlers.set(kind, { handler, ctx });
+    handlers.set(kind, { handler, ctx: contextFor(deps.env, plugin) });
   }
 
   return {
@@ -96,6 +96,46 @@ export function createDispatcher(deps: {
         }
       }
       return failures;
+    },
+  };
+}
+
+export interface EventDispatcher {
+  invoke(kind: EventKind, payload: unknown, eventId: string): Promise<void>;
+}
+
+export function createEventDispatcher(deps: DispatcherDeps): EventDispatcher {
+  const handlers = new Map<
+    string,
+    { handler: EventHandler; ctx: DispatchContext }
+  >();
+
+  for (const [kind, binding] of Object.entries(deps.drivers)) {
+    const plugin = deps.registry.get(binding.impl);
+    if (!plugin) {
+      throw new Error(
+        `runtime-manifest binds event kind "${kind}" to impl "${binding.impl}" but no plugin with that name is registered`,
+      );
+    }
+    if (!plugin.bindEvent) {
+      throw new Error(
+        `plugin "${binding.impl}" bound to event kind "${kind}" does not handle events (no bindEvent)`,
+      );
+    }
+    const ctx = contextFor(deps.env, plugin);
+    handlers.set(kind, { handler: plugin.bindEvent(kind, binding), ctx });
+  }
+
+  return {
+    async invoke(kind, payload, eventId) {
+      const entry = handlers.get(kind);
+      if (!entry) {
+        deps.env.log(
+          `[event-dispatcher] no handler for event kind "${kind}" — skipping`,
+        );
+        return;
+      }
+      await entry.handler(payload, { ...entry.ctx, eventId });
     },
   };
 }

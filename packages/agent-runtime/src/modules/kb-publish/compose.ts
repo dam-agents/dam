@@ -10,7 +10,7 @@ import {
 } from "agent-runtime-api/kb-snapshot";
 
 import { createFilesWatcher, type WatchHandle } from "../files-watch.js";
-import type { HarnessClient } from "../runtime-channel/harness-client.js";
+import type { HarnessClient } from "../runtime-channel/index.js";
 import { executeWork } from "./executor.js";
 import { planShare } from "./walker.js";
 

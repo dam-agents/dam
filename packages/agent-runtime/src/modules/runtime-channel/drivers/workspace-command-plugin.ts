@@ -1,12 +1,7 @@
 import { workspaceCommandEventPayload } from "agent-runtime-api";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type {
-  DriverBinding,
-  EventHandler,
-  Plugin,
-  WorkspaceCommandEventPayload,
-} from "agent-runtime-api";
+import type { DriverBinding, EventHandler, Plugin } from "agent-runtime-api";
 
 import { describeFailure, runOnce } from "../../../core/run-once.js";
 
