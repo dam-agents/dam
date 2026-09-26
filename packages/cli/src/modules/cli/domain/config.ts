@@ -18,11 +18,11 @@ export const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 export type ConfigKey = keyof Config;
 
-export const CONFIG_KEYS: readonly ConfigKey[] = Object.keys(
+const CONFIG_KEYS: readonly ConfigKey[] = Object.keys(
   configSchema.shape,
 ) as ConfigKey[];
 
-export function isConfigKey(input: string): input is ConfigKey {
+function isConfigKey(input: string): input is ConfigKey {
   return Object.prototype.hasOwnProperty.call(configSchema.shape, input);
 }
 

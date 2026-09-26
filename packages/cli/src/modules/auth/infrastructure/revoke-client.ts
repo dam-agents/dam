@@ -1,5 +1,6 @@
 import { err, ok, type Result } from "../../../result.js";
 import type { RevokeError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface RevokeClient {
   revoke(input: {
@@ -9,19 +10,9 @@ export interface RevokeClient {
   }): Promise<Result<void, RevokeError>>;
 }
 
-export interface HttpRevokeClientOpts {
-  timeoutMs?: number;
-}
+const TIMEOUT_MS = 10_000;
 
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-export function createRevokeClient(
-  opts: HttpRevokeClientOpts = {},
-): RevokeClient {
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-
+export function createRevokeClient(): RevokeClient {
   return {
     async revoke({ revocationEndpoint, clientId, refreshToken }) {
       const body = new URLSearchParams({
@@ -39,7 +30,7 @@ export function createRevokeClient(
             Accept: "application/json",
           },
           body,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (e) {
         return err({ kind: "revoke-failed", reason: errorMessage(e) });

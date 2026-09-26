@@ -44,7 +44,7 @@ const MODE_BINS: Record<LaunchMode, readonly string[]> = {
   zed: ["zed"],
 };
 
-export function inferMode(base: string): LaunchMode | undefined {
+function inferMode(base: string): LaunchMode | undefined {
   return MODES.find((m) => MODE_BINS[m].includes(base));
 }
 

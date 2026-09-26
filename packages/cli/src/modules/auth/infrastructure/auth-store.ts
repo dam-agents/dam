@@ -16,6 +16,7 @@ import type {
   AuthStoreWriteError,
   MalformedAuthStoreError,
 } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export type HostUrl = string;
 
@@ -50,10 +51,6 @@ const fileSchema = z
   .passthrough();
 
 const FILE_MODE = 0o600;
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 function errnoCode(e: unknown): string | undefined {
   return e instanceof Error && "code" in e && typeof e.code === "string"

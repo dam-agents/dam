@@ -5,7 +5,11 @@ import type {
   TransportError,
 } from "../domain/errors.js";
 import type { AgentView } from "../domain/agent-view.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
@@ -28,7 +32,7 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
     e: unknown,
     ref: string,
   ): Result<never, TransportError | AuthRequiredError | NotFoundError> {
-    if ((e as any)?.data?.code === "NOT_FOUND")
+    if (trpcErrorCode(e) === "NOT_FOUND")
       return err({ kind: "not-found", ref, via: "id" });
     return classifyTrpcError(e);
   }
@@ -41,7 +45,7 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       try {
         return ok(await deps.trpc.agents.get.query({ id }));
       } catch (e) {
-        if ((e as any)?.data?.code === "NOT_FOUND") return ok(null);
+        if (trpcErrorCode(e) === "NOT_FOUND") return ok(null);
         return classifyTrpcError(e);
       }
     },

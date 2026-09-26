@@ -6,7 +6,7 @@ export const VSCODE_REMOTE_HOSTS = [
   "vscode.download.prss.microsoft.com",
 ] as const;
 
-export function hostsToSeed(
+function hostsToSeed(
   existing: readonly EgressRuleView[],
   wanted: readonly string[],
 ): string[] {

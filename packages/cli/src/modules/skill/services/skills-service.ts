@@ -6,7 +6,11 @@ import type {
   SkillSource,
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AgentNotReachableError,
@@ -19,6 +23,7 @@ import type {
   SourceNotFoundError,
   TransportError,
 } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface SkillsService {
   listSources(
@@ -115,11 +120,11 @@ export interface SkillsService {
 function classifyWakeError(
   e: unknown,
 ): Result<never, TransportError | AuthRequiredError | AgentNotReachableError> {
-  const code = (e as { data?: { code?: string } })?.data?.code;
+  const code = trpcErrorCode(e);
   if (code === "PRECONDITION_FAILED" || code === "INTERNAL_SERVER_ERROR") {
     return err({
       kind: "agent-not-reachable",
-      reason: e instanceof Error ? e.message : String(e),
+      reason: errorMessage(e),
     });
   }
   return classifyTrpcError(e);
@@ -135,7 +140,7 @@ function classifyPublishError(
   | PublishNeedsConnectionError
   | PublishFailedError
 > {
-  const msg = e instanceof Error ? e.message : String(e);
+  const msg = errorMessage(e);
 
   const cta = msg.match(/platform-cta:(\S+)/)?.[1];
   if (cta !== undefined) {
@@ -146,7 +151,7 @@ function classifyPublishError(
     });
   }
 
-  const code = (e as { data?: { code?: string } })?.data?.code;
+  const code = trpcErrorCode(e);
   if (
     code === "PRECONDITION_FAILED" ||
     (code === "INTERNAL_SERVER_ERROR" && /could not be made ready/.test(msg))
@@ -173,7 +178,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
         const created = await deps.trpc.skills.sources.create.mutate(input);
         return ok(created);
       } catch (e) {
-        if ((e as { data?: { code?: string } })?.data?.code === "CONFLICT") {
+        if (trpcErrorCode(e) === "CONFLICT") {
           return err({ kind: "source-exists" });
         }
         return classifyTrpcError(e);
@@ -189,7 +194,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
         await deps.trpc.skills.sources.refresh.mutate({ id });
         return ok(undefined);
       } catch (e) {
-        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
+        if (trpcErrorCode(e) === "NOT_FOUND") {
           return err({ kind: "source-not-found" });
         }
         return classifyTrpcError(e);
@@ -204,7 +209,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
         return ok(skills);
       } catch (e) {
         if (agentId === undefined) {
-          const code = (e as { data?: { code?: string } })?.data?.code;
+          const code = trpcErrorCode(e);
           if (code === "PRECONDITION_FAILED")
             return err({ kind: "private-source-needs-agent" });
           return classifyTrpcError(e);
@@ -218,10 +223,10 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
             .trim();
           return err({ kind: "source-needs-connection", message, cta });
         }
-        if ((e as { data?: { code?: string } })?.data?.code === "FORBIDDEN") {
+        if (trpcErrorCode(e) === "FORBIDDEN") {
           return err({
             kind: "source-needs-connection",
-            message: e instanceof Error ? e.message : String(e),
+            message: errorMessage(e),
           });
         }
         return classifyWakeError(e);

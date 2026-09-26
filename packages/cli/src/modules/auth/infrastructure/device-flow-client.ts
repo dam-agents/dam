@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { DeviceFlowError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
-export const DEVICE_FLOW_SCOPE = "openid profile email offline_access";
+const DEVICE_FLOW_SCOPE = "openid profile email offline_access";
 
 export interface DeviceAuthorizationResponse {
   deviceCode: string;
@@ -21,9 +22,7 @@ export interface DeviceFlowClient {
   }): Promise<Result<DeviceAuthorizationResponse, DeviceFlowError>>;
 }
 
-export interface HttpDeviceFlowClientOpts {
-  timeoutMs?: number;
-}
+const TIMEOUT_MS = 10_000;
 
 const deviceAuthorizationSchema = z.object({
   device_code: z.string().min(1),
@@ -34,15 +33,7 @@ const deviceAuthorizationSchema = z.object({
   interval: z.number().int().positive().default(5),
 });
 
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-export function createDeviceFlowClient(
-  opts: HttpDeviceFlowClientOpts = {},
-): DeviceFlowClient {
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-
+export function createDeviceFlowClient(): DeviceFlowClient {
   return {
     async authorize({ deviceAuthorizationEndpoint, clientId, scope }) {
       const body = new URLSearchParams({
@@ -59,7 +50,7 @@ export function createDeviceFlowClient(
             Accept: "application/json",
           },
           body,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (e) {
         return err({

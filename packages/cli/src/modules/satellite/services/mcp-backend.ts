@@ -8,6 +8,7 @@ import {
   type SatelliteTool,
 } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A Satellite backed by an MCP server the user names
@@ -154,7 +155,7 @@ export async function createMcpBackend(
       } catch (err) {
         if (controller.signal.aborted)
           return { status: "cancelled", output: "", truncated: false };
-        const reason = err instanceof Error ? err.message : String(err);
+        const reason = errorMessage(err);
         return {
           status: "interrupted",
           reason: reason.slice(0, 280),

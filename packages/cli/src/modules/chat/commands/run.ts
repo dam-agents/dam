@@ -15,6 +15,7 @@ import {
   type RunService,
 } from "../services/run-service.js";
 import { exitCodeFor, printError } from "./chat.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 const END_TURN = "end_turn";
 
@@ -32,7 +33,7 @@ export function resolvePrompt(opts: {
     return ok(opts.readFile(opts.promptFile));
   } catch (e) {
     return err(
-      `could not read prompt file '${opts.promptFile}': ${e instanceof Error ? e.message : String(e)}`,
+      `could not read prompt file '${opts.promptFile}': ${errorMessage(e)}`,
     );
   }
 }
