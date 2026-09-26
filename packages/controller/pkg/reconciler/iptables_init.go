@@ -56,9 +56,9 @@ echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
 		},
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:                &runAsRoot,
-			RunAsNonRoot:             ptrBool(false),
-			AllowPrivilegeEscalation: ptrBool(false),
-			ReadOnlyRootFilesystem:   ptrBool(true),
+			RunAsNonRoot:             new(false),
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},

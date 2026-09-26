@@ -35,13 +35,11 @@ func BuildExtAuthzService(agentName string, cfg *config.Config) *corev1.Service 
 				Port:        extAuthzPort,
 				TargetPort:  intstr.FromString("ext-authz"),
 				Protocol:    corev1.ProtocolTCP,
-				AppProtocol: stringPtr("grpc"),
+				AppProtocol: new("grpc"),
 			}},
 		},
 	}
 }
-
-func stringPtr(s string) *string { return &s }
 
 func (r *AgentReconciler) applyExtAuthzService(ctx context.Context, desired *corev1.Service) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {

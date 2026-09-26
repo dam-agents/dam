@@ -23,7 +23,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/ptr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -75,7 +74,7 @@ func expandableDefaultClass(t *testing.T, r *AgentReconciler, expands bool) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta:           metav1.ObjectMeta{Name: "standard", Annotations: map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}},
 		Provisioner:          "example.com/block",
-		AllowVolumeExpansion: ptr.To(expands),
+		AllowVolumeExpansion: new(expands),
 	}
 	_, err := r.client.StorageV1().StorageClasses().Create(context.Background(), sc, metav1.CreateOptions{})
 	require.NoError(t, err)

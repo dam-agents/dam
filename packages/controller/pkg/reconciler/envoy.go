@@ -769,15 +769,13 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: EnvoyLeafSecretName(instanceName),
-					Optional:   ptrBool(false),
+					Optional:   new(false),
 				},
 			},
 		})
 	}
 	return volumes
 }
-
-func ptrBool(b bool) *bool { return &b }
 
 const envoyBootstrapTemplateRev = "v17-per-connection-routes"
 
@@ -855,8 +853,8 @@ func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Se
 		},
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities:           &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			ReadOnlyRootFilesystem: ptrBool(true),
-			RunAsNonRoot:           ptrBool(true),
+			ReadOnlyRootFilesystem: new(true),
+			RunAsNonRoot:           new(true),
 		},
 	}
 	c.Env = gatewayOTelEnv(instanceName, cfg)

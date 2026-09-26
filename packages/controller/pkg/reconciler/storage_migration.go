@@ -167,7 +167,7 @@ func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) erro
 			Namespace: m.config.Namespace,
 			Labels:    map[string]string{"agent-platform.ai/managed-by": "platform-controller"},
 		},
-		AutomountServiceAccountToken: ptrBool(false),
+		AutomountServiceAccountToken: new(false),
 	}
 	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("creating migration service account: %w", err)
@@ -399,8 +399,8 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 		}
 		slog.Info("storage migration: gating agent for migration", "agent", name, "wasRunning", wasRunning)
 		return m.patchAgentAnnotations(ctx, name, map[string]*string{
-			annStorageMigration:           ptrString("migrating"),
-			annStorageMigrationWasRunning: ptrString(fmt.Sprintf("%t", wasRunning)),
+			annStorageMigration:           new("migrating"),
+			annStorageMigrationWasRunning: new(fmt.Sprintf("%t", wasRunning)),
 		})
 	}
 
@@ -547,7 +547,7 @@ func (m *StorageMigrationManager) flip(ctx context.Context, agent *apiv1.Agent, 
 
 	for _, pair := range pairs {
 		if err := patchPVCLabels(ctx, m.client, m.config.Namespace, pair.target, map[string]*string{
-			LabelAgent:        ptrString(name),
+			LabelAgent:        new(name),
 			LabelMigrationFor: nil,
 		}); err != nil {
 			return fmt.Errorf("labeling target %s: %w", pair.target, err)
@@ -555,7 +555,7 @@ func (m *StorageMigrationManager) flip(ctx context.Context, agent *apiv1.Agent, 
 		if err := patchPVCLabels(ctx, m.client, m.config.Namespace, pair.old, map[string]*string{
 			LabelAgent:               nil,
 			LabelMount:               nil,
-			LabelMigrationSuperseded: ptrString(name),
+			LabelMigrationSuperseded: new(name),
 		}); err != nil {
 			return fmt.Errorf("stripping source %s: %w", pair.old, err)
 		}
@@ -602,7 +602,7 @@ func (m *StorageMigrationManager) finishFlip(ctx context.Context, agent *apiv1.A
 		annStorageMigrationWasRunning: nil,
 	}
 	if agent.Annotations[annStorageMigrationWasRunning] == "true" {
-		patch[annLastActivity] = ptrString(m.now().UTC().Format(time.RFC3339))
+		patch[annLastActivity] = new(m.now().UTC().Format(time.RFC3339))
 	}
 	if err := m.patchAgentAnnotations(ctx, name, patch); err != nil {
 		return err
@@ -656,8 +656,6 @@ func patchPVCLabels(ctx context.Context, client kubernetes.Interface, namespace,
 	}
 	return err
 }
-
-func ptrString(s string) *string { return &s }
 
 func jobSucceeded(job *batchv1.Job) bool {
 	for _, c := range job.Status.Conditions {
@@ -902,8 +900,8 @@ copy_verify() {
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
 					ServiceAccountName:           migrationServiceAccount,
-					AutomountServiceAccountToken: ptrBool(false),
-					EnableServiceLinks:           ptrBool(false),
+					AutomountServiceAccountToken: new(false),
+					EnableServiceLinks:           new(false),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser: &rootUID,
 					},

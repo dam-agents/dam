@@ -145,7 +145,7 @@ func TestReconcile_PendingWhenGatewayNotReady(t *testing.T) {
 func rolloutSS(name string, generation, observedGen int64, updateRev string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents", Generation: generation},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 		Status:     appsv1.StatefulSetStatus{ObservedGeneration: observedGen, UpdateRevision: updateRev},
 	}
 }
@@ -307,11 +307,11 @@ func TestReconcile_PreservesHibernation(t *testing.T) {
 	}
 	existingAgent := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	existingGW := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	r, client := setupReconciler(t, agent, existingAgent, existingGW)
 
@@ -328,7 +328,7 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 	agent := agentCR()
 	existingSS := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	r, client := setupReconciler(t, agent, existingSS)
 
@@ -564,7 +564,7 @@ func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.
 	agent := agentCR()
 	existingGateway := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 	}
 	r, client := setupReconciler(t, agent, existingGateway)
 
@@ -640,8 +640,6 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
 	assert.NoError(t, err, "live agent PVC must be retained")
 }
-
-func int32Ptr(i int32) *int32 { return &i }
 
 func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
 	agent := agentCR()

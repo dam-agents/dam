@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -462,7 +461,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-			DefaultMode: ptr.To[int32](0o400),
+			DefaultMode: new(int32(0o400)),
 			Sources: []corev1.VolumeProjection{
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: name}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "tls.crt", Path: "tls.crt"}, {Key: "tls.key", Path: "tls.key"}}}},
@@ -497,10 +496,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
-					TerminationGracePeriodSeconds: ptr.To(int64(vmRunnerTerminationGraceSeconds)),
+					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
-					AutomountServiceAccountToken:  ptrBool(false),
-					EnableServiceLinks:            ptrBool(false),
+					AutomountServiceAccountToken:  new(false),
+					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
 					ImagePullSecrets:              spec.ImagePullSecrets,
