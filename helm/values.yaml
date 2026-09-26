@@ -572,7 +572,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.39
+  image: docker.io/chrislusf/seaweedfs:4.47
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -603,7 +603,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.160.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.161.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -636,7 +636,7 @@ clickstack:
         repository: quay.io/dam-agents/hyperdx
         tag: "2.35.0"
       waitForMongodb:
-        image: "quay.io/dam-agents/busybox:1.37.0"
+        image: "quay.io/dam-agents/busybox:1.38.0"
 
   clickhouse:
     # Without an explicit image the operator injects its built-in default
@@ -1447,7 +1447,7 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -1457,7 +1457,7 @@ controller:
         # Hardened curl image for the probe. The probe is a `sh` loop, so it
         # needs a shell — use the `-builder` variant (the distroless curl image
         # has no shell). Any image works as long as it provides /bin/sh + curl.
-        image: registry.access.redhat.com/hi/curl:8.20-builder
+        image: registry.access.redhat.com/hi/curl:8.22-builder
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
