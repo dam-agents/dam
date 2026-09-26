@@ -17,9 +17,22 @@ interface TokenResponse {
   expires_in: number;
 }
 
-const keycloakLoginLockPort = Number(
-  process.env.PLATFORM_E2E_LOGIN_LOCK_PORT ?? 47_319,
-);
+const defaultKeycloakLoginLockPort = 47_319;
+
+function keycloakLoginLockPortFromEnv(): number {
+  const raw = process.env.PLATFORM_E2E_LOGIN_LOCK_PORT;
+  if (raw === undefined || raw.trim() === "")
+    return defaultKeycloakLoginLockPort;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(
+      `PLATFORM_E2E_LOGIN_LOCK_PORT must be a TCP port from 1 to 65535, got "${raw}"`,
+    );
+  }
+  return port;
+}
+
+const keycloakLoginLockPort = keycloakLoginLockPortFromEnv();
 const keycloakLoginLockPollMs = 50;
 const keycloakLoginLockWaitMs = 120_000;
 const passwordGrantTimeoutMs = 30_000;
@@ -45,9 +58,7 @@ function listenOnLoginLockPort(): Promise<Server | undefined> {
   });
 }
 
-export async function oneKeycloakLoginAtATime<T>(
-  login: () => Promise<T>,
-): Promise<T> {
+async function oneKeycloakLoginAtATime<T>(login: () => Promise<T>): Promise<T> {
   const deadline = Date.now() + keycloakLoginLockWaitMs;
   let lock = await listenOnLoginLockPort();
   while (!lock) {
@@ -93,6 +104,18 @@ export async function getAccessToken(
   return data.access_token;
 }
 
+export async function submitKeycloakLoginForm(page: Page): Promise<void> {
+  await oneKeycloakLoginAtATime(async () => {
+    await page.locator("#username").fill(testUser.username);
+    await page.locator("#password").fill(testUser.password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(
+      (url) =>
+        url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
+    );
+  });
+}
+
 export async function acceptTerms(api: ApiClient): Promise<void> {
   const current = await api.terms.current.query();
   await api.terms.accept.mutate({ version: current.version });
@@ -110,15 +133,7 @@ export async function loginViaUi(page: Page): Promise<void> {
   await expect(usernameField.or(termsButton).or(appSidebar)).toBeVisible();
 
   if (await usernameField.isVisible()) {
-    await oneKeycloakLoginAtATime(async () => {
-      await usernameField.fill(testUser.username);
-      await page.locator("#password").fill(testUser.password);
-      await page.getByRole("button", { name: /sign in/i }).click();
-      await page.waitForURL(
-        (url) =>
-          url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
-      );
-    });
+    await submitKeycloakLoginForm(page);
     await expect(termsButton.or(appSidebar)).toBeVisible();
   }
 
