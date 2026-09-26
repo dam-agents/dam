@@ -222,9 +222,9 @@ prepull_images() {
   local images
   images=$(
     {
-      for chart in istiod cni ztunnel; do
-        helm template "$chart" "istio/$chart" --version "$ISTIO_VERSION" --set profile=ambient
-      done
+      helm template istiod istio/istiod --version "$ISTIO_VERSION" --set profile=ambient
+      helm template istio-cni istio/cni --version "$ISTIO_VERSION" --set profile=ambient
+      helm template ztunnel istio/ztunnel --version "$ISTIO_VERSION"
       helm template platform helm -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
     } | yq -r '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' |
       grep -v '^---$' | grep -vE '(^|/)platform-' | sort -u
@@ -246,7 +246,112 @@ export -f pull_one
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
-# 1d. Traefik app entrypoint — on lima this rides the provision script's
+# 1d. Load images into k3s (built at the top, or out-of-band in CI).
+# SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
+# already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
+# does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
+# still have to be imported into k3s's containerd.
+if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
+  echo "Skipping image load (SKIP_IMAGE_LOAD set)"
+  NO_RESTART=true
+else
+  # Build (and below, load) only the templates enabled in the effective rendered
+  # values (--set/--helm-values honored). Capture first so a failed render aborts
+  # rather than silently building none. Templates are one ConfigMap keyed by
+  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry. Enabled built-in
+  # kits whose image is a local `platform-*` tag join the list as "kit:<id>"; a
+  # kit on a published image is left for the node to pull.
+  RENDERED=$(helm template platform helm \
+      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
+  AGENTS_RENDERED=$(printf '%s\n' "$RENDERED" \
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-harness-templates$"))
+             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
+  KITS_RENDERED=$(printf '%s\n' "$RENDERED" \
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-starter-kits$"))
+             | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
+             | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
+  AGENT_TASKS=()
+  VM_IMAGES=()
+  SEEN_COMPONENTS=()
+  while IFS=$'\t' read -r name image; do
+    { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
+    name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
+    # Templates can share one image (presets, e.g. adaevolve/evox over the
+    # skydiscover image, or k-search-local over k-search), so resolve the
+    # build component from the image repository basename
+    # ("platform-<component>" locally), not the template key — and dedup so
+    # a shared image builds and loads once.
+    comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+    # The backend is chosen per agent at create, not declared by a template, so
+    # any agent image may be asked to boot as a microVM — every one of them,
+    # e2e fixtures included, is staged for the VM runners when the install
+    # supports them, once per image.
+    if [ -n "${VIRT_ENABLED:-}" ] && { [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; }; then
+      case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac
+    fi
+    case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+    SEEN_COMPONENTS+=("$comp")
+    if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
+      AGENT_TASKS+=("$comp")
+    else
+      echo "WARN: no build task for '$name' ($image) — skipping" >&2
+    fi
+  done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
+  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
+  # Like the agents', off Linux its build runs in the VM, so it waits for one.
+  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ] && mise run //packages/vm-runner:oci
+
+  COMPONENTS=(controller api-server ui keycloak)
+  [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
+  # CI brings the cluster up while this run's images are still building, and
+  # e2e:ci-images pulls them in the background. Each batch it has finished is
+  # imported while the rest are still on their way, so only the last to land
+  # is imported after the wait.
+  load_images() {
+    local c remaining=("$@") left tars=()
+    if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+      echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
+      while [ ${#remaining[@]} -gt 0 ]; do
+        left=() tars=()
+        for c in "${remaining[@]}"; do
+          if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
+            tars+=("$(.mise/tasks/image/resolve tar-path "$c")")
+          else
+            left+=("$c")
+          fi
+        done
+        if [ ${#tars[@]} -gt 0 ]; then
+          echo "Loading into k3s: ${tars[*]}"
+          mise run cluster:import -- "${tars[@]}"
+        fi
+        tars=()
+        remaining=(${left[@]+"${left[@]}"})
+        if [ ${#remaining[@]} -gt 0 ] && [ -s "$CI_IMAGES_STATUS" ]; then
+          [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; return 1; }
+          break
+        fi
+        [ ${#remaining[@]} -eq 0 ] || sleep 2
+      done
+    fi
+    [ ${#remaining[@]} -gt 0 ] || return 0
+    echo "Loading images into k3s: ${remaining[*]}"
+    for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
+    mise run cluster:import -- "${tars[@]}"
+  }
+  # Both loads run beside the mesh install below, which spends most of its time
+  # waiting, and the chart install waits only for the platform images: no pod
+  # the chart starts runs an agent image. The mock's is the largest image the
+  # e2e cluster loads, and importing it beside Keycloak's first boot slowed
+  # that boot down.
+  load_images "${COMPONENTS[@]}" > >(sed -u 's/^/[images] /') 2>&1 &
+  IMAGE_LOAD_PID=$!
+  if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
+    load_images "${AGENT_TASKS[@]}" > >(sed -u 's/^/[agent images] /') 2>&1 &
+    AGENT_LOAD_PID=$!
+  fi
+fi
+
+# 1e. Traefik app entrypoint — on lima this rides the provision script's
 # k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
 # so the app port silently doesn't exist. HelmChartConfig via kubectl apply
 # is idempotent and works on both. The port follows `--set=port=…` so the
@@ -544,104 +649,10 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# 3. Load images into k3s (built at the top, or out-of-band in CI).
-# SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
-# already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
-# does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
-# still have to be imported into k3s's containerd.
-if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
-  echo "Skipping image load (SKIP_IMAGE_LOAD set)"
-  NO_RESTART=true
-else
-  # Build (and below, load) only the templates enabled in the effective rendered
-  # values (--set/--helm-values honored). Capture first so a failed render aborts
-  # rather than silently building none. Templates are one ConfigMap keyed by
-  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry. Enabled built-in
-  # kits whose image is a local `platform-*` tag join the list as "kit:<id>"; a
-  # kit on a published image is left for the node to pull.
-  RENDERED=$(helm template platform helm \
-      -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
-  AGENTS_RENDERED=$(printf '%s\n' "$RENDERED" \
-    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-harness-templates$"))
-             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
-  KITS_RENDERED=$(printf '%s\n' "$RENDERED" \
-    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-starter-kits$"))
-             | .data | to_entries | .[] | select(.key | test("__kit.yaml$")) | .value | from_yaml
-             | select(.image != null) | select(.image.ref | test("^platform-")) | "kit:" + .id + "\t" + .image.ref')
-  AGENT_TASKS=()
-  VM_IMAGES=()
-  SEEN_COMPONENTS=()
-  while IFS=$'\t' read -r name image; do
-    { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
-    name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
-    # Templates can share one image (presets, e.g. adaevolve/evox over the
-    # skydiscover image, or k-search-local over k-search), so resolve the
-    # build component from the image repository basename
-    # ("platform-<component>" locally), not the template key — and dedup so
-    # a shared image builds and loads once.
-    comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
-    # The backend is chosen per agent at create, not declared by a template, so
-    # any agent image may be asked to boot as a microVM — every one of them,
-    # e2e fixtures included, is staged for the VM runners when the install
-    # supports them, once per image.
-    if [ -n "${VIRT_ENABLED:-}" ] && { [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; }; then
-      case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac
-    fi
-    case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
-    SEEN_COMPONENTS+=("$comp")
-    if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
-      AGENT_TASKS+=("$comp")
-    else
-      echo "WARN: no build task for '$name' ($image) — skipping" >&2
-    fi
-  done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
-  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
-  # Like the agents', off Linux its build runs in the VM, so it waits for one.
-  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ] && mise run //packages/vm-runner:oci
-
-  COMPONENTS=(controller api-server ui keycloak)
-  [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
-  # CI brings the cluster up while this run's images are still building, and
-  # e2e:ci-images pulls them in the background; this is where they are first
-  # needed. Each one it has finished is imported while the rest are still on
-  # their way, so only the last to land is imported after the wait.
-  load_images() {
-    local c remaining=("$@") left tars=()
-    if [ -n "${CI_IMAGES_STATUS:-}" ]; then
-      echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
-      while [ ${#remaining[@]} -gt 0 ]; do
-        left=()
-        for c in "${remaining[@]}"; do
-          if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
-            echo "Loading $c into k3s..."
-            mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
-          else
-            left+=("$c")
-          fi
-        done
-        remaining=(${left[@]+"${left[@]}"})
-        if [ ${#remaining[@]} -gt 0 ] && [ -s "$CI_IMAGES_STATUS" ]; then
-          [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; return 1; }
-          break
-        fi
-        [ ${#remaining[@]} -eq 0 ] || sleep 2
-      done
-    fi
-    [ ${#remaining[@]} -gt 0 ] || return 0
-    echo "Loading images into k3s: ${remaining[*]}"
-    for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-    mise run cluster:import -- "${tars[@]}"
-  }
-  load_images "${COMPONENTS[@]}"
-  # No pod the chart starts runs an agent image, so those load beside the
-  # install below. The mock's is the largest image the e2e cluster loads.
-  if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
-    load_images "${AGENT_TASKS[@]}" > >(sed -u 's/^/[agent images] /') 2>&1 &
-    AGENT_LOAD_PID=$!
-  fi
-fi
-
 # 4. Helm install or upgrade.
+if [ -n "${IMAGE_LOAD_PID:-}" ]; then
+  wait "$IMAGE_LOAD_PID" || { echo "FATAL: loading the platform images failed" >&2; exit 1; }
+fi
 echo "Installing/upgrading Platform chart..."
 # Helm never upgrades the chart's crds/ on an existing release — on
 # this single-env local cluster the freeze has no value, so apply them directly.
