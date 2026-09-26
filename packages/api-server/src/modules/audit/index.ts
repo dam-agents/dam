@@ -1,1 +1,1 @@
-export { composeAuditModule, type AuditModule } from "./compose.js";
+export { composeAuditModule } from "./compose.js";

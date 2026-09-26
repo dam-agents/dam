@@ -54,12 +54,9 @@ import type { TemplatesRepository } from "../../modules/templates/infrastructure
 import type { StarterKitsRepository } from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
 import type { Config } from "../../config.js";
-import type {
-  createAuth,
-  startJwksWarmup,
-  SurfaceAttribution,
-} from "./admission/index.js";
-import type { SessionPresence } from "./agent-proxies/index.js";
+import type { createAuth, SurfaceAttribution } from "./admission/auth.js";
+import type { startJwksWarmup } from "./admission/jwks-warmup.js";
+import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 export type { ApiVariables };

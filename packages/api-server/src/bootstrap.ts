@@ -139,10 +139,10 @@ import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
   createAuth,
-  startJwksWarmup,
   type SurfaceAttribution,
-} from "./apps/api-server/admission/index.js";
-import { createSessionPresence } from "./apps/api-server/agent-proxies/index.js";
+} from "./apps/api-server/admission/auth.js";
+import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
+import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
@@ -218,7 +218,6 @@ import {
   createAgentApiPodClient,
 } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createXactLock } from "./core/xact-lock.js";
@@ -1540,4 +1539,21 @@ export async function bootstrap() {
   };
 
   return { apiServerDeps, harnessDeps, extAuthzDeps, cleanup };
+}
+
+function loadTrustedHosts(path: string): readonly string[] {
+  if (!path) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    process.stderr.write(
+      `trusted-hosts: ${path}: ${err instanceof Error ? err.message : err}\n`,
+    );
+    return [];
+  }
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
 }

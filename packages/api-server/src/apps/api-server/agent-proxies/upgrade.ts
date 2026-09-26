@@ -22,12 +22,21 @@ import {
   checkWsTermsAccepted,
   type TermsDenialKind,
 } from "../admission/terms.js";
-import { upgradeDenial } from "./mappers.js";
 
 export type RelayDenialKind = "not-owner" | "not-permitted";
 
 export type RelayAdmissionDenialKind =
   AuthDenialKind | TermsDenialKind | RelayDenialKind;
+
+const upgradeDenial: Record<RelayAdmissionDenialKind, string> = {
+  "missing-token": "401 Unauthorized",
+  unauthorized: "401 Unauthorized",
+  forbidden: "403 Forbidden",
+  "auth-unavailable": "503 Service Unavailable",
+  "terms-stale": "412 Precondition Failed",
+  "not-owner": "404 Not Found",
+  "not-permitted": "403 Forbidden",
+};
 
 export type RelayAdmissionResult =
   | { ok: true; user: UserIdentity; surface: string }
