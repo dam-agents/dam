@@ -10,6 +10,8 @@ export interface TemplatesRepository {
   readSpec(id: string): Promise<{ spec: TemplateSpec } | null>;
 }
 
+export type ReadTemplateSpec = TemplatesRepository["readSpec"];
+
 export function createTemplatesRepository(dir: string): TemplatesRepository {
   const byId = loadTemplates(dir);
   return {

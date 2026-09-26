@@ -12,3 +12,4 @@ export {
   UnknownExperimentError,
 } from "./services/experiments-service.js";
 export type { ExperimentsRepository } from "./infrastructure/experiments-repository.js";
+export type { ExperimentPinPort } from "./services/reap-follow-up.js";

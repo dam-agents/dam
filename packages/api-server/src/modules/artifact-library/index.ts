@@ -3,6 +3,7 @@ export {
   composeShareViewer,
   composeArtifactExpirySweeper,
 } from "./compose.js";
+export type { ArtifactLibraryFor } from "./compose.js";
 export { createAgentApiPodClient } from "./infrastructure/agent-api-pod-client.js";
 export type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 export type { ShareViewerService } from "./services/share-viewer-service.js";

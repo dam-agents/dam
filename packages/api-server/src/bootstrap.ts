@@ -1,15 +1,23 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import type { TriggerEventPayload } from "agent-runtime-api";
-import { createApi } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAgentInformer,
+  createApi,
+  createK8sClient,
+  createLeaseApi,
+  podBaseUrl,
+} from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
+  EXPERIMENT_ACTIVE_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
   composePublicAgentPage,
+  connectionGrantProvisioner,
   createAgentsRepository,
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
@@ -40,7 +48,6 @@ import {
   listKbShareAgentIds,
   startKbShareSync,
 } from "./modules/kb-shares/index.js";
-import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { retryWhileUnreachable } from "./core/retry-unreachable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
@@ -149,13 +156,17 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  composeArtifactExpirySweeper,
+  composeArtifactLibraryForOwner,
   composeShareAuth,
   composeShareRenderTokens,
   composeShareViewer,
+  createAgentApiPodClient,
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
@@ -174,7 +185,6 @@ import {
   createStarterKitsRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
-import { composeTemplatesModule } from "./modules/templates/compose.js";
 import {
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
@@ -211,13 +221,6 @@ import {
   listOpenExperimentDriverIds,
   reconcileExperimentPins,
 } from "./modules/experiments/index.js";
-import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
-import {
-  composeArtifactExpirySweeper,
-  composeArtifactLibraryForOwner,
-  createAgentApiPodClient,
-} from "./modules/artifact-library/index.js";
-import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createXactLock } from "./core/xact-lock.js";
@@ -229,13 +232,8 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
-import {
-  createAgentInformer,
-  createLeaseApi,
-} from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -1040,8 +1038,7 @@ export async function bootstrap() {
     deliverySweeper.tick(),
   );
 
-  const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
-  const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+  const registrySecretPort = createAgentRegistrySecretPort(k8sClient);
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
@@ -1075,16 +1072,20 @@ export async function bootstrap() {
     },
   );
 
-  const artifactLibraryForSystem = (owner: string) =>
+  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
     composeArtifactLibraryForOwner({
       db,
       artifacts,
       owner,
-      surface: "system",
+      surface,
       shareBaseUrl: config.shareBaseUrl,
+      agentExists: opts?.agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: createAgentApiPodClient(config.namespace),
+      agentApi: agentApiPodClient,
     }).artifactLibrary;
+  const artifactLibraryForSystem = (owner: string) =>
+    artifactLibraryFor(owner, "system");
 
   const agentCleanupSources: AgentCleanupSource[] = [
     {
@@ -1194,7 +1195,7 @@ export async function bootstrap() {
     findKbShareOwnerByAgent(db),
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
-    k8s: agentsCleanupK8s,
+    k8s: k8sClient,
     sources: agentCleanupSources,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
@@ -1283,14 +1284,11 @@ export async function bootstrap() {
     schedulesBoot.runner.restoreAll(),
   );
 
-  const { readSpec: harnessReadTemplateSpec } =
-    composeTemplatesModule(templatesRepo);
   const wakeAgentFor = async (agentId: string) => {
     await agentsRepo.wakeIfHibernated(agentId);
   };
-  const harnessAgentsServiceFor = (owner: string) => {
-    const connections = connectionsServiceFor(owner);
-    return composeAgentsModule({
+  const harnessAgentsServiceFor = (owner: string) =>
+    composeAgentsModule({
       api,
       resolveSlackWorkspace,
       agentStateCache,
@@ -1303,30 +1301,16 @@ export async function bootstrap() {
       },
       owner,
       db,
-      readTemplateSpec: harnessReadTemplateSpec,
+      readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
       onboardingChecklists,
-      grantProvisioner: {
-        async resolveSpecGrants(sel) {
-          if (sel.providerConnectionId)
-            await connections.validateProviderConnection(
-              sel.providerConnectionId,
-            );
-          await connections.validateGrantSet(sel.connectionIds);
-          return {
-            grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          };
-        },
-        async applyAfterCreate(agentId, sel) {
-          if (sel.connectionIds.length)
-            await connections.setAgentConnections(agentId, sel.connectionIds);
-        },
-      },
+      grantProvisioner: connectionGrantProvisioner(
+        connectionsServiceFor(owner),
+      ),
     }).agents;
-  };
 
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
@@ -1434,6 +1418,9 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     sessionPresence,
+    wakeAgent: wakeAgentFor,
+    experimentPin,
+    artifactLibraryFor,
   };
   const onboardingChecklistFor = (owner: string) =>
     createOnboardingChecklist({
@@ -1455,6 +1442,11 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     runtimeProgress: contributionsProgressPort,
     artifacts,
+    k8sClient,
+    agentsRepo,
+    templatesRepo,
+    artifactLibraryFor,
+    experimentPin,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,

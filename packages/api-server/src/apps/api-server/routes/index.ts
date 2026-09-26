@@ -1,10 +1,6 @@
 import type { Hono } from "hono";
 import type { AuthConfig } from "api-server-api";
-import {
-  composeArtifactLibraryForOwner,
-  createAgentApiPodClient,
-  createArtifactLibraryRoutes,
-} from "../../../modules/artifact-library/index.js";
+import { createArtifactLibraryRoutes } from "../../../modules/artifact-library/index.js";
 import { createSlackOAuthRoutes } from "../../../modules/channels/infrastructure/slack-oauth.js";
 import {
   createSlackInstallRoutes,
@@ -70,16 +66,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   app.route(
     "/api/artifact-library",
     createArtifactLibraryRoutes({
-      artifactLibraryFor: (owner, surface) =>
-        composeArtifactLibraryForOwner({
-          db: boot.db,
-          artifacts: boot.artifacts,
-          owner,
-          surface,
-          shareBaseUrl: config.shareBaseUrl,
-          ensureReady: (agentId) => boot.agentsRepo.ensureReady(agentId),
-          agentApi: createAgentApiPodClient(config.namespace),
-        }).artifactLibrary,
+      artifactLibraryFor: boot.artifactLibraryFor,
       artifacts: boot.artifacts,
     }),
   );
