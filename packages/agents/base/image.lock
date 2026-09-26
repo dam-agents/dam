@@ -91,21 +91,21 @@ url = "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose
 url_api = "https://api.github.com/repos/docker/compose/releases/assets/542966285"
 
 [[tools."http:bob"]]
-version = "2.0.3"
+version = "2.0.4"
 backend = "http:bob"
-specifiers = ["2.0.3"]
+specifiers = ["2.0.4"]
 
 [tools."http:bob".options]
 rename_exe = "bob"
 strip_components = "1"
 
 [tools."http:bob"."platforms.linux-arm64"]
-checksum = "sha256:c0f65ca2ad1166e5506d42781b474637796fd5f64cdd707d4c0eba7bc800da19"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.3.tgz"
+checksum = "sha256:10de047ffdc23a50f3e1ef69fad3b6313ff6dda0010589a22efe26b24685254b"
+url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.4.tgz"
 
 [tools."http:bob"."platforms.linux-x64"]
-checksum = "sha256:c0f65ca2ad1166e5506d42781b474637796fd5f64cdd707d4c0eba7bc800da19"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.3.tgz"
+checksum = "sha256:10de047ffdc23a50f3e1ef69fad3b6313ff6dda0010589a22efe26b24685254b"
+url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.4.tgz"
 
 [[tools."http:docker"]]
 version = "29.8.1"
