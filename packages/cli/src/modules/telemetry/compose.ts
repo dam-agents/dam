@@ -26,7 +26,6 @@ export function composeTelemetryModule(
       buildTelemetryCommand({
         compatService: opts.compatService,
         configService: opts.configService,
-        tokenProvider: opts.tokenProvider,
         createAgentService: opts.createAgentService,
         createTelemetryService: (host) =>
           createTelemetryService({

@@ -3,7 +3,7 @@ import type { Result } from "../../../result.js";
 import { EXIT_RUNTIME_FAILURE } from "../exit-codes.js";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import { formatAuthRejection } from "../auth-message.js";
-import { classifyTrpcError } from "./classify.js";
+import { classifyTrpcError, trpcErrorCode } from "./classify.js";
 
 export function formatTransportError(reason: string, host: string): string {
   return `cannot reach server \`${host}\`: ${reason}`;
@@ -11,17 +11,16 @@ export function formatTransportError(reason: string, host: string): string {
 
 export function serverDetail(e: unknown): string {
   if (!(e instanceof TRPCClientError)) return "";
-  const code = e.data?.code as string | undefined;
+  const code = trpcErrorCode(e);
   return e.message && e.message !== code ? e.message : "";
 }
 
 export function printServiceError(
   error: TransportError | AuthRequiredError,
   host: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (error.kind === "auth-required") {
-    process.stderr.write(formatAuthRejection(error.reason, env));
+    process.stderr.write(formatAuthRejection(error.reason));
     return;
   }
   if (error.serverCode) {

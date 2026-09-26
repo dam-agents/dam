@@ -8,6 +8,7 @@ import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsUrl } from "../../shared/ws-url.js";
 
 const TIMEOUT_MS = 120_000;
 
@@ -68,9 +69,7 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
 }
 
 export function acpUrl(host: string, agentId: string, token: string): string {
-  const proto = host.startsWith("https://") ? "wss:" : "ws:";
-  const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  return `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/acp?token=${encodeURIComponent(token)}`;
+  return wsUrl(host, `/api/agents/${encodeURIComponent(agentId)}/acp`, token);
 }
 
 function toSessionView(agentId: string, s: ListedSession): SessionView {

@@ -1,8 +1,5 @@
 import type { AgentView } from "../domain/agent-view.js";
-import {
-  createAgentResolver,
-  type ResolveError,
-} from "../services/agent-resolver.js";
+import { resolveAgent, type ResolveError } from "../services/agent-resolver.js";
 import type { AgentService } from "../services/agent-service.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
@@ -44,7 +41,7 @@ export async function resolveAgentOrExit(
   ref: string,
   host: string,
 ): Promise<AgentView> {
-  const resolved = await createAgentResolver({ agentService }).resolve(ref);
+  const resolved = await resolveAgent(agentService, ref);
   if (!resolved.ok) {
     printResolveError(resolved.error, host);
     process.exit(exitCodeForResolveError(resolved.error));

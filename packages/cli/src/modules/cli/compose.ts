@@ -23,10 +23,8 @@ export interface CliModule {
   cliVersion: string;
 }
 
-export function composeCliModule(
-  opts: { configPath?: string } = {},
-): CliModule {
-  const configPath = opts.configPath ?? defaultConfigPath();
+export function composeCliModule(): CliModule {
+  const configPath = defaultConfigPath();
   const store = createTomlConfigStore(configPath);
   const envReader = createProcessEnvReader();
   const cliVersion =

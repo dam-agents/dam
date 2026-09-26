@@ -1,9 +1,9 @@
 import type { z } from "zod";
+import { EXIT_INVALID_INPUT } from "./exit-codes.js";
 
 export async function parseOrExit<T>(
   schema: z.ZodType<T>,
   input: unknown,
-  exitCode: number,
   onExit?: () => void | Promise<void>,
 ): Promise<T> {
   const result = schema.safeParse(input);
@@ -15,7 +15,7 @@ export async function parseOrExit<T>(
   });
   process.stderr.write(`error: invalid input\n${issues.join("\n")}\n`);
   if (onExit) await onExit();
-  process.exit(exitCode);
+  process.exit(EXIT_INVALID_INPUT);
 }
 
 function formatPath(path: PropertyKey[]): string {

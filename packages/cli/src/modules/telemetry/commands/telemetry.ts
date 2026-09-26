@@ -6,7 +6,6 @@ import {
 
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -56,7 +55,6 @@ const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 interface Deps {
   compatService: CompatService;
   configService: ConfigService;
-  tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
   createTelemetryService: (host: string) => TelemetryService;
   createExportClient: (host: string) => {

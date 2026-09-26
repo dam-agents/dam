@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-09-24
+Last verified: 2026-09-26
 
 ## Overview
 
@@ -55,7 +55,7 @@ The `agent` module gives users a human-friendly way to name an Agent and exports
 - **Resolver policy** — a ref with the ID shape is fetched by id; anything else is matched by exact, case-sensitive name. Zero matches is not-found, one is ok, two or more is ambiguous. No normalization, no retries, one round-trip.
 - **Reserved ID shape** — the api-server mints Agent IDs as `agent-` plus 16 hex characters and rejects Agent names of that exact shape at create time, eliminating the only ambiguous case. A name such as `agent-2` is allowed.
 - **Uniqueness** — `(owner, name)` is unique, enforced at create time; the narrow race window is accepted for CLI traffic and falls through to the resolver's ambiguous path.
-- **`AgentResolver`** is the seam every downstream verb resolves through, via one shared resolve-or-exit step that reports a not-found or ambiguous ref uniformly; the verb then binds an agent-scoped client to the resolved active host.
+- **`resolveAgent`** is the seam every downstream verb resolves through, via one shared resolve-or-exit step that reports a not-found or ambiguous ref uniformly; the verb then binds an agent-scoped client to the resolved active host.
 
 ## Command surface
 
@@ -84,7 +84,7 @@ Every command group is a thin client over the procedures its subsystem already e
 - **Exit-code registry.** Beyond generic success/failure, the CLI has a small set of named exit codes for machine callers (agent-not-resolved, invalid-input, rule- and schedule-not-found, agent-not-reachable, approval-not-actionable). Wrapper scripts branch on the code; the specific numbers are a code-level contract, not architecture.
 - **`--json` parity.** Every read verb emits raw contract types under `--json` (an empty result is `[]`, never null); mutations emit a small result object. A very small number of verbs augment the raw shape where the annotation is the whole point of the flag — those departures are documented at the call site.
 - **TTY discipline.** Destructive verbs confirm on a TTY, take `--yes` to bypass, and refuse on non-TTY without it. Interactive-only verbs (interactive create, masked secret prompts) refuse on non-TTY and point at the scripted path.
-- **Client-side ref resolution.** Agent refs resolve through `AgentResolver`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
+- **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 

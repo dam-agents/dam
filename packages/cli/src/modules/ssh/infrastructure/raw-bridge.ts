@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsUrl } from "../../shared/ws-url.js";
 
 export function connectRawBridge({
   host,
@@ -17,9 +18,11 @@ export function connectRawBridge({
 }): Promise<number> {
   return new Promise<number>((resolve) => {
     let settled = false;
-    const proto = host.startsWith("https://") ? "wss:" : "ws:";
-    const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-    const url = `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/ssh?token=${encodeURIComponent(token)}`;
+    const url = wsUrl(
+      host,
+      `/api/agents/${encodeURIComponent(agentId)}/ssh`,
+      token,
+    );
     const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
     ws.binaryType = "nodebuffer";
 

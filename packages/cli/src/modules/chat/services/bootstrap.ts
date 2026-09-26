@@ -2,7 +2,7 @@ import { err, ok, type Result } from "../../../result.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TokenProvider } from "../../auth/index.js";
 import {
-  createAgentResolver,
+  resolveAgent,
   type AgentService,
   type ResolveError,
 } from "../../agent/index.js";
@@ -60,9 +60,10 @@ export function createBootstrap(deps: BootstrapDeps) {
       });
     }
 
-    const resolved = await createAgentResolver({
-      agentService: deps.createAgentService(host),
-    }).resolve(agentRef);
+    const resolved = await resolveAgent(
+      deps.createAgentService(host),
+      agentRef,
+    );
     if (!resolved.ok) return resolved;
 
     const tok = await deps.tokenProvider.getValidAccessToken(host);
