@@ -2,12 +2,9 @@
 import { expect, test } from "@playwright/test";
 import type { AgentState } from "api-server-api";
 
-import { baseUrl } from "../../config.js";
 import {
-  AGENT_UP,
-  agentCardStatus,
   chatInput,
-  gotoAgentChat,
+  openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
 } from "../../lib/agents.js";
@@ -78,13 +75,7 @@ test("a vm agent chats, hibernates and wakes", async ({ page }) => {
 
   await test.step("chat with the agent", async () => {
     await setMockAgentReply(client, agentId, firstReply);
-    await page.goto(baseUrl);
-    await expect(page.getByTestId("app-sidebar")).toBeVisible();
-    await expect(agentCardStatus(page, vmAgentName, AGENT_UP)).toBeVisible({
-      timeout: 60_000,
-    });
-    await gotoAgentChat(page, vmAgentName, agentId);
-    await expect(chatInput(page)).toBeVisible();
+    await openAgentChat(page, vmAgentName, agentId, { cardTimeoutMs: 60_000 });
     await sendMessageToAgent(page, "hello-vm");
     await expect(page.getByText(firstReply)).toBeVisible({
       timeout: 60_000,

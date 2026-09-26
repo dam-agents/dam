@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { type ApiClient, createApiClient } from "../../lib/api-client.js";
+import { waitForAgentIdRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import {
   AGENT_NS,
@@ -18,16 +19,6 @@ import { harnessName } from "../../lib/fixtures.js";
 const agentName = "e2e-gateway-wedge";
 const deadSecret = "platform-conn-deleted";
 
-async function waitRunning(api: ApiClient, agentId: string): Promise<void> {
-  await expect
-    .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
-      timeout: 180_000,
-      intervals: [2_000],
-      message: `agent ${agentId} did not reach running state`,
-    })
-    .toBe("running");
-}
-
 test("a gateway wedged on a deleted credential Secret heals itself (#2817)", async () => {
   test.setTimeout(900_000);
 
@@ -44,7 +35,7 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
         templateId: harnessName,
       });
       agentId = created.id;
-      await waitRunning(api, agentId);
+      await waitForAgentIdRunning(api, agentId);
     });
 
     const gw = `${agentId}-gateway`;

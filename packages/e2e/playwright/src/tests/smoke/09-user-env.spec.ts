@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../../lib/agents.js";
+import { expectAgentEnv, wakeAgent } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName, envName, placeholder } from "../../lib/fixtures.js";
@@ -10,42 +10,13 @@ const userEnvValue = "user-value-9d2f";
 const userEnvEdited = "user-value-edited-4a7b";
 const shadowValue = "user-overrides-connection-1c8e";
 
-async function expectAgentEnv(
-  api: ApiClient,
-  agentId: string,
-  name: string,
-  expected: string,
-  message: string,
-): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        try {
-          return (await api.e2e.getEnv.query({ agentId, name })).value;
-        } catch {
-          return undefined;
-        }
-      },
-      { timeout: 120_000, intervals: [2_000], message },
-    )
-    .toBe(expected);
-}
-
 test("user env rides the contribution rail", async () => {
   test.setTimeout(420_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);
 
-  const listed = (await api.agents.list.query()).find(
-    (a) => a.name === agentName,
-  );
-  expect(
-    listed,
-    `agent ${agentName} must exist from earlier specs`,
-  ).toBeTruthy();
-  await api.agents.wake.mutate({ id: listed!.id });
-  const agentId = await waitForAgentRunning(api, agentName);
+  const agentId = await wakeAgent(api, agentName);
 
   const baselineEnv = (await api.agents.get.query({ id: agentId })).env ?? [];
 

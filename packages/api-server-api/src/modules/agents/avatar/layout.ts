@@ -4,7 +4,7 @@ import type { AvatarTraits, EyeSpec } from "./traits.js";
 
 export const AVATAR_CENTER = 50;
 export const EDGE_MARGIN = 4;
-export const GAP_MARGIN = 4;
+const GAP_MARGIN = 4;
 export const MOUTH_Y = 65;
 
 const CAP_DIP = 3.5;
@@ -171,13 +171,13 @@ export function visorBox(traits: AvatarTraits, head: HeadGeometry): Box {
 
 export const WINK_HEIGHT = 12;
 
-export function faceCenterY(traits: AvatarTraits, head: HeadGeometry): number {
+function faceCenterY(traits: AvatarTraits, head: HeadGeometry): number {
   const zone = faceZone(traits, head);
   const half = WINK_HEIGHT / 2;
   return Math.min(Math.max(48, zone.top + half), zone.bottom - half);
 }
 
-export interface Wink {
+interface Wink {
   dot: { cx: number; cy: number; r: number };
   dash: Box;
 }
@@ -272,7 +272,7 @@ export function hatLayout(head: HeadGeometry): { brim: Box; crown: Box } {
   };
 }
 
-export const ANTENNA_SPREAD = 11;
+const ANTENNA_SPREAD = 11;
 
 export function antennaCenter(
   head: HeadGeometry,
@@ -290,7 +290,7 @@ const STRAP_REACH = 80;
 const MOUTH_CLEARANCE = 10;
 const STRAP_TILTS = [45, 35, 55, 25].map((deg) => (deg * Math.PI) / 180);
 
-export interface Segment {
+interface Segment {
   x1: number;
   y1: number;
   x2: number;
