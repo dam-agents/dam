@@ -362,7 +362,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               ? "Creating…"
               : kit
                 ? "Create agent from this kit"
-                : "Create coding agent"}
+                : "Create agent"}
           </Button>
         </>
       }

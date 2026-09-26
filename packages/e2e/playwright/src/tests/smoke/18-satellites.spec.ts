@@ -262,7 +262,7 @@ test.describe("satellites", () => {
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
     await page.getByTestId("catalog-close").click();
     await expect(page.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
-    await page.getByRole("button", { name: /create coding agent/i }).click();
+    await page.getByRole("button", { name: /create agent/i }).click();
 
     const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME, {
       timeoutMs: 360_000,
