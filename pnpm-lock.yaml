@@ -66,11 +66,11 @@ importers:
         specifier: 1.1.0
         version: 1.1.0
       '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       '@xterm/addon-serialize':
         specifier: 0.14.0
         version: 0.14.0
@@ -139,8 +139,8 @@ importers:
   packages/agent-runtime-api:
     dependencies:
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -242,11 +242,11 @@ importers:
         specifier: ^4.7.0
         version: 4.7.0(@types/express@5.0.6)(debug@4.4.3)
       '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
@@ -354,8 +354,8 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
@@ -388,11 +388,11 @@ importers:
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.0
@@ -500,8 +500,8 @@ importers:
   packages/e2e/agents/mock:
     dependencies:
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -528,8 +528,8 @@ importers:
   packages/e2e/agents/mock-api:
     dependencies:
       '@trpc/server':
-        specifier: ^11.16.0
-        version: 11.16.0(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(typescript@6.0.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -547,8 +547,8 @@ importers:
         specifier: ^1.50.0
         version: 1.60.0
       '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
       api-server-api:
         specifier: workspace:*
         version: link:../../api-server-api
@@ -684,14 +684,14 @@ importers:
         specifier: ^4.2.2
         version: 4.2.2(vite@6.4.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
       '@tanstack/react-query':
-        specifier: ^5.99.0
-        version: 5.99.0(react@19.2.7)
+        specifier: ^5.103.1
+        version: 5.103.1(react@19.2.7)
       '@trpc/client':
-        specifier: ^11.16.0
-        version: 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@trpc/server@11.19.0(typescript@5.9.3))(typescript@5.9.3)
       '@trpc/tanstack-react-query':
-        specifier: ^11.16.0
-        version: 11.16.0(@tanstack/react-query@5.99.0(react@19.2.7))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.16.0(typescript@5.9.3))(react@19.2.7)(typescript@5.9.3)
+        specifier: ^11.19.0
+        version: 11.19.0(@tanstack/react-query@5.103.1(react@19.2.7))(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.19.0(typescript@5.9.3))(react@19.2.7)(typescript@5.9.3)
       '@xterm/addon-fit':
         specifier: 0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -3482,11 +3482,11 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/query-core@5.99.0':
-    resolution: {integrity: sha512-3Jv3WQG0BCcH7G+7lf/bP8QyBfJOXeY+T08Rin3GZ1bshvwlbPt7NrDHMEzGdKIOmOzvIQmxjk28YEQX60k7pQ==}
+  '@tanstack/query-core@5.103.1':
+    resolution: {integrity: sha512-rms8HqTGp6zA00dM+cUQ2eBcgzNJefuu5CAMB37i/6MiGT1zulPOytCFu2a0qjLqVR2n1jENPj9woqFQNuCzWA==}
 
-  '@tanstack/react-query@5.99.0':
-    resolution: {integrity: sha512-OY2bCqPemT1LlqJ8Y2CUau4KELnIhhG9Ol3ZndPbdnB095pRbPo1cHuXTndg8iIwtoHTgwZjyaDnQ0xD0mYwAw==}
+  '@tanstack/react-query@5.103.1':
+    resolution: {integrity: sha512-rmAPPApNEK17VXRJhtE1rja53n23VV5w30C0saCgJhhX+EpdUnVqMGV/s5nnzV43X75KTHKzuoiuxSzGTBIkag==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -3497,26 +3497,26 @@ packages:
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
 
-  '@trpc/client@11.16.0':
-    resolution: {integrity: sha512-TxIzm7OoK3baKZ0XCbuMUbI3GhgjcbKHIc4nWVKaRpCRnbSh0T31BT6fTPYwtnA/Nur8pBCGqC2B4J5hEPiPFQ==}
+  '@trpc/client@11.19.0':
+    resolution: {integrity: sha512-0MKkPq6MejsKB5Opca1Rl22KVIaqo2+A1EiXyZ8EGUsl9TLrPdpGn+Usux20TZKFwnSC2+wI/WilqNJaP4ODfw==}
     hasBin: true
     peerDependencies:
-      '@trpc/server': 11.16.0
+      '@trpc/server': 11.19.0
       typescript: '>=5.7.2'
 
-  '@trpc/server@11.16.0':
-    resolution: {integrity: sha512-XgGuUMddrUTd04+za/WE5GFuZ1/YU9XQG0t3VL5WOIu2JspkOlq6k4RYEiqS6HSJt+S0RXaPdIoE2anIP/BBRQ==}
+  '@trpc/server@11.19.0':
+    resolution: {integrity: sha512-7C1goiDurz82yFKtZUbEzjXd0Rg/jyisaIZQhdvus+1l7E6mwcEYZXjZ1US/HF8kOyz1LERL8UN3bcboJtjcyQ==}
     hasBin: true
     peerDependencies:
       typescript: '>=5.7.2'
 
-  '@trpc/tanstack-react-query@11.16.0':
-    resolution: {integrity: sha512-kfNYJ5NCk67tmRCO/QWCycJmRamuEKmZf1HRG8yCBl8aTJdTwVq7l6AffFIMab3Q+NmQzwP8XXkAEK/EelKYOA==}
+  '@trpc/tanstack-react-query@11.19.0':
+    resolution: {integrity: sha512-KYmZBRyqZqm9oY66a3tXxBlT9PLLG+YiH//4VRzrY7jCekeusYwzMkz9GAmyqnmAlc+n/9nbfzTmtIA0IordRw==}
     hasBin: true
     peerDependencies:
       '@tanstack/react-query': ^5.80.3
-      '@trpc/client': 11.16.0
-      '@trpc/server': 11.16.0
+      '@trpc/client': 11.19.0
+      '@trpc/server': 11.19.0
       react: '>=18.2.0'
       typescript: '>=5.7.2'
 
@@ -9982,11 +9982,11 @@ snapshots:
       tailwindcss: 4.2.2
       vite: 6.4.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0)
 
-  '@tanstack/query-core@5.99.0': {}
+  '@tanstack/query-core@5.103.1': {}
 
-  '@tanstack/react-query@5.99.0(react@19.2.7)':
+  '@tanstack/react-query@5.103.1(react@19.2.7)':
     dependencies:
-      '@tanstack/query-core': 5.99.0
+      '@tanstack/query-core': 5.103.1
       react: 19.2.7
 
   '@tokenizer/inflate@0.4.1':
@@ -9998,29 +9998,29 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)':
+  '@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
-      '@trpc/server': 11.16.0(typescript@5.9.3)
+      '@trpc/server': 11.19.0(typescript@5.9.3)
       typescript: 5.9.3
 
-  '@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)':
+  '@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)':
     dependencies:
-      '@trpc/server': 11.16.0(typescript@6.0.3)
+      '@trpc/server': 11.19.0(typescript@6.0.3)
       typescript: 6.0.3
 
-  '@trpc/server@11.16.0(typescript@5.9.3)':
+  '@trpc/server@11.19.0(typescript@5.9.3)':
     dependencies:
       typescript: 5.9.3
 
-  '@trpc/server@11.16.0(typescript@6.0.3)':
+  '@trpc/server@11.19.0(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
 
-  '@trpc/tanstack-react-query@11.16.0(@tanstack/react-query@5.99.0(react@19.2.7))(@trpc/client@11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.16.0(typescript@5.9.3))(react@19.2.7)(typescript@5.9.3)':
+  '@trpc/tanstack-react-query@11.19.0(@tanstack/react-query@5.103.1(react@19.2.7))(@trpc/client@11.19.0(@trpc/server@11.19.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.19.0(typescript@5.9.3))(react@19.2.7)(typescript@5.9.3)':
     dependencies:
-      '@tanstack/react-query': 5.99.0(react@19.2.7)
-      '@trpc/client': 11.16.0(@trpc/server@11.16.0(typescript@5.9.3))(typescript@5.9.3)
-      '@trpc/server': 11.16.0(typescript@5.9.3)
+      '@tanstack/react-query': 5.103.1(react@19.2.7)
+      '@trpc/client': 11.19.0(@trpc/server@11.19.0(typescript@5.9.3))(typescript@5.9.3)
+      '@trpc/server': 11.19.0(typescript@5.9.3)
       react: 19.2.7
       typescript: 5.9.3
 

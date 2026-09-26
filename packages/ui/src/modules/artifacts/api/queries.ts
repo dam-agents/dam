@@ -71,10 +71,12 @@ export function usePrefetchArtifactPreview() {
   const queryClient = useQueryClient();
   return useCallback(
     (id: string) => {
-      void queryClient.prefetchQuery({
-        ...trpc.artifactLibrary.preview.queryOptions({ id }),
-        staleTime: PREVIEW_STALE_MS,
-      });
+      void queryClient
+        .query({
+          ...trpc.artifactLibrary.preview.queryOptions({ id }),
+          staleTime: PREVIEW_STALE_MS,
+        })
+        .catch(() => {});
     },
     [queryClient],
   );
