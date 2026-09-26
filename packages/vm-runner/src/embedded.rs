@@ -39,11 +39,6 @@ impl Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Called on the runner's own tick.
-    pub fn reap(&self) {
-        smolvm::process::reap_vm_children();
-    }
-
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
         Ok(self.db.get_vm(id)?)
     }
@@ -297,26 +292,23 @@ mod tests {
 
     struct Home {
         path: PathBuf,
+        _dir: crate::testdir::TempDir,
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl Home {
         fn new(name: &str) -> Self {
             let lock = HOME.lock().unwrap_or_else(|e| e.into_inner());
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-smolvm-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
+            let dir = crate::testdir::TempDir::new(&format!("smolvm-{name}"));
+            let path = dir.path().to_path_buf();
             std::env::set_var("HOME", &path);
             std::env::set_var("XDG_DATA_HOME", path.join("data"));
             std::env::set_var("XDG_CACHE_HOME", path.join("cache"));
-            Self { path, _lock: lock }
-        }
-    }
-
-    impl Drop for Home {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
+            Self {
+                path,
+                _dir: dir,
+                _lock: lock,
+            }
         }
     }
 

@@ -134,6 +134,7 @@ fn escape_len(rest: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.
     #[test]
@@ -150,23 +151,19 @@ mod tests {
     // TEST_SCENARIO: the tail starts at a whole line when the file is longer than what a status carries, so the first line an operator reads is not the end of one they cannot see; a short file is shown whole, and a machine with no console shows nothing.
     #[test]
     fn a_long_console_is_cut_at_a_line() {
-        let dir = std::env::temp_dir().join(format!("vm-runner-console-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let log = dir.join(CONSOLE_LOG);
+        let dir = TempDir::new("console");
+        let log = dir.path().join(CONSOLE_LOG);
         fs::write(&log, "first line\nsecond line\nlast line\n").unwrap();
         assert_eq!(tail_of(&log, 14), "last line");
         assert_eq!(tail_of(&log, 1000), "first line\nsecond line\nlast line");
-        assert_eq!(tail_of(&dir.join("missing"), 1000), "");
-        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(tail_of(&dir.path().join("missing"), 1000), "");
     }
 
     // TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
     #[test]
     fn probe_lines_do_not_crowd_the_guest_out_of_the_tail() {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-console-probes-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let log = dir.join(CONSOLE_LOG);
+        let dir = TempDir::new("console-probes");
+        let log = dir.path().join(CONSOLE_LOG);
         let probe = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
         let flatten = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"flattening local image archive\"},\"target\":\"smolvm_agent::storage\"}";
         let mut text = format!("kernel panic\n{flatten}\n");
@@ -175,16 +172,13 @@ mod tests {
         }
         fs::write(&log, &text).unwrap();
         assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end. The limit counts the console's bytes before any decoding, so bytes that are not UTF-8 and CRLF line ends give a tail of the stated size, cut at a character, and never a panic.
     #[test]
     fn a_long_last_line_of_bad_bytes_is_cut_at_a_character() {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-console-bytes-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let log = dir.join(CONSOLE_LOG);
+        let dir = TempDir::new("console-bytes");
+        let log = dir.path().join(CONSOLE_LOG);
         let mut bytes = b"guest panic: ".to_vec();
         bytes.extend(std::iter::repeat_n(0xFF, 2000));
         fs::write(&log, &bytes).unwrap();
@@ -211,21 +205,19 @@ mod tests {
             tail.ends_with("\nabc") && tail.starts_with("xxx"),
             "{tail:?}"
         );
-        let _ = fs::remove_dir_all(&dir);
     }
 
     // TEST_SCENARIO: an earlier boot printed a Secret, the operator rotated it, and the runner restarted and so forgot the old value. The console still holds that boot. Starting the machine again empties it first, so no later tail can quote a value the runner no longer knows to redact.
     #[test]
     fn a_start_empties_the_console_an_earlier_boot_left() {
-        let root = std::env::temp_dir().join(format!("vm-runner-clear-{}", std::process::id()));
-        let (vm_dir, proc_root) = (root.join("m1"), root.join("proc"));
+        let root = TempDir::new("clear");
+        let (vm_dir, proc_root) = (root.path().join("m1"), root.path().join("proc"));
         fs::create_dir_all(&vm_dir).unwrap();
         fs::create_dir_all(&proc_root).unwrap();
         let log = vm_dir.join(CONSOLE_LOG);
         fs::write(&log, "OPENAI_API_KEY=sk-live-withdrawn\n").unwrap();
         crate::runtime::clear_for_start("m1", &proc_root, &vm_dir);
         assert_eq!(fs::read(&log).unwrap(), b"");
-        let _ = fs::remove_dir_all(&root);
     }
 
     // TEST_SCENARIO: the console file is where smolvm points every machine's virtual console, and the size, the wait and both sentences reach the Agent's condition, which an operator reads and a runbook quotes. All of them are pinned as literals, and the sentence that joins a message to its tail is checked on the join itself.

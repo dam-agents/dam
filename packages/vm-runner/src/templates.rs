@@ -41,7 +41,13 @@ fn expanded(packed: &Path) -> PathBuf {
 
 // UNIT_BOUNDARY_DESCRIPTION: puts every missing template in place and links each into `home`. With `kept` a template is expanded once into it; without it the template is expanded into `install` itself, which a roll throws away. A template the release ships already expanded is linked as it is. A failure is logged and left: smolvm still expands what it needs itself.
 pub fn warm(install: &Path, kept: Option<&Path>, home: &Path, cancel: &CancellationToken) {
-    let mut ready = expanded_in(install);
+    let mut ready: BTreeMap<OsString, PathBuf> = fs::read_dir(install)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".ext4"))
+        .map(|e| (e.file_name(), e.path()))
+        .collect();
     let packed = to_warm(install);
     if packed.is_empty() && ready.is_empty() {
         tracing::info!(dir = %install.display(), "no disk templates to warm");
@@ -106,17 +112,6 @@ fn expand(packed: &Path, target: &Path, cancel: &CancellationToken) -> anyhow::R
     result
 }
 
-fn expanded_in(dir: &Path) -> BTreeMap<OsString, PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return BTreeMap::new();
-    };
-    entries
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".ext4"))
-        .map(|e| (e.file_name(), e.path()))
-        .collect()
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: points `home/.smolvm/<template>` at each expanded template. That is the first place smolvm looks, and smolvm canonicalizes the link before it writes a template's path into a qcow2 overlay, so an overlay names the expanded file and not the link. Each link is made under a temporary name and renamed over the old one, so a machine created meanwhile sees either the old template or the new one, never none.
 pub fn link(templates: impl IntoIterator<Item = PathBuf>, home: &Path) {
     let dir = home.join(".smolvm");
@@ -152,24 +147,7 @@ fn put_link(at: &Path, target: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-templates-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::testdir::TempDir;
 
     // TEST_SCENARIO: warming picks exactly the templates that are missing: one already expanded is left alone, so a warm pod does no work, and nothing that is not a packed template is touched.
     #[test]
@@ -182,14 +160,14 @@ mod tests {
             "smolvm",
             "notes.txt.zst",
         ] {
-            fs::write(dir.0.join(name), "x").unwrap();
+            fs::write(dir.path().join(name), "x").unwrap();
         }
         assert_eq!(
-            to_warm(&dir.0),
-            vec![dir.0.join("storage-template.ext4.zst")]
+            to_warm(dir.path()),
+            vec![dir.path().join("storage-template.ext4.zst")]
         );
-        fs::write(dir.0.join("storage-template.ext4"), "x").unwrap();
-        assert!(to_warm(&dir.0).is_empty());
+        fs::write(dir.path().join("storage-template.ext4"), "x").unwrap();
+        assert!(to_warm(dir.path()).is_empty());
     }
 
     // TEST_SCENARIO: smolvm looks for templates in HOME/.smolvm and beside its own executable, and this runner is not installed beside the release. Each expanded template is linked there, a stale link is replaced, and a link already right is kept.
@@ -197,27 +175,33 @@ mod tests {
     fn expanded_templates_are_linked_where_smolvm_looks() {
         let install = TempDir::new("install");
         let home = TempDir::new("home");
-        fs::write(install.0.join("overlay-template.ext4"), "x").unwrap();
-        fs::write(install.0.join("overlay-template.ext4.zst"), "x").unwrap();
-        fs::create_dir_all(home.0.join(".smolvm")).unwrap();
-        std::os::unix::fs::symlink("/nowhere", home.0.join(".smolvm/overlay-template.ext4"))
-            .unwrap();
+        fs::write(install.path().join("overlay-template.ext4"), "x").unwrap();
+        fs::write(install.path().join("overlay-template.ext4.zst"), "x").unwrap();
+        fs::create_dir_all(home.path().join(".smolvm")).unwrap();
+        std::os::unix::fs::symlink(
+            "/nowhere",
+            home.path().join(".smolvm/overlay-template.ext4"),
+        )
+        .unwrap();
 
-        warm(&install.0, None, &home.0, &CancellationToken::new());
-        warm(&install.0, None, &home.0, &CancellationToken::new());
+        warm(install.path(), None, home.path(), &CancellationToken::new());
+        warm(install.path(), None, home.path(), &CancellationToken::new());
         assert_eq!(
-            fs::read_link(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
-            install.0.join("overlay-template.ext4")
+            fs::read_link(home.path().join(".smolvm/overlay-template.ext4")).unwrap(),
+            install.path().join("overlay-template.ext4")
         );
-        assert!(!home.0.join(".smolvm/overlay-template.ext4.zst").exists());
+        assert!(!home
+            .path()
+            .join(".smolvm/overlay-template.ext4.zst")
+            .exists());
     }
 
     // TEST_SCENARIO: a kept template is named by the content of the compressed one, so a pod of the same release finds the copy an earlier pod expanded, and a new release's template lands beside it instead of being taken for the old one. The file keeps the template's own name, which is how smolvm tells its templates apart.
     #[test]
     fn a_kept_template_is_named_by_its_content() {
         let install = TempDir::new("keyed");
-        let kept = install.0.join("kept");
-        let old = install.0.join("storage-template.ext4.zst");
+        let kept = install.path().join("kept");
+        let old = install.path().join("storage-template.ext4.zst");
         fs::write(&old, "release one").unwrap();
         let first = kept_path(&old, &kept).unwrap();
         assert_eq!(first, kept_path(&old, &kept).unwrap());
@@ -232,27 +216,35 @@ mod tests {
     fn a_template_already_kept_is_linked_without_expanding() {
         let install = TempDir::new("kept");
         let home = TempDir::new("kept-home");
-        let packed = install.0.join("overlay-template.ext4.zst");
+        let packed = install.path().join("overlay-template.ext4.zst");
         fs::write(&packed, "packed").unwrap();
-        let kept = home.0.join(KEPT_DIR);
+        let kept = home.path().join(KEPT_DIR);
         let at = kept_path(&packed, &kept).unwrap();
         fs::create_dir_all(at.parent().unwrap()).unwrap();
         fs::write(&at, "expanded").unwrap();
-        fs::create_dir_all(home.0.join(".smolvm")).unwrap();
-        std::os::unix::fs::symlink("/nowhere", home.0.join(".smolvm/overlay-template.ext4"))
-            .unwrap();
+        fs::create_dir_all(home.path().join(".smolvm")).unwrap();
+        std::os::unix::fs::symlink(
+            "/nowhere",
+            home.path().join(".smolvm/overlay-template.ext4"),
+        )
+        .unwrap();
 
-        warm(&install.0, Some(&kept), &home.0, &CancellationToken::new());
+        warm(
+            install.path(),
+            Some(&kept),
+            home.path(),
+            &CancellationToken::new(),
+        );
         assert_eq!(
-            fs::read_link(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
+            fs::read_link(home.path().join(".smolvm/overlay-template.ext4")).unwrap(),
             at
         );
         assert_eq!(
-            fs::read_to_string(home.0.join(".smolvm/overlay-template.ext4")).unwrap(),
+            fs::read_to_string(home.path().join(".smolvm/overlay-template.ext4")).unwrap(),
             "expanded"
         );
         assert!(
-            fs::symlink_metadata(install.0.join("overlay-template.ext4")).is_err(),
+            fs::symlink_metadata(install.path().join("overlay-template.ext4")).is_err(),
             "nothing is linked beside the release"
         );
     }

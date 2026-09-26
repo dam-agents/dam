@@ -190,7 +190,6 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use http_body_util::BodyExt;
-    use std::path::PathBuf;
     use tower::ServiceExt;
 
     // UNIT_BOUNDARY_DESCRIPTION: a runtime that has no machines and accepts every call, for tests about the HTTP surface rather than about machines.
@@ -220,23 +219,17 @@ mod tests {
         }
     }
 
-    struct Api(Router, PathBuf);
-
-    impl Drop for Api {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.1);
-        }
+    struct Api {
+        router: Router,
+        _dir: crate::testdir::TempDir,
     }
 
     fn api(name: &str) -> Api {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-http-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testdir::TempDir::new(&format!("http-{name}"));
         let server = Server::start(
             Config {
-                state_dir: dir.join("machines"),
-                image_dir: dir.join("images"),
+                state_dir: dir.path().join("machines"),
+                image_dir: dir.path().join("images"),
                 image_cache_socket: None,
                 image_budget: 0,
                 crane: String::new(),
@@ -249,7 +242,10 @@ mod tests {
             Arc::new(Idle),
         )
         .unwrap();
-        Api(router(server, "secret"), dir)
+        Api {
+            router: router(server, "secret"),
+            _dir: dir,
+        }
     }
 
     async fn call(
@@ -264,7 +260,7 @@ mod tests {
             request = request.header("authorization", format!("Bearer {token}"));
         }
         let response = api
-            .0
+            .router
             .clone()
             .oneshot(request.body(Body::from(body.to_string())).unwrap())
             .await

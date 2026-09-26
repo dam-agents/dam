@@ -43,33 +43,29 @@ const OTHER: &str = r#"{"auths":{"quay.io":{"auth":"b3RoZXI="}}}"#;
 const IMAGE: &str = "quay.io/x/vm:1";
 
 struct Fixture {
-    dir: PathBuf,
+    dir: crate::testdir::TempDir,
 }
 
 impl Fixture {
     fn new(name: &str, crane: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "vm-runner-imagecache-{}-{name}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let this = Self { dir };
+        let this = Self {
+            dir: crate::testdir::TempDir::new(&format!("imagecache-{name}")),
+        };
         this.crane(crane);
         this
     }
 
     fn crane(&self, script: &str) {
-        let path = self.dir.join("crane");
+        let path = self.dir.path().join("crane");
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     fn cache(&self, tune: impl FnOnce(&mut CacheConfig)) -> ImageCache {
         let mut config = CacheConfig {
-            dir: self.dir.join("images"),
+            dir: self.dir.path().join("images"),
             budget: 1 << 40,
-            crane: self.dir.join("crane").to_string_lossy().into_owned(),
+            crane: self.dir.path().join("crane").to_string_lossy().into_owned(),
             pins: Vec::new(),
             lifetime: CancellationToken::new(),
             check_access: true,
@@ -83,17 +79,11 @@ impl Fixture {
     }
 
     fn calls(&self, op: &str) -> usize {
-        fs::read_to_string(self.dir.join("crane.log"))
+        fs::read_to_string(self.dir.path().join("crane.log"))
             .unwrap_or_default()
             .lines()
             .filter(|l| l.starts_with(&format!("{op} ")))
             .count()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -150,14 +140,14 @@ fn a_tag_is_resolved_again_only_once_its_answer_is_stale() {
     let f = Fixture::new("moved", PUBLIC_CRANE);
     let fresh = f.cache(|_| {});
     let old = resolved(fresh.resolve(IMAGE, &[])).digest;
-    fs::write(f.dir.join("moved"), "v2").unwrap();
+    fs::write(f.dir.path().join("moved"), "v2").unwrap();
     assert_eq!(resolved(fresh.resolve(IMAGE, &[])).digest, old);
     assert_eq!(f.calls("digest"), 1, "a fresh answer was asked again");
 
     let stale = f.cache(|c| c.ref_fresh = Duration::ZERO);
     let first = resolved(stale.resolve(IMAGE, &[])).digest;
     assert_ne!(first, old, "the moved tag booted its old image");
-    fs::write(f.dir.join("registry-down"), "").unwrap();
+    fs::write(f.dir.path().join("registry-down"), "").unwrap();
     let exports = f.calls("export");
     assert_eq!(resolved(stale.resolve(IMAGE, &[])).digest, first);
     assert_eq!(f.calls("export"), exports);
@@ -172,14 +162,14 @@ fn a_pinned_reference_is_never_resolved_and_an_unknown_tag_is_refused() {
     let pinned = resolved(cache.resolve(&format!("quay.io/x/vm:1@{digest}"), &[]));
     assert_eq!(pinned.digest, digest);
     assert_eq!(f.calls("digest"), 0);
-    let log = fs::read_to_string(f.dir.join("crane.log")).unwrap();
+    let log = fs::read_to_string(f.dir.path().join("crane.log")).unwrap();
     assert!(
         log.lines()
             .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
         "{log}"
     );
 
-    fs::write(f.dir.join("registry-down"), "").unwrap();
+    fs::write(f.dir.path().join("registry-down"), "").unwrap();
     let refused = cache
         .resolve("quay.io/x/never:1", &[])
         .resolved
@@ -392,7 +382,7 @@ fn a_public_entry_boots_for_anyone_without_asking_the_registry() {
         .resolve(IMAGE, &[CREDENTIAL.to_string()])
         .resolved
         .is_ok());
-    fs::write(f.dir.join("registry-down"), "").unwrap();
+    fs::write(f.dir.path().join("registry-down"), "").unwrap();
     assert!(cache.resolve(IMAGE, &[]).resolved.is_ok());
 
     let own = Fixture::new("unshared", PRIVATE_CRANE);
@@ -443,7 +433,7 @@ async fn a_runner_reaches_the_service_over_its_socket() {
 
     stop.cancel();
     serving.await.unwrap().unwrap();
-    let gone = CacheClient::new(f.dir.join("no-such.sock"));
+    let gone = CacheClient::new(f.dir.path().join("no-such.sock"));
     let lookup = tokio::task::spawn_blocking(move || gone.resolve(IMAGE, &[]))
         .await
         .unwrap();
