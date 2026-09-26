@@ -140,13 +140,18 @@ spec:
             {{- end }}
           {{- if .Values.probes.enabled }}
           # An optimized start is up in about ten seconds; a failed readiness
-          # check only holds traffic back.
+          # check only holds traffic back. Checked every 2s so the pod turns
+          # Ready, and the realm import hook and the api-server behind it
+          # start, within 2s of Keycloak being ready instead of up to 10s
+          # later. The failure threshold keeps 30s of failed checks before a
+          # Ready pod is pulled, as the 10s period with the default of 3 did.
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 9000
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 2
+            failureThreshold: 15
           livenessProbe:
             httpGet:
               path: /health/live
