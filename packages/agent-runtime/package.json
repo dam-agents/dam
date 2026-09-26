@@ -13,9 +13,9 @@
     "file-type": "^22.0.1",
     "js-yaml": "^4.1.0",
     "smol-toml": "^1.8.0",
-    "tar": "^7.5.13",
+    "tar": "^7.5.22",
     "ts-pattern": "^5.9.0",
-    "ws": "^8.20.0",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -28,7 +28,7 @@
     "dev-config": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   }
 }

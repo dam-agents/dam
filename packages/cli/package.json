@@ -39,13 +39,13 @@
     "dev-config": "workspace:*",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
-    "open": "^11.0.0",
+    "open": "^11.0.4",
     "smol-toml": "^1.8.0",
     "tar-stream": "^3.1.8",
     "tsup": "^8.5.1",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "ws": "^8.20.0",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   }
 }

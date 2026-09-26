@@ -4,7 +4,7 @@
   "type": "module",
   "devDependencies": {
     "eslint": "^10.2.0",
-    "eslint-plugin-react-hooks": "^7.1.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-unicorn": "^64.0.0",
     "prettier": "^3.8.3",
