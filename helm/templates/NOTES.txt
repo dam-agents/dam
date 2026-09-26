@@ -19,7 +19,7 @@ RBAC:
 
 To verify:
   kubectl get pods -n {{ .Release.Namespace }}
-  kubectl get cm -n {{ .Values.agentNamespace }} -l agent-platform.ai/type=agent-template
+  kubectl get cm -n {{ .Release.Namespace }} {{ include "platform.fullname" . }}-harness-templates
 
 To access services:
   {{ include "platform.url.ui" . }}          (UI)
