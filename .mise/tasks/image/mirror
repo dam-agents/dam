@@ -27,11 +27,11 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # Keep in step with helm/values.yaml (clickstack.collector.image, the clickstack
 # subchart image pins) and .mise/tasks/cluster/install (the operator images).
 MIRRORS="
-otel/opentelemetry-collector-contrib:0.160.0
-docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+otel/opentelemetry-collector-contrib:0.161.0
+docker.hyperdx.io/hyperdx/hyperdx:2.35.0
 clickhouse/clickhouse-server:25.7-alpine
 clickhouse/clickhouse-keeper:25.7-alpine
-busybox:1.37.0
+busybox:1.38.0
 ghcr.io/clickhouse/clickhouse-operator:v0.0.7
 quay.io/mongodb/mongodb-kubernetes:1.7.0
 "

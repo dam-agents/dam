@@ -572,7 +572,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.39
+  image: docker.io/chrislusf/seaweedfs:4.47
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -603,7 +603,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.160.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.161.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -634,9 +634,9 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.27.0"
+        tag: "2.35.0"
       waitForMongodb:
-        image: "quay.io/dam-agents/busybox:1.37.0"
+        image: "quay.io/dam-agents/busybox:1.38.0"
 
   clickhouse:
     # Without an explicit image the operator injects its built-in default
@@ -677,7 +677,7 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
@@ -1232,6 +1232,10 @@ apiServer:
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
+    # Istio's release host, which redirects every download to its R2 bucket.
+    # The Google Cloud Storage bucket still serves releases up to 1.30.
+    - blob.istio.io
+    - istio-release.r2.istio.io
     - istio-release.storage.googleapis.com
     - mirror.openshift.com
     # Supply-chain signing (cosign's TUF root)
@@ -1447,7 +1451,7 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -1457,7 +1461,7 @@ controller:
         # Hardened curl image for the probe. The probe is a `sh` loop, so it
         # needs a shell — use the `-builder` variant (the distroless curl image
         # has no shell). Any image works as long as it provides /bin/sh + curl.
-        image: registry.access.redhat.com/hi/curl:8.20-builder
+        image: registry.access.redhat.com/hi/curl:8.22-builder
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
@@ -1673,8 +1677,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
+  # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart

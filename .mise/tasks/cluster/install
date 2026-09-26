@@ -202,8 +202,11 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.29.1"
-helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+ISTIO_VERSION="1.31.0"
+# Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
+# and is being retired. --force-update repoints an `istio` repo a machine
+# already has registered at the old URL.
+helm repo add --force-update istio https://blob.istio.io/istio-release/charts >/dev/null 2>&1 || true
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build helm
 prepull_images() {
@@ -407,19 +410,32 @@ install_cert_manager > >(sed -u 's/^/[cert-manager] /') 2>&1 &
 CERT_MANAGER_PID=$!
 
 # 2b. Install Istio ambient + Gateway-API CRDs (required).
-# Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
-# and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
-# floor for ambient L7 with locked-down waypoint HCM.
-GATEWAY_API_VERSION="v1.2.0"
+# Istio 1.29.x is the floor for ambient L7 with locked-down waypoint HCM; the
+# Kubernetes 1.36 that k3s runs needs Istio 1.30 or later.
+# Pinned: Gateway API standard channel, at exactly the bundle k3s's own
+# `traefik-crd` chart ships (v1.5.1 in k3s v1.36.4, Traefik chart v40). That
+# chart owns these CRDs too and rewrites them to its bundle whenever its job
+# runs. Since v1.5 the bundle also installs the cluster-scoped safe-upgrades
+# ValidatingAdmissionPolicy and its binding, which deny any CRD older than the
+# policy's floor (v1.5.0 here) and experimental over standard CRDs. So a newer
+# pin does not stick either: v1.6.0's policy denies the rewrite down to v1.5.1,
+# the `traefik-crd` job fails, and Traefik never installs. Traefik v40's own
+# install also checks for the v1 BackendTLSPolicy, ListenerSet, ReferenceGrant
+# and TLSRoute kinds, which the old v1.2.0 pin lacked. Move this pin with k3s.
+# The waypoint below needs only Gateway v1; Istio 1.31 wants v1.5.0+ for TLSRoute
+# and v1.6.0+ for TCPRoute, neither of which the platform uses. Server-side
+# apply: the HTTPRoute CRD comes within a few KiB of the limit on client-side
+# apply's last-applied annotation.
+GATEWAY_API_VERSION="v1.5.1"
 
 if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
-  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+  kubectl --kubeconfig="$KUBECONFIG" apply --server-side -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
 else
   echo "Gateway API CRDs already installed"
 fi
 
-# k3s bundles Traefik (chart v39+), whose `traefik-crd` chart also ships the
+# k3s bundles Traefik (chart v40+), whose `traefik-crd` chart also ships the
 # Gateway API CRDs. We install those out-of-band above (for Istio) via plain
 # `kubectl apply`, so they carry no Helm ownership metadata — and the
 # `traefik-crd` Helm job then dies with "invalid ownership metadata" and
@@ -428,10 +444,10 @@ fi
 # reconcile. Idempotent, and covers both install orders (whichever of the k3s
 # Traefik bootstrap vs. this CRD apply wins the race).
 echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
-# One call each for every CRD: kubectl still stamps the rest when one is
-# missing.
+# One call each for every CRD of the standard bundle: kubectl still stamps
+# the rest when one is missing.
 GATEWAY_CRDS=()
-for crd in gatewayclasses gateways grpcroutes httproutes referencegrants; do
+for crd in backendtlspolicies gatewayclasses gateways grpcroutes httproutes listenersets referencegrants tlsroutes; do
   GATEWAY_CRDS+=("$crd.gateway.networking.k8s.io")
 done
 kubectl --kubeconfig="$KUBECONFIG" label crd "${GATEWAY_CRDS[@]}" \
@@ -494,10 +510,15 @@ fi
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
+# useAppArmorAnnotation=false sets the node agent's Unconfined AppArmor
+# profile through securityContext.appArmorProfile, GA since Kubernetes 1.30,
+# instead of the deprecated container.apparmor.security.beta.kubernetes.io
+# annotation the chart still defaults to.
 istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
   --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
+  --set useAppArmorAnnotation=false \
   ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"} > >(sed -u 's/^/[istio-cni] /') 2>&1 &
 ISTIO_CNI_PID=$!
 # ztunnel proxies every mesh hop, including the experiment SDK's status polls
@@ -607,7 +628,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: watchdog
-              image: mirror.gcr.io/alpine/k8s:1.30.4
+              image: mirror.gcr.io/alpine/k8s:1.36.4
               command:
                 - sh
                 - -c

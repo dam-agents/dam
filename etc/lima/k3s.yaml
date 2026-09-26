@@ -64,9 +64,10 @@ provision:
         - "container-log-max-files=3"
       EOF
       if [ ! -d /var/lib/rancher/k3s ]; then
-        # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
-        # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
-        export INSTALL_K3S_VERSION="v1.36.1+k3s1"
+        # Pinned: the bundled Traefik's traefik-crd chart also ships the Gateway API
+        # CRDs, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the
+        # bundle this k3s carries (v1.5.1 in v1.36.4, Traefik chart v40.1).
+        export INSTALL_K3S_VERSION="v1.36.4+k3s1"
         export INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16443"
         # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
         # its binary relabel step fails under set -e on a disabled-SELinux host.

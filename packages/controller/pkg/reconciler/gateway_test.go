@@ -31,7 +31,7 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "gateway pod has exactly one Envoy container")
 	envoy := ss.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "envoy", envoy.Name)
-	assert.Equal(t, "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2", envoy.Image)
+	assert.Equal(t, "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1", envoy.Image)
 
 	mountPaths := map[string]string{}
 	for _, m := range envoy.VolumeMounts {
