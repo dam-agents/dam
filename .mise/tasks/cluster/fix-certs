@@ -5,13 +5,12 @@ set -eo pipefail
 
 # Diagnose first: the expired-SVID signature always surfaces in ztunnel
 # logs — for ztunnel-held workload certs and for an expired waypoint cert
-# alike (the dialing ztunnel logs the failed HBONE handshake). Keep the
-# regex in sync with the ztunnel-cert-watchdog CronJob (cluster:install).
+# alike (the dialing ztunnel logs the failed HBONE handshake).
 echo "Scanning ztunnel logs (last 30m) for expired-cert markers..."
 FOUND=0
-for pod in $(kubectl --kubeconfig="$KUBECONFIG" -n istio-system get pods -l app=ztunnel -o name); do
-  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs --since=30m "$pod" 2>/dev/null \
-      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+for pod in $(kubectl -n istio-system get pods -l app=ztunnel -o name); do
+  if kubectl -n istio-system logs --since=30m "$pod" 2>/dev/null \
+      | grep -qiE "$MESH_CERT_EXPIRED"; then
     echo "  $pod: expired-cert signature PRESENT"
     FOUND=1
   else
@@ -24,11 +23,11 @@ fi
 
 # Waypoint pods carry their own SVIDs; istiod stamps the deployments it
 # synthesises from istio-waypoint Gateways with this label.
-WAYPOINTS=$(kubectl --kubeconfig="$KUBECONFIG" get deploy -A \
+WAYPOINTS=$(kubectl get deploy -A \
   -l gateway.istio.io/managed=istio.io-mesh-controller \
   -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
 if [ -z "$WAYPOINTS" ]; then
-  if kubectl --kubeconfig="$KUBECONFIG" get gateways.gateway.networking.k8s.io -A \
+  if kubectl get gateways.gateway.networking.k8s.io -A \
       -o jsonpath='{.items[*].spec.gatewayClassName}' 2>/dev/null | grep -qw istio-waypoint; then
     echo "WARN: istio-waypoint Gateways exist but no waypoint deployments carry the" >&2
     echo "      mesh-controller label — istiod still reconciling, or label drift after an istio bump." >&2
@@ -42,25 +41,25 @@ fi
 # "failed calling webhook ... certificate has expired". A restart re-issues
 # it from the long-lived CA Secret.
 CM_WEBHOOK=0
-if kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+if kubectl -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
   CM_WEBHOOK=1
 fi
 
 echo "Rolling ds/ztunnel..."
-kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout restart ds/ztunnel
+kubectl -n istio-system rollout restart ds/ztunnel
 for wp in $WAYPOINTS; do
   echo "Rolling waypoint deploy/${wp##*/} (ns ${wp%%/*})..."
-  kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
+  kubectl -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
 done
 if [ "$CM_WEBHOOK" = 1 ]; then
   echo "Rolling cert-manager webhook..."
-  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout restart deploy/cert-manager-webhook
+  kubectl -n cert-manager rollout restart deploy/cert-manager-webhook
 fi
-kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
+kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
 for wp in $WAYPOINTS; do
-  kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
+  kubectl -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
 done
 if [ "$CM_WEBHOOK" = 1 ]; then
-  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout status deploy/cert-manager-webhook --timeout=120s
+  kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=120s
 fi
 echo "Done. If symptoms persist, re-check with: mise run cluster:status"

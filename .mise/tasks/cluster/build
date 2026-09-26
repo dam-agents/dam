@@ -43,14 +43,14 @@ for c in "${components[@]}"; do
     agents)
       # Captured first, so a kubectl failure aborts rather than looking like
       # "nothing deployed".
-      cms="$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml)"
+      cms="$(kubectl get configmap -A -o yaml)"
       agents=($(deployed_agents "$cms"))
       if [ ${#agents[@]} -eq 0 ]; then echo "No agent templates deployed — nothing to build."; continue; fi
       mise run //packages/agents:oci -- "${agents[@]}"
       tars=()
       for a in "${agents[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$a")"); done
       mise run cluster:import -- "${tars[@]}"
-      kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all 2>/dev/null || true
+      kubectl delete pods -n platform-agents --all 2>/dev/null || true
       continue
       ;;
     controller) pkg=controller deploy=platform-controller timeout=60s ;;
@@ -64,19 +64,10 @@ for c in "${components[@]}"; do
   esac
   mise run "//packages/$pkg:oci"
   mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment "$deploy"
-  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment "$deploy" --timeout="$timeout"
+  kubectl rollout restart deployment "$deploy"
+  kubectl rollout status deployment "$deploy" --timeout="$timeout"
 done
 
-# Prune dangling layers: old `:latest` SHAs that just lost their tag to the
-# freshly imported one. Skip `crictl rmi --prune` here — when no instance
-# pods are running, our just-loaded agent images are unpinned and would
-# get wiped. (issue #244)
-PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
-if [ -n "${IS_SANDBOX:-}" ]; then
-  bash -c "$PRUNE_DANGLING"
-else
-  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
-fi
+prune_dangling_images
 
 echo "Done."

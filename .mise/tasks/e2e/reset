@@ -4,7 +4,6 @@
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
 # 1. Delete agents (custom resources) so the controller
 # stops reconciling them, plus the remaining durable ConfigMaps, then sweep the
@@ -12,13 +11,13 @@ KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 # volumeClaimTemplates are never GC'd with their owner). Templates are
 # helm-managed — leave them.
 echo "Deleting agents in platform-agents..."
-"${KCTL[@]}" -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
-"${KCTL[@]}" -n platform-agents delete configmap \
+kubectl -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
+kubectl -n platform-agents delete configmap \
   -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' \
   --ignore-not-found
-"${KCTL[@]}" -n platform-agents delete statefulset --all --ignore-not-found --wait=true --timeout=60s
-"${KCTL[@]}" -n platform-agents delete pod --all --ignore-not-found --force --grace-period=0 2>/dev/null || true
-"${KCTL[@]}" -n platform-agents delete pvc --all --ignore-not-found --wait=true --timeout=60s
+kubectl -n platform-agents delete statefulset --all --ignore-not-found --wait=true --timeout=60s
+kubectl -n platform-agents delete pod --all --ignore-not-found --force --grace-period=0 2>/dev/null || true
+kubectl -n platform-agents delete pvc --all --ignore-not-found --wait=true --timeout=60s
 
 # 2. Drop + recreate the platform DB. apiserver must be disconnected first
 # (DROP DATABASE refuses while a session is attached); scale it to 0, drop with
@@ -26,19 +25,19 @@ echo "Deleting agents in platform-agents..."
 # reruns the Drizzle migrations from zero on boot. Postgres stays up the whole
 # time, so the fresh-cluster apiserver-vs-init race never applies here.
 echo "Dropping + recreating the platform database..."
-"${KCTL[@]}" scale deployment platform-apiserver --replicas=0
-"${KCTL[@]}" wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
+kubectl scale deployment platform-apiserver --replicas=0
+kubectl wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
 # Recreate owned by the api-server's NOSUPERUSER role so it can run its
 # migrations ($POSTGRES_USER is the admin superuser; $POSTGRES_APISERVER_USER
 # is the platform DB's owning role — both are set on the postgres pod).
-"${KCTL[@]}" exec platform-postgres-0 -- bash -c \
+kubectl exec platform-postgres-0 -- bash -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
      -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
      -c "CREATE DATABASE platform OWNER $POSTGRES_APISERVER_USER;"'
-"${KCTL[@]}" scale deployment platform-apiserver --replicas=1
+kubectl scale deployment platform-apiserver --replicas=1
 # Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
 # ~240s); allow headroom past that bound for a fresh pod to become Available.
-"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=300s
+kubectl wait --for=condition=Available deployment/platform-apiserver --timeout=300s
 
 # 3. Clear stored Playwright auth so 01-auth re-runs the login + terms flow
 # (terms acceptance lived in the platform DB we just dropped; a fresh browser

@@ -3,7 +3,7 @@
 #MISE raw=true
 #MISE quiet=true
 
-export KUBECONFIG="$(mise run cluster:kubeconfig)"
+export KUBECONFIG="$(. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh" && echo "$KUBECONFIG")"
 
 CALLER=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
 CALLER="${CALLER:-$SHELL}"

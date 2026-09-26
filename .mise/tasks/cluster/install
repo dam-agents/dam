@@ -123,7 +123,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   fi
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
-  for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 else
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
@@ -153,12 +153,12 @@ else
     exit 1
   fi
   echo "Waiting for k3s to be ready..."
-  for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 fi
 # k3s writes kubeconfig before the node registers; the for-loop above
 # ensures ≥1 node exists, otherwise `kubectl wait --all` would error
 # immediately with "no matching resources found".
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+kubectl wait --for=condition=Ready node --all --timeout=120s
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
 # path for VMs created before this flag was added). New VMs already have
@@ -180,7 +180,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     if [ -d /run/systemd/system ]; then
       sudo systemctl restart k3s
-      kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+      kubectl wait --for=condition=Ready node --all --timeout=120s
     else
       echo "No service manager here — container log rotation applies the next time k3s starts."
     fi
@@ -191,7 +191,7 @@ else
     limactl shell "$LIMA_INSTANCE" sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
-    kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
+    kubectl wait --for=condition=Ready node --all --timeout=120s
   fi
 fi
 
@@ -367,7 +367,7 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
     --set=port=*) APP_PORT="${arg#--set=port=}" ;;
   esac
 done
-kubectl --kubeconfig="$KUBECONFIG" apply -f - <<YAML
+kubectl apply -f - <<YAML
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -390,18 +390,18 @@ YAML
 CERT_MANAGER_VERSION="v1.21.2"
 
 install_cert_manager() {
-  if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
+  if ! kubectl get ns cert-manager >/dev/null 2>&1; then
     echo "Installing cert-manager ($CERT_MANAGER_VERSION)..."
     # Retried: freshly-provisioned k3s can restart its apiserver right after
     # reporting Ready (seen as ECONNREFUSED mid-apply on CI runners).
     for attempt in 1 2 3 4 5; do
-      kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml && break
+      kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml && break
       [ "$attempt" = 5 ] && return 1
       echo "cert-manager apply failed (attempt $attempt); retrying in 10s..."
       sleep 10
     done
     echo "Waiting for cert-manager to be ready..."
-    kubectl --kubeconfig="$KUBECONFIG" -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
+    kubectl -n cert-manager wait --for=condition=Available deployment --all --timeout=120s
   else
     echo "cert-manager already installed"
   fi
@@ -428,9 +428,9 @@ CERT_MANAGER_PID=$!
 # apply's last-applied annotation.
 GATEWAY_API_VERSION="v1.5.1"
 
-if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
+if ! kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
-  kubectl --kubeconfig="$KUBECONFIG" apply --server-side -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+  kubectl apply --server-side -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
 else
   echo "Gateway API CRDs already installed"
 fi
@@ -450,9 +450,9 @@ GATEWAY_CRDS=()
 for crd in backendtlspolicies gatewayclasses gateways grpcroutes httproutes listenersets referencegrants tlsroutes; do
   GATEWAY_CRDS+=("$crd.gateway.networking.k8s.io")
 done
-kubectl --kubeconfig="$KUBECONFIG" label crd "${GATEWAY_CRDS[@]}" \
+kubectl label crd "${GATEWAY_CRDS[@]}" \
   app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-kubectl --kubeconfig="$KUBECONFIG" annotate crd "${GATEWAY_CRDS[@]}" \
+kubectl annotate crd "${GATEWAY_CRDS[@]}" \
   meta.helm.sh/release-name=traefik-crd meta.helm.sh/release-namespace=kube-system \
   --overwrite >/dev/null 2>&1 || true
 
@@ -466,11 +466,11 @@ echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 istio_install_if_missing() {
   local release="$1" chart="$2"
   shift 2
-  if helm --kubeconfig="$KUBECONFIG" -n istio-system status "$release" >/dev/null 2>&1; then
+  if helm -n istio-system status "$release" >/dev/null 2>&1; then
     echo "  $release already installed, skipping"
     return 0
   fi
-  helm --kubeconfig="$KUBECONFIG" install "$release" "$chart" \
+  helm install "$release" "$chart" \
     -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait "$@"
 }
 
@@ -533,8 +533,8 @@ istio_install_if_missing ztunnel istio/ztunnel \
   ${ZTUNNEL_IPV4_ONLY[@]+"${ZTUNNEL_IPV4_ONLY[@]}"}
 wait "$ISTIOD_PID" || { echo "FATAL: istiod install failed" >&2; exit 1; }
 wait "$ISTIO_CNI_PID" || { echo "FATAL: istio-cni install failed" >&2; exit 1; }
-kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
-kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
+kubectl -n istio-system rollout status ds/istio-cni-node --timeout=120s
 wait "$CERT_MANAGER_PID" || { echo "FATAL: cert-manager install failed" >&2; exit 1; }
 
 # Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
@@ -545,7 +545,8 @@ wait "$CERT_MANAGER_PID" || { echo "FATAL: cert-manager install failed" >&2; exi
 # rotation failure that slips past the 30d DEFAULT_WORKLOAD_CERT_TTL
 # pinned on istiod above (e.g. a cluster left running past TTL, an
 # upstream istio bug). Apply is idempotent on re-runs of cluster:install.
-kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+# Its markers are MESH_CERT_EXPIRED's in .mise/lib/cluster.sh; keep them in sync.
+kubectl apply -f - <<'YAML'
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -666,7 +667,7 @@ YAML
 # Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
 # install below targets the `default` namespace; label it now (the
 # chart's validate-istio.yaml asserts this label is present).
-kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
+kubectl label namespace default istio.io/dataplane-mode=ambient --overwrite
 
 # 4. Helm install or upgrade.
 if [ -n "${IMAGE_LOAD_PID:-}" ]; then
@@ -677,8 +678,8 @@ echo "Installing/upgrading Platform chart..."
 # this single-env local cluster the freeze has no value, so apply them directly.
 # The explicit Established wait keeps the helm install below race-free even if
 # the chart ever grows a CR instance (today it deliberately ships none).
-kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f helm/crds/
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f helm/crds/
+kubectl apply --server-side --force-conflicts -f helm/crds/
+kubectl wait --for=condition=Established --timeout=60s -f helm/crds/
 
 # ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
 # CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
@@ -688,13 +689,13 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60
 # (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
-  helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
+  helm upgrade --install clickstack-operators clickstack/clickstack-operators \
     --version 1.1.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
     --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
     --set clickhouse-operator.manager.image.tag=v0.0.7 \
     --set mongodb-operator.registry.operator=quay.io/dam-agents \
     --set mongodb-operator.operator.watchNamespace=default
-  kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
+  kubectl wait --for=condition=Established --timeout=120s \
     crd/clickhouseclusters.clickhouse.com \
     crd/keeperclusters.clickhouse.com \
     crd/mongodbcommunity.mongodbcommunity.mongodb.com
@@ -707,7 +708,7 @@ fi
 # --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
-helm --kubeconfig="$KUBECONFIG" upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
 if [ -n "${AGENT_LOAD_PID:-}" ]; then
   wait "$AGENT_LOAD_PID" || { echo "FATAL: loading the agent images failed" >&2; exit 1; }
@@ -718,27 +719,27 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
+  kubectl rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
   # Runners are created per owner with a hashed name, so restart them by label.
   # The node image cache DaemonSet runs the same image. Both live in the agent
   # namespace, and either may not exist yet.
   if [ -n "$VIRT_ENABLED" ]; then
     for workload in deployment/vm-runner daemonset/vm-image-cache; do
       selector="app.kubernetes.io/component=${workload#*/}"
-      if [ -n "$(kubectl --kubeconfig="$KUBECONFIG" -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
-        kubectl --kubeconfig="$KUBECONFIG" -n platform-agents rollout restart "${workload%/*}" -l "$selector"
+      if [ -n "$(kubectl -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
+        kubectl -n platform-agents rollout restart "${workload%/*}" -l "$selector"
       fi
     done
   fi
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
-  kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
+  kubectl delete pods -n platform-agents --all --ignore-not-found
 fi
 
 # 6. Wait for all Platform deployments to become Available (replaces helm --wait,
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
+kubectl wait --for=condition=Available deployment --all --timeout=10m
 
 # 6b. vm-backend images onto the node, where every VM runner mounts them read
 # only: runners are per owner and created on demand, so there is no pod to copy
@@ -758,23 +759,14 @@ done
 # (re)starts after Mongo is ready.)
 if [ -n "${CLICKSTACK:-}" ] && [ "$NO_RESTART" != true ]; then
   echo "Restarting HyperDX onto a ready MongoDB..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-clickstack-app
-  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-clickstack-app --timeout=5m
+  kubectl rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
+  kubectl rollout restart deployment platform-clickstack-app
+  kubectl rollout status deployment platform-clickstack-app --timeout=5m
 fi
 
-# 7. Prune dangling image layers (issue #244). After repeated reinstalls,
-# old `:latest` SHAs lose their tag to the freshly imported one and become
-# `<none>:<none>`. Drop only those — `crictl rmi --prune` would also wipe
-# tagged-but-unpinned images like the agent ones we just loaded (no
-# instance pods exist yet to pin them).
+# 7. Prune the image layers repeated reinstalls leave dangling.
 echo "Pruning dangling images..."
-PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
-if [ -n "${IS_SANDBOX:-}" ]; then
-  bash -c "$PRUNE_DANGLING"
-else
-  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
-fi
+prune_dangling_images
 
 wait "$PREPULL_PID" 2>/dev/null || true
 
@@ -782,7 +774,7 @@ echo ""
 echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
 echo ""
-kubectl --kubeconfig="$KUBECONFIG" get pods
+kubectl get pods
 
 # Where the install's wall clock went. `helm --wait` returns only once the
 # slowest pod is Ready, so the one number it reports hides which service held
@@ -798,12 +790,11 @@ kubectl --kubeconfig="$KUBECONFIG" get pods
 # the signature of a startup-ordering race rather than a slow service. The
 # apiserver/postgres race in e2e:install is exactly that shape.
 #
-# python3, not jq: this script already depends on python3 and the repo pins no
-# jq. Never fails the install — instrumentation that can break a provision is
+# Never fails the install — instrumentation that can break a provision is
 # worse than no instrumentation.
 echo ""
 echo "--- Readiness timeline (pod creation -> Ready) ---"
-kubectl --kubeconfig="$KUBECONFIG" get pods -o json 2>/dev/null | python3 -c '
+kubectl get pods -o json 2>/dev/null | python3 -c '
 import json, sys
 from datetime import datetime
 
@@ -840,6 +831,6 @@ for _, name, ready, restarts, killed in sorted(rows, reverse=True):
 # not already finish. An image it found on the node logs nothing here.
 echo ""
 echo "--- Image pulls left to the kubelet ---"
-kubectl --kubeconfig="$KUBECONFIG" get events -A --field-selector reason=Pulled \
+kubectl get events -A --field-selector reason=Pulled \
     -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' 2>/dev/null |
   sed -n 's/^Successfully pulled image "\([^"]*\)" in \([^ ]*\) .*/  \2  \1/p' || true
