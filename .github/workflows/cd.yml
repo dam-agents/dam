@@ -107,6 +107,17 @@ jobs:
           path: &pnpm-store ~/.local/share/pnpm/store
           key: &pnpm-key pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: &pnpm-restore-keys pnpm-store-${{ runner.os }}-
+      # pnpm's record that it checked this lockfile against the supply-chain
+      # policies in pnpm-workspace.yaml (minimumReleaseAge, trustPolicy). pnpm
+      # matches it by the lockfile's hash and the policy, and skips the check,
+      # which took 12-18s of every install, looking up each of the 1393
+      # entries in the registry. Only main saves it, and only an exact key is
+      # of any use: a changed lockfile is checked again.
+      - id: pnpm-verified
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
+          key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
@@ -151,6 +162,11 @@ jobs:
         with:
           path: *pnpm-store
           key: *pnpm-key
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-verified.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
   # a tag: e2e pulls by digest, and publishing and scanning run on main and
@@ -273,6 +289,11 @@ jobs:
           path: *pnpm-store
           key: *pnpm-key
           restore-keys: *pnpm-restore-keys
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
           quay-username: ${{ secrets.QUAY_USERNAME }}
@@ -576,6 +597,10 @@ jobs:
           path: *pnpm-store
           key: *pnpm-key
           restore-keys: *pnpm-restore-keys
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
       # Only a PR that changes the controller builds it here; one that does not
       # pulls main's image.
       - id: controller-changed
@@ -596,6 +621,14 @@ jobs:
         with:
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
+      # k3s comes up in about twenty seconds and needs nothing the steps
+      # below set up, so it starts here, beside them. `mise run e2e` waits
+      # for it and keeps the cluster instead of nuking it first; if this
+      # provision fails, it nukes whatever is left and provisions again.
+      - name: Provision k3s in the background
+        run: |
+          nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
+            > /tmp/k3s-provision.log 2>&1 &
       # The keycloak image bakes in the theme JAR. Built here, before the
       # background build starts, so it does not race e2e:install's own run of
       # the same task, which is then a cache hit.
@@ -628,14 +661,26 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # Under the job's timeout, so a hung image build fails the step and the
       # log steps below still run; the job's own timeout cancels them too.
-      - run: mise run e2e
+      - run: |
+          timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done' ||
+            { echo "::error::the background k3s provision is still running after 3 minutes"; exit 1; }
+          status="$(cat /tmp/k3s-provision.status)"
+          if [ "$status" != 0 ]; then
+            echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
+            unset E2E_HOST_PROVISIONED
+          fi
+          mise run e2e
         timeout-minutes: 35
         env:
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
+          E2E_HOST_PROVISIONED: "1"
       - name: Image fetch log
         if: ${{ !cancelled() }}
         run: cat /tmp/ci-images.log
+      - name: k3s provision log
+        if: ${{ !cancelled() }}
+        run: cat /tmp/k3s-provision.log
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

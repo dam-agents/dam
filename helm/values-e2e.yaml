@@ -10,7 +10,15 @@ e2e:
 # proves prompts outlive an abandoned tab has to wait the window out in real
 # time, so the production value would cost every such spec a minute and a
 # half of sleeping.
+# Requests at a tenth of the limits, not half: the smoke suite runs two
+# Playwright workers, and a spec that brings up its own mock agent overlaps a
+# phase of the e2e-agent chain. At half, two mock agents (500m each, plus
+# their gateway's 100m) do not fit beside the control plane on the
+# single-node CI cluster, and the second one stays Pending. The mock replays
+# scripts and needs no reserved CPU. Limits, and so Budgets, are unchanged.
 controller:
+  requestsFromLimits:
+    fraction: "0.1"
   agent:
     templateDefaults:
       env:

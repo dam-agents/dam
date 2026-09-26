@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Run a lima template's provision scripts on this host: in sandbox mode, the stand-in for creating the VM. cluster:install runs it by path; CI runs it at the top of the e2e job, before the tools the rest of the install needs are set up."
+#MISE hide=true
+# Needs sudo, and yq on PATH. The scripts are idempotent, so re-running over a
+# partial provision heals it.
+set -eo pipefail
+
+template="${1:?usage: provision-host <lima-template>}"
+
+# Lima provision scripts may shell out to apt-get; stub it so the loop below
+# doesn't fail on a non-Debian host. Idempotent.
+if ! command -v apt-get >/dev/null 2>&1 && command -v dnf >/dev/null 2>&1; then
+  [ -x /usr/local/bin/apt-get ] || (
+    sudo install -m 0755 /dev/stdin /usr/local/bin/apt-get <<'SHIM'
+#!/bin/sh
+exit 0
+SHIM
+  )
+fi
+for i in $(seq 0 $(($(yq '.provision | length' "$template") - 1))); do
+  yq ".provision[$i].script" "$template" | sudo bash
+done
