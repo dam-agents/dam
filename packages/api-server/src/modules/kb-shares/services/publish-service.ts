@@ -13,9 +13,6 @@ import {
 import {
   INDEX_FORMAT_VERSION,
   MAX_WALK_DEPTH,
-  MAX_FILES,
-  PER_FILE_MAX_BYTES,
-  TOTAL_MAX_BYTES,
   bucketForPath,
   chooseBucketCount,
   parseManifest,
@@ -98,8 +95,7 @@ export interface KbSharePublishGateDeps {
     ArtifactService,
     "put" | "get" | "delete" | "stat" | "createUploadUrl"
   >;
-  limits?: Partial<KbSharePublishLimits>;
-  now?: () => Date;
+  limits: KbSharePublishLimits;
 }
 
 export interface KbSharePublishLimits {
@@ -157,12 +153,7 @@ function fromWireFailure(wire: {
 export function createKbSharePublishGate(
   deps: KbSharePublishGateDeps,
 ): KbSharePublishGate {
-  const now = deps.now ?? (() => new Date());
-  const limits: KbSharePublishLimits = {
-    perFileMaxBytes: deps.limits?.perFileMaxBytes ?? PER_FILE_MAX_BYTES,
-    totalMaxBytes: deps.limits?.totalMaxBytes ?? TOTAL_MAX_BYTES,
-    maxFiles: deps.limits?.maxFiles ?? MAX_FILES,
-  };
+  const limits = deps.limits;
   const messageLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
   const pending = new Map<string, PendingPublish>();
 
@@ -252,7 +243,7 @@ export function createKbSharePublishGate(
   }): Promise<readonly StaleSnapshotEntry[]> {
     const keep: StaleSnapshotEntry[] = [];
     const expired: StaleSnapshotEntry[] = [];
-    const nowMs = now().getTime();
+    const nowMs = Date.now();
     for (const entry of opts.stale) {
       const ageMs = nowMs - Date.parse(entry.replacedAt);
       const expiredNow = ageMs >= STALE_SNAPSHOT_GRACE_MS;
@@ -410,7 +401,7 @@ export function createKbSharePublishGate(
   }
 
   function reapAbandonedPending(): void {
-    const cutoff = now().getTime() - STALE_CLAIM_MS;
+    const cutoff = Date.now() - STALE_CLAIM_MS;
     for (const [ticket, entry] of pending) {
       if (entry.createdAtMs >= cutoff) continue;
       pending.delete(ticket);
@@ -558,7 +549,7 @@ export function createKbSharePublishGate(
           {
             snapshotId: claimed.snapshotId,
             snapshotManifestKey: claimed.snapshotManifestKey,
-            snapshotCreatedAt: claimed.snapshotCreatedAt ?? now(),
+            snapshotCreatedAt: claimed.snapshotCreatedAt ?? new Date(),
             documentCount: planFiles.length,
             totalSizeBytes,
             staleSnapshots,
@@ -612,7 +603,7 @@ export function createKbSharePublishGate(
         roots: claimed.roots,
         ticket,
         claimedAt,
-        createdAtMs: now().getTime(),
+        createdAtMs: Date.now(),
         snapshotId: mintSnapshotId(),
         shareId,
         planFiles,
@@ -691,7 +682,7 @@ export function createKbSharePublishGate(
       }
     }
 
-    const createdAt = now();
+    const createdAt = new Date();
     const files: SnapshotManifestFile[] = entry.planFiles.map((f) => ({
       path: f.path,
       sizeBytes: f.sizeBytes,

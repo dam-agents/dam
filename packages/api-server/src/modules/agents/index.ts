@@ -12,24 +12,14 @@ export {
   type AgentsRepository,
   type AgentActivityStamp,
 } from "./infrastructure/agents-repository.js";
-export {
-  createAgentEnvRepository,
-  type AgentEnvRepository,
-} from "./infrastructure/agent-env-repository.js";
-export {
-  createAgentRegistrySecretPort,
-  type AgentRegistrySecretPort,
-} from "./infrastructure/agent-registry-secret-port.js";
+export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
+export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 export {
   createKeycloakUserDirectory,
   type KeycloakUserDirectory,
 } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
-export {
-  createAgentSweep,
-  isSweepDue,
-  type AgentSweep,
-} from "./services/agent-sweep.js";
+export { createAgentSweep } from "./services/agent-sweep.js";
 export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,
@@ -37,20 +27,11 @@ export {
   wakeFailureReasonToken,
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
-export {
-  AgentStoppedError,
-  isAgentStoppedError,
-} from "./domain/agent-stopped.js";
+export { isAgentStoppedError } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
-export {
-  agentStreamable,
-  type AgentStreamability,
-} from "./domain/streamable.js";
+export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
-export {
-  createPublicAgentRoutes,
-  type PublicAgentRoutesDeps,
-} from "./infrastructure/public-agent-routes.js";
+export { createPublicAgentRoutes } from "./infrastructure/public-agent-routes.js";
 export {
   concreteResources,
   type DefaultResourceLimits,
@@ -66,5 +47,4 @@ export {
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   setSlackChannelDefault,
-  type SlackBindingRow,
 } from "./infrastructure/channel-bindings-repository.js";

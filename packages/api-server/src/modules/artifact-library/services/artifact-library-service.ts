@@ -144,14 +144,6 @@ function agentApiAccess(
   return { allowed: true, agentId: row.agentId };
 }
 
-export function shareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/a/${slug}`;
-}
-
-export function folderShareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/f/${slug}`;
-}
-
 function hasShareLink(visibility: ArtifactVisibility): boolean {
   return match(visibility)
     .with("private", () => false)
@@ -182,7 +174,7 @@ export function toLibraryArtifact(
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
-      ? shareUrlFor(shareBaseUrl, row.slug)
+      ? `${shareBaseUrl.replace(/\/+$/, "")}/a/${row.slug}`
       : null,
     viewers,
     createdAt: row.createdAt.toISOString(),
@@ -711,7 +703,9 @@ export function createArtifactLibraryService(
     async folderShareUrl(id) {
       const folder = await requireOwnedFolder(id);
       const shared = await repo.countSharedInFolder(id);
-      return shared > 0 ? folderShareUrlFor(shareBaseUrl, folder.slug) : null;
+      return shared > 0
+        ? `${shareBaseUrl.replace(/\/+$/, "")}/f/${folder.slug}`
+        : null;
     },
 
     resolveContentRef: resolveRef,

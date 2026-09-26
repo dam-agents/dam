@@ -8,7 +8,6 @@ export {
   listKbShareAgentIds,
   startKbShareSync,
   type KbShareAgentOps,
-  type KbShareStorePort,
 } from "./compose.js";
 export { registerKbShareTools } from "./mcp-tools.js";
 export {

@@ -122,28 +122,6 @@ function readyCondition(obj: KubeObject) {
   return status.conditions?.find((c) => c.type === "Ready");
 }
 
-function agentPodTerminationMessage(obj: KubeObject): string | undefined {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  const c = status.conditions?.find((c) => c.type === "AgentPodReady");
-  if (c?.status !== "False" || !c.message) return undefined;
-  return c.reason && POD_FAILURE_REASONS.has(c.reason) ? c.message : undefined;
-}
-
-function agentPodRestarts(obj: KubeObject): number {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  const restarts = status.agentPodRestarts;
-  return typeof restarts === "number" &&
-    Number.isFinite(restarts) &&
-    restarts > 0
-    ? restarts
-    : 0;
-}
-
-function agentPodRestartReason(obj: KubeObject): string | undefined {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  return status.agentPodRestartReason || undefined;
-}
-
 export function agentOwner(obj: KubeObject): string | undefined {
   return obj.metadata?.labels?.[LABEL_OWNER];
 }
@@ -174,6 +152,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       : undefined;
 
   const agentPod = status.conditions?.find((c) => c.type === "AgentPodReady");
+  const restarts = status.agentPodRestarts;
   const gatewayPod = status.conditions?.find(
     (c) => c.type === "GatewayPodReady",
   );
@@ -223,9 +202,18 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     error,
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
-    podTerminationReason: agentPodTerminationMessage(obj),
-    podRestarts: agentPodRestarts(obj),
-    podRestartReason: agentPodRestartReason(obj),
+    podTerminationReason:
+      agentPod?.status === "False" &&
+      agentPod.message &&
+      agentPod.reason &&
+      POD_FAILURE_REASONS.has(agentPod.reason)
+        ? agentPod.message
+        : undefined,
+    podRestarts:
+      typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
+        ? restarts
+        : 0,
+    podRestartReason: status.agentPodRestartReason || undefined,
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,
@@ -303,13 +291,6 @@ export function buildAgentObject(
     },
     spec,
   };
-}
-
-export function findOrphanedAgentIds(
-  infraIds: Set<string>,
-  psqlAgentIds: string[],
-): string[] {
-  return psqlAgentIds.filter((id) => !infraIds.has(id));
 }
 
 function splitRoots(raw: string | undefined): string[] | undefined {

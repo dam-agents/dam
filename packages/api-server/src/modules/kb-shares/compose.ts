@@ -86,7 +86,7 @@ export function composeKbPublishGate(opts: {
     },
     findActiveByAgent: findActiveShareByAgent(opts.db),
     store: opts.store,
-    ...(opts.publishLimits ? { limits: opts.publishLimits } : {}),
+    limits: resolveLimits(opts.publishLimits),
   });
 }
 
