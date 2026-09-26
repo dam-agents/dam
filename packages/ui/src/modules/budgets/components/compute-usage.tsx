@@ -82,10 +82,9 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
 interface Props {
   agents: readonly AgentView[];
   workingAgentIds: ReadonlySet<string>;
-  compact?: boolean;
 }
 
-export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
+export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -118,14 +117,12 @@ export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
           Request more
         </a>
       </div>
-      {!compact && (
-        <div className="mb-3">
-          <p className="text-2xl font-semibold tabular-nums text-foreground">
-            {view.usedSlots}/{view.ceilingSlots}
-          </p>
-          <p className="text-sm text-muted-foreground">Slots</p>
-        </div>
-      )}
+      <div className="mb-3">
+        <p className="text-2xl font-semibold tabular-nums text-foreground">
+          {view.usedSlots}/{view.ceilingSlots}
+        </p>
+        <p className="text-sm text-muted-foreground">Slots</p>
+      </div>
       <div className="mb-3">
         <SlotBar
           segments={view.segments}

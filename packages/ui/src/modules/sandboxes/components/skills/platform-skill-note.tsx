@@ -10,12 +10,10 @@ function separator(index: number, total: number): string {
 
 export function PlatformSkillNote({
   featureId,
-  subject = "this agent",
   className,
   onOpenSkills,
 }: {
   featureId: PlatformFeatureId;
-  subject?: string;
   className?: string;
   onOpenSkills?: () => void;
 }) {
@@ -31,7 +29,7 @@ export function PlatformSkillNote({
           <code className="rounded bg-muted px-1 py-0.5 text-xs">{name}</code>
         </span>
       ))}{" "}
-      {names.length > 1 ? "skills" : "skill"} to {subject}.
+      {names.length > 1 ? "skills" : "skill"} to this agent.
       {onOpenSkills && (
         <>
           {" "}

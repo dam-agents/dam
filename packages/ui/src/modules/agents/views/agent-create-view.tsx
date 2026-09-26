@@ -592,7 +592,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         satelliteNames={form.satelliteNames}
         onToggleSatellite={toggleSatellite}
         onOpenCatalog={openCatalog}
-        title="Connections"
         excludeIds={kitOwnedConnectionIds}
         leading={
           kit && connectionRequirements(kit).length > 0 ? (
