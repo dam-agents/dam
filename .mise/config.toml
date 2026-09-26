@@ -13,7 +13,7 @@ repo_root = "{{config_root}}"
 # a base update by itself: image:bump-bases re-pins the digests.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:24@sha256:17ce4f31d2671b2cbfcca600e483d2284dd4f45b11e4665ab24d4f93e71cc1eb"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:58f9030ce520821c61798d41ca52aa2b10ba5f20c49245f63ecffcfcaa3d464f"
-base_image_keycloak = "quay.io/keycloak/keycloak:26.7.3@sha256:29be7252db0a106f1cd2ac17b9a56ff2668073da645638a38b9fc67deeb2d6c4"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c"
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:b1a78d4e21c3d3d820918253b4a260009c7cd5f5edf1831c8f490f1afac3b064"
 # The `mise oci` images' base, the agents' system-package image and the VM
 # runner, by tag alone: both take Debian's packages afresh at build time, and

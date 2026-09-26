@@ -677,7 +677,7 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
