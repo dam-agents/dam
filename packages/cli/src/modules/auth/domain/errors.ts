@@ -89,18 +89,3 @@ export type TokenProviderError =
   | AuthStoreReadError
   | AuthStoreWriteError
   | MalformedAuthStoreError;
-
-export type AuthDomainError =
-  | AuthStoreReadError
-  | AuthStoreWriteError
-  | MalformedAuthStoreError
-  | AuthConfigProbeError
-  | OidcDiscoveryError
-  | DeviceFlowError
-  | TokenTransportError
-  | BrowserOpenError
-  | NotLoggedInError
-  | SessionExpiredError
-  | RefreshFailedError
-  | RefreshTransientError
-  | RevokeError;

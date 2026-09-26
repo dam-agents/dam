@@ -1,9 +1,5 @@
 import { Command } from "commander";
-import type {
-  AuthService,
-  StatusEntry,
-  StatusError,
-} from "../services/auth-service.js";
+import type { AuthService } from "../services/auth-service.js";
 import {
   EXIT_RUNTIME_FAILURE,
   EXIT_AUTH_STATUS_NO_VALID,
@@ -22,7 +18,9 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
     .action(async () => {
       const result = await deps.authService.status();
       if (!result.ok) {
-        printStatusError(result.error);
+        process.stderr.write(
+          `error: failed to read credential store: ${result.error.detail}\n`,
+        );
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
@@ -35,32 +33,17 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
         );
       }
 
-      const lines: string[] = [];
-      for (const entry of report.entries) {
-        lines.push(formatEntry(entry));
-      }
+      const lines = report.entries.map((entry) => {
+        const marker = entry.isActive ? "*" : " ";
+        const expires =
+          entry.expiresAt !== undefined
+            ? ` (expires ${entry.expiresAt.toISOString()})`
+            : "";
+        return `${marker} ${entry.host}  user=${entry.username}  source=${entry.source}  issuer=${entry.issuer}${expires}`;
+      });
       process.stdout.write(`${lines.join("\n")}\n`);
       process.exit(
         report.activeHostValid ? EXIT_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
       );
     });
-}
-
-function formatEntry(entry: StatusEntry): string {
-  const marker = entry.isActive ? "*" : " ";
-  const expires =
-    entry.expiresAt !== undefined
-      ? ` (expires ${entry.expiresAt.toISOString()})`
-      : "";
-  return `${marker} ${entry.host}  user=${entry.username}  source=${entry.source}  issuer=${entry.issuer}${expires}`;
-}
-
-function printStatusError(e: StatusError): void {
-  switch (e.kind) {
-    case "auth-store":
-      process.stderr.write(
-        `error: failed to read credential store: ${e.detail}\n`,
-      );
-      return;
-  }
 }

@@ -8,11 +8,10 @@ import {
 } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildDeleteCommand } from "./commands/delete.js";
-import { buildDisableCommand } from "./commands/disable.js";
-import { buildEnableCommand } from "./commands/enable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildResetSessionCommand } from "./commands/reset-session.js";
+import { buildToggleCommand } from "./commands/toggle-command.js";
 import { buildUpdateCommand } from "./commands/update.js";
 import {
   createScheduleService,
@@ -59,8 +58,8 @@ export function composeScheduleModule(
   parent.addCommand(buildGetCommand(idScoped));
   parent.addCommand(buildCreateCommand(agentScoped));
   parent.addCommand(buildUpdateCommand(idScoped));
-  parent.addCommand(buildEnableCommand(idScoped));
-  parent.addCommand(buildDisableCommand(idScoped));
+  parent.addCommand(buildToggleCommand(idScoped, true));
+  parent.addCommand(buildToggleCommand(idScoped, false));
   parent.addCommand(buildDeleteCommand(idScoped));
   parent.addCommand(buildResetSessionCommand(idScoped));
 

@@ -16,7 +16,6 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ChannelService } from "../services/channel-service.js";
-import { ensureProviderAvailable } from "./precheck.js";
 
 export function buildSlackConnectCommand(deps: {
   compatService: CompatService;
@@ -77,7 +76,15 @@ export function buildSlackConnectCommand(deps: {
         }
 
         const svc = deps.createChannelService(host);
-        await ensureProviderAvailable(svc, ChannelType.Slack, host);
+        const available = await svc.available();
+        if (!available.ok) {
+          printServiceError(available.error, host);
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+        if (!available.value[ChannelType.Slack]) {
+          process.stderr.write("error: Slack app token not configured\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
 
         const res = await svc.connectSlack(
           resolved.value.id,
