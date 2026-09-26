@@ -373,17 +373,19 @@ build_mise() (
 
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
-# base/apt.toml as an image, rebuilt when it changes and once a day for
-# updates, and served to mise oci, which pulls a base from a registry only.
+# base/apt.toml as an image on the root config's Debian base, rebuilt when
+# either changes and once a day for updates, and served to mise oci, which
+# pulls a base from a registry only.
 # Ceiling: one agent build per host at a time, on the registry's fixed port.
 serve_apt_base() {
-  local layout="$state/apt-base" key port="${AGENT_APT_REGISTRY_PORT:-5123}"
-  key="$(sha256sum "$agents/base/apt.toml" | cut -c1-16)-$(date -u +%F)"
+  local layout="$state/apt-base" key port="${AGENT_APT_REGISTRY_PORT:-5123}" from
+  from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
+  key="$({ cat "$agents/base/apt.toml"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   if [ "$(cat "$layout.key" 2>/dev/null)" != "$key" ]; then
     rm -rf "$layout" "$work/apt"
     mkdir -p "$work/apt"
     cp "$agents/base/apt.toml" "$work/apt/mise.toml"
-    (isolate_mise && cd "$work/apt" && ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise -o "$layout")
+    (isolate_mise && cd "$work/apt" && ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise --from "$from" -o "$layout")
     [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work" "$layout"
     echo "$key" > "$layout.key"
   fi

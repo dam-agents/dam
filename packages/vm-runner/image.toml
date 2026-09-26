@@ -1,10 +1,10 @@
-# The VM runner image, built with `mise oci` by //packages/vm-runner:oci: smolvm
-# plus the platform's vm-runner agent, run as one pod that holds /dev/kvm (a
-# device-plugin resource, or privileged locally) and hosts vm-backend agents as
-# microVMs. Same image everywhere; only the pod's device grant differs per
-# cluster. The task compiles the runner, the image cache service and
-# platform-init from this crate, fetches the smolvm release smolvm.pin names
-# and crane, and copies them in.
+# The VM runner image, built with `mise oci` by //packages/vm-runner:oci on the
+# root config's base_image_debian: smolvm plus the platform's vm-runner agent,
+# run as one pod that holds /dev/kvm (a device-plugin resource, or privileged
+# locally) and hosts vm-backend agents as microVMs. Same image everywhere; only
+# the pod's device grant differs per cluster. The task compiles the runner, the
+# image cache service and platform-init from this crate, fetches the smolvm
+# release smolvm.pin names and crane, and copies them in.
 
 # tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
 # expands the ext4 templates onto the runner's claim, once per release, so the
@@ -29,8 +29,6 @@
 # any of them. The controller passes the rest. The runner's tests read the
 # entrypoint from this line, so it stays one line of JSON-compatible TOML.
 [oci]
-# Google's mirror: no Docker Hub rate limit on CI.
-from = "mirror.gcr.io/library/debian:trixie-slim"
 workdir = "/"
 cmd = []
 entrypoint = ["/usr/bin/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init"]

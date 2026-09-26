@@ -100,7 +100,9 @@ tar -xzf "$(fetch "https://github.com/google/go-containerregistry/releases/downl
 install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bin/crane"
 
 # A mise project of its own, outside the repo, whose config is image.toml and
-# the copies of the tree above; it names no tools.
+# the copies of the tree above; it names no tools. Its base is read before
+# mise is isolated from the repo.
+from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 project="$work/project"
 mkdir -p "$project" "$work"/{data,cache,state,config}
 cp image.toml "$project/mise.toml"
@@ -118,7 +120,7 @@ for d in usr opt; do printf '\n[[oci.copy]]\nhost = "../build/%s"\nimage = "/%s"
   # layer's resolve inside the image and those in smolvm's guest rootfs inside
   # the guest; it flags the copies, though both are this build's own tree; and
   # an image with no tools is the point.
-  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise -o "$work/layout" 2>&1 1>&3 3>&- |
+  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise --from "$from" -o "$work/layout" 2>&1 1>&3 3>&- |
     { grep -vE 'oci layer: symlink [^ ]*(/mise-oci-apt-rootfs-[^ ]*/diff|/agent-rootfs)/[^ ]* .* has an absolute target outside|mise oci build: (copying host path |no tools in the toolset)' || true; } >&2; } 3>&1
 )
 [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work"

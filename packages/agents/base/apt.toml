@@ -1,6 +1,6 @@
 # The system packages every agent image shares, built once into the base the
 # images build on (//packages/agents:oci): mise oci installs them afresh in
-# every build otherwise.
+# every build otherwise. They go onto the root config's base_image_debian.
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
 # libnss3-tools for Chromium's trust store, and from
@@ -54,7 +54,3 @@
 "apt:fonts-tlwg-loma-otf" = "latest"
 "apt:fonts-unifont" = "latest"
 "apt:xfonts-scalable" = "latest"
-
-[oci]
-# Google's mirror: no Docker Hub rate limit on CI.
-from = "mirror.gcr.io/library/debian:trixie-slim"

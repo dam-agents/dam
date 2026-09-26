@@ -33,9 +33,10 @@ env:
 jobs:
   base-pins:
     name: base image pins
-    # image:pack bases are pinned by digest, so no rebuild picks up a base
-    # update by itself. The nightly run keeps one issue open while a pin is
-    # behind its tag; update-vulnerable-deps bumps it with image:bump-bases.
+    # image:pack bases are pinned by digest in the root config's base_image_*
+    # vars, so no rebuild picks up a base update by itself. The nightly run
+    # keeps one issue open while a pin is behind its tag; up-deps-sec bumps it
+    # with image:bump-bases.
     if: ${{ github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -71,7 +72,7 @@ jobs:
               print "A base image tag moved past its pin, so the images built on it miss its updates."
               print "Re-pin with `mise run image:bump-bases`. Last checked: [run](" run ")."
               print ""
-              print "| Task | Tag | Pinned | Current |"
+              print "| Variable | Tag | Pinned | Current |"
               print "| --- | --- | --- | --- |"
             }
             { printf "| `%s` | `%s` | `%s` | `%s` |\n", $1, $2, substr($3, 1, 19), substr($4, 1, 19) }')"
