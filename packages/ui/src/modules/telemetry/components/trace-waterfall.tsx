@@ -1,9 +1,10 @@
 import type { TurnDetail } from "api-server-api";
 import { useMemo } from "react";
 
+import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatDurationMs, formatUsd } from "../../metrics/lib/format.js";
+import { formatUsd } from "../../metrics/lib/format.js";
 import {
   buildWaterfall,
   logCostUsd,

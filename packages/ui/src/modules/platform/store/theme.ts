@@ -13,12 +13,17 @@ export interface ThemeSlice {
   setTheme: (t: Theme) => void;
 }
 
-function applyTheme(theme: Theme) {
-  const isDark =
+export function isDarkTheme(theme: Theme): boolean {
+  return (
     theme === "dark" ||
     (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", isDark);
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches)
+  );
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.classList.toggle("dark", isDarkTheme(theme));
 }
 
 export function readStoredTheme(): Theme {

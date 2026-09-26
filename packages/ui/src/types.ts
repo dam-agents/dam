@@ -98,7 +98,6 @@ export interface Message {
 }
 
 export type { SessionView } from "api-server-api";
-export { SessionType } from "api-server-api";
 
 export interface TemplateView {
   id: string;
