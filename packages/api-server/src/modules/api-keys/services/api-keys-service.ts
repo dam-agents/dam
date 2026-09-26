@@ -42,10 +42,6 @@ function rowToView(r: ApiKeyRow): ApiKeyView {
   };
 }
 
-function generateKeyId(): string {
-  return `key-${randomUUID()}`;
-}
-
 export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
   return {
     async list() {
@@ -104,7 +100,7 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
 
       const { token, hash } = deps.mintToken();
       const row = await deps.insert({
-        id: generateKeyId(),
+        id: `key-${randomUUID()}`,
         ownerSub: deps.ownerSub,
         name: input.name,
         hash,

@@ -27,8 +27,6 @@ import {
   type ExperimentPinPort,
 } from "./services/reap-follow-up.js";
 
-export type { ExperimentPinPort } from "./services/reap-follow-up.js";
-
 const FEED_INVOCATIONS_MAX = 500;
 
 const NO_PIN: ExperimentPinPort = {

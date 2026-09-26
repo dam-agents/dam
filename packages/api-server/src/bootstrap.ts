@@ -1038,17 +1038,7 @@ export async function bootstrap() {
         return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
       },
     },
-    ruleMatcher: {
-      match: async (agentId, host, method, path) => {
-        const matched = await createEgressRuleMatchAdapter(db).match(
-          agentId,
-          host,
-          method,
-          path,
-        );
-        return matched ? { verdict: matched.verdict } : null;
-      },
-    },
+    ruleMatcher: createEgressRuleMatchAdapter(db),
     attendance: turnAttendance,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,

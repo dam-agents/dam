@@ -60,10 +60,6 @@ export interface ComposeApprovalsSystemDeps {
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedHosts: readonly string[];
-  sweep?: {
-    staleMs?: number;
-    batchSize?: number;
-  };
 }
 
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
@@ -87,8 +83,8 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   const sweeper = createDeliverySweeper({
     repo,
     wrapperFrameSender: deps.wrapperFrameSender,
-    staleMs: deps.sweep?.staleMs ?? 30_000,
-    batchSize: deps.sweep?.batchSize ?? 50,
+    staleMs: 30_000,
+    batchSize: 50,
   });
   return { relay, gate, sweeper, wakeSaga };
 }
@@ -104,17 +100,4 @@ export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }
 
-export type { ApprovalsRelayService } from "./services/approvals-relay-service.js";
-export type {
-  ExtAuthzGate,
-  ExtAuthzGateInput,
-  ExtAuthzVerdict,
-  EgressAttendance,
-  EgressRuleMatcher,
-  AgentIdentityResolver,
-} from "./services/ext-authz-gate.js";
-export type { DeliverySweeper } from "./services/delivery-sweeper.js";
-export type {
-  EgressRuleWriter,
-  WrapperFrameSender,
-} from "./services/approvals-service.js";
+export type { ApprovalsRelayService, ExtAuthzGate, WrapperFrameSender };

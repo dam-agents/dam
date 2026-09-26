@@ -1,10 +1,5 @@
 import type { Db } from "db";
-import type {
-  EgressPreset,
-  EgressRuleSource,
-  EgressRulesService,
-  RuleVerdict,
-} from "api-server-api";
+import type { EgressRulesService } from "api-server-api";
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
 import { createEgressRulesService } from "./services/egress-rules-service.js";
 import { createPresetSeeder } from "./services/preset-seeder.js";
@@ -14,7 +9,6 @@ import {
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
-import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
 import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import { reconcileL7Promotions } from "./services/l7-promotion-reconcile.js";
@@ -45,42 +39,20 @@ export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
   return { service };
 }
 
-export interface EgressRuleMatchAdapter {
-  match(
-    agentId: string,
-    host: string,
-    method: string,
-    path: string,
-  ): Promise<{ verdict: RuleVerdict } | null>;
-}
-
-export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
+export function createEgressRuleMatchAdapter(db: Db) {
   const repo = createEgressRulesRepository(db);
   return {
-    async match(agentId, host, method, path) {
+    async match(agentId: string, host: string, method: string, path: string) {
       const row = await repo.findMatch(agentId, host, method, path);
       return row ? { verdict: row.verdict } : null;
     },
   };
 }
 
-export interface EgressRuleWriterAdapter {
-  insert(input: {
-    id: string;
-    agentId: string;
-    host: string;
-    method: string;
-    pathPattern: string;
-    verdict: RuleVerdict;
-    decidedBy: string;
-    source: EgressRuleSource;
-  }): Promise<EgressRuleWriteOutcome>;
-}
-
 export function createEgressRuleWriterAdapter(
   db: Db,
   l7Hosts?: AgentL7HostsPort,
-): EgressRuleWriterAdapter {
+) {
   return createEgressRuleWriter({
     repo: createEgressRulesRepository(db),
     l7Hosts,
@@ -114,12 +86,7 @@ export function createL7PromotionReconcile(
   return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });
 }
 
-export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
-export type { EgressPreset };
-export {
-  createAgentL7HostsPort,
-  type AgentL7HostsPort,
-} from "./infrastructure/k8s-agent-l7-hosts-port.js";
+export { createAgentL7HostsPort };
 
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);

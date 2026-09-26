@@ -29,8 +29,6 @@ import { createApiContextFactory } from "./trpc/context.js";
 import { createTrpcHttpHandler } from "./trpc/http.js";
 import { createTrpcWsEndpoint } from "./trpc/ws.js";
 
-export type { ApiServerDeps } from "./deps.js";
-
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
   await next();
   if (c.res.status !== 304 && !c.res.headers.has("Cache-Control"))

@@ -7,19 +7,18 @@ import { durationToMinutesStrict } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
 
-function isValidAppSlug(s: string): boolean {
-  return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
-}
-
 const adminAppSlugSchema = z
   .string()
   .nullable()
   .default(null)
   .transform((v) => (v == null || v === "" ? null : v))
-  .refine((v) => v == null || isValidAppSlug(v), {
-    message:
-      "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
-  });
+  .refine(
+    (v) => v == null || (v.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(v)),
+    {
+      message:
+        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+    },
+  );
 
 const positiveQuantitySchema = z
   .string()

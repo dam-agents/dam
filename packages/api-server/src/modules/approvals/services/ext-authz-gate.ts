@@ -224,7 +224,13 @@ async function waitForVerdict(
     const checkResolved = async () => {
       const row = await deps.repo.getPending(id);
       if (!row || row.status !== "resolved") return;
-      settle({ verdict: verdictOf(row.verdict), reason: "hold-resolved" });
+      settle({
+        verdict:
+          row.verdict === "allow" || row.verdict === "allow_once"
+            ? "allow"
+            : "deny",
+        reason: "hold-resolved",
+      });
     };
 
     const unsubscribe = deps.bus.subscribe(
@@ -253,9 +259,4 @@ async function waitForVerdict(
       clearTimeout(timeout);
     }
   });
-}
-
-function verdictOf(v: string | null): ExtAuthzVerdict {
-  if (v === "allow" || v === "allow_once") return "allow";
-  return "deny";
 }

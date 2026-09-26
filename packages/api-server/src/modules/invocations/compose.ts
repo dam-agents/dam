@@ -88,5 +88,3 @@ export function listInvocationAgentIds(db: Db): Promise<string[]> {
 }
 
 const INVOCATION_ORPHAN_GRACE_MS = 5 * 60_000;
-
-export type { DriverResolution } from "./services/driver-resolution.js";

@@ -51,19 +51,6 @@ function isRequest(msg: unknown): msg is JsonRpcRequest {
   return m.id !== undefined && typeof m.method === "string";
 }
 
-function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
-  return isRequest(msg) && msg.method === "session/request_permission";
-}
-
-function isPrompt(msg: unknown): msg is JsonRpcRequest {
-  return isRequest(msg) && msg.method === "session/prompt";
-}
-
-function hasPermissionOutcome(msg: JsonRpcResponse): boolean {
-  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
-  return typeof result?.outcome?.outcome === "string";
-}
-
 function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== "object" || msg === null) return false;
   const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
@@ -190,7 +177,7 @@ export function createAcpRelay(
       }
 
       function trackIfPrompt(parsed: unknown): void {
-        if (!isPrompt(parsed)) return;
+        if (!isRequest(parsed) || parsed.method !== "session/prompt") return;
         if (
           actor.surface === "ui" &&
           parsed.params?._meta?.platform?.initiator === "system"
@@ -207,7 +194,9 @@ export function createAcpRelay(
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
-        if (!rowId || !hasPermissionOutcome(msg)) return;
+        const result = msg.result as
+          { outcome?: { outcome?: unknown } } | undefined;
+        if (!rowId || typeof result?.outcome?.outcome !== "string") return;
         approvals
           .resolveAcpNativeFromInSession(rowId)
           .then(() => mirroredRows.delete(key))
@@ -313,7 +302,11 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
             client.send(data, { binary: false });
-            if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
+            if (
+              isRequest(parsed) &&
+              parsed.method === "session/request_permission"
+            )
+              mirrorPermissionRequest(parsed);
           });
 
           upstream.on("close", (code, reason) => {

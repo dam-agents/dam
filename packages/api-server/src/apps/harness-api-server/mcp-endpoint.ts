@@ -73,7 +73,6 @@ import {
   textResult,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
-export type { ToolContent } from "../../core/mcp-tool-result.js";
 
 function errMessage(err: unknown, fallback: string): string {
   if (err instanceof TRPCError) {
