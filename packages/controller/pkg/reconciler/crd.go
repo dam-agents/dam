@@ -6,7 +6,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -43,21 +42,4 @@ func agentToUnstructured(agent *apiv1.Agent) (*unstructured.Unstructured, error)
 
 func agentOwnerRef(agent *apiv1.Agent) metav1.OwnerReference {
 	return *metav1.NewControllerRef(agent, agentGVK)
-}
-
-type agentLister struct {
-	lister cache.GenericLister
-	ns     string
-}
-
-func NewAgentLister(lister cache.GenericLister, ns string) AgentGetter {
-	return agentLister{lister: lister, ns: ns}
-}
-
-func (g agentLister) Get(name string) (*apiv1.Agent, error) {
-	obj, err := g.lister.ByNamespace(g.ns).Get(name)
-	if err != nil {
-		return nil, err
-	}
-	return FromCacheObject[apiv1.Agent](obj)
 }

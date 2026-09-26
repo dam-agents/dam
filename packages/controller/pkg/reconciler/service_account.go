@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -48,7 +49,7 @@ func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *core
 				changed = true
 			}
 		}
-		if !hasOwnerRef(existing.OwnerReferences, desired.OwnerReferences[0]) {
+		if !slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
 			existing.OwnerReferences = append(existing.OwnerReferences, desired.OwnerReferences[0])
 			changed = true
 		}
@@ -63,15 +64,6 @@ func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *core
 		_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
-}
-
-func hasOwnerRef(existing []metav1.OwnerReference, want metav1.OwnerReference) bool {
-	for _, r := range existing {
-		if r.UID == want.UID {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {

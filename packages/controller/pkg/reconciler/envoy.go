@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -220,15 +221,6 @@ func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envo
 	return out
 }
 
-func (c envoyHostChain) HasQueryParamCredential() bool {
-	for _, cred := range c.Credentials {
-		if cred.QueryParamName != "" {
-			return true
-		}
-	}
-	return false
-}
-
 const envoySecretTypeAllowOnly = "allow-only"
 
 func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
@@ -423,13 +415,6 @@ func sdsFileKeyForHost(host string) string {
 	return "host-" + base64.RawURLEncoding.EncodeToString([]byte(host)) + ".sds.yaml"
 }
 
-func sdsFileKey(e connectionHostInjection) string {
-	if e.SDSKey != "" {
-		return e.SDSKey
-	}
-	return sdsFileKeyForHost(e.Host)
-}
-
 func validPathRewrites(s corev1.Secret, e connectionHostInjection) []envoyPathRewrite {
 	out := make([]envoyPathRewrite, 0, len(e.PathRewrites))
 	for _, r := range e.PathRewrites {
@@ -522,7 +507,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 				HeaderName:     header,
 				QueryParamName: e.QueryParamName,
 				VolumeName:     "cred-" + s.Name,
-				SDSFileKey:     sdsFileKey(e),
+				SDSFileKey:     cmp.Or(e.SDSKey, sdsFileKeyForHost(e.Host)),
 			},
 		})
 	}

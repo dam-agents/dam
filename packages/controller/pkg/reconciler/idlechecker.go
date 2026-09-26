@@ -43,7 +43,9 @@ func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg}
-	c.busyProbe = c.podIsBusy
+	c.busyProbe = func(ctx context.Context, name string) bool {
+		return agentPodIsBusy(ctx, c.config.Namespace, name)
+	}
 	return c
 }
 
@@ -85,14 +87,7 @@ func (c *IdleChecker) checkInterval() time.Duration {
 	if timeout <= 0 {
 		return maxIdleCheckInterval
 	}
-	d := timeout / idleSweepsPerTimeout
-	if d < minIdleCheckInterval {
-		d = minIdleCheckInterval
-	}
-	if d > maxIdleCheckInterval {
-		d = maxIdleCheckInterval
-	}
-	return d
+	return min(max(timeout/idleSweepsPerTimeout, minIdleCheckInterval), maxIdleCheckInterval)
 }
 
 func (c *IdleChecker) check(ctx context.Context) {
@@ -133,7 +128,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, ownerOf(agent), name); err != nil {
+		if err := c.hibernate(ctx, agent.GetLabels()[envoyOwnerLabel], name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -199,10 +194,6 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 		return nil
 	}
 	return &metav1.Duration{Duration: d}
-}
-
-func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
-	return agentPodIsBusy(ctx, c.config.Namespace, agentName)
 }
 
 func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
@@ -282,8 +273,3 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt M
 }
 
 type MachineHalt func(ctx context.Context, owner, name string) error
-
-func ownerOf(agent *unstructured.Unstructured) string {
-	labels := agent.GetLabels()
-	return labels[envoyOwnerLabel]
-}

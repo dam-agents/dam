@@ -3,6 +3,8 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +28,6 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -427,10 +428,8 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if err != nil {
 			return err
 		}
-		for _, ref := range sec.OwnerReferences {
-			if ref.UID == ownerRef.UID {
-				return nil
-			}
+		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
+			return nil
 		}
 		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
 			APIVersion: ownerRef.APIVersion,
@@ -444,7 +443,6 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 }
 
 func (r *AgentReconciler) Delete(ctx context.Context, name string, labels map[string]string) {
-	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
@@ -494,7 +492,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 	persisted := map[string]bool{}
 	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
 		if mnt.Persist {
-			persisted[types.SanitizeMountName(mnt.Path)] = true
+			persisted[sanitizeMountName(mnt.Path)] = true
 		}
 	}
 
@@ -534,7 +532,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		if !mnt.Persist {
 			continue
 		}
-		volName := types.SanitizeMountName(mnt.Path)
+		volName := sanitizeMountName(mnt.Path)
 		if _, ok := claims[volName]; ok {
 			continue
 		}
@@ -674,14 +672,8 @@ func agentNameFromLeafSecret(sec corev1.Secret) (string, bool) {
 	if sec.Type != corev1.SecretTypeTLS {
 		return "", false
 	}
-	const suffix = envoyLeafSecretSuffix
-	if len(sec.Name) <= len(suffix) {
-		return "", false
-	}
-	if sec.Name[len(sec.Name)-len(suffix):] != suffix {
-		return "", false
-	}
-	return sec.Name[:len(sec.Name)-len(suffix)], true
+	name, ok := strings.CutSuffix(sec.Name, envoyLeafSecretSuffix)
+	return name, ok && name != ""
 }
 
 func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error {

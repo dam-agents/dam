@@ -4,8 +4,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
@@ -51,7 +51,7 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	}
 }
 
-func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
+func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *apiv1.AgentSpec) {
 	if agentSpec.RuntimeClassName != "" {
 		rc := agentSpec.RuntimeClassName
 		spec.RuntimeClassName = &rc
@@ -66,26 +66,4 @@ func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
 		}
 		spec.NodeSelector = merged
 	}
-}
-
-func configMountsToTypes(in []config.Mount) []types.Mount {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]types.Mount, len(in))
-	for i, m := range in {
-		out[i] = types.Mount{Path: m.Path, Persist: m.Persist, Size: m.Size}
-	}
-	return out
-}
-
-func configEnvToTypes(in []config.EnvVar) []types.EnvVar {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]types.EnvVar, len(in))
-	for i, e := range in {
-		out[i] = types.EnvVar{Name: e.Name, Value: e.Value}
-	}
-	return out
 }

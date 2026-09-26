@@ -15,10 +15,6 @@ type machineWatch struct {
 	cancel context.CancelFunc
 }
 
-func machineComingUp(st vmrunner.MachineStatus) bool {
-	return !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady)
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: starts watching the machine from the status version the reconcile just read, unless a watch on it is already running. The watch lives no longer than the reconciler's lifetime, so losing leadership or shutting down ends it. A running watch that holds an older version answers at once and requeues, so the next reconcile starts one from the newer version.
 func (r *AgentReconciler) watchMachine(runner *vmrunner.Client, name string, since uint64) {
 	if r.requeue == nil {
