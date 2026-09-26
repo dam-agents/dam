@@ -1,5 +1,6 @@
 import { Launch } from "@carbon/icons-react";
 
+import { getBrand } from "@/brand";
 import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { externalLinkProps } from "@/lib/external-link";
@@ -28,6 +29,7 @@ function CliQuickstartNote() {
 }
 
 export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
+  const cli = getBrand().short;
   return (
     <Modal widthClass="w-[480px]">
       <DialogHeader
@@ -35,7 +37,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
         onClose={onClose}
         subtitle={
           <>
-            <code className="font-mono">dam chat</code> connects your terminal
+            <code className="font-mono">{cli} chat</code> connects your terminal
             to <strong className="text-foreground">{agentName}</strong>'s
             interactive TUI.
           </>
@@ -45,7 +47,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
         <span className="text-sm font-medium text-foreground">
           Attach to the agent
         </span>
-        <CopyableCommand command={`dam chat ${agentId}`} size="compact" />
+        <CopyableCommand command={`${cli} chat ${agentId}`} size="compact" />
         <CliQuickstartNote />
       </DialogBody>
     </Modal>
@@ -53,6 +55,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
 }
 
 export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
+  const cli = getBrand().short;
   return (
     <Modal widthClass="w-[480px]">
       <DialogHeader
@@ -60,7 +63,7 @@ export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
         onClose={onClose}
         subtitle={
           <>
-            <code className="font-mono">dam ssh connect</code> launches your
+            <code className="font-mono">{cli} ssh connect</code> launches your
             editor against{" "}
             <strong className="text-foreground">{agentName}</strong>'s workspace
             over SSH.
@@ -72,14 +75,14 @@ export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
           Open in VS Code
         </span>
         <CopyableCommand
-          command={`dam ssh connect -x code ${agentId}`}
+          command={`${cli} ssh connect -x code ${agentId}`}
           size="compact"
         />
         <span className="mt-1 text-sm font-medium text-foreground">
           Open in Zed
         </span>
         <CopyableCommand
-          command={`dam ssh connect -x zed ${agentId}`}
+          command={`${cli} ssh connect -x zed ${agentId}`}
           size="compact"
         />
         <CliQuickstartNote />
