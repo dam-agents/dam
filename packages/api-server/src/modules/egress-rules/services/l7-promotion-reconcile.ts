@@ -2,7 +2,7 @@ import { promotedHosts, type PromotionRule } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 
-export interface AgentL7State {
+interface AgentL7State {
   agentId: string;
   current: readonly string[];
 }

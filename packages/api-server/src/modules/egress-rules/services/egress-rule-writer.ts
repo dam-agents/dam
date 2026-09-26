@@ -6,11 +6,6 @@ import type {
 import type { EgressRuleRow } from "../domain/types.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 
-export interface CreateEgressRuleWriterDeps {
-  repo: EgressRulesRepository;
-  l7Hosts?: AgentL7HostsPort;
-}
-
 export type EgressRuleWriteOutcome =
   | { kind: "inserted"; row: EgressRuleRow }
   | {
@@ -20,9 +15,14 @@ export type EgressRuleWriteOutcome =
     }
   | { kind: "verdict-clash"; existing: EgressRuleRow };
 
-export function createEgressRuleWriter(deps: CreateEgressRuleWriterDeps): {
+export interface EgressRuleWriter {
   insert(input: NewEgressRule): Promise<EgressRuleWriteOutcome>;
-} {
+}
+
+export function createEgressRuleWriter(deps: {
+  repo: EgressRulesRepository;
+  l7Hosts?: AgentL7HostsPort;
+}): EgressRuleWriter {
   return {
     async insert(input) {
       const row = await deps.repo.insert(input);

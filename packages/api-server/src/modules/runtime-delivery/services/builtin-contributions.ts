@@ -1,27 +1,16 @@
 import {
   KB_AGGREGATE_MCP_SERVER,
   PLATFORM_OUTBOUND_MCP_SERVER,
-  SHARED_KB_TEMPLATE_ID,
   type Contribution,
 } from "api-server-api";
 
-export { SHARED_KB_TEMPLATE_ID };
-
-export interface BuiltinContributionOpts {
-  sharedKnowledgeBases: boolean;
-}
-
 export interface BuiltinContributions {
-  for(agentId: string, opts: BuiltinContributionOpts): Contribution[];
+  for(agentId: string, opts: { sharedKnowledgeBases: boolean }): Contribution[];
 }
 
-export interface BuiltinContributionsOpts {
+export function createBuiltinContributions(opts: {
   harnessServerUrl: string;
-}
-
-export function createBuiltinContributions(
-  opts: BuiltinContributionsOpts,
-): BuiltinContributions {
+}): BuiltinContributions {
   const base = opts.harnessServerUrl.replace(/\/+$/, "");
   return {
     for(agentId, contributionOpts): Contribution[] {

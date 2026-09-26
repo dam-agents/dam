@@ -26,7 +26,7 @@ import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
-export interface ComposeApprovalsServiceDeps {
+interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
@@ -51,7 +51,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   return { service };
 }
 
-export interface ComposeApprovalsSystemDeps {
+interface ComposeApprovalsSystemDeps {
   db: Db;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;

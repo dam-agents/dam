@@ -17,14 +17,10 @@ export interface ConnectionRulesSync {
   }): Promise<void>;
 }
 
-export interface EgressHostRule {
+interface EgressHostRule {
   host: string;
   port?: number;
   pathPattern?: string;
-}
-
-export interface CreateConnectionRulesSyncDeps {
-  repo: EgressRulesRepository;
 }
 
 const SOURCE_PREFIX = "connection:";
@@ -37,9 +33,9 @@ function normalizePath(p: string | undefined | null): string {
   return p && p.length > 0 ? p : "*";
 }
 
-export function createConnectionRulesSync(
-  deps: CreateConnectionRulesSyncDeps,
-): ConnectionRulesSync {
+export function createConnectionRulesSync(deps: {
+  repo: EgressRulesRepository;
+}): ConnectionRulesSync {
   return {
     async adoptSources({ agentId, fromSources, toSource }) {
       await deps.repo.reassignActiveSource(

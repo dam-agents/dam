@@ -79,7 +79,6 @@ function harness(): Harness {
 
   const repo: AttentionRepository = {
     listForAgent: async () => [...stored.values()],
-    getRecord: async () => null,
     listForOwner: async () => [],
     upsertRecord: async (row) => {
       if (failWrite) {
@@ -90,8 +89,6 @@ function harness(): Harness {
       state.upserted?.push(row.sessionId);
     },
     listDismissals: async () => [],
-    getDismissal: async () => null,
-    setDismissal: async () => {},
     ownedSessionKeys: async () => new Set<string>(),
     setDismissals: async () => {},
     deleteSessions: async (_agentId, sessionIds) => {

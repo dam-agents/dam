@@ -11,7 +11,7 @@ export interface AgentRuntimeClient {
   applyState(input: ApplyStateInput): Promise<ApplyStateResult>;
 }
 
-export interface AgentRuntimeClientOpts {
+interface AgentRuntimeClientOpts {
   fetch?: FetchLike;
   timeoutMs?: number;
 }

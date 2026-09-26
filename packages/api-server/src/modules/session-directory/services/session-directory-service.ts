@@ -1,4 +1,3 @@
-import type { SessionDirectoryEntry } from "agent-runtime-api";
 import {
   sessionCategoryOf,
   type SessionCategory,
@@ -18,9 +17,7 @@ export function createSessionDirectoryService(deps: {
   repo: SessionDirectoryRepository;
 }): SessionDirectory {
   return {
-    async record(agentId: string, sessions: readonly SessionDirectoryEntry[]) {
-      await deps.repo.record(agentId, sessions);
-    },
+    record: (agentId, sessions) => deps.repo.record(agentId, sessions),
 
     async categorize(agentIds, sessionIds) {
       const rows = await deps.repo.find(agentIds, sessionIds);

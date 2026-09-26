@@ -9,7 +9,7 @@ export interface CronSweep {
   tick(): Promise<void>;
 }
 
-export interface CronSweepDeps {
+interface CronSweepDeps {
   outboxRepo: OutboxRepo;
   queue: StateQueue;
   agentRunningPort: IsAgentRunning;

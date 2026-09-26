@@ -13,15 +13,11 @@ export function composeHarnessConfigModule(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
+  const { db, ...serviceDeps } = deps;
   return {
     service: createHarnessConfigService({
-      surface: deps.surface,
-      runtimeMutator: deps.runtimeMutator,
-      snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
-      ownerSub: deps.ownerSub,
-      isOwnedAgent: deps.isOwnedAgent,
-      getCapabilities: deps.getCapabilities,
-      isSettled: deps.isSettled,
+      ...serviceDeps,
+      snapshotRepo: createHarnessConfigSnapshotRepo(db),
     }),
   };
 }

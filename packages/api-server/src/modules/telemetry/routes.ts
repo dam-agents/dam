@@ -12,13 +12,15 @@ import {
   TELEMETRY_DISABLED_REASON,
 } from "./services/telemetry-service.js";
 
-export interface TelemetryRoutesDeps {
+interface TelemetryRoutesDeps {
   reader: TelemetryReader | null;
   listLiveAgentIds: (rawSub: string) => Promise<string[]>;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
 }
 
 type AppEnv = { Variables: ApiVariables };
+
+const EXPORT_QUERY_KEYS = ["agentId", "sessionId", "signal", "sinceHours"];
 
 async function ownedIds(
   deps: TelemetryRoutesDeps,
@@ -49,20 +51,14 @@ export function createTelemetryRoutes(deps: TelemetryRoutesDeps) {
     if (!reader) {
       return c.json({ error: TELEMETRY_DISABLED_REASON }, 412);
     }
-    const parsed = telemetryExportQuerySchema.safeParse({
-      ...(c.req.query("agentId") === undefined
-        ? {}
-        : { agentId: c.req.query("agentId") }),
-      ...(c.req.query("sessionId") === undefined
-        ? {}
-        : { sessionId: c.req.query("sessionId") }),
-      ...(c.req.query("signal") === undefined
-        ? {}
-        : { signal: c.req.query("signal") }),
-      ...(c.req.query("sinceHours") === undefined
-        ? {}
-        : { sinceHours: c.req.query("sinceHours") }),
-    });
+    const parsed = telemetryExportQuerySchema.safeParse(
+      Object.fromEntries(
+        EXPORT_QUERY_KEYS.flatMap((key) => {
+          const value = c.req.query(key);
+          return value === undefined ? [] : [[key, value]];
+        }),
+      ),
+    );
     if (!parsed.success) {
       return c.json({ error: "invalid export query" }, 400);
     }
@@ -95,7 +91,7 @@ export function createTelemetryRoutes(deps: TelemetryRoutesDeps) {
       rows =
         query.signal === "logs"
           ? await reader.logRecords(ids, window, TELEMETRY_EXPORT_MAX_ROWS)
-          : await exportSpans(reader, ids, window);
+          : await reader.sessionSpans(ids, window, TELEMETRY_EXPORT_MAX_ROWS);
     } catch (err) {
       return c.json({ error: storeFailureMessage(err) }, 502);
     }
@@ -119,13 +115,4 @@ function storeFailureMessage(err: unknown): string {
     return "The telemetry store has no tables yet, so there is nothing to export. Its collector creates them when it starts, and has not done so against this store.";
   }
   return `The telemetry store could not answer the export: ${detail}`;
-}
-
-async function exportSpans(
-  reader: TelemetryReader,
-  ids: readonly string[],
-  window: { hours: number; sessionId?: string },
-): Promise<unknown[]> {
-  if (ids.length === 0) return [];
-  return reader.sessionSpans(ids, window, TELEMETRY_EXPORT_MAX_ROWS);
 }

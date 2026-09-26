@@ -102,12 +102,12 @@ export async function resolveDraft(
   readArtifactText: (artifactId: string) => Promise<string | null>,
 ): Promise<ResolvedContent> {
   if (record.status !== "pending" || !record.artifactId) {
-    return { content: record.content, source: record.contentSource };
+    return carried(record);
   }
   const live = await readArtifactText(record.artifactId);
   const parsed = caseStudyContentSchema.safeParse(live);
   if (!parsed.success || parsed.data === record.content) {
-    return { content: record.content, source: record.contentSource };
+    return carried(record);
   }
   return { content: parsed.data, source: "artifact" };
 }
