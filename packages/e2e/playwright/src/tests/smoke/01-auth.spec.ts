@@ -3,8 +3,8 @@ import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
-import { getAccessToken, oneKeycloakLoginAtATime } from "../../lib/auth.js";
-import { baseUrl, testUser } from "../../config.js";
+import { getAccessToken, submitKeycloakLoginForm } from "../../lib/auth.js";
+import { baseUrl } from "../../config.js";
 
 const storageStatePath = "./.auth/user.json";
 
@@ -107,12 +107,8 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
     name: /pick an agent for/i,
   });
 
-  await oneKeycloakLoginAtATime(async () => {
-    await page.locator("#username").fill(testUser.username);
-    await page.locator("#password").fill(testUser.password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await expect(termsButton.or(picker)).toBeVisible();
-  });
+  await submitKeycloakLoginForm(page);
+  await expect(termsButton.or(picker)).toBeVisible();
   if (await termsButton.isVisible()) await termsButton.click();
 
   await expect(picker).toBeVisible();
@@ -129,15 +125,7 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.goto(baseUrl);
 
   await page.waitForURL(/\/realms\/platform\/protocol\/openid-connect\/auth/);
-  await oneKeycloakLoginAtATime(async () => {
-    await page.locator("#username").fill(testUser.username);
-    await page.locator("#password").fill(testUser.password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(
-      (url) =>
-        url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
-    );
-  });
+  await submitKeycloakLoginForm(page);
 
   const termsButton = page.getByRole("button", {
     name: /I accept the Terms of Use/,
