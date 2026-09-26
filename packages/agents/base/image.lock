@@ -227,10 +227,10 @@ backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["0.85.1"]
 
 [[tools."npm:@openai/codex"]]
-version = "0.153.4"
-aube = { path = ".mise/locks/npm-openai-codex/0.153.4", digest = "sha256:dfc57655e9da491a3c9ced0d6c2ff749011b09f72a5f04880ca09ecdb60db0d6" }
+version = "0.155.1"
+aube = { path = ".mise/locks/npm-openai-codex/0.155.1", digest = "sha256:fb4c9ddab45aefa223a5b6242781a49e8bf7afa5bc1ef5cfc120d283efbc7a2f" }
 backend = "npm:@openai/codex"
-specifiers = ["0.153.4"]
+specifiers = ["0.155.1"]
 
 [[tools."npm:@zed-industries/codex-acp"]]
 version = "0.16.0"
