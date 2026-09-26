@@ -45,7 +45,7 @@ if (isOtelEnabled(process.env)) {
       }),
     ],
     logRecordProcessors: [
-      new logs.BatchLogRecordProcessor(new OTLPLogExporter()),
+      new logs.BatchLogRecordProcessor({ exporter: new OTLPLogExporter() }),
     ],
     instrumentations: [
       new HttpInstrumentation({
