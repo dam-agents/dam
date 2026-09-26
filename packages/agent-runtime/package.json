@@ -16,7 +16,7 @@
     "tar": "^7.5.22",
     "ts-pattern": "^5.9.0",
     "ws": "^8.21.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",
