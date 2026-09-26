@@ -3,6 +3,7 @@ import type {
   EventContext,
   EventHandler,
   EventOutcome,
+  EventReportInput,
   Plugin,
   ScheduleResetEventPayload,
   TriggerEventPayload,
@@ -16,11 +17,7 @@ import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js
 const IMPL_NAME = "trigger";
 
 export interface EventReporter {
-  report(input: {
-    eventId: string;
-    outcome: EventOutcome;
-    detail?: string;
-  }): Promise<void>;
+  report(input: EventReportInput): Promise<void>;
 }
 
 const WIRE_OUTCOME: Record<PrecheckOutcome["verdict"], EventOutcome> = {

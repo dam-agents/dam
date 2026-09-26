@@ -192,9 +192,6 @@ export const workspaceSeedEvent = z.object({
 export const workspaceCommandEventPayload = z.object({
   command: z.string().min(1),
 });
-export type WorkspaceCommandEventPayload = z.infer<
-  typeof workspaceCommandEventPayload
->;
 
 export const workspaceCommandEvent = z.object({
   id: z.string().min(1),
@@ -223,9 +220,6 @@ export const experimentExecuteEvent = z.object({
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
 });
-export type InitializationEventPayload = z.infer<
-  typeof initializationEventPayload
->;
 
 export const initializationEvent = z.object({
   id: z.string().min(1),
@@ -339,7 +333,6 @@ export const stateSlice = z.object({
   contributions: z.array(contribution),
   hash: z.string().min(1),
 });
-export type StateSlice = z.infer<typeof stateSlice>;
 
 export const applyStateInput = z.object({
   version: z.number().int().positive(),

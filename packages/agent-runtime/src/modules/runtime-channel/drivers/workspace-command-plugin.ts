@@ -1,9 +1,10 @@
 import { workspaceCommandEventPayload } from "agent-runtime-api";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DriverBinding, EventHandler, Plugin } from "agent-runtime-api";
 
 import { describeFailure, runOnce } from "../../../core/run-once.js";
+import { sentinelExists } from "./sentinel.js";
 
 const IMPL_NAME = "workspace-command";
 
@@ -51,16 +52,6 @@ export function createWorkspaceCommandPlugin(deps: {
       };
     },
   };
-}
-
-async function sentinelExists(path: string): Promise<boolean> {
-  try {
-    await readFile(path);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
-  }
 }
 
 async function runCommand(

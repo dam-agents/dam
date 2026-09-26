@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const MANIFEST_VERSION = 2;
-
 export interface SnapshotManifestFile {
   path: string;
   sizeBytes: number;

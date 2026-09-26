@@ -2,6 +2,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type {
+  Contribution,
   DriverBinding,
   KindHandler,
   Plugin,
@@ -89,17 +90,16 @@ export function createSkillInstallPlugin(deps: {
           expandHome(p, ctx.agentHome),
         );
         const resolvedPaths = skillPaths.map((p) => resolve(p));
-        const skillRefs = contributions.filter((c) => c.kind === "skill-ref");
+        const skillRefs = contributions.filter(
+          (c): c is Extract<Contribution, { kind: "skill-ref" }> =>
+            c.kind === "skill-ref",
+        );
         const managed = new Set(stateStore.read().installed);
         ctx.log(
           `wanted (${skillRefs.length}): ${
             skillRefs.length === 0
               ? "<none>"
-              : skillRefs
-                  .map((c) =>
-                    c.kind === "skill-ref" ? `${c.name}@${c.version}` : "",
-                  )
-                  .join(", ")
+              : skillRefs.map((c) => `${c.name}@${c.version}`).join(", ")
           }; targets: ${resolvedPaths.join(", ") || "<none>"}; managed: ${
             [...managed].join(", ") || "<none>"
           }`,
@@ -108,8 +108,7 @@ export function createSkillInstallPlugin(deps: {
         const desired = new Set<string>();
         const installed = new Set<string>();
         const failed: string[] = [];
-        for (const c of contributions) {
-          if (c.kind !== "skill-ref") continue;
+        for (const c of skillRefs) {
           desired.add(c.name);
           const installInput: SkillInstallInput = {
             sourceUrl: c.sourceUrl,

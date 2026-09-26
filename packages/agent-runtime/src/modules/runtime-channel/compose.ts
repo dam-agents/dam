@@ -141,8 +141,9 @@ export async function composeRuntimeChannel(
 
   await loadExtensions(manifest.extensions?.impls ?? [], registry);
 
+  const contributionBindings = contributionDrivers(resolved);
   const dispatcher = createDispatcher({
-    drivers: contributionDrivers(resolved),
+    drivers: contributionBindings,
     registry,
     env,
   });
@@ -153,7 +154,7 @@ export async function composeRuntimeChannel(
   });
 
   const contributionKinds = Object.keys(
-    contributionDrivers(resolved),
+    contributionBindings,
   ) as readonly ContributionKind[];
   const eventKinds = eventKind.options;
 
