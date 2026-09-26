@@ -202,8 +202,11 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.29.1"
-helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+ISTIO_VERSION="1.31.0"
+# Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
+# and is being retired. --force-update repoints an `istio` repo a machine
+# already has registered at the old URL.
+helm repo add --force-update istio https://blob.istio.io/istio-release/charts >/dev/null 2>&1 || true
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build helm
 prepull_images() {
@@ -409,7 +412,8 @@ CERT_MANAGER_PID=$!
 # 2b. Install Istio ambient + Gateway-API CRDs (required).
 # Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
 # and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
-# floor for ambient L7 with locked-down waypoint HCM.
+# floor for ambient L7 with locked-down waypoint HCM; the Kubernetes 1.36
+# that k3s runs needs Istio 1.30 or later.
 GATEWAY_API_VERSION="v1.2.0"
 
 if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
