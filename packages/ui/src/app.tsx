@@ -6,8 +6,10 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { StarterKitSetupView } from "./modules/agents/views/agent-create-view.js";
-import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
+import {
+  AgentCreateView,
+  StarterKitSetupView,
+} from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import {
   NotificationsBell,
@@ -140,7 +142,7 @@ function MainApp() {
               {view === "home" ? (
                 <HomeView />
               ) : view === "agent-new" ? (
-                <CodingAgentSetupView />
+                <AgentCreateView kit={null} />
               ) : view === "settings" ? (
                 <SettingsView />
               ) : view === "starter-kits" || view === "starter-kit" ? (

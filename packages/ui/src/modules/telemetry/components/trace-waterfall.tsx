@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 import { formatDurationMs, formatUsd } from "../../metrics/lib/format.js";
-import { spanColor } from "../lib/span-color.js";
 import {
   buildWaterfall,
   logCostUsd,
@@ -14,6 +13,22 @@ import {
   spanKindLabel,
   type TimelineRow,
 } from "../lib/waterfall.js";
+
+const KIND_COLORS: Record<string, string> = {
+  interaction: "#a56eff",
+  llm_request: "#1192e8",
+  tool: "#009d9a",
+  "tool.execution": "#0f9b98",
+  "tool.blocked_on_user": "#b28600",
+  hook: "#6929c4",
+};
+
+const FALLBACK = "#5f6a7a";
+
+function spanColor(name: string): string {
+  const short = name.startsWith("claude_code.") ? name.slice(12) : name;
+  return KIND_COLORS[short] ?? FALLBACK;
+}
 
 const offsetLabel = (ms: number): string =>
   ms < 1000 ? `+${Math.round(ms)}ms` : `+${(ms / 1000).toFixed(1)}s`;

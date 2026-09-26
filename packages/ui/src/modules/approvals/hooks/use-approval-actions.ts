@@ -17,7 +17,6 @@ import {
   useDismissApproval,
 } from "../api/mutations.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
-import { isHeldCallStillLive } from "../lib/hold.js";
 
 export type ApprovalActionId =
   "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
@@ -57,7 +56,8 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     denyForever.isPending ||
     dismiss.isPending;
 
-  const live = isHeldCallStillLive(row);
+  const live =
+    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
   const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
 

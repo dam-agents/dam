@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 
 import type { ProviderPresetType, TemplateView } from "../../../../types.js";
 import { CardIcon } from "../../../providers/components/card-icon.js";
-import { CardTags } from "./card-tags.js";
 import { CardIconTile, StackedCard } from "./stacked-card.js";
 
 const HARNESS_PRESET: Record<string, ProviderPresetType> = {
@@ -58,7 +57,13 @@ export function HarnessCard({
           </Badge>
         ) : undefined
       }
-      trailing={<CardTags tags={template.tags} />}
+      trailing={
+        template.tags && template.tags.length > 0 ? (
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {template.tags.join(" · ")}
+          </span>
+        ) : null
+      }
       selected={selected}
       onSelect={onSelect}
       testId={`template-card-${template.id}`}

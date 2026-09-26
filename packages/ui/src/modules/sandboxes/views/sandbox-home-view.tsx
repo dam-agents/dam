@@ -14,7 +14,7 @@ import { SandboxSchedulesSection } from "../components/sandbox-schedules-section
 import { SandboxSectionNav } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
-import { SandboxTwoColumnShell } from "../components/sandbox-two-column-shell.js";
+import { StickyFooterLayout } from "../components/sticky-footer-layout.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
@@ -65,45 +65,50 @@ export function SandboxHomeView() {
   );
 
   return (
-    <SandboxTwoColumnShell
+    <StickyFooterLayout
       footer={section === "setup" || f.dirty ? footer : undefined}
-      nav={
-        <SandboxSectionNav
-          active={section}
-          onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
-          summaries={summaries}
-          warnings={warnings}
-        />
-      }
+      footerClassName="max-w-[1040px]"
     >
-      <SandboxHomeHeader
-        agent={agent}
-        display={display}
-        avatarName={f.draftName?.trim() || agent.name}
-      />
-      {section === "setup" ? (
-        <SandboxSetupSection f={f} />
-      ) : section === "channels" ? (
-        <SandboxChannelsSection agentId={agent.id} />
-      ) : section === "skills" ? (
-        <SandboxSkillsSection agent={agent} />
-      ) : section === "schedules" ? (
-        <SandboxSchedulesSection agentId={agent.id} />
-      ) : section === "artifacts" ? (
-        <SandboxArtifactsSection agentId={agent.id} />
-      ) : section === "usage" ? (
-        <SandboxUsageSection agentId={agent.id} />
-      ) : (
-        <ConnectionsSection
-          agentId={agent.id}
-          oauthReturnView={routeToPath({
-            view: "sandbox-home",
-            agentId: agent.id,
-            sandboxSection: "connections",
-          })}
-          inset
-        />
-      )}
-    </SandboxTwoColumnShell>
+      <div className="mx-auto w-full max-w-[1040px] px-4 pt-6 pb-8 md:px-8 md:pt-12">
+        <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+          <SandboxSectionNav
+            active={section}
+            onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
+            summaries={summaries}
+            warnings={warnings}
+          />
+          <div className="min-w-0 flex-1 md:max-w-[760px]">
+            <SandboxHomeHeader
+              agent={agent}
+              display={display}
+              avatarName={f.draftName?.trim() || agent.name}
+            />
+            {section === "setup" ? (
+              <SandboxSetupSection f={f} />
+            ) : section === "channels" ? (
+              <SandboxChannelsSection agentId={agent.id} />
+            ) : section === "skills" ? (
+              <SandboxSkillsSection agent={agent} />
+            ) : section === "schedules" ? (
+              <SandboxSchedulesSection agentId={agent.id} />
+            ) : section === "artifacts" ? (
+              <SandboxArtifactsSection agentId={agent.id} />
+            ) : section === "usage" ? (
+              <SandboxUsageSection agentId={agent.id} />
+            ) : (
+              <ConnectionsSection
+                agentId={agent.id}
+                oauthReturnView={routeToPath({
+                  view: "sandbox-home",
+                  agentId: agent.id,
+                  sandboxSection: "connections",
+                })}
+                inset
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </StickyFooterLayout>
   );
 }
