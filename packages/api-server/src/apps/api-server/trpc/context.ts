@@ -56,7 +56,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telegramBindFlows,
     slackBindFlows,
     seedSources,
-    redisBus,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -256,7 +255,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
-      bus: redisBus,
       wrapperFrameSender,
     });
     const attention = composeAttentionService({

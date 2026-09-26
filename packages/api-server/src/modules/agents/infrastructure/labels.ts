@@ -2,10 +2,6 @@ export const LABEL_TEMPLATE_REF = "agent-platform.ai/template";
 export const LABEL_AGENT_REF = "agent-platform.ai/agent";
 export const LABEL_OWNER = "agent-platform.ai/owner";
 
-export const LABEL_ROLE = "agent-platform.ai/role";
-export const ROLE_AGENT = "agent";
-export const ROLE_GATEWAY = "gateway";
-
 export const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
 export const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
 export const MANAGED_BY_API_SERVER = "api-server";

@@ -57,11 +57,6 @@ import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-direc
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-export type {
-  AgentCleanupHook,
-  PresetSeeder,
-} from "./services/agents-service.js";
-
 type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
 export function composeAgentsModule(deps: {
@@ -87,7 +82,6 @@ export function composeAgentsModule(deps: {
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;
-  repo: AgentsRepository;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
@@ -133,7 +127,6 @@ export function composeAgentsModule(deps: {
       slackBinding: deps.slackBinding,
       resolveSlackChannelNames: deps.resolveSlackChannelNames,
     }),
-    repo,
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
   };

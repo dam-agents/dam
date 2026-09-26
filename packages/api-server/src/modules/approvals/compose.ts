@@ -21,7 +21,6 @@ import {
   createDeliverySweeper,
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
-import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
 import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
@@ -32,7 +31,6 @@ interface ComposeApprovalsServiceDeps {
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
-  bus: RedisBus;
   wrapperFrameSender: WrapperFrameSender;
 }
 
@@ -69,7 +67,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   wakeSaga: Subscription;
 } {
   const repo = createApprovalsRepository(deps.db);
-  const wakeSaga = startWakeHeldCallsSaga(createRedisApprovalsBus(deps.bus));
+  const wakeSaga = startWakeHeldCallsSaga(deps.bus);
   const relay = createApprovalsRelayService({ repo, bus: deps.bus });
   const gate = createExtAuthzGate({
     repo,

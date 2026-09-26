@@ -43,7 +43,7 @@ export function createEgressRuleMatchAdapter(db: Db) {
 
 export function createEgressRuleWriterAdapter(
   db: Db,
-  l7Hosts?: AgentL7HostsPort,
+  l7Hosts: AgentL7HostsPort,
 ) {
   return createEgressRuleWriter({
     repo: createEgressRulesRepository(db),

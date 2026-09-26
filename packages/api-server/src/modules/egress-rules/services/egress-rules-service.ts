@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
-  promotedHosts,
   type EgressPreset,
   type EgressRuleCreateInput,
   type EgressRuleUpdateInput,
@@ -12,11 +11,12 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
 import type { EgressRuleRow } from "../domain/types.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
+import { reconvergeAgentL7Hosts } from "./l7-promotion-reconcile.js";
 import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
-  l7Hosts?: AgentL7HostsPort;
+  l7Hosts: AgentL7HostsPort;
   presetSeeder?: PresetSeeder;
   trustedHosts: readonly string[];
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
@@ -51,12 +51,6 @@ export function createEgressRulesService(
       reason: "not-owner",
       detail,
     });
-  }
-
-  async function reconvergePromotions(agentId: string): Promise<void> {
-    if (!deps.l7Hosts) return;
-    const rows = await deps.repo.listForAgent(agentId);
-    await deps.l7Hosts.set(agentId, promotedHosts(rows));
   }
 
   return {
@@ -147,7 +141,7 @@ export function createEgressRulesService(
             : {}),
         },
       });
-      await reconvergePromotions(input.agentId);
+      await reconvergeAgentL7Hosts(deps, input.agentId);
       return toView(row);
     },
 
@@ -196,7 +190,7 @@ export function createEgressRulesService(
           priorVerdict: rule.verdict,
         },
       });
-      await reconvergePromotions(updated.agentId);
+      await reconvergeAgentL7Hosts(deps, updated.agentId);
       return toView(updated);
     },
 
@@ -217,7 +211,7 @@ export function createEgressRulesService(
           pathPattern: rule.pathPattern,
         },
       });
-      await reconvergePromotions(rule.agentId);
+      await reconvergeAgentL7Hosts(deps, rule.agentId);
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {

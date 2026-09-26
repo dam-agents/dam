@@ -18,10 +18,7 @@ export {
 } from "./infrastructure/agents-repository.js";
 export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
-export {
-  createKeycloakUserDirectory,
-  type KeycloakUserDirectory,
-} from "./infrastructure/keycloak-user-directory.js";
+export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export {
@@ -47,7 +44,6 @@ export {
   listChannelsByOwner,
   findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
-  deleteSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   setSlackChannelDefault,
