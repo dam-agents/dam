@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::rejection::QueryRejection;
-use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Path, Query, Request, State};
+use axum::http::StatusCode;
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -16,22 +17,18 @@ use crate::server::{Rejected, Server};
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
 
-#[derive(Clone)]
-struct Api {
-    server: Arc<Server>,
-    token: Arc<str>,
-}
-
 pub fn router(server: Arc<Server>, token: &str) -> Router {
-    let api = Api {
-        server,
-        token: Arc::from(token),
-    };
-    Router::new()
-        .route("/healthz", get(|| async { StatusCode::OK }))
+    let machines = Router::new()
         .route("/machines", get(list))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
-        .with_state(api)
+        .route_layer(middleware::from_fn_with_state(
+            Arc::<str>::from(token),
+            authorized,
+        ))
+        .with_state(server);
+    Router::new()
+        .route("/healthz", get(|| async { StatusCode::OK }))
+        .merge(machines)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the scrape endpoint, served on its own port and without the machine API's token. The token is what lets a caller create and delete machines, and a scraper that held it could do both; what this serves names no machine, image or owner, so the NetworkPolicy that admits only the platform's collector to its port is the whole of its gate.
@@ -73,13 +70,17 @@ fn rejected(rejected: Rejected) -> Response {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller, and a request without its token gets nothing, not even a status. The comparison takes the same time however much of the token matches.
-fn authorized(api: &Api, headers: &HeaderMap) -> bool {
-    let got = headers
+async fn authorized(State(token): State<Arc<str>>, request: Request, next: Next) -> Response {
+    let got = request
+        .headers()
         .get("authorization")
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     let got = got.strip_prefix("Bearer ").unwrap_or(got);
-    constant_time_eq(got.as_bytes(), api.token.as_bytes())
+    if !constant_time_eq(got.as_bytes(), token.as_bytes()) {
+        return plain(StatusCode::UNAUTHORIZED, "unauthorized");
+    }
+    next.run(request).await
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -89,28 +90,18 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
 }
 
-fn unauthorized() -> Response {
-    plain(StatusCode::UNAUTHORIZED, "unauthorized")
-}
-
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> T + Send + 'static,
-) -> Result<T, Box<Response>> {
+async fn blocking(work: impl FnOnce() -> Response + Send + 'static) -> Response {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|e| Box::new(plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string())))
+        .unwrap_or_else(|e| plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
 }
 
-async fn list(State(api): State<Api>, headers: HeaderMap) -> Response {
-    if !authorized(&api, &headers) {
-        return unauthorized();
-    }
-    let server = api.server.clone();
-    match blocking(move || server.list()).await {
-        Ok(Ok(ids)) => Json(ids).into_response(),
-        Ok(Err(e)) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
-        Err(response) => *response,
-    }
+async fn list(State(server): State<Arc<Server>>) -> Response {
+    blocking(move || match server.list() {
+        Ok(ids) => Json(ids).into_response(),
+        Err(e) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
+    })
+    .await
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a status read that names `wait`, in seconds, and the `since` version the caller last saw waits until the machine's status version differs from it, or until the wait ends. Without `wait` it answers at once.
@@ -122,38 +113,31 @@ struct StatusWait {
 }
 
 async fn status(
-    State(api): State<Api>,
-    headers: HeaderMap,
+    State(server): State<Arc<Server>>,
     Path(id): Path<String>,
     query: Result<Query<StatusWait>, QueryRejection>,
 ) -> Response {
-    if !authorized(&api, &headers) {
-        return unauthorized();
-    }
     let Ok(Query(asked)) = query else {
         return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
     };
-    let server = api.server.clone();
-    let read = move || match asked.wait {
-        0 => server.get(&id),
-        wait => server.wait(&id, asked.since, Duration::from_secs(wait)),
-    };
-    match blocking(read).await {
-        Ok(Ok(status)) => Json(status).into_response(),
-        Ok(Err(e)) => rejected(e),
-        Err(response) => *response,
-    }
+    blocking(move || {
+        let read = match asked.wait {
+            0 => server.get(&id),
+            wait => server.wait(&id, asked.since, Duration::from_secs(wait)),
+        };
+        match read {
+            Ok(status) => Json(status).into_response(),
+            Err(e) => rejected(e),
+        }
+    })
+    .await
 }
 
 async fn ensure(
-    State(api): State<Api>,
-    headers: HeaderMap,
+    State(server): State<Arc<Server>>,
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if !authorized(&api, &headers) {
-        return unauthorized();
-    }
     if !crate::state::is_machine_id(&id) {
         return plain(StatusCode::BAD_REQUEST, "invalid machine id");
     }
@@ -161,24 +145,19 @@ async fn ensure(
         Ok(spec) => spec,
         Err(e) => return plain(StatusCode::BAD_REQUEST, &e.to_string()),
     };
-    let server = api.server.clone();
-    match blocking(move || server.put(&id, spec)).await {
-        Ok(Ok(status)) => Json(status).into_response(),
-        Ok(Err(e)) => rejected(e),
-        Err(response) => *response,
-    }
+    blocking(move || match server.put(&id, spec) {
+        Ok(status) => Json(status).into_response(),
+        Err(e) => rejected(e),
+    })
+    .await
 }
 
-async fn remove(State(api): State<Api>, headers: HeaderMap, Path(id): Path<String>) -> Response {
-    if !authorized(&api, &headers) {
-        return unauthorized();
-    }
-    let server = api.server.clone();
-    match blocking(move || server.delete(&id)).await {
-        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
-        Ok(Err(e)) => rejected(e),
-        Err(response) => *response,
-    }
+async fn remove(State(server): State<Arc<Server>>, Path(id): Path<String>) -> Response {
+    blocking(move || match server.delete(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => rejected(e),
+    })
+    .await
 }
 
 #[cfg(test)]

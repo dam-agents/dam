@@ -157,12 +157,16 @@ impl CacheClient {
             .ok_or_else(|| std::io::Error::other("the image cache service sent no HTTP response"))
     }
 
+    fn unreachable_message(&self, e: std::io::Error) -> String {
+        format!(
+            "the node's image cache service at {} cannot be reached: {e}",
+            self.socket.display()
+        )
+    }
+
     fn unreachable(&self, e: std::io::Error) -> Lookup {
         Lookup {
-            resolved: Err(unusable(format!(
-                "the node's image cache service at {} cannot be reached: {e}",
-                self.socket.display()
-            ))),
+            resolved: Err(unusable(self.unreachable_message(e))),
             fetched: None,
             unreachable: true,
         }
@@ -250,12 +254,9 @@ impl Images for CacheClient {
         let body = serde_json::to_vec(&HoldRequest {
             digests: digests.clone(),
         })?;
-        let (status, _) = self.request(HOLDS_PATH, &body, HOLD_TIMEOUT).map_err(|e| {
-            anyhow::anyhow!(
-                "the node's image cache service at {} cannot be reached: {e}",
-                self.socket.display()
-            )
-        })?;
+        let (status, _) = self
+            .request(HOLDS_PATH, &body, HOLD_TIMEOUT)
+            .map_err(|e| anyhow::anyhow!(self.unreachable_message(e)))?;
         anyhow::ensure!(
             (200..300).contains(&status),
             "the image cache service answered {status} to a hold"
