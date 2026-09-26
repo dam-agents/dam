@@ -498,10 +498,15 @@ fi
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
+# useAppArmorAnnotation=false sets the node agent's Unconfined AppArmor
+# profile through securityContext.appArmorProfile, GA since Kubernetes 1.30,
+# instead of the deprecated container.apparmor.security.beta.kubernetes.io
+# annotation the chart still defaults to.
 istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
   --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
+  --set useAppArmorAnnotation=false \
   ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"} > >(sed -u 's/^/[istio-cni] /') 2>&1 &
 ISTIO_CNI_PID=$!
 # ztunnel proxies every mesh hop, including the experiment SDK's status polls
