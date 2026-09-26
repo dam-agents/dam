@@ -105,7 +105,7 @@ function harness(opts?: {
     uiBaseUrl: "http://ui",
     attendance: stubTurnAttendance(),
     workspaceFiles: workspace.factory,
-    canonicalWorkspace: (teamId) => teamId,
+    listWorkspaces: async () => [],
     emit: (e) => events.push(e),
   });
 

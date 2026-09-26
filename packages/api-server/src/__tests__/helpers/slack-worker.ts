@@ -85,7 +85,7 @@ export function slackWorkerHarness(
     uiBaseUrl: "http://ui",
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
-    canonicalWorkspace: (teamId) => teamId,
+    listWorkspaces: async () => [],
     emit: () => {},
     settleMs: opts.settleMs ?? 0,
   });

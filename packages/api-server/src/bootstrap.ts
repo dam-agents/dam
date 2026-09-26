@@ -27,6 +27,7 @@ import {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
+  claimUnscopedSlackBindings,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
@@ -60,7 +61,11 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
-import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import {
+  createFakeSlackGateway,
+  FAKE_WORKSPACE,
+} from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import { createFakeSlackTokenRotation } from "./modules/channels/infrastructure/fake-slack-token-rotation.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
@@ -96,6 +101,7 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createSlackTokenRotation } from "./modules/channels/infrastructure/slack-token-rotation.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -642,9 +648,12 @@ export async function bootstrap() {
     });
 
   const fakeSlackGateway =
-    config.e2eEnabled && !(config.slackBotToken && config.slackAppToken)
+    config.e2eEnabled && !config.slackAppToken
       ? createFakeSlackGateway()
       : undefined;
+  const fakeSlackRotation = fakeSlackGateway
+    ? createFakeSlackTokenRotation()
+    : undefined;
 
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
@@ -653,6 +662,12 @@ export async function bootstrap() {
       ? {
           slackInstalls: {
             record: (install) => slackInstalls.record(install),
+            importHelmToken: (teamId, token) =>
+              slackInstalls.importHelmToken(teamId, token),
+            renewAll: () => slackInstalls.renewAll(),
+            resolveBotToken: (teamId) => slackInstalls.resolveBotToken(teamId),
+            forgetBotToken: (teamId) => slackInstalls.forgetBotToken(teamId),
+            rotation: fakeSlackRotation!,
           },
         }
       : {}),
@@ -821,13 +836,33 @@ export async function bootstrap() {
     "install:slack",
     SLACK_INSTALL_HANDOFF_TTL_MS,
   );
+  const slackTokenRotation =
+    config.slackClientId && config.slackClientSecret
+      ? createSlackTokenRotation({
+          clientId: config.slackClientId,
+          clientSecret: config.slackClientSecret,
+        })
+      : null;
+  const listActiveSlackWorkspaces = async () =>
+    (await listSlackInstalls(db)())
+      .filter((i) => i.credentialState === "active")
+      .map((i) => i.teamId);
   const slackInstalls = createSlackInstallService({
     find: findSlackInstall(db),
+    list: listSlackInstalls(db),
+    claimUnscopedBindings: claimUnscopedSlackBindings(db),
     upsert: upsertSlackInstall(db),
     setState: setSlackCredentialState(db),
     secrets: secretStore,
     installLock: createXactLock(db),
-    envBotToken: config.slackBotToken,
+    refreshToken:
+      fakeSlackRotation?.refresh ?? slackTokenRotation?.refresh ?? null,
+    exchangeToken:
+      fakeSlackRotation?.exchange ??
+      (config.slackTokenRotation
+        ? (slackTokenRotation?.exchange ?? null)
+        : null),
+    ...(fakeSlackRotation ? { now: fakeSlackRotation.now } : {}),
   });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
@@ -851,18 +886,17 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackTokens =
-    config.slackBotToken && config.slackAppToken
-      ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
-      : null;
+  const slackAppToken = config.slackAppToken;
 
-  const slackGatewayFactory = slackTokens
+  const slackGatewayFactory = slackAppToken
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
-          setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
-          envBotToken: slackTokens.botToken,
-          appToken: slackTokens.appToken,
+          importHelmToken: slackInstalls.importHelmToken,
+          renewTokens: slackInstalls.renewAll,
+          forgetBotToken: slackInstalls.forgetBotToken,
+          helmBotToken: config.slackBotToken,
+          appToken: slackAppToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
         })
@@ -904,7 +938,7 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
-        canonicalWorkspace: slackInstalls.canonicalWorkspaceName,
+        listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
         agentIcon: config.imgbbApiKey
           ? createImgbbAgentIcons(config.imgbbApiKey)
@@ -913,10 +947,10 @@ export async function bootstrap() {
     : undefined;
 
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
-    listInstalledWorkspaces: async () =>
-      (await listSlackInstalls(db)())
-        .filter((i) => i.credentialState === "active")
-        .map((i) => i.teamId),
+    listInstalledWorkspaces: async () => [
+      ...(fakeSlackGateway ? [FAKE_WORKSPACE] : []),
+      ...(await listActiveSlackWorkspaces()),
+    ],
     conversationStanding: async (slackChannelId, teamId) =>
       channelManager.slackConversationStanding(slackChannelId, teamId),
   });

@@ -91,7 +91,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     uiBaseUrl: "http://ui",
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
-    canonicalWorkspace: (teamId) => teamId,
+    listWorkspaces: async () => [],
     emit: (e) => events.push(e),
     settleMs: opts.settleMs ?? 0,
   });

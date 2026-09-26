@@ -133,7 +133,13 @@ const suite: NamedProject[] = [
         },
         {
           name: "slack-full",
-          testMatch: /full\/slack-.*\.spec\.ts$/,
+          testMatch: /full\/slack-(?!token-rotation).*\.spec\.ts$/,
+          use: { ...devices["Desktop Chrome"] },
+        },
+        {
+          name: "slack-rotation-full",
+          testMatch: /full\/slack-token-rotation\.spec\.ts$/,
+          dependencies: ["slack-ambient", "slack-full"],
           use: { ...devices["Desktop Chrome"] },
         },
         {

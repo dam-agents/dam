@@ -218,6 +218,10 @@ spec:
                   name: {{ include "platform.apiserver.secrets.fullname" . }}
                   key: SLACK_CLIENT_SECRET
             {{- end }}
+            {{- if .Values.apiServer.slackTokenRotation }}
+            - name: SLACK_TOKEN_ROTATION
+              value: "true"
+            {{- end }}
             {{- if .Values.apiServer.slackEnterpriseId }}
             - name: SLACK_ENTERPRISE_ID
               value: {{ .Values.apiServer.slackEnterpriseId | quote }}

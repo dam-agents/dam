@@ -19,28 +19,27 @@ const NEVER_ASKED = async (): Promise<SlackConversationStanding> => {
 
 describe("slack workspace probe", () => {
   /**
-   * TEST_SCENARIO: The install that predates multi-workspace support. Nothing
-   * else is installed, so the answer is the original workspace and Slack is
-   * never called — a single-workspace install must not pay for a feature it
-   * does not use.
+   * TEST_SCENARIO: One workspace is connected, so the answer is that one and
+   * Slack is never called — a single-workspace install must not pay for a
+   * feature it does not use.
    */
   it("answers for a lone install without asking Slack", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => [],
+      listInstalledWorkspaces: async () => ["T1"],
       conversationStanding: NEVER_ASKED,
     });
 
-    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "" });
+    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "T1" });
   });
 
   /**
    * TEST_SCENARIO: A second workspace is installed and only it can see the
    * conversation. That is the whole point of the probe — the id resolves to the
-   * workspace that has it, not to the operator's original one.
+   * workspace that has it, not to the one connected first.
    */
   it("resolves to the installed workspace that has the conversation", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async (_channel: string, teamId: string) =>
         teamId === "T2" ? "member" : "unknown",
     });
@@ -49,45 +48,42 @@ describe("slack workspace probe", () => {
   });
 
   /**
-   * TEST_SCENARIO: The original workspace is reported as the empty workspace
-   * rather than a team id, so bindings made before multi-workspace support and
-   * after it share one key — the uniqueness index keeps holding and nothing
-   * needs backfilling.
+   * TEST_SCENARIO: No workspace is connected at all, so no conversation can
+   * belong to one, and nothing is asked.
    */
-  it("reports the original workspace as the empty workspace", async () => {
+  it("refuses every conversation while no workspace is connected", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
-      conversationStanding: async (_channel: string, teamId: string) =>
-        teamId === "" ? "member" : "unknown",
+      listInstalledWorkspaces: async () => [],
+      conversationStanding: NEVER_ASKED,
     });
 
-    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "" });
+    expect(await probe("C1")).toEqual({ kind: "unknown" });
   });
 
   /**
    * TEST_SCENARIO: An organization shares one channel into several of its
    * workspaces, so more than one answers yes. They are looking at the same
    * conversation and either token posts to the same place, so this is settled
-   * rather than refused — on the original workspace, so repeated binds of the
+   * rather than refused — on the workspace connected first, so repeated binds of the
    * same conversation always land on the same answer.
    */
   it("settles a conversation shared into several workspaces", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2", "T3"],
+      listInstalledWorkspaces: async () => ["T1", "T2", "T3"],
       conversationStanding: async () => "member" as const,
     });
 
-    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "" });
+    expect(await probe("C1")).toEqual({ kind: "resolved", teamId: "T1" });
   });
 
   /**
    * TEST_SCENARIO: A workspace that can only see the channel cannot post into
    * it, so it loses to one the bot was actually invited to — even though the
-   * seer is the original workspace and would otherwise win.
+   * seer was connected first and would otherwise win.
    */
   it("prefers a workspace the bot belongs to over one that only sees it", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async (_channel: string, teamId: string) =>
         teamId === "T2" ? "member" : "known",
     });
@@ -102,7 +98,7 @@ describe("slack workspace probe", () => {
    */
   it("refuses a conversation no workspace can see", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async () => "unknown" as const,
     });
 
@@ -116,12 +112,12 @@ describe("slack workspace probe", () => {
    */
   it("treats a workspace that cannot answer as not having it", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async (
         _channel: string,
         teamId: string,
       ): Promise<SlackConversationStanding> => {
-        if (teamId === "") throw new Error("invalid_auth");
+        if (teamId === "T1") throw new Error("invalid_auth");
         return "member";
       },
     });
@@ -137,7 +133,7 @@ describe("slack workspace probe", () => {
    */
   it("separates being unable to ask from nobody being able to see it", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async () => {
         throw new Error("missing_scope");
       },
@@ -154,7 +150,7 @@ describe("slack workspace probe", () => {
    */
   it("keeps a definite answer when only one workspace cannot be asked", async () => {
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2"],
+      listInstalledWorkspaces: async () => ["T1", "T2"],
       conversationStanding: async (
         _channel: string,
         teamId: string,
@@ -182,7 +178,7 @@ describe("slack workspace probe", () => {
     const waiting: Array<() => void> = [];
 
     const probe = createSlackWorkspaceProbe({
-      listInstalledWorkspaces: async () => ["T2", "T3"],
+      listInstalledWorkspaces: async () => ["T1", "T2", "T3"],
       conversationStanding: (_channel: string, teamId: string) =>
         new Promise<SlackConversationStanding>((resolve) => {
           waiting.push(() => resolve(teamId === "T3" ? "member" : "unknown"));

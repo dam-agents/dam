@@ -132,7 +132,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     uiBaseUrl: "http://ui",
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
-    canonicalWorkspace: (teamId) => teamId,
+    listWorkspaces: async () => [],
     emit: () => {},
   });
 

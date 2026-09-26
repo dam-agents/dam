@@ -14,17 +14,12 @@ export class FileTooLargeError extends Error {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for. The empty
- * string is the install's original workspace — the one whose bot token the
- * operator set in Helm values, and the one every binding made before this
- * platform could install itself anywhere else belongs to. Keeping it a value
- * rather than an absent field is what lets a caller never have "no workspace":
- * every outbound call names one, and the resolver answers for it without
- * asking Slack who the operator's token belongs to.
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for, by its team
+ * id. Every outbound call names one, and a workspace with no install row —
+ * including the empty string, which Slack never sends — resolves to no
+ * credential.
  */
 export type SlackWorkspace = string;
-
-export const ORIGINAL_WORKSPACE: SlackWorkspace = "";
 
 export interface SlackMentionEvent {
   user?: string;
