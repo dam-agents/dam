@@ -1726,8 +1726,8 @@ controller:
 # offered exactly when the image changed. Pinning `tag` to a fixed value in an
 # override opts that template out of upgrade detection, and non-image drift
 # (mounts/env/resources) is never detected.
-# `$HOME` in mount paths is substituted at chart render time
-# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+# `$HOME` in mount paths is substituted at chart render time with the fixed
+# agent home, /home/agent.
 # Every entry is a harness image the platform delivers. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.

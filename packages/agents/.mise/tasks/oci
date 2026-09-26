@@ -3,7 +3,6 @@
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--build" help="Never reuse an image from the registry"
 #USAGE flag "--no-tar" help="Linux only: keep a mise image as its OCI layout"
-#USAGE flag "--dry-run" help="Print the plan"
 #USAGE flag "--lock" help="Refresh packages/agents/base/image.lock and image-locks/; builds nothing"
 #USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
 #USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
@@ -14,7 +13,7 @@ resolve=.mise/tasks/image/resolve
 agents=packages/agents
 workloads=" $($resolve list-workloads) "
 root="$PWD"
-dry="${usage_dry_run:-false}" lock="${usage_lock:-false}" warm="${usage_warm:-false}"
+lock="${usage_lock:-false}" warm="${usage_warm:-false}"
 reuse=true; [ "${usage_build:-}" != true ] || reuse=false
 write_tar=true; [ "${usage_no_tar:-}" != true ] || write_tar=false
 bump=(); [ "${usage_bump:-}" != true ] || bump=(--bump)
@@ -27,17 +26,10 @@ if [ ${#named[@]} -eq 0 ]; then
     [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
   done
 fi
-mise_images=()
 for a in "${named[@]}"; do
   d="$(dir_of "$a")" || { echo "no such agent: $a" >&2; exit 2; }
   [ -f "$d/image.toml" ] || { echo "$a has no image.toml" >&2; exit 2; }
-  mise_images+=("$a")
 done
-
-if [ "$dry" = true ]; then
-  echo "mise oci (one at a time): ${mise_images[*]:-—}"
-  exit 0
-fi
 
 reused() {
   [ "$reuse" = true ] || return 1
@@ -422,7 +414,7 @@ if [ "$warm" = true ]; then
 fi
 
 todo=()
-for a in ${mise_images[@]+"${mise_images[@]}"}; do reused "$a" || todo+=("$a"); done
+for a in ${named[@]+"${named[@]}"}; do reused "$a" || todo+=("$a"); done
 if [ ${#todo[@]} -gt 0 ]; then
   echo "⚒ build ${todo[*]}"
   if [ "$(uname -s)" = Linux ]; then
