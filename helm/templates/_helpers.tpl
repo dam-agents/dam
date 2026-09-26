@@ -97,18 +97,6 @@ annotations:
 {{- end }}
 {{- end }}
 
-{{/*
-nameList — comma-separated .name values from a list of objects.
-Usage: {{ include "platform.nameList" .Values.someList }}
-*/}}
-{{- define "platform.nameList" -}}
-{{- $names := list }}
-{{- range . }}
-{{- $names = append $names .name }}
-{{- end }}
-{{- join "," $names }}
-{{- end }}
-
 {{/* ---- Public URLs (derived from domain + port + scheme) ---- */}}
 
 {{/*
@@ -360,13 +348,6 @@ sslrootcert from the connection string.
 {{- $dsn = printf "%s?sslmode=%s" $dsn .Values.apiServer.db.sslmode -}}
 {{- end -}}
 {{- $dsn -}}
-{{- end }}
-
-{{/*
-Keycloak OIDC issuer URL (external, for iss claim matching in JWTs)
-*/}}
-{{- define "platform.keycloak.issuer" -}}
-{{- printf "%s/realms/%s" (include "platform.url.keycloak" .) .Values.keycloak.realm }}
 {{- end }}
 
 {{/* ---- Keycloak resources ---- */}}
