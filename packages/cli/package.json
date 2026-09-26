@@ -34,7 +34,7 @@
     "@types/ws": "^8.18.1",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "dev-config": "workspace:*",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
