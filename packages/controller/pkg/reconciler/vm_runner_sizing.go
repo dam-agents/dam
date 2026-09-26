@@ -162,7 +162,7 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quanti
 
 // UNIT_BOUNDARY_DESCRIPTION: the request is changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply it. A replacement pod therefore starts at the install's request, and the next reconcile raises it again. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against a limit the scheduler does not see — and says so once.
 func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demandMiB int) {
-	if !r.podResizeAvailable() {
+	if !r.podResizeAvailable(ctx) {
 		return
 	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
@@ -235,7 +235,7 @@ func (r *AgentReconciler) reportResizePending(owner string, pod *corev1.Pod, wan
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: in-place resize arrived as the pods/resize subresource, so the API server's own discovery is the one answer to whether this cluster has it. The answer is kept for the process, because the API server does not gain or lose a subresource while the controller runs; a discovery call that fails is asked again next time rather than taken as a no.
-func (r *AgentReconciler) podResizeAvailable() bool {
+func (r *AgentReconciler) podResizeAvailable(ctx context.Context) bool {
 	switch r.podResize.Load() {
 	case resizeSupported:
 		return true
@@ -243,7 +243,7 @@ func (r *AgentReconciler) podResizeAvailable() bool {
 		return false
 	case resizeSupportUnknown:
 	}
-	list, err := r.client.Discovery().ServerResourcesForGroupVersion("v1")
+	list, err := r.client.Discovery().ServerResourcesForGroupVersionWithContext(ctx, "v1")
 	if err != nil {
 		slog.Warn("vm runner: cannot tell whether this cluster resizes pods in place", "error", err)
 		return false
