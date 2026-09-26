@@ -1,8 +1,11 @@
 import { emit, EventType } from "../../../events.js";
-import { experimentFolderName } from "api-server-api";
+import { experimentFolderName, type TraceFeedInvocation } from "api-server-api";
 import type { Db } from "db";
 import type { ArtifactLibraryServiceImpl } from "../../artifact-library/index.js";
-import { createInvocationsRepository } from "../../invocations/infrastructure/invocations-repository.js";
+import {
+  createInvocationsRepository,
+  type InvocationsRepository,
+} from "../../invocations/infrastructure/invocations-repository.js";
 import { injectFeedSnapshot } from "../domain/feed-snapshot.js";
 import { projectFeed } from "../domain/trace-graph.js";
 import {
@@ -12,6 +15,23 @@ import {
 import { toSpanView, toView } from "./experiments-service.js";
 
 const FEED_INVOCATIONS_MAX = 500;
+
+export async function listFeedInvocations(
+  invocationsRepo: Pick<InvocationsRepository, "listByExperiment">,
+  driverAgentId: string,
+  experimentId: string,
+): Promise<TraceFeedInvocation[]> {
+  const rows = await invocationsRepo.listByExperiment(
+    driverAgentId,
+    experimentId,
+    FEED_INVOCATIONS_MAX,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    spanId: row.experimentSpanId?.slice(experimentId.length + 1) ?? null,
+    status: row.status,
+  }));
+}
 
 export type DashboardSnapshotter = (
   experimentId: string,
@@ -33,23 +53,14 @@ export function createDashboardSnapshotter(deps: {
     const renderer = await artifactLibrary.getContent(row.dashboardArtifactId);
     if (!renderer || renderer.binary || renderer.tooLarge) return;
 
-    const [spans, invocationRows] = await Promise.all([
+    const [spans, invocations] = await Promise.all([
       repo.listSpans(experimentId),
-      invocationsRepo.listByExperiment(
-        row.driverAgentId,
-        experimentId,
-        FEED_INVOCATIONS_MAX,
-      ),
+      listFeedInvocations(invocationsRepo, row.driverAgentId, experimentId),
     ]);
     const feed = projectFeed({
       experiment: toView(row),
       spans: spans.map(toSpanView),
-      invocations: invocationRows.map((invocation) => ({
-        id: invocation.id,
-        spanId:
-          invocation.experimentSpanId?.slice(experimentId.length + 1) ?? null,
-        status: invocation.status,
-      })),
+      invocations,
       custom: row.customData,
       attachedArtifactIds: row.attachedArtifactIds,
     });

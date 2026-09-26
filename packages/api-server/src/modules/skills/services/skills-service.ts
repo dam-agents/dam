@@ -22,7 +22,7 @@ import type {
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
-import { canonicalSourceLocation } from "agent-runtime-api";
+import { canonicalSourceLocation, parseGithubRepo } from "agent-runtime-api";
 import type { SourceLocation } from "agent-runtime-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
 import type {
@@ -53,7 +53,6 @@ import {
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { UnitOfWork } from "../../../core/unit-of-work.js";
-import { detectHost } from "../domain/git-host.js";
 import {
   PublicArchiveNotFoundError,
   SkillSourcePathError,
@@ -113,7 +112,7 @@ export interface SkillsServiceDeps {
 }
 
 function enrichSource(s: SkillSource): SkillSource {
-  return detectHost(s.gitUrl) ? { ...s, canPublish: true } : s;
+  return parseGithubRepo(s.gitUrl) ? { ...s, canPublish: true } : s;
 }
 
 function templateSourceLocation(seed: {
@@ -362,7 +361,7 @@ async function runScanForSource(
   agentId?: string,
 ): Promise<SourceScan> {
   let archiveAsked = false;
-  if (detectHost(src.gitUrl)) {
+  if (parseGithubRepo(src.gitUrl)) {
     archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
@@ -678,7 +677,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `skill source ${JSON.stringify(sourceId)} not found`,
         });
       }
-      if (!detectHost(src.gitUrl)) {
+      if (!parseGithubRepo(src.gitUrl)) {
         throw new TRPCError({
           code: "NOT_IMPLEMENTED",
           message:

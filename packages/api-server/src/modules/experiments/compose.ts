@@ -14,7 +14,10 @@ import {
 } from "./domain/install-command.js";
 import { createExperimentsRepository } from "./infrastructure/experiments-repository.js";
 import { createExecuteLauncher } from "./infrastructure/execute-launcher.js";
-import { createDashboardSnapshotter } from "./services/dashboard-snapshot.js";
+import {
+  createDashboardSnapshotter,
+  listFeedInvocations,
+} from "./services/dashboard-snapshot.js";
 import { createExperimentsService } from "./services/experiments-service.js";
 import {
   createExperimentInactivitySweep,
@@ -26,8 +29,6 @@ import {
   createReapFollowUp,
   type ExperimentPinPort,
 } from "./services/reap-follow-up.js";
-
-const FEED_INVOCATIONS_MAX = 500;
 
 const NO_PIN: ExperimentPinPort = {
   set: async () => {},
@@ -47,7 +48,7 @@ export function composeExperimentsForOwner(opts: {
   const invocationsRepo = createInvocationsRepository(opts.db);
   const { agents, runtimeMutator, wakeAgent, owner, surface } = opts;
   const kindedRail =
-    agents && runtimeMutator && wakeAgent
+    runtimeMutator && wakeAgent
       ? { owner, surface, agents, runtimeMutator, wakeAgent }
       : null;
   const experiments = createExperimentsService({
@@ -80,18 +81,8 @@ export function composeExperimentsForOwner(opts: {
             }),
         }
       : {}),
-    invocationsForExperiment: async (driverAgentId, experimentId) => {
-      const rows = await invocationsRepo.listByExperiment(
-        driverAgentId,
-        experimentId,
-        FEED_INVOCATIONS_MAX,
-      );
-      return rows.map((row) => ({
-        id: row.id,
-        spanId: row.experimentSpanId?.slice(experimentId.length + 1) ?? null,
-        status: row.status,
-      }));
-    },
+    invocationsForExperiment: (driverAgentId, experimentId) =>
+      listFeedInvocations(invocationsRepo, driverAgentId, experimentId),
     runningInvocationsByDriver: () =>
       invocationsRepo.countRunningByDriver(opts.owner),
     experimentForInvocation: async (targetAgentId) => {

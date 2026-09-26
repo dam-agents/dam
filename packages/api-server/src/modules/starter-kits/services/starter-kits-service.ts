@@ -29,10 +29,7 @@ import {
   kitRef,
   unmetRequiredConnections,
 } from "../domain/requirements.js";
-import type {
-  LoadedKit,
-  StarterKitsRepository,
-} from "../infrastructure/kits-repository.js";
+import type { ResolvedKitRow } from "../infrastructure/resolved-catalog-repository.js";
 import { emit, EventType } from "../../../events.js";
 import {
   initializationEvent,
@@ -41,6 +38,13 @@ import {
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
+
+export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
+
+export interface StarterKitsRepository {
+  list(): Promise<LoadedKit[]>;
+  get(catalog: string, id: string): Promise<LoadedKit | null>;
+}
 
 export interface StarterKitsServiceDeps {
   owner: string;

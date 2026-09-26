@@ -1,8 +1,5 @@
 export { composeStarterKitsForOwner } from "./compose.js";
-export {
-  createStarterKitsRepository,
-  type StarterKitsRepository,
-} from "./infrastructure/kits-repository.js";
+export type { StarterKitsRepository } from "./services/starter-kits-service.js";
 export {
   createCatalogRefresh,
   type NamedCatalog,

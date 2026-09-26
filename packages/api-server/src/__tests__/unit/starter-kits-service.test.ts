@@ -12,12 +12,11 @@ import type {
 } from "api-server-api";
 import { starterKitSchema } from "api-server-api";
 import { composeOnboardingPrompt } from "../../modules/starter-kits/domain/onboarding-prompt.js";
+import { unmetRequiredConnections } from "../../modules/starter-kits/domain/requirements.js";
 import {
-  parseKitRef,
-  unmetRequiredConnections,
-} from "../../modules/starter-kits/domain/requirements.js";
-import type { LoadedKit } from "../../modules/starter-kits/infrastructure/kits-repository.js";
-import { createStarterKitsService } from "../../modules/starter-kits/services/starter-kits-service.js";
+  createStarterKitsService,
+  type LoadedKit,
+} from "../../modules/starter-kits/services/starter-kits-service.js";
 
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import {
@@ -1064,17 +1063,6 @@ describe("starter kits: domain helpers", () => {
     expect(
       unmetRequiredConnections(familyKit, [{ templateId: "slack" }]),
     ).toHaveLength(1);
-  });
-
-  it("parses kit refs", () => {
-    expect(parseKitRef("platform/code-reviewer@abc")).toEqual({
-      catalog: "platform",
-      kitId: "code-reviewer",
-      version: "abc",
-    });
-    expect(parseKitRef("code-reviewer@abc")).toBeNull();
-    expect(parseKitRef("broken")).toBeNull();
-    expect(parseKitRef("platform/@v1")).toBeNull();
   });
 });
 

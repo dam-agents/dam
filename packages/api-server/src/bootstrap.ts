@@ -182,7 +182,6 @@ import {
   createGitHosts,
   createGitRefResolver,
   createResolvedCatalogRepository,
-  createStarterKitsRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
 import {
@@ -335,9 +334,6 @@ export async function bootstrap() {
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const resolvedCatalog = createResolvedCatalogRepository(db);
-  const starterKitsRepo = createStarterKitsRepository({
-    resolved: resolvedCatalog,
-  });
   const kitGitHosts = createGitHosts({
     host: config.githubEnterpriseHost,
     token: config.githubEnterpriseToken,
@@ -1407,7 +1403,7 @@ export async function bootstrap() {
     agentsRepo,
     connectionsBoot,
     templatesRepo,
-    starterKitsRepo,
+    starterKitsRepo: resolvedCatalog,
     reposService,
     apiKeysModule,
     satellitesBoot,
