@@ -5,11 +5,7 @@ import { renderTable } from "../../shared/render-table.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printServiceError } from "../../shared/trpc/print.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -28,13 +24,7 @@ export function buildListCommand(deps: {
       "\nExamples:\n  dam agent list\n  dam agent list --json\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createAgentService(host).list();
       if (!result.ok) {

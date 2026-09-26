@@ -6,11 +6,7 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { renderTable } from "../../shared/render-table.js";
@@ -39,13 +35,7 @@ function serverOption(command: Command): Command {
 }
 
 async function host(deps: ManageDeps, opts: CommonOpts): Promise<string> {
-  return resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  return resolveActiveHost(deps, opts.server);
 }
 
 async function resolveAgentId(

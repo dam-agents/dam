@@ -10,11 +10,7 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printTrpcError } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 export interface FileListDeps {
   tokenProvider: TokenProvider;
@@ -81,14 +77,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
         remotePath: string | undefined,
         opts: { server?: string; json?: boolean; recursive?: boolean },
       ) => {
-        const flag = opts.server ? { server: opts.server } : undefined;
-        const host = await resolveActiveHost(deps, {
-          flag,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const svc = deps.createAgentService(host);
         const resolver = createAgentResolver({ agentService: svc });

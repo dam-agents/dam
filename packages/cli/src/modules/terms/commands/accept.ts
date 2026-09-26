@@ -1,10 +1,6 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -40,13 +36,7 @@ export function buildAcceptCommand(deps: {
         server?: string;
         json?: boolean;
       }) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
         if (!opts.yes && !process.stdin.isTTY) {
           process.stderr.write(
             "error: refusing to accept the Terms of Use non-interactively without --yes\nhint: re-run with --yes to accept in a script or CI\n",

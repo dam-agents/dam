@@ -13,7 +13,6 @@ import {
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -70,13 +69,7 @@ interface Deps {
 }
 
 async function hostAndAgent(deps: Deps, ref: string, server?: string) {
-  const host = await resolveActiveHost(deps, {
-    flag: server ? { server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, server);
   const resolved = await createAgentResolver({
     agentService: deps.createAgentService(host),
   }).resolve(ref);

@@ -1,10 +1,7 @@
 import { Command } from "commander";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ApprovalService } from "../services/approval-service.js";
 import { printOutcomeAndExit } from "./outcome.js";
@@ -35,13 +32,7 @@ export function buildDenyCommand(deps: {
         id: string,
         opts: { once?: boolean; server?: string; json?: boolean },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const service = deps.createApprovalService(host);
         const result = await (opts.once

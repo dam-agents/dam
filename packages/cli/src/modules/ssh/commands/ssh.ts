@@ -14,10 +14,7 @@ import {
   resolveHostFromConfig,
 } from "../../shared/preflight.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE } from "../../shared/exit-codes.js";
 import { connectRawBridge } from "../infrastructure/raw-bridge.js";
 import { ensureKeyPair, sshPaths } from "../infrastructure/ssh-keys.js";
 import {
@@ -222,10 +219,7 @@ export function buildSshCommand(deps: SshDeps): Command {
     .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
     .action(async (agentRef: string, opts: { server?: string }) => {
-      const host = await resolveHostFromConfig(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: { runtimeFailure: EXIT_RUNTIME_FAILURE },
-      });
+      const host = await resolveHostFromConfig(deps, opts.server);
       const paths = sshPaths();
       const [agent, publicKey, tok] = await Promise.all([
         resolveAgent(deps, host, agentRef),
@@ -260,13 +254,7 @@ export function buildSshCommand(deps: SshDeps): Command {
 }
 
 function resolveSshHost(deps: SshDeps, serverFlag?: string) {
-  return resolveActiveHost(deps, {
-    flag: serverFlag ? { server: serverFlag } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  return resolveActiveHost(deps, serverFlag);
 }
 
 async function resolveAgent(

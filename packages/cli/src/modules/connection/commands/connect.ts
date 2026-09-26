@@ -10,7 +10,6 @@ import { printServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -172,13 +171,7 @@ export function buildConnectCommand(deps: {
 
       const authOverride = parseAuthMode(opts.auth);
 
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
       const svc = deps.createConnectionService(host);
 
       const templatesRes = await svc.listTemplates();

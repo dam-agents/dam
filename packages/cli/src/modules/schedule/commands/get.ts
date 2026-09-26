@@ -3,7 +3,6 @@ import { rruleToText } from "api-server-api";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
   EXIT_SCHEDULE_NOT_FOUND,
   EXIT_SUCCESS,
@@ -82,13 +81,7 @@ export function buildGetCommand(deps: {
       "\nExamples:\n  dam schedule get sched-abc123\n  dam schedule get sched-abc123 --json\n",
     )
     .action(async (id: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createScheduleService(host).get(id);
       if (!result.ok) {

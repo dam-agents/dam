@@ -14,7 +14,6 @@ import {
 } from "../../shared/trpc/print.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -77,13 +76,7 @@ async function runRestart(
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  const host = await resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, opts.server);
 
   const svc = deps.createAgentService(host);
   const resolver = createAgentResolver({ agentService: svc });

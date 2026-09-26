@@ -17,7 +17,6 @@ import {
   resolveArgs,
 } from "../infrastructure/bundle-builder.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -70,15 +69,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       paths: string[],
       opts: { server?: string; yes?: boolean; json?: boolean },
     ) => {
-      const flag = opts.server ? { server: opts.server } : undefined;
-
-      const host = await resolveActiveHost(deps, {
-        flag,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const resolved = await resolveArgs(paths);
       if (!resolved.ok) {

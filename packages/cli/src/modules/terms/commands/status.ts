@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
   EXIT_TERMS_NOT_ACCEPTED,
@@ -26,13 +25,7 @@ export function buildStatusCommand(deps: {
     )
     .option("--json", "emit the acceptance state as JSON")
     .action(async (opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
       const service = deps.createTermsService(host);
       const [current, latest] = await Promise.all([
         service.current(),

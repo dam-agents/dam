@@ -7,7 +7,6 @@ import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -51,13 +50,7 @@ async function runDelete(
   opts: { server?: string; yes?: boolean; json?: boolean },
   deps: DeleteDeps,
 ): Promise<void> {
-  const host = await resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, opts.server);
 
   const svc = deps.createAgentService(host);
   const resolver = createAgentResolver({ agentService: svc });
