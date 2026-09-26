@@ -21,7 +21,11 @@ import {
   printServiceError,
   exitOnServiceError,
 } from "../../shared/trpc/print.js";
-import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
+import {
+  errorReason,
+  parseEnvFlag,
+  validateAgentName,
+} from "./create-helpers.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -207,18 +211,14 @@ async function runCreate(
     }
     providerConnectionId = matches[0]!.id;
   }
-  const createInput = await parseOrExit(
-    agentCreateInputSchema,
-    {
-      name,
-      templateId: template,
-      connectionIds: [providerConnectionId],
-      providerConnectionId,
-      description: opts.description,
-      env: env.length > 0 ? env : undefined,
-    },
-    EXIT_INVALID_INPUT,
-  );
+  const createInput = await parseOrExit(agentCreateInputSchema, {
+    name,
+    templateId: template,
+    connectionIds: [providerConnectionId],
+    providerConnectionId,
+    description: opts.description,
+    env: env.length > 0 ? env : undefined,
+  });
   let agent: AgentView;
   try {
     agent = await trpc.agents.create.mutate(createInput);
@@ -307,12 +307,4 @@ async function runCreate(
     );
   }
   process.exit(EXIT_SUCCESS);
-}
-
-function errorReason(e: unknown): string {
-  return e instanceof Error
-    ? e.message
-    : typeof e === "string"
-      ? e
-      : "unknown failure";
 }

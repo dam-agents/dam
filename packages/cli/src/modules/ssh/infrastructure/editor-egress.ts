@@ -1,7 +1,7 @@
 import type { EgressRuleView } from "api-server-api";
 import type { EgressService } from "../../egress/index.js";
 
-export const VSCODE_REMOTE_HOSTS = [
+const VSCODE_REMOTE_HOSTS = [
   "update.code.visualstudio.com",
   "vscode.download.prss.microsoft.com",
 ] as const;
@@ -25,7 +25,6 @@ function hostsToSeed(
 export async function ensureEditorEgress(opts: {
   egress: EgressService;
   agentId: string;
-  hosts: readonly string[];
   note: (msg: string) => void;
 }): Promise<void> {
   const listed = await opts.egress.listForAgent(opts.agentId);
@@ -35,7 +34,7 @@ export async function ensureEditorEgress(opts: {
     );
     return;
   }
-  const todo = hostsToSeed(listed.value, opts.hosts);
+  const todo = hostsToSeed(listed.value, VSCODE_REMOTE_HOSTS);
   const seeded: string[] = [];
   for (const host of todo) {
     const r = await opts.egress.create({

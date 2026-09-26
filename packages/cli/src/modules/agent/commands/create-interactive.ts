@@ -25,16 +25,12 @@ import {
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentView } from "../domain/agent-view.js";
-import { validateAgentName } from "./create-helpers.js";
+import { errorReason, validateAgentName } from "./create-helpers.js";
 import { formatTransportError } from "../../shared/trpc/print.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -210,7 +206,6 @@ async function runCreate(
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     { name, templateId },
-    EXIT_INVALID_INPUT,
     async () => {
       spin.stop("Invalid input");
       await flushCleanup(trpc, cleanup);
@@ -715,11 +710,9 @@ async function addOrReplaceGithubPat(
   }
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts = 5,
-  delayMs = 2000,
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const maxAttempts = 5;
+  const delayMs = 2000;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
@@ -730,10 +723,4 @@ async function withRetry<T>(
     }
   }
   throw new Error("withRetry: exhausted attempts");
-}
-
-function errorReason(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  return "unknown failure";
 }
