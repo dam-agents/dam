@@ -1689,10 +1689,10 @@ controller:
   # task does this).
   envoyMitm:
     enabled: true
-    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
-    # collisions with other charts.
+    # -- Name of the bootstrap cluster issuer. Cluster-scoped, so consider
+    # collisions with other charts. The CA issuer is always
+    # `platform-mitm-ca-issuer`, the name the controller mints leaves from.
     bootstrapIssuerName: platform-selfsigned-bootstrap
-    caIssuerName: platform-mitm-ca-issuer
     # -- Where the CA Secret lives. Must equal cert-manager's
     # --cluster-resource-namespace flag (default `cert-manager`).
     caSecretNamespace: cert-manager
