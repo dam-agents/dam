@@ -1,25 +1,25 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 import { useCallback, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 
 export function useAcpSessionEngagement(selectedAgent: string | null): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
-  engage: (conn: ClientSideConnection) => Promise<string | null>;
+  engage: (conn: ClientConnection) => Promise<string | null>;
   bind: (sessionId: string) => void;
   clear: () => void;
 } {
   const engagedSessionIdRef = useRef<string | null>(null);
 
   const engage = useCallback(
-    async (conn: ClientSideConnection): Promise<string | null> => {
+    async (conn: ClientConnection): Promise<string | null> => {
       if (!selectedAgent) return null;
       const boundSessionId = engagedSessionIdRef.current;
       if (boundSessionId) return boundSessionId;
 
       const sid = useStore.getState().sessionId;
       if (!sid) return null;
-      await conn.resumeSession({
+      await conn.agent.request("session/resume", {
         sessionId: sid,
         cwd: ".",
         mcpServers: [],

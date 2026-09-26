@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 
 export class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
@@ -22,13 +22,13 @@ export function isConnectionClosed(e: unknown): boolean {
 }
 
 export function withCloseRace(
-  conn: ClientSideConnection,
+  conn: ClientConnection,
   closeReason: () => string | null,
-): ClientSideConnection {
+): ClientConnection {
   const closedThrows = conn.closed.then(() => {
     throw new ConnectionClosedError(closeReason());
   });
-  return new Proxy(conn, {
+  const agent = new Proxy(conn.agent, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== "function") return value;
@@ -39,6 +39,11 @@ export function withCloseRace(
           ? Promise.race([result, closedThrows])
           : result;
       };
+    },
+  });
+  return new Proxy(conn, {
+    get(target, prop, receiver) {
+      return prop === "agent" ? agent : Reflect.get(target, prop, receiver);
     },
   });
 }

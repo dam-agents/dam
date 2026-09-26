@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 import type { PodSession } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
@@ -59,7 +59,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
 
 async function withConnection<T>(
   agentId: string,
-  fn: (conn: ClientSideConnection) => Promise<T>,
+  fn: (conn: ClientConnection) => Promise<T>,
   opts?: { passive?: boolean },
 ): Promise<T> {
   const { connection, ws } = await openInitializedConnection(
@@ -88,9 +88,9 @@ function byRecencyThenId(a: SessionView, b: SessionView): number {
 
 export async function listSessionsOn(
   agentId: string,
-  conn: ClientSideConnection,
+  conn: ClientConnection,
 ): Promise<SessionView[]> {
-  const r = await conn.listSessions({ cwd: "." });
+  const r = await conn.agent.request("session/list", { cwd: "." });
   return (r.sessions ?? [])
     .map((s) => toSessionView(agentId, s as unknown as ListedSession))
     .sort(byRecencyThenId);
@@ -156,7 +156,7 @@ export async function deleteAgentSession(
   sessionId: string,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/deleteSession", { sessionId }),
+    conn.agent.request("platform/deleteSession", { sessionId }),
   );
 }
 
@@ -166,7 +166,7 @@ export async function forgetUndeliveredPrompt(
   id: string,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/forgetUndelivered", { sessionId, id }),
+    conn.agent.request("platform/forgetUndelivered", { sessionId, id }),
   );
 }
 
@@ -177,7 +177,7 @@ export async function handOverUndelivered(
 ): Promise<void> {
   if (prompts.length === 0) return;
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/recordUndelivered", { sessionId, prompts }),
+    conn.agent.request("platform/recordUndelivered", { sessionId, prompts }),
   );
 }
 
@@ -187,7 +187,7 @@ export async function setSessionMode(
   mode: SessionMode,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.resumeSession({
+    conn.agent.request("session/resume", {
       sessionId,
       cwd: ".",
       mcpServers: [],

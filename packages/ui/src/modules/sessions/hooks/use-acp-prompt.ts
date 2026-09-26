@@ -1,4 +1,4 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 import type { AgentState, PromptBlock } from "api-server-api";
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef } from "react";
@@ -248,7 +248,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       let started: StartedSession | null = null;
       let detached = false;
       try {
-        let connection: ClientSideConnection;
+        let connection: ClientConnection;
         let sessionId: string;
         let isOpen: () => boolean;
 
@@ -274,7 +274,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 text,
                 attachments,
               );
-        const turn = connection.prompt({
+        const turn = connection.agent.request("session/prompt", {
           sessionId,
           prompt: promptBlocks,
           _meta: {
@@ -356,7 +356,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     setMessages((p) => finalizeAllStreaming(p));
     if (!conn || !sid) return;
     try {
-      await conn.cancel({ sessionId: sid });
+      await conn.agent.notify("session/cancel", { sessionId: sid });
     } catch {}
   }, [engagedSessionIdRef, connectionRef, setMessages]);
 
