@@ -1,7 +1,5 @@
-import {
-  createClickhouseClient,
-  createClickhouseReader,
-} from "./infrastructure/clickhouse-reader.js";
+import { createClient } from "@clickhouse/client";
+import { createClickhouseReader } from "./infrastructure/clickhouse-reader.js";
 import type { MetricsReader } from "./services/metrics-service.js";
 
 export function composeMetricsReader(config: {
@@ -12,7 +10,7 @@ export function composeMetricsReader(config: {
 }): MetricsReader | null {
   if (!config.clickhouseUrl) return null;
   return createClickhouseReader(
-    createClickhouseClient({
+    createClient({
       url: config.clickhouseUrl,
       username: config.clickhouseUser,
       password: config.clickhousePassword,

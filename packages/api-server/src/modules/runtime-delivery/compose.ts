@@ -94,13 +94,12 @@ export interface ComposeRuntimeDeliveryOpts {
   harnessServerUrl: string;
   resolveOwner: (agentId: string) => Promise<string | null>;
   deliveryConcurrency: number;
-  log?: (msg: string) => void;
 }
 
 export function composeRuntimeDelivery(
   opts: ComposeRuntimeDeliveryOpts,
 ): RuntimeDeliveryComposition {
-  const log = opts.log ?? ((m) => getLogger().info(`[runtime] ${m}`));
+  const log = (m: string) => getLogger().info(`[runtime] ${m}`);
 
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);
