@@ -1,33 +1,34 @@
 #!/usr/bin/env -S usage bash
-#MISE description="Re-pin every image:pack base (tag@digest in a package's :oci task) to the digest its tag names now"
-#USAGE flag "--check" help="Change nothing: print each stale pin as '<file> <tag> <pinned> <current>' and exit 1 if there is one"
+#MISE description="Re-pin every image:pack base (a tag@digest base_image_* var in the root config) to the digest its tag names now"
+#USAGE flag "--check" help="Change nothing: print each stale pin as '<var> <tag> <pinned> <current>' and exit 1 if there is one"
 # The images image:pack builds take their base by tag and digest, so an image's
 # source sha names its whole content and image:resolve can reuse it. Base
 # updates therefore land as commits: this task writes them, and security.yml,
-# in CI/CD's nightly run, checks for them with --check.
+# in CI/CD's nightly run, checks for them with --check. A base pinned by tag
+# alone is left as it is.
 #
 # By path too, with crane on PATH.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
-pin_re='[a-z0-9.-]+\.[a-z]+/[a-z0-9/._-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}'
+cfg=.mise/config.toml
+pin_re='^(base_image_[a-z0-9_]+) = "([a-z0-9.-]+\.[a-z]+/[a-z0-9/._-]+:[A-Za-z0-9._-]+)@(sha256:[0-9a-f]{64})"$'
 # Nothing is printed or written until every tag resolved, so a registry error
 # never reads as a partial list.
 stale=()
-for f in $(git grep -lE "$pin_re" -- 'packages/*/.mise/tasks/oci'); do
-  for pin in $(grep -oE "$pin_re" "$f" | sort -u); do
-    tag="${pin%@*}" pinned="${pin#*@}"
-    current="$(crane digest "$tag")"
-    [ "$current" = "$pinned" ] || stale+=("$f $tag $pinned $current")
-  done
-done
+while IFS= read -r line; do
+  [[ "$line" =~ $pin_re ]] || continue
+  var="${BASH_REMATCH[1]}" tag="${BASH_REMATCH[2]}" pinned="${BASH_REMATCH[3]}"
+  current="$(crane digest "$tag")"
+  [ "$current" = "$pinned" ] || stale+=("$var $tag $pinned $current")
+done < "$cfg"
 for s in ${stale[@]+"${stale[@]}"}; do
-  read -r f tag pinned current <<< "$s"
+  read -r var tag pinned current <<< "$s"
   if [ "${usage_check:-false}" = true ]; then
     echo "$s"
   else
-    sed -i.bak "s|$tag@$pinned|$tag@$current|" "$f" && rm -f "$f.bak"
-    echo "$f: $tag -> $current"
+    sed -i.bak "s|^$var = \"$tag@$pinned\"$|$var = \"$tag@$current\"|" "$cfg" && rm -f "$cfg.bak"
+    echo "$var: $tag -> $current"
   fi
 done
 [ "${usage_check:-false}" != true ] || [ ${#stale[@]} -eq 0 ]

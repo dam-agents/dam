@@ -41,8 +41,9 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
 
 # Source of the images `mise oci` builds (//packages/agents:oci), besides
-# their own directory.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+# their own directory. The root config names their Debian base; a bump of
+# another tool there re-tags them too, which errs toward rebuilds.
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # harness agents; CI's `agents` build/merge matrix
 AGENTS="claude-code codex pi-agent bob"
@@ -50,8 +51,9 @@ AGENTS="claude-code codex pi-agent bob"
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
 # Components image:pack builds on the host, plus the task that packs them, the
-# toolchain pins in the root config and their exact versions in mise.lock. A
-# lockfile bump for another tool re-tags them too, which errs toward rebuilds.
+# base and toolchain pins in the root config and the tools' exact versions in
+# mise.lock. A lockfile bump for another tool re-tags them too, which errs
+# toward rebuilds.
 PACK_TOOLING=".mise/tasks/image/pack .mise/config.toml mise.lock"
 # The pnpm workspace: its root manifests and lockfile.
 PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
@@ -81,22 +83,22 @@ own_paths() {
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it, image.toml and the task that builds the image
-    # from it all. Beside it, the task that names the image and the Rust
-    # toolchain that compiles it: its pin in the root config, its exact
-    # version in mise.lock. A lockfile bump for another tool re-tags it too,
+    # from it all. Beside it, the task that names the image, its base and the
+    # Rust toolchain that compiles it: their pins in the root config, the
+    # toolchain's exact version in mise.lock. A lockfile bump for another tool re-tags it too,
     # which errs toward rebuilds.
     vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
     # Each TS image's own package and its workspace dependencies, transitively.
     controller) echo "packages/controller $PACK_TOOLING" ;;
     ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
     api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
-    # keycloak = upstream Keycloak + the Keycloakify theme, packed onto it by
-    # image:pack. The theme build also depends on dev-config and (any)
-    # lockfile change — lockfile bumps re-tag it even when unrelated, which
-    # errs toward rebuilds. Its source-sha tag is what the published chart
+    # keycloak = upstream Keycloak, pinned in the root config, + the
+    # Keycloakify theme, packed onto it by image:pack. The theme build also
+    # depends on dev-config and (any) lockfile change — lockfile and root
+    # config bumps re-tag it even when unrelated, which errs toward rebuilds. Its source-sha tag is what the published chart
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack" ;;
+    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
     claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -179,6 +181,7 @@ self_check() {
   has "$(effective_paths claude-code)" packages/agents/claude-code
   has "$(effective_paths claude-code)" packages/agents/base
   has "$(effective_paths claude-code)" packages/agent-runtime
+  has "$(effective_paths claude-code)" .mise/config.toml
   has "$(effective_paths bob)" packages/agents/bob
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
@@ -191,6 +194,7 @@ self_check() {
   has "$(effective_paths api-server)" .mise/tasks/image/pack
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
+  has "$(effective_paths keycloak)" .mise/config.toml
   has "$(effective_paths vm-runner)" packages/vm-runner
   has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner

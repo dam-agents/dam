@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #MISE description="Build the api-server image to dist/oci/api-server.tar"
-#MISE sources=["src/**", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../mise.lock"]
+#MISE sources=["src/**", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
 #MISE outputs=["dist/oci/api-server.tar"]
 set -euo pipefail
+base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
 pnpm exec tsup
 root="$(mktemp -d)" npm="$(mktemp -d)"
 trap 'rm -rf "$root" "$npm"' EXIT
@@ -18,5 +19,5 @@ touch "$npm/usr/lib/node_modules_24/.wh.npm"
 for b in npm npm-24 npx npx-24; do touch "$npm/usr/bin/.wh.$b"; done
 # The --import preload wires OpenTelemetry before the app evaluates; it is a
 # no-op unless an OTLP endpoint is configured in the environment.
-"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" registry.access.redhat.com/hi/nodejs:24@sha256:17ce4f31d2671b2cbfcca600e483d2284dd4f45b11e4665ab24d4f93e71cc1eb "$root" dist/oci/api-server.tar platform-api-server:latest \
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" "$base" "$root" dist/oci/api-server.tar platform-api-server:latest \
   --owner 65532:0 --root-layer "$npm" --cmd node,--import,./dist/js/telemetry.js,dist/js/index.js
