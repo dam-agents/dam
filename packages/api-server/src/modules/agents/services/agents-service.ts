@@ -5,7 +5,6 @@ import {
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
-  type TemplateSpec,
   type ChannelConfig,
   type ContributionKind,
   type DriverFailure,
@@ -57,6 +56,7 @@ import {
   type RuntimeMutator,
   workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
+import type { ReadTemplateSpec } from "../../templates/index.js";
 import { ok, err } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -435,9 +435,7 @@ export function executeSlackBind(deps: {
 export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
   getAgent: (id: string) => Promise<InfraAgent | null>;
-  readTemplateSpec: (
-    id: string,
-  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readTemplateSpec: ReadTemplateSpec;
   patchImage: (id: string, image: string) => Promise<InfraAgent | null>;
 }) {
   return async (
@@ -503,9 +501,7 @@ export function createAgentsService(deps: {
   agentEnvRepo: AgentEnvRepository;
   agentIdleTimeoutMinutes: number;
   owner: string | undefined;
-  readTemplateSpec: (
-    id: string,
-  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
@@ -847,7 +843,7 @@ export function createAgentsService(deps: {
       let templateId: string | undefined;
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
-        if (!tmpl || tmpl.isOwned) {
+        if (!tmpl) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: `template "${input.templateId}" not found`,

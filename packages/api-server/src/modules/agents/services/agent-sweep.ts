@@ -8,10 +8,9 @@ export interface AgentSweep {
 export interface CreateAgentSweepDeps {
   listAgents: () => Promise<InfraAgent[]>;
   agentsFor: (owner: string) => AgentsService;
-  now?: () => Date;
 }
 
-export function isSweepDue(agent: InfraAgent, now: Date): boolean {
+function isSweepDue(agent: InfraAgent, now: Date): boolean {
   if (!agent.sweepable || !agent.hibernated) return false;
   if (agent.lifetimeMs <= 0) return true;
   if (!agent.hibernatedSince) return false;
@@ -19,7 +18,6 @@ export function isSweepDue(agent: InfraAgent, now: Date): boolean {
 }
 
 export function createAgentSweep(deps: CreateAgentSweepDeps): AgentSweep {
-  const now = deps.now ?? (() => new Date());
   let running = false;
 
   async function tick(): Promise<void> {
@@ -27,7 +25,7 @@ export function createAgentSweep(deps: CreateAgentSweepDeps): AgentSweep {
     running = true;
     try {
       const agents = await deps.listAgents();
-      const at = now();
+      const at = new Date();
       let reaped = 0;
       for (const agent of agents) {
         if (!isSweepDue(agent, at)) continue;

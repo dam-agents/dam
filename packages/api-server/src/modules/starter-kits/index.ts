@@ -5,7 +5,6 @@ export {
 } from "./infrastructure/kits-repository.js";
 export {
   createCatalogRefresh,
-  type CatalogRefresh,
   type NamedCatalog,
 } from "./infrastructure/catalog-refresh.js";
 export { createGitRefResolver } from "./infrastructure/git-ref-resolver.js";
@@ -21,8 +20,6 @@ export {
 export {
   catalogEntryHosts,
   createGitHosts,
-  type EnterpriseHost,
-  type GitHosts,
 } from "./infrastructure/git-hosts.js";
 export {
   createOnboardingMarker,
@@ -30,7 +27,6 @@ export {
 } from "./services/onboarding-marker.js";
 export {
   createOnboardingChecklist,
-  type OnboardingChecklist,
   type OnboardingChecklistOps,
 } from "./services/onboarding-checklist.js";
 export {

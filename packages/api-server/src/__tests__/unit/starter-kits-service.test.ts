@@ -211,7 +211,6 @@ function makeHarness(
               image: "quay.io/example/codex",
               harness: "codex",
             } as TemplateSpec,
-            isOwned: false,
           }
         : null,
     wakeAgent: async (id) => {

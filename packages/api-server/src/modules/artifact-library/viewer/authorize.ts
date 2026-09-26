@@ -24,3 +24,9 @@ export function denied(response: Response): Authorized {
 export function isRestricted(artifact: ArtifactRow): boolean {
   return artifact.visibility === "restricted";
 }
+
+export function parseVersion(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const v = Number.parseInt(raw, 10);
+  return Number.isInteger(v) && v >= 1 ? v : undefined;
+}

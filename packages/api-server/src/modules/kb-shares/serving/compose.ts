@@ -19,7 +19,7 @@ export function composeKbShareServing(opts: {
   db: Db;
   store: Pick<ArtifactService, "get">;
   k8s: K8sClient;
-  grepDeadlineMs?: number;
+  grepDeadlineMs: number;
 }): Hono {
   const nameCache = new Map<string, { name: string; expiresAt: number }>();
 
@@ -45,9 +45,7 @@ export function composeKbShareServing(opts: {
     reader: createSnapshotReader(opts.store),
     agentName,
     limits: createQueryLimits(),
-    ...(opts.grepDeadlineMs !== undefined
-      ? { grepDeadlineMs: opts.grepDeadlineMs }
-      : {}),
+    grepDeadlineMs: opts.grepDeadlineMs,
   });
 }
 

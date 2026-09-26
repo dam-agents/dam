@@ -63,15 +63,11 @@ export type {
   PresetSeeder,
 } from "./services/agents-service.js";
 
+type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
+
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
-  resolveSlackWorkspace: (
-    slackChannelId: string,
-  ) => Promise<
-    | { kind: "resolved"; teamId: string }
-    | { kind: "unknown" }
-    | { kind: "unreachable" }
-  >;
+  resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;
@@ -88,19 +84,8 @@ export function composeAgentsModule(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
-  resolveSlackChannelNames?: (
-    refs: { channelId: string; teamId: string }[],
-  ) => Promise<{ channelId: string; teamId: string; name: string | null }[]>;
-  grantProvisioner?: {
-    resolveSpecGrants(sel: {
-      connectionIds: string[];
-      providerConnectionId?: string;
-    }): Promise<{ grantedConnectionIds: string[] }>;
-    applyAfterCreate(
-      agentId: string,
-      sel: { connectionIds: string[] },
-    ): Promise<void>;
-  };
+  resolveSlackChannelNames?: AgentsServiceDeps["resolveSlackChannelNames"];
+  grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;
   repo: AgentsRepository;

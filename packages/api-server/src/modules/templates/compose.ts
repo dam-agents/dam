@@ -4,7 +4,7 @@ import { createTemplatesService } from "./services/templates-service.js";
 
 export type ReadTemplateSpec = (
   id: string,
-) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+) => Promise<{ spec: TemplateSpec } | null>;
 
 export function composeTemplatesModule(repo: TemplatesRepository): {
   templates: TemplatesService;

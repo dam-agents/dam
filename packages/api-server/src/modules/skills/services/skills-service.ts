@@ -71,7 +71,7 @@ import { sourcePathFailure } from "../domain/scan-failure.js";
 import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
 import { getLogger } from "../../../core/logger.js";
 
-export function templateSourceId(templateId: string, gitUrl: string): string {
+function templateSourceId(templateId: string, gitUrl: string): string {
   const hash = crypto
     .createHash("sha256")
     .update(gitUrl)
@@ -80,7 +80,7 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
   return `template:${templateId}:${hash}`;
 }
 
-export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
+const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
@@ -134,9 +134,7 @@ async function loadTemplateSources(
   deps: SkillsServiceDeps,
   agentId: string,
 ): Promise<SkillSource[]> {
-  const instance = await deps.agentsRepo.get(agentId, deps.owner);
-  if (!instance) return [];
-  const agent = await deps.agentsRepo.get(instance.id, deps.owner);
+  const agent = await deps.agentsRepo.get(agentId, deps.owner);
   if (!agent?.templateId) return [];
   const template = await deps.templatesRepo.get(agent.templateId);
   if (!template?.spec.skillSources?.length) return [];
@@ -222,14 +220,6 @@ async function sourcePathsByGitUrl(
   const seeds = deps.seedSources.map(seedToSkillSource);
   const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
   return new Map(merged.map((s) => [s.gitUrl, s.path]));
-}
-
-async function resolveSourcePathByGitUrl(
-  deps: SkillsServiceDeps,
-  agentId: string,
-  gitUrl: string,
-): Promise<string | undefined> {
-  return (await sourcePathsByGitUrl(deps, agentId)).get(gitUrl);
 }
 
 function asPodVerdict(err: unknown): unknown {
@@ -422,22 +412,6 @@ async function runScanForSource(
     if (!verdict) throw err;
     throw verdict;
   }
-}
-
-function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
-  const filtered = current.filter(
-    (s) => !(s.source === next.source && s.name === next.name),
-  );
-  return [...filtered, next];
-}
-
-function removeSkillRef(
-  current: SkillRef[],
-  key: { source: string; name: string },
-): SkillRef[] {
-  return current.filter(
-    (s) => !(s.source === key.source && s.name === key.name),
-  );
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
@@ -787,9 +761,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async install(input: SkillInstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
-      const path = await resolveSourcePathByGitUrl(
-        deps,
-        input.agentId,
+      const path = (await sourcePathsByGitUrl(deps, input.agentId)).get(
         input.source,
       );
       const ref: SkillRef = {
@@ -826,12 +798,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
       });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
-      return upsertSkillRef(
-        current.filter(
+      return [
+        ...current.filter(
           (s) => !(s.source === ref.source && s.name === ref.name),
         ),
         ref,
-      );
+      ];
     },
 
     async uninstall(input: SkillUninstallInput) {
@@ -866,10 +838,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
       });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
-      return removeSkillRef(current, {
-        source: input.source,
-        name: input.name,
-      });
+      return current.filter(
+        (s) => !(s.source === input.source && s.name === input.name),
+      );
     },
 
     applyBatch(input) {

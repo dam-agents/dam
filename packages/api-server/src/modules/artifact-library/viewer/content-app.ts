@@ -11,6 +11,7 @@ import {
   allowed,
   denied,
   isRestricted,
+  parseVersion,
   PRIVATE_NO_STORE,
   type Authorized,
 } from "./authorize.js";
@@ -20,7 +21,6 @@ import {
   renderImageInner,
   renderTextKindInner,
 } from "./renderer.js";
-import { parseVersion } from "./version-query.js";
 
 const RENDER_MAX_BYTES = 10 * 1024 * 1024;
 

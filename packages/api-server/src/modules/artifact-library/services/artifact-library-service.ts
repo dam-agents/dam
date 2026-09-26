@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -34,7 +34,7 @@ import {
   downloadFileName,
   isTextKind,
 } from "../domain/artifact-kind.js";
-import { generateId, generateSlug } from "../domain/share-crypto.js";
+import { generateSlug } from "../domain/share-crypto.js";
 import {
   isOwnStagingKey,
   stagingKey,
@@ -144,14 +144,6 @@ function agentApiAccess(
   return { allowed: true, agentId: row.agentId };
 }
 
-export function shareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/a/${slug}`;
-}
-
-export function folderShareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/f/${slug}`;
-}
-
 function hasShareLink(visibility: ArtifactVisibility): boolean {
   return match(visibility)
     .with("private", () => false)
@@ -182,7 +174,7 @@ export function toLibraryArtifact(
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
-      ? shareUrlFor(shareBaseUrl, row.slug)
+      ? `${shareBaseUrl.replace(/\/+$/, "")}/a/${row.slug}`
       : null,
     viewers,
     createdAt: row.createdAt.toISOString(),
@@ -435,7 +427,7 @@ export function createArtifactLibraryService(
             "an interactive artifact can talk to your agent, so it cannot be shared",
         });
       }
-      const id = generateId();
+      const id = randomUUID();
       const key = versionKey(owner, id, 1, fileName);
       const stored = await ingestBytes({
         content: input.content,
@@ -670,7 +662,7 @@ export function createArtifactLibraryService(
 
     async createFolder(name) {
       const row = await repo.insertFolder({
-        id: generateId(),
+        id: randomUUID(),
         owner,
         name,
         slug: generateSlug(),
@@ -711,7 +703,9 @@ export function createArtifactLibraryService(
     async folderShareUrl(id) {
       const folder = await requireOwnedFolder(id);
       const shared = await repo.countSharedInFolder(id);
-      return shared > 0 ? folderShareUrlFor(shareBaseUrl, folder.slug) : null;
+      return shared > 0
+        ? `${shareBaseUrl.replace(/\/+$/, "")}/f/${folder.slug}`
+        : null;
     },
 
     resolveContentRef: resolveRef,
