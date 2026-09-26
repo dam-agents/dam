@@ -1,7 +1,4 @@
-import {
-  DEFAULT_MAX_APPLY_ATTEMPTS,
-  type OutboxRepo,
-} from "../infrastructure/outbox-repo.js";
+import type { OutboxRepo } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { IsAgentRunning } from "./worker-handler.js";
 
@@ -92,9 +89,7 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     if (running) return;
     running = true;
     try {
-      const retryable = await deps.outboxRepo.listRetryable(
-        DEFAULT_MAX_APPLY_ATTEMPTS,
-      );
+      const retryable = await deps.outboxRepo.listRetryable();
       const checks = await checkAll(retryable.map((row) => row.agentId));
 
       const toEnqueue: string[] = [];

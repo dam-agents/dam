@@ -87,6 +87,7 @@ export {
   event,
   eventKind,
   isWorkspaceMutationEventKind,
+  workspaceMutationEventKinds,
   capabilities,
   runtimeFeaturesOf,
   type RuntimeFeatures,
