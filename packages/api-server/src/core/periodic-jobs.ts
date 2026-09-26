@@ -1,6 +1,6 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 
-export const PERIODIC_QUEUE_PREFIX = "periodic.";
+const PERIODIC_QUEUE_PREFIX = "periodic.";
 
 export interface PeriodicJobs {
   register(

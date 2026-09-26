@@ -48,7 +48,7 @@ import {
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import { emit, EventType } from "../../events.js";
-import { workspaceEvent } from "./domain/workspace-event.js";
+import { workspaceEvent } from "./domain/outbox-events.js";
 import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {

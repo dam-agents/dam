@@ -5,7 +5,6 @@ import {
   type Contribution,
 } from "api-server-api";
 
-export const KB_AGGREGATE_MCP_ENTRY_NAME = KB_AGGREGATE_MCP_SERVER;
 export { SHARED_KB_TEMPLATE_ID };
 
 export interface BuiltinContributionOpts {
@@ -37,7 +36,7 @@ export function createBuiltinContributions(
           ? [
               {
                 kind: "mcp-entry",
-                name: KB_AGGREGATE_MCP_ENTRY_NAME,
+                name: KB_AGGREGATE_MCP_SERVER,
                 url: `${agentPath}/kb`,
               } satisfies Contribution,
             ]

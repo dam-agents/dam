@@ -183,7 +183,7 @@ function toSpanRow(r: typeof spansTable.$inferSelect): SpanRow {
   };
 }
 
-export function spanRowId(experimentId: string, spanId: string): string {
+function spanRowId(experimentId: string, spanId: string): string {
   return `${experimentId}/${spanId}`;
 }
 
