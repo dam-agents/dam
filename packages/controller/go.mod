@@ -2,7 +2,7 @@ module github.com/dam-agents/dam/packages/controller
 
 go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.27.1
 
 require (
 	github.com/cert-manager/cert-manager v1.21.2
