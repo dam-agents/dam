@@ -1,4 +1,4 @@
-import { type AuthConfig, authConfigSchema } from "api-server-api";
+import { authConfigSchema } from "api-server-api";
 import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 import { rememberReturnPath, takeReturnPath } from "./lib/return-path.js";
@@ -9,26 +9,14 @@ import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.j
 let userManager: UserManager;
 let currentUser: User | null = null;
 
-let cachedAuthConfig: AuthConfig | null = null;
-
 function signinExtraParams(): Record<string, string> {
   return { kc_theme: readStoredTheme() };
 }
 
-async function fetchAuthConfig(): Promise<AuthConfig> {
+export async function initAuth(): Promise<User | null> {
   const res = await fetch("/api/auth/config");
   if (!res.ok) throw new Error("Failed to fetch auth config");
-  const parsed = authConfigSchema.parse(await res.json());
-  cachedAuthConfig = parsed;
-  return parsed;
-}
-
-export function getAuthConfig(): AuthConfig | null {
-  return cachedAuthConfig;
-}
-
-export async function initAuth(): Promise<User | null> {
-  const config = await fetchAuthConfig();
+  const config = authConfigSchema.parse(await res.json());
 
   userManager = new UserManager({
     authority: config.issuer,

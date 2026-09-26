@@ -222,9 +222,3 @@ export {
   PROVIDER_PRESET_TYPES,
   PROVIDERS,
 } from "api-server-api";
-
-export interface McpConnection {
-  hostname: string;
-  connectedAt: string;
-  expired: boolean;
-}

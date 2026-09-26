@@ -7,32 +7,6 @@ import { authFetch } from "../../../auth.js";
 
 export type BundleEntry = { path: string; file: File };
 
-const EXCLUDE_FROM_IMPORT = new Set([
-  "node_modules",
-  ".venv",
-  "__pycache__",
-  ".DS_Store",
-]);
-
-export interface FilterReport {
-  kept: BundleEntry[];
-  dropped: number;
-}
-
-export function filterImportEntries(entries: BundleEntry[]): FilterReport {
-  let dropped = 0;
-  const kept: BundleEntry[] = [];
-  for (const e of entries) {
-    const segs = e.path.split("/");
-    if (segs.some((s) => EXCLUDE_FROM_IMPORT.has(s))) {
-      dropped++;
-      continue;
-    }
-    kept.push(e);
-  }
-  return { kept, dropped };
-}
-
 export async function walkDataTransfer(
   items: DataTransferItemList,
 ): Promise<BundleEntry[]> {
@@ -51,14 +25,6 @@ export async function walkDataTransfer(
     seen.add(e.path);
     out.push(e);
   }
-  return out;
-}
-
-export async function walkFileSystemEntry(
-  entry: FileSystemEntry,
-): Promise<BundleEntry[]> {
-  const out: BundleEntry[] = [];
-  await walkEntry(entry, "", out);
   return out;
 }
 
@@ -275,13 +241,4 @@ export async function importRawBundle({
 }: ImportRawBundleArgs): Promise<ImportBundleResult> {
   const filename = bundle instanceof File ? bundle.name : "bundle.tar.gz";
   return postBundle(agentId, bundle, filename);
-}
-
-export function isTarballName(name: string): boolean {
-  const lower = name.toLowerCase();
-  return (
-    lower.endsWith(".tar") ||
-    lower.endsWith(".tar.gz") ||
-    lower.endsWith(".tgz")
-  );
 }

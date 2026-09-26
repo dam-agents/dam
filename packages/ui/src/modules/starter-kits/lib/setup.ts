@@ -206,24 +206,6 @@ export function kitScheduleCadence(schedule: StarterKitSchedule): string {
   return schedule.cron;
 }
 
-export function effectiveTiming(
-  schedule: StarterKitSchedule,
-  override: StarterKitScheduleOverride | undefined,
-): { cron: string } | { rrule: string; timezone: string } {
-  if (override?.timing) return override.timing;
-  return "cron" in schedule
-    ? { cron: schedule.cron }
-    : { rrule: schedule.rrule, timezone: schedule.timezone };
-}
-
-export function describeTiming(
-  timing: { cron: string } | { rrule: string; timezone: string },
-): string {
-  return "cron" in timing
-    ? timing.cron
-    : `${rruleToText(timing.rrule)} (${timing.timezone})`;
-}
-
 export function withOverride(
   overrides: readonly StarterKitScheduleOverride[],
   name: string,

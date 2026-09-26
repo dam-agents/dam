@@ -81,12 +81,3 @@ export function usePrefetchArtifactPreview() {
     [queryClient],
   );
 }
-
-export function useFolderShareUrl(id: string | null) {
-  return useQuery({
-    ...trpc.artifactLibrary.folderShareUrl.queryOptions(
-      id ? { id } : skipToken,
-    ),
-    meta: { errorToast: "Couldn't resolve folder link" },
-  });
-}

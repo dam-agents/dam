@@ -1,6 +1,5 @@
 import { Help } from "@carbon/icons-react";
 
-import { Card } from "@/components/ui/card";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -168,13 +167,5 @@ export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
         </div>
       )}
     </>
-  );
-}
-
-export function ComputeUsageCard(props: Props) {
-  return (
-    <Card className="mb-8 border border-border p-4">
-      <ComputeUsage {...props} />
-    </Card>
   );
 }
