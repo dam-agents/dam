@@ -634,7 +634,7 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.27.0"
+        tag: "2.35.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.37.0"
 

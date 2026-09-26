@@ -28,7 +28,7 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # subchart image pins) and .mise/tasks/cluster/install (the operator images).
 MIRRORS="
 otel/opentelemetry-collector-contrib:0.160.0
-docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+docker.hyperdx.io/hyperdx/hyperdx:2.35.0
 clickhouse/clickhouse-server:25.7-alpine
 clickhouse/clickhouse-keeper:25.7-alpine
 busybox:1.37.0
