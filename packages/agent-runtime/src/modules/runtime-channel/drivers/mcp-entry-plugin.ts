@@ -43,7 +43,7 @@ const bindingSchema = z
     for (const key of Object.keys(b.extraFields ?? {})) {
       if (reserved.has(key)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["extraFields", key],
           message: `"${key}" is built by the driver and cannot be set via extraFields`,
         });

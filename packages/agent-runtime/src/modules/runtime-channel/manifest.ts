@@ -77,28 +77,19 @@ export const runtimeManifestSchema = z.object({
 });
 export type RuntimeManifest = z.infer<typeof runtimeManifestSchema>;
 
-export class ManifestLoadError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ManifestLoadError";
-  }
-}
-
 export function loadManifest(path: string): RuntimeManifest {
   if (!existsSync(path)) {
-    throw new ManifestLoadError(`runtime-manifest.yaml not found at ${path}`);
+    throw new Error(`runtime-manifest.yaml not found at ${path}`);
   }
   let raw: unknown;
   try {
     raw = loadYamlDocument(readFileSync(path, "utf8"));
   } catch (err) {
-    throw new ManifestLoadError(
-      `failed to parse ${path}: ${(err as Error).message}`,
-    );
+    throw new Error(`failed to parse ${path}: ${(err as Error).message}`);
   }
   const parsed = runtimeManifestSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new ManifestLoadError(
+    throw new Error(
       `invalid runtime-manifest.yaml at ${path}: ${parsed.error.message}`,
     );
   }
@@ -156,7 +147,7 @@ export function resolveDrivers(
   }
   for (const [kind, entry] of Object.entries(manifest.drivers)) {
     if (!KNOWN_KINDS.has(kind)) {
-      throw new ManifestLoadError(
+      throw new Error(
         `unknown driver kind "${kind}" — not a contribution or event kind`,
       );
     }
