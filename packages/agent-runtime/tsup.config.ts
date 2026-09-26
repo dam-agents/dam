@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/server.ts"],
   format: "esm",
-  target: "node24",
+  target: "node26",
   platform: "node",
   noExternal: ["agent-runtime-api", "api-server-api"],
   external: ["@lydell/node-pty", "@xterm/headless", "@xterm/addon-serialize"],
