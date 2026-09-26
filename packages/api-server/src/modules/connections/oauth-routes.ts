@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Db } from "db";
 import type { OAuthEngine } from "./infrastructure/oauth-engine.js";
+import type { GitHubAppEngine } from "./infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "./domain/connection-template.js";
 import type { SecretStore } from "../secret-store/index.js";
 import {
@@ -16,6 +17,7 @@ export interface OAuthCallbackDeps {
   db: Db;
   secretStore: SecretStore;
   engine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   runtimeMutator: RuntimeMutator;
   uiBaseUrl: string;
@@ -68,6 +70,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
 
     const flow = createOAuthFlowService({
       engine: deps.engine,
+      githubAppEngine: deps.githubAppEngine,
       repo: createConnectionsRepository(deps.db),
       templates: deps.templates,
       secretStore: deps.secretStore,

@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-09-24
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -64,6 +64,8 @@ Credentials carry their own lifecycle. A stored one can be **updated in place** 
 A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously. The issuer URL is optional — when omitted it is discovered from the API host's published OAuth metadata. The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret. One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
 
 A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
+
+A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there. The user token and its refresh token stay at rest; what injects is a scoped token GitHub derives from the user token, authorized by the app's client secret, and re-derived after every refresh, at re-consent, and when the subset is edited. GitHub rotates the refresh token on each use, so the new one is stored before the derivation — a subset GitHub refuses parks the Connection as expired without costing it the ability to renew, and never falls back to injecting the unscoped token. A narrowed token still never does more than the user could. The subset is chosen after sign-in, against the installations and repositories the user token itself reaches, since before consent there is nothing to read.
 
 Connect and disconnect raise domain events, recorded as [Activity Events](usage-tracking.md). A connect fires wherever the Connection actually reaches its connected state — at creation for the modes that complete synchronously, and at the authorization callback for OAuth, which is the only mode that cannot finish in one step. Emitting at both points would double-count OAuth; emitting only at the callback leaves every other mode invisible. A connection abandoned before that state raises neither event, so removals cannot outnumber connects. The event names the provider, not just the grant, because the Connection record is destroyed on disconnect and a grant identifier alone would die with it.
 

@@ -132,6 +132,17 @@ export const connectionUpdateGitHubAppScopeInputSchema = z.object({
   permissions: z.string().optional(),
 });
 
+export const connectionProbeGitHubUserTokenInputSchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
+  id: z.string().min(1),
+  targetId: z.number().int().positive().optional(),
+  repositoryIds: z.string().optional(),
+  permissions: z.string().optional(),
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),

@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import type {
+  GitHubUserTokenInstallation,
+  GitHubUserTokenProbe,
+} from "api-server-api";
 import { OAuthTokenEndpointError } from "./oauth-engine.js";
 
 export interface GitHubAppTokenSet {
@@ -34,6 +38,29 @@ export interface GitHubAppInstallationInfo {
   repositoriesTruncated?: boolean;
 }
 
+export interface ScopeUserTokenOpts {
+  id: string;
+  apiBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  accessToken: string;
+  targetId: number;
+  repositoryIds?: number[];
+  permissions?: Record<string, string>;
+}
+
+export interface GitHubUserTokenSet {
+  accessToken: string;
+  expiresAt?: number;
+  accountLogin?: string;
+}
+
+export interface ReadUserInstallationsOpts {
+  id: string;
+  apiBaseUrl: string;
+  accessToken: string;
+}
+
 export interface GitHubAppEngine {
   mintInstallationToken(
     opts: MintInstallationTokenOpts,
@@ -41,6 +68,10 @@ export interface GitHubAppEngine {
   readInstallation(
     opts: ReadInstallationOpts,
   ): Promise<GitHubAppInstallationInfo>;
+  scopeUserToken(opts: ScopeUserTokenOpts): Promise<GitHubUserTokenSet>;
+  readUserInstallations(
+    opts: ReadUserInstallationsOpts,
+  ): Promise<GitHubUserTokenProbe>;
 }
 
 export interface CreateGitHubAppEngineOptions {
@@ -69,8 +100,25 @@ interface InstallationRepositoriesResponse {
   repositories?: { id?: number; name?: string }[];
 }
 
+interface ScopedTokenResponse {
+  token?: string;
+  expires_at?: string | null;
+  installation?: { account?: { login?: string } } | null;
+}
+
+interface UserInstallationsResponse {
+  installations?: {
+    id?: number;
+    target_id?: number;
+    account?: { id?: number; login?: string } | null;
+    permissions?: Record<string, string>;
+    repository_selection?: string;
+  }[];
+}
+
 const REPOS_PER_PAGE = 100;
 const MAX_REPO_PAGES = 5;
+const MAX_INSTALLATION_PAGES = 3;
 
 export function createGitHubAppEngine(
   opts?: CreateGitHubAppEngineOptions,
@@ -231,8 +279,173 @@ export function createGitHubAppEngine(
     }
   }
 
+  function githubHeaders(authorization: string): Record<string, string> {
+    return {
+      Authorization: authorization,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": userAgent,
+    };
+  }
+
+  async function scopeUserToken({
+    id,
+    apiBaseUrl,
+    clientId,
+    clientSecret,
+    accessToken,
+    targetId,
+    repositoryIds,
+    permissions,
+  }: ScopeUserTokenOpts): Promise<GitHubUserTokenSet> {
+    const url = `${apiBaseUrl.replace(/\/+$/, "")}/applications/${encodeURIComponent(clientId)}/token/scoped`;
+    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        ...githubHeaders(`Basic ${basic}`),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        access_token: accessToken,
+        target_id: targetId,
+        ...(repositoryIds?.length ? { repository_ids: repositoryIds } : {}),
+        ...(permissions && Object.keys(permissions).length
+          ? { permissions }
+          : {}),
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      const oauthError =
+        res.status === 401
+          ? "invalid_client"
+          : res.status === 404 || res.status === 422
+            ? "invalid_grant"
+            : undefined;
+      throw new OAuthTokenEndpointError(
+        `GitHub user token ${id}: scoped-token request failed — ${res.status} ${txt.slice(0, 500)}`,
+        { status: res.status, ...(oauthError ? { oauthError } : {}) },
+      );
+    }
+    const data = (await res.json()) as ScopedTokenResponse;
+    if (!data.token) {
+      throw new Error(
+        `GitHub user token ${id}: scoped-token response contained no token`,
+      );
+    }
+    const expiresAt = data.expires_at
+      ? Math.floor(Date.parse(data.expires_at) / 1000)
+      : undefined;
+    const accountLogin = data.installation?.account?.login;
+    return {
+      accessToken: data.token,
+      ...(expiresAt !== undefined && Number.isFinite(expiresAt)
+        ? { expiresAt }
+        : {}),
+      ...(accountLogin ? { accountLogin } : {}),
+    };
+  }
+
+  async function listUserInstallationRepositories(
+    base: string,
+    installationId: number,
+    headers: Record<string, string>,
+  ): Promise<
+    Pick<
+      GitHubUserTokenInstallation,
+      "repositories" | "repositoriesTruncated" | "repositoriesUnavailable"
+    >
+  > {
+    const repositories: { id: number; name: string }[] = [];
+    for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+      const res = await fetchImpl(
+        `${base}/user/installations/${installationId}/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`,
+        { headers },
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        return {
+          repositories: [],
+          repositoriesUnavailable: `${res.status} ${txt.slice(0, 200)}`,
+        };
+      }
+      const body = (await res.json()) as InstallationRepositoriesResponse;
+      const batch = body.repositories ?? [];
+      for (const repo of batch) {
+        if (typeof repo.id === "number" && repo.name) {
+          repositories.push({ id: repo.id, name: repo.name });
+        }
+      }
+      if (batch.length < REPOS_PER_PAGE) return { repositories };
+    }
+    return { repositories, repositoriesTruncated: true };
+  }
+
+  async function readUserInstallations({
+    id,
+    apiBaseUrl,
+    accessToken,
+  }: ReadUserInstallationsOpts): Promise<GitHubUserTokenProbe> {
+    const base = apiBaseUrl.replace(/\/+$/, "");
+    const headers = githubHeaders(`Bearer ${accessToken}`);
+    const found: Omit<
+      GitHubUserTokenInstallation,
+      "repositories" | "repositoriesTruncated" | "repositoriesUnavailable"
+    >[] = [];
+    let installationsTruncated = false;
+    for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
+      const res = await fetchImpl(
+        `${base}/user/installations?per_page=${REPOS_PER_PAGE}&page=${page}`,
+        { headers },
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(
+          `GitHub user token ${id}: could not list the app installations this sign-in reaches — ${res.status} ${txt.slice(0, 500)}`,
+        );
+      }
+      const body = (await res.json()) as UserInstallationsResponse;
+      const batch = body.installations ?? [];
+      for (const inst of batch) {
+        const targetId = inst.target_id ?? inst.account?.id;
+        const accountLogin = inst.account?.login;
+        if (typeof inst.id !== "number" || typeof targetId !== "number") {
+          continue;
+        }
+        if (!accountLogin) continue;
+        found.push({
+          installationId: inst.id,
+          targetId,
+          accountLogin,
+          permissions: inst.permissions ?? {},
+          repositorySelection:
+            inst.repository_selection === "all" ? "all" : "selected",
+        });
+      }
+      if (batch.length < REPOS_PER_PAGE) break;
+      if (page === MAX_INSTALLATION_PAGES) installationsTruncated = true;
+    }
+    const installations = await Promise.all(
+      found.map(async (inst) => ({
+        ...inst,
+        ...(await listUserInstallationRepositories(
+          base,
+          inst.installationId,
+          headers,
+        )),
+      })),
+    );
+    return {
+      installations,
+      ...(installationsTruncated ? { installationsTruncated: true } : {}),
+    };
+  }
+
   return {
     mintInstallationToken,
+    scopeUserToken,
+    readUserInstallations,
 
     async readInstallation({
       id,
