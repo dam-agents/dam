@@ -1,11 +1,11 @@
-import { protectedProcedure, t } from "../../trpc.js";
+import { t } from "../../trpc.js";
 
 export const sessionsRouter = t.router({
-  list: protectedProcedure.query(async ({ ctx }) => ({
+  list: t.procedure.query(async ({ ctx }) => ({
     sessions: await ctx.sessions.list(),
   })),
 
-  watch: protectedProcedure.subscription(async function* ({ ctx, signal }) {
+  watch: t.procedure.subscription(async function* ({ ctx, signal }) {
     for await (const notice of ctx.sessions.watch(signal)) yield notice;
   }),
 });

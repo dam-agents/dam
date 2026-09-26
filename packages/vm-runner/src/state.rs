@@ -40,6 +40,10 @@ pub fn machine_dir(state_dir: &Path, id: &str) -> Option<PathBuf> {
     is_machine_id(id).then(|| state_dir.join(id))
 }
 
+pub fn require_machine_dir(state_dir: &Path, id: &str) -> anyhow::Result<PathBuf> {
+    machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the machines this runner has state for, which is the answer to what it is running — not a list it keeps, because it is restarted and the machines are not. A state directory that does not exist yet is no machines rather than an error, since that is a runner that has not made one.
 pub fn machine_ids(state_dir: &Path) -> std::io::Result<BTreeSet<String>> {
     let entries = match fs::read_dir(state_dir) {
@@ -83,8 +87,7 @@ pub fn is_image_ref(image: &str) -> bool {
 // UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped. The registry credential is cleared too: it is sent only so that the image can be fetched, and a stored copy would keep a credential on the state volume for as long as the machine exists.
 // UNIT_BOUNDARY_DESCRIPTION: written 0600, the one restrictive mode any machine state is written with, and the reason is inside the file: a spec's env carries the values of the Agent's secretRef Secret, copied in whole by the controller, so this is the only piece of machine state holding secret material in plaintext. An ordinary write takes the process umask and lands 0644 — what every other file here is, and a leak in this one.
 pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-    let dir =
-        machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
+    let dir = require_machine_dir(state_dir, id)?;
     let mut stored = spec.clone();
     stored.running = false;
     stored.pull_auths.clear();
@@ -118,8 +121,7 @@ pub fn allocate_port(
     if let existing @ 1.. = port(state_dir, id) {
         return Ok(existing);
     }
-    let dir =
-        machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
+    let dir = require_machine_dir(state_dir, id)?;
     let taken: BTreeSet<u16> = machine_ids(state_dir)
         .unwrap_or_default()
         .iter()

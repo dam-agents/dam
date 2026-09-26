@@ -49,7 +49,7 @@ impl Forwarder {
         listener.set_nonblocking(true)?;
         let stop = CancellationToken::new();
         published.insert(id.to_string(), stop.clone());
-        let guest = SocketAddr::from(([127, 0, 0, 1], port + LOOPBACK_OFFSET));
+        let guest = guest_address(port);
         self.runtime.spawn(async move {
             let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
                 return;
@@ -106,13 +106,16 @@ impl Forwarder {
     }
 }
 
+fn guest_address(port: u16) -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], port + LOOPBACK_OFFSET))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether the guest answers its health endpoint with a 200. Asked with a bare HTTP/1.1 request, bounded to HEALTH_TIMEOUT, on the loopback port smolvm publishes the guest on.
 pub fn healthy(port: u16) -> bool {
     if port == 0 {
         return false;
     }
-    let address = SocketAddr::from(([127, 0, 0, 1], port + LOOPBACK_OFFSET));
-    let Ok(mut stream) = TcpStream::connect_timeout(&address, HEALTH_TIMEOUT) else {
+    let Ok(mut stream) = TcpStream::connect_timeout(&guest_address(port), HEALTH_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(HEALTH_TIMEOUT));

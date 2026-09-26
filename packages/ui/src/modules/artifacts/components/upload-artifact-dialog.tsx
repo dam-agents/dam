@@ -19,20 +19,15 @@ import { uploadArtifactFile } from "../lib/transfer.js";
 
 interface Props {
   folders: ArtifactFolder[];
-  defaultFolderId?: string;
   onClose: () => void;
 }
 
-export function UploadArtifactDialog({
-  folders,
-  defaultFolderId,
-  onClose,
-}: Props) {
+export function UploadArtifactDialog({ folders, onClose }: Props) {
   const folderNames = folderDisplayNames(folders);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [folderId, setFolderId] = useState(defaultFolderId ?? "");
+  const [folderId, setFolderId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useCreateArtifact();

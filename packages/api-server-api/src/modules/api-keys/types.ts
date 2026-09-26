@@ -10,7 +10,7 @@ export {
 
 export type Scope = z.infer<typeof scopeSchema>;
 
-export type AgentBinding = readonly string[] | "*";
+type AgentBinding = readonly string[] | "*";
 
 export interface ApiKeyView {
   id: string;

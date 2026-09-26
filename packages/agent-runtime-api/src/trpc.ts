@@ -53,5 +53,3 @@ export const t = initTRPC.context<AgentRuntimeContext>().create({
     };
   },
 });
-
-export const protectedProcedure = t.procedure;

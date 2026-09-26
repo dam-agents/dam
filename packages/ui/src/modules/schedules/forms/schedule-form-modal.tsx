@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -11,7 +10,6 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 import { emitToast } from "../../../lib/toast.js";
@@ -36,22 +34,12 @@ import {
 } from "./schedule-form-schema.js";
 
 interface Props {
-  agentId?: string;
-  agentChoices?: readonly { id: string; name: string }[];
+  agentId: string;
   existing?: Schedule;
   onClose: () => void;
-  onSaved: () => void;
 }
 
-export function ScheduleFormModal({
-  agentId,
-  agentChoices,
-  existing,
-  onClose,
-  onSaved,
-}: Props) {
-  const [chosenAgent, setChosenAgent] = useState(agentId ?? "");
-  const targetAgentId = existing?.agentId ?? agentId ?? chosenAgent;
+export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const deleteSchedule = useDeleteSchedule();
@@ -99,7 +87,6 @@ export function ScheduleFormModal({
           ? `Schedule "${v.name}" saved`
           : `Schedule "${v.name}" added`,
       });
-      onSaved();
       onClose();
     };
     if (existing) {
@@ -110,7 +97,7 @@ export function ScheduleFormModal({
     } else {
       createSchedule.mutate(
         {
-          agentId: targetAgentId,
+          agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
         },
@@ -128,24 +115,6 @@ export function ScheduleFormModal({
         />
 
         <DialogBody className="flex flex-col gap-4">
-          {!existing && agentChoices && (
-            <FormField label="Agent" disableInset>
-              <Select
-                className="h-10"
-                value={chosenAgent}
-                onChange={(event) => setChosenAgent(event.target.value)}
-              >
-                <option value="" disabled>
-                  Choose an agent
-                </option>
-                {agentChoices.map((choice) => (
-                  <option key={choice.id} value={choice.id}>
-                    {choice.name}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
               className="h-10"
@@ -207,7 +176,6 @@ export function ScheduleFormModal({
           label={existing ? "Save" : "Create"}
           pendingLabel={existing ? "Saving…" : "Creating…"}
           pending={mutation.isPending}
-          disabled={!targetAgentId}
         />
       </form>
     </Modal>

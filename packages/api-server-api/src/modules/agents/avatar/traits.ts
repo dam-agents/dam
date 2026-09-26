@@ -10,14 +10,14 @@ import {
 
 export { AVATAR_GAP, AVATAR_INK, AVATAR_SCLERA } from "./constants.js";
 
-export interface AvatarPalette {
+interface AvatarPalette {
   hue: number;
   base: string;
   shade: string;
   light: string;
 }
 
-export const AVATAR_HUE_STEPS = 12;
+const AVATAR_HUE_STEPS = 12;
 const MIN_HUE_DISTANCE = 2;
 
 const HUE_OFFSET = 5;
@@ -93,12 +93,12 @@ export const HEAD_SHAPES = [
 export type HeadShape = (typeof HEAD_SHAPES)[number];
 
 export type Face = "eyes" | "visor" | "happy" | "wink" | "shades" | "dots";
-export type Sides = "none" | "block" | "round" | "wings" | "fins" | "double";
+type Sides = "none" | "block" | "round" | "wings" | "fins" | "double";
 export type Top =
   "none" | "hat" | "bolt" | "cap" | "antennas" | "crown" | "siren";
-export type Banding = "none" | "chin" | "bands" | "belt";
-export type Bottom = "none" | "neck" | "stripes" | "stand" | "wheels";
-export type Mouth = "none" | "line" | "smile" | "o" | "grin" | "cat";
+type Banding = "none" | "chin" | "bands" | "belt";
+type Bottom = "none" | "neck" | "stripes" | "stand" | "wheels";
+type Mouth = "none" | "line" | "smile" | "o" | "grin" | "cat";
 
 export interface Look {
   dx: number;
@@ -114,7 +114,7 @@ export interface EyeSpec {
   shape?: "square" | "goat";
 }
 
-export interface Antenna {
+interface Antenna {
   r: number;
 }
 
@@ -132,9 +132,9 @@ export const DERPS = [
   "square",
   "goat",
 ] as const;
-export type Derp = (typeof DERPS)[number];
+type Derp = (typeof DERPS)[number];
 
-export interface AvatarColors {
+interface AvatarColors {
   head: string;
   headShade: string;
   side: string;
@@ -162,7 +162,7 @@ export interface AvatarTraits {
   patch: number | null;
 }
 
-export type Random = () => number;
+type Random = () => number;
 
 export function avatarKey(owner: string, name: string): string {
   return `${owner}\n${name}`;
@@ -222,7 +222,7 @@ function eye(x: number, y: number, r: number, look: Look, pupil = 0.46) {
   return { x, y, r, pupil, look };
 }
 
-export function derpEyes(derp: Derp, random: Random): EyeSpec[] {
+function derpEyes(derp: Derp, random: Random): EyeSpec[] {
   const side: 1 | -1 = random() < 0.5 ? -1 : 1;
   switch (derp) {
     case "side-eye": {

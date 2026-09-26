@@ -7,10 +7,10 @@ import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-d
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
-import { SandboxSchedulesSection } from "../components/sandbox-schedules-section.js";
 import { SandboxSectionNav } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
@@ -23,6 +23,7 @@ export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSession = useStore((s) => s.openAgentSession);
 
   const agentInaccessible = useIsAgentInaccessible(agentId);
   usePublicAgentFallback(agentId, agentInaccessible);
@@ -90,7 +91,14 @@ export function SandboxHomeView() {
             ) : section === "skills" ? (
               <SandboxSkillsSection agent={agent} />
             ) : section === "schedules" ? (
-              <SandboxSchedulesSection agentId={agent.id} />
+              <section className="mb-8">
+                <SchedulesPanel
+                  agentId={agent.id}
+                  onResumeSession={(sessionId) =>
+                    openAgentSession(agent.id, sessionId)
+                  }
+                />
+              </section>
             ) : section === "artifacts" ? (
               <SandboxArtifactsSection agentId={agent.id} />
             ) : section === "usage" ? (
@@ -103,7 +111,6 @@ export function SandboxHomeView() {
                   agentId: agent.id,
                   sandboxSection: "connections",
                 })}
-                inset
               />
             )}
           </div>

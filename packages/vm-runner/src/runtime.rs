@@ -30,7 +30,7 @@ pub struct Machine<'a> {
     pub image: &'a str,
     pub host_port: u16,
     pub share: &'a Path,
-    pub launch: Option<&'a ImageLaunch>,
+    pub launch: &'a ImageLaunch,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the new shape of a stopped machine, written to its record in place so its disk and port stay. `applied` is the spec it last had, which says which env keys the controller has since dropped and whether the disk must grow. `image` is set when the machine moves to another image: what it boots now, named as for a create, and the launch that image names.
@@ -76,10 +76,7 @@ pub struct Workload {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the guest's command and environment. platform-init runs first and execs the image's own entrypoint, so the image's entrypoint, command, env and working directory all come from its launch record. The platform's env wins over the image's, because it is what makes the guest an agent. The env is sorted by key so two creates of one spec write one record.
-pub fn workload(spec: &MachineSpec, launch: Option<&ImageLaunch>) -> anyhow::Result<Workload> {
-    let Some(launch) = launch else {
-        anyhow::bail!(IMAGE_LAUNCH_UNKNOWN);
-    };
+pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Workload> {
     let mut env: BTreeMap<String, String> = launch
         .env
         .iter()
@@ -290,13 +287,13 @@ mod tests {
     fn platform_init_runs_first_and_hands_off_to_what_the_image_names() {
         let w = workload(
             &spec_with_env(&[]),
-            Some(&launch(&["/entry", "-x"], &["serve"], &[], "/app")),
+            &launch(&["/entry", "-x"], &["serve"], &[], "/app"),
         )
         .unwrap();
         assert_eq!(w.command, vec![INIT_PATH, "/entry", "-x", "serve"]);
         assert_eq!(w.workdir.as_deref(), Some("/app"));
 
-        let bare = workload(&spec_with_env(&[]), Some(&launch(&[], &["run"], &[], ""))).unwrap();
+        let bare = workload(&spec_with_env(&[]), &launch(&[], &["run"], &[], "")).unwrap();
         assert_eq!(bare.command, vec![INIT_PATH, "run"]);
         assert_eq!(
             bare.workdir, None,
@@ -309,12 +306,12 @@ mod tests {
     fn the_platforms_env_wins_over_the_images() {
         let w = workload(
             &spec_with_env(&[("HOME", "/home/agent"), ("PLATFORM_BACKEND", "vm")]),
-            Some(&launch(
+            &launch(
                 &["/entry"],
                 &[],
                 &["HOME=/root", "PATH=/usr/bin", "NOEQUALS"],
                 "",
-            )),
+            ),
         )
         .unwrap();
         assert_eq!(
@@ -327,18 +324,16 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, whether the launch is missing or empty, and the refusal reaches the Agent's status, so its wording is pinned.
+    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, and the refusal reaches the Agent's status, so its wording is pinned.
     #[test]
     fn a_machine_with_nothing_to_run_is_refused() {
-        let none = workload(&spec_with_env(&[]), None).unwrap_err().to_string();
-        let empty = workload(&spec_with_env(&[]), Some(&launch(&[], &[], &["A=b"], "/")))
+        let empty = workload(&spec_with_env(&[]), &launch(&[], &[], &["A=b"], "/"))
             .unwrap_err()
             .to_string();
         assert_eq!(
-            none,
+            empty,
             "this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it"
         );
-        assert_eq!(empty, none);
     }
 
     // TEST_SCENARIO: an update must drop what the controller stopped sending, or a Secret key removed from an Agent stays in its guest forever. It must also keep what only the image set, which the controller never sent and so never removed.

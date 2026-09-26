@@ -3,11 +3,15 @@ import { expect, test } from "@playwright/test";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName, echoUrl, sentinel } from "../../lib/fixtures.js";
+import {
+  agentName,
+  echoUrl,
+  mockDefaultReply,
+  sentinel,
+} from "../../lib/fixtures.js";
 
 const sharedChannelId = "C-E2E-SHARED";
 const strangerSlackUserId = "U-E2E-STRANGER";
-const mockDefaultReply = "Hello from the mock agent.";
 const helloText = "hello from a channel member";
 
 test("any channel member drives the agent through a shared binding", async () => {

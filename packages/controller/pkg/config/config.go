@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -44,26 +43,24 @@ type Config struct {
 	LegacyAgentCPULimit    resource.Quantity
 	LegacyAgentMemoryLimit resource.Quantity
 
-	AgentProbesEnabled       bool
-	HarnessServerURL         string
-	HarnessServerPort        int
-	EnvoyImage               string
-	EnvoyPort                int
-	EnvoyMitmCAIssuer        string
-	VMRunnerCAIssuer         string
-	EnvoyMitmLeafDuration    time.Duration
-	EnvoyMitmLeafRenewBefore time.Duration
-	OTelEnv                  map[string]string
-	GatewayOTLPEndpoint      string
-	GatewayOTLPProtocol      string
-	ExtAuthzPort             int
-	ExtAuthzHoldSeconds      int
-	IstioTrustDomain         string
-	IstioWaypointName        string
-	TelemetryCollectorHost   string
-	TelemetryCollectorPort   int
-	ObjectStoreHost          string
-	ObjectStorePort          int
+	AgentProbesEnabled     bool
+	HarnessServerURL       string
+	HarnessServerPort      int
+	EnvoyImage             string
+	EnvoyPort              int
+	EnvoyMitmCAIssuer      string
+	VMRunnerCAIssuer       string
+	OTelEnv                map[string]string
+	GatewayOTLPEndpoint    string
+	GatewayOTLPProtocol    string
+	ExtAuthzPort           int
+	ExtAuthzHoldSeconds    int
+	IstioTrustDomain       string
+	IstioWaypointName      string
+	TelemetryCollectorHost string
+	TelemetryCollectorPort int
+	ObjectStoreHost        string
+	ObjectStorePort        int
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -235,8 +232,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.VMRunnerCAIssuer = envOrDefault("VM_RUNNER_CA_ISSUER", "platform-vm-runner-ca-issuer")
-	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
-	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
@@ -390,15 +385,6 @@ func envOrDefaultBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
-		}
-	}
-	return def
-}
-
-func envOrDefaultDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
 		}
 	}
 	return def

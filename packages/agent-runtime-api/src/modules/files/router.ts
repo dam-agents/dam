@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, t } from "../../trpc.js";
+import { t } from "../../trpc.js";
 import {
   fileCreateInputSchema,
   fileListDirsInputSchema,
@@ -38,35 +38,33 @@ function toTrpcError(error: FilesDomainError): TRPCError {
 }
 
 export const filesRouter = t.router({
-  listDirs: protectedProcedure
+  listDirs: t.procedure
     .input(fileListDirsInputSchema)
     .query(async ({ ctx, input }) => ({
       results: await ctx.files.listDirs(input.paths),
     })),
 
-  watch: protectedProcedure
+  watch: t.procedure
     .input(fileListDirsInputSchema)
     .subscription(async function* ({ ctx, input, signal }) {
       for await (const notice of ctx.files.watchDirs(input.paths, signal))
         yield notice;
     }),
 
-  watchFile: protectedProcedure
+  watchFile: t.procedure
     .input(fileReadInputSchema)
     .subscription(async function* ({ ctx, input, signal }) {
       for await (const notice of ctx.files.watchFile(input.path, signal))
         yield notice;
     }),
 
-  read: protectedProcedure
-    .input(fileReadInputSchema)
-    .query(async ({ ctx, input }) => {
-      const result = await ctx.files.readFileSafe(input.path);
-      if (!result.ok) throw toTrpcError(result.error);
-      return result.value;
-    }),
+  read: t.procedure.input(fileReadInputSchema).query(async ({ ctx, input }) => {
+    const result = await ctx.files.readFileSafe(input.path);
+    if (!result.ok) throw toTrpcError(result.error);
+    return result.value;
+  }),
 
-  write: protectedProcedure
+  write: t.procedure
     .input(fileWriteInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.writeFileSafe(
@@ -78,7 +76,7 @@ export const filesRouter = t.router({
       return { mtimeMs: result.value.mtimeMs };
     }),
 
-  create: protectedProcedure
+  create: t.procedure
     .input(fileCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.createFileSafe(input.path, input.content);
@@ -86,7 +84,7 @@ export const filesRouter = t.router({
       return { mtimeMs: result.value.mtimeMs };
     }),
 
-  mkdir: protectedProcedure
+  mkdir: t.procedure
     .input(fileMkdirInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.mkdirSafe(input.path);
@@ -94,7 +92,7 @@ export const filesRouter = t.router({
       return { ok: true as const };
     }),
 
-  rename: protectedProcedure
+  rename: t.procedure
     .input(fileRenameInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.renameSafe(
@@ -106,7 +104,7 @@ export const filesRouter = t.router({
       return { ok: true as const };
     }),
 
-  remove: protectedProcedure
+  remove: t.procedure
     .input(fileRemoveInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.deleteSafe(input.path);
@@ -114,7 +112,7 @@ export const filesRouter = t.router({
       return { ok: true as const };
     }),
 
-  upload: protectedProcedure
+  upload: t.procedure
     .input(fileUploadInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.uploadFileSafe(

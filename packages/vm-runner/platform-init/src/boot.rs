@@ -242,11 +242,7 @@ impl FreshRoot {
                 options.as_ptr().cast(),
             )
         };
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err(io::Error::last_os_error())
-        }
+        succeeded(rc == 0)
     }
 }
 
@@ -364,21 +360,15 @@ fn pivot_root(new_root: &Path, put_old: &Path) -> io::Result<()> {
     let new_root = cstring(new_root.as_os_str())?;
     let put_old = cstring(put_old.as_os_str())?;
     // SAFETY: both paths are NUL-terminated strings that outlive the call, and pivot_root(2) takes exactly these two.
-    if unsafe { libc::syscall(libc::SYS_pivot_root, new_root.as_ptr(), put_old.as_ptr()) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    succeeded(
+        unsafe { libc::syscall(libc::SYS_pivot_root, new_root.as_ptr(), put_old.as_ptr()) } == 0,
+    )
 }
 
 fn unmount_detached(target: &Path) -> io::Result<()> {
     let target = cstring(target.as_os_str())?;
     // SAFETY: the target is a NUL-terminated string that outlives the call.
-    if unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    succeeded(unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) } == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's console goes nowhere — stdout and stderr in the guest are both /dev/null — so without this a guest that dies explains itself to nobody. Pointing both at the disk this early puts the whole boot in the record, not only the part after the harness starts. Each boot starts a fresh file and moves the one before it aside, so the history is one boot deep: enough that a machine which died still explains itself on the boot after. Nothing bounds the boot being written, so an agent that logs without pause can still fill its disk and only the boot after it trims.
@@ -650,17 +640,18 @@ fn mount(source: &Path, target: &Path, flags: libc::c_ulong) -> io::Result<()> {
             std::ptr::null(),
         )
     };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a close that fails is a write that did not land, so a copy reports it rather than letting the drop discard it.
 fn close(file: File) -> io::Result<()> {
     // SAFETY: into_raw_fd hands over the only owner of the descriptor, so nothing closes it twice.
-    if unsafe { libc::close(file.into_raw_fd()) } == 0 {
+    succeeded(unsafe { libc::close(file.into_raw_fd()) } == 0)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the result of a libc call that reports failure in errno, read right after the call and before anything else can overwrite it.
+fn succeeded(ok: bool) -> io::Result<()> {
+    if ok {
         Ok(())
     } else {
         Err(io::Error::last_os_error())

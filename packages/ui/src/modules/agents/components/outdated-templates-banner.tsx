@@ -8,10 +8,9 @@ import { useUpdateSandbox } from "../hooks/use-update-sandbox.js";
 
 interface Props {
   agents: readonly AgentView[];
-  noun?: string;
 }
 
-export function OutdatedTemplatesBanner({ agents, noun = "agents" }: Props) {
+export function OutdatedTemplatesBanner({ agents }: Props) {
   const update = useUpdateSandbox();
   const outdated = agents.filter((agent) => agent.templateUpdate);
 
@@ -27,7 +26,7 @@ export function OutdatedTemplatesBanner({ agents, noun = "agents" }: Props) {
         <Renew size={16} className="shrink-0 text-accent" />
         <span>
           <strong className="font-medium text-foreground">
-            {outdated.length} {noun}
+            {outdated.length} agents
           </strong>{" "}
           out of date — newer images available upstream.
         </span>

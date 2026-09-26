@@ -56,7 +56,10 @@ export function startAcpService(deps: AcpServiceDeps): void {
     try {
       switch (method) {
         case "initialize":
-          respondInitialize(id);
+          respond(id, {
+            protocolVersion: 1,
+            agentCapabilities: { sessionCapabilities: { close: {} } },
+          });
           return;
         case "authenticate":
           respond(id, null);
@@ -240,21 +243,8 @@ export function startAcpService(deps: AcpServiceDeps): void {
     } catch (err) {
       text = `[fetch error] ${err instanceof Error ? err.message : String(err)}`;
     }
-    notify("session/update", {
-      sessionId: sid,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text },
-      },
-    });
+    emitText(sid, text);
     return text;
-  }
-
-  function respondInitialize(id: JsonRpcId): void {
-    respond(id, {
-      protocolVersion: 1,
-      agentCapabilities: { sessionCapabilities: { close: {} } },
-    });
   }
 
   function respond(id: JsonRpcId, result: unknown): void {

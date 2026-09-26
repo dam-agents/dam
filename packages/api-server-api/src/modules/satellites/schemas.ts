@@ -78,7 +78,7 @@ export const heartbeatInputSchema = z.object({
 });
 
 export const MAX_JOB_OUTPUT_BYTES = 1024 * 1024;
-export const MAX_TOOL_ARGS_BYTES = 64 * 1024;
+const MAX_TOOL_ARGS_BYTES = 64 * 1024;
 
 export const toolArgsSchema = z
   .record(z.string(), z.unknown())

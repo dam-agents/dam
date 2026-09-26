@@ -43,6 +43,11 @@ impl Smolvm {
         Ok(self.db.get_vm(id)?)
     }
 
+    fn existing(&self, id: &str) -> anyhow::Result<VmRecord> {
+        self.record(id)?
+            .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: runs a smolvm stop or delete, and powers the machine off when smolvm refuses it. smolvm stops a running guest only once the guest confirms its disks are quiesced, and when the guest does not confirm, it leaves the VMM running and fails the call. The runner still has to end the machine: the controller asked for the stop, a restart cannot apply a change without it, and a delete of a machine that never confirms would never finish. So a refusal while a VMM still holds the machine's directory kills that VMM, which is what a stop did before smolvm asked for the confirmation, and the call is made once more, against a machine that is now down.
     fn ended(&self, id: &str, end: impl Fn() -> smolvm::Result<()>) -> anyhow::Result<()> {
         let Err(refused) = end() else {
@@ -98,17 +103,13 @@ impl Runtime for Smolvm {
         } = *update;
         let secrets: Vec<&str> = desired.env.values().map(String::as_str).collect();
         timed("update", id, &secrets, || {
-            let mut record = self
-                .record(id)?
-                .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+            let mut record = self.existing(id)?;
             if record.actual_state() == RecordState::Running
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &vm_data_dir(id));
-                record = self
-                    .record(id)?
-                    .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+                record = self.existing(id)?;
             }
             if !matches!(
                 record.actual_state(),
@@ -132,12 +133,11 @@ impl Runtime for Smolvm {
                 }
             }
             let allowed_cidrs = allowed_cidrs(desired)?;
-            let relaunch = match image {
-                Some((image, launch)) => {
-                    Some((resolved_image(image)?, workload(desired, Some(launch))?))
-                }
-                None => None,
-            };
+            let relaunch = image
+                .map(|(image, launch)| {
+                    anyhow::Ok((resolved_image(image)?, workload(desired, launch)?))
+                })
+                .transpose()?;
             self.db.update_vm(id, |r| {
                 r.cpus = cpus;
                 r.mem = mem;
@@ -190,10 +190,8 @@ impl Runtime for Smolvm {
 
     // UNIT_BOUNDARY_DESCRIPTION: a `local-dir:` or `local:` reference is mapped back to its host directory the way a start maps it, so this answers exactly what that start would find.
     fn image_present(&self, id: &str) -> anyhow::Result<bool> {
-        let record = self
-            .record(id)?
-            .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
-        Ok(record
+        Ok(self
+            .existing(id)?
             .image
             .as_deref()
             .and_then(packed_layers_dir_for_ref)
@@ -354,7 +352,7 @@ mod tests {
                     image: tree.to_str().unwrap(),
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -416,7 +414,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -444,7 +442,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -500,7 +498,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &home.path.join("missing"),
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap_err()
@@ -527,7 +525,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -587,7 +585,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -647,7 +645,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -678,7 +676,7 @@ mod tests {
                     image: old_tree.to_str().unwrap(),
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&old_launch),
+                    launch: &old_launch,
                 },
             )
             .unwrap();

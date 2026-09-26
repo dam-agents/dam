@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, t } from "../../trpc.js";
+import { t } from "../../trpc.js";
 import { sshAuthorizeKeyInputSchema } from "./schemas.js";
 
 export const sshRouter = t.router({
-  authorizeKey: protectedProcedure
+  authorizeKey: t.procedure
     .input(sshAuthorizeKeyInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.ssh.authorizeKey(input.publicKey);

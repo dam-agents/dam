@@ -56,7 +56,6 @@ interface Props {
   onConfigure: () => void;
   configureLabel: string;
   onShare?: () => void;
-  shareLabel?: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -80,7 +79,6 @@ export function AgentRow({
   onConfigure,
   configureLabel,
   onShare,
-  shareLabel,
   onWake,
   onRestart,
   onPause,
@@ -204,7 +202,7 @@ export function AgentRow({
               </DropdownMenuItem>
               {onShareKnowledge && (
                 <DropdownMenuItem onSelect={onShareKnowledge}>
-                  {shareLabel ?? "Share knowledge base"}
+                  Share knowledge base
                 </DropdownMenuItem>
               )}
               {onAddToChannel && (messengers.slack || messengers.telegram) && (

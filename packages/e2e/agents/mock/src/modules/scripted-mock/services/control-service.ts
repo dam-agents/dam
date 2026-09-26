@@ -6,7 +6,6 @@ import type {
   PerformFetchResult,
   ScriptedMockService,
   SetScriptInput,
-  SpawnInvocationInput,
 } from "mock-agent-api";
 import type { MockState } from "../domain/state.js";
 import type { HarnessSpawn } from "./ports.js";
@@ -45,11 +44,7 @@ export function createScriptedMockService(
     getEnv(input: GetEnvInput): GetEnvResult {
       return { value: process.env[input.name] };
     },
-    performFetch(input: PerformFetchInput): Promise<PerformFetchResult> {
-      return proxyFetch(input);
-    },
-    spawnInvocation(input: SpawnInvocationInput) {
-      return harnessSpawn(input);
-    },
+    performFetch: proxyFetch,
+    spawnInvocation: harnessSpawn,
   };
 }

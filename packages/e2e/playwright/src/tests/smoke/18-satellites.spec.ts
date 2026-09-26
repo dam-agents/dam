@@ -5,7 +5,7 @@ import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import {
   deleteAgentIfPresent,
-  ensureAgentExists,
+  ensureAgentRunning,
   waitForAgentRunning,
 } from "../../lib/agents.js";
 import { harnessName } from "../../lib/fixtures.js";
@@ -101,8 +101,7 @@ test.describe("satellites", () => {
     );
     expect(satellite?.grantedAgentIds).toEqual([]);
 
-    await ensureAgentExists(api, AGENT_NAME, harnessName);
-    const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    const agentId = await ensureAgentRunning(api, AGENT_NAME);
 
     await api.satellites.grant.mutate({ satellite: SATELLITE, agentId });
     expect(
@@ -196,8 +195,7 @@ test.describe("satellites", () => {
     await expect(row).toBeVisible();
     await expect(row).not.toContainText(/Offline|Shutting down/);
 
-    await ensureAgentExists(api, AGENT_NAME, harnessName);
-    const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    const agentId = await ensureAgentRunning(api, AGENT_NAME);
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await page.getByTestId("open-connection-catalog").first().click();
     await page.getByTestId("catalog-tab-mcp").click();

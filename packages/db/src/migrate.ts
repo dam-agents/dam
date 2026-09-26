@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { buildDbSsl, type DbTlsOptions } from "./client.js";
+import { postgresOptions, type DbTlsOptions } from "./client.js";
 
 const MIGRATION_LOCK = "platform-migrations";
 
@@ -10,8 +10,7 @@ export async function runMigrations(
   migrationsFolder: string,
   tls?: DbTlsOptions,
 ): Promise<void> {
-  const ssl = buildDbSsl(tls);
-  const sql = postgres(url, ssl ? { max: 1, ssl } : { max: 1 });
+  const sql = postgres(url, postgresOptions(1, tls));
   const db = drizzle(sql);
   try {
     await sql`SELECT pg_advisory_lock(pg_catalog.hashtext(${MIGRATION_LOCK}))`;

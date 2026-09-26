@@ -21,8 +21,8 @@ export function SchedulesPanel({
   agentId,
   onResumeSession,
 }: {
-  agentId: string | null;
-  onResumeSession?: (sessionId: string) => void;
+  agentId: string;
+  onResumeSession: (sessionId: string) => void;
 }) {
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
@@ -38,9 +38,7 @@ export function SchedulesPanel({
     <PlatformSkillNote
       featureId="schedules"
       className="mb-4"
-      onOpenSkills={
-        agentId ? () => navigateToSandboxHome(agentId, "skills") : undefined
-      }
+      onOpenSkills={() => navigateToSandboxHome(agentId, "skills")}
     />
   );
 
@@ -89,16 +87,15 @@ export function SchedulesPanel({
         </>
       )}
 
-      {agentId && form && (
+      {form && (
         <ScheduleFormModal
           agentId={agentId}
           existing={form.mode === "edit" ? form.schedule : undefined}
           onClose={closeForm}
-          onSaved={closeForm}
         />
       )}
 
-      {agentId && resultsFor && (
+      {resultsFor && (
         <ScheduleResultsModal
           agentId={agentId}
           schedule={resultsFor}

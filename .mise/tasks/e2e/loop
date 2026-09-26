@@ -28,7 +28,7 @@ REBUILD="${usage_rebuild:-}"
 NEEDS_BOOTSTRAP=false
 if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
   NEEDS_BOOTSTRAP=true
-elif ! kubectl --kubeconfig="$KUBECONFIG" get deployment platform-apiserver >/dev/null 2>&1; then
+elif ! kubectl get deployment platform-apiserver >/dev/null 2>&1; then
   NEEDS_BOOTSTRAP=true
 fi
 if [ "$NEEDS_BOOTSTRAP" = true ]; then

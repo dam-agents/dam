@@ -38,6 +38,7 @@ data:
   {{- range $path, $bytes := .Files.Glob "starter-kits/kits/*/**" }}
   {{- $id := index (splitList "/" $path) 2 }}
   {{- if include "platform.starterKits.kitEnabled" (dict "root" $root "id" $id) }}
+  {{- $key := $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}
   {{- $override := dig $id "image" "" ($root.Values.starterKits.builtin.kits | default dict) }}
   {{- if and $override (hasSuffix "/kit.yaml" $path) }}
   {{- $kit := $bytes | toString | fromYaml }}
@@ -45,10 +46,10 @@ data:
   {{- fail (printf "starterKits.builtin.kits.%s.image: kit %s brings no image of its own, so there is nothing to override" $id $id) }}
   {{- end }}
   {{- $_ := set $kit.image "ref" $override }}
-  {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
+  {{ $key }}: |-
     {{- $kit | toYaml | nindent 4 }}
   {{- else }}
-  {{ $path | trimPrefix "starter-kits/" | replace "/" "__" | quote }}: |-
+  {{ $key }}: |-
     {{- $bytes | toString | nindent 4 }}
   {{- end }}
   {{- end }}

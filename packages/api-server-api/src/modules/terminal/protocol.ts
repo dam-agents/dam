@@ -3,7 +3,7 @@ export const OP_OUTPUT = 0x01;
 export const OP_RESIZE = 0x02;
 export const OP_EXIT = 0x03;
 
-export type TerminalFrame =
+type TerminalFrame =
   | { op: typeof OP_INPUT | typeof OP_OUTPUT; data: Uint8Array }
   | { op: typeof OP_RESIZE; cols: number; rows: number }
   | { op: typeof OP_EXIT; code: number };

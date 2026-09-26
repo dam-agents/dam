@@ -3,11 +3,10 @@ import { expect, test } from "@playwright/test";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName } from "../../lib/fixtures.js";
+import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
 
 const ambientChannelId = "C-E2E-AMBIENT";
 const strangerSlackUserId = "U-E2E-STRANGER";
-const mockDefaultReply = "Hello from the mock agent.";
 const questionText = "does anyone know what the deploy script does?";
 
 test("an unmentioned channel message gets an ambient reply", async () => {
