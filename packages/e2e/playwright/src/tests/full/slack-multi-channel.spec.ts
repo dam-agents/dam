@@ -1,25 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-import { ensureAgentExists, waitForAgentRunning } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
+import { ensureAgentRunning } from "../../lib/agents.js";
+import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { harnessName } from "../../lib/fixtures.js";
+import { mockDefaultReply } from "../../lib/fixtures.js";
 
 const agentName = "e2e-slack-multi";
 
 const channelA = "C-E2E-MULTI-A";
 const channelB = "C-E2E-MULTI-B";
 const strangerSlackUserId = "U-E2E-STRANGER";
-const mockDefaultReply = "Hello from the mock agent.";
 
 const sharedTs = "1700000900.000100";
 
 const textIn = (channel: string) => `hello from ${channel}`;
 
-async function repliedInThread(
-  api: ReturnType<typeof createApiClient>,
-  channel: string,
-) {
+async function repliedInThread(api: ApiClient, channel: string) {
   const { records } = await api.e2e.slackReadOutbound.query();
   return records.some(
     (r) =>
@@ -36,8 +32,7 @@ test("one agent serves two Slack channels, each its own conversation (#3086)", a
   const token = await getAccessToken();
   const api = createApiClient(token);
   await acceptTerms(api);
-  await ensureAgentExists(api, agentName, harnessName);
-  const agentId = await waitForAgentRunning(api, agentName);
+  const agentId = await ensureAgentRunning(api, agentName);
 
   await test.step("both channels bind to the same agent", async () => {
     await api.agents.disconnectSlack.mutate({ id: agentId });

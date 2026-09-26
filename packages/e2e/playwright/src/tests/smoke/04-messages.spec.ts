@@ -1,11 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl } from "../../config.js";
 import {
-  AGENT_UP,
-  agentCardStatus,
-  chatInput,
-  gotoAgentChat,
+  openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
   setMockReplyWithMidTurnUserPrompt,
@@ -31,14 +27,7 @@ test("exchange messages with the agent", async ({ page }) => {
   await setMockAgentReply(api, agentId, scriptedReply);
 
   await test.step("open the agent chat from the agent list", async () => {
-    await page.goto(baseUrl);
-    await expect(page.getByTestId("app-sidebar")).toBeVisible();
-
-    await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
-
-    await gotoAgentChat(page, agentName, agentId);
-
-    await expect(chatInput(page)).toBeVisible();
+    await openAgentChat(page, agentName, agentId);
   });
 
   await test.step("send a message and receive the scripted reply", async () => {
@@ -69,11 +58,7 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
 
   try {
     await test.step("open the agent chat", async () => {
-      await page.goto(baseUrl);
-      await expect(page.getByTestId("app-sidebar")).toBeVisible();
-      await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
-      await gotoAgentChat(page, agentName, agentId);
-      await expect(chatInput(page)).toBeVisible();
+      await openAgentChat(page, agentName, agentId);
     });
 
     await test.step("the interleaved reply stays paired with the user prompt", async () => {

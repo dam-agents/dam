@@ -17,10 +17,7 @@ export type ArtifactKind =
 
 export type ArtifactVisibility = "private" | "restricted" | "public";
 
-export type ArtifactCreateVisibility = Exclude<
-  ArtifactVisibility,
-  "restricted"
->;
+type ArtifactCreateVisibility = Exclude<ArtifactVisibility, "restricted">;
 
 export interface ArtifactFolder {
   id: string;

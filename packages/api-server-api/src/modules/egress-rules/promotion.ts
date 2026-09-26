@@ -1,4 +1,4 @@
-export function needsL7Promotion(
+function needsL7Promotion(
   method: string,
   pathPattern: string,
   port?: number,
@@ -29,7 +29,7 @@ export interface GatewayRestartImpact {
   willRestart: boolean;
 }
 
-export interface GatewayRestartImpactInput {
+interface GatewayRestartImpactInput {
   current: readonly (PromotionRule & { id: string })[];
   adds?: readonly PromotionRule[];
   removeIds?: readonly string[];

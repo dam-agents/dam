@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ensureAgentExists, waitForAgentRunning } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
+import { ensureAgentRunning } from "../../lib/agents.js";
+import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { harnessName } from "../../lib/fixtures.js";
+import { mockDefaultReply } from "../../lib/fixtures.js";
 
 const agentName = "e2e-slack-workspaces";
 
@@ -11,14 +11,10 @@ const secondTeamId = "T-E2E-SECOND";
 const channelInSecond = "C-E2E-WS-SECOND";
 const channelInOriginal = "C-E2E-WS-ORIGINAL";
 const strangerSlackUserId = "U-E2E-WS-STRANGER";
-const mockDefaultReply = "Hello from the mock agent.";
 
 const ts = "1700000950.000100";
 
-async function outboundFor(
-  api: ReturnType<typeof createApiClient>,
-  channel: string,
-) {
+async function outboundFor(api: ApiClient, channel: string) {
   const { records } = await api.e2e.slackReadOutbound.query();
   return records.find(
     (r) =>
@@ -34,8 +30,7 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
   const token = await getAccessToken();
   const api = createApiClient(token);
   await acceptTerms(api);
-  await ensureAgentExists(api, agentName, harnessName);
-  const agentId = await waitForAgentRunning(api, agentName);
+  const agentId = await ensureAgentRunning(api, agentName);
 
   await test.step("a conversation is bound before any second workspace exists", async () => {
     await api.agents.disconnectSlack.mutate({ id: agentId });

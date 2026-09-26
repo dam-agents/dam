@@ -3,7 +3,7 @@ import { z } from "zod";
 export const contentHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const wirePathSchema = z.string().min(1).max(4096);
 
-export const kbPublishInventoryFileSchema = z.object({
+const kbPublishInventoryFileSchema = z.object({
   path: wirePathSchema,
   sizeBytes: z.number().int().nonnegative(),
   contentHash: contentHashSchema,
@@ -50,7 +50,7 @@ export type KbPublishCompleteReport = z.infer<
   typeof kbPublishCompleteInputSchema
 >["report"];
 
-export interface KbPublishWorkCaps {
+interface KbPublishWorkCaps {
   perFileMaxBytes: number;
   totalMaxBytes: number;
   maxFiles: number;
