@@ -13,6 +13,39 @@ export interface AgentFooter {
   agentId: string;
   label: string;
   sessionId?: string;
+  postRef?: SlackPostRef;
+}
+
+export interface SlackPostRef {
+  teamId: string;
+  channel: string;
+  threadTs?: string;
+  sentAt: number;
+  nonce: string;
+}
+
+const POST_REF_RE = /^(.*)-([A-Z0-9]+)-(\d+\.\d+)?-(\d+)-([0-9a-f]{16})$/;
+
+function formatSlackPostRef(ref: SlackPostRef): string {
+  return [
+    ref.teamId,
+    ref.channel,
+    ref.threadTs ?? "",
+    ref.sentAt,
+    ref.nonce,
+  ].join("-");
+}
+
+export function parseSlackPostRef(raw: string): SlackPostRef | null {
+  const match = raw.match(POST_REF_RE);
+  if (!match) return null;
+  return {
+    teamId: match[1]!,
+    channel: match[2]!,
+    ...(match[3] ? { threadTs: match[3] } : {}),
+    sentAt: Number(match[4]),
+    nonce: match[5]!,
+  };
 }
 
 function escapeLinkLabel(name: string): string {
@@ -42,10 +75,22 @@ export function agentFooterMrkdwn(footer: AgentFooter): string {
   return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
 }
 
+function deleteLinkMrkdwn(footer: AgentFooter, ref: SlackPostRef): string {
+  const session = footer.sessionId
+    ? `/${encodeURIComponent(footer.sessionId)}`
+    : "";
+  return `<${footer.uiBaseUrl}${CHAT_PATH}${footer.agentId}${session}?m=${encodeURIComponent(formatSlackPostRef(ref))}|Delete (owner only)>`;
+}
+
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
+  const deleteLink = footer.postRef
+    ? ` · ${deleteLinkMrkdwn(footer, footer.postRef)}`
+    : "";
   return {
     type: "context",
-    elements: [{ type: "mrkdwn", text: agentFooterMrkdwn(footer) }],
+    elements: [
+      { type: "mrkdwn", text: `${agentFooterMrkdwn(footer)}${deleteLink}` },
+    ],
   };
 }
 
@@ -53,23 +98,44 @@ const FOOTER_RE = new RegExp(
   `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
 );
 
+const FOOTER_SESSION_RE = new RegExp(
+  `${PUBLIC_AGENT_PATH}agent-[A-Za-z0-9]+\\?s=([^&|>]+)`,
+);
+
+function footerTexts(message: SlackMessage): string[] {
+  return (message.blocks ?? []).flatMap((block) => {
+    if ((block as { type?: unknown }).type !== "context") return [];
+    const elements = (block as { elements?: Array<{ text?: unknown }> })
+      .elements;
+    return (elements ?? []).flatMap((element) =>
+      typeof element?.text === "string" ? [element.text] : [],
+    );
+  });
+}
+
 export function parseAgentFooter(
   message: SlackMessage,
 ): { agentId: string } | null {
-  for (const block of message.blocks ?? []) {
-    if ((block as { type?: unknown }).type !== "context") continue;
-    const elements = (block as { elements?: Array<{ text?: unknown }> })
-      .elements;
-    for (const element of elements ?? []) {
-      const text = element?.text;
-      if (typeof text !== "string") continue;
-      const match = text.match(FOOTER_RE);
-      if (match) {
-        return { agentId: match[1] };
-      }
-    }
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_RE);
+    if (match) return { agentId: match[1] };
   }
   return null;
+}
+
+export function footerSessionId(message: SlackMessage): string | null {
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_SESSION_RE);
+    if (match) return decodeURIComponent(match[1]!);
+  }
+  return null;
+}
+
+export function footerCarriesNonce(
+  message: SlackMessage,
+  nonce: string,
+): boolean {
+  return footerTexts(message).some((text) => text.includes(`-${nonce}|`));
 }
 
 export const THREAD_MARKER_NOTE =

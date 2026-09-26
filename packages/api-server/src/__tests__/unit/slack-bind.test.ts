@@ -38,6 +38,10 @@ async function harness(opts?: {
     postMessage: vi.fn(async () =>
       opts?.postError ? { error: opts.postError } : { ok: true as const },
     ),
+    deletePost: vi.fn(async () => ({
+      ok: true as const,
+      agentWillBeTold: false,
+    })),
   };
   const findChannelBindings = vi.fn(async () =>
     opts?.boundTo

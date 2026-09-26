@@ -120,6 +120,7 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
+  fileIds?: string[];
 }
 
 export type SlackBlock = Record<string, unknown>;
@@ -150,7 +151,7 @@ export interface SlackUpload {
   file: Buffer;
   filename: string;
   title?: string;
-  initialComment?: string;
+  blocks?: SlackBlock[];
   threadTs?: string;
   teamId: SlackWorkspace;
 }
@@ -227,6 +228,19 @@ export interface SlackGateway {
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<void>;
   postEphemeral(args: SlackPostEphemeral): Promise<void>;
+  readMessageWindow(args: {
+    channel: string;
+    threadTs?: string;
+    oldest: string;
+    latest: string;
+    teamId: SlackWorkspace;
+  }): Promise<SlackMessage[]>;
+  deleteMessage(
+    channel: string,
+    ts: string,
+    teamId: SlackWorkspace,
+  ): Promise<void>;
+  deleteFile(fileId: string, teamId: SlackWorkspace): Promise<void>;
   startStream(args: SlackStartStream): Promise<{ ts: string }>;
   appendStream(args: SlackAppendStream): Promise<void>;
   stopStream(args: SlackStopStream): Promise<void>;

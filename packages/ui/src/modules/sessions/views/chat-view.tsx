@@ -90,6 +90,7 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { SlackPostDeleteDialog } from "../../slack/components/slack-post-delete-dialog.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
@@ -641,6 +642,7 @@ export function ChatView() {
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
           <WorkspaceFailureNotice agentId={selectedAgent} />
+          <SlackPostDeleteDialog agentId={selectedAgent} />
           <SessionsSidebar
             open={sessionsSectionOpen}
             onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}

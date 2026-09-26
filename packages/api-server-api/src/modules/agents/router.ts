@@ -11,6 +11,7 @@ import {
   agentBindTelegramChatInputSchema,
   agentListTelegramChatsInputSchema,
   agentUnbindTelegramChatInputSchema,
+  agentDeleteSlackPostInputSchema,
   agentConnectSlackInputSchema,
   agentCreateInputSchema,
   agentDeleteInputSchema,
@@ -283,6 +284,31 @@ export const agentsRouter = t.router({
         case "AgentNotFound":
         case "ChatNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });
+      }
+    }),
+
+  deleteSlackPost: manageAgentsProcedure
+    .input(agentDeleteSlackPostInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.deleteSlackPost(
+        input.agentId,
+        input.postRef,
+        input.reason || null,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "SlackUnavailable":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Slack is not connected",
+          });
+        case "DeleteRefused":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: res.error.message,
+          });
       }
     }),
 
