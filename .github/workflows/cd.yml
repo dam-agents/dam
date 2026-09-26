@@ -107,6 +107,17 @@ jobs:
           path: &pnpm-store ~/.local/share/pnpm/store
           key: &pnpm-key pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: &pnpm-restore-keys pnpm-store-${{ runner.os }}-
+      # pnpm's record that it checked this lockfile against the supply-chain
+      # policies in pnpm-workspace.yaml (minimumReleaseAge, trustPolicy). pnpm
+      # matches it by the lockfile's hash and the policy, and skips the check,
+      # which took 12-18s of every install, looking up each of the 1393
+      # entries in the registry. Only main saves it, and only an exact key is
+      # of any use: a changed lockfile is checked again.
+      - id: pnpm-verified
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
+          key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
@@ -151,6 +162,11 @@ jobs:
         with:
           path: *pnpm-store
           key: *pnpm-key
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-verified.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
 
   # appversion and the merge-* jobs only tag images, and nothing on a PR reads
   # a tag: e2e pulls by digest, and publishing and scanning run on main and
@@ -273,6 +289,11 @@ jobs:
           path: *pnpm-store
           key: *pnpm-key
           restore-keys: *pnpm-restore-keys
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
           quay-username: ${{ secrets.QUAY_USERNAME }}
@@ -576,6 +597,10 @@ jobs:
           path: *pnpm-store
           key: *pnpm-key
           restore-keys: *pnpm-restore-keys
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
       # Only a PR that changes the controller builds it here; one that does not
       # pulls main's image.
       - id: controller-changed
