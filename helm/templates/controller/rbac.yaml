@@ -138,7 +138,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if or .Values.virtualization.enabled (and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
+{{- if or .Values.virtualization.enabled (and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

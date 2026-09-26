@@ -107,9 +107,10 @@ data:
     -- rejected (it owns pinned system objects), so only user objects are
     -- moved, by kind. Sequences linked to a table column follow their table.
     -- The two blocks are identical except for the connection + target role.
-    \connect platform
+    {{- range $db := list (dict "name" "platform" "user" "api_user") (dict "name" "keycloak" "user" "kc_user") }}
+    \connect {{ $db.name }}
     SET app.admin = :'admin_user';
-    SET app.target = :'api_user';
+    SET app.target = :'{{ $db.user }}';
     DO $$
     DECLARE r record; tgt text := current_setting('app.target'); adm text := current_setting('app.admin');
     BEGIN
@@ -138,37 +139,7 @@ data:
       LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, tgt); END LOOP;
     END
     $$;
-    \connect keycloak
-    SET app.admin = :'admin_user';
-    SET app.target = :'kc_user';
-    DO $$
-    DECLARE r record; tgt text := current_setting('app.target'); adm text := current_setting('app.admin');
-    BEGIN
-      FOR r IN SELECT format('%I.%I', n.nspname, c.relname) AS obj
-               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
-                 AND c.relkind IN ('r','p','v','m','S') AND pg_get_userbyid(c.relowner) = adm
-                 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
-                                 AND d.objid=c.oid AND d.deptype='a' AND d.refclassid='pg_class'::regclass)
-               ORDER BY CASE c.relkind WHEN 'r' THEN 0 WHEN 'p' THEN 0 ELSE 1 END
-      LOOP EXECUTE format('ALTER TABLE %s OWNER TO %I', r.obj, tgt); END LOOP;
-      FOR r IN SELECT format('%I.%I', n.nspname, t.typname) AS obj
-               FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
-                 AND pg_get_userbyid(t.typowner) = adm AND t.typtype IN ('e','c','d')
-                 AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
-      LOOP EXECUTE format('ALTER TYPE %s OWNER TO %I', r.obj, tgt); END LOOP;
-      FOR r IN SELECT format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)) AS obj
-               FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
-                 AND pg_get_userbyid(p.proowner) = adm
-      LOOP EXECUTE format('ALTER ROUTINE %s OWNER TO %I', r.obj, tgt); END LOOP;
-      FOR r IN SELECT nspname FROM pg_namespace
-               WHERE nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND nspname NOT LIKE 'pg\_%'
-                 AND pg_get_userbyid(nspowner) = adm
-      LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, tgt); END LOOP;
-    END
-    $$;
+    {{- end }}
     \connect postgres
 
     -- Regression guard: fail loudly (ON_ERROR_STOP) if either app role is

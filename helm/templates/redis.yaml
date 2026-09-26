@@ -1,6 +1,6 @@
 {{- if .Values.redis.enabled }}
 {{- $redisName := include "platform.redis.fullname" . }}
-{{- $authSecretName := printf "%s-auth" $redisName }}
+{{- $authSecretName := include "platform.redis.authSecretName" . }}
 {{- /*
   Stable per-release password. `lookup` returns the existing Secret on
   upgrades so the password persists; on first install the Secret doesn't

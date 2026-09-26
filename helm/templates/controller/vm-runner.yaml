@@ -13,7 +13,7 @@ namespace, so the ServiceAccount is rendered beside the runners in the agent
 namespace. Removing it — uninstall, rollback, or virtualization.enabled going
 false — collects every runner, disk and credential with it.
 */}}
-{{- $name := printf "%s-vm-runner" (include "platform.fullname" .) }}
+{{- $name := include "platform.vmRunner.serviceAccountName" . }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
