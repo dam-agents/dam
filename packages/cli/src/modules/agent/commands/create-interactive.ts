@@ -126,7 +126,6 @@ export interface CreateAgentInteractiveCommandDeps {
   createAgentService: (host: string) => AgentService;
   createTemplateService: (host: string) => TemplateService;
   createTrpcClient: (host: string) => TrpcClient;
-  serverEnvVar: string;
 }
 
 interface CliOpts {

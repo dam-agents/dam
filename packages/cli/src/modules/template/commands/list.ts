@@ -3,7 +3,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printServiceError } from "../../shared/trpc/print.js";
-import { renderTable } from "../../shared/render-table.js";
+import { renderTable, truncate } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -73,8 +73,4 @@ export function buildListCommand(deps: {
         EXIT_SUCCESS,
       );
     });
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }

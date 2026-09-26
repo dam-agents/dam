@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { LocalSkill, SkillRef, SkillsState } from "api-server-api";
+import type { LocalSkill, SkillsState } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { createAgentResolver } from "../../agent/index.js";
 import {
@@ -102,11 +102,16 @@ function renderInstalled(
 ): string {
   const nameByUrl = new Map(sources.map((s) => [s.gitUrl, s.name]));
   const unresolved = new Set<string>();
-  const rows = [...installed].sort(bySourceThenName).map((r) => {
-    const name = nameByUrl.get(r.source);
-    if (name === undefined) unresolved.add(r.source);
-    return [name ?? r.source, r.name, r.version.slice(0, 7)];
-  });
+  const rows = [...installed]
+    .sort(
+      (a, b) =>
+        a.source.localeCompare(b.source) || a.name.localeCompare(b.name),
+    )
+    .map((r) => {
+      const name = nameByUrl.get(r.source);
+      if (name === undefined) unresolved.add(r.source);
+      return [name ?? r.source, r.name, r.version.slice(0, 7)];
+    });
   if (unresolved.size > 0) {
     process.stderr.write(
       `note: ${unresolved.size} source(s) no longer registered, shown by URL: ${[...unresolved].join(", ")}\n`,
@@ -132,9 +137,4 @@ function renderStandalone(
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((s: LocalSkill) => [s.name, prByName.get(s.name) ?? "—"]);
   return `Standalone skills:\n${renderTable([STANDALONE_HEADER, ...rows])}`;
-}
-
-function bySourceThenName(a: SkillRef, b: SkillRef): number {
-  const s = a.source.localeCompare(b.source);
-  return s !== 0 ? s : a.name.localeCompare(b.name);
 }

@@ -30,7 +30,6 @@ export interface ImportCommandDeps {
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
   bundleBuilder: BundleBuilder;
-  serverEnvVar: string;
 }
 
 interface ImportSuccess {

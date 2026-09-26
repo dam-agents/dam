@@ -243,7 +243,10 @@ export function buildConnectCommand(deps: {
 
       const presetNames = presetsApplied.map((i) => i.name);
       if (!json && presetNames.length > 0) {
-        process.stderr.write(formatPresetNote(presetsApplied));
+        const fields = presetsApplied.map((i) => labelFor(i.name)).join(", ");
+        process.stderr.write(
+          `Using preset values (${fields}). Pass ${flagListFor(presetsApplied)} to use your own.\n`,
+        );
       }
 
       if (template.authKind !== "oauth") {
@@ -704,9 +707,4 @@ function formatConfigFlagError(e: ConfigFlagError): string {
     case "invalid-value":
       return e.message;
   }
-}
-
-function formatPresetNote(inputs: ConnectionTemplateInput[]): string {
-  const fields = inputs.map((i) => labelFor(i.name)).join(", ");
-  return `Using preset values (${fields}). Pass ${flagListFor(inputs)} to use your own.\n`;
 }

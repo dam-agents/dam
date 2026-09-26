@@ -28,126 +28,34 @@ export interface ComposeOptions {
 
 export function compose(opts: ComposeOptions = {}): Command {
   const cli = composeCliModule({ configPath: opts.configPath });
+  const { compatService, configService } = cli.services;
   const auth = composeAuthModule({
     authPath: opts.authPath,
     env: opts.env,
-    compatService: cli.services.compatService,
-    configService: cli.services.configService,
+    compatService,
+    configService,
   });
   const { tokenProvider } = auth.exports;
   const buildTrpc = (host: string) => createTrpcClient({ host, tokenProvider });
 
   const template = composeTemplateModule({
     buildTrpc,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
+    configService,
+    compatService,
   });
   const agent = composeAgentModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    serverEnvVar: "DAM_SERVER",
+    tokenProvider,
+    configService,
+    compatService,
     templateService: template.exports.createService,
   });
-  const chat = composeChatModule({
-    compatService: cli.services.compatService,
-    configService: cli.services.configService,
+  const base = {
     tokenProvider,
+    configService,
+    compatService,
     createAgentService: agent.exports.createService,
-  });
-
-  const importModule = composeImportModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-    serverEnvVar: "DAM_SERVER",
-  });
-
-  const fileModule = composeFileModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const egress = composeEgressModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const approval = composeApprovalModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const connection = composeConnectionModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-    browserOpener: createBrowserOpener(),
-  });
-
-  const schedule = composeScheduleModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const skill = composeSkillModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const satellite = composeSatelliteModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const ssh = composeSshModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-    createEgressService: egress.exports.createService,
-  });
-
-  const channel = composeChannelModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const metrics = composeMetricsModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const telemetry = composeTelemetryModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    createAgentService: agent.exports.createService,
-  });
-
-  const terms = composeTermsModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-  });
+  };
+  const egress = composeEgressModule(base);
 
   const program = new Command();
   program
@@ -155,24 +63,31 @@ export function compose(opts: ComposeOptions = {}): Command {
     .description("Command-line client for a Platform deployment")
     .version(cli.cliVersion);
 
-  for (const command of cli.commands) program.addCommand(command);
-  for (const command of auth.commands) program.addCommand(command);
-  for (const command of template.commands) program.addCommand(command);
-  for (const command of chat.commands) program.addCommand(command);
-  for (const command of agent.commands) program.addCommand(command);
-  for (const command of importModule.commands) program.addCommand(command);
-  for (const command of fileModule.commands) program.addCommand(command);
-  for (const command of egress.commands) program.addCommand(command);
-  for (const command of approval.commands) program.addCommand(command);
-  for (const command of connection.commands) program.addCommand(command);
-  for (const command of schedule.commands) program.addCommand(command);
-  for (const command of skill.commands) program.addCommand(command);
-  for (const command of satellite.commands) program.addCommand(command);
-  for (const command of ssh.commands) program.addCommand(command);
-  for (const command of channel.commands) program.addCommand(command);
-  for (const command of metrics.commands) program.addCommand(command);
-  for (const command of telemetry.commands) program.addCommand(command);
-  for (const command of terms.commands) program.addCommand(command);
+  for (const module of [
+    cli,
+    auth,
+    template,
+    composeChatModule(base),
+    agent,
+    composeImportModule(base),
+    composeFileModule(base),
+    egress,
+    composeApprovalModule(base),
+    composeConnectionModule({ ...base, browserOpener: createBrowserOpener() }),
+    composeScheduleModule(base),
+    composeSkillModule(base),
+    composeSatelliteModule(base),
+    composeSshModule({
+      ...base,
+      createEgressService: egress.exports.createService,
+    }),
+    composeChannelModule(base),
+    composeMetricsModule(base),
+    composeTelemetryModule(base),
+    composeTermsModule(base),
+  ]) {
+    for (const command of module.commands) program.addCommand(command);
+  }
 
   return program;
 }

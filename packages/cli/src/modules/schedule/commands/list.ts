@@ -15,14 +15,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
-import type {
-  ScheduleService,
-  ScheduleView,
-} from "../services/schedule-service.js";
-
-function recurrenceText(view: ScheduleView): string {
-  return view.rrule !== null ? rruleToText(view.rrule) : (view.cron ?? "");
-}
+import type { ScheduleService } from "../services/schedule-service.js";
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -94,7 +87,7 @@ export function buildListCommand(deps: {
           ...result.value.map((v) => [
             v.id,
             v.createdBy === "agent" ? `${v.name} (agent)` : v.name,
-            recurrenceText(v),
+            v.rrule !== null ? rruleToText(v.rrule) : (v.cron ?? ""),
             v.timezone ?? "—",
             String(v.enabled),
             v.status?.nextRun ?? "—",
