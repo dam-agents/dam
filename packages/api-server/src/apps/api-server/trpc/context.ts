@@ -90,6 +90,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     liveEvents,
   } = boot;
 
+  const defaultLimits = {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  };
+  const wakeAgent = async (agentId: string): Promise<void> => {
+    await agentsRepo.wakeIfHibernated(agentId);
+  };
+
   return (user: UserIdentity, surface: string): ApiContext => {
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
@@ -115,10 +123,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
       },
-      slotSize: {
-        cpu: config.agentDefaultCpuLimit,
-        memory: config.agentDefaultMemoryLimit,
-      },
+      slotSize: defaultLimits,
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -126,10 +131,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
-      agentDefaultLimits: {
-        cpu: config.agentDefaultCpuLimit,
-        memory: config.agentDefaultMemoryLimit,
-      },
+      agentDefaultLimits: defaultLimits,
       virtualizationEnabled: config.virtualizationEnabled,
       resizeGate,
       owner: user.sub,
@@ -182,11 +184,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         },
       },
     });
+    const agentExists = async (agentId: string) =>
+      (await agents.get(agentId)) !== null;
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
       owner: user.sub,
       agentBinding: user.agentIds,
-      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+      agentExists,
     });
     const invocationsQuery = composeInvocationsQueryForOwner({
       db,
@@ -216,7 +220,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifacts,
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
-      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+      agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: createAgentApiPodClient(config.namespace),
     });
@@ -233,9 +237,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
       },
       runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
+      wakeAgent,
     });
     const { features } = composeFeaturesForOwner({
       db,
@@ -264,16 +266,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       skills,
       surface,
       readTemplateSpec,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
+      wakeAgent,
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
       virtualizationEnabled: config.virtualizationEnabled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
-      (await agents.get(agentId)) !== null && ownerSub === user.sub;
+      (await agentExists(agentId)) && ownerSub === user.sub;
     const l7Hosts = createAgentL7HostsPort(k8sClient);
     const { service: egressRules } = composeEgressRulesModule({
       db,

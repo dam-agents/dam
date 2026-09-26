@@ -63,7 +63,6 @@ export function startApiServerApp(deps: ApiServerDeps) {
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
     authenticatePrincipal(deps.auth.verify, token, site);
-  const termsGate = createTermsGate({ terms: deps.terms });
 
   const app = new Hono<{ Variables: ApiVariables }>();
 
@@ -80,7 +79,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     "/api/*",
     except(
       (c) => isTermsOnlyTrpcCall(new URL(c.req.raw.url).pathname),
-      termsGate.middleware,
+      createTermsGate(deps.terms),
     ),
   );
   mountRoutes(app, deps);

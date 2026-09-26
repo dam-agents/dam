@@ -20,25 +20,24 @@ export interface ExperimentEndpointsDeps {
   experimentsServiceFor: (owner: string) => ExperimentsService;
 }
 
-function mapError(c: {
-  json: (body: unknown, status: 400 | 404 | 409) => Response;
-}): (err: unknown) => Response {
-  return (err) => {
-    if (err instanceof UnknownExperimentError) {
-      return c.json({ error: err.message }, 404);
-    }
-    if (err instanceof ExperimentClosedError) {
-      return c.json({ error: err.message }, 409);
-    }
-    if (
-      err instanceof ScriptContentRequiredError ||
-      err instanceof CustomDataTooLargeError ||
-      err instanceof z.ZodError
-    ) {
-      return c.json({ error: (err as Error).message }, 400);
-    }
-    throw err;
-  };
+function mapError(
+  c: { json: (body: unknown, status: 400 | 404 | 409) => Response },
+  err: unknown,
+): Response {
+  if (err instanceof UnknownExperimentError) {
+    return c.json({ error: err.message }, 404);
+  }
+  if (err instanceof ExperimentClosedError) {
+    return c.json({ error: err.message }, 409);
+  }
+  if (
+    err instanceof ScriptContentRequiredError ||
+    err instanceof CustomDataTooLargeError ||
+    err instanceof z.ZodError
+  ) {
+    return c.json({ error: err.message }, 400);
+  }
+  throw err;
 }
 
 export function mountExperimentRoutes(
@@ -76,7 +75,7 @@ export function mountExperimentRoutes(
         .appendEvents(driverId, experimentId, body.events);
       return c.json(result);
     } catch (err) {
-      return mapError(c)(err);
+      return mapError(c, err);
     }
   });
 
@@ -93,7 +92,7 @@ export function mountExperimentRoutes(
         .finish(driverId, experimentId, body);
       return c.json({ ok: true });
     } catch (err) {
-      return mapError(c)(err);
+      return mapError(c, err);
     }
   });
 }

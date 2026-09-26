@@ -14,9 +14,6 @@ import { legacyShareRoots } from "../../modules/kb-shares/domain/legacy-roots.js
 export interface AgentIdentity {
   agentId: string;
   owner: string;
-  uid: string;
-  vmBackend: boolean;
-  kind?: AgentKind;
   kbShareRoots?: readonly string[];
   onboardingPending: boolean;
 }
@@ -30,12 +27,8 @@ export async function resolveAgent(
   const owner = obj.metadata?.labels?.[LABEL_OWNER];
   if (!owner) return null;
 
-  const backend = (obj.spec as { backend?: { type?: string } } | undefined)
-    ?.backend;
-  const kindParse = agentKindSchema.safeParse(
-    obj.metadata?.annotations?.[ANN_AGENT_KIND],
-  );
   const annotations = obj.metadata?.annotations ?? {};
+  const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
   const shareRoots = shareRootsOf(
     annotations,
     kindParse.success ? kindParse.data : undefined,
@@ -43,12 +36,9 @@ export async function resolveAgent(
   return {
     agentId,
     owner,
-    uid: obj.metadata?.uid ?? "",
-    vmBackend: backend?.type === "vm",
     onboardingPending:
       annotations[ANN_STARTER_KIT] !== undefined &&
       annotations[ANN_STARTER_KIT_ONBOARDED] === undefined,
-    ...(kindParse.success ? { kind: kindParse.data } : {}),
     ...(shareRoots ? { kbShareRoots: shareRoots } : {}),
   };
 }

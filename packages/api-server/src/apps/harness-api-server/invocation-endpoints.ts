@@ -105,16 +105,16 @@ export function mountInvocationRoutes(
         });
         return c.json({ error: err.message }, 403);
       }
-      if (err instanceof InvalidSchemaError) {
+      if (
+        err instanceof InvalidSchemaError ||
+        err instanceof SizeNeverFitsError
+      ) {
         return c.json({ error: err.message }, 400);
       }
-      if (err instanceof SizeNeverFitsError) {
-        return c.json({ error: err.message }, 400);
-      }
-      if (err instanceof ExperimentNotRunningError) {
-        return c.json({ error: err.message }, 409);
-      }
-      if (err instanceof UnresolvableDriverError) {
+      if (
+        err instanceof ExperimentNotRunningError ||
+        err instanceof UnresolvableDriverError
+      ) {
         return c.json({ error: err.message }, 409);
       }
       throw err;

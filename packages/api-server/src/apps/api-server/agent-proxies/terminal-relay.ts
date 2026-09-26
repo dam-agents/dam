@@ -13,7 +13,6 @@ import { sanitizeCloseCode } from "./acp-relay.js";
 import { boundedSet } from "../../../core/bounded-map.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
-const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const EVICT_CHANNEL = "terminal:evict";
 
@@ -150,7 +149,7 @@ export function createTerminalRelay(
               now - (lastActivity.get(agentId) ?? 0) >=
               ACTIVITY_DEBOUNCE_MS
             ) {
-              boundedSet(lastActivity, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
+              boundedSet(lastActivity, agentId, now);
               repo
                 .patchAnnotation(
                   agentId,

@@ -434,7 +434,7 @@ async function withAcpConnection<T>(
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    const result = await Promise.race([
+    return await Promise.race([
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
@@ -446,7 +446,6 @@ async function withAcpConnection<T>(
         });
       }),
     ]);
-    return result;
   } finally {
     cleanup();
   }
@@ -662,7 +661,7 @@ export function createAcpClient(opts: {
           stallProbeMs,
           sessionId: () => watchSessionId,
         },
-        async (connection, _init) => {
+        async (connection) => {
           let sessionId: string;
           const mcpServers = (triggerOpts.mcpServers ?? []) as McpServer[];
 

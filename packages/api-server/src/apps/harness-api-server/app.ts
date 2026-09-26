@@ -110,6 +110,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeProgress,
   } = deps;
 
+  const defaultLimits = {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  };
+  const defaultCeiling = {
+    cpu: config.defaultUserCpuBudget,
+    memory: config.defaultUserMemoryBudget,
+  };
+  const publishLimits = {
+    perFileMaxBytes: config.kbSharePerFileMaxBytes,
+    totalMaxBytes: config.kbShareTotalMaxBytes,
+    maxFiles: config.kbShareMaxFiles,
+  };
   const k8sClient = createK8sClient(api, config.namespace);
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
@@ -124,17 +137,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
-        defaultLimits: {
-          cpu: config.agentDefaultCpuLimit,
-          memory: config.agentDefaultMemoryLimit,
-        },
+        defaultLimits,
         gate: composeSpawnSizeGate({
           k8s: k8sClient,
           owner,
-          defaultCeiling: {
-            cpu: config.defaultUserCpuBudget,
-            memory: config.defaultUserMemoryBudget,
-          },
+          defaultCeiling,
         }),
       }),
     });
@@ -167,11 +174,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agentWorkDir: config.agentWorkDir,
       },
       objectStoreConfigured: Boolean(config.objectStorageEndpoint),
-      publishLimits: {
-        perFileMaxBytes: config.kbSharePerFileMaxBytes,
-        totalMaxBytes: config.kbShareTotalMaxBytes,
-        maxFiles: config.kbShareMaxFiles,
-      },
+      publishLimits,
     });
   const experimentPin = {
     set: (agentId: string) =>
@@ -191,11 +194,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const kbPublishGate = composeKbPublishGate({
     db,
     store: artifacts,
-    publishLimits: {
-      perFileMaxBytes: config.kbSharePerFileMaxBytes,
-      totalMaxBytes: config.kbShareTotalMaxBytes,
-      maxFiles: config.kbShareMaxFiles,
-    },
+    publishLimits,
   });
 
   const composeSkills = (owner: string) =>
@@ -221,10 +220,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pin: experimentPin,
       agents: agentsServiceFor(owner),
     }).experiments;
-  const defaultLimits = {
-    cpu: config.agentDefaultCpuLimit,
-    memory: config.agentDefaultMemoryLimit,
-  };
 
   const app = new Hono();
   mountMcpRoutes(app, {
@@ -268,10 +263,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         k8s: k8sClient,
         owner,
         listAgents: () => harnessAgentsRepo.list(owner),
-        defaultCeiling: {
-          cpu: config.defaultUserCpuBudget,
-          memory: config.defaultUserMemoryBudget,
-        },
+        defaultCeiling,
         slotSize: defaultLimits,
       }).budgets,
     defaultLimits,
