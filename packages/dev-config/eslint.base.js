@@ -1,7 +1,8 @@
+import { defineConfig } from "eslint/config";
 import unicorn from "eslint-plugin-unicorn";
 import tseslint from "typescript-eslint";
 
-export default tseslint.config([
+export default defineConfig([
   { ignores: ["dist/**"] },
   {
     files: ["src/**/*.{ts,tsx}"],
