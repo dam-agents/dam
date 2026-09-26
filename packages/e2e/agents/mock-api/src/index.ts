@@ -1,20 +1,5 @@
 export { appRouter } from "./router.js";
 export type { AppRouter } from "./router.js";
-export type { MockAgentContext } from "./context.js";
-export {
-  getEnvInputSchema,
-  getEnvResultSchema,
-  getReceivedPromptsResultSchema,
-  performFetchInputSchema,
-  performFetchResultSchema,
-  receivedPromptSchema,
-  resetResultSchema,
-  scriptEntrySchema,
-  scriptFileSchema,
-  setScriptInputSchema,
-  spawnInvocationInputSchema,
-  spawnInvocationResultSchema,
-} from "./modules/scripted-mock/schemas.js";
 export type {
   GetEnvInput,
   GetEnvResult,
@@ -22,7 +7,6 @@ export type {
   PerformFetchInput,
   PerformFetchResult,
   ReceivedPrompt,
-  ResetResult,
   ScriptEntry,
   ScriptedMockService,
   ScriptFile,
