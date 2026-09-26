@@ -1700,9 +1700,6 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h # 10y
     caRenewBefore: 720h # 30d
-    # -- Per-agent leaf cert validity.
-    leafDuration: 2160h # 90d
-    leafRenewBefore: 360h # 15d
   # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
   # data plane no SDK or zero-code instrumentation can reach, so the controller
   # configures it natively in the rendered bootstrap — the exporter target
