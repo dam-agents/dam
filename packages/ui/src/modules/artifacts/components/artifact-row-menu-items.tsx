@@ -5,7 +5,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-import { useArtifactDeletion } from "../hooks/use-artifact-deletion.js";
+import { useStore } from "../../../store.js";
+import { useDeleteArtifact } from "../api/mutations.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -25,8 +26,23 @@ export function ArtifactRowMenuItems({
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
-  const deleteArtifact = useArtifactDeletion();
+  const showConfirm = useStore((s) => s.showConfirm);
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const { mutate: deleteArtifact } = useDeleteArtifact();
   const startSession = useStartArtifactSession(artifact);
+
+  const confirmAndDelete = async () => {
+    const confirmed = await showConfirm(
+      "All versions are deleted and its share link stops working. This cannot be undone.",
+      `Delete “${artifact.title}”?`,
+      { kind: "destructive", confirmLabel: "Delete" },
+    );
+    if (!confirmed) return;
+
+    if (openArtifactId === artifact.id) setOpenArtifactId(null);
+    deleteArtifact({ id: artifact.id });
+  };
 
   return (
     <>
@@ -56,10 +72,7 @@ export function ArtifactRowMenuItems({
       <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
         Delete after…
       </DropdownMenuItem>
-      <DropdownMenuItem
-        tone="danger"
-        onSelect={() => void deleteArtifact(artifact)}
-      >
+      <DropdownMenuItem tone="danger" onSelect={() => void confirmAndDelete()}>
         Delete artifact
       </DropdownMenuItem>
     </>

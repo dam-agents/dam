@@ -1,11 +1,12 @@
 import { Satellite } from "@carbon/icons-react";
 import type { SatelliteView } from "api-server-api";
 
+import { ExplainerPopover } from "@/components/explainer-popover";
 import { PanelCard } from "@/components/ui/panel-card";
 
+import { getBrand } from "../../../brand.js";
 import type { RowGrantControls } from "../../connections/components/catalog-connection-row.js";
 import { SatelliteRow } from "./satellite-row.js";
-import { SatellitesExplainer } from "./satellites-explainer.js";
 
 interface Props {
   satellites: readonly SatelliteView[];
@@ -13,6 +14,23 @@ interface Props {
   grant?: (satellite: SatelliteView) => RowGrantControls | undefined;
   onRemove?: (satellite: SatelliteView) => void;
   removingName?: string | null;
+}
+
+function SatellitesExplainer() {
+  const cli = getBrand().short;
+  return (
+    <ExplainerPopover side="bottom" label="What a satellite is">
+      <p>
+        A satellite is a machine outside the platform that offers tools to your
+        agents. It connects out to the platform, so nothing has to reach in.
+      </p>
+      <p>
+        Start one on the machine with <code>{cli} satellite shell</code> or{" "}
+        <code>{cli} satellite mcp</code>. Only the agents you add it to can call
+        its tools, and the machine checks every call before it runs anything.
+      </p>
+    </ExplainerPopover>
+  );
 }
 
 export function SatellitesGroupCard({

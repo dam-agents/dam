@@ -39,7 +39,3 @@ export const MODES = {
     templateId: string;
   }
 >;
-
-export function stripWhitespace(value: string): string {
-  return value.replace(/\s+/g, "");
-}

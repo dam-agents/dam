@@ -5,7 +5,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
+import { type CSSProperties, type Ref, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -126,15 +126,15 @@ export function SessionsSidebar({
   const draftKeys = useStore(useShallow((s) => keysWithDraftContent(s.drafts)));
   const draftKeySet = useMemo(() => new Set(draftKeys), [draftKeys]);
 
-  const confirmDelete = useCallback(
-    async (sid: string, title: string | null | undefined) => {
-      const label = title || sid.slice(0, 12);
-      if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
-        deleteSession(sid);
-      }
-    },
-    [showConfirm, deleteSession],
-  );
+  const confirmDelete = async (
+    sid: string,
+    title: string | null | undefined,
+  ) => {
+    const label = title || sid.slice(0, 12);
+    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+      deleteSession(sid);
+    }
+  };
 
   const renderRow = (s: (typeof sessions)[number]) => {
     const isOpen = s.sessionId === sessionId;

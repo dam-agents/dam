@@ -25,7 +25,7 @@ const REHYPE_PLUGINS = [rehypeHighlight];
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-function splitFrontmatter(source: string): {
+export function splitFrontmatter(source: string): {
   frontmatter: string | null;
   body: string;
 } {

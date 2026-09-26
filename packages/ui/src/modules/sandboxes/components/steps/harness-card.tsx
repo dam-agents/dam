@@ -1,10 +1,11 @@
 import { Box } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
+import { cardSelectionVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType, TemplateView } from "../../../../types.js";
 import { CardIcon } from "../../../providers/components/card-icon.js";
-import { CardIconTile, StackedCard } from "./stacked-card.js";
 
 const HARNESS_PRESET: Record<string, ProviderPresetType> = {
   codex: "openai",
@@ -33,7 +34,11 @@ function HarnessIcon({ templateId }: { templateId: string }) {
   if (preset) {
     return <CardIcon provider={preset} size="md" />;
   }
-  return <CardIconTile icon={Box} />;
+  return (
+    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+      <Box className="size-5 text-muted-foreground" />
+    </div>
+  );
 }
 
 export function HarnessCard({
@@ -46,27 +51,50 @@ export function HarnessCard({
   onSelect: () => void;
 }) {
   return (
-    <StackedCard
-      icon={<HarnessIcon templateId={template.id} />}
-      title={template.name}
-      description={template.description}
-      badge={
-        template.experimental ? (
-          <Badge variant="warning" className="shrink-0">
-            Alpha
-          </Badge>
-        ) : undefined
-      }
-      trailing={
-        template.tags && template.tags.length > 0 ? (
-          <span className="shrink-0 text-sm text-muted-foreground">
-            {template.tags.join(" · ")}
-          </span>
-        ) : null
-      }
-      selected={selected}
-      onSelect={onSelect}
-      testId={`template-card-${template.id}`}
-    />
+    <div
+      className={cn(
+        cardSelectionVariants({ selected }),
+        "relative p-4",
+        selected ? undefined : "bg-gradient-to-br from-muted/60 to-transparent",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={template.name}
+        data-testid={`template-card-${template.id}`}
+        className="absolute inset-0 rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      />
+      <div className="pointer-events-none relative">
+        <div className="flex min-h-[96px] flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <HarnessIcon templateId={template.id} />
+            {template.tags && template.tags.length > 0 ? (
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {template.tags.join(" · ")}
+              </span>
+            ) : null}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-base font-semibold text-foreground">
+                {template.name}
+              </p>
+              {template.experimental ? (
+                <Badge variant="warning" className="shrink-0">
+                  Alpha
+                </Badge>
+              ) : undefined}
+            </div>
+            {template.description && (
+              <p className="text-sm text-muted-foreground">
+                {template.description}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
