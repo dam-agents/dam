@@ -50,10 +50,7 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
-import {
-  createPromptScheduler,
-  type QueueDropCause,
-} from "./prompt-scheduler.js";
+import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
