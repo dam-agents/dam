@@ -15,6 +15,8 @@ export const backgroundWorkItemSchema = z.object({
   command: advisory(500),
 });
 
+export type BackgroundWorkItem = z.infer<typeof backgroundWorkItemSchema>;
+
 export const backgroundWorkReportSchema = z.object({
   items: z
     .array(backgroundWorkItemSchema)

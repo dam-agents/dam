@@ -29,10 +29,6 @@ export const podSessionSchema = z.object({
   running: z.boolean(),
 });
 
-export const podSessionListSchema = z.object({
-  sessions: z.array(podSessionSchema),
-});
-
 export const podSessionNoticeSchema = z.object({
   topic: z.literal("sessions"),
 });
