@@ -1,6 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
-import { createTelegramBindFlowStore } from "../../modules/channels/infrastructure/telegram-flows.js";
+import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
+import type { TelegramPendingBind } from "../../modules/channels/infrastructure/telegram-flows.js";
 
 const BIND = {
   conversationId: "chat-42",
@@ -9,9 +10,9 @@ const BIND = {
   chatTitle: "Team chat",
 };
 
-describe("telegram bind-flow store", () => {
+describe("bind-flow store", () => {
   it("create → peek returns the record without consuming it", async () => {
-    const store = createTelegramBindFlowStore({
+    const store = createFlowStore<TelegramPendingBind>({
       now: () => 1_000,
       store: createMemoryTtlStore(600_000, () => 1_000),
     });
@@ -21,7 +22,7 @@ describe("telegram bind-flow store", () => {
   });
 
   it("consume removes the record", async () => {
-    const store = createTelegramBindFlowStore({
+    const store = createFlowStore<TelegramPendingBind>({
       now: () => 1_000,
       store: createMemoryTtlStore(600_000, () => 1_000),
     });
@@ -32,7 +33,7 @@ describe("telegram bind-flow store", () => {
 
   it("expires records past the TTL", async () => {
     let clock = 1_000;
-    const store = createTelegramBindFlowStore({
+    const store = createFlowStore<TelegramPendingBind>({
       now: () => clock,
       store: createMemoryTtlStore(60_000, () => clock),
     });
@@ -44,7 +45,7 @@ describe("telegram bind-flow store", () => {
   });
 
   it("unknown flow ids read as null", async () => {
-    const store = createTelegramBindFlowStore({
+    const store = createFlowStore<TelegramPendingBind>({
       store: createMemoryTtlStore(600_000),
     });
     expect(await store.peek("nope")).toBe(null);

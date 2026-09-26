@@ -3,7 +3,8 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
-import { createSlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
+import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
+import type { SlackPendingBind } from "../../modules/channels/infrastructure/slack-flows.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 import type { IdentityLinkService } from "../../modules/channels/services/identity-link-service.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
@@ -44,7 +45,7 @@ function makeHarness(opts: {
     createdAt: opts.pendingCreatedAt ?? Date.now(),
   });
 
-  const bindFlows = createSlackBindFlowStore({
+  const bindFlows = createFlowStore<SlackPendingBind>({
     store: createMemoryTtlStore(600_000),
   });
   const link = vi.fn(async () => {});

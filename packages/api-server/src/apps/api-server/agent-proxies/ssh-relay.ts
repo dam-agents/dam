@@ -5,12 +5,10 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { createActivityStamper } from "./activity-stamper.js";
 import type { SessionPresence } from "./session-presence.js";
-import { boundedSet } from "../../../core/bounded-map.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
-const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PING_INTERVAL_MS = 30_000;
 
 export interface SshRelay {
@@ -30,16 +28,7 @@ export function createSshRelay(
 ): SshRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
-  const lastActivity = new Map<string, number>();
-  const bumpActivity = (id: string) => {
-    const now = Date.now();
-    if (now - (lastActivity.get(id) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
-      boundedSet(lastActivity, id, now);
-      repo
-        .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
-        .catch(() => {});
-    }
-  };
+  const stamper = createActivityStamper(repo);
   const pipe = (from: WebSocket, to: WebSocket) =>
     from.on(
       "message",
@@ -127,7 +116,7 @@ export function createSshRelay(
         client.on("message", (d, isBinary) => {
           if (us.readyState !== WebSocket.OPEN) return;
           us.send(d, { binary: isBinary });
-          bumpActivity(agentId);
+          stamper.bump(agentId);
         });
         pipe(us, client);
         us.on("close", () => closeWs(client));
