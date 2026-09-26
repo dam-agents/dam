@@ -181,9 +181,7 @@ export function createSnapshotReader(
       return { kind: "segmented", segments, degraded };
     },
 
-    async readDocumentText(manifest, path) {
-      return readManifestEntryText(manifest, path);
-    },
+    readDocumentText: readManifestEntryText,
 
     async readDocument(manifest, path, opts) {
       const text = await readManifestEntryText(manifest, path);

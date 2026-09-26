@@ -13,20 +13,16 @@ export interface AgentFilesClient {
   listDirs(agentId: string, paths: string[]): Promise<DirListResult[]>;
 }
 
-function makeClient(agentId: string, namespace: string) {
-  return createTRPCClient<AppRouter>({
-    links: [
-      httpBatchLink({
-        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-      }),
-    ],
-  });
-}
-
 export function createAgentFilesClient(namespace: string): AgentFilesClient {
   return {
     async listDirs(agentId, paths) {
-      const client = makeClient(agentId, namespace);
+      const client = createTRPCClient<AppRouter>({
+        links: [
+          httpBatchLink({
+            url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+          }),
+        ],
+      });
       try {
         const result = await client.files.listDirs.query({ paths });
         return result.results;

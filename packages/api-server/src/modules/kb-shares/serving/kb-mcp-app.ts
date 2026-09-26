@@ -6,6 +6,11 @@ import { KB_AGGREGATE_MCP_SERVER } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import {
+  errorResult,
+  textResult,
+  type ToolContent,
+} from "../../../core/mcp-tool-result.js";
+import {
   tokenize,
   type AnySnapshotManifest,
 } from "agent-runtime-api/kb-snapshot";
@@ -42,20 +47,6 @@ export interface KbShareMcpAppDeps extends TokenAuthDeps {
   markShareDirty: (agentId: string) => Promise<void>;
   limits: QueryLimits;
   grepDeadlineMs: number;
-}
-
-interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-function textResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }] };
-}
-
-function errorResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }], isError: true };
 }
 
 function staleness(manifest: AnySnapshotManifest): string {

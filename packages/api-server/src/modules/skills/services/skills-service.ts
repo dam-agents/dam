@@ -112,10 +112,8 @@ export interface SkillsServiceDeps {
   brandName: string;
 }
 
-function enrichSources(sources: SkillSource[]): SkillSource[] {
-  return sources.map((s) =>
-    detectHost(s.gitUrl) ? { ...s, canPublish: true } : s,
-  );
+function enrichSource(s: SkillSource): SkillSource {
+  return detectHost(s.gitUrl) ? { ...s, canPublish: true } : s;
 }
 
 function templateSourceLocation(seed: {
@@ -606,19 +604,15 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
       const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
-      return sortSources(enrichSources(merged));
+      return sortSources(merged.map(enrichSource));
     },
     async getSource(id) {
       const s = await resolveSource(deps, id);
-      if (!s) return null;
-      const [enriched] = enrichSources([s]);
-      return enriched;
+      return s ? enrichSource(s) : null;
     },
     async createSource(input: SkillCreateSourceInput) {
       try {
-        const created = await deps.repo.create(input, deps.owner);
-        const [enriched] = enrichSources([created]);
-        return enriched;
+        return enrichSource(await deps.repo.create(input, deps.owner));
       } catch (err) {
         if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
           throw new TRPCError({

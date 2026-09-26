@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   parseSeedSources,
   seedSlug,
-  seedSourceId,
 } from "../../modules/skills/infrastructure/seed-sources.js";
 
 describe("seedSlug", () => {
@@ -18,12 +17,6 @@ describe("seedSlug", () => {
 
   it("returns empty for an all-symbol name", () => {
     expect(seedSlug("???")).toBe("");
-  });
-});
-
-describe("seedSourceId", () => {
-  it("prefixes with skill-src-seed-", () => {
-    expect(seedSourceId("Cluster Ops")).toBe("skill-src-seed-cluster-ops");
   });
 });
 

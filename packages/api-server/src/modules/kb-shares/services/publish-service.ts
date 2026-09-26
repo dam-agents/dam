@@ -40,7 +40,7 @@ import type { KbShareRow } from "../domain/types.js";
 
 export const STALE_CLAIM_MS = 15 * 60 * 1000;
 
-const RUNTIME_UNSUPPORTED_MESSAGE =
+export const RUNTIME_UNSUPPORTED_MESSAGE =
   "the knowledge base agent's runtime does not support publishing — apply the pending agent update, then refresh the share";
 const UPLOAD_VERIFY_FAILED_MESSAGE =
   "publishing could not upload the snapshot — retry shortly";
@@ -53,8 +53,6 @@ const UPLOAD_VERIFY_FAILED_MESSAGE =
  * owner-visible failure for a self-healing race.
  */
 class StalePlanError extends Error {}
-
-export { RUNTIME_UNSUPPORTED_MESSAGE };
 
 export interface KbSharePublishGate extends KbPublishGate {
   purgeShareObjects(row: KbShareRow): Promise<void>;
@@ -133,6 +131,12 @@ interface PendingPublish {
   previousStale: readonly StaleSnapshotEntry[];
 }
 
+function failureReason(err: unknown): string {
+  return err instanceof PublishFailure
+    ? err.message
+    : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+}
+
 function fromWireFailure(wire: {
   code: string;
   root?: string;
@@ -154,7 +158,7 @@ export function createKbSharePublishGate(
   deps: KbSharePublishGateDeps,
 ): KbSharePublishGate {
   const limits = deps.limits;
-  const messageLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
+  const walkLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
   const pending = new Map<string, PendingPublish>();
 
   function validatePlan(
@@ -163,7 +167,7 @@ export function createKbSharePublishGate(
   ): KbPublishInventoryFile[] {
     if (files.length > limits.maxFiles) {
       throw new PublishFailure(
-        `the share contains more than ${limits.maxFiles} files — narrow the share roots`,
+        publishFailureMessage({ code: "too-many-files" }, walkLimits),
       );
     }
     const rootSet = new Set(roots);
@@ -206,7 +210,7 @@ export function createKbSharePublishGate(
     }
     if (total > limits.totalMaxBytes) {
       throw new PublishFailure(
-        `the share exceeds ${Math.floor(limits.totalMaxBytes / (1024 * 1024))} MB of text content — narrow the share roots`,
+        publishFailureMessage({ code: "total-too-large" }, walkLimits),
       );
     }
     for (const root of roots) {
@@ -429,7 +433,7 @@ export function createKbSharePublishGate(
         reportFailure(
           claimed,
           ticket,
-          publishFailureMessage(fromWireFailure(input.failure), messageLimits),
+          publishFailureMessage(fromWireFailure(input.failure), walkLimits),
         );
         return { outcome: "rejected" };
       }
@@ -569,12 +573,7 @@ export function createKbSharePublishGate(
 
       const order: KbPublishWorkOrder = {
         ticket,
-        caps: {
-          perFileMaxBytes: limits.perFileMaxBytes,
-          totalMaxBytes: limits.totalMaxBytes,
-          maxFiles: limits.maxFiles,
-          maxWalkDepth: MAX_WALK_DEPTH,
-        },
+        caps: walkLimits,
         bucketCount,
         blobs: [],
         segments: [],
@@ -624,10 +623,7 @@ export function createKbSharePublishGate(
         await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
         return { outcome: "busy" };
       }
-      const reason =
-        err instanceof PublishFailure
-          ? err.message
-          : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+      const reason = failureReason(err);
       reportFailure(claimed, ticket, reason);
       return { outcome: "rejected" };
     }
@@ -766,10 +762,7 @@ export function createKbSharePublishGate(
       prepared = await prepareSnapshot(entry, report);
     } catch (err) {
       await dropAttemptManifest(entry);
-      const reason =
-        err instanceof PublishFailure
-          ? err.message
-          : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+      const reason = failureReason(err);
       reportFailure(entry, ticket, reason);
       return { outcome: "failed" };
     }

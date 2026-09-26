@@ -4,7 +4,6 @@ import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
-  LABEL_OWNER,
   LAST_ACTIVITY_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
