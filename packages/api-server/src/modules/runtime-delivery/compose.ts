@@ -1,5 +1,9 @@
 import type { ConnectionOptions } from "bullmq";
-import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
+import {
+  runtimeFeaturesOf,
+  workspaceMutationEventKinds,
+  type RuntimeFeatures,
+} from "agent-runtime-api";
 import type { Db } from "db";
 import type {
   ContributionKind,
@@ -44,7 +48,6 @@ import {
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/outbox-events.js";
-import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -149,7 +152,7 @@ export function composeRuntimeDelivery(
   });
 
   const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
-  for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
+  for (const kind of workspaceMutationEventKinds)
     eventOutcomeHandlers.set(kind, async (event) => {
       const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
         log(
