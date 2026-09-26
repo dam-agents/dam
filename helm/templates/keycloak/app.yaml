@@ -161,16 +161,22 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          {{- /* volumeMounts and volumes always render, as [] when empty, so a
+          deployer's post-render JSON patch can append with an `add .../-` op. */}}
           {{- if .Values.keycloak.db.caCert }}
           volumeMounts:
             - name: pg-ca
               mountPath: /etc/keycloak/pg-ca
               readOnly: true
+          {{- else }}
+          volumeMounts: []
           {{- end }}
       {{- if .Values.keycloak.db.caCert }}
       volumes:
         - name: pg-ca
           configMap:
             name: {{ include "platform.fullname" . }}-keycloak-db-ca
+      {{- else }}
+      volumes: []
       {{- end }}
 {{- end }}
