@@ -14,13 +14,13 @@ else
 fi
 echo ''
 echo '=== Nodes ==='
-kubectl --kubeconfig='$KUBECONFIG' get nodes 2>/dev/null || echo 'Cluster not reachable'
+kubectl get nodes 2>/dev/null || echo 'Cluster not reachable'
 echo ''
 echo '=== Pods (default) ==='
-kubectl --kubeconfig='$KUBECONFIG' get pods 2>/dev/null || true
+kubectl get pods 2>/dev/null || true
 echo ''
 echo '=== Pods (platform-agents) ==='
-kubectl --kubeconfig='$KUBECONFIG' get pods -n platform-agents 2>/dev/null || true
+kubectl get pods -n platform-agents 2>/dev/null || true
 "
 
 case "${1:-}" in
@@ -36,15 +36,12 @@ case "${1:-}" in
     ;;
   *)
     eval "$STATUS_CMD"
-    # One-shot only — log fetches are too slow for the --watch loop. Same
-    # expiry signature the ztunnel-cert-watchdog CronJob keys on (see
-    # cluster:install); keep the regex in sync. ztunnel logs cover both its
-    # own expired SVID and an expired waypoint cert (it dials the mTLS hop).
+    # One-shot only — log fetches are too slow for the --watch loop.
     echo ''
     echo '=== Mesh cert health (istio-system) ==='
-    CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
+    CERT_HITS=$(kubectl -n istio-system logs \
         -l app=ztunnel --since=30m --tail=2000 --prefix 2>/dev/null \
-      | grep -iE 'certificate expired|AlertReceived\(CertificateExpired\)' | tail -5 || true)
+      | grep -iE "$MESH_CERT_EXPIRED" | tail -5 || true)
     if [ -n "$CERT_HITS" ]; then
       echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
       echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
@@ -59,11 +56,11 @@ case "${1:-}" in
     # The webhook's in-memory serving cert can expire while the VM sleeps,
     # failing chart installs at admission. Probe with a server dry-run — the
     # same call the platform chart's cert-manager objects go through.
-    if ! kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+    if ! kubectl -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
       echo 'skipped — cert-manager not installed'
     else
       PROBE_ERR=$(printf 'apiVersion: cert-manager.io/v1\nkind: ClusterIssuer\nmetadata:\n  name: webhook-health-probe\nspec:\n  selfSigned: {}\n' \
-        | kubectl --kubeconfig="$KUBECONFIG" apply --dry-run=server -f - 2>&1 >/dev/null || true)
+        | kubectl apply --dry-run=server -f - 2>&1 >/dev/null || true)
       if [ -z "$PROBE_ERR" ]; then
         echo 'ok — webhook admission responding'
       elif printf '%s' "$PROBE_ERR" | grep -q 'certificate has expired'; then

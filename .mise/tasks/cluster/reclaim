@@ -12,8 +12,8 @@ echo "[1/4] Pruning unreferenced images from containerd..."
 $RUN_IN_VM k3s crictl rmi --prune || true
 
 echo "[2/4] Deleting Succeeded/Failed pods cluster-wide..."
-kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Succeeded --ignore-not-found
-kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Failed --ignore-not-found
+kubectl delete pod -A --field-selector=status.phase=Succeeded --ignore-not-found
+kubectl delete pod -A --field-selector=status.phase=Failed --ignore-not-found
 
 echo "[3/4] Checking for orphan agent PVCs..."
 # Cross-reference platform.ai/instance label on each PVC against existing instance
@@ -22,11 +22,11 @@ echo "[3/4] Checking for orphan agent PVCs..."
 ORPHANS=()
 while IFS='|' read -r ns pvc inst; do
   [ -z "$pvc" ] && continue
-  if ! kubectl --kubeconfig="$KUBECONFIG" -n "$ns" get configmap "$inst" >/dev/null 2>&1; then
+  if ! kubectl -n "$ns" get configmap "$inst" >/dev/null 2>&1; then
     ORPHANS+=("$ns/$pvc (instance: $inst)")
   fi
 done < <(
-  kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l platform.ai/instance \
+  kubectl get pvc -A -l platform.ai/instance \
     -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.platform\.ai/instance}{"\n"}{end}'
 )
 if [ -z "${ORPHANS[*]:-}" ]; then

@@ -16,11 +16,11 @@
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
 #   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
-#   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
-#   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
+#   mise run image:resolve -- list-workloads            -> the claude-code-derived workload components
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
+#   mise run image:resolve -- tar-path <component>       -> where its :oci task writes its image tar
 #   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
@@ -238,12 +238,11 @@ case "${1:-}" in
   resolve)        resolve "$2" ;;
   source-sha)     source_sha "$2" ;;
   gha-outputs)    gha_outputs ;;
-  list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|source-sha|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac
