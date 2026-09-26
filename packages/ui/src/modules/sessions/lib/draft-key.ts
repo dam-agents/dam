@@ -20,14 +20,14 @@ export function draftKey(agentId: string, sessionId: string | null): string {
   return `${agentId}:${sessionId ?? BLANK_CHAT}`;
 }
 
-function draftHasContent(draft: SessionDraft): boolean {
-  return draft.text.trim().length > 0 || draft.attachments.length > 0;
-}
-
 export function keysWithDraftContent(
   drafts: Record<string, SessionDraft>,
 ): string[] {
   return Object.keys(drafts)
-    .filter((key) => draftHasContent(drafts[key]))
+    .filter(
+      (key) =>
+        drafts[key].text.trim().length > 0 ||
+        drafts[key].attachments.length > 0,
+    )
     .sort();
 }

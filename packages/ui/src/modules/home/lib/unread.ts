@@ -19,10 +19,6 @@ export function isUnreadSession(
   return laterThanSeen(session.updatedAt, session.seenAt);
 }
 
-function isUnreadAttention(item: AttentionItem): boolean {
-  return laterThanSeen(item.activityAt, item.seenAt);
-}
-
 const FEED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function isFeedableAttention(
@@ -40,6 +36,6 @@ export function isUnreadItem(item: {
   return (
     item.kind === "unread" &&
     item.session !== undefined &&
-    isUnreadAttention(item.session)
+    laterThanSeen(item.session.activityAt, item.session.seenAt)
   );
 }

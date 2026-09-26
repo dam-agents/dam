@@ -9,12 +9,14 @@ const CONTRIBUTION_KIND_LABELS: Record<ContributionKind, string> = {
   "skill-ref": "skills",
 };
 
-function contributionKindLabel(kind: string): string {
-  return CONTRIBUTION_KIND_LABELS[kind as ContributionKind] ?? kind;
-}
-
 export function contributionKindList(kinds: string[]): string {
-  const labels = [...new Set(kinds.map(contributionKindLabel))];
+  const labels = [
+    ...new Set(
+      kinds.map(
+        (kind) => CONTRIBUTION_KIND_LABELS[kind as ContributionKind] ?? kind,
+      ),
+    ),
+  ];
   if (labels.length <= 1) return labels[0] ?? "";
   return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]!}`;
 }
