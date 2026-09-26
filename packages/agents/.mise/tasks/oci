@@ -129,9 +129,11 @@ lock_mise() (
   unlockable="$(awk '/^\[tools\./ { t = $0; sub(/^\[tools\./, "", t); sub(/\]$/, "", t); gsub(/"/, "", t) } /^uvx_args/ { print t }' mise/conf.d/harness.*.toml)"
   read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r --arg skip "$unlockable" '[keys[] | select(. as $k | $skip | split("\n") | index($k) | not)] | join(" ")')"
   # Python dependency locks run the image's uv. Its own install stays out of
-  # the lockfile, which would otherwise gain this host's platform.
+  # the lockfile, which would otherwise gain this host's platform. It is the
+  # newest uv, not the locked one, so mise finds it only on PATH, ahead of the
+  # repo's own uv.
   MISE_LOCKFILE=0 mise -E "$envs" install uv
-  mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
+  PATH="$(MISE_LOCKFILE=0 mise -E "$envs" bin-paths uv):$PATH" mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
   cp mise/mise.lock "$root/$lockfile"
   rm -rf "${root:?}/$deplocks"
   [ ! -d mise/.mise/locks ] || cp -R mise/.mise/locks "$root/$deplocks"
