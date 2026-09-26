@@ -1,5 +1,6 @@
 import hashlib
 import time
+from pathlib import Path
 
 import pytest
 
@@ -58,7 +59,7 @@ def test_plan_mode_registers_and_exits(stub, tmp_path):
         next(exp.iterations(loop))
     assert exit_info.value.code == 0
 
-    method, path, body = stub.requests[-1]
+    _method, path, body = stub.requests[-1]
     assert path.endswith("/experiments/plan")
     assert body["name"] == "evolver"
     assert [s["id"] for s in body["skeleton"]["stages"]] == ["produce", "eval"]
@@ -66,7 +67,7 @@ def test_plan_mode_registers_and_exits(stub, tmp_path):
     assert body["skeleton"]["loops"] == [
         {"id": "generations", "stages": ["produce", "eval"]}
     ]
-    raw = open(script, "rb").read()
+    raw = Path(script).read_bytes()
     assert body["script"]["sha256"] == hashlib.sha256(raw).hexdigest()
     assert body["script"]["content"] == raw.decode()
 
@@ -140,7 +141,7 @@ def test_run_mode_streams_spans_and_finishes(stub, tmp_path, monkeypatch):
 
     run_starts = stub.of_type("run-start")
     assert len(run_starts) == 1
-    assert run_starts[0]["scriptContent"] == open(script).read()
+    assert run_starts[0]["scriptContent"] == Path(script).read_text()
 
     starts = stub.of_type("span-start")
     ends = stub.of_type("span-end")
@@ -150,7 +151,7 @@ def test_run_mode_streams_spans_and_finishes(stub, tmp_path, monkeypatch):
     assert ends[1]["score"] == 0.0 and ends[3]["score"] == 0.1
     assert ends[1]["artifactIds"] == ["art-1"]
 
-    method, path, body = stub.requests[-1]
+    _method, path, body = stub.requests[-1]
     assert path.endswith("/experiments/exp-9/finish")
     assert body == {"status": "completed"}
 
@@ -159,12 +160,14 @@ def test_unhandled_exception_reports_failed_and_reraises(stub, tmp_path, monkeyp
     monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
     run_routes(stub)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
-            with exp.span("work"):
-                raise RuntimeError("boom")
+    with (
+        pytest.raises(RuntimeError, match="boom"),
+        x.Experiment("evolver", script_path=write_script(tmp_path)) as exp,
+        exp.span("work"),
+    ):
+        raise RuntimeError("boom")
 
-    method, path, body = stub.requests[-1]
+    _method, path, body = stub.requests[-1]
     assert path.endswith("/finish")
     assert body["status"] == "failed"
     assert "boom" in body["error"]
@@ -176,9 +179,11 @@ def test_undeclared_stage_emits_stage_declare(stub, tmp_path, monkeypatch):
     monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
     run_routes(stub)
 
-    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
-        with exp.span("mutate"):
-            pass
+    with (
+        x.Experiment("evolver", script_path=write_script(tmp_path)) as exp,
+        exp.span("mutate"),
+    ):
+        pass
 
     assert stub.of_type("stage-declare") == [
         {"type": "stage-declare", "stage": "mutate"}
