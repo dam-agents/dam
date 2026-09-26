@@ -7,13 +7,6 @@ export interface EnvMapping {
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
-export interface InjectionConfig {
-  headerName: string;
-  valueFormat?: string;
-  queryParamName?: string;
-  http2?: boolean;
-}
-
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
@@ -56,11 +49,10 @@ export interface BobModelPins {
 
 export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_BASE_URL = `https://${BOB_HOST}`;
-const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
-    { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
+    { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "BOB_DEFAULT_GATEWAY_URL", placeholder: BOB_BASE_URL },
   ];
   const push = (envName: string, value?: string) => {
@@ -93,16 +85,11 @@ export interface ProviderPresetMode {
   templateId: string;
   tokenPrefix?: string;
   isDefault?: boolean;
-  defaultEnvMappings: EnvMapping[];
-  injection?: InjectionConfig;
-  extraInjections?: readonly InjectionConfig[];
 }
 
 export interface ProviderPreset {
   id: ProviderPresetType;
   displayName: string;
-  hostPattern: string;
-  pathPattern?: string;
   modes: readonly ProviderPresetMode[];
 }
 
@@ -110,19 +97,12 @@ export const PROVIDERS = {
   anthropic: {
     id: "anthropic",
     displayName: "Anthropic",
-    hostPattern: "api.anthropic.com",
     modes: [
       {
         key: "oauth",
         label: "OAuth Token",
         templateId: "anthropic-oauth",
         tokenPrefix: "sk-ant-oat",
-        defaultEnvMappings: [
-          {
-            envName: "CLAUDE_CODE_OAUTH_TOKEN",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
       },
       {
         key: "api-key",
@@ -130,62 +110,23 @@ export const PROVIDERS = {
         templateId: "anthropic",
         tokenPrefix: "sk-ant-api",
         isDefault: true,
-        defaultEnvMappings: [
-          {
-            envName: "ANTHROPIC_API_KEY",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
-        injection: { headerName: "x-api-key", valueFormat: "{value}" },
       },
     ],
   },
   "ibm-litellm": {
     id: "ibm-litellm",
     displayName: "IBM LiteLLM ETE Proxy",
-    hostPattern: IBM_LITELLM_HOST,
-    modes: [
-      {
-        key: "api-key",
-        label: "API Token",
-        templateId: "ibm-litellm",
-        defaultEnvMappings: ibmLitellmEnvMappings(),
-      },
-    ],
+    modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
   },
   openai: {
     id: "openai",
     displayName: "OpenAI",
-    hostPattern: "api.openai.com",
-    pathPattern: "/v1/*",
-    modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        templateId: "openai",
-        defaultEnvMappings: openaiEnvMappings(),
-      },
-    ],
+    modes: [{ key: "api-key", label: "API Key", templateId: "openai" }],
   },
   bob: {
     id: "bob",
     displayName: "Bob Shell",
-    hostPattern: BOB_HOST,
-    modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        templateId: "bob",
-        defaultEnvMappings: bobEnvMappings(),
-        injection: {
-          headerName: "Authorization",
-          valueFormat: "Apikey {value}",
-        },
-        extraInjections: [
-          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
-        ],
-      },
-    ],
+    modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 

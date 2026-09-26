@@ -35,13 +35,6 @@ export function createScriptedMockService(
     getReceivedPrompts(): GetReceivedPromptsResult {
       return { prompts: [...state.receivedPrompts] };
     },
-    reset() {
-      state.scriptEntries = [];
-      state.scriptStopReason = "end_turn";
-      state.scriptFiles = [];
-      state.receivedPrompts = [];
-      return { ok: true as const };
-    },
     getEnv(input: GetEnvInput): GetEnvResult {
       return { value: process.env[input.name] };
     },

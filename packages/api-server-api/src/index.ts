@@ -234,11 +234,8 @@ export {
 export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
-  ProviderPreset,
-  ProviderPresetMode,
   ProviderPresetType,
   EnvMapping,
-  InjectionConfig,
   BobModelPins,
 } from "./modules/connections/providers.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
@@ -248,10 +245,8 @@ export {
   RESERVED_MCP_SERVER_NAMES,
 } from "./modules/shared.js";
 export {
-  DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
-  isProviderPresetType,
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,

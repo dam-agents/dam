@@ -74,8 +74,6 @@ export function createE2eService(deps: {
       withClient(agentId, (c) => c.scriptedMock.setScript.mutate(input)),
     getReceivedPrompts: (agentId) =>
       withClient(agentId, (c) => c.scriptedMock.getReceivedPrompts.query()),
-    reset: (agentId) =>
-      withClient(agentId, (c) => c.scriptedMock.reset.mutate()),
     getEnv: (agentId, name) =>
       withClient(agentId, (c) => c.scriptedMock.getEnv.query({ name })),
     performFetch: (agentId, input) =>
