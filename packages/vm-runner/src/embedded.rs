@@ -17,8 +17,9 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, discard_overlay, grown_storage, kill_orphans, orphan_pids, timed, updated_env,
-    vmm_gone, workload, Machine, Runtime, Update, GUEST_AGENT_PORT, VMM_EXIT_WAIT,
+    clear_for_start, discard_overlay, grown_storage, image_env_beside, kill_orphans, orphan_pids,
+    timed, updated_env, vmm_gone, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
+    VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -145,6 +146,11 @@ impl Runtime for Smolvm {
                 }
             }
             let allowed_cidrs = allowed_cidrs(desired)?;
+            let image_env = record
+                .image
+                .as_deref()
+                .and_then(packed_layers_dir_for_ref)
+                .and_then(|rootfs| image_env_beside(&rootfs));
             let relaunch = image
                 .map(|(image, launch)| {
                     anyhow::Ok((resolved_image(image)?, workload(desired, launch)?))
@@ -165,7 +171,7 @@ impl Runtime for Smolvm {
                         r.workdir = workload.workdir;
                         r.env = workload.env;
                     }
-                    None => r.env = updated_env(&r.env, applied, desired),
+                    None => r.env = updated_env(&r.env, applied, desired, image_env.as_deref()),
                 }
             })?;
             Ok(())

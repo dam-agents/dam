@@ -7,22 +7,41 @@ use crate::fetch::failure_reason;
 
 // TEST_OVERVIEW: the image cache's one writer — the node service, or a runner on its own claim. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the three questions the cache asks — which digest a tag names, what an image says to run, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest weighs what `size` says, an export waits while `hold-export` exists, and fails while `export-fails` does.
 const PUBLIC_CRANE: &str = r#"#!/bin/sh
 here="$(dirname "$0")"
 echo "$@" >> "$here/crane.log"
-if [ "$1" = digest ]; then
-  if [ -f "$here/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
-  moved=$(cat "$here/moved" 2>/dev/null)
-  printf 'sha256:%s\n' "$(printf '%s%s' "${2%@*}" "$moved" | sha256sum | cut -c1-64)"
-  exit 0
-fi
-if [ "$1" = config ]; then
-  printf '{"config":{"Entrypoint":["/entry"],"Cmd":["serve"]}}'
-  exit 0
-fi
+case "$1" in
+  digest)
+    if [ -f "$here/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
+    moved=$(cat "$here/moved" 2>/dev/null)
+    printf 'sha256:%s\n' "$(printf '%s%s%s' "${2%@*}" "$4" "$moved" | sha256sum | cut -c1-64)"
+    exit 0;;
+  config) printf '{"config":{"Entrypoint":["/entry"],"Cmd":["serve"]}}'; exit 0;;
+  manifest) printf '{"config":{"size":1},"layers":[{"size":%s}]}' "$(cat "$here/size" 2>/dev/null || echo 1)"; exit 0;;
+esac
+while [ -f "$here/hold-export" ]; do sleep 0.02; done
+if [ -f "$here/export-fails" ]; then echo 'unexpected EOF' >&2; exit 1; fi
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
+
+// UNIT_BOUNDARY_DESCRIPTION: three registries holding one private image. quay.io/x/vm answers only the credential `c2VjcmV0`, mirror.io/x/vm only `b3RoZXI=`, and attacker.io answers every manifest read from anyone with the image's digest, while holding none of its bytes.
+const ORIGIN_CRANE: &str = r##"#!/bin/sh
+here="$(dirname "$0")"
+echo "$@" >> "$here/crane.log"
+auth=$(cat "$DOCKER_CONFIG/config.json" 2>/dev/null)
+case "$2" in
+  quay.io/x/vm*) case "$auth" in *c2VjcmV0*) ;; *) echo UNAUTHORIZED >&2; exit 1;; esac;;
+  mirror.io/x/vm*) case "$auth" in *b3RoZXI=*) ;; *) echo UNAUTHORIZED >&2; exit 1;; esac;;
+  attacker.io/*) if [ "$1" = digest ]; then echo sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; exit 0; fi; echo 'MANIFEST_UNKNOWN' >&2; exit 1;;
+esac
+case "$1" in
+  digest) echo sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; exit 0;;
+  config) printf '{"config":{"Cmd":["serve"]}}'; exit 0;;
+  manifest) exit 1;;
+esac
+d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
+"##;
 
 // UNIT_BOUNDARY_DESCRIPTION: a registry that answers only a caller holding the credential `c2VjcmV0`, anonymous reads included.
 const PRIVATE_CRANE: &str = r##"#!/bin/sh
@@ -164,8 +183,11 @@ fn a_pinned_reference_is_never_resolved_and_an_unknown_tag_is_refused() {
     assert_eq!(f.calls("digest"), 0);
     let log = fs::read_to_string(f.dir.path().join("crane.log")).unwrap();
     assert!(
-        log.lines()
-            .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
+        log.lines().any(|l| l
+            == format!(
+                "export quay.io/x/vm@{digest} - --platform {}",
+                fetch::host_platform()
+            )),
         "{log}"
     );
 
@@ -442,4 +464,188 @@ async fn a_runner_reaches_the_service_over_its_socket() {
         failure_reason(&lookup.resolved.unwrap_err()),
         REASON_IMAGE_UNAVAILABLE
     );
+}
+
+fn scratch_trees(cache: &ImageCache) -> usize {
+    fs::read_dir(cache.dir())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(PARTIAL_PREFIX))
+        .count()
+}
+
+// TEST_SCENARIO: a multi-arch image read with no platform is read as linux/amd64 on every host, so an arm64 node would unpack a tree it cannot run. Every registry read names this host's platform, and the tree records the platform it was unpacked for. A tree recorded for another platform — a claim that moved to a node of another architecture, under a pinned index digest both share — is fetched again rather than booted.
+#[test]
+fn an_image_is_read_and_kept_for_the_hosts_platform() {
+    let f = Fixture::new("platform", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = digest_of(&cache, IMAGE);
+    let platform = fetch::host_platform();
+    let log = fs::read_to_string(f.dir.path().join("crane.log")).unwrap();
+    for op in ["digest", "config", "manifest", "export"] {
+        let line = log
+            .lines()
+            .find(|l| l.starts_with(&format!("{op} ")))
+            .unwrap_or_else(|| panic!("no {op} call: {log}"));
+        assert!(line.ends_with(&format!(" --platform {platform}")), "{line}");
+    }
+    let entry = cache.digest_entry(&digest);
+    assert_eq!(read_origin(&entry).unwrap().platform, platform);
+
+    let pinned = format!("quay.io/x/vm@{digest}");
+    fs::write(
+        entry.join(ORIGIN_FILE),
+        r#"{"platform":"linux/s390x","repositories":["quay.io/x/vm"]}"#,
+    )
+    .unwrap();
+    let again = cache.resolve(&pinned, &[]);
+    assert!(
+        again.fetched.is_some_and(|f| f.ok),
+        "a tree of another platform was booted"
+    );
+    assert_eq!(f.calls("export"), 2);
+    assert_eq!(read_origin(&entry).unwrap().platform, platform);
+    assert_eq!(scratch_trees(&cache), 0);
+}
+
+// TEST_SCENARIO: eviction must never leave a partly deleted tree under an entry's name, because the name is all a lookup checks and the tree would be booted as complete. An evicted entry leaves its name in one rename, to a scratch name no lookup matches, and only then is deleted; a writer killed before the delete finished leaves a scratch tree, which the next open reclaims.
+#[test]
+fn an_evicted_entry_leaves_its_name_in_one_step() {
+    let f = Fixture::new("evict-atomic", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let entry = cache.digest_entry(&digest_of(&cache, IMAGE));
+    let aside = cache.discard(&entry).unwrap().expect("the entry was there");
+    assert!(!entry.exists());
+    assert!(
+        aside.path().join(ROOTFS_DIR).join("hello").exists(),
+        "the tree was deleted while it still had the entry's name"
+    );
+    assert!(aside
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .starts_with(PARTIAL_PREFIX));
+    std::mem::forget(aside);
+    assert!(cache.discard(&entry).unwrap().is_none());
+
+    let reopened = f.cache(|_| {});
+    assert_eq!(scratch_trees(&reopened), 0, "a half-deleted tree survived");
+}
+
+// TEST_SCENARIO: a tree with no launch record beside it is not an entry anyone may boot — what an older writer that died mid-eviction left, or anything else incomplete. A fetch of its digest puts a whole new tree in its place rather than leaving the stale one to be served, and none of the stale tree's files survive.
+#[test]
+fn a_fetch_replaces_an_incomplete_tree_under_its_name() {
+    let f = Fixture::new("replace", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = format!("sha256:{}", "b".repeat(64));
+    let entry = cache.digest_entry(&digest);
+    fs::create_dir_all(entry.join(ROOTFS_DIR)).unwrap();
+    fs::write(entry.join(ROOTFS_DIR).join("stale"), "left behind").unwrap();
+
+    let lookup = cache.resolve(&format!("quay.io/x/vm@{digest}"), &[]);
+    assert!(lookup.fetched.is_some_and(|f| f.ok));
+    assert!(entry.join(ROOTFS_DIR).join("hello").exists());
+    assert!(!entry.join(ROOTFS_DIR).join("stale").exists());
+    assert!(entry.join(LAUNCH_FILE).exists());
+    assert_eq!(scratch_trees(&cache), 0);
+
+    let truncated = format!("sha256:{}", "d".repeat(64));
+    let entry = cache.digest_entry(&truncated);
+    fs::create_dir_all(entry.join(ROOTFS_DIR)).unwrap();
+    fs::write(entry.join(LAUNCH_FILE), "{").unwrap();
+    let lookup = cache.resolve(&format!("quay.io/x/vm@{truncated}"), &[]);
+    assert!(lookup.fetched.is_some_and(|f| f.ok));
+    assert!(read_launch(&entry).unwrap().is_some());
+}
+
+// TEST_SCENARIO: anyone can name a digest under a registry of their own that answers every manifest read. A private tree must not be served, or marked public, because a caller's own repository claims to hold its digest: access is checked against the repositories the tree was fetched from. A caller naming the digest elsewhere proves its access by fetching the digest from there, which a registry that lacks the bytes cannot answer; one that holds them joins the tree's origins, so that caller reuses the tree from then on without fetching it again.
+#[test]
+fn a_private_entry_is_checked_where_it_came_from() {
+    let f = Fixture::new("origin", ORIGIN_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = resolved(cache.resolve(IMAGE, &[CREDENTIAL.to_string()])).digest;
+
+    let attacker = cache.resolve(&format!("attacker.io/x@{digest}"), &[]);
+    assert!(attacker.resolved.is_err(), "a lying registry won the tree");
+    assert!(!locked(&cache.memory).public.contains(&digest));
+    let anonymous = cache
+        .resolve(&format!("quay.io/x/vm@{digest}"), &[])
+        .resolved
+        .unwrap_err();
+    assert!(
+        anonymous.to_string().contains("private registry"),
+        "{anonymous}"
+    );
+    assert_eq!(f.calls("export"), 1);
+
+    let mirror = format!("mirror.io/x/vm@{digest}");
+    let proven = cache.resolve(&mirror, &[OTHER.to_string()]);
+    assert!(proven.fetched.is_some_and(|f| f.ok));
+    let origins = read_origin(&cache.digest_entry(&digest))
+        .unwrap()
+        .repositories;
+    assert_eq!(
+        origins,
+        ["mirror.io/x/vm".to_string(), "quay.io/x/vm".to_string()].into()
+    );
+    let exports = f.calls("export");
+    assert!(cache
+        .resolve(&mirror, &[OTHER.to_string()])
+        .fetched
+        .is_none());
+    assert_eq!(f.calls("export"), exports);
+    assert!(!locked(&cache.memory).public.contains(&digest));
+}
+
+// TEST_SCENARIO: the node's fetch ceiling is what keeps runners that share its socket from filling the disk with trees nobody may evict. Fetches that start together must not each find the cache under its ceiling: a fetch reserves what its manifest weighs for as long as it runs, and the next is refused, as a capacity problem, while the reserved bytes take the cache past the ceiling. The reservation is given back when the fetch ends.
+#[test]
+fn fetches_under_way_count_against_the_ceiling() {
+    let f = Fixture::new("in-flight", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("size"), "1000").unwrap();
+    fs::write(f.dir.path().join("hold-export"), "").unwrap();
+    let cache = Arc::new(f.cache(|c| {
+        c.budget = 100;
+        c.fetch_ceiling = node_fetch_ceiling(100);
+    }));
+    let first = {
+        let cache = cache.clone();
+        std::thread::spawn(move || cache.resolve("quay.io/x/a:1", &[]).resolved.is_ok())
+    };
+    let started = Instant::now();
+    while f.calls("export") == 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "no fetch began"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let refused = cache.resolve("quay.io/x/b:1", &[]);
+    assert_eq!(
+        failure_reason(&refused.resolved.unwrap_err()),
+        crate::api::REASON_OUT_OF_CAPACITY
+    );
+    assert!(refused.fetched.is_none());
+    fs::remove_file(f.dir.path().join("hold-export")).unwrap();
+    assert!(first.join().unwrap());
+    assert_eq!(locked(&cache.memory).in_flight, 0);
+}
+
+// TEST_SCENARIO: a hold is how eviction knows a tree is in use, and every runner on the node can make the service resolve any digest. A resolve that fails leaves nothing on disk and so holds nothing, or naming digests that do not exist would grow what the service remembers without bound.
+#[test]
+fn a_resolve_that_fails_holds_nothing() {
+    let f = Fixture::new("hold-failed", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("export-fails"), "").unwrap();
+    let cache = f.cache(|_| {});
+    let digest = format!("sha256:{}", "c".repeat(64));
+    let failed = cache.resolve(&format!("quay.io/x/vm@{digest}"), &[]);
+    let error = failed.resolved.unwrap_err();
+    assert_eq!(
+        failure_reason(&error),
+        REASON_IMAGE_UNAVAILABLE,
+        "{error:#}"
+    );
+    assert!(failed.fetched.is_some_and(|f| !f.ok));
+    assert!(locked(&cache.memory).holds.is_empty());
+    assert_eq!(scratch_trees(&cache), 0);
 }
