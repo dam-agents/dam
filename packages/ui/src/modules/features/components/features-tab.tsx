@@ -1,4 +1,4 @@
-import type { FeatureId } from "api-server-api";
+import type { AgentBackend, FeatureId } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -71,6 +71,14 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
 ];
 
+function visibleFeatureRows(
+  install: { defaultBackend: AgentBackend } | undefined,
+): FeatureRow[] {
+  return install?.defaultBackend === "vm"
+    ? FEATURE_ROWS.filter((row) => row.id !== "vm-sandboxes")
+    : FEATURE_ROWS;
+}
+
 function FeatureRowCard({
   row,
   enabled,
@@ -120,7 +128,7 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.map((row) => (
+        {visibleFeatureRows(install).map((row) => (
           <FeatureRowCard
             key={row.id}
             row={row}

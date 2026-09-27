@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.defaultBackendIsRunnable" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
@@ -77,6 +78,21 @@ A missing text or version would lock out every account at first request.
 {{- end -}}
 {{- if not (.Values.terms.version | default "" | trim) -}}
 {{- fail "terms.version is required. Bump on material text changes to re-prompt every user." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The default Backend is what every create that names none gets. `vm` on an
+install without virtualization would give every new agent a machine nothing
+can run — each one parked at reconcile — so the install refuses to render.
+*/}}
+{{- define "platform.validate.defaultBackendIsRunnable" -}}
+{{- $b := .Values.virtualization.defaultBackend | default "container" -}}
+{{- if not (has $b (list "container" "vm")) -}}
+{{- fail (printf "virtualization.defaultBackend must be container or vm, not %q." $b) -}}
+{{- end -}}
+{{- if and (eq $b "vm") (not .Values.virtualization.enabled) -}}
+{{- fail "virtualization.defaultBackend=vm requires virtualization.enabled=true: without it the install cannot run a microVM, and every new agent would be created as one and never start." -}}
 {{- end -}}
 {{- end -}}
 

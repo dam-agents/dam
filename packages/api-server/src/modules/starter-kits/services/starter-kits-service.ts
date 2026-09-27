@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { match } from "ts-pattern";
 
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -68,6 +69,16 @@ export interface StarterKitsServiceDeps {
 }
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+function kitBackendChoice(
+  backend: ResolvedStarterKit["backend"],
+): Pick<AgentCreateInput, "vm"> {
+  return match(backend)
+    .with(undefined, () => ({}))
+    .with("container", () => ({ vm: false }))
+    .with("vm", () => ({ vm: true }))
+    .exhaustive();
+}
 
 function withoutSeed(kit: ResolvedStarterKit): ResolvedStarterKit {
   const { seed: _seed, ...rest } = kit;
@@ -308,7 +319,7 @@ export function createStarterKitsService(
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
         ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
-        ...(kit.backend === "vm" ? { vm: true } : {}),
+        ...kitBackendChoice(kit.backend),
         ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
         ...(kit.env.length > 0 ? { env: kit.env } : {}),

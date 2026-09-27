@@ -1,5 +1,5 @@
 import { Close, Gift } from "@carbon/icons-react";
-import type { StarterKitView } from "api-server-api";
+import type { AgentBackend, StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ import {
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
+import { useBackendOffer } from "../../features/hooks/use-backend-offer.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
@@ -74,12 +74,14 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { BackendSection } from "../components/backend-section.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
   hasPartialRegistryCredential,
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
+import { effectiveBackend, kitBackend } from "../lib/create-backend.js";
 import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
 
 export function StarterKitSetupView() {
@@ -133,7 +135,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       returnPath,
       scope: kit ? `${kit.catalog}/${kit.id}` : undefined,
     });
-  const vmRuntime = useVmRuntime();
+  const backendOffer = useBackendOffer();
+  const [pickedBackend, setPickedBackend] = useState<AgentBackend | null>(null);
   const agentsQ = useAgents();
   const availableChannels = agentsQ.data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
@@ -274,9 +277,27 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     : setupProviderPolicy("coding-agent");
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
 
+  const selectedTemplate = catalogue.harnesses.find(
+    (t) => t.id === form.templateId,
+  );
+  const containerOnly =
+    form.customImage.trim().length > 0
+      ? undefined
+      : selectedTemplate?.containerOnlyReason;
+  const backend = kit
+    ? kitBackend({
+        declared: kit.backend,
+        offer: backendOffer,
+        containerOnlyReason: bringsImage ? undefined : containerOnly,
+      })
+    : effectiveBackend({
+        offer: backendOffer,
+        containerOnlyReason: containerOnly,
+        picked: pickedBackend,
+      });
   const plainDraft: CodingAgentSetupDraft = {
     name: form.name,
-    vm: vmRuntime.vm,
+    vm: backend === "vm",
     templateId: form.templateId,
     customImage: form.customImage,
     providerRef: form.providerRef,
@@ -284,9 +305,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
   };
-  const selectedTemplate = catalogue.harnesses.find(
-    (t) => t.id === form.templateId,
-  );
   const registryPartial = hasPartialRegistryCredential(plainDraft);
   const blockingSchedule = invalidSchedules.some(
     (name) => !form.skippedSchedules.includes(name),
@@ -302,7 +320,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       !pending
     : isCodingAgentSetupComplete(plainDraft) &&
       !pending &&
-      vmRuntime.answered &&
+      backendOffer.answered &&
       (channelsAnswered || !wantsChannel);
 
   const create = async () => {
@@ -481,6 +499,14 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
+      {!kit && backendOffer.vmOffered && (
+        <BackendSection
+          backend={backend}
+          containerOnlyReason={containerOnly}
+          onPick={setPickedBackend}
+        />
+      )}
+
       {kit && (
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
@@ -507,6 +533,17 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             />
           )}
         </section>
+      )}
+
+      {kit && (backendOffer.vmOffered || kit.backend === "vm") && (
+        <BackendSection
+          backend={backend}
+          containerOnlyReason={
+            kit.backend === undefined && !bringsImage
+              ? containerOnly
+              : undefined
+          }
+        />
       )}
 
       {noCompatibleProvider ? (

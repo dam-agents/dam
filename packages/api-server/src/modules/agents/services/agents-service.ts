@@ -1,5 +1,7 @@
 import {
+  containerOnlyReason,
   isProtectedAgentEnvName,
+  type AgentBackend,
   type AgentsService,
   type AgentCreateInput,
   type EgressPreset,
@@ -48,6 +50,7 @@ import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
+import { resolveBackend } from "../domain/backend-resolution.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -506,6 +509,7 @@ export function createAgentsService(deps: {
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
+  defaultBackend?: AgentBackend;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
@@ -856,14 +860,37 @@ export function createAgentsService(deps: {
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
-      if (input.templateId) {
-        const tmpl = await deps.readTemplateSpec(input.templateId);
-        if (!tmpl) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `template "${input.templateId}" not found`,
-          });
-        }
+      const tmpl = input.templateId
+        ? await deps.readTemplateSpec(input.templateId)
+        : null;
+      if (input.templateId && !tmpl) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `template "${input.templateId}" not found`,
+        });
+      }
+      const resolution = resolveBackend({
+        requestedVm: input.vm,
+        installDefault: deps.virtualizationEnabled
+          ? (deps.defaultBackend ?? "container")
+          : "container",
+        containerOnlyReason: tmpl ? containerOnlyReason(tmpl.spec) : undefined,
+      });
+      if (resolution.kind === "refused") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `this agent cannot run as its own microVM because ${resolution.reason}; create it on the container backend instead`,
+        });
+      }
+      const { backend } = resolution;
+      if (backend === "vm" && !deps.virtualizationEnabled) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
+        });
+      }
+      if (tmpl && input.templateId) {
         spec = assembleSpecFromTemplate(
           input.name,
           tmpl.spec,
@@ -871,7 +898,7 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm: input.vm,
+            backend,
           },
           deps.agentDefaultLimits,
         );
@@ -884,18 +911,10 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm: input.vm,
+            backend,
           },
           deps.agentDefaultLimits,
         );
-      }
-      const backend = spec.backend as { type?: string } | undefined;
-      if (backend?.type === "vm" && !deps.virtualizationEnabled) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
-        });
       }
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],

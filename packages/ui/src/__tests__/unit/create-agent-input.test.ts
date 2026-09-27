@@ -40,6 +40,7 @@ describe("buildCreateAgentInput", () => {
       name: "swift-otter",
       templateId: "claude-code",
       egressPreset: "trusted",
+      vm: false,
       appConnectionIds: ["conn-123"],
     });
   });
@@ -50,13 +51,16 @@ describe("buildCreateAgentInput", () => {
     ).toMatchObject({ egressPreset: "all" });
   });
 
-  // TEST_SCENARIO: the backend is chosen beside the image, not by picking a different one, so the same template reaches the server either way and only the vm flag differs.
-  it("asks for a microVM without changing the template", () => {
+  // TEST_SCENARIO: the backend is chosen beside the image, not by picking a different one, so the same template reaches the server either way and only the vm flag differs. A container is sent as an explicit false, because the install's default may be vm and the form must create what it showed.
+  it("asks for the shown backend without changing the template", () => {
     expect(buildCreateAgentInput({ ...complete, vm: true })).toMatchObject({
       templateId: "claude-code",
       vm: true,
     });
-    expect(buildCreateAgentInput(complete)).not.toHaveProperty("vm");
+    expect(buildCreateAgentInput(complete)).toMatchObject({
+      templateId: "claude-code",
+      vm: false,
+    });
   });
 
   it("throws on an incomplete draft", () => {
@@ -128,6 +132,7 @@ describe("buildCodingAgentSetupInput", () => {
     ).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
+      vm: false,
       hibernationTimeoutMin: 60,
       templateId: "claude-code",
       appConnectionIds: ["conn-granted", "conn-provider"],
@@ -143,6 +148,7 @@ describe("buildCodingAgentSetupInput", () => {
     expect(buildCodingAgentSetupInput(custom)).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
+      vm: false,
       hibernationTimeoutMin: 60,
       image: "ghcr.io/org/agent:latest",
       appConnectionIds: ["conn-granted", "conn-provider"],

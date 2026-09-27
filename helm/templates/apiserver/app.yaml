@@ -247,6 +247,8 @@ spec:
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
+            - name: AGENT_DEFAULT_BACKEND
+              value: {{ .Values.virtualization.defaultBackend | default "container" | quote }}
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED

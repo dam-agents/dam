@@ -144,7 +144,8 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
+# -- The vm backend (`backend.type: vm`, chosen per agent at create, or for
+# every new agent by `defaultBackend` below): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
@@ -169,6 +170,17 @@ istio:
 # runner is not ready.
 virtualization:
   enabled: false
+  # The Backend a new agent gets when its create names none: `container` or
+  # `vm`, and `vm` only with `enabled: true` (the install refuses to render
+  # otherwise). `vm` switches every new agent to a microVM for every user, with
+  # no per-user experimental flag in between; the create form then offers a
+  # container as the alternative, and an explicit choice from the API or a kit
+  # still wins. An agent whose template needs a pod stays a container — one
+  # with `runtimeClassName`, `nodeSelector`, a resource other than cpu/memory
+  # (a GPU), a persisted mount outside $HOME, or `requiresContainer: true` —
+  # and an explicit vm request for it is refused. Existing agents keep their
+  # Backend: it is fixed at create. Rendered as AGENT_DEFAULT_BACKEND.
+  defaultBackend: container
   # The shape of every runner pod the controller creates (one per owner).
   runner:
     # Published charts pin this to the image's content tag, so an upgrade that
@@ -1744,6 +1756,12 @@ controller:
 # KB template's installer so the installed tooling (manual, commands, skill)
 # lands where that harness reads it. Omit it for images that wrap none of the
 # known families — the installer then falls back to its own harness detection.
+# A template does not choose a Backend — the same image boots as a pod or a
+# microVM. It can only rule the microVM out: `requiresContainer: true` keeps
+# its agents on containers even where `virtualization.defaultBackend` is `vm`,
+# and refuses an explicit vm create. `runtimeClassName`, `nodeSelector`, a
+# resource other than cpu/memory, or a persisted mount outside $HOME imply it,
+# since a machine has none of them.
 #
 # To predefine an *experimental external agent* (a private-registry image users
 # just pick from the template list, with no manual "Private registry" entry),

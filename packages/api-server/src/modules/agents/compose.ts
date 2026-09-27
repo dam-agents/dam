@@ -2,7 +2,11 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
-import type { AgentsService, ConnectionsService } from "api-server-api";
+import type {
+  AgentBackend,
+  AgentsService,
+  ConnectionsService,
+} from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
@@ -67,6 +71,7 @@ export function composeAgentsModule(deps: {
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
   virtualizationEnabled?: boolean;
+  defaultBackend?: AgentBackend;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
@@ -96,6 +101,7 @@ export function composeAgentsModule(deps: {
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
       virtualizationEnabled: deps.virtualizationEnabled,
+      defaultBackend: deps.defaultBackend,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,

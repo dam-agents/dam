@@ -27,9 +27,11 @@ data:
   {{- if and $tmpl $tmpl.enabled }}
   {{- /* The Backend is chosen per agent at create, not declared by a template.
          An install carrying the old key would otherwise render a template that
-         silently produces container agents, so it is refused here instead. */}}
+         silently produces container agents, so it is refused here instead.
+         What a template may say is that its agents cannot be machines:
+         requiresContainer. */}}
   {{- if $tmpl.backend }}
-  {{- fail (printf "harnessTemplates.%s: backend is no longer a template field — the Backend is chosen per agent at create time. Remove it from your values." $name) }}
+  {{- fail (printf "harnessTemplates.%s: backend is no longer a template field — the Backend is chosen per agent at create time (virtualization.defaultBackend sets the install's default). To keep this template's agents on containers, set requiresContainer: true instead." $name) }}
   {{- end }}
   {{- $home := "/home/agent" }}
   {{ $name }}.yaml: |
@@ -82,6 +84,9 @@ data:
     {{- with $tmpl.nodeSelector }}
     nodeSelector:
       {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if $tmpl.requiresContainer }}
+    requiresContainer: true
     {{- end }}
     {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
     {{- fail (printf "harnessTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}

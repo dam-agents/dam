@@ -1,4 +1,4 @@
-import type { AgentsService } from "./modules/agents/types.js";
+import type { AgentBackend, AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type { BudgetsService } from "./modules/budgets/types.js";
@@ -73,4 +73,5 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
+  defaultBackend: AgentBackend;
 }

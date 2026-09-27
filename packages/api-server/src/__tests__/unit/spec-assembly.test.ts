@@ -17,7 +17,7 @@ describe("assembleSpecFromTemplate", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       { ...baseTemplate, hibernationTimeout: "0s" },
-      {},
+      { backend: "container" },
       defaultLimits,
     );
     expect(spec.hibernationTimeout).toBe("0s");
@@ -27,22 +27,18 @@ describe("assembleSpecFromTemplate", () => {
     const spec = assembleSpecFromTemplate(
       "agent-1",
       baseTemplate,
-      {},
+      { backend: "container" },
       defaultLimits,
     );
     expect(spec.hibernationTimeout).toBeUndefined();
   });
 
-  // TEST_SCENARIO: the vm backend is chosen beside the image rather than by picking a different template, so a plain container template must assemble as a microVM on request — and runtimeClassName and nodeSelector, which the CRD rejects on that backend, must not ride along.
-  it("boots a container template as a microVM without its container-only placement", () => {
+  // TEST_SCENARIO: the vm backend is chosen beside the image rather than by picking a different template, so a plain container template must assemble as a microVM when the resolved backend says so.
+  it("boots a container template as a microVM on the vm backend", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
-      {
-        ...baseTemplate,
-        runtimeClassName: "kata",
-        nodeSelector: { pool: "gpu" },
-      },
-      { vm: true },
+      baseTemplate,
+      { backend: "vm" },
       defaultLimits,
     );
     expect(spec.backend).toEqual({ type: "vm" });
@@ -62,7 +58,7 @@ describe("assembleSpecFromTemplate", () => {
           { path: "/tmp", persist: false },
         ],
       },
-      { vm: true },
+      { backend: "vm" },
       defaultLimits,
     );
     expect(spec.backend).toEqual({ type: "vm" });
@@ -73,11 +69,11 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.storageSize).toBe("20Gi");
   });
 
-  it("leaves the agent on a container when the caller asks for nothing", () => {
+  it("writes a container as no backend and keeps its container-only placement", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       { ...baseTemplate, runtimeClassName: "kata" },
-      {},
+      { backend: "container" },
       defaultLimits,
     );
     expect(spec.backend).toBeUndefined();

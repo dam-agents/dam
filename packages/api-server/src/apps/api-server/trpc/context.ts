@@ -125,6 +125,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
       virtualizationEnabled: config.virtualizationEnabled,
+      defaultBackend: config.agentDefaultBackend,
       resizeGate,
       owner: user.sub,
       db,
@@ -366,6 +367,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
+      defaultBackend: config.agentDefaultBackend,
     };
   };
 }

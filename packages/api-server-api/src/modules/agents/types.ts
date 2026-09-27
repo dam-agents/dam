@@ -5,6 +5,7 @@ import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type { OnboardingStep } from "../starter-kits/types.js";
 import type {
   agentCreateInputSchema,
+  agentBackendSchema,
   agentKindSchema,
   agentUpdateInputSchema,
 } from "./schemas.js";
@@ -88,6 +89,7 @@ export interface Agent {
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
+export type AgentBackend = z.infer<typeof agentBackendSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   starterKit?: string;

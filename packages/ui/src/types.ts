@@ -112,6 +112,7 @@ export interface TemplateView {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
+  containerOnlyReason?: string;
   size?: { cpu?: string; memory?: string };
 }
 

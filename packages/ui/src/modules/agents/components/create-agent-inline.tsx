@@ -8,7 +8,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 
 import type { AgentView } from "../../../types.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
+import { useBackendOffer } from "../../features/hooks/use-backend-offer.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -19,6 +19,7 @@ import {
   type CreateAgentDraft,
   isCreateAgentDraftComplete,
 } from "../lib/create-agent-input.js";
+import { backendLine, effectiveBackend } from "../lib/create-backend.js";
 import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
 
 interface Props {
@@ -27,26 +28,32 @@ interface Props {
 
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
-  const vmRuntime = useVmRuntime();
+  const backendOffer = useBackendOffer();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName(AGENT_NAME_PREFIX, name, setName);
 
-  const selectedTemplateId =
-    templateId ??
-    (templates.find((t) => !t.experimental) ?? templates[0])?.id ??
-    null;
+  const selectedTemplate =
+    templates.find((t) => t.id === templateId) ??
+    templates.find((t) => !t.experimental) ??
+    templates[0];
+  const selectedTemplateId = selectedTemplate?.id ?? null;
+  const backend = effectiveBackend({
+    offer: backendOffer,
+    containerOnlyReason: selectedTemplate?.containerOnlyReason,
+    picked: null,
+  });
 
   const draft: CreateAgentDraft = {
     name,
     templateId: selectedTemplateId,
     providerRef,
     egressPreset: "trusted",
-    vm: vmRuntime.vm,
+    vm: backend === "vm",
   };
-  const canCreate = isCreateAgentDraftComplete(draft) && vmRuntime.answered;
+  const canCreate = isCreateAgentDraftComplete(draft) && backendOffer.answered;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -79,6 +86,11 @@ export function CreateAgentInline({ onCreated }: Props) {
             </option>
           ))}
         </Select>
+        {backendOffer.vmOffered && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {backendLine(backend, selectedTemplate?.containerOnlyReason)}
+          </p>
+        )}
       </FormField>
 
       <div>

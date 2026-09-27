@@ -15,6 +15,7 @@ export type {
   TemplatesService,
   Resources,
 } from "./modules/templates/types.js";
+export { containerOnlyReason } from "./modules/templates/backend-eligibility.js";
 
 export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, ReposService } from "./modules/repos/types.js";
@@ -48,6 +49,7 @@ export type {
   AgentSpec,
   AgentState,
   AgentsService,
+  AgentBackend,
   AgentCreateInput,
   AgentUpdateInput,
   BackgroundWorkItemView,
@@ -64,6 +66,7 @@ export type {
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
+  agentBackendSchema,
   agentCreateInputSchema,
   agentKindSchema,
 } from "./modules/agents/schemas.js";
