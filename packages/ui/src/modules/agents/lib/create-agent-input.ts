@@ -32,7 +32,7 @@ export function buildCreateAgentInput(
     name: draft.name.trim(),
     templateId: draft.templateId!,
     egressPreset: draft.egressPreset,
-    ...(draft.vm ? { vm: true } : {}),
+    vm: draft.vm,
     appConnectionIds: [draft.providerRef!.id],
   };
 }
@@ -85,7 +85,7 @@ export function buildCodingAgentSetupInput(
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
-    ...(draft.vm ? { vm: true } : {}),
+    vm: draft.vm,
     ...(draft.hibernationTimeoutMin === null
       ? {}
       : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),

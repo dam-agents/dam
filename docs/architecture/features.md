@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-23
+Last verified: 2026-09-27
 
 ## Overview
 
@@ -23,21 +23,27 @@ simply never read again (Experiments, Knowledge Bases and the
 
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —
-whether this deployment supports microVMs — read from the chart's own value
-rather than from any stored row. A surface that needs both, like either form that
-creates an agent, asks both and acts only once each has answered: an unanswered
-question reads like a no, and an agent would otherwise be created as
-something its author did not choose. **A kit that declares `backend: vm` is the exception, and reads neither answer**
-([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a
-machine, so the agent gets one whether or not its owner ever opted in, and a
-kit that declares nothing gets the ordinary sandbox even from an owner who did.
+whether this deployment supports microVMs, and which Backend it gives a create
+that names none — read from the chart's own values rather than from any stored
+row. A surface that needs both, like either form that creates an agent, asks
+both and acts only once each has answered: an unanswered question reads like a
+no, and an agent would otherwise be created as something its author did not
+choose. **An install whose default Backend is vm does not ask the flag at all**:
+the microVM is then the install's own runtime rather than a pre-release one, so
+it is offered to every user and the flag's row leaves the settings tab. On an
+install that still defaults to containers the flag is how a user opts in first.
+Either way the form offers the microVM as the default and a container as the
+alternative, shows a template that needs a pod as a container with the reason
+([vm-runner](vm-runner.md#which-agents-are-machines)), and sends the Backend it showed.
+**A kit that declares a backend is the exception, and reads neither answer**
+([starter-kits](starter-kits.md#kit-backend)): the kit says what its work
+needs, so the agent gets it whether or not its owner ever opted in, and a kit
+that declares nothing gets the install's default even from an owner who did.
 The flag still decides what that owner *sees* — a `vm` kit wears a badge rather
 than being hidden — and the install-wide answer still decides whether the kit is
 offered at all. The rule is the same one stated above from the other side: a
 per-user flag says what a user wants to see, and here the kit, not the user, is
-choosing the runtime. The new sandbox runtime is not a choice
-inside the form — with both answers yes, every agent the form creates is a
-microVM, and the form says so in a notice pointing back at the flag.
+choosing the runtime.
 
 ### Install preflight
 
