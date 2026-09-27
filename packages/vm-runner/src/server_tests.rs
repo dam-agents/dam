@@ -480,6 +480,26 @@ async fn a_guest_that_answers_is_ready_before_its_start_returns() {
     }
 }
 
+// TEST_SCENARIO: a guest answers only after platform-init has put the agent's home on the disk, so its first answer is when the runner records in the share that this disk holds a home. platform-init reads that record to refuse a later boot that finds the home gone, which is what a disk smolvm reformatted looks like; a machine that has never answered has no record, so its first boot still seeds.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_answer_records_that_the_disk_holds_a_home() {
+    let h = Harness::new("seeded");
+    let share = h.dir.join("machines").join("m1").join(SHARE_DIR);
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(
+        !share::seeded(&share),
+        "a machine that has not answered was recorded as seeded"
+    );
+    let _guest = guest(h.base);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.server.status("m1").ready {
+        assert!(Instant::now() < deadline, "the guest was never ready");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(share::seeded(&share));
+}
+
 // TEST_SCENARIO: a machine being stopped keeps answering until it dies, and that answer says nothing about a machine that is going away — it is never reported ready.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guest_answering_through_its_own_stop_is_not_ready() {
