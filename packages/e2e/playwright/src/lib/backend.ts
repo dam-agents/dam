@@ -254,7 +254,15 @@ export async function deleteBackendHost(
   );
   await expect
     .poll(
-      () => hostPods(selector).some((p) => p.ready && !before.includes(p.uid)),
+      () => {
+        try {
+          return hostPods(selector).some(
+            (p) => p.ready && !before.includes(p.uid),
+          );
+        } catch {
+          return false;
+        }
+      },
       {
         timeout: 600_000,
         intervals: [3_000],
