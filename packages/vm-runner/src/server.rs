@@ -1200,6 +1200,7 @@ impl Server {
         let answered = if seen.ready { entry.boot.take() } else { None };
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
+            self.record_seeded(id);
         }
         let mut seen = seen;
         let now = SystemTime::now();
@@ -1216,6 +1217,20 @@ impl Server {
         entry.probed = Some(Instant::now());
         if changed {
             self.bump(entry);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that answers has booted past platform-init, which starts the image only once the agent's home is on the disk. So the first answer of a boot is when the runner records, in the machine's share, that its disk holds a home; from then on platform-init refuses a boot that finds it gone. It is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on. A record that cannot be written is logged, and the next boot's answer tries again.
+    fn record_seeded(&self, id: &str) {
+        let Some(share) =
+            state::machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR))
+        else {
+            return;
+        };
+        if share.is_dir() && !share::seeded(&share) {
+            if let Err(e) = share::record_seeded(&share) {
+                tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine's disk holds a home");
+            }
         }
     }
 

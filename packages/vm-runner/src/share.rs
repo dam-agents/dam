@@ -24,6 +24,9 @@ pub const SEED_FILE: &str = "seed.tar";
 // UNIT_BOUNDARY_DESCRIPTION: the seed is read by platform-init as root in the guest, through the VMM, which serves the share with the runner's own credentials; world-readable is what the rest of the share is, and nothing in the guest writes to it.
 pub const SEED_MODE: u32 = 0o644;
 
+// UNIT_BOUNDARY_DESCRIPTION: the share's record that this machine's disk has held the agent's home, which platform-init reads at guest::SEEDED_PATH. The runner writes it the first time the machine's guest answers, which it does only after platform-init has put the home on the disk, and nothing removes it but the machine's delete: its whole point is to outlive a home that smolvm formatted away.
+pub const SEEDED_FILE: &str = "seeded";
+
 // UNIT_BOUNDARY_DESCRIPTION: the modes the share's CA is written with, stated rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and two installs would write one machine's share differently.
 pub const CA_DIR_MODE: u32 = 0o755;
 pub const CA_MODE: u32 = 0o644;
@@ -47,6 +50,16 @@ pub fn write_share(
     files::create_dir(&ca, CA_DIR_MODE)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
     copy_init(init, &share.join(INIT_FILE))
+}
+
+pub fn seeded(share: &Path) -> bool {
+    share.join(SEEDED_FILE).exists()
+}
+
+pub fn record_seeded(share: &Path) -> anyhow::Result<()> {
+    files::write(&share.join(SEEDED_FILE), b"", CA_MODE)?;
+    tracing::info!(share = %share.display(), "the storage disk holds a home; a boot that finds it gone is refused from now on");
+    Ok(())
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -171,6 +184,35 @@ mod tests {
             guest::SHARE_CA_DIR,
             format!("{}/{CA_DIR}", guest::SHARE_PATH),
             "the guest binds a CA directory this module does not write"
+        );
+        assert_eq!(
+            guest::SEEDED_PATH,
+            format!("{}/{SEEDED_FILE}", guest::SHARE_PATH),
+            "the guest looks for the seeded record where this module does not write it"
+        );
+    }
+
+    // TEST_SCENARIO: the seeded record is what lets platform-init refuse a disk smolvm has reformatted, so it must survive everything the share goes through while the machine exists: every ensure rewrites the share, and a rewrite that dropped the record would let the next boot seed a fresh home over the lost one without a word.
+    #[test]
+    fn the_seeded_record_outlives_every_rewrite_of_the_share() {
+        let dir = TempDir::new("seeded");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let spec = MachineSpec {
+            ca_cert: "ca".into(),
+            ..Default::default()
+        };
+        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert!(!seeded(&share));
+
+        record_seeded(&share).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        assert!(seeded(&share));
+        assert_eq!(
+            mode_of(&share.join(SEEDED_FILE)),
+            CA_MODE,
+            "the guest reads it"
         );
     }
 

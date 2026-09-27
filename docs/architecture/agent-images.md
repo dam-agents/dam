@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-09-26
+Last verified: 2026-09-27
 
 The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily, and no baked tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
 
@@ -29,7 +29,7 @@ One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), buil
 The image is built root-owned, and the agent user is then given only the paths it must write: its home, the mise data dir and system config, the runtime's directory and the trust store. Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships. Each layer the re-owning rewrites is kept as a plain tar rather than gzipped again on one core, which for a venv of gigabytes took longer than packaging it; a local cluster imports it as it is, and CI gzips a published image's plain layers with parallel gzip as it pushes.
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
-- **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA ([vm-runner](vm-runner.md)). The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
+- **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)). The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
 
 On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts the gateway's MITM CA in the system bundle and seeds a new home from the working-dir seed. On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too. The seed stays pristine: the runtime reconciles image skills against it ([agent-skills](agent-skills.md)).
 

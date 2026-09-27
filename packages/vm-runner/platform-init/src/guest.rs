@@ -8,6 +8,9 @@ pub const SHARE_CA_DIR: &str = "/platform/ca";
 // UNIT_BOUNDARY_DESCRIPTION: the home an agent brings with it when it moves to this backend: a tar of its old volume, uploaded into the share while the machine is stopped and before it ever booted. platform-init seeds the agent store from it instead of from the image, on the one boot that finds no store.
 pub const SHARE_SEED_FILE: &str = "/platform/seed.tar";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share once this machine has booted with its home on the disk, and never removes it. smolvm formats a storage disk it cannot mount, and a formatted disk looks exactly like a disk that was never seeded. Without this file platform-init would seed a fresh home on it and boot as if nothing was lost. With it, platform-init knows the home must already be there, and refuses to boot when it is not.
+pub const SEEDED_PATH: &str = "/platform/seeded";
+
 // UNIT_BOUNDARY_DESCRIPTION: where the image expects the platform's MITM CA. The share carries it and platform-init binds it here, so an image's own trust setup is the same sequence on both backends.
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 
@@ -51,7 +54,7 @@ mod tests {
     // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory and the seed directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, or the image's home where the agent's own was meant to be.
     #[test]
     fn the_share_paths_are_inside_the_share() {
-        for path in [INIT_PATH, SHARE_CA_DIR, SHARE_SEED_FILE] {
+        for path in [INIT_PATH, SHARE_CA_DIR, SHARE_SEED_FILE, SEEDED_PATH] {
             let parent = Path::new(path).parent().expect("a share path has a parent");
             assert_eq!(
                 parent,
