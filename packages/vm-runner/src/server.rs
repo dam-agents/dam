@@ -45,6 +45,15 @@ pub const STATUS_WAIT_CAP: Duration = Duration::from_secs(30);
 // UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the actions already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long closing the runner gives its running machines to stop, all at once, after the actions have ended. A machine is a VMM process of this pod: left running, it is killed with the pod, its guest page cache unwritten on a disk with no journal to replay. A stop signals the workload, has the guest quiesce its disks and then powers it off, which takes seconds; the rest of this window is for a guest slow to confirm. CLOSE_GRACE and this together must fit inside the termination grace the controller gives the runner pod.
+pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
+pub const DELETE_WAIT: Duration = Duration::from_secs(15);
+
+// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it. A start includes the guest pulling a staged archive, which is the longest of them.
+pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
+
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 
@@ -83,7 +92,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -102,6 +111,9 @@ struct MachineEntry {
     probed: Option<Instant>,
     probing: bool,
     version: u64,
+    acting_mib: i32,
+    cancel: Option<CancellationToken>,
+    deletes: u32,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the prober asks about this machine, or None when nothing but an action can change what it would hear.
@@ -184,6 +196,18 @@ impl Rejected {
             message: message.into(),
         }
     }
+
+    fn unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: 503,
+            message: message.into(),
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a spec that reaches a closing runner is not stored, so it must not be answered as if it were: a 200 would tell the controller its spec was taken. The runner's next pod takes it on the next reconcile.
+fn shutting_down() -> Rejected {
+    Rejected::unavailable("the VM runner is shutting down; the spec was not stored")
 }
 
 fn check_id(id: &str) -> Result<(), Rejected> {
@@ -272,19 +296,72 @@ impl Server {
         Ok(server)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, and waits up to CLOSE_GRACE for it. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
-    pub async fn close(&self) {
+    // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
+    pub async fn close(self: &Arc<Self>) {
+        self.close_within(CLOSE_GRACE, STOP_ON_CLOSE).await;
+    }
+
+    async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Duration) {
         self.stop_taking_work();
-        if tokio::time::timeout(CLOSE_GRACE, self.work.wait())
-            .await
-            .is_err()
-        {
+        if tokio::time::timeout(grace, self.work.wait()).await.is_err() {
             tracing::warn!(
-                grace_secs = CLOSE_GRACE.as_secs(),
+                grace_secs = grace.as_secs(),
                 "vm runner: machine actions were still running when the runner closed"
             );
         }
+        let server = self.clone();
+        let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         self.forwarder.unpublish_all();
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: stops every machine the runtime reports running, each on a thread of its own so one slow guest does not spend the others' time, and returns once all have answered or `within` has passed. A machine whose worker is still in a runtime call is left alone: the call holds the machine, and a stop beside it would only queue behind it.
+    fn stop_running(self: &Arc<Self>, within: Duration) {
+        let deadline = Instant::now() + within;
+        let ids = state::machine_ids(&self.config.state_dir).unwrap_or_default();
+        let (done, stopped) = std::sync::mpsc::channel();
+        let mut asked = 0;
+        for id in ids.into_iter().filter(|id| !self.converging(id)) {
+            let server = self.clone();
+            let done = done.clone();
+            let spawned = std::thread::Builder::new()
+                .name("close-stop".into())
+                .spawn(move || {
+                    let result = match server.runtime.state(&id) {
+                        Ok(State::Running) => server.stop_machine(&id).map(|()| true),
+                        Ok(_) => Ok(false),
+                        Err(e) => Err(e),
+                    };
+                    let _ = done.send((id, result));
+                });
+            if spawned.is_ok() {
+                asked += 1;
+            }
+        }
+        drop(done);
+        let mut answered = 0;
+        while answered < asked {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let Ok((id, result)) = stopped.recv_timeout(left) else {
+                break;
+            };
+            answered += 1;
+            match result {
+                Ok(true) => {
+                    tracing::info!(machine = %id, "vm runner: stopped the machine before closing")
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(machine = %id, error = %format!("{e:#}"), "vm runner: could not stop the machine before closing")
+                }
+            }
+        }
+        if answered < asked {
+            tracing::warn!(
+                left = asked - answered,
+                grace_secs = within.as_secs(),
+                "vm runner: machines were still stopping when the runner closed"
+            );
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the part of closing that does not wait: no new work is taken, what runs is cancelled, and every status read waiting on a change answers now. The HTTP server's drain waits for those reads, so this comes before it.
@@ -346,11 +423,15 @@ impl Server {
             }
             let mut machines = locked(&self.machines);
             if machines.closed {
-                return Ok(status);
+                return Err(shutting_down());
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
             if entry.deleting {
-                return Ok(status);
+                if entry.converging || entry.deletes > 0 {
+                    return Ok(status);
+                }
+                entry.deleting = false;
+                entry.cancel = None;
             }
             if converging && !entry.converging {
                 continue;
@@ -361,10 +442,16 @@ impl Server {
                 return Ok(status);
             }
             let Some(action) = action else {
+                if entry.failure.take().is_some() {
+                    self.bump(entry);
+                    drop(machines);
+                    return Ok(self.status(id));
+                }
                 return Ok(status);
             };
             entry.converging = true;
             entry.action = Some(action);
+            entry.acting_mib = entry.desired.as_ref().map_or(0, |d| d.memory_mib);
             self.bump(entry);
             status.version = entry.version;
             let asked = entry.asked;
@@ -427,20 +514,47 @@ impl Server {
     fn end_worker(&self, entry: &mut MachineEntry) {
         entry.converging = false;
         entry.action = None;
+        entry.acting_mib = 0;
         self.bump(entry);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, then waits for the action in flight to return.
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. An action still running then is answered with a 503 and nothing removed; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
+        self.delete_within(id, DELETE_WAIT)
+    }
+
+    fn delete_within(&self, id: &str, wait: Duration) -> Result<(), Rejected> {
         check_id(id)?;
+        let deadline = Instant::now() + wait;
         {
             let mut machines = locked(&self.machines);
-            machines.entries.entry(id.to_string()).or_default().deleting = true;
-            while machines.entries.get(id).is_some_and(|e| e.converging) {
-                machines = self
-                    .settled
-                    .wait(machines)
-                    .unwrap_or_else(|e| e.into_inner());
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            entry.deleting = true;
+            entry.deletes += 1;
+            entry
+                .cancel
+                .get_or_insert_with(|| self.lifetime.child_token())
+                .cancel();
+            while let Some(action) = machines
+                .entries
+                .get(id)
+                .filter(|e| e.converging)
+                .map(|e| e.action)
+            {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    if let Some(entry) = machines.entries.get_mut(id) {
+                        entry.deletes -= 1;
+                    }
+                    let doing = action.map_or("working on it", Action::label);
+                    return Err(Rejected::unavailable(format!(
+                        "the machine is still {doing}; it is deleted once that returns, so ask again"
+                    )));
+                }
+                machines = match self.settled.wait_timeout(machines, left) {
+                    Ok((guard, _)) => guard,
+                    Err(e) => e.into_inner().0,
+                };
             }
         }
         let removed = self.remove(id);
@@ -450,7 +564,11 @@ impl Server {
                 machines.entries.remove(id);
                 self.changed.notify_all();
             } else if let Some(entry) = machines.entries.get_mut(id) {
-                entry.deleting = false;
+                entry.deletes -= 1;
+                if entry.deletes == 0 {
+                    entry.deleting = false;
+                    entry.cancel = None;
+                }
             }
         }
         removed?;
@@ -461,7 +579,16 @@ impl Server {
     fn remove(&self, id: &str) -> Result<(), Rejected> {
         let internal = |e: anyhow::Error| Rejected::internal(format!("{e:#}"));
         if self.runtime.state(id).map_err(internal)? != State::Absent {
-            self.runtime.delete(id).map_err(internal)?;
+            let runtime = self.runtime.clone();
+            let target = id.to_string();
+            bounded(
+                "the runtime's delete",
+                Some(RUNTIME_CALL_LIMIT),
+                None,
+                None,
+                move || runtime.delete(&target),
+            )
+            .map_err(internal)?;
         }
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
@@ -566,7 +693,9 @@ impl Server {
                 entry.seen = None;
                 entry.looked += 1;
                 self.bump(entry);
-                entry.desired.clone().unwrap_or_default()
+                let spec = entry.desired.clone().unwrap_or_default();
+                entry.acting_mib = spec.memory_mib;
+                spec
             };
             self.run(id, action, spec);
             if settle.settles(&mut locked(&self.machines), Some(asked)) {
@@ -641,7 +770,7 @@ impl Server {
             let _ports = locked(&self.ports);
             state::allocate_port(&self.config.state_dir, id, self.config.ports.clone())?
         };
-        let (image, launch, digest) = self.resolve(spec, auths)?;
+        let (image, launch, digest) = self.resolve(id, spec, auths)?;
         self.record_digest(id, digest.as_deref())?;
         let dir = state::require_machine_dir(&self.config.state_dir, id)?;
         self.runtime.create(
@@ -679,7 +808,7 @@ impl Server {
         let applied = read_spec(&self.config.state_dir, id);
         let image = match &applied {
             Some(applied) if applied.image == spec.image && self.runtime.image_present(id)? => None,
-            _ => Some(self.resolve(spec, auths)?),
+            _ => Some(self.resolve(id, spec, auths)?),
         };
         let port = state::port(&self.config.state_dir, id);
         if port != 0 {
@@ -712,9 +841,10 @@ impl Server {
         self.start_machine(id, action)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
+        id: &str,
         spec: &MachineSpec,
         auths: &[String],
     ) -> anyhow::Result<(String, ImageLaunch, Option<String>)> {
@@ -726,7 +856,15 @@ impl Server {
             self.metrics.lookup(true);
             return Ok((staged.to_string_lossy().into_owned(), launch, None));
         }
-        let lookup = self.images.resolve(image, auths);
+        let images = self.images.clone();
+        let (reference, asked) = (image.clone(), auths.to_vec());
+        let lookup = bounded(
+            "fetching the image",
+            None,
+            Some(&self.cancel_token(id)),
+            Some(&self.work),
+            move || Ok(images.resolve(&reference, &asked)),
+        )?;
         if let Some(fetched) = &lookup.fetched {
             self.metrics
                 .fetched(Duration::from_millis(fetched.ms), fetched.ok);
@@ -786,7 +924,15 @@ impl Server {
             });
         }
         let started = Instant::now();
-        let result = self.runtime.start(id);
+        let runtime = self.runtime.clone();
+        let target = id.to_string();
+        let result = bounded(
+            "the runtime's start",
+            Some(RUNTIME_CALL_LIMIT),
+            None,
+            None,
+            move || runtime.start(&target),
+        );
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
         result
@@ -799,7 +945,27 @@ impl Server {
                 self.bump(entry);
             }
         }
-        self.runtime.stop(id)
+        let runtime = self.runtime.clone();
+        let target = id.to_string();
+        bounded(
+            "the runtime's stop",
+            Some(RUNTIME_CALL_LIMIT),
+            None,
+            None,
+            move || runtime.stop(&target),
+        )
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the machine's token, made on first use as a child of the runner's lifetime, so closing the runner cancels it as a delete does.
+    fn cancel_token(&self, id: &str) -> CancellationToken {
+        let mut machines = locked(&self.machines);
+        match machines.entries.get_mut(id) {
+            Some(entry) => entry
+                .cancel
+                .get_or_insert_with(|| self.lifetime.child_token())
+                .clone(),
+            None => self.lifetime.child_token(),
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
@@ -944,15 +1110,34 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is bringing up has asked for. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is converging holds or is about to. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one. What counts is the action in flight as well as the spec stored behind it: a machine still booting holds its memory even when the spec behind the boot is a stop, and a restart may be moving between the applied size and the desired one, so it is counted at the larger of the two.
     fn committing(&self) -> BTreeMap<String, i32> {
-        locked(&self.machines)
+        let converging: Vec<(String, Option<i32>, Option<i32>)> = locked(&self.machines)
             .entries
             .iter()
             .filter(|(_, entry)| entry.converging)
-            .filter_map(|(id, entry)| {
-                let desired = entry.desired.as_ref().filter(|d| d.running)?;
-                Some((id.clone(), desired.memory_mib))
+            .map(|(id, entry)| {
+                let booting = entry
+                    .action
+                    .filter(|action| *action != Action::Stop)
+                    .map(|_| entry.acting_mib);
+                let desired = entry
+                    .desired
+                    .as_ref()
+                    .filter(|d| d.running)
+                    .map(|d| d.memory_mib);
+                (id.clone(), booting, desired)
+            })
+            .collect();
+        converging
+            .into_iter()
+            .filter(|(_, booting, desired)| booting.is_some() || desired.is_some())
+            .map(|(id, booting, desired)| {
+                let applied = booting
+                    .and_then(|_| read_spec(&self.config.state_dir, &id))
+                    .map(|s| s.memory_mib);
+                let mib = [booting, desired, applied].into_iter().flatten().max();
+                (id, mib.unwrap_or(0))
             })
             .collect()
     }
@@ -1087,10 +1272,11 @@ impl Server {
         for id in due {
             let server = self.clone();
             self.work.spawn_blocking(move || {
+                let _probing = Probing {
+                    server: &server,
+                    id: &id,
+                };
                 server.probe(&id);
-                if let Some(entry) = locked(&server.machines).entries.get_mut(&id) {
-                    entry.probing = false;
-                }
             });
         }
     }
@@ -1221,6 +1407,70 @@ impl Drop for Seeding {
         drop(self.file.take());
         if let Some(entry) = locked(&self.server.machines).entries.get_mut(&self.id) {
             entry.seeding = false;
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how often a bounded wait looks at its token.
+const BOUNDED_TICK: Duration = Duration::from_millis(50);
+
+// UNIT_BOUNDARY_DESCRIPTION: runs `work` on a thread of its own and waits for its answer until `limit` passes or `cancel` is cancelled. Work that cannot be interrupted is then no longer waited on: it runs on to its end and its answer is dropped. With `tracker` the thread joins that barrier, so closing the runner still waits for it. Without one it is a plain thread, which is what a runtime call needs: one stuck in the kernel then never holds up the close. A panic in `work` is an error here, not a panic of the caller.
+fn bounded<T: Send + 'static>(
+    what: &str,
+    limit: Option<Duration>,
+    cancel: Option<&CancellationToken>,
+    tracker: Option<&TaskTracker>,
+    work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> anyhow::Result<T> {
+    let (answer, answered) = std::sync::mpsc::sync_channel(1);
+    let run = move || {
+        let _ = answer.send(work());
+    };
+    match tracker {
+        Some(tracker) => drop(tracker.spawn_blocking(run)),
+        None => drop(
+            std::thread::Builder::new()
+                .name("bounded".into())
+                .spawn(run)?,
+        ),
+    }
+    let deadline = limit.map(|limit| Instant::now() + limit);
+    loop {
+        let tick = deadline.map_or(BOUNDED_TICK, |deadline| {
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(BOUNDED_TICK)
+        });
+        if tick.is_zero() {
+            anyhow::bail!(
+                "{what} did not return within {}s",
+                limit.unwrap_or_default().as_secs()
+            );
+        }
+        match answered.recv_timeout(tick) {
+            Ok(result) => return result,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                anyhow::bail!("{what} ended without an answer")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if cancel.is_some_and(CancellationToken::is_cancelled) {
+                    anyhow::bail!("{what} was cancelled: the machine is being deleted or the runner is closing");
+                }
+            }
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: clears a machine's probing mark when its probe ends, however it ends. A probe that panicked would otherwise leave the mark set, and the prober never probes that machine again.
+struct Probing<'a> {
+    server: &'a Server,
+    id: &'a str,
+}
+
+impl Drop for Probing<'_> {
+    fn drop(&mut self) {
+        if let Some(entry) = locked(&self.server.machines).entries.get_mut(self.id) {
+            entry.probing = false;
         }
     }
 }

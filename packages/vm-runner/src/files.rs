@@ -3,18 +3,56 @@ use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-// UNIT_BOUNDARY_DESCRIPTION: how this runner writes a file another process will be judged by — a machine's spec, its published port, the CA a guest must trust, the entrypoint it execs. Two things `fs::write` does not do. It reports a write that failed late, which `fs::write` never does: it drops the handle, and a dropped handle discards whatever the close would have said, so the runner would call a truncated file written. `sync_all` is what reports it here rather than the close, because Rust's close returns nothing to check — and it is the stronger of the two, since it also waits for the bytes to reach the disk instead of only surfacing errors already known. And it states the mode rather than taking the process umask, so the file lands the same way whatever umask the runner was started with.
+// UNIT_BOUNDARY_DESCRIPTION: how this runner writes a file another process will be judged by — a machine's spec, its published port, the CA a guest must trust, the entrypoint it execs. Three things `fs::write` does not do. The file is replaced whole: the body goes to a new file beside it, which is renamed over the old one, so a runner killed mid-write leaves the old file or the new one and never a truncated one — a spec cut short reads back as no spec, and the next start would boot the machine from an image and size it never had. It reports a write that failed late, which `fs::write` never does: it drops the handle, and a dropped handle discards whatever the close would have said. `sync_all` is what reports it here rather than the close, because Rust's close returns nothing to check, and the directory is synced after the rename, so the new name is on the disk too. And it states the mode rather than taking the process umask, so the file lands the same way whatever umask the runner was started with.
 pub fn write(path: &Path, body: &[u8], mode: u32) -> io::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(mode)
-        .open(path)?;
-    file.write_all(body)?;
-    // UNIT_BOUNDARY_DESCRIPTION: the mode given to the open is masked by the umask, and a create does not change the mode of a file that already exists — so the mode is set on the open file as well as asked for.
-    file.set_permissions(fs::Permissions::from_mode(mode))?;
-    file.sync_all()
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a file needs a name"))?;
+    let staged = unique_sibling(dir, &name.to_string_lossy(), mode)?;
+    let written = (|| {
+        let mut file = fs::OpenOptions::new().write(true).open(&staged)?;
+        file.write_all(body)?;
+        // UNIT_BOUNDARY_DESCRIPTION: the mode given to the open is masked by the umask, so it is set on the open file as well as asked for.
+        file.set_permissions(fs::Permissions::from_mode(mode))?;
+        file.sync_all()?;
+        fs::rename(&staged, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    written?;
+    fs::File::open(dir)?.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a new, empty file beside `name` that nothing else has, dot-prefixed so nothing that lists the directory takes it for the file it will replace.
+fn unique_sibling(dir: &Path, name: &str, mode: u32) -> io::Result<PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    for _ in 0..100 {
+        let path = dir.join(format!(
+            ".{name}.{}-{}.tmp",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(&path)
+        {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        format!("no free name beside {name} in {}", dir.display()),
+    ))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a directory with the mode it is asked for. `mkdir(2)` masks its mode argument through the umask the process inherited, so a `DirBuilder::mode` is a request and not an instruction — under a tighter umask the guest is handed a CA directory it cannot traverse. platform-init states the same rule for the same reason when it reproduces an image's tree: the mode is set after the entry exists, never at creation.
@@ -89,6 +127,32 @@ mod tests {
             0o600,
             "the rewrite kept the first write's mode"
         );
+    }
+
+    // TEST_SCENARIO: a runner killed while it writes a spec must leave the old spec or the new one, never a spec cut short. So a write never touches the old file's bytes: it replaces the file with a new one. A second name linked to the old file still reads the old body, which a write in place would have truncated, and no staging file is left beside it.
+    #[test]
+    fn a_rewrite_replaces_the_file_and_never_writes_into_the_old_one() {
+        let dir = TempDir::new("atomic");
+        let path = dir.path().join("spec.json");
+        write(&path, b"the old spec", 0o600).unwrap();
+        let old = dir.path().join("old-link");
+        fs::hard_link(&path, &old).unwrap();
+
+        write(&path, b"new", 0o600).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(
+            fs::read(&old).unwrap(),
+            b"the old spec",
+            "the old file was written into in place"
+        );
+        let mut left: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["old-link", "spec.json"]);
     }
 
     // TEST_SCENARIO: that a directory's mode survives the umask. The mode asked for here is one the ordinary umask 022 does mask — 0777 becomes 0755 at creation — so this fails unless the mode is set after the directory exists. A mode the umask leaves alone, such as 0700, would pass either way and prove nothing.

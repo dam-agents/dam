@@ -216,7 +216,8 @@ mod tests {
         fs::create_dir_all(&proc_root).unwrap();
         let log = vm_dir.join(CONSOLE_LOG);
         fs::write(&log, "OPENAI_API_KEY=sk-live-withdrawn\n").unwrap();
-        crate::runtime::clear_for_start("m1", &proc_root, &vm_dir);
+        crate::runtime::clear_for_start("m1", &proc_root, &vm_dir, crate::runtime::VMM_EXIT_WAIT)
+            .unwrap();
         assert_eq!(fs::read(&log).unwrap(), b"");
     }
 
