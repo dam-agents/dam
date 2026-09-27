@@ -8,7 +8,7 @@ mod console;
 pub mod embedded;
 mod fetch;
 mod files;
-mod forward;
+pub mod forward;
 pub mod http;
 pub mod imagecache;
 mod launch;
