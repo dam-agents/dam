@@ -34,3 +34,16 @@ export function createWsApiClient(token: string): {
     close: () => ws.close(),
   };
 }
+
+export function createRefreshingApiClient(
+  token: () => Promise<string>,
+): ApiClient {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: `${baseUrl}/api/trpc`,
+        headers: async () => ({ Authorization: `Bearer ${await token()}` }),
+      }),
+    ],
+  });
+}
