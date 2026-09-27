@@ -43,8 +43,8 @@ const (
 	vmRunnerPortMin = 31000
 	vmRunnerPortMax = 31099
 
-	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call. The default thirty seconds would kill it at the end of that wait.
-	vmRunnerTerminationGraceSeconds = 45
+	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call, and then up to forty more while it stops every running machine, so each guest quiesces its disk before its VMM goes with the pod. The default thirty seconds would kill it in the middle of that.
+	vmRunnerTerminationGraceSeconds = 90
 )
 
 type runnerConn struct {

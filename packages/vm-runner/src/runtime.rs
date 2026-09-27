@@ -120,13 +120,10 @@ pub fn updated_env(
     env.into_iter().collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the size the storage disk grows to, or nothing. A disk can grow and cannot shrink, so a smaller request leaves it alone. With no applied spec there is nothing known to grow from.
-pub fn grown_storage(applied: Option<&MachineSpec>, desired: &MachineSpec) -> Option<u64> {
-    if applied?.storage_gib < desired.storage_gib {
-        u64::try_from(desired.storage_gib).ok()
-    } else {
-        None
-    }
+// UNIT_BOUNDARY_DESCRIPTION: the size in GiB the storage disk grows to, or nothing. It is decided from the disk's own size in bytes, not from the applied spec: a spec lost, unreadable or written ahead of a grow that failed says nothing true about the disk, and a grow decided from it would be skipped. A disk can grow and cannot shrink, so a smaller request leaves it alone.
+pub fn grown_storage(disk_bytes: u64, desired: &MachineSpec) -> Option<u64> {
+    let want = u64::try_from(desired.storage_gib).ok()?;
+    (disk_bytes < want << 30).then_some(want)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes the Agent's secret values from text that may reach the Agent's status or a log line. Values of three characters or fewer are left alone: replacing them would mangle ordinary words and hide nothing.
@@ -208,20 +205,34 @@ pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied.
-pub fn clear_for_start(id: &str, proc_root: &Path, vm_dir: &Path) {
+// UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
+pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+pub fn clear_for_start(
+    id: &str,
+    proc_root: &Path,
+    vm_dir: &Path,
+    wait: Duration,
+) -> anyhow::Result<()> {
     if !vm_dir.is_dir() {
-        return;
+        return Ok(());
     }
-    if !vmm_gone(proc_root, vm_dir, VMM_EXIT_WAIT) {
+    if !vmm_gone(proc_root, vm_dir, wait) {
         kill_orphans(proc_root, vm_dir);
-        let _ = vmm_gone(proc_root, vm_dir, Duration::from_secs(1));
+        if !vmm_gone(proc_root, vm_dir, KILLED_EXIT_WAIT) {
+            anyhow::bail!(
+                "machine '{id}': its previous VMM (pid {:?}) still holds the machine's disks after SIGKILL, likely stuck in the kernel; refusing to boot a second VMM on the same disk",
+                orphan_pids(proc_root, vm_dir)
+            );
+        }
     }
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
     discard_overlay(id, proc_root, vm_dir);
     crate::console::clear_console(id, vm_dir);
+    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs one machine operation and logs it with its duration: info for every operation, a warning when it was slow or failed. The error is redacted because an operator's Secret reaches the guest through the env, and smolvm's own errors may echo the record they were given.
@@ -361,19 +372,48 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than what the machine has. Anything else would either fail the update or, worse, look like a shrink that silently did nothing.
+    // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than the disk actually is. Anything else would either fail the update or, worse, look like a shrink that silently did nothing. The disk's own size decides, so a disk a lost spec or a failed grow left smaller than its spec claims still grows.
     #[test]
-    fn storage_grows_only_when_asked_for_more() {
-        let mut applied = spec_with_env(&[]);
+    fn storage_grows_only_when_the_disk_is_smaller_than_asked() {
         let mut desired = spec_with_env(&[]);
-        applied.storage_gib = 10;
         desired.storage_gib = 20;
-        assert_eq!(grown_storage(Some(&applied), &desired), Some(20));
-        desired.storage_gib = 10;
-        assert_eq!(grown_storage(Some(&applied), &desired), None);
+        assert_eq!(grown_storage(10 << 30, &desired), Some(20));
+        assert_eq!(grown_storage((20 << 30) - 1, &desired), Some(20));
+        assert_eq!(grown_storage(20 << 30, &desired), None);
         desired.storage_gib = 5;
-        assert_eq!(grown_storage(Some(&applied), &desired), None);
-        assert_eq!(grown_storage(None, &desired), None);
+        assert_eq!(grown_storage(10 << 30, &desired), None);
+    }
+
+    // TEST_SCENARIO: a VMM stuck in the kernel outlives SIGKILL and still holds the machine's disks. Clearing its lock and sockets would let a second VMM boot on the same storage disk beside it, so the start fails and says why, and the files that keep the second VMM out stay. A directory no VMM holds is cleared as before.
+    #[test]
+    fn a_start_refuses_a_disk_a_vmm_that_survived_sigkill_still_holds() {
+        let proc = TempDir::new("stuck-proc");
+        let vm = TempDir::new("stuck-vm");
+        fs::write(vm.path().join("vm.lock"), "").unwrap();
+        process(
+            &proc,
+            i32::MAX - 7,
+            &format!(
+                "/proc/self/exe\0_boot-vm\0{}/boot-config.json",
+                vm.path().display()
+            ),
+        );
+
+        let refused = clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refused.contains("still holds the machine's disks after SIGKILL"),
+            "{refused}"
+        );
+        assert!(
+            vm.path().join("vm.lock").exists(),
+            "the lock of the live VMM was removed"
+        );
+
+        fs::remove_dir_all(proc.path().join((i32::MAX - 7).to_string())).unwrap();
+        clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50)).unwrap();
+        assert!(!vm.path().join("vm.lock").exists());
     }
 
     // TEST_SCENARIO: an operator's Secret reaches the guest through the env, and a failure's text reaches the Agent's status. Every value long enough to mean something is replaced; a short one is left, since replacing `on` would mangle the sentence and hide nothing.
