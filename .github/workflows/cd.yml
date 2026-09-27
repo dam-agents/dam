@@ -212,7 +212,6 @@ jobs:
       images: ${{ steps.d.outputs.images }}
       mock: ${{ steps.d.outputs.mock }}
       source_shas: ${{ steps.d.outputs.source_shas }}
-      vm_e2e: ${{ steps.vm.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -236,46 +235,6 @@ jobs:
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
-      # Whether e2e-vm runs. It is a second full e2e on its own runner, and
-      # longer than the first, so it runs where a vm regression can come from
-      # rather than on every PR: a PR that touches the runtime (vm-runner), the
-      # controller that renders runners and machines from the same reconcile
-      # as pods, the chart's runner, device plugin and CA templates and the
-      # values that set them, or the lane itself (the e2e tasks, the install and
-      # image staging it drives, the Playwright config and the backend spec).
-      # The nightly run and a dispatch always run it, so a regression that
-      # lands on main by another path — two PRs that are each fine alone — is
-      # caught within a day, and a dispatch on a branch runs it on demand —
-      # which is also how a change to the e2e-vm job itself is tried, since
-      # this file is left off the list: most of its changes are elsewhere. A
-      # main push does not run it: its PR already did, or the change could not
-      # reach it.
-      - id: vm
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          case "$EVENT" in
-            schedule | workflow_dispatch) run=true ;;
-            pull_request)
-              if git diff --quiet HEAD^1 HEAD -- \
-                packages/vm-runner packages/controller \
-                helm/templates/controller helm/templates/cert-manager/vm-runner-ca.yaml helm/templates/_validators.tpl \
-                helm/values.yaml helm/values-local.yaml helm/values-e2e.yaml \
-                .mise/tasks/e2e .mise/tasks/cluster/install .mise/tasks/cluster/provision-host .mise/tasks/image/stage-vm \
-                etc/lima/k3s-test.yaml \
-                packages/e2e/playwright/playwright.config.ts \
-                packages/e2e/playwright/src/lib/backend.ts \
-                packages/e2e/playwright/src/tests/smoke/19-agent-backend.spec.ts; then
-                run=false
-              else
-                run=true
-              fi
-              ;;
-            *) run=false ;;
-          esac
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "::notice::vm e2e lane: $run"
 
   build-images:
     # One job per arch builds the stale ones of the five images side by side;
@@ -347,7 +306,7 @@ jobs:
           read -r -a images <<< "$IMAGES"
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's
-      # build-vm-runner job reads the amd64 one.
+      # e2e-vm job reads the amd64 one.
       - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -544,44 +503,6 @@ jobs:
           read -r -a workloads <<< "$WORKLOADS"
           SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge /tmp/digests "${workloads[@]}"
 
-  build-vm-runner:
-    name: build vm-runner (PR)
-    # The container e2e does not run the vm-runner, so a PR that e2e-vm skips
-    # only proves it builds; one whose source is already published needs no
-    # proof. A PR that e2e-vm runs on builds the runner there and boots
-    # machines on it, so this job would only repeat the build. Its own runner:
-    # a cold release build of the Rust crate takes eight minutes, which on the
-    # e2e runner took CPU from the image builds the cluster waits on.
-    needs: [changes]
-    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.vm_e2e != 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # image:resolve finds the vm-runner's source sha in the history.
-          fetch-depth: 0
-      - id: rust-release-key
-        run: *rust-release-version
-      # build-images' vm-runner release build, read-only.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: *rust-release-paths
-          key: *rust-release-key
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-        with:
-          quay-username: ${{ secrets.QUAY_USERNAME }}
-          quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Build
-        run: |
-          set -euo pipefail
-          decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
-          case "$decision" in
-            "REUSE "*) echo "vm-runner unchanged: ${decision#REUSE }" ;;
-            *) .mise/tasks/image/ci-build amd64 vm-runner:cacheonly ;;
-          esac
-
   build-mock:
     name: build mock (e2e fixture)
     needs: [changes]
@@ -606,7 +527,13 @@ jobs:
         run: .mise/tasks/image/ci-build amd64 mock:source
 
   e2e:
-    name: mise e2e
+    name: mise e2e (container)
+    # The container lane: the smoke suite on an install without
+    # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
+    # suite with every agent on the vm Backend; the two run side by side on
+    # every run but a tag, each on its own runner, and the Playwright config
+    # picks each lane's specs from E2E_VIRTUALIZATION (see
+    # packages/e2e/playwright/src/lib/lane.ts).
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
     # a PR, or waits for this run's build jobs, in the background, and
@@ -756,23 +683,25 @@ jobs:
 
   e2e-vm:
     name: mise e2e (vm)
-    # The e2e suite again on an install with virtualization enabled, the one
-    # lane that boots vm-Backend agents: the chart's own KVM device plugin,
-    # the runner's egressCidrs and the staged mock image come from
-    # values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, and the
-    # vm-runner image is built or fetched with the rest by e2e:ci-images. The
-    # Playwright config then adds the container-agent and vm-agent projects,
-    # which run one backend spec on each Backend, so a failure only the vm
-    # project shows is the vm Backend's. `changes` decides when it runs: see
-    # its vm step.
+    # The vm lane: the same smoke suite on an install with virtualization
+    # enabled, where every agent the suite creates is a vm Agent. The chart's
+    # own KVM device plugin, the runner's egressCidrs and the staged mock
+    # image come from values-local.yaml once e2e:install sees
+    # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
+    # rest by e2e:ci-images. The same variable makes the suite's global setup
+    # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
+    # agents, and the spec helpers create vm agents through the API. It also
+    # adds the runtime migration spec, which needs both Backends on one
+    # install, and runs it and the backend spec after the rest of the suite:
+    # the backend spec deletes the user's VM runner, which runs every one of
+    # the user's machines. It runs whenever the container lane does, so a
+    # vm-only failure shows on the PR that caused it.
     #
     # GitHub's standard x64 Linux runners expose /dev/kvm, root-owned; a udev
     # rule opens it to the runner's user, whom cluster:install probes it as.
-    # On a PR the vm-runner's release build shares this runner with the other
-    # image builds — which build-vm-runner exists to avoid for e2e — so this
-    # lane has the longer budget.
-    needs: [changes]
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && needs.changes.outputs.vm_e2e == 'true' }}
+    # On a PR that changes the vm-runner its release build shares this runner
+    # with the other image builds, so this lane has the longer budget.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -826,8 +755,9 @@ jobs:
       - *e2e-playwright-version
       - *e2e-playwright-cache
       # Twice the container lane's budget: the vm-runner build above on a PR,
-      # the node staging of the mock image, and the vm spec's boots, each a
-      # machine start under nested virtualization.
+      # the node staging of the mock image, every agent's boots, each a machine
+      # start under nested virtualization, and the backend and runtime
+      # migration specs, which run after the rest of the suite.
       - run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
