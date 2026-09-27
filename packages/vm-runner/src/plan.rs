@@ -133,14 +133,27 @@ fn shaped(spec: &MachineSpec) -> bool {
     !spec.image.is_empty() && spec.cpus >= 1 && spec.memory_mib >= 1 && spec.storage_gib >= 1
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the controller always sends the paired gateway's address alone.
+pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them /0";
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
     if spec.running && !shaped(spec) {
         return Err(REQUIRED);
+    }
+    if spec.running
+        && (spec.allow_cidrs.is_empty() || spec.allow_cidrs.iter().any(|c| opens_everything(c)))
+    {
+        return Err(OPEN_EGRESS);
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
         return Err(BAD_IMAGE);
     }
     Ok(())
+}
+
+fn opens_everything(cidr: &str) -> bool {
+    cidr.split_once('/')
+        .is_some_and(|(_, bits)| bits.trim().parse::<u8>() == Ok(0))
 }
 
 #[cfg(test)]
@@ -149,7 +162,7 @@ mod tests {
 
     const RESTART: Option<Action> = Some(Action::Restart { unhealthy: false });
 
-    // TEST_SCENARIO: these two strings are the body of a 400 that the controller shows in the Agent's status, so an operator searches for their wording.
+    // TEST_SCENARIO: these strings are the body of a 400 that the controller shows in the Agent's status, so an operator searches for their wording.
     #[test]
     fn the_refusals_keep_their_wording() {
         assert_eq!(
@@ -157,6 +170,10 @@ mod tests {
             "image, cpus, memoryMiB and storageGiB are required"
         );
         assert_eq!(BAD_IMAGE, "invalid image reference");
+        assert_eq!(
+            OPEN_EGRESS,
+            "a running machine needs allowCidrs, none of them /0"
+        );
     }
 
     // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
@@ -456,7 +473,7 @@ mod tests {
         assert_eq!(Action::Stop.label(), "stopping");
     }
 
-    // TEST_SCENARIO: what is refused at the door. A machine meant to run needs a whole shape, and an image reference is checked here because a request is where a `..` can be chosen by somebody. A stop needs no shape.
+    // TEST_SCENARIO: what is refused at the door. A machine meant to run needs a whole shape, and an allowlist narrower than everything, because smolvm reads an empty one as no filter at all. An image reference is checked here because a request is where a `..` can be chosen by somebody. A stop needs no shape.
     #[test]
     fn a_request_that_could_not_produce_a_machine_is_refused_at_the_door() {
         assert_eq!(admissible(&running_spec()), Ok(()));
@@ -498,6 +515,20 @@ mod tests {
                 ..running_spec()
             };
             assert_eq!(admissible(&spec), Err(BAD_IMAGE), "{escape} was admitted");
+        }
+        for (what, allow) in [
+            ("no allowlist", vec![]),
+            (
+                "an open v4 range",
+                vec!["10.0.0.7/32".into(), "0.0.0.0/0".into()],
+            ),
+            ("an open v6 range", vec!["::/0".into()]),
+        ] {
+            let spec = MachineSpec {
+                allow_cidrs: allow,
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
         }
         let stop = MachineSpec {
             running: false,

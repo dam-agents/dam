@@ -378,8 +378,7 @@ mod tests {
         (status, String::from_utf8_lossy(&bytes).into_owned())
     }
 
-    const SPEC: &str =
-        r#"{"image":"quay.io/x/vm:1","cpus":1,"memoryMiB":512,"storageGiB":1,"running":false}"#;
+    const SPEC: &str = r#"{"image":"quay.io/x/vm:1","cpus":1,"memoryMiB":512,"storageGiB":1,"allowCidrs":["10.0.0.1/32"],"running":false}"#;
 
     // TEST_SCENARIO: the controller is the only caller. A request with no token or the wrong one gets 401 and nothing else, on every route but the pod's own health probe, which kubelet calls with no credentials.
     #[tokio::test(flavor = "multi_thread")]

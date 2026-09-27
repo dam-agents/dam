@@ -148,13 +148,18 @@ pub fn grown_storage(disk_bytes: u64, desired: &MachineSpec) -> Option<u64> {
     (disk_bytes < want << 30).then_some(want)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: removes the Agent's secret values from text that may reach the Agent's status or a log line. Values of three characters or fewer are left alone: replacing them would mangle ordinary words and hide nothing.
+// UNIT_BOUNDARY_DESCRIPTION: removes the Agent's secret values from text that may reach the Agent's status or a log line. The longest value goes first, so a value that is the start of a longer one cannot cut that one short and leave its tail readable. A value spanning lines — a key, a certificate — reaches a console one line at a time, so each of its lines is removed as well as the whole. Values, and lines, of three characters or fewer are left alone: replacing them would mangle ordinary words and hide nothing, so a Secret that short is not protected here at all.
 pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
+    let mut needles: Vec<&str> = secrets
+        .into_iter()
+        .flat_map(|secret| std::iter::once(secret).chain(secret.lines().map(str::trim)))
+        .filter(|needle| needle.len() > 3)
+        .collect();
+    needles.sort_unstable_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+    needles.dedup();
     let mut out = text.to_string();
-    for secret in secrets {
-        if secret.len() > 3 {
-            out = out.replace(secret, "***");
-        }
+    for needle in needles {
+        out = out.replace(needle, "***");
     }
     out
 }
@@ -492,6 +497,29 @@ mod tests {
         assert_eq!(
             redact("token hunter2 rejected on port", ["hunter2", "on"]),
             "token *** rejected on port"
+        );
+    }
+
+    // TEST_SCENARIO: one value is the start of another, and replacing the shorter first would leave the longer one's tail in the status. The longer goes first, whatever order the env gave them in.
+    #[test]
+    fn a_value_that_starts_another_does_not_leave_its_tail() {
+        assert_eq!(
+            redact("key=abcd-efgh-ijkl", ["abcd", "abcd-efgh-ijkl"]),
+            "key=***"
+        );
+    }
+
+    // TEST_SCENARIO: a key or certificate spans lines, and a console prints it a line at a time, with its own line endings and indentation, so the whole value never appears as one string. Each of its lines is removed on its own; a line too short to mean anything is left, as a short value is.
+    #[test]
+    fn each_line_of_a_multi_line_value_is_removed() {
+        let key = "-----BEGIN KEY-----\nMIIEsecretline1\nMIIEsecretline2\nab\n-----END KEY-----";
+        let console =
+            "boot: -----BEGIN KEY-----\r\n  MIIEsecretline1\r\n  MIIEsecretline2\r\nab\r\n";
+        let out = redact(console, [key]);
+        assert!(!out.contains("secretline"), "{out}");
+        assert!(
+            out.contains("ab"),
+            "a two-character line is not a secret on its own"
         );
     }
 
