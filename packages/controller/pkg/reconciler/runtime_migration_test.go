@@ -235,7 +235,7 @@ func TestOnlyABootingMigrationLetsTheAgentRun(t *testing.T) {
 
 // TEST_SCENARIO: the owner's runner admits its own migration Jobs to the machine API and nothing else new: not the published agent ports, and not a Job of another owner.
 func TestTheRunnerAdmitsItsOwnersMigrationJobToTheMachineAPIOnly(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", 10000, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", 10000, nil, nil, nil)
 	var found bool
 	for _, rule := range np.Spec.Ingress {
 		for _, peer := range rule.From {
