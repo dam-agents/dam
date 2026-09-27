@@ -245,6 +245,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			r.recordParkedRetry(name)
 		}
 	} else {
+		if _, err := r.ownedSecretRef(ctx, agent); err != nil {
+			return r.setError(ctx, name, err.Error())
+		}
 		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
 		if err != nil {

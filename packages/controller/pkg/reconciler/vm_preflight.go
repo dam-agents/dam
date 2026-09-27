@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 type vmPreflightResult struct {
@@ -72,6 +74,7 @@ func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {
 	}{
 		{"egressCidrs", spec.EgressCIDRs},
 		{"egressExceptCidrs", spec.EgressExceptCIDRs},
+		{"dnsCidrs", spec.DNSCIDRs},
 	} {
 		for _, c := range field.cidrs {
 			if _, err := netip.ParsePrefix(c); err != nil {
@@ -85,7 +88,53 @@ func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {
 	res.problems = append(res.problems, devProblems...)
 	res.warnings = append(res.warnings, devWarnings...)
 	res.warnings = append(res.warnings, r.preflightEgressReach(ctx)...)
+	dnsProblems, dnsWarnings := preflightRunnerDNS(spec)
+	res.problems = append(res.problems, dnsProblems...)
+	res.warnings = append(res.warnings, dnsWarnings...)
+	res.warnings = append(res.warnings, preflightMetadataReach(spec)...)
 	return res
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a confined runner that caches on its own claim resolves its registry only through the resolver the install names, and with none named every fetch fails on the name. That is a problem, not a warning, because no machine on such a runner can get an image. A resolver range of /0 is allowed but warned about, since it reopens port 53 to every address.
+func preflightRunnerDNS(spec config.VMRunnerSpec) (problems, warnings []string) {
+	if len(spec.EgressCIDRs) == 0 || !runnerOwnsImageCache(spec) {
+		return nil, nil
+	}
+	if runnerDNSRule(spec) == nil {
+		if runnerDNSPolicy(spec.DNSPolicy) == corev1.DNSClusterFirst {
+			return []string{"the runner caches images on its own claim and resolves through the cluster DNS, but no DNS pods are selected, so it cannot resolve its registry (virtualization.runner.clusterDns)"}, nil
+		}
+		return []string{"the runner caches images on its own claim, but no resolver address is named, so it cannot resolve its registry (virtualization.runner.dnsCidrs)"}, nil
+	}
+	for _, c := range spec.DNSCIDRs {
+		if p, err := netip.ParsePrefix(c); err == nil && p.Bits() == 0 {
+			warnings = append(warnings, fmt.Sprintf("virtualization.runner.dnsCidrs entry %s admits DNS to every address, which an escaped guest can use as a channel to any host; name the node's resolver instead", c))
+		}
+	}
+	return nil, warnings
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller subtracts the metadata endpoints from every egress block whatever the install wrote, so this does not report a hole — it reports values that do not say what the policy does: a wide block with no exception for link-local, which the values tell every install to write, and a block naming an endpoint itself, which is dropped. The single-address endpoints a few clouds add are subtracted without a word, since no install is asked to list them.
+func preflightMetadataReach(spec config.VMRunnerSpec) []string {
+	var out []string
+	for _, c := range spec.EgressCIDRs {
+		given := containedIn(c, spec.EgressExceptCIDRs)
+		except, inside := exceptMetadata(c, given)
+		if inside {
+			out = append(out, fmt.Sprintf("virtualization.runner.egressCidrs entry %s lies inside a cloud metadata range, which the runner may never reach, so it is not rendered", c))
+			continue
+		}
+		var linkLocal []string
+		for _, added := range except[len(given):] {
+			if p, err := netip.ParsePrefix(added); err == nil && p.Addr().IsLinkLocalUnicast() {
+				linkLocal = append(linkLocal, added)
+			}
+		}
+		if len(linkLocal) > 0 {
+			out = append(out, fmt.Sprintf("virtualization.runner.egressCidrs entry %s contains the link-local metadata range with no exception for it; the controller excepts %s itself — add it to egressExceptCidrs to say so", c, strings.Join(linkLocal, ", ")))
+		}
+	}
+	return out
 }
 
 func (r *AgentReconciler) preflightServiceAccount(ctx context.Context) []string {

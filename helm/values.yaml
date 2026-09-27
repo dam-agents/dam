@@ -192,8 +192,10 @@ virtualization:
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
     # served even where the image keeps them from root, and — only when the
-    # runner caches images on its own claim — CHOWN + FOWNER so it can
-    # restore each file's owner and mode as it unpacks. Set this only where
+    # runner caches images on its own claim — CHOWN + FOWNER + FSETID so it
+    # can restore each file's owner and mode, setgid bits included, as it
+    # unpacks. The runner drops every other capability, cannot escalate, and
+    # runs under the runtime/default seccomp profile. Set this only where
     # that SCC is off, or where the runner needs a shape it refuses: the
     # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
     # With `imageCache.hostPath` the same SCC also admits the node image
@@ -276,6 +278,32 @@ virtualization:
     # lives inside the cluster and whose excepts leave that range reachable;
     # it resolves Service names and loses nothing, since nothing is blocked.
     dnsPolicy: Default
+    # Where the runner may send DNS once egressCidrs confines it. Only a
+    # runner that caches images on its own claim (no `imageCache.hostPath`,
+    # no `imageArchiveHostPath`) resolves anything — its registry — so only
+    # that runner gets DNS at all; one on the node cache or on staged images
+    # reaches no resolver whatsoever. DNS open to every address would be a
+    # two-way channel from an escaped guest to any host listening on 53, so
+    # the runner reaches only the resolver it uses, on UDP and TCP (TCP for
+    # answers too large for one datagram):
+    # - `dnsPolicy: Default` — the node's resolver, at the addresses listed
+    #   here: the first `nameserver` of the nodes' /etc/resolv.conf (e.g. the
+    #   VPC resolver, `169.254.169.253/32` on AWS). REQUIRED in that case —
+    #   the install fails without it, and /0 is refused.
+    # - `dnsPolicy: ClusterFirst` — the cluster DNS pods `clusterDns` selects,
+    #   on their own ports: policy is applied after the DNS Service address
+    #   is translated to a pod, so the pods are named, not the Service.
+    #   OpenShift: namespace `openshift-dns`, podLabels
+    #   `dns.operator.openshift.io/daemonset-dns: default`, ports [5353].
+    # A resolver still recurses for whatever name it is asked, so a runner
+    # that resolves at all keeps that one narrow channel; the node cache
+    # (`imageCache.hostPath`) closes it.
+    dnsCidrs: []
+    clusterDns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+      ports: [53]
     # Where the runner pod itself may send traffic. REQUIRED when
     # virtualization.enabled — the install fails without it, because leaving
     # it empty means no policy at all, and that is the weakest point of this
@@ -283,8 +311,9 @@ virtualization:
     # very process an escaped guest would own, so with no kernel gate behind
     # it such a guest reaches the platform's datastores (each gateway's own
     # ingress policy still keeps it off other owners' gateways). Set this and
-    # the runner is confined to DNS, its owner's gateways (on their proxy
-    # port), and these CIDRs.
+    # the runner is confined to its owner's gateways (on their proxy port),
+    # these CIDRs, and — only if it resolves names — its resolver
+    # (`dnsCidrs` above).
     # It cannot default to closed because the runner also pulls agent images,
     # so the registry has to be named.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
@@ -294,6 +323,10 @@ virtualization:
     #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"]
     # pods, Services, and link-local — the node's metadata endpoint lives there
     # on every cloud and is the classic way out of a sandbox with credentials.
+    # The controller subtracts the metadata ranges (169.254.0.0/16,
+    # 100.100.100.200/32, fe80::/10, fd00:ec2::254/128) from every entry that
+    # contains one even when they are left out here, and the chart refuses an
+    # entry inside link-local.
     # On OpenShift the internal registry is a Service address, so excepting the
     # Service range blocks pulls from it: name that registry in egressCidrs and
     # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
