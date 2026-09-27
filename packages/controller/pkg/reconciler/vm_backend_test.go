@@ -1409,7 +1409,7 @@ func envSecret(t *testing.T, r *AgentReconciler, name string, labels map[string]
 	require.NoError(t, err)
 }
 
-// TEST_SCENARIO: a secretRef names a Secret by name alone, in the namespace that holds every owner's credentials and every runner's token, and all of its keys land in the guest's environment. A Secret labelled with the Agent's own owner is honoured; one with another owner's label, with no owner label at all, or one the platform manages is refused, and none of its values reaches the machine.
+// TEST_SCENARIO: a secretRef names a Secret by name alone, in the namespace that holds every owner's credentials and every runner's token, and all of its keys land in the guest's environment. A Secret labelled with the Agent's own owner is honoured; one with another owner's label, with no owner label at all, or one the platform manages is refused: the machine is still ensured, without any of its values, and the reconcile reports the refusal.
 func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.SecretRef = "mine"
@@ -1433,6 +1433,7 @@ func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "secretRef "+name)
 			assert.NotContains(t, err.Error(), "s3cr3t-value", "the refusal names the Secret, never its contents")
+			assert.NotEmpty(t, node.spec("my-agent").Image, "the machine is still ensured, only without the refused Secret")
 			for _, v := range node.spec("my-agent").Env {
 				assert.NotEqual(t, "s3cr3t-value", v)
 			}
@@ -1440,7 +1441,28 @@ func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: the container backend hands a secretRef to the kubelet as envFrom, so the same Secret the vm backend refuses must never reach a StatefulSet there either — the check runs before the pod is rendered. An operator's Secret that predates the rule needs only its owner label to work again.
+// TEST_SCENARIO: an agent already ran with a Secret its owner does not hold — written before the check existed. Refusing the reconcile alone would leave that environment on the workload; the refusal must take it off. A machine ensured with the Secret is ensured again without it.
+func TestARefusedSecretRefIsTakenOffAMachineThatHadIt(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.SecretRef = "theirs"
+	r, node, _ := setupVMReconciler(t, agent)
+	envSecret(t, r, "theirs", map[string]string{envoyOwnerLabel: testOwner})
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.Equal(t, "s3cr3t-value", node.spec("my-agent").Env["SECRET_TOKEN"])
+
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), "theirs", metav1.GetOptions{})
+	require.NoError(t, err)
+	sec.Labels[envoyOwnerLabel] = "someone-else"
+	_, err = r.client.CoreV1().Secrets("test-agents").Update(context.Background(), sec, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	err = r.Reconcile(context.Background(), agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "secretRef theirs")
+	assert.NotContains(t, node.spec("my-agent").Env, "SECRET_TOKEN")
+}
+
+// TEST_SCENARIO: the container backend hands a secretRef to the kubelet as envFrom, so the same Secret the vm backend refuses must never reach a StatefulSet there either: the pod is rendered without it, which also takes it off a pod that already had it, and the reconcile reports the refusal. An operator's Secret that predates the rule needs only its owner label to work again.
 func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	agent := agentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -1451,8 +1473,13 @@ func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "secretRef theirs")
-	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "no pod may be rendered with another owner's Secret as its environment")
+	ss, err := r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err, "the pod is still rendered, only without the refused Secret")
+	for _, c := range ss.Spec.Template.Spec.Containers {
+		for _, from := range c.EnvFrom {
+			assert.Nil(t, from.SecretRef, "no pod may carry another owner's Secret as its environment")
+		}
+	}
 
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), "theirs", metav1.GetOptions{})
 	require.NoError(t, err)

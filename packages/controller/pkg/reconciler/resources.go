@@ -3,6 +3,7 @@ package reconciler
 import (
 	"cmp"
 	"context"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -61,12 +62,32 @@ func (r *AgentReconciler) ownedSecretRef(ctx context.Context, agent *apiv1.Agent
 	}
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" || sec.Labels[envoyOwnerLabel] != owner {
-		return nil, fmt.Errorf("secretRef %s does not carry this agent's owner label (%s), so its keys are not given to the agent; label the Secret with its owner to use it", name, envoyOwnerLabel)
+		return nil, secretRefRefused(fmt.Sprintf("secretRef %s does not carry this agent's owner label (%s), so its keys are not given to the agent; label the Secret with its owner to use it", name, envoyOwnerLabel))
 	}
 	if sec.Labels[envoyManagedByLabel] != "" || sec.Labels["app.kubernetes.io/component"] == vmRunnerComponent {
-		return nil, fmt.Errorf("secretRef %s is a Secret the platform manages, which is never given to an agent", name)
+		return nil, secretRefRefused(fmt.Sprintf("secretRef %s is a Secret the platform manages, which is never given to an agent", name))
 	}
 	return sec, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a secretRef the agent may not have, as against one that could not be read. A refusal is final for the Secret as it stands, so the agent is rendered without it — which also takes it off an agent that already had it — and the reconcile reports it; a read that failed is retried instead.
+type secretRefRefused string
+
+func (e secretRefRefused) Error() string { return string(e) }
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent's spec as its workload is rendered: the stored spec, less a secretRef the check refused, and the refusal to report once the rest of the reconcile is done.
+func (r *AgentReconciler) renderedSpec(ctx context.Context, agent *apiv1.Agent) (*apiv1.AgentSpec, string, error) {
+	_, err := r.ownedSecretRef(ctx, agent)
+	var refused secretRefRefused
+	switch {
+	case stderrors.As(err, &refused):
+		spec := agent.Spec
+		spec.SecretRef = ""
+		return &spec, refused.Error(), nil
+	case err != nil:
+		return nil, "", err
+	}
+	return &agent.Spec, "", nil
 }
 
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {

@@ -72,6 +72,10 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		env[e.Name] = e.Value
 	}
 	sec, err := r.ownedSecretRef(ctx, agent)
+	var refused secretRefRefused
+	if errors.As(err, &refused) {
+		sec, err = nil, nil
+	}
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}

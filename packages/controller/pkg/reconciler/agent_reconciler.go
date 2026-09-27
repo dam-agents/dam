@@ -78,8 +78,14 @@ func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name str
 	return r
 }
 
-func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) error {
+func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (err error) {
 	name := agent.Name
+	var secretRefused string
+	defer func() {
+		if err == nil && secretRefused != "" {
+			err = r.setError(ctx, name, secretRefused)
+		}
+	}()
 	ownerRef := agentOwnerRef(agent)
 	agentSpec := &agent.Spec
 
@@ -235,6 +241,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		if err := r.prepareRuntimeMigration(ctx, agent); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
 		}
+		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
+			secretRefused = refusal
+		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -251,10 +260,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			r.recordParkedRetry(name)
 		}
 	} else {
-		if _, err := r.ownedSecretRef(ctx, agent); err != nil {
+		podSpec, refusal, err := r.renderedSpec(ctx, agent)
+		if err != nil {
 			return r.setError(ctx, name, err.Error())
 		}
-		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
+		secretRefused = refusal
+		agentSS := BuildAgentStatefulSet(name, podSpec, r.config, ownerRef, gatewayIP)
 		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
 		if err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
