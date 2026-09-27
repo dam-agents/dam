@@ -78,7 +78,6 @@ import {
   DemoHeaderActions,
   DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
-import { OnboardingInputWrap } from "../../packs/components/onboarding-input-wrap.js";
 import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
@@ -203,11 +202,6 @@ export function ChatView() {
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
-  const onboardingActive = useStore((s) => {
-    if (!selectedAgent) return false;
-    const ob = s.onboardingByAgent.get(selectedAgent);
-    return !!ob && !ob.completed;
-  });
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
@@ -541,88 +535,105 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {}
-      <header
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="inline"
+      aria-label="Back"
+      onClick={handleBack}
+      className={cn(
+        "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
+        isDemo
+          ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
+          : "text-muted-foreground",
+      )}
+    >
+      <ArrowLeft size={14} />
+    </Button>
+  );
+
+  const agentDropdown = !isDemo ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          aria-label={surfaceCopy.actionsAria}
+        >
+          <OverflowMenuVertical size={16} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={handleConfigureSandbox}>
+          {surfaceCopy.configure}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleRestartSandbox}>
+          Restart
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={handleDeleteSandbox}
+        >
+          {surfaceCopy.delete}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
+  const headerStatus =
+    isDemo && demoActions ? (
+      <DemoHeaderActions actions={demoActions} />
+    ) : (
+      <ChatHeaderStatus
+        selectedAgent={selectedAgent}
+        agents={agents}
+        busy={busy}
+        connectionState={connectionState}
+        sessionId={sessionId}
+      />
+    );
+
+  const statusDot = !isDemo && (
+    <span
+      aria-hidden
+      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+    />
+  );
+
+  const renderHeader = () => {
+    return null;
+  };
+
+  const renderSidebarAgentHeader = () => {
+    return (
+      <div
         className={cn(
-          `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
+          "shrink-0 border-b border-border p-3",
           isDemo && DEMO_HEADER_CLASS,
         )}
       >
-        <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className={cn(
-            "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
-            isDemo
-              ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
-              : "text-muted-foreground",
-          )}
-        >
-          <ArrowLeft size={14} />
-        </Button>
-        <div className="flex items-center gap-3 min-w-0">
-          {!isDemo && (
-            <span
-              aria-hidden
-              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-            />
-          )}
+        <div className="flex items-center gap-2 min-w-0">
+          {backButton}
+          {statusDot}
           <h1
             className={cn(
-              "text-sm font-bold truncate",
+              "text-sm font-semibold truncate flex-1 min-w-0",
               isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
             )}
           >
             {selectedAgentName}
           </h1>
           {isDemo && <DemoHeaderTag />}
-          {!isDemo && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={surfaceCopy.actionsAria}
-                >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                  {surfaceCopy.configure}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleRestartSandbox}>
-                  Restart
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={handleDeleteSandbox}
-                >
-                  {surfaceCopy.delete}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <div className="ml-auto shrink-0">{agentDropdown}</div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {null}
-          {isDemo && demoActions ? (
-            <DemoHeaderActions actions={demoActions} />
-          ) : (
-            <ChatHeaderStatus
-              selectedAgent={selectedAgent}
-              agents={agents}
-              busy={busy}
-              connectionState={connectionState}
-              sessionId={sessionId}
-            />
-          )}
-        </div>
-      </header>
+        <div className="mt-2 flex items-center gap-2">{headerStatus}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      {renderHeader()}
 
       {}
       <div className="flex flex-1 min-h-0">
@@ -633,6 +644,7 @@ export function ChatView() {
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
+          {renderSidebarAgentHeader()}
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <SessionsSidebar
             open={sessionsOpen}
@@ -808,16 +820,14 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                <OnboardingInputWrap agentId={selectedAgent}>
-                  <ChatInputArea
-                    textareaRef={textareaRef}
-                    busy={busy}
-                    loadingSession={loadingSession}
-                    onSend={sendPrompt}
-                    onStop={stopAgent}
-                    rotatingPlaceholder={rotatingPlaceholder}
-                  />
-                </OnboardingInputWrap>
+                <ChatInputArea
+                  textareaRef={textareaRef}
+                  busy={busy}
+                  loadingSession={loadingSession}
+                  onSend={sendPrompt}
+                  onStop={stopAgent}
+                  rotatingPlaceholder={rotatingPlaceholder}
+                />
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
@@ -836,7 +846,7 @@ export function ChatView() {
                             }
                           />
                         )}
-                        {selectedAgent && !onboardingActive && (
+                        {selectedAgent && (
                           <>
                             <span className="text-border">·</span>
                             <ScheduleIndicator

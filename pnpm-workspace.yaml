@@ -62,3 +62,4 @@ allowBuilds:
   # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
   # scripts even when `--frozen-lockfile`, so we have to list it.
   esbuild: true
+  msw: true

@@ -13,9 +13,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { applyBrand } from "../brand.js";
-import { PACKS, REAL_PACKS } from "../modules/packs/data/packs.js";
 import { queryClient } from "../query-client.js";
-import { useStore } from "../store.js";
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
 import { artifactFolders, artifacts } from "./data/artifacts.js";
@@ -179,6 +177,10 @@ for (const agent of agents) {
 }
 for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
   queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, "notifications"],
+    sessions,
+  );
 }
 (window as any).__mockListAgentSessions = (agentId: string) =>
   Promise.resolve(sessionsByAgent[agentId] ?? []);
@@ -232,20 +234,6 @@ queryClient.setQueryData(trpcKey("files.list"), [
   { path: "src/index.ts", type: "file" },
   { path: "package.json", type: "file" },
 ]);
-
-// ─── Seed onboarding state for one agent ────────────────────────────────────
-{
-  const pack = REAL_PACKS[0];
-  if (pack) {
-    const agentId = agents[0]?.id;
-    if (agentId) {
-      useStore.getState().initOnboarding(agentId, pack);
-      useStore
-        .getState()
-        .completeOnboardingStep(agentId, `connect-${pack.required[0]?.label}`);
-    }
-  }
-}
 
 // ─── Stub fetch: returns proper tRPC responses for refetches ─────────────────
 
@@ -340,9 +328,7 @@ window.fetch = async (
       const procs = procPath.split(",");
       const results = procs.map((proc) => {
         const data = fixtures[proc];
-        return {
-          result: { type: "data", data: data !== undefined ? data : null },
-        };
+        return { result: { data: data !== undefined ? data : null } };
       });
       return new Response(JSON.stringify(results), {
         status: 200,

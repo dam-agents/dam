@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
-
 import { Checkmark, CircleDash, Cube } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import {
   HoverCard,
@@ -8,8 +7,8 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 
-import { ChatColumn } from "../../sessions/components/chat-column.js";
 import { useStore } from "../../../store.js";
+import { ChatColumn } from "../../sessions/components/chat-column.js";
 
 export function OnboardingInputWrap({
   agentId,

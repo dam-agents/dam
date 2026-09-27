@@ -37,9 +37,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5174,
-    proxy: {
-      "/api": { target: "http://localhost:4444", ws: true, changeOrigin: true },
-    },
+    port: 5173,
+    ...(!process.env.VITE_MOCK && {
+      proxy: {
+        "/api": { target: "http://localhost:4444", ws: true, changeOrigin: true },
+      },
+    }),
   },
 });

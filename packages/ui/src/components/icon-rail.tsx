@@ -2,12 +2,11 @@ import {
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
-  Cube,
   Folders,
+  Gift,
   Help,
   Home,
   Settings,
-  Time,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -16,8 +15,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
-import { DOCS_URL } from "../constants.js";
-import { externalLinkProps } from "../lib/external-link.js";
 import { useStore } from "../store.js";
 import { SidebarAgentList } from "./sidebar-agent-list.js";
 
@@ -28,6 +25,7 @@ interface Destination {
   badge: number;
   navigate: () => void;
   iconClassName?: string;
+  disabled?: boolean;
 }
 
 export function IconRail({
@@ -39,7 +37,7 @@ export function IconRail({
   const setView = useStore((s) => s.setView);
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
+
   const sandboxes: Destination = {
     label: "Home",
     icon: Home,
@@ -49,32 +47,36 @@ export function IconRail({
   };
   const starterKits: Destination = {
     label: "Starter Kits",
-    icon: Cube,
-    active: view === "presets",
+    icon: Gift,
+    active: false,
     badge: 0,
-    navigate: () => setView("presets"),
+    navigate: () => {},
+    iconClassName: "text-purple-600 dark:text-purple-400",
+    disabled: true,
   };
-  const schedules: Destination = {
-    label: "Schedules",
-    icon: Time,
-    active: view === "schedules",
-    badge: 0,
-    navigate: () => setView("schedules"),
-  };
-
   const artifacts: Destination = {
     label: "Artifacts",
     icon: Folders,
-    active: view === "artifacts",
+    active: false,
     badge: 0,
-    navigate: () => setView("artifacts"),
+    navigate: () => {},
+    disabled: true,
+  };
+  const docs: Destination = {
+    label: "Documentation",
+    icon: Help,
+    active: false,
+    badge: 0,
+    navigate: () => {},
+    disabled: true,
   };
   const settings: Destination = {
     label: "Settings",
     icon: Settings,
-    active: view === "settings",
+    active: false,
     badge: 0,
-    navigate: () => navigateToSettings(),
+    navigate: () => {},
+    disabled: true,
   };
 
   return (
@@ -151,19 +153,14 @@ export function IconRail({
         )}
         {!expandedNav && <div className="flex-1" />}
         <div className="mb-2 flex flex-col gap-px">
-          <RailLink
-            label="Documentation"
-            icon={Help}
-            href={DOCS_URL}
-            expanded={expandedNav}
-          />
+          <RailItem {...docs} expanded={expandedNav} />
           <RailItem {...settings} expanded={expandedNav} />
         </div>
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, artifacts, starterKits].map((destination) => (
+          {[sandboxes, settings].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>
@@ -180,7 +177,32 @@ function RailItem({
   navigate,
   expanded,
   iconClassName,
+  disabled,
 }: Destination & { expanded: boolean }) {
+  if (disabled) {
+    const disabledEl = (
+      <span
+        aria-label={expanded ? undefined : label}
+        aria-disabled
+        className={cn(
+          "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 opacity-40 cursor-not-allowed",
+          iconClassName,
+        )}
+      >
+        <IconWithBadge icon={Icon} badge={0} size={16} />
+        {expanded && (
+          <span className="truncate text-sm font-medium">{label}</span>
+        )}
+      </span>
+    );
+    if (expanded) return disabledEl;
+    return (
+      <Tooltip content={label} side="right">
+        {disabledEl}
+      </Tooltip>
+    );
+  }
+
   const button = (
     <button
       type="button"
@@ -213,40 +235,6 @@ function RailItem({
   return (
     <Tooltip content={label} side="right">
       {button}
-    </Tooltip>
-  );
-}
-
-function RailLink({
-  label,
-  icon: Icon,
-  href,
-  expanded,
-}: {
-  label: string;
-  icon: CarbonIconType;
-  href: string;
-  expanded: boolean;
-}) {
-  const link = (
-    <a
-      href={href}
-      {...externalLinkProps}
-      className={cn(
-        "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
-        "text-foreground/80 hover:text-foreground hover:bg-muted",
-      )}
-    >
-      <Icon size={16} />
-      {expanded && (
-        <span className="truncate text-sm font-medium">{label}</span>
-      )}
-    </a>
-  );
-  if (expanded) return link;
-  return (
-    <Tooltip content={label} side="right">
-      {link}
     </Tooltip>
   );
 }

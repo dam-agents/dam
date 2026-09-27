@@ -589,3 +589,32 @@
 .prose .hljs {
   background: var(--muted) !important;
 }
+
+/* ── Sonner toast type theming (richColors removed, we own the palette) ── */
+[data-sonner-toast][data-type="success"] {
+  background: var(--c-success-light) !important;
+  border-color: color-mix(in srgb, var(--c-success) 30%, transparent) !important;
+  color: var(--c-success) !important;
+}
+[data-sonner-toast][data-type="error"] {
+  background: var(--c-danger-light) !important;
+  border-color: color-mix(in srgb, var(--c-danger) 30%, transparent) !important;
+  color: var(--c-danger) !important;
+}
+[data-sonner-toast][data-type="info"] {
+  background: var(--c-info-light) !important;
+  border-color: color-mix(in srgb, var(--c-info) 20%, transparent) !important;
+  color: var(--c-info) !important;
+}
+[data-sonner-toast][data-type="warning"] {
+  background: color-mix(in srgb, var(--c-warning) 10%, white) !important;
+  border-color: color-mix(in srgb, var(--c-warning) 30%, transparent) !important;
+  color: var(--c-warning-fg) !important;
+}
+[data-sonner-toast][data-type="warning"] [data-icon] svg {
+  color: var(--c-warning) !important;
+}
+.dark [data-sonner-toast][data-type="warning"] {
+  background: var(--c-warning-light) !important;
+  color: var(--c-warning) !important;
+}

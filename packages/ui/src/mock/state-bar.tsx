@@ -1,24 +1,10 @@
-import { ListChecked } from "@carbon/icons-react";
+import { ListChecked, Warning } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { REAL_PACKS } from "../modules/packs/data/packs.js";
-import { queryClient } from "../query-client.js";
+import { fireApprovalToast } from "../modules/notifications/hooks/use-approval-toasts.js";
 import { useStore } from "../store.js";
-import { agents } from "./data/agents.js";
-import { approvals } from "./data/approvals.js";
-import { artifactFolders, artifacts } from "./data/artifacts.js";
-import { channelsAvailable } from "./data/channels.js";
-import {
-  agentConnections,
-  connections,
-  connectionTemplates,
-} from "./data/connections.js";
-import { driverSummaries, experiments } from "./data/experiments.js";
-import { knowledgeBases } from "./data/knowledge-bases.js";
-import { schedules } from "./data/schedules.js";
-import { setMockEmpty, setMockFirstRun } from "./handlers.js";
 
 interface ReviewScreen {
   label: string;
@@ -26,201 +12,55 @@ interface ReviewScreen {
   go: () => void;
 }
 
-function flashElement(selector: string, delay = 100) {
-  setTimeout(() => {
-    const el = document.querySelector(selector);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    const ring = document.createElement("div");
-    Object.assign(ring.style, {
-      position: "absolute",
-      inset: "-6px",
-      borderRadius: "12px",
-      border: "2px solid #6366f1",
-      boxShadow: "0 0 0 4px rgba(99,102,241,0.2)",
-      pointerEvents: "none",
-      zIndex: "9998",
-      animation: "review-flash 2s ease-out forwards",
-    });
-    const parent = el as HTMLElement;
-    const prev = parent.style.position;
-    if (!prev || prev === "static") parent.style.position = "relative";
-    parent.appendChild(ring);
-    setTimeout(() => {
-      ring.remove();
-      if (!prev || prev === "static") parent.style.position = prev;
-    }, 2000);
-  }, delay);
-}
-
-if (!document.getElementById("review-flash-style")) {
-  const style = document.createElement("style");
-  style.id = "review-flash-style";
-  style.textContent = `@keyframes review-flash {
-    0% { opacity: 1; }
-    70% { opacity: 1; }
-    100% { opacity: 0; }
-  }`;
-  document.head.appendChild(style);
-}
-
 function useReviewScreens(): ReviewScreen[] {
   const setView = useStore((s) => s.setView);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const selectAgent = useStore((s) => s.selectAgent);
-  const initOnboarding = useStore((s) => s.initOnboarding);
+  const openApprovals = useStore((s) => s.openApprovals);
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
   return [
     {
       label: "Home",
-      note: "Agent list and new agent cards.",
+      note: "Needs-you banner appears when approvals are pending.",
       go: () => setView("home"),
     },
     {
-      label: "Starter Kits",
-      note: "Browsable starter kit library with spotlight hero.",
-      go: () => setView("presets"),
+      label: "Activity feed",
+      note: "Global activity — not scoped to an agent. Agent header bar removed.",
+      go: toggleNotifications,
     },
     {
-      label: "Agent setup",
-      note: "Create agent form: name, harness, provider, schedule, connections.",
-      go: () => setView("agent-new"),
+      label: "Needs you",
+      note: "Approval drill-down in the activity panel.",
+      go: openApprovals,
     },
     {
-      label: "Starter kit components",
-      note: "All component variations for starter kits in the agent setup.",
-      go: () => setView("setup-workbench"),
-    },
-    {
-      label: "Schedule (Setup)",
-      note: "Simplified schedule cards.",
-      go: () => setView("agent-new"),
-    },
-    {
-      label: "Schedule (Configure)",
-      note: "Simplified schedule cards.",
-      go: () =>
-        navigateToSandboxHome(
-          "a1b2c3d4-0002-4000-8000-000000000002",
-          "schedules",
-        ),
-    },
-    {
-      label: "Spend detail link",
-      note: "Hover the ? next to Spend — tooltip has a link to the usage page.",
-      go: () => {
-        setView("home");
-        flashElement("[data-review='spend-tooltip']");
-      },
-    },
-    {
-      label: "Onboarding tag on agent card",
-      note: "Purple 'Onboarding 1/3' badge on agent row; hover for checklist.",
-      go: () => setView("home"),
-    },
-    {
-      label: "Onboarding in chat UI",
-      note: "Onboarding bar wrapping the chat input.",
-      go: () => {
-        const agentId = "a1b2c3d4-0001-4000-8000-000000000001";
-        const pack = REAL_PACKS[0];
-        if (pack) initOnboarding(agentId, pack);
-        selectAgent(agentId);
-      },
-    },
-    {
-      label: "New Agent card designs",
-      note: "Agent card design — every state side by side.",
+      label: "Activity feed cards",
+      note: "Every card state side by side.",
       go: () => setView("card-gallery"),
     },
   ];
 }
 
+const TOAST_AGENTS = [
+  "CI Pipeline Agent",
+  "Code Review Agent",
+  "Security Scanner",
+  "Build Agent",
+  "Docs Sync Agent",
+];
+
 export function MockStateBar() {
-  const [mode, setMode] = useState<"populated" | "empty">("populated");
   const [indexOpen, setIndexOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
-
-  const pick = (next: "populated" | "empty") => {
-    setMode(next);
-    setMockEmpty(next === "empty");
-    setMockFirstRun(false);
-
-    const empty = next === "empty";
-
-    queryClient.setQueryData(["agents", "list-with-channels"], {
-      list: empty ? [] : agents,
-      availableChannels: channelsAvailable,
-    });
-    queryClient.setQueryData(["approvals", "owner"], approvals);
-
-    const trpcKey = (proc: string) => [
-      proc.split("."),
-      { input: undefined, type: "query" },
-    ];
-    queryClient.setQueryData(trpcKey("connections.list"), connections);
-    queryClient.setQueryData(
-      trpcKey("connections.listTemplates"),
-      connectionTemplates,
-    );
-    queryClient.setQueryData(trpcKey("connections.getAgentConnections"), {
-      connections: agentConnections.map((c) => ({
-        ...c,
-        connectionId: c.id,
-      })),
-    });
-    queryClient.setQueryData(
-      trpcKey("experiments.list"),
-      empty ? [] : experiments,
-    );
-    queryClient.setQueryData(
-      trpcKey("experiments.driverSummaries"),
-      empty ? [] : driverSummaries,
-    );
-    queryClient.setQueryData(trpcKey("schedules.list"), schedules);
-    queryClient.setQueryData(trpcKey("schedules.listForOwner"), schedules);
-    queryClient.setQueryData(
-      trpcKey("knowledgeBases.list"),
-      empty ? [] : knowledgeBases,
-    );
-    queryClient.setQueryData(
-      trpcKey("artifactLibrary.list"),
-      empty ? [] : artifacts,
-    );
-    queryClient.setQueryData(
-      trpcKey("artifactLibrary.listFolders"),
-      empty ? [] : artifactFolders,
-    );
-  };
+  const openApprovals = useStore((s) => s.openApprovals);
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
-        <span className="text-sm font-medium text-muted-foreground">
-          Preview:
-        </span>
-        {(["populated", "empty"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => pick(m)}
-            className={cn(
-              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-              mode === m
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            {m === "populated" ? "Real data" : "Empty"}
-          </button>
-        ))}
-      </div>
-
       <button
         type="button"
         onClick={() => setIndexOpen((v) => !v)}
         className={cn(
-          "fixed bottom-4 right-4 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          "fixed bottom-4 left-4 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
           indexOpen && "bg-muted",
         )}
         aria-label="Toggle review index"
@@ -229,7 +69,7 @@ export function MockStateBar() {
       </button>
 
       {indexOpen && (
-        <div className="fixed bottom-16 right-4 z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
+        <div className="fixed bottom-16 left-4 z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">
               Review index
@@ -242,16 +82,7 @@ export function MockStateBar() {
             {screens.map((s) => {
               const active =
                 (s.label === "Home" && view === "home") ||
-                (s.label === "Starter Kits" && view === "presets") ||
-                (s.label === "Agent setup" && view === "agent-new") ||
-                (s.label === "Starter kit components" &&
-                  view === "setup-workbench") ||
-                (s.label === "Schedule (Setup)" && view === "agent-new") ||
-                (s.label === "Schedule (Configure)" &&
-                  view === "sandbox-home") ||
-                (s.label === "Spend detail link" && view === "home") ||
-                (s.label === "Onboarding in chat UI" && view === "chat") ||
-                (s.label === "New Agent card designs" &&
+                (s.label === "Activity feed cards" &&
                   view === "card-gallery");
               return (
                 <button
@@ -280,6 +111,35 @@ export function MockStateBar() {
                 </button>
               );
             })}
+          </div>
+          <div className="border-t border-border px-2 py-2">
+            <button
+              type="button"
+              onClick={() => {
+                const name =
+                  TOAST_AGENTS[
+                    Math.floor(Math.random() * TOAST_AGENTS.length)
+                  ]!;
+                const headlines = [
+                  "Wants to access network",
+                  "Wants to run a command",
+                ];
+                const headline =
+                  headlines[Math.floor(Math.random() * headlines.length)]!;
+                fireApprovalToast(name, headline, openApprovals);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors hover:bg-warning/10"
+            >
+              <Warning size={16} className="shrink-0 text-warning" />
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium text-foreground">
+                  Fire approval toast
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  Preview the toast notification
+                </p>
+              </div>
+            </button>
           </div>
         </div>
       )}

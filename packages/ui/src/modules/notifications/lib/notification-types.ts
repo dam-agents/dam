@@ -7,6 +7,7 @@ export const NOTIFICATION_TYPES = [
   "approval-network",
   "running",
   "unread",
+  "read",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -16,6 +17,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   "approval-network": "Network requests",
   running: "Running",
   unread: "Unread",
+  read: "Read",
 };
 
 export type NotificationItem =
@@ -39,6 +41,7 @@ export type NotificationItem =
       agentId: string;
       at: string | null;
       session: SessionView;
+      artifactName?: string | null;
     }
   | {
       type: "unread";
@@ -46,6 +49,15 @@ export type NotificationItem =
       agentId: string;
       at: string | null;
       session: SessionView;
+      artifactName?: string | null;
+    }
+  | {
+      type: "read";
+      id: string;
+      agentId: string;
+      at: string | null;
+      session: SessionView;
+      artifactName?: string | null;
     };
 
 export function notificationType(item: NotificationItem): NotificationType {

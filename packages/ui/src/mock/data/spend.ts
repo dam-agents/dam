@@ -44,27 +44,27 @@ export const spendBreakdown = {
   byAgent: [
     {
       agentId: AGENT_IDS.codexResearch,
-      agentName: "brand-asset-generator",
+      agentName: "ci-pipeline",
       costUsd: 14.22,
     },
     {
       agentId: AGENT_IDS.claudeCodeMain,
-      agentName: "packaging-layouts",
+      agentName: "code-review-bot",
       costUsd: 9.83,
     },
     {
       agentId: AGENT_IDS.geminiPipeline,
-      agentName: "photo-retouching",
+      agentName: "bug-triage",
       costUsd: 7.61,
     },
     {
       agentId: AGENT_IDS.knowledgeBase,
-      agentName: "brand-guidelines",
+      agentName: "api-docs",
       costUsd: 4.18,
     },
     {
       agentId: AGENT_IDS.experiment1,
-      agentName: "color-palette-testing",
+      agentName: "pm-standup",
       costUsd: 2.6,
     },
   ],

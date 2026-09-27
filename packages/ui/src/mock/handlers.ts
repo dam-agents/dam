@@ -20,7 +20,6 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
-import { spendBreakdown } from "./data/spend.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
@@ -28,7 +27,7 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 export let mockEmpty = false;
 export let mockFirstRun = false;
 
-const createdConnections: Array<Record<string, unknown>> = [];
+const resolvedApprovalIds = new Set<string>();
 
 export function setMockEmpty(value: boolean) {
   mockEmpty = value;
@@ -40,18 +39,8 @@ export function setMockFirstRun(value: boolean) {
   if (value) mockEmpty = false;
 }
 
-function extractInput(
-  body: Record<string, unknown> | undefined,
-  idx: number,
-): Record<string, unknown> | undefined {
-  if (!body) return undefined;
-  const entry = (body as Record<string, unknown>)[String(idx)] as
-    | Record<string, unknown>
-    | undefined;
-  if (entry?.json) return entry.json as Record<string, unknown>;
-  if ((body as Record<string, unknown>).json)
-    return (body as Record<string, unknown>).json as Record<string, unknown>;
-  return undefined;
+export function resetResolvedApprovals() {
+  resolvedApprovalIds.clear();
 }
 
 function getFixtures(): Record<string, unknown> {
@@ -62,15 +51,19 @@ function getFixtures(): Record<string, unknown> {
     "agents.get": agents[1],
     "channels.available": fresh ? [] : channelsAvailable,
     "channels.telegramBot": null,
-    "approvals.listForOwner": fresh ? [] : approvals,
-    "approvals.listForInstance": fresh ? [] : approvals.slice(0, 2),
+    "approvals.listForOwner": fresh
+      ? []
+      : approvals.filter((a) => !resolvedApprovalIds.has(a.id)),
+    "approvals.listForInstance": fresh
+      ? []
+      : approvals
+          .slice(0, 2)
+          .filter((a) => !resolvedApprovalIds.has(a.id)),
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
-    "connections.list": fresh
-      ? [...createdConnections]
-      : [...connections, ...createdConnections],
+    "connections.list": fresh ? [] : connections,
     "connections.getAgentConnections": fresh
       ? { connections: [] }
       : {
@@ -163,7 +156,6 @@ function getFixtures(): Record<string, unknown> {
     "repos.list": [],
     "apiKeys.list": [],
     "metrics.usage": { totalTokens: 0, totalCostCents: 0 },
-    "metrics.spendBreakdown": spendBreakdown,
     "harnessConfig.get": {},
     "harnessConfig.status": {
       catalog: {
@@ -405,15 +397,6 @@ export const handlers = [
         return { result: { data: [] } };
       }
 
-      if (proc === "connections.get") {
-        const id = inputObj?.id as string | undefined;
-        const found =
-          createdConnections.find((c) => c.id === id) ??
-          connections.find((c) => c.id === id);
-        if (found) return { result: { data: { ...found, status: "active" } } };
-        return { result: { data: null } };
-      }
-
       const data = fixtures[proc];
       if (data !== undefined) {
         return { result: { data } };
@@ -425,79 +408,109 @@ export const handlers = [
     return HttpResponse.json(results);
   }),
 
+  // Agent-specific tRPC mutations (POST)
+  http.post(/\/api\/agents\/[^/]+\/trpc\/.*/, async ({ request }) => {
+    try {
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace(
+        /^\/api\/agents\/[^/]+\/trpc\//,
+        "",
+      );
+      const procedures = procedurePath.split(",");
+
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
+      }
+
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock agent mutation: ${proc}`);
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] Agent POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
+    }
+  }),
+
   // tRPC batch mutations (POST)
   http.post("/api/trpc/*", async ({ request }) => {
-    const url = new URL(request.url);
-    const procedurePath = url.pathname.replace("/api/trpc/", "");
-    const procedures = procedurePath.split(",");
-
-    let body: Record<string, unknown> | undefined;
     try {
-      body = (await request.json()) as Record<string, unknown>;
-    } catch {}
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace("/api/trpc/", "");
+      const procedures = procedurePath.split(",");
 
-    const results = procedures.map((proc, idx) => {
-      console.info(`[MSW] Mock mutation: ${proc}`);
-      if (proc === "agents.create") {
-        mockEmpty = false;
-        return { result: { data: agents[0] } };
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
       }
-      if (proc === "agents.upgrade") {
-        return { result: { data: { ...agents[1], templateUpdate: null } } };
-      }
-      if (proc === "experiments.createSandbox") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "experiment") ?? agents[0],
-          },
-        };
-      }
-      if (proc === "knowledgeBases.create") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
-          },
-        };
-      }
-      if (proc === "connections.startOAuth") {
-        return {
-          result: {
-            data: { authUrl: `${window.location.origin}?mock-oauth=1` },
-          },
-        };
-      }
-      if (proc === "connections.create") {
-        const input = extractInput(body, idx);
-        const templateId = (input?.templateId as string) ?? "github";
-        const tpl = connectionTemplates.find((t) => t.id === templateId);
-        const id = `conn-mock-${Date.now()}`;
-        const newConn = {
-          id,
-          templateId,
-          name: (input?.name as string) ?? tpl?.name ?? "New connection",
-          category: tpl?.category ?? "app",
-          status: "active",
-          authKind: tpl?.authKind ?? "header",
-          contributions: [],
-          hosts: [],
-          connectedAt: new Date().toISOString(),
-        };
-        createdConnections.push(newConn);
-        return { result: { data: { id } } };
-      }
-      if (
-        proc === "agents.wake" ||
-        proc === "agents.pause" ||
-        proc === "agents.stop"
-      ) {
-        return { result: { data: agents[1] } };
-      }
-      return { result: { data: null } };
-    });
 
-    return HttpResponse.json(results);
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock mutation: ${proc}`);
+        if (proc === "agents.create") {
+          mockEmpty = false;
+          return { result: { data: agents[0] } };
+        }
+        if (proc === "agents.upgrade") {
+          return { result: { data: { ...agents[1], templateUpdate: null } } };
+        }
+        if (proc === "experiments.createSandbox") {
+          mockEmpty = false;
+          return {
+            result: {
+              data: agents.find((a) => a.kind === "experiment") ?? agents[0],
+            },
+          };
+        }
+        if (proc === "knowledgeBases.create") {
+          mockEmpty = false;
+          return {
+            result: {
+              data:
+                agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
+            },
+          };
+        }
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
+    }
   }),
 
   // Brand endpoint
