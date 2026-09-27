@@ -1,4 +1,4 @@
-import { OverflowMenuVertical, Time } from "@carbon/icons-react";
+import { EdgeDevice, OverflowMenuVertical, Time } from "@carbon/icons-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -127,32 +127,34 @@ export function SidebarAgentItem({
   const subtitle = agent.size ? computeSubtitle(agent.size) : "";
   const dotColor = STATE_DOT_COLORS[display.state];
   const stateLabel = STATE_LABELS[display.state] ?? display.state;
-
-  const metaParts: string[] = [];
-  if (subtitle) metaParts.push(subtitle);
-  if (hasSlack) metaParts.push(`Slack · ${slackChannels.length}`);
-  if (hasSchedules)
-    metaParts.push(
-      `${scheduleCount} schedule${scheduleCount === 1 ? "" : "s"}`,
-    );
+  const isRunning =
+    display.state === "running" || display.state === "running_always_on";
 
   return (
     <div>
       <div
         className={cn(
-          "group/agent relative flex gap-3 rounded-lg px-2.5 py-2.5 transition-colors",
-          active
-            ? "bg-muted text-foreground"
-            : "text-foreground/80 hover:bg-muted hover:text-foreground",
+          "group/agent relative flex w-full gap-3 rounded-xl px-4 py-4 text-left transition-colors",
+          active ? "bg-[#f4f4f4]/50 dark:bg-white/[0.03]" : "hover:bg-muted/50",
         )}
       >
-        {/* Avatar placeholder */}
-        <div className="relative mt-0.5 size-8 shrink-0 rounded-md border border-border bg-white">
-          {dotColor && (
+        {/* Icon container — matches NotificationRow agent icon style */}
+        <div className="relative shrink-0 pt-0.5">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-[#f2f4f8] text-foreground dark:bg-white/10">
+            <EdgeDevice size={16} />
+          </div>
+          {isRunning && (
+            <span className="working-dots absolute -left-[8px] top-0 flex items-center -space-x-[1px]">
+              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+            </span>
+          )}
+          {!isRunning && dotColor && (
             <Tooltip content={stateLabel} side="right">
               <span
                 className={cn(
-                  "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
+                  "absolute -left-0.5 top-0 size-2.5 rounded-full border-2 border-background",
                   dotColor,
                 )}
               />
@@ -165,40 +167,42 @@ export function SidebarAgentItem({
           onClick={() => toggle(agent.id)}
           className="min-w-0 flex-1 text-left"
         >
-          <span className="block min-w-0 truncate text-sm font-medium">
-            {agent.name}
-          </span>
+          <div className="flex items-baseline gap-1 text-sm leading-snug">
+            <p className="min-w-0 truncate">
+              <span className="font-semibold text-foreground">
+                {agent.name}
+              </span>
+            </p>
+          </div>
 
-          {metaParts.length > 0 && (
-            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              {subtitle && <span className="truncate">{subtitle}</span>}
-              {hasSlack && (
-                <>
-                  {subtitle && <span className="text-border">·</span>}
-                  <ConnectionIcon
-                    iconSlug="slack"
-                    alt="Slack"
-                    size={16}
-                    className="shrink-0 opacity-60"
-                  />
-                  <span className="shrink-0">{slackChannels.length}</span>
-                </>
-              )}
-              {hasSchedules && (
-                <>
-                  {(subtitle || hasSlack) && (
-                    <span className="text-border">·</span>
-                  )}
-                  <Time size={16} className="shrink-0 opacity-60" />
-                  <span className="shrink-0">{scheduleCount}</span>
-                </>
-              )}
-            </span>
-          )}
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+            {subtitle && <span className="truncate">{subtitle}</span>}
+            {hasSlack && (
+              <>
+                {subtitle && <span className="text-border">·</span>}
+                <ConnectionIcon
+                  iconSlug="slack"
+                  alt="Slack"
+                  size={16}
+                  className="shrink-0 opacity-60"
+                />
+                <span className="shrink-0">{slackChannels.length}</span>
+              </>
+            )}
+            {hasSchedules && (
+              <>
+                {(subtitle || hasSlack) && (
+                  <span className="text-border">·</span>
+                )}
+                <Time size={16} className="shrink-0 opacity-60" />
+                <span className="shrink-0">{scheduleCount}</span>
+              </>
+            )}
+          </p>
         </button>
 
         <div
-          className="absolute right-1 top-1 opacity-0 transition-opacity group-hover/agent:opacity-100"
+          className="flex shrink-0 items-start pt-0.5 opacity-0 transition-opacity group-hover/agent:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
@@ -229,8 +233,7 @@ export function SidebarAgentItem({
                   Restart
                 </DropdownMenuItem>
               )}
-              {(display.state === "running" ||
-                display.state === "running_always_on") && (
+              {isRunning && (
                 <>
                   <DropdownMenuItem onSelect={onPause}>
                     Pause — wakes on next use
@@ -254,7 +257,7 @@ export function SidebarAgentItem({
       </div>
 
       {expanded && (
-        <div className="ml-6 mt-1 flex flex-col gap-0.5 border-l border-border pl-2.5">
+        <div className="ml-8 mt-1 flex flex-col gap-0.5 border-l border-border pl-3">
           {isFetching && !sessions && (
             <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
               <Spinner className="size-3" />
