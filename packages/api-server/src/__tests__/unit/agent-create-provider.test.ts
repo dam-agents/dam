@@ -89,6 +89,7 @@ function setup(rows: Connection[] = [provider]) {
       create: writeRegistry,
       secretName: () => "registry",
     }),
+    secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
     agentIdleTimeoutMinutes: 30,
     cleanupHooks: [],

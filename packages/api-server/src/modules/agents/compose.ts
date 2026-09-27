@@ -6,6 +6,7 @@ import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
 import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
@@ -103,6 +104,7 @@ export function composeAgentsModule(deps: {
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
+      secretRefs: createAgentSecretRefPort(k8s),
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
