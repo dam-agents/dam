@@ -49,6 +49,15 @@ export interface AgentsRepository {
     patch: Record<string, unknown>,
   ): Promise<InfraAgent | null>;
   patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
+  getLive(id: string, owner: string | undefined): Promise<InfraAgent | null>;
+  migrateBackend(
+    id: string,
+    owner: string | undefined,
+    patch: {
+      spec: Record<string, unknown>;
+      annotations: Record<string, string>;
+    },
+  ): Promise<InfraAgent | null>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
@@ -74,6 +83,14 @@ export interface AgentsRepository {
 export interface AgentActivityStamp {
   previous: string | null;
   written: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through migrateBackend; every other spec write that names the Backend is a bug and fails loudly.
+function assertBackendUntouched(patch: Record<string, unknown>): void {
+  if ("backend" in patch)
+    throw new Error(
+      "an agent's backend changes only through a runtime migration",
+    );
 }
 
 export function createAgentsRepository(
@@ -119,6 +136,7 @@ export function createAgentsRepository(
     },
 
     async updateSpec(id, owner, patch) {
+      assertBackendUntouched(patch);
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
       if (owner && !agentIsOwnedBy(obj, owner)) return null;
@@ -129,7 +147,26 @@ export function createAgentsRepository(
     },
 
     async patchSpec(id, patch) {
+      assertBackendUntouched(patch);
       await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
+    },
+
+    async getLive(id, owner) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      if (owner && !agentIsOwnedBy(obj, owner)) return null;
+      return parseInfraAgent(obj);
+    },
+
+    async migrateBackend(id, owner, patch) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      if (owner && !agentIsOwnedBy(obj, owner)) return null;
+      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: { annotations: patch.annotations },
+        spec: patch.spec,
+      });
+      return parseInfraAgent(updated);
     },
 
     async delete(id, owner?) {

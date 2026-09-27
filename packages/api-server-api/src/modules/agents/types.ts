@@ -48,6 +48,13 @@ export interface TemplateUpdate {
   toImage: string;
 }
 
+export type RuntimeMigrationPhase = "requested" | "copying" | "booting";
+
+export interface RuntimeMigration {
+  phase: RuntimeMigrationPhase;
+  message?: string;
+}
+
 export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
 
 export interface WorkspaceFailure {
@@ -64,6 +71,8 @@ export interface Agent {
   createdAt?: string;
   templateId?: string;
   templateUpdate?: TemplateUpdate;
+  runtimeMigration?: RuntimeMigration;
+  runtimeMigratable?: boolean;
   spec: AgentSpec;
   state: AgentState;
   effectiveHibernationTimeoutMin: number;
@@ -114,6 +123,17 @@ export type UpgradeAgentError =
 
 export type UpgradeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
+
+export type MigrateRuntimeError =
+  | { type: "AgentNotFound" }
+  | { type: "AlreadyOnVm" }
+  | { type: "VirtualizationDisabled" }
+  | { type: "RuntimeMigrationInProgress" }
+  | { type: "StorageMigrationInProgress" }
+  | { type: "PersistsOutsideHome"; paths: string[] };
+
+export type MigrateRuntimeResult =
+  { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
@@ -181,6 +201,7 @@ export interface AgentsService {
     id: string,
     expectedToImage?: string,
   ) => Promise<UpgradeAgentResult>;
+  migrateRuntime: (id: string) => Promise<MigrateRuntimeResult>;
   ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;
   connectSlack: (
     id: string,

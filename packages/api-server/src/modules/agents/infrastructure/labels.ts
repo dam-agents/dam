@@ -17,6 +17,10 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 export const EXPERIMENT_ACTIVE_KEY = "agent-platform.ai/experiment-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+export const RUNTIME_MIGRATION_KEY = "agent-platform.ai/runtime-migration";
+export const RUNTIME_MIGRATION_MESSAGE_KEY =
+  "agent-platform.ai/runtime-migration-message";
+export const STORAGE_MIGRATION_KEY = "agent-platform.ai/storage-migration";
 
 export const ANN_SWEEPABLE = "agent-platform.ai/sweepable";
 export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";

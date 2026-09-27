@@ -19,6 +19,7 @@ import {
   type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
+  type MigrateRuntimeError,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -43,7 +44,12 @@ import {
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
+  RUNTIME_MIGRATION_KEY,
 } from "../infrastructure/labels.js";
+import {
+  RUNTIME_MIGRATION_SPEC_PATCH,
+  runtimeMigrationRefusal,
+} from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -469,6 +475,47 @@ export function executeTemplateUpgrade(deps: {
         fromImage: update.fromImage,
         toImage: update.toImage,
       },
+    });
+    return ok(patched);
+  };
+}
+
+export interface RuntimeMigrationPatch {
+  spec: Record<string, unknown>;
+  annotations: Record<string, string>;
+}
+
+export function executeRuntimeMigration(deps: {
+  owner: string | undefined;
+  virtualizationEnabled: boolean;
+  getAgent: (id: string) => Promise<InfraAgent | null>;
+  writeMigration: (
+    id: string,
+    patch: RuntimeMigrationPatch,
+  ) => Promise<InfraAgent | null>;
+}) {
+  return async (
+    id: string,
+  ): Promise<
+    { ok: true; value: InfraAgent } | { ok: false; error: MigrateRuntimeError }
+  > => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return err({ type: "AgentNotFound" as const });
+    const refusal = runtimeMigrationRefusal(infra, deps.virtualizationEnabled);
+    if (refusal) return err(refusal);
+
+    const patched = await deps.writeMigration(id, {
+      spec: { ...RUNTIME_MIGRATION_SPEC_PATCH },
+      annotations: { [RUNTIME_MIGRATION_KEY]: "requested" },
+    });
+    if (!patched) return err({ type: "AgentNotFound" as const });
+    securityLog("info", "agent.runtime-migrate", {
+      category: "resource",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      agentId: id,
+      result: "success",
+      detail: { fromBackend: "container", toBackend: "vm" },
     });
     return ok(patched);
   };
@@ -1262,6 +1309,23 @@ export function createAgentsService(deps: {
         patchImage: (agentId, image) =>
           deps.repo.updateSpec(agentId, deps.owner, { image }),
       })(id, expectedToImage);
+      if (!result.ok) return result;
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
+      return ok(await project(result.value));
+    },
+
+    async migrateRuntime(id) {
+      const result = await executeRuntimeMigration({
+        owner: deps.owner,
+        virtualizationEnabled: deps.virtualizationEnabled === true,
+        getAgent: (agentId) => deps.repo.getLive(agentId, deps.owner),
+        writeMigration: (agentId, patch) =>
+          deps.repo.migrateBackend(agentId, deps.owner, patch),
+      })(id);
       if (!result.ok) return result;
       emit({
         type: EventType.AgentUpdated,

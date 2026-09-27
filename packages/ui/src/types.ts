@@ -169,7 +169,14 @@ export interface AgentView {
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
   vm: boolean;
+  runtimeMigration: RuntimeMigrationView | null;
+  runtimeMigratable: boolean;
   kind?: AgentKind;
+}
+
+export interface RuntimeMigrationView {
+  phase: "requested" | "copying" | "booting";
+  message?: string;
 }
 
 interface QuietWindowView {
