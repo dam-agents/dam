@@ -16,6 +16,8 @@ Three rules carry the security model:
    every resource the user creates. Per-user credential isolation is the
    `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
+   An Agent's `secretRef`, whose keys become its environment, is honoured
+   only for a Secret with its owner's label that the platform does not manage.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
    *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
@@ -74,8 +76,7 @@ gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
 - **Per-pair NetworkPolicies** gate the agent → paired gateway hop
-  at both ends. The agent pod opts out of ambient mesh, so the kernel
-  sees real destination IPs rather than HBONE tunnelled to ztunnel.
+  at both ends.
 - **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
