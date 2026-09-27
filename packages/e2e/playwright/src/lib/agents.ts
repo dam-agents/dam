@@ -2,9 +2,10 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
+import { bootTimeoutMs, onLaneBackend } from "./backend.js";
 import { harnessName } from "./fixtures.js";
 
-const AGENT_RUNNING_TIMEOUT_MS = 180_000;
+const AGENT_RUNNING_TIMEOUT_MS = bootTimeoutMs(180_000);
 
 export async function waitForAgentRunning(
   api: ApiClient,
@@ -86,10 +87,9 @@ export async function ensureAgentRunning(
 ): Promise<string> {
   const list = await api.agents.list.query();
   if (!list.some((a) => a.name === agentName))
-    await api.agents.create.mutate({
-      name: agentName,
-      templateId: harnessName,
-    });
+    await api.agents.create.mutate(
+      onLaneBackend({ name: agentName, templateId: harnessName }),
+    );
   return waitForAgentRunning(api, agentName);
 }
 

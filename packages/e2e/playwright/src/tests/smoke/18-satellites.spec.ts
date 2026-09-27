@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
+import { bootTimeoutMs } from "../../lib/backend.js";
 import {
   deleteAgentIfPresent,
   ensureAgentRunning,
@@ -173,7 +174,7 @@ test.describe("satellites", () => {
   test("a connected satellite shows among Connections and is added to an agent there", async ({
     page,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(bootTimeoutMs(240_000));
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);
@@ -227,7 +228,7 @@ test.describe("satellites", () => {
   test("a satellite picked on the new-agent form is granted once the agent exists", async ({
     page,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(bootTimeoutMs(600_000));
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);
@@ -263,7 +264,7 @@ test.describe("satellites", () => {
     await page.getByRole("button", { name: /create agent/i }).click();
 
     const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME, {
-      timeoutMs: 360_000,
+      timeoutMs: bootTimeoutMs(360_000),
     });
     expect(
       (await api.satellites.list.query()).find((s) => s.name === SATELLITE)

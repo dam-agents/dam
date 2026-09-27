@@ -1,5 +1,5 @@
-// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. One spec, run once per Backend by the Playwright project's `backend` option: on the container Backend the agent is a pod, on the vm Backend a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. The vm project exists only under E2E_VIRTUALIZATION, which CI's vm lane sets on a KVM runner; there a missing vm backend fails the spec rather than skipping it.
-import { expect, type Page } from "@playwright/test";
+// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. Both CI lanes run this spec, each on its own Backend: on the container lane the agent is a pod, on the vm lane a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. On the vm lane the runner it deletes also runs every other machine of the e2e user, so the Playwright config runs this spec there only after the rest of the suite has finished.
+import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -16,9 +16,9 @@ import {
   createAgentOn,
   deleteBackendHost,
   expectHomeFile,
+  laneBackend,
   refreshingToken,
   requireBackend,
-  test,
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
@@ -45,13 +45,13 @@ async function chatTurn(
   await expect(page.getByText(reply)).toBeVisible({ timeout: 90_000 });
 }
 
-test.beforeAll(async ({ backend }) => {
+test.beforeAll(async () => {
   test.setTimeout(900_000);
   api = createRefreshingApiClient(token);
-  await requireBackend(api, backend);
+  await requireBackend(api, laneBackend);
   await acceptTerms(api);
-  agentName = `e2e-${backend}-lifecycle`;
-  agentId = await createAgentOn(api, backend, agentName, harnessName, {
+  agentName = `e2e-${laneBackend}-lifecycle`;
+  agentId = await createAgentOn(api, laneBackend, agentName, harnessName, {
     neverIdle: true,
   });
 });
@@ -139,11 +139,10 @@ test("restarts with HOME intact", async ({ page }) => {
 
 // TEST_SCENARIO: the pod that hosts the agent is deleted out from under it: the agent pod on the container Backend, the owner's VM runner — and with it every machine it runs — on the vm Backend. Nothing asked for it, so nothing but the controller's reconcile brings the machine back, and HOME must still be on the disk it boots.
 test("comes back after its host pod is deleted, with HOME intact", async ({
-  backend,
   page,
 }) => {
   test.setTimeout(1_200_000);
-  await deleteBackendHost(agentId, backend);
+  await deleteBackendHost(agentId, laneBackend);
   await waitAgentState(api, agentId, "running", { failOnError: false });
   await expectHomeFile(token, agentId, markerPath, marker);
   await chatTurn(page, "hello-after-host-loss", "backend-reply-after-host");

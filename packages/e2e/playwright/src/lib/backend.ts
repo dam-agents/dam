@@ -1,20 +1,34 @@
-import { expect, test as base } from "@playwright/test";
+import { expect } from "@playwright/test";
 import type { AgentState } from "api-server-api";
 
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
 import { AGENT_NS, kubectl } from "./cluster.js";
+import { type Backend, laneBackend } from "./lane.js";
 
-export type Backend = "container" | "vm";
+export { type Backend, laneBackend };
 
-export interface BackendOptions {
-  backend: Backend;
+export function onLaneBackend<T extends object>(input: T): T & { vm?: true } {
+  return laneBackend === "vm" ? { ...input, vm: true } : input;
 }
 
-export const test = base.extend<object, BackendOptions>({
-  backend: ["container", { option: true, scope: "worker" }],
-});
+export function bootTimeoutMs(containerMs: number): number {
+  return laneBackend === "vm" ? containerMs * 3 : containerMs;
+}
+
+export async function setVmSandboxes(
+  api: ApiClient,
+  enabled: boolean,
+): Promise<void> {
+  const flags = await api.features.setFlag.mutate({
+    feature: "vm-sandboxes",
+    enabled,
+  });
+  expect(flags["vm-sandboxes"], "the vm-sandboxes experiment flag").toBe(
+    enabled,
+  );
+}
 
 const tokenMaxAgeMs = 120_000;
 
@@ -90,7 +104,7 @@ export async function waitAgentState(
 }
 
 function agentTrpcUrl(agentId: string, procedure: string): string {
-  return `${baseUrl}/api/agents/${encodeURIComponent(agentId)}/trpc/files.${procedure}`;
+  return `${baseUrl}/api/agents/${encodeURIComponent(agentId)}/trpc/${procedure}`;
 }
 
 export async function writeHomeFile(
@@ -99,7 +113,7 @@ export async function writeHomeFile(
   path: string,
   content: string,
 ): Promise<void> {
-  const res = await fetch(agentTrpcUrl(agentId, "write"), {
+  const res = await fetch(agentTrpcUrl(agentId, "files.write"), {
     method: "POST",
     headers: {
       authorization: `Bearer ${await token()}`,
@@ -119,9 +133,12 @@ export async function readHomeFile(
   path: string,
 ): Promise<string> {
   const input = encodeURIComponent(JSON.stringify({ path }));
-  const res = await fetch(`${agentTrpcUrl(agentId, "read")}?input=${input}`, {
-    headers: { authorization: `Bearer ${await token()}` },
-  });
+  const res = await fetch(
+    `${agentTrpcUrl(agentId, "files.read")}?input=${input}`,
+    {
+      headers: { authorization: `Bearer ${await token()}` },
+    },
+  );
   const body = await res.text();
   if (res.status !== 200)
     throw new Error(
@@ -157,6 +174,24 @@ export async function expectHomeFile(
       },
     )
     .toBe(expected);
+}
+
+export async function listSessionIds(
+  token: () => Promise<string>,
+  agentId: string,
+): Promise<string[]> {
+  const res = await fetch(agentTrpcUrl(agentId, "sessions.list"), {
+    headers: { authorization: `Bearer ${await token()}` },
+  });
+  const body = await res.text();
+  if (res.status !== 200)
+    throw new Error(
+      `listing the sessions of ${agentId} answered ${res.status}: ${body.slice(0, 500)}`,
+    );
+  const parsed = JSON.parse(body) as {
+    result: { data: { sessions: { sessionId: string }[] } };
+  };
+  return parsed.result.data.sessions.map((s) => s.sessionId).sort();
 }
 
 function agentOwner(agentId: string): string {

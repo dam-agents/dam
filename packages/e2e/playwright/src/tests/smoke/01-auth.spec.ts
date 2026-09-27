@@ -5,10 +5,15 @@ import type { AppRouter } from "api-server-api";
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import { getAccessToken, submitKeycloakLoginForm } from "../../lib/auth.js";
 import { baseUrl } from "../../config.js";
+import {
+  laneBackend,
+  requireBackend,
+  setVmSandboxes,
+} from "../../lib/backend.js";
 
 const storageStatePath = "./.auth/user.json";
 
-// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project.
+// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project, then the setup that puts the e2e user on the lane's Backend.
 
 function trpcError(err: unknown): TRPCClientError<AppRouter> {
   expect(err).toBeInstanceOf(TRPCClientError);
@@ -141,4 +146,11 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await expect(appSidebar).toBeVisible();
 
   await page.context().storageState({ path: storageStatePath });
+});
+
+// TEST_SCENARIO: The global setup for the lane's Backend. The vm-sandboxes experiment makes the UI create agents on the vm Backend. So the vm lane turns it on for the e2e user here, before any spec creates an agent. The container lane turns it off, so a flag left from an earlier run on the same database cannot move that lane's agents. The vm lane also fails here, once, when the install has no vm backend, and not later in every spec that boots an agent.
+test("the e2e user's runtime matches the lane's Backend", async () => {
+  const api = createApiClient(await getAccessToken());
+  await requireBackend(api, laneBackend);
+  await setVmSandboxes(api, laneBackend === "vm");
 });
