@@ -39,6 +39,7 @@ type fakeNode struct {
 	specs    map[string]vmrunner.MachineSpec
 	statuses map[string]vmrunner.MachineStatus
 	deleted  []string
+	seedGone []string
 	puts     []vmrunner.MachineSpec
 	version  uint64
 	waits    int
@@ -65,6 +66,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		id := r.URL.Path[len("/machines/"):]
+		if seeded, ok := strings.CutSuffix(id, "/seed"); ok && r.Method == http.MethodDelete {
+			n.seedGone = append(n.seedGone, seeded)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			var spec vmrunner.MachineSpec
@@ -854,14 +860,17 @@ func TestEveryCacheIsBounded(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent.
+// TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent. The one peer that does sit in the agent namespace is the owner's own runtime-migration Job.
 func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
 	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
 
-	require.Len(t, np.Spec.Ingress, 2, "the machine API and published ports, and the scrape port")
+	require.Len(t, np.Spec.Ingress, 3, "the machine API and published ports, the migration Job's machine API, and the scrape port")
 	for _, rule := range np.Spec.Ingress {
 		require.NotEmpty(t, rule.From)
 		for _, from := range rule.From {
+			if from.PodSelector.MatchLabels[LabelRole] == RoleRuntimeMigration {
+				continue
+			}
 			require.NotNil(t, from.NamespaceSelector, "a bare pod selector would only match the runner's own namespace")
 			assert.Equal(t, "release-ns", from.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
 		}
@@ -900,6 +909,9 @@ func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *test
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
 		for _, from := range rule.From {
+			if from.PodSelector.MatchLabels[LabelRole] == RoleRuntimeMigration {
+				continue
+			}
 			instances = append(instances, from.PodSelector.MatchLabels["app.kubernetes.io/instance"])
 		}
 	}

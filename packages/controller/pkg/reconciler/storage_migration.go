@@ -155,7 +155,12 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 }
 
 func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) error {
-	_, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
+	return ensureMigrationServiceAccount(ctx, m.client, m.config.Namespace)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the identity every copy Job runs as — the storage migration's and the runtime migration's alike — carrying no API token, since a copy only ever touches volumes.
+func ensureMigrationServiceAccount(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	_, err := client.CoreV1().ServiceAccounts(namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
 	if err == nil {
 		return nil
 	}
@@ -165,15 +170,15 @@ func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) erro
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      migrationServiceAccount,
-			Namespace: m.config.Namespace,
+			Namespace: namespace,
 			Labels:    map[string]string{"agent-platform.ai/managed-by": "platform-controller"},
 		},
 		AutomountServiceAccountToken: new(false),
 	}
-	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
+	if _, err := client.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("creating migration service account: %w", err)
 	}
-	slog.Info("storage migration: service account ensured", "name", migrationServiceAccount)
+	slog.Info("migration service account ensured", "name", migrationServiceAccount)
 	return nil
 }
 
@@ -624,6 +629,11 @@ func (m *StorageMigrationManager) agentPodPresent(ctx context.Context, agentName
 }
 
 func (m *StorageMigrationManager) patchAgentAnnotations(ctx context.Context, name string, ann map[string]*string) error {
+	return patchAgentAnnotations(ctx, m.dynamic, m.config.Namespace, name, ann)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a nil value removes the annotation. Entries are sorted so one change always renders as one patch.
+func patchAgentAnnotations(ctx context.Context, dyn dynamic.Interface, namespace, name string, ann map[string]*string) error {
 	entries := make([]string, 0, len(ann))
 	for k, v := range ann {
 		if v == nil {
@@ -634,7 +644,7 @@ func (m *StorageMigrationManager) patchAgentAnnotations(ctx context.Context, nam
 	}
 	sort.Strings(entries)
 	patch := fmt.Sprintf(`{"metadata":{"annotations":{%s}}}`, strings.Join(entries, ","))
-	_, err := m.dynamic.Resource(AgentsGVR).Namespace(m.config.Namespace).
+	_, err := dyn.Resource(AgentsGVR).Namespace(namespace).
 		Patch(ctx, name, k8stypes.MergePatchType, []byte(patch), metav1.PatchOptions{})
 	return err
 }

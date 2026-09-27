@@ -342,6 +342,12 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}, {
+				From: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					LabelRole:       RoleRuntimeMigration,
+					envoyOwnerLabel: owner,
+				}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &api}},
+			}, {
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},

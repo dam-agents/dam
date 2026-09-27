@@ -232,6 +232,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
+		if err := r.prepareRuntimeMigration(ctx, agent); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
+		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -240,6 +243,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, fmt.Sprintf("reconciling vm machine: %v", err))
 		}
 		timer.mark("vmMachine")
+		if err := r.continueRuntimeMigration(ctx, agent, machine, runnerReached); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
 			r.recordParkedRetry(name)
