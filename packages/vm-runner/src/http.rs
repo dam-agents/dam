@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use axum::body::{Body, Bytes};
@@ -18,7 +19,7 @@ use crate::server::{Rejected, Server};
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
 
-pub fn router(server: Arc<Server>, token: &str) -> Router {
+pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
     let machines = Router::new()
         .route("/machines", get(list))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
@@ -26,10 +27,7 @@ pub fn router(server: Arc<Server>, token: &str) -> Router {
             "/machines/{id}/seed",
             put(seed).delete(unseed).layer(DefaultBodyLimit::disable()),
         )
-        .route_layer(middleware::from_fn_with_state(
-            Arc::<str>::from(token),
-            authorized,
-        ))
+        .route_layer(middleware::from_fn_with_state(token, authorized))
         .with_state(server);
     Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
@@ -74,15 +72,91 @@ fn rejected(rejected: Rejected) -> Response {
     )
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how often the token file is read again. The kubelet rewrites a projected Secret in place within about a minute of a change, so a token the controller replaced is honoured without restarting the pod, and every machine with it.
+pub const TOKEN_RELOAD: Duration = Duration::from_secs(10);
+
+// UNIT_BOUNDARY_DESCRIPTION: the machine API's bearer token, as the runner's credentials volume holds it now. The file is read at start, where a missing or empty token is fatal, and again every TOKEN_RELOAD; a read that fails or finds the file empty keeps the token already held, because the kubelet swaps a projected volume's files through a symlink and a read can land between two of its steps.
+pub struct Token {
+    path: Option<PathBuf>,
+    current: RwLock<Arc<str>>,
+}
+
+impl Token {
+    pub fn fixed(token: &str) -> Arc<Self> {
+        Arc::new(Self {
+            path: None,
+            current: RwLock::new(Arc::from(token)),
+        })
+    }
+
+    pub fn from_file(path: PathBuf) -> anyhow::Result<Arc<Self>> {
+        let token = read_token(&path)?;
+        Ok(Arc::new(Self {
+            path: Some(path),
+            current: RwLock::new(Arc::from(token)),
+        }))
+    }
+
+    pub fn reload(&self) {
+        let Some(path) = &self.path else {
+            return;
+        };
+        match read_token(path) {
+            Ok(token) => {
+                let mut current = self.current.write().unwrap_or_else(|e| e.into_inner());
+                if *current.as_ref() != token {
+                    *current = Arc::from(token);
+                    tracing::info!(path = %path.display(), "the machine API token changed, the new one is in use");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "the token file could not be read again, the token held is kept")
+            }
+        }
+    }
+
+    pub fn keep_fresh(self: Arc<Self>) {
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(TOKEN_RELOAD);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                self.reload();
+            }
+        });
+    }
+
+    fn matches(&self, got: &[u8]) -> bool {
+        let current = self
+            .current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        constant_time_eq(got, current.as_bytes())
+    }
+}
+
+fn read_token(path: &std::path::Path) -> anyhow::Result<String> {
+    let token = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+    let token = token.trim();
+    anyhow::ensure!(
+        !token.is_empty(),
+        "the token file {} is empty",
+        path.display()
+    );
+    Ok(token.to_string())
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller, and a request without its token gets nothing, not even a status. The comparison takes the same time however much of the token matches.
-async fn authorized(State(token): State<Arc<str>>, request: Request, next: Next) -> Response {
+async fn authorized(State(token): State<Arc<Token>>, request: Request, next: Next) -> Response {
     let got = request
         .headers()
         .get("authorization")
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     let got = got.strip_prefix("Bearer ").unwrap_or(got);
-    if !constant_time_eq(got.as_bytes(), token.as_bytes()) {
+    if !token.matches(got.as_bytes()) {
         return plain(StatusCode::UNAUTHORIZED, "unauthorized");
     }
     next.run(request).await
@@ -341,7 +415,7 @@ mod tests {
         )
         .unwrap();
         Api {
-            router: router(server, "secret"),
+            router: router(server, Token::fixed("secret")),
             dir,
         }
     }
@@ -621,6 +695,39 @@ mod tests {
             );
         }
         assert!(!share.join(crate::share::SEED_FILE).exists());
+    }
+
+    // TEST_SCENARIO: the controller replaces the token in the runner's Secret and the kubelet rewrites the file. The next read takes the new token and the old one stops working; a file caught empty or missing mid-swap keeps the token already held rather than locking the controller out.
+    #[test]
+    fn a_rewritten_token_file_is_taken_and_a_broken_one_is_not() {
+        let dir = crate::testdir::TempDir::new("http-token-reload");
+        let path = dir.path().join("token");
+        std::fs::write(&path, "first\n").unwrap();
+        let token = Token::from_file(path.clone()).unwrap();
+        assert!(token.matches(b"first"));
+
+        std::fs::write(&path, "second").unwrap();
+        token.reload();
+        assert!(token.matches(b"second"));
+        assert!(!token.matches(b"first"));
+
+        std::fs::write(&path, "  \n").unwrap();
+        token.reload();
+        assert!(token.matches(b"second"));
+
+        std::fs::remove_file(&path).unwrap();
+        token.reload();
+        assert!(token.matches(b"second"));
+    }
+
+    // TEST_SCENARIO: a runner started without a usable token would answer every call 401, so a missing or empty file stops it at start.
+    #[test]
+    fn a_runner_does_not_start_without_a_token() {
+        let dir = crate::testdir::TempDir::new("http-token-start");
+        let path = dir.path().join("token");
+        assert!(Token::from_file(path.clone()).is_err());
+        std::fs::write(&path, "\n").unwrap();
+        assert!(Token::from_file(path).is_err());
     }
 
     // TEST_SCENARIO: the token comparison must not stop at the first differing byte, and must refuse a token that is a prefix of the real one — the two shortcuts a hand-written comparison takes.

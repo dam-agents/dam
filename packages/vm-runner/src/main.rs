@@ -147,10 +147,7 @@ fn main() -> anyhow::Result<()> {
         "--memory-mib is required: without it the runner admits machines against no limit at all"
     );
     check_ports(args.port_min, args.port_max)?;
-    let token = std::fs::read_to_string(&args.token_file)
-        .map_err(|e| anyhow::anyhow!("reading {}: {e}", args.token_file.display()))?;
-    let token = token.trim().to_string();
-    anyhow::ensure!(!token.is_empty(), "the token file is empty");
+    let token = http::Token::from_file(args.token_file.clone())?;
     configure_smolvm(&args.smolvm);
     prepare_host(&args)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -202,7 +199,7 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve(args: Args, token: String) -> anyhow::Result<()> {
+async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let runtime = Arc::new(tokio::task::spawn_blocking(Smolvm::open).await??);
     let server = Server::start(
         Config {
@@ -241,7 +238,8 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
     });
 
     let listener = bind(&args.listen)?;
-    let app = http::router(server.clone(), &token).into_make_service();
+    token.clone().keep_fresh();
+    let app = http::router(server.clone(), token).into_make_service();
     let handle = axum_server::Handle::new();
     let scrape = if args.metrics_listen.is_empty() {
         None

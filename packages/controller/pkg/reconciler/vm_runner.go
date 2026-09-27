@@ -210,6 +210,13 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 	if err != nil {
 		return nil, err
 	}
+	client.WithTokenReload(func(ctx context.Context) (string, error) {
+		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		return string(sec.Data["token"]), nil
+	})
 	if r.runners == nil {
 		r.runners = map[string]runnerConn{}
 	}
@@ -217,7 +224,7 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 	return client, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bearer token is the machine API's only credential besides the network policy, so it comes from the operating system's CSPRNG and carries 256 bits; a math/rand token is seeded from the clock and can be guessed from the Secret's creation time. A token already minted is kept rather than rotated, because the runner reads its token once at start and a rotation would lock the controller out of that runner until its pod restarts.
+// UNIT_BOUNDARY_DESCRIPTION: the bearer token is the machine API's only credential besides the network policy, so it comes from the operating system's CSPRNG and carries 256 bits; a math/rand token is seeded from the clock and can be guessed from the Secret's creation time. A token already minted is kept rather than rotated. One that changes anyway — a Secret deleted and minted again — is picked up by the runner, which re-reads its token file, and by the client, which re-reads the Secret when the runner refuses it.
 func newRunnerToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
