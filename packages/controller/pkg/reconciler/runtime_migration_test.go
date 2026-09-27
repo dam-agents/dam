@@ -160,7 +160,7 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "an old failure is cleared so the next reconcile copies again")
 }
 
-// TEST_SCENARIO: a failed copy names why. The last attempt's own error — vm-seed's last line, carried as the pod's termination message — is shown with the retry, and an earlier attempt's older error is not.
+// TEST_SCENARIO: a failed copy names why. The last attempt's own error — vm-seed's error and its causes, carried as the pod's termination message — is shown with the retry, and an earlier attempt's older error is not.
 func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
@@ -178,7 +178,7 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 		message  string
 	}{
 		{now.Add(-time.Minute), "Error: an older failure"},
-		{now, "{\"level\":\"INFO\",\"message\":\"seed upload starting\"}\nError: the runner refused the seed: 409 Conflict: busy\n"},
+		{now, "{\"level\":\"INFO\",\"message\":\"seed upload starting\"}\nError: uploading the seed to https://runner:4600/machines/my-agent/seed\n\nCaused by:\n    0: error sending request\n    1: Connection refused (os error 111)\n"},
 	} {
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -199,7 +199,7 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	completeJob(t, r, batchv1.JobFailed, now)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t,
-		"copying the home directory failed (Error: the runner refused the seed: 409 Conflict: busy); retrying",
+		"copying the home directory failed (Error: uploading the seed to https://runner:4600/machines/my-agent/seed; 0: error sending request; 1: Connection refused (os error 111)); retrying",
 		reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage])
 }
 

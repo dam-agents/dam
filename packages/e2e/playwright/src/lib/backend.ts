@@ -89,7 +89,17 @@ export async function waitAgentState(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const agent = await api.agents.get.query({ id: agentId });
+    let agent: Awaited<ReturnType<typeof api.agents.get.query>>;
+    try {
+      agent = await api.agents.get.query({ id: agentId });
+    } catch (e) {
+      if (Date.now() > deadline)
+        throw new Error(
+          `agent ${agentId} did not reach ${state} in ${timeoutMs / 1000}s; the last read failed: ${(e as Error).message}`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      continue;
+    }
     if (agent.state === state) return;
     if (failOnError && agent.state === "error")
       throw new Error(

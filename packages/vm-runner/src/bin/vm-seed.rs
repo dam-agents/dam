@@ -98,6 +98,44 @@ fn client(ca_file: &Path) -> anyhow::Result<reqwest::Client> {
     Ok(builder.build()?)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a Job's fresh pod waits for the runner to accept a connection before it gives up. The runner admits the Job by a NetworkPolicy that names its labels, and a policy engine adds a new pod to that rule only after the pod exists, so the first connections a pod makes can be refused though the rule allows it. Waiting here costs one attempt a few seconds; failing costs the whole Job a retry delay.
+const REACH_DEADLINE: Duration = Duration::from_secs(180);
+
+// UNIT_BOUNDARY_DESCRIPTION: waits until the runner's address accepts a TCP connection, retrying a refused or unreachable one with a growing pause, and fails with the last error once the deadline passes. The upload itself is not retried: its body is the archive being written, so it can be sent only once.
+async fn await_reachable(url: &str, deadline: Duration) -> anyhow::Result<()> {
+    let parsed = reqwest::Url::parse(url).with_context(|| format!("parsing {url}"))?;
+    let host = parsed
+        .host_str()
+        .with_context(|| format!("{url} names no host"))?
+        .to_string();
+    let port = parsed
+        .port_or_known_default()
+        .with_context(|| format!("{url} names no port"))?;
+    let started = Instant::now();
+    let mut pause = Duration::from_millis(500);
+    loop {
+        let err = match tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::net::TcpStream::connect((host.as_str(), port)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => return Ok(()),
+            Ok(Err(e)) => anyhow::Error::new(e),
+            Err(_) => anyhow::anyhow!("connecting timed out"),
+        };
+        if started.elapsed() + pause > deadline {
+            return Err(err.context(format!(
+                "the runner at {host}:{port} accepted no connection in {}s",
+                deadline.as_secs()
+            )));
+        }
+        tracing::warn!(host = %host, port, error = %err, "the runner is not reachable yet; retrying");
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(Duration::from_secs(10));
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().init();
     let args = Args::parse();
@@ -114,6 +152,7 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()?
         .block_on(async move {
+            await_reachable(&args.url, REACH_DEADLINE).await?;
             let (chunks, mut received) = tokio::sync::mpsc::channel(CHUNKS);
             let url = args.url.clone();
             let archiving = tokio::task::spawn_blocking(move || archive(&args, chunks));
@@ -168,6 +207,46 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TEST_SCENARIO: a runner that starts accepting connections a moment after the pod starts is waited for, not failed on — the refusal a fresh pod meets while its NetworkPolicy catches up looks exactly like this.
+    #[tokio::test]
+    async fn a_runner_that_opens_late_is_waited_for() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let opener = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+                .await
+                .unwrap();
+            let _ = listener.accept().await;
+        });
+        await_reachable(
+            &format!("https://127.0.0.1:{port}/machines/m1/seed"),
+            Duration::from_secs(20),
+        )
+        .await
+        .unwrap();
+        opener.abort();
+    }
+
+    // TEST_SCENARIO: a runner that never answers fails the wait once the deadline passes, and the error names the address, so the Job's message says where it could not reach.
+    #[tokio::test]
+    async fn a_runner_that_never_opens_fails_with_its_address() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let err = await_reachable(
+            &format!("https://127.0.0.1:{port}/x"),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains(&format!("127.0.0.1:{port}")),
+            "{err:#}"
+        );
+    }
 
     // TEST_SCENARIO: the migration Job runs this binary with these four flags, and a flag it does not know is a Job that fails on every attempt without moving a byte.
     #[test]

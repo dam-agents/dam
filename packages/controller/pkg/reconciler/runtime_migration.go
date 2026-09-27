@@ -203,7 +203,7 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in the words of vm-seed's own last line: the error it exits with, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. Empty when no attempt left a message.
+// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. Empty when no attempt left a message.
 func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) string {
 	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
 	if err != nil {
@@ -222,7 +222,20 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 		return ""
 	}
 	lines := strings.Split(strings.TrimSpace(last.Message), "\n")
-	msg := strings.TrimSpace(lines[len(lines)-1])
+	from := len(lines) - 1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "Error:") {
+			from = i
+			break
+		}
+	}
+	var parts []string
+	for _, l := range lines[from:] {
+		if l = strings.TrimSpace(l); l != "" && l != "Caused by:" {
+			parts = append(parts, l)
+		}
+	}
+	msg := strings.Join(parts, "; ")
 	if len(msg) > copyFailureMax {
 		msg = msg[:copyFailureMax] + "…"
 	}
