@@ -2,8 +2,10 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -185,7 +187,11 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 			annLastActivity:            new(time.Now().UTC().Format(time.RFC3339)),
 		})
 	case jobConditionTrue(job, batchv1.JobFailed):
-		if err := r.noteRuntimeMigration(ctx, name, fmt.Errorf("copying the home directory failed; retrying")); err != nil {
+		reason := "copying the home directory failed; retrying"
+		if why := r.copyJobFailure(ctx, job); why != "" {
+			reason = fmt.Sprintf("copying the home directory failed (%s); retrying", why)
+		}
+		if err := r.noteRuntimeMigration(ctx, name, errors.New(reason)); err != nil {
 			return err
 		}
 		if time.Since(job.CreationTimestamp.Time) < migrationJobRetryAfter {
@@ -196,6 +202,34 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 	}
 	return nil
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in the words of vm-seed's own last line: the error it exits with, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. Empty when no attempt left a message.
+func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) string {
+	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
+	if err != nil {
+		return ""
+	}
+	var last *corev1.ContainerStateTerminated
+	for i := range pods.Items {
+		for _, cs := range pods.Items[i].Status.ContainerStatuses {
+			t := cs.State.Terminated
+			if t != nil && t.Message != "" && (last == nil || t.FinishedAt.After(last.FinishedAt.Time)) {
+				last = t
+			}
+		}
+	}
+	if last == nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(last.Message), "\n")
+	msg := strings.TrimSpace(lines[len(lines)-1])
+	if len(msg) > copyFailureMax {
+		msg = msg[:copyFailureMax] + "…"
+	}
+	return msg
+}
+
+const copyFailureMax = 300
 
 func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
@@ -268,9 +302,10 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 					ImagePullSecrets:             spec.ImagePullSecrets,
 					SecurityContext:              &corev1.PodSecurityContext{RunAsUser: &rootUID},
 					Containers: []corev1.Container{{
-						Name:            "seed",
-						Image:           spec.Image,
-						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
+						Name:                     "seed",
+						Image:                    spec.Image,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+						ImagePullPolicy:          corev1.PullPolicy(spec.ImagePullPolicy),
 						Command: []string{
 							runtimeMigrationSeedBinary,
 							"--source", runtimeMigrationSourcePath,

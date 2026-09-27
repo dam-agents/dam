@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -157,6 +158,49 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an old failure is cleared so the next reconcile copies again")
+}
+
+// TEST_SCENARIO: a failed copy names why. The last attempt's own error — vm-seed's last line, carried as the pod's termination message — is shown with the retry, and an earlier attempt's older error is not.
+func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.TerminationMessageFallbackToLogsOnError, job.Spec.Template.Spec.Containers[0].TerminationMessagePolicy)
+	now := time.Now()
+	for i, attempt := range []struct {
+		finished time.Time
+		message  string
+	}{
+		{now.Add(-time.Minute), "Error: an older failure"},
+		{now, "{\"level\":\"INFO\",\"message\":\"seed upload starting\"}\nError: the runner refused the seed: 409 Conflict: busy\n"},
+	} {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("%s-%d", job.Name, i), Namespace: "test-agents",
+				Labels: map[string]string{batchv1.JobNameLabel: job.Name},
+			},
+			Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "seed",
+				State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: 1, FinishedAt: metav1.NewTime(attempt.finished), Message: attempt.message,
+				}},
+			}}},
+		}
+		_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+
+	completeJob(t, r, batchv1.JobFailed, now)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t,
+		"copying the home directory failed (Error: the runner refused the seed: 409 Conflict: busy); retrying",
+		reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage])
 }
 
 // TEST_SCENARIO: an agent with no volume at HOME has nothing to copy. The migration says so rather than booting a machine that would silently start from the image.
