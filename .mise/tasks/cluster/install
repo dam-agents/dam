@@ -679,7 +679,13 @@ echo "Installing/upgrading Platform chart..."
 # The explicit Established wait keeps the helm install below race-free even if
 # the chart ever grows a CR instance (today it deliberately ships none).
 kubectl apply --server-side --force-conflicts -f helm/crds/
-kubectl wait --for=condition=Established --timeout=60s -f helm/crds/
+# A CRD read before the apiserver writes its first status has no conditions
+# list, and kubectl wait fails on it at once instead of waiting — retry that.
+for attempt in 1 2 3 4 5; do
+  kubectl wait --for=condition=Established --timeout=60s -f helm/crds/ && break
+  [ "$attempt" -lt 5 ] || exit 1
+  sleep 2
+done
 
 # ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
 # CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
