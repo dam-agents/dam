@@ -2,6 +2,7 @@
 id: 093
 title: smolvm microVMs are the only agent runtime
 status: accepted
+supersedes: [038, 073]
 subsystem: vm-runner
 tags: [vm, smolvm, gateway, quota, migration]
 summary: Every agent becomes a smolvm machine in its owner's runner pod, with a per-owner CPU and storage pool and the owner's gateway as a sidecar there; container agent pods and Kata are removed once every agent has been migrated with its HOME.
@@ -15,7 +16,7 @@ summary: Every agent becomes a smolvm machine in its owner's runner pod, with a 
 
 ## Context
 
-Two agent Backends run side by side: a pod per agent (optionally under Kata) and the vm Backend, where an owner's machines live in one runner pod. Every feature that touches an agent carries both paths. The vm Backend is still opt-in behind a per-user experimental flag. GPU templates, per-template node placement and persisted paths outside HOME are the only things it cannot do, and none of them is used in practice. A review of the vm Backend found its remaining gaps fixable; none of them argues for keeping two runtimes.
+Two agent Backends run side by side: a pod per agent (optionally under Kata) and the vm Backend, where an owner's machines live in one runner pod. Every feature that touches an agent carries both paths. The vm Backend is still opt-in behind a per-user experimental flag. GPU templates, per-template node placement and persisted paths outside HOME are the only things it cannot do, and none of them is used in practice. A review of the vm Backend found its remaining gaps fixable; none of them argues for keeping two runtimes. This replaces the paired agent and gateway pods of ADR-038 and the per-template `runtimeClassName` and `nodeSelector` of ADR-073. It keeps ADR-091's runner topology but ends one of its commitments: budgets no longer count a vm agent by its gateway.
 
 ## Decision
 
