@@ -778,7 +778,7 @@ func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)
@@ -817,7 +817,7 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	args := func(configure func(*config.VMRunnerSpec)) []string {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)
@@ -833,7 +833,7 @@ func TestEveryCacheIsBounded(t *testing.T) {
 	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
-		if err := r.applyRunnerDeployment(context.Background(), testOwner); err != nil {
+		if err := r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true); err != nil {
 			return "", err
 		}
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
@@ -1305,7 +1305,7 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner))
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)

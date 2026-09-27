@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"sort"
 	"strings"
@@ -46,7 +47,7 @@ func runnerRolloutLimits(spec config.VMRunnerSpec) (int, time.Duration) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most `rollout.maxConcurrent` runners are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one.
-func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment) error {
+func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment, create bool) error {
 	hash, err := runnerTemplateHash(dep.Spec)
 	if err != nil {
 		return err
@@ -54,12 +55,18 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	cli := r.client.AppsV1().Deployments(dep.Namespace)
 	existing, err := cli.Get(ctx, dep.Name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
+		if !create {
+			return nil
+		}
 		dep.Annotations = map[string]string{annRunnerTemplate: hash}
 		_, err = cli.Create(ctx, dep, metav1.CreateOptions{})
 		return err
 	}
 	if err != nil {
 		return err
+	}
+	if existing.DeletionTimestamp != nil {
+		return errRunnerTerminating
 	}
 	if existing.Annotations[annRunnerTemplate] == hash {
 		return nil
@@ -184,7 +191,7 @@ func runnerPodRolledOut(dep *appsv1.Deployment) bool {
 	return st.ObservedGeneration >= dep.Generation && st.Replicas == want && st.UpdatedReplicas == want && st.ReadyReplicas == want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a changed runner pod is applied when one of that owner's agents reconciles, and a hibernated owner's agents may not reconcile for days. The sweep offers every runner its turn, in name order, so a roll reaches the whole install even where nothing else would ask.
+// UNIT_BOUNDARY_DESCRIPTION: a changed runner pod is applied when one of that owner's agents reconciles, and a hibernated owner's agents may not reconcile for days. The sweep offers every runner its turn, in name order, so a roll reaches the whole install even where nothing else would ask. Each turn holds the owner's lock and only updates a runner that still exists, so it cannot race the orphan sweep into recreating a runner that sweep has just removed.
 func (r *AgentReconciler) ReconcileRunnerRollout(ctx context.Context) {
 	if !r.config.VM.Enabled {
 		return
@@ -197,12 +204,17 @@ func (r *AgentReconciler) ReconcileRunnerRollout(ctx context.Context) {
 		return
 	}
 	sort.Slice(list.Items, func(i, j int) bool { return list.Items[i].Name < list.Items[j].Name })
+	refs := r.runnerOwnerRef(ctx)
 	for i := range list.Items {
 		owner := list.Items[i].Labels[envoyOwnerLabel]
 		if owner == "" || list.Items[i].DeletionTimestamp != nil {
 			continue
 		}
-		if err := r.applyRunnerDeployment(ctx, owner); err != nil {
+		lock := r.ownerLock(owner)
+		lock.Lock()
+		err := r.applyRunnerDeployment(ctx, owner, refs, false)
+		lock.Unlock()
+		if err != nil && !errors.Is(err, errRunnerTerminating) {
 			slog.Warn("vm runner rollout: applying a runner failed", "owner", owner, "error", err)
 		}
 	}

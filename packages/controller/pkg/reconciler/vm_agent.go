@@ -46,11 +46,17 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if owner == "" {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
+	lock := r.ownerLock(owner)
+	lock.Lock()
+	defer lock.Unlock()
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
 	}
 	runner, ready, err := r.ensureRunner(ctx, owner, demand)
+	if errors.Is(err, errRunnerTerminating) {
+		return vmrunner.MachineStatus{Message: "the owner's previous VM runner is still being removed; a new one is created once it is gone"}, false, nil
+	}
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
@@ -161,6 +167,9 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner that cannot be reached, and whose owner has no Agent of any kind, is kept before the sweep removes it anyway. Only an agent's reconcile creates a runner, so such a runner serves nobody; the grace covers a runner that is merely restarting while its owner's Agents are being recreated.
+const orphanRunnerGrace = 30 * time.Minute
+
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	if !r.config.VM.Enabled {
 		return
@@ -171,44 +180,93 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 		return
 	}
 	for _, runner := range runners {
-		ids, err := runner.client.List(ctx)
-		if err != nil {
-			slog.Warn("orphan machine GC: listing machines failed", "owner", runner.owner, "error", err)
-			continue
-		}
-		for _, id := range ids {
-			agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
-			if err == nil {
-				if agent.GetLabels()[envoyOwnerLabel] == runner.owner {
-					continue
-				}
-			} else if !k8serrors.IsNotFound(err) {
-				slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
-				continue
-			}
-			if err := runner.client.Delete(ctx, id); err != nil {
-				slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
-				continue
-			}
-			slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
-		}
-		agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: envoyOwnerLabel + "=" + runner.owner,
-		})
-		if err != nil {
-			slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", runner.owner, "error", err)
-			continue
-		}
-		if anyVMAgent(agents.Items) {
-			continue
-		}
-		left, err := runner.client.List(ctx)
-		if err != nil || len(left) > 0 {
-			slog.Info("orphan machine GC: runner kept, it is not empty", "owner", runner.owner, "machines", len(left), "error", err)
-			continue
-		}
-		r.deleteRunner(ctx, runner.owner)
+		r.sweepRunner(ctx, runner)
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name: an Agent of the same name that belongs to someone else says nothing about this runner.
+func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
+	owner := runner.owner
+	lock := r.ownerLock(owner)
+	lock.Lock()
+	defer lock.Unlock()
+
+	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: envoyOwnerLabel + "=" + owner,
+	})
+	if err != nil {
+		slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", owner, "error", err)
+		return
+	}
+	var ids []string
+	if runner.client != nil {
+		ids, err = runner.client.List(ctx)
+	}
+	if runner.client == nil || err != nil {
+		r.collectUnreachableRunner(ctx, owner, len(agents.Items), err)
+		return
+	}
+	r.ownerless.Delete(owner)
+	claimed := map[string]bool{}
+	for i := range agents.Items {
+		claimed[agents.Items[i].GetName()] = true
+	}
+	for _, id := range ids {
+		if claimed[id] {
+			continue
+		}
+		if err := runner.client.Delete(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
+			continue
+		}
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
+	}
+	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
+		return
+	}
+	left, err := runner.client.List(ctx)
+	if err != nil || len(left) > 0 {
+		slog.Info("orphan machine GC: runner kept, it is not empty", "owner", owner, "machines", len(left), "error", err)
+		return
+	}
+	r.deleteRunner(ctx, owner)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed with whatever its disk still holds — it is reported at error level, because that is the one path where the platform deletes a claim it could not see into.
+func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
+	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
+		r.ownerless.Delete(owner)
+		slog.Warn("orphan machine GC: the owner's VM runner cannot be reached, it is kept", "owner", owner, "error", cause)
+		return
+	}
+	first, _ := r.ownerless.LoadOrStore(owner, time.Now())
+	since := time.Since(first.(time.Time))
+	if since < orphanRunnerGrace {
+		slog.Warn("orphan machine GC: a VM runner that cannot be reached serves no agent; it is removed if that lasts", "owner", owner, "for", since.Round(time.Second), "grace", orphanRunnerGrace, "error", cause)
+		return
+	}
+	slog.Error("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is deleted unseen", "owner", owner, "for", since.Round(time.Second), "error", cause)
+	r.deleteRunner(ctx, owner)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's Agents as the informer sees them, counted as a second opinion beside a fresh List: either one knowing of an Agent keeps the runner.
+func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string, vmOnly bool) int {
+	items, err := r.ownerAgents(ctx, owner)
+	if err != nil {
+		return 1
+	}
+	n := 0
+	for _, obj := range items {
+		u, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			n++
+			continue
+		}
+		if !vmOnly || anyVMAgent([]unstructured.Unstructured{*u}) {
+			n++
+		}
+	}
+	return n
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
@@ -246,6 +304,9 @@ func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name stri
 		return
 	}
 	for _, runner := range runners {
+		if runner.client == nil {
+			continue
+		}
 		if err := runner.client.Delete(ctx, name); err != nil {
 			slog.Warn("deleting machine", "agent", name, "owner", runner.owner, "error", err)
 		}

@@ -234,16 +234,16 @@ func TestTheRunnerClaimIsSizedFromDemandAndGrowsWithIt(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
 	expandableDefaultClass(t, r, true)
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 	assert.Equal(t, "61Gi", runnerClaim(t, r), "10Gi of disk, 1Gi of headroom and the 50Gi image cache budget")
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 30, machines: 2}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 30, machines: 2}, nil))
 	assert.Equal(t, "82Gi", runnerClaim(t, r), "a second agent grows the claim")
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 	assert.Equal(t, "82Gi", runnerClaim(t, r), "a claim is never shrunk")
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 200, machines: 4}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 200, machines: 4}, nil))
 	assert.Equal(t, "100Gi", runnerClaim(t, r), "runner.storage is the ceiling")
 }
 
@@ -254,7 +254,7 @@ func TestACacheOffTheClaimIsNotCountedOnIt(t *testing.T) {
 	expandableDefaultClass(t, r, true)
 	r.config.VM.Runner.ImageCacheHostPath = "/var/lib/platform-images"
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 	assert.Equal(t, "11Gi", runnerClaim(t, r))
 }
 
@@ -271,7 +271,7 @@ func TestAClaimThatCouldNotGrowIsCreatedAtTheCeiling(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, _, _ := setupVMReconciler(t, vmAgentCR())
 			tc.setup(t, r)
-			require.NoError(t, r.applyRunnerPVC(context.Background(), testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+			require.NoError(t, r.applyRunnerPVC(context.Background(), testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 			assert.Equal(t, "100Gi", runnerClaim(t, r))
 		})
 	}
@@ -283,7 +283,7 @@ func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	expandableDefaultClass(t, r, true)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}, nil))
 	require.Equal(t, "50Gi", runnerClaim(t, r))
 	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("persistentvolumeclaims %q is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize", r.runnerName(testOwner))
@@ -297,11 +297,11 @@ func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
 func TestAnExistingLargerClaimStaysAsItIs(t *testing.T) {
 	ctx := context.Background()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 	require.Equal(t, "100Gi", runnerClaim(t, r))
 	expandableDefaultClass(t, r, true)
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
 	assert.Equal(t, "100Gi", runnerClaim(t, r))
 }
 
@@ -310,7 +310,7 @@ func TestAMistypedCeilingLeavesExistingClaimsAlone(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}, nil))
 
 	r.config.VM.Runner.Storage = "a lot"
 	require.NoError(t, r.Reconcile(ctx, agent))

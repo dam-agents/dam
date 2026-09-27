@@ -51,6 +51,7 @@ type AgentReconciler struct {
 	agentCache     cache.GenericLister
 	vmRunning      sync.Map
 	resizeNotices  sync.Map
+	ownerless      sync.Map
 	machineWatchMu sync.Mutex
 	machineWatches map[string]*machineWatch
 	preflightMu    sync.Mutex

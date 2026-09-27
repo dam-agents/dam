@@ -106,21 +106,21 @@ func TestAChangedRunnerPodRollsOneOwnerAtATime(t *testing.T) {
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.config.VM.Runner.Image = runnerV2
 
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "only one runner is mid-roll at a time")
 
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the first runner's new pod is not ready yet")
 
 	settleRunnerPod(t, r, "owner-a")
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the pod is ready but the machine it had is not back")
 
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the first runner settled, so the next one rolls")
 
 	a, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
@@ -133,7 +133,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupRolloutReconciler(t, "owner-a")
 	r.config.VM.Runner.Image = runnerV2
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 
 	issueRunnerTLS(t, r, "owner-new")
 	_, _, err := r.ensureRunner(ctx, "owner-new", runnerDemand{})
@@ -148,7 +148,7 @@ func TestAnUnchangedRunnerIsNotWritten(t *testing.T) {
 	cs := r.client.(*fake.Clientset)
 	cs.ClearActions()
 
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	for _, a := range cs.Actions() {
 		assert.False(t, a.GetVerb() == "update" && a.GetResource().Resource == "deployments", "unexpected %s of %s", a.GetVerb(), a.GetResource().Resource)
 	}
@@ -161,15 +161,15 @@ func TestARollThatNeverSettlesStopsHoldingItsPlace(t *testing.T) {
 	nodes["owner-a"].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.config.VM.Runner.Image = runnerV2
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	settleRunnerPod(t, r, "owner-a")
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
 
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"))
 
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
 }
 
@@ -180,11 +180,11 @@ func TestAMachineWhoseAgentIsGoneDoesNotHoldTheRoll(t *testing.T) {
 	nodes["owner-a"].specs["deleted-agent"] = vmrunner.MachineSpec{Running: true}
 	nodes["owner-a"].set("deleted-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.config.VM.Runner.Image = runnerV2
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	settleRunnerPod(t, r, "owner-a")
 	nodes["owner-a"].set("deleted-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent})
 
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b"))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
 }
 
@@ -196,7 +196,7 @@ func TestTheRollWidthIsTheInstalls(t *testing.T) {
 	r.config.VM.Runner.Image = runnerV2
 
 	for _, owner := range []string{"owner-a", "owner-b", "owner-c"} {
-		require.NoError(t, r.applyRunnerDeployment(ctx, owner))
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
 	}
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
