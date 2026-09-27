@@ -7,7 +7,8 @@ set -euo pipefail
 COMMON=(--set terms.version=test --set terms.text='Test Terms')
 VM=(--set virtualization.enabled=true
   --set virtualization.runner.resources.limits.memory=8Gi
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0'
+  --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32')
 
 refuses() {
   local want=$1 out
