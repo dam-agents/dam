@@ -24,6 +24,10 @@ import {
   type SidebarSlice,
 } from "./modules/platform/store/sidebar.js";
 import {
+  createSidebarAgentsSlice,
+  type SidebarAgentsSlice,
+} from "./modules/platform/store/sidebar-agents.js";
+import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
@@ -53,6 +57,7 @@ export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
+  SidebarAgentsSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
@@ -66,6 +71,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
+  ...createSidebarAgentsSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),

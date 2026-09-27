@@ -19,6 +19,7 @@ import { getBrand } from "../brand.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { useStore } from "../store.js";
+import { SidebarAgentList } from "./sidebar-agent-list.js";
 
 interface Destination {
   label: string;
@@ -81,7 +82,7 @@ export function IconRail({
       <nav
         className={cn(
           "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0 transition-[width]",
-          expandedNav ? "w-[232px]" : "w-[56px]",
+          expandedNav ? "w-[280px]" : "w-[56px]",
         )}
         data-testid="app-sidebar"
       >
@@ -138,7 +139,17 @@ export function IconRail({
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...starterKits} expanded={expandedNav} />
         </div>
-        <div className="flex-1" />
+        {expandedNav && (
+          <div className="mt-4 flex min-h-0 flex-1 flex-col">
+            <div className="mb-2 px-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Agents
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <SidebarAgentList />
+            </div>
+          </div>
+        )}
+        {!expandedNav && <div className="flex-1" />}
         <div className="mb-2 flex flex-col gap-px">
           <RailLink
             label="Documentation"
