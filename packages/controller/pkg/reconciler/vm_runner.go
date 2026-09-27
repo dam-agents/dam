@@ -19,9 +19,11 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
@@ -282,7 +284,7 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, demand runnerDemand, refs []metav1.OwnerReference) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
-	size, ceiling, sizeErr := r.runnerClaimSize(demand)
+	size, ceiling, sizeErr := r.runnerClaimSize(owner, demand)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
 		if existing.DeletionTimestamp != nil {
 			return errRunnerTerminating
@@ -768,27 +770,45 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand.
-func (r *AgentReconciler) runnerNotReadyMessage(ctx context.Context, owner string) string {
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up.
+func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
 	})
 	if err != nil || len(pods.Items) == 0 {
-		return starting
+		return vmrunner.ReasonNotReady, starting
 	}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" {
-				return "the owner's VM runner cannot be scheduled: " + c.Message
+				return apiv1.ReasonMachineRunnerUnschedulable, "the owner's VM runner cannot be scheduled: " + c.Message
 			}
 		}
 		for _, cs := range pod.Status.ContainerStatuses {
 			if w := cs.State.Waiting; w != nil && w.Reason != "" && w.Reason != "ContainerCreating" {
-				return "the owner's VM runner is not starting: " + strings.TrimSpace(w.Reason+": "+w.Message)
+				return vmrunner.ReasonNotReady, "the owner's VM runner is not starting: " + strings.TrimSpace(w.Reason+": "+w.Message)
 			}
 		}
 	}
-	return starting
+	return vmrunner.ReasonNotReady, starting
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what cert-manager says about a Certificate it has not issued yet — a missing issuer, a CA that is not ready, a rate limit — from its Ready condition. Empty when it says nothing, or the Certificate cannot be read.
+func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) string {
+	cert, err := r.dynamic.Resource(certificateGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return ""
+	}
+	conds, _, _ := unstructured.NestedSlice(cert.Object, "status", "conditions")
+	for _, c := range conds {
+		m, ok := c.(map[string]interface{})
+		if !ok || m["type"] != "Ready" || m["status"] != "False" {
+			continue
+		}
+		msg, _ := m["message"].(string)
+		return msg
+	}
+	return ""
 }

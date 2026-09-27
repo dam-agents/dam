@@ -65,11 +65,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		msg := r.runnerNotReadyMessage(ctx, owner)
+		reason, msg := r.runnerNotReady(ctx, owner)
 		if problems := r.vmPreflightProblems(); problems != "" {
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
-		return vmrunner.MachineStatus{Message: msg}, false, nil
+		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
@@ -397,6 +397,42 @@ func (r *AgentReconciler) nextNotReadyPoll(name string) time.Duration {
 	}
 	r.notReadyPolls.Store(name, n+1)
 	return poll
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent cannot start until cert-manager has issued its gateway's leaf and its owner's runner certificate, and a Certificate that is not issuing says why only on itself. The wait is put on the Agent's readiness, with cert-manager's account when it gives one, so the owner sees what the agent waits for instead of a status that never moves.
+func (r *AgentReconciler) publishCertificateWait(ctx context.Context, agent *apiv1.Agent, pending error) {
+	cert, what := EnvoyLeafSecretName(agent.Name), "the gateway's TLS certificate"
+	if errors.Is(pending, errRunnerTLSPending) {
+		cert, what = r.runnerTLSName(agent.Labels[envoyOwnerLabel]), "the owner's VM runner's TLS certificate"
+	}
+	msg := "waiting for cert-manager to issue " + what
+	if detail := r.certificateNotReady(ctx, cert); detail != "" {
+		msg += ": " + detail
+	}
+	gen := agent.Generation
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
+	}); err != nil {
+		slog.Warn("writing the certificate wait onto the agent", "agent", agent.Name, "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine that could not be ensured is not known to be ready, so the failed reconcile takes Ready and AgentPodReady down with it rather than leaving the last success standing. A runner that could not be reached is described without its address; the dial error goes to the log.
+func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agent, cause error) error {
+	var unreachable *vmrunner.UnreachableError
+	if errors.As(cause, &unreachable) {
+		slog.Warn("vm machine: the owner's VM runner could not be reached", "agent", agent.Name, "owner", agent.Labels[envoyOwnerLabel], "error", unreachable.Unwrap())
+	}
+	msg := fmt.Sprintf("reconciling vm machine: %v", cause)
+	gen := agent.Generation
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
+	}); err != nil {
+		slog.Warn("writing agent machine-error status", "agent", agent.Name, "error", err)
+	}
+	return r.setError(ctx, agent.Name, msg)
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {

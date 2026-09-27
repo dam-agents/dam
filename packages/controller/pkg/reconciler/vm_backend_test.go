@@ -232,12 +232,14 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
-	msg := ""
+	msg, reason := "", ""
 	for _, c := range conds {
 		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
 			msg, _ = m["message"].(string)
+			reason, _ = m["reason"].(string)
 		}
 	}
+	assert.Equal(t, apiv1.ReasonMachineRunnerUnschedulable, reason, "a runner that cannot be placed is a failed start, not one still coming up")
 	assert.Contains(t, msg, "cannot be scheduled")
 	assert.Contains(t, msg, "Insufficient devices.kubevirt.io/kvm",
 		"the scheduler's own account reaches the agent, not just the generic starting message")

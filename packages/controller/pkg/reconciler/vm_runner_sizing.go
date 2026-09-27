@@ -103,7 +103,7 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
-func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
+func (r *AgentReconciler) runnerClaimSize(owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
 	ceiling, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
@@ -119,9 +119,18 @@ func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantit
 	gib := max((need+(1<<30)-1)>>30, 1)
 	size := *resource.NewQuantity(gib<<30, resource.BinarySI)
 	if size.Cmp(ceiling) > 0 {
+		r.noteClaimCapped(owner, size, ceiling)
 		return ceiling, ceiling, nil
 	}
 	return size, ceiling, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose disks and cache outgrow `runner.storage` gets a claim at the ceiling, and the machines on it can fill it. That is the install's choice, not an error, so it is said once per owner and ceiling rather than on every reconcile of every one of their agents.
+func (r *AgentReconciler) noteClaimCapped(owner string, need, ceiling resource.Quantity) {
+	if _, seen := r.claimCapNotices.LoadOrStore(owner+"/"+ceiling.String(), struct{}{}); seen {
+		return
+	}
+	slog.Warn("vm runner: the owner's machines need more than runner.storage, so the claim is capped there and can fill up", "owner", owner, "need", need.String(), "ceiling", ceiling.String())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a claim sized to today's demand is only safe where it can grow with tomorrow's, so a claim on a class that does not allow expansion is created at the ceiling, as every claim was before. A class the controller cannot read counts as one that does not expand — the cost of guessing wrong that way is unused storage, the cost the other way is an owner whose next agent does not fit.

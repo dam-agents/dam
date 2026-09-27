@@ -35,6 +35,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: its sandbox VM didn't boot. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineRunnerUnschedulable":
+          return (
+            "This agent failed to start: the cluster has no node that can " +
+            "run its sandbox VMs right now. Tell an admin."
+          );
         default:
           return (
             "This agent failed to start: it crashed while starting. " +

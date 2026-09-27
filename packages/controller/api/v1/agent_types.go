@@ -195,6 +195,14 @@ const ReasonOverBudget = "OverBudget"
 // a deleted credential Secret. Terminal, unlike PodNotReady.
 const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 
+// ReasonMachineRunnerUnschedulable is stamped on AgentPodReady when a vm
+// agent's owner has a VM runner pod the scheduler cannot place (no node
+// offers the virtualization devices, say). The controller sets it from the
+// runner pod's PodScheduled condition; the runner itself never reports it, so
+// it is not part of the machine API's vocabulary. The message carries the
+// scheduler's own account.
+const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
+
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.
 type AgentStatus struct {

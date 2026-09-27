@@ -28,6 +28,12 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a runner no node can place as an error", () => {
+    expect(computeAgentState(notReady("MachineRunnerUnschedulable"))).toBe(
+      "error",
+    );
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

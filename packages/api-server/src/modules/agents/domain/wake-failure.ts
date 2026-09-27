@@ -29,6 +29,7 @@ export const POD_FAILURE_REASONS = new Set([
   "ContainerTerminated",
   "MachineBootFailed",
   "MachineImageUnavailable",
+  "MachineRunnerUnschedulable",
 ]);
 
 const GATEWAY_FAILURE_REASONS = new Set([
@@ -123,6 +124,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image is not available to the VM runner";
         case "MachineBootFailed":
           return "the agent's microVM did not boot";
+        case "MachineRunnerUnschedulable":
+          return "the VM runner for this agent's owner cannot be placed on any node";
         default:
           return "the agent crashed while starting";
       }
