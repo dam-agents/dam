@@ -51,8 +51,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	lock := r.ownerLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
-	wasRunning, known := r.vmRunning.Load(name)
-	live := running && known && wasRunning.(bool)
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
@@ -125,7 +123,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		MemoryMiB:  r.machineMemoryMiB(spec),
 		StorageGiB: storageGiB,
 		Env:        env,
-		CACert:     r.gateCARestart(name, string(leaf.Data["ca.crt"]), live),
+		CACert:     string(leaf.Data["ca.crt"]),
 		AllowCIDRs: []string{gatewayIP + "/32"},
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
@@ -135,7 +133,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return st, false, err
 	}
-	r.noteMachineCA(name, machine.CACert, running, st)
 
 	if st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {

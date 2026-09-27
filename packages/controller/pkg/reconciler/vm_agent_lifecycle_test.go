@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,6 @@ import (
 	"strings"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
-	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 // TEST_SCENARIO: an Agent is deleted while its owner's runner is restarting. The machine cannot be removed yet, so the cleanup says so — the delete queue retries it — and a later attempt, with the runner back, removes it.
@@ -98,66 +96,6 @@ func TestARunnerChangeWakesOnlyItsOwnersVMAgents(t *testing.T) {
 
 	assert.Equal(t, []string{"vm-one"}, r.OwnerVMAgents(testOwner))
 	assert.Empty(t, r.OwnerVMAgents(""))
-}
-
-func addVMPeer(t *testing.T, r *AgentReconciler, name string, running bool) *apiv1.Agent {
-	t.Helper()
-	ctx := context.Background()
-	a := vmAgentCR()
-	a.Name = name
-	a.Labels = map[string]string{envoyOwnerLabel: testOwner}
-	a.Spec.Resources.Limits = map[string]string{"cpu": "500m", "memory": "1Gi"}
-	if !running {
-		a.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
-	}
-	u, err := agentToUnstructured(a)
-	require.NoError(t, err)
-	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
-	require.NoError(t, err)
-	leaf := leafSecret()
-	leaf.Name = EnvoyLeafSecretName(name)
-	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
-	require.NoError(t, err)
-	return a
-}
-
-func rotateMITMCA(t *testing.T, r *AgentReconciler, names ...string) {
-	t.Helper()
-	for _, name := range names {
-		sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), EnvoyLeafSecretName(name), metav1.GetOptions{})
-		require.NoError(t, err)
-		sec.Data["ca.crt"] = []byte("MITM-CA-2")
-		_, err = r.client.CoreV1().Secrets("test-agents").Update(context.Background(), sec, metav1.UpdateOptions{})
-		require.NoError(t, err)
-	}
-}
-
-// TEST_SCENARIO: the MITM CA rotates, which reaches every agent's leaf Secret, and the runner applies a new CA as a reboot. Two running machines take it one after the other — the second keeps the CA it runs with until the first is ready again — while a stopped machine, which reboots anyway when it starts, takes it at once.
-func TestANewMITMCARebootsRunningMachinesOneAtATime(t *testing.T) {
-	ctx := context.Background()
-	first := vmAgentCR()
-	first.Spec.Resources.Limits = map[string]string{"cpu": "500m", "memory": "1Gi"}
-	r, node, _ := setupVMReconciler(t, first)
-	second := addVMPeer(t, r, "second", true)
-	asleep := addVMPeer(t, r, "asleep", false)
-	for _, a := range []*apiv1.Agent{first, second, asleep} {
-		require.NoError(t, r.Reconcile(ctx, a))
-	}
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000})
-	node.set("second", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31001})
-	rotateMITMCA(t, r, "my-agent", "second", "asleep")
-
-	for _, a := range []*apiv1.Agent{first, second, asleep} {
-		require.NoError(t, r.Reconcile(ctx, a))
-	}
-	assert.Equal(t, "MITM-CA-2", node.spec("my-agent").CACert)
-	assert.Equal(t, "MITM-CA", node.spec("second").CACert, "the second running machine waits for the first to reboot")
-	assert.Equal(t, "MITM-CA-2", node.spec("asleep").CACert, "a stopped machine takes the new CA at once")
-
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000})
-	require.NoError(t, r.Reconcile(ctx, first))
-	require.NoError(t, r.Reconcile(ctx, second))
-	assert.Equal(t, "MITM-CA-2", node.spec("second").CACert, "once the first is back, the second takes its turn")
 }
 
 // TEST_SCENARIO: an idle vm agent is hibernated while its owner's runner cannot be reached. The machine cannot be stopped yet, but that is no reason to keep its gateway up and the agent reported as running: the gateway is scaled down and the agent reads hibernated, and the agent's next reconcile stops the machine.

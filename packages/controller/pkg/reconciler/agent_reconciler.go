@@ -55,9 +55,6 @@ type AgentReconciler struct {
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
-	caMu            sync.Mutex
-	machineCA       map[string]string
-	caRolls         map[string]caRoll
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
 	machineWatches  map[string]*machineWatch
@@ -471,7 +468,6 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 	}
 	r.vmRunning.Delete(name)
 	r.notReadyPolls.Delete(name)
-	r.forgetMachineCA(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
