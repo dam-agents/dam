@@ -14,14 +14,19 @@ summary: Every agent becomes a smolvm machine in its owner's runner pod, with a 
 
 ## Context
 
-Two agent Backends run side by side: a pod per agent (optionally under Kata) and the vm Backend, where an owner's machines live in one runner pod. Every feature that touches an agent carries both paths. The vm Backend is still opt-in behind a per-user flag. GPU templates, per-template node placement and persisted paths outside HOME are the only things it cannot do, and none of them is used in practice. A review of the vm Backend found its remaining gaps fixable; none of them argues for keeping two runtimes.
+Two agent Backends run side by side: a pod per agent (optionally under Kata) and the vm Backend, where an owner's machines live in one runner pod. Every feature that touches an agent carries both paths. The vm Backend is still opt-in behind a per-user experimental flag. GPU templates, per-template node placement and persisted paths outside HOME are the only things it cannot do, and none of them is used in practice. A review of the vm Backend found its remaining gaps fixable; none of them argues for keeping two runtimes.
 
 ## Decision
 
 smolvm microVMs become the platform's only agent runtime. Each owner gets one runner pod that hosts all of their machines, a shared pool of CPU and storage, and one gateway as a sidecar. Container agent pods and Kata are removed once every existing agent has been migrated, with its HOME moved into its VM disk.
 
 - **One runtime.** The per-agent pod goes, and with it Kata (`runtimeClassName`), per-template node selection, GPU and other extended resources, and persisted paths outside HOME. HOME on the machine's disk is the one persistence rule.
-- **Cutover, then removal.** Every new agent becomes a machine, with no picker. An existing agent moves on its own Backend: its identity, sessions and schedules stay, and its HOME is copied into its disk. Data on any other persisted path is copied under HOME, so the one persistence rule holds after the move. The old volume is kept for a retention window, so a move can be rolled back onto it. At first a user starts each move, behind the experimental flag; a controller sweep that moves the rest follows. Once every agent has moved, the container Backend, the migration and the flag are deleted.
+- **The move.** An agent moves on its own Backend: its identity, sessions and schedules stay, and its HOME is copied into its disk. Data on any other persisted path is copied under HOME, so the one persistence rule holds after the move. The old volume is kept for a retention window, so a move can be rolled back onto it.
+- **Transition in four phases**, each one proving the next:
+  1. *Opt-in.* A user who opts into the experiment gets the new runtime for new agents and a button that migrates one chosen agent. Every move is started by hand, so the whole path is tested one agent at a time.
+  2. *New runtime for everyone.* The experiment and its flag are removed, and the runtime is presented as the new runtime, not an experiment. New agents are machines; existing agents still move only when their user presses the button.
+  3. *Platform-driven migration.* The platform moves the remaining agents itself, in phased batches.
+  4. *Removal.* Once every agent has moved, the container Backend, Kata with it, the migration and the button are deleted.
 - **Per-owner runner.** The runner pod stays the unit of placement, failure and trust. All of an owner's machines share it, and a guest escape reaches that owner and no one else.
 - **Per-owner gateway in the runner pod.** One gateway per owner runs as a sidecar of the runner and serves all of that owner's machines, replacing the pod per agent.
 - **Per-owner pool for CPU and storage.** The runner's CPU limit is the owner's quota, and a machine may use CPUs up to it. Each machine keeps one sparse disk, sized up to the pool. The guest discards freed blocks, and the runner stops a machine before the owner's claim fills. Memory stays sized per agent for now.
@@ -31,6 +36,7 @@ smolvm microVMs become the platform's only agent runtime. Each owner gets one ru
 ## Alternatives Considered
 
 - **Keep both Backends** — every agent feature keeps two implementations, for configurations nobody uses.
+- **Migrate every agent in the first release** — the move would run at scale before it had been tested on single agents, one chosen by hand at a time.
 - **Runner per node** — a guest escape would reach every owner on the node, and a per-owner pool would become a scheduler problem.
 - **Runner per agent** — no shared pool, and the most pods, which is what the pod per agent costs today.
 - **Gateway per agent, in its own pod** — keeps raw credentials out of the runner, at one extra pod per agent.
