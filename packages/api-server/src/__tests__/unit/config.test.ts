@@ -105,3 +105,49 @@ describe("loadConfig — object storage", () => {
     expect(() => loadConfig()).toThrow(/must be set together/);
   });
 });
+
+describe("loadConfig — default backend", () => {
+  const managed = [
+    ...Object.keys(REQUIRED_ENV),
+    "VIRTUALIZATION_ENABLED",
+    "AGENT_DEFAULT_BACKEND",
+  ];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("defaults new agents to containers", () => {
+    expect(loadConfig().agentDefaultBackend).toBe("container");
+  });
+
+  it("defaults new agents to vm on an install with virtualization", () => {
+    process.env.VIRTUALIZATION_ENABLED = "true";
+    process.env.AGENT_DEFAULT_BACKEND = "vm";
+    expect(loadConfig().agentDefaultBackend).toBe("vm");
+  });
+
+  // TEST_SCENARIO: a vm default on an install that cannot run a machine would park every new agent at reconcile, so the api-server refuses to start rather than serve it.
+  it("refuses a vm default without virtualization", () => {
+    process.env.AGENT_DEFAULT_BACKEND = "vm";
+    expect(() => loadConfig()).toThrow(/AGENT_DEFAULT_BACKEND=vm/);
+  });
+
+  it("refuses a backend it does not know", () => {
+    process.env.VIRTUALIZATION_ENABLED = "true";
+    process.env.AGENT_DEFAULT_BACKEND = "kata";
+    expect(() => loadConfig()).toThrow();
+  });
+});

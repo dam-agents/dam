@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#MISE description="Render the chart with values each validator must refuse or accept, and assert the outcome. check:render only proves the valid shapes render; this proves the invalid ones do not."
+#MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+COMMON=(--set terms.version=test --set terms.text='Test Terms')
+VM=(--set virtualization.enabled=true
+  --set virtualization.runner.resources.limits.memory=8Gi
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
+
+refuses() {
+  local want=$1 out
+  shift
+  if out=$(helm template platform . "${COMMON[@]}" "$@" 2>&1); then
+    echo "FAIL: expected the render to be refused with \"$want\" for: $*" >&2
+    exit 1
+  fi
+  if ! grep -qF -- "$want" <<<"$out"; then
+    echo "FAIL: the render was refused, but not with \"$want\" for: $*" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+}
+
+renders_with() {
+  local want=$1 out
+  shift
+  out=$(helm template platform . "${COMMON[@]}" "$@")
+  if ! grep -qF -- "$want" <<<"$out"; then
+    echo "FAIL: expected the render to contain \"$want\" for: $*" >&2
+    exit 1
+  fi
+}
+
+refuses "virtualization.defaultBackend=vm requires virtualization.enabled=true" \
+  --set virtualization.defaultBackend=vm
+refuses "virtualization.defaultBackend must be container or vm" \
+  "${VM[@]}" --set virtualization.defaultBackend=kata
+renders_with 'value: "vm"' "${VM[@]}" --set virtualization.defaultBackend=vm \
+  --show-only templates/apiserver/app.yaml
+renders_with 'value: "container"' "${VM[@]}" \
+  --show-only templates/apiserver/app.yaml
+
+refuses "set requiresContainer: true instead" \
+  --set harnessTemplates.codex.backend.type=vm
+renders_with "requiresContainer: true" \
+  --set harnessTemplates.codex.requiresContainer=true \
+  --show-only templates/harness-templates.yaml
+echo "validators: ok"

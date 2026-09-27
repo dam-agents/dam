@@ -50,6 +50,7 @@ export interface TemplateSpec {
   storageClass?: string;
   runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
+  requiresContainer?: boolean;
   skillSources?: SkillSourceSeed[];
 }
 

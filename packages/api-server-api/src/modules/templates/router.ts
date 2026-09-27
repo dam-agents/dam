@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import { readAgentProcedure } from "../../auth-procedures.js";
+import { containerOnlyReason } from "./backend-eligibility.js";
 import { templateGetInputSchema } from "./schemas.js";
 import type { Template } from "./types.js";
 
@@ -18,6 +19,7 @@ function toView(tmpl: Template) {
     releaseNotesUrl: tmpl.spec.releaseNotesUrl,
     setupNote: tmpl.spec.setupNote,
     experimental: tmpl.spec.experimental ?? false,
+    containerOnlyReason: containerOnlyReason(tmpl.spec),
     size: {
       cpu: tmpl.spec.resources?.limits?.cpu,
       memory: tmpl.spec.resources?.limits?.memory,

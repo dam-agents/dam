@@ -73,7 +73,10 @@
     },
     "backend": {
       "type": "string",
-      "const": "vm"
+      "enum": [
+        "container",
+        "vm"
+      ]
     },
     "resources": {
       "type": "object",

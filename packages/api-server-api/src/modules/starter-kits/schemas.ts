@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  agentBackendSchema,
   agentNameSchema,
   agentSizeSchema,
   storageQuantitySchema,
@@ -120,7 +121,7 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
-  backend: z.literal("vm").optional(),
+  backend: agentBackendSchema.optional(),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   install: starterKitInstallSchema.optional(),

@@ -1,4 +1,4 @@
-import { brandSchema, linksSchema } from "api-server-api";
+import { agentBackendSchema, brandSchema, linksSchema } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
@@ -69,6 +69,7 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.coerce.boolean().default(false),
+  agentDefaultBackend: agentBackendSchema.default("container"),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -172,6 +173,11 @@ const validatedConfigSchema = configSchema
     }
     return { ...c, acpTurnStallProbeSeconds: stall };
   })
+  .refine((c) => c.agentDefaultBackend !== "vm" || c.virtualizationEnabled, {
+    message:
+      "AGENT_DEFAULT_BACKEND=vm needs VIRTUALIZATION_ENABLED: an install that cannot run a microVM cannot default every new agent to one",
+    path: ["agentDefaultBackend"],
+  })
   .refine(
     (c) =>
       (c.objectStorageAccessKeyId == null) ===
@@ -225,6 +231,7 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
+    agentDefaultBackend: process.env.AGENT_DEFAULT_BACKEND,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,

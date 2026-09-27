@@ -72,6 +72,7 @@ export const templateSpecSchema = z
     storageClass: z.string().optional(),
     runtimeClassName: z.string().optional(),
     nodeSelector: z.record(z.string(), z.string()).optional(),
+    requiresContainer: z.boolean().optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();

@@ -1288,6 +1288,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
+      defaultBackend: config.agentDefaultBackend,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,

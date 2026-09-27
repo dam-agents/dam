@@ -1096,10 +1096,30 @@ describe("starter kits: backend", () => {
     expect(calls.created[0]).toMatchObject({ vm: true });
   });
 
-  // TEST_SCENARIO: `vm` is absent rather than false for a kit that declares no backend, so the create falls through to whatever the install and the user's flag would have chosen. Sending false would override that choice from a kit that never expressed one.
+  // TEST_SCENARIO: `vm` is absent rather than false for a kit that declares no backend, so the create falls through to the install's default Backend. Sending false would override that default from a kit that never expressed one.
   it("says nothing about the backend when the kit does not", async () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply(APPLY);
     expect(calls.created[0]).not.toHaveProperty("vm");
+  });
+
+  // TEST_SCENARIO: a kit whose work needs a pod declares `backend: container`, and that must hold on an install that defaults every new agent to vm — so apply sends an explicit false, which the create lets win over the default.
+  it("pins a container when the kit declares one", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({ backend: "container" }),
+    });
+    await service.apply(APPLY);
+    expect(calls.created[0]).toMatchObject({ vm: false });
+  });
+
+  it("keeps a container kit on offer where the install cannot run a microVM", async () => {
+    const { service } = makeHarness(
+      { ...LOADED, kit: kit({ backend: "container" }) },
+      null,
+      [],
+      false,
+    );
+    expect(await service.list()).toHaveLength(1);
   });
 });

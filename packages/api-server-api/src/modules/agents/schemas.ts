@@ -4,6 +4,8 @@ import { envVarSchema } from "../shared.js";
 
 const idSchema = z.object({ id: z.string().min(1) });
 
+export const agentBackendSchema = z.enum(["container", "vm"]);
+
 const cpuQuantitySchema = z
   .string()
   .regex(/^\d+(\.\d+)?m?$/, "CPU must look like '2', '0.5' or '500m'")

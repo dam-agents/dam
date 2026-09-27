@@ -1,4 +1,5 @@
-import type { TemplateSpec } from "api-server-api";
+import type { AgentBackend, TemplateSpec } from "api-server-api";
+import { match } from "ts-pattern";
 import { durationToMinutes } from "../../../duration.js";
 
 export function resolveEffectiveHibernationTimeoutMin(
@@ -33,14 +34,14 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
+// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. It arrives already resolved (resolveBackend), which never puts a template carrying runtimeClassName or nodeSelector on the vm backend, so both are copied as the template states them. A container is written as no backend at all, the CRD's own default.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
   opts: {
     description?: string;
     size?: { cpu?: string; memory?: string };
-    vm?: boolean;
+    backend: AgentBackend;
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -57,9 +58,9 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: opts.vm ? { type: "vm" } : undefined,
-    runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
-    nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
+    backend: backendSpec(opts.backend),
+    runtimeClassName: tmplSpec.runtimeClassName,
+    nodeSelector: tmplSpec.nodeSelector,
   };
 }
 
@@ -69,7 +70,7 @@ export function assembleSpecFromImage(
     image?: string;
     description?: string;
     size?: { cpu?: string; memory?: string };
-    vm?: boolean;
+    backend: AgentBackend;
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -79,7 +80,14 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
-    backend: opts.vm ? { type: "vm" } : undefined,
+    backend: backendSpec(opts.backend),
     storageSize: opts.storage,
   };
+}
+
+function backendSpec(backend: AgentBackend): { type: "vm" } | undefined {
+  return match(backend)
+    .with("container", () => undefined)
+    .with("vm", () => ({ type: "vm" as const }))
+    .exhaustive();
 }
