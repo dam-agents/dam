@@ -1,12 +1,18 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import type { BackendOptions } from "./src/lib/backend.js";
+
 const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
 
 const full = process.env.E2E_FULL === "1";
 
-export default defineConfig({
+const virtualization = Boolean(process.env.E2E_VIRTUALIZATION);
+
+const soak = process.env.E2E_VM_SOAK === "1";
+
+export default defineConfig<object, BackendOptions>({
   testDir: "./src/tests",
   fullyParallel: false,
   workers: 2,
@@ -90,12 +96,50 @@ export default defineConfig({
       dependencies: ["auth", "slack-inchat"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
-    {
-      name: "vm-agent",
-      testMatch: /19-.*\.spec\.ts$/,
-      dependencies: ["auth"],
-      use: { ...devices["Desktop Chrome"], storageState },
-    },
+    ...(virtualization || full
+      ? [
+          {
+            name: "container-agent",
+            testMatch: /19-.*\.spec\.ts$/,
+            dependencies: ["auth"],
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState,
+              backend: "container" as const,
+            },
+          },
+        ]
+      : []),
+    ...(virtualization
+      ? [
+          {
+            name: "vm-agent",
+            testMatch: /19-.*\.spec\.ts$/,
+            dependencies: ["auth"],
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState,
+              backend: "vm" as const,
+            },
+          },
+        ]
+      : []),
+    ...(soak
+      ? [
+          {
+            name: "vm-soak",
+            testMatch: /soak\/.*\.spec\.ts$/,
+            dependencies: ["auth"],
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState,
+              backend: "vm" as const,
+              trace: "retain-on-failure" as const,
+              video: "retain-on-failure" as const,
+            },
+          },
+        ]
+      : []),
     {
       name: "slack",
       testMatch: /07-.*\.spec\.ts$/,

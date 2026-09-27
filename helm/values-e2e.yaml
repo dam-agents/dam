@@ -41,3 +41,16 @@ harnessTemplates:
     enabled: false
   nous:
     enabled: false
+
+# Only read with virtualization.enabled, which E2E_VIRTUALIZATION turns on (the
+# vm lane); values-local.yaml sets the rest of the runner. Its CPU request drops
+# to a tenth for the reason the agents' does above: in that lane the smoke
+# chain, the container-agent spec and the vm-agent spec run side by side on the
+# CI runner's four cores, and the runner's 500m would leave one of them
+# Pending. The memory request and limit stay, since the runner admits machines
+# against its limit.
+virtualization:
+  runner:
+    resources:
+      requests:
+        cpu: 50m

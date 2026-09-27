@@ -22,9 +22,14 @@ INSTALL_ARGS=(
 # and oidc-client-ts can generate PKCE state in signinRedirect(). On
 # *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
 # the OIDC redirect throws silently, and the SPA hangs on a blank screen.
-# E2E_VIRTUALIZATION=1 installs the vm backend too, which is what un-skips the
-# vm agent spec. It needs /dev/kvm (nested virtualization on the lima VM), so
-# it is opt-in and CI never sets it.
+# E2E_VIRTUALIZATION=1 installs the vm backend too: values-local.yaml already
+# turns on the chart's own KVM device plugin, states the runner's egressCidrs
+# and points the runners at the images this install stages on the node. The
+# same variable makes the Playwright config add the vm-agent project, and a
+# vm project fails, rather than skips, on an install without the backend. It
+# needs a usable /dev/kvm (nested virtualization on the lima VM, or a KVM
+# host in sandbox mode), so it is opt-in: CI sets it only in its vm lane,
+# cd.yml's e2e-vm job on a KVM runner, and in the vm-soak workflow.
 if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
   INSTALL_ARGS+=(--set=virtualization.enabled=true)
 fi

@@ -22,7 +22,7 @@ You are here when `CLAUDE_CODE_REMOTE=true`, PID 1 is `process_api`, and `/run/s
 | PID 1 not inspectable | istio-cni: `Statfs /host/proc/1/ns/net: permission denied` | `k3s-launcher`: k3s in its own PID namespace |
 | cgroup v1 | kubelet ≥ 1.35 refuses to start | `k3s-launcher`: `fail-cgroupv1=false` |
 | Fixed disk allowance far below the 252G the device reports | kubelet's 5% threshold evicts everything, then GCs images | `k3s-launcher`: absolute 2Gi eviction thresholds |
-| No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off |
+| No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off, and the vm lane runs in CI only ([cluster-ops](../cluster-ops/SKILL.md)) |
 
 The launcher's workarounds are sandbox-only on purpose. Each one turns on only when its probe says it is needed, but clamping OOM scores or lowering eviction thresholds would change behavior on a real host.
 

@@ -14,9 +14,14 @@
 # build jobs, which build the same set: the `changes` job resolves it the same
 # way.
 #
-# By path, like image:resolve. Needs GH_TOKEN with actions:read,
-# GITHUB_REPOSITORY, GITHUB_RUN_ID and IMAGE_PREFIX; RESOLVE_NO_REUSE as the
-# `changes` job has it.
+# E2E_VIRTUALIZATION, as the vm lane sets it, adds the vm-runner, which
+# cluster:install then loads beside the platform images. It is built or
+# waited for exactly like them: here under CI_IMAGES_BUILD, otherwise by
+# build-images.
+#
+# By path, like image:resolve. Needs GH_TOKEN with actions:read (only to wait
+# on build jobs), GITHUB_REPOSITORY, GITHUB_RUN_ID and IMAGE_PREFIX;
+# RESOLVE_NO_REUSE as the `changes` job has it.
 set -uo pipefail
 
 status_file="${1:?usage: ci-images <status-file>}"
@@ -28,6 +33,7 @@ set -e
 
 resolve=.mise/tasks/image/resolve
 LOADED="controller api-server ui keycloak mock"
+[ -z "${E2E_VIRTUALIZATION:-}" ] || LOADED="$LOADED vm-runner"
 
 # Each image's file lands in the ready directory once its tar is complete,
 # for cluster:install to import it while the rest still build.
@@ -60,7 +66,8 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
 fi
 
 # The jobs that build what is stale, by their cd.yml names: CI_IMAGES_IMAGES_JOB
-# builds controller, api-server, ui and keycloak; CI_IMAGES_MOCK_JOB the mock.
+# builds controller, api-server, ui, keycloak and the vm-runner;
+# CI_IMAGES_MOCK_JOB the mock.
 # `detect stale images` is always waited on: when it fails, the build jobs that
 # need it never start under their names, and nothing else would end the wait.
 JOBS=("detect stale images")
