@@ -14,7 +14,22 @@ name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-crane export - "$work/rootfs.tar" < "$usage_tar"
+# crane reads a docker-save tarball's layers as all gzip or all plain, judged
+# by the first layer alone, and a built image mixes the two: the layers its
+# build writes are plain tars, the ones it takes from its base stay gzip. Read
+# as plain, a gzip layer is a truncated tar ("reading tar: unexpected EOF"),
+# so the tar is unpacked to its OCI layout, every plain layer gzipped and the
+# docker-save manifest written again before crane flattens it. An image
+# pulled from a registry is gzip throughout and passes through unchanged.
+layout="$work/layout"
+mkdir -p "$layout"
+tar -xf "$usage_tar" -C "$layout"
+"$MISE_CONFIG_ROOT/.mise/tasks/image/gzip-layout" "$layout"
+"$MISE_CONFIG_ROOT/.mise/tasks/image/name-layout" "$layout" "$IMAGE"
+entries=()
+while IFS= read -r e; do entries+=("$e"); done < <(ls -A "$layout")
+tar -C "$layout" -cf - "${entries[@]}" | crane export - "$work/rootfs.tar"
+rm -rf "$layout"
 # The record the runner reads beside the tree: what the image says to run.
 tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
   '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
