@@ -54,6 +54,7 @@ import { resolveBackend } from "../domain/backend-resolution.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
+import type { AgentSecretRefPort } from "../infrastructure/agent-secret-ref-port.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import {
   type RuntimeMutator,
@@ -503,6 +504,7 @@ export function createAgentsService(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
+  secretRefs: AgentSecretRefPort;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
@@ -565,6 +567,29 @@ export function createAgentsService(deps: {
     refs: SlackConversationRef[],
   ) => Promise<(SlackConversationRef & { name: string | null })[]>;
 }): AgentsService {
+  // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
+  async function assertOwnSecretRef(
+    secretRef: string | undefined,
+    owner: string | undefined,
+    agentId?: string,
+  ): Promise<void> {
+    if (!secretRef) return;
+    if (owner && (await deps.secretRefs.isOwnedBy(secretRef, owner))) return;
+    securityLog("warn", "agent.secret_ref.refused", {
+      category: "resource",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      result: "failure",
+      ...(agentId ? { agentId } : {}),
+      target: secretRef,
+      reason: "secret not owned by the agent's owner",
+    });
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `secretRef "${secretRef}" does not name a Secret you own`,
+    });
+  }
+
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
       return await deps.contributionsProgress.status(id);
@@ -958,6 +983,7 @@ export function createAgentsService(deps: {
         });
       }
       const owner = deps.owner;
+      await assertOwnSecretRef(input.secretRef, owner);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1072,6 +1098,11 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
+      if (input.secretRef) {
+        const current = await deps.repo.get(input.id, deps.owner);
+        if (!current) return null;
+        await assertOwnSecretRef(input.secretRef, current.owner, input.id);
+      }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.description !== undefined)

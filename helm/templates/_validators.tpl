@@ -13,6 +13,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.defaultBackendIsRunnable" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
+{{- include "platform.validate.vmRunnerReachesOnlyItsResolver" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
@@ -128,6 +129,49 @@ by omission.
 {{- end -}}
 
 {{/*
+A confined runner reaches DNS only at the resolver it uses, because port 53
+open to every address is a two-way channel from an escaped guest to any host
+listening there. Only a runner that caches images on its own claim resolves
+anything, so only it needs one named: the node's resolver by address under
+`Default`, the cluster DNS pods by label under `ClusterFirst`. A resolver
+range of /0 would reopen exactly what this closes. The metadata endpoint is
+link-local on every cloud; the controller subtracts it from any wider entry,
+so an egress entry lying inside link-local can only mean the endpoint itself.
+*/}}
+{{- define "platform.validate.vmRunnerReachesOnlyItsResolver" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- $r := $v.runner -}}
+{{- $ownCache := and (not ($v.imageCache | default dict).hostPath) (not $r.imageArchiveHostPath) -}}
+{{- if and $r.egressCidrs $ownCache -}}
+{{- if eq ($r.dnsPolicy | default "Default") "ClusterFirst" -}}
+{{- $dns := $r.clusterDns | default dict -}}
+{{- if or (not $dns.namespace) (not $dns.podLabels) -}}
+{{- fail "virtualization.runner.dnsPolicy=ClusterFirst on a runner that caches images on its own claim needs virtualization.runner.clusterDns.namespace and .podLabels — the cluster DNS pods it may resolve through. Without them the runner cannot resolve its registry." -}}
+{{- end -}}
+{{- else if not $r.dnsCidrs -}}
+{{- fail "virtualization.runner.dnsCidrs is required when the runner caches images on its own claim (no imageCache.hostPath, no imageArchiveHostPath) — it resolves its registry through the node's resolver, and the runner may reach only the resolver named here. Set it to the nodes' nameserver (e.g. [169.254.169.253/32] on AWS), or set imageCache.hostPath so runners resolve nothing." -}}
+{{- end -}}
+{{- end -}}
+{{- range ($r.dnsCidrs | default list) -}}
+{{- if hasSuffix "/0" (toString .) -}}
+{{- fail (printf "virtualization.runner.dnsCidrs entry %q admits DNS to every address, which is the channel this list exists to close. Name the nodes' resolver instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- range ($r.egressCidrs | default list) -}}
+{{- $parts := splitList "/" (toString .) -}}
+{{- if eq (len $parts) 2 -}}
+{{- $addr := lower (first $parts) -}}
+{{- $bits := atoi (last $parts) -}}
+{{- if or (and (hasPrefix "169.254." $addr) (ge $bits 16)) (and (hasPrefix "fe80:" $addr) (ge $bits 10)) -}}
+{{- fail (printf "virtualization.runner.egressCidrs entry %q lies inside link-local, where every cloud serves the node's metadata endpoint and its credentials. The runner never reaches it; name the resolver there in dnsCidrs if that is what it is." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 On OpenShift the chart's own SCC is the only one the runner and the device
 plugin get, and it admits neither a privileged container nor a hostPath
 volume. Without a built-in SCC bound as well, admission refuses the pod and
@@ -181,7 +225,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range $field := list "egressCidrs" "egressExceptCidrs" -}}
+{{- range $field := list "egressCidrs" "egressExceptCidrs" "dnsCidrs" -}}
 {{- range (index $v.runner $field | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
 {{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}

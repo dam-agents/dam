@@ -32,6 +32,7 @@ func preflightConfig() *config.Config {
 			NodeSelector:      map[string]string{"pool": "virt"},
 			EgressCIDRs:       []string{"0.0.0.0/0"},
 			EgressExceptCIDRs: []string{"10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"},
+			DNSCIDRs:          []string{"10.0.2.3/32"},
 			Resources: &corev1.ResourceRequirements{Limits: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("8Gi"),
 			}},
@@ -112,15 +113,47 @@ func TestPreflightWarnsWhenEgressReachesTheCluster(t *testing.T) {
 	cfg.VM.Runner.EgressExceptCIDRs = nil
 	res := runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
 	assert.Empty(t, res.problems, "an unconfined runner is a choice the install may make")
-	require.Len(t, res.warnings, 2)
+	require.Len(t, res.warnings, 3)
 	assert.Contains(t, res.warnings[0], "Service range")
 	assert.Contains(t, res.warnings[0], "172.30.0.1")
 	assert.Contains(t, res.warnings[1], "pod range")
 	assert.Contains(t, res.warnings[1], "10.128.2.7")
+	assert.Contains(t, res.warnings[2], "the controller excepts 169.254.0.0/16 itself",
+		"the metadata endpoint is closed anyway, and the install is told its values do not say so")
 
 	cfg.VM.Runner.EgressCIDRs = []string{"203.0.113.10/32"}
 	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
 	assert.Empty(t, res.warnings, "a runner confined to its registry reaches neither range")
+
+	cfg.VM.Runner.EgressCIDRs = []string{"169.254.169.254/32"}
+	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
+	require.Len(t, res.warnings, 1)
+	assert.Contains(t, res.warnings[0], "is not rendered", "a block naming the metadata endpoint is dropped, and said to be")
+}
+
+// TEST_SCENARIO: a confined runner that caches on its own claim resolves its registry only through the resolver the install names, so with none named no machine can fetch an image — a problem, naming the value to set. A runner on the node cache resolves nothing and needs none, and a resolver range of /0, which reopens port 53 everywhere, is warned about.
+func TestPreflightNamesARunnerWithNoResolver(t *testing.T) {
+	cfg := preflightConfig()
+	cfg.VM.Runner.DNSCIDRs = nil
+	res := runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
+	require.Len(t, res.problems, 1)
+	assert.Contains(t, res.problems[0], "virtualization.runner.dnsCidrs")
+
+	cfg.VM.Runner.DNSPolicy = "ClusterFirst"
+	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
+	require.Len(t, res.problems, 1)
+	assert.Contains(t, res.problems[0], "virtualization.runner.clusterDns")
+
+	cfg.VM.Runner.ImageCacheHostPath = "/var/lib/platform-images"
+	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
+	assert.Empty(t, res.problems, "the node's cache service resolves the registry, not the runner")
+
+	cfg = preflightConfig()
+	cfg.VM.Runner.DNSCIDRs = []string{"0.0.0.0/0"}
+	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
+	assert.Empty(t, res.problems)
+	require.Len(t, res.warnings, 1)
+	assert.Contains(t, res.warnings[0], "admits DNS to every address")
 }
 
 // TEST_SCENARIO: a vm agent whose runner is not ready on an install that cannot run one says so in its status, next to what the runner pod reports, rather than reading "still starting" until someone reads the cluster by hand.

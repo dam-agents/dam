@@ -71,11 +71,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	for _, e := range defaults.Env {
 		env[e.Name] = e.Value
 	}
-	if spec.SecretRef != "" {
-		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, spec.SecretRef, metav1.GetOptions{})
-		if err != nil {
-			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
-		}
+	sec, err := r.ownedSecretRef(ctx, agent)
+	if err != nil {
+		return vmrunner.MachineStatus{}, false, err
+	}
+	if sec != nil {
 		for k, v := range sec.Data {
 			env[k] = string(v)
 		}

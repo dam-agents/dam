@@ -17,6 +17,7 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
@@ -46,8 +47,31 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set virtualization.runner.dnsPolicy=ClusterFirst \
   --set controller.envoyMitm.enabled=false \
   | "${KUBECONFORM[@]}" "$@"
+# A confined runner reaches DNS only at the resolver it uses. One that caches
+# on its own claim and names no resolver, a resolver range of /0, and an
+# egress entry naming the link-local metadata endpoint all fail the render.
+VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
+for refused in 'virtualization.runner.dnsPolicy=Default' \
+  'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
+  'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
+  'virtualization.runner.clusterDns=null'; do
+  extra=(--set "$refused")
+  case "$refused" in
+    *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
+    *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
+  esac
+  if helm template platform . "${COMMON[@]}" "${VM[@]}" "${extra[@]}" >/dev/null 2>&1; then
+    echo "a render setting $refused succeeded, but it leaves the runner's DNS or metadata open" >&2
+    exit 1
+  fi
+done
+# A runner on the node cache resolves nothing, so it needs no resolver named.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
 # Virtualization keys the chart no longer reads fail the render rather than
 # being dropped without a word.
 for removed in 'virtualization.imageCache.preload.enabled=false' \

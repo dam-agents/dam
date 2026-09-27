@@ -59,7 +59,7 @@ func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	}
 	args := renderedRunnerArgs(t)
 
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "platform", 10000, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "platform", 10000, nil, nil, nil)
 	published := np.Spec.Ingress[0].Ports[1]
 	require.NotNil(t, published.Port)
 	require.NotNil(t, published.EndPort)
