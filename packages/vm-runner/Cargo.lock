@@ -1633,6 +1633,7 @@ version = "0.0.0"
 dependencies = [
  "libc",
  "serde_json",
+ "tar",
 ]
 
 [[package]]
@@ -3054,9 +3055,11 @@ dependencies = [
  "axum-server",
  "clap",
  "filetime",
+ "futures-util",
  "http-body-util",
  "libc",
  "platform-init",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",

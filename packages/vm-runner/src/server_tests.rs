@@ -405,6 +405,86 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
+// TEST_SCENARIO: an agent moving to this backend brings its home as a seed, which platform-init reads only on the first boot. So the controller creates its machine stopped: a stopped spec with a whole shape creates the machine, its share, spec and port, and never starts it. Only the ensure that asks for it running boots it, onto the same machine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_can_be_created_without_being_booted() {
+    let h = Harness::new("create-stopped");
+    h.server.put("m1", spec(false)).unwrap();
+    let parked = h.settle("m1").await;
+    assert_eq!(parked.state, STATE_STOPPED, "{parked:?}");
+    assert_eq!(h.fake.calls(), vec!["create m1"]);
+    assert!(read_spec(&h.dir.join("machines"), "m1").is_some());
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(h.fake.calls(), vec!["create m1", "update m1", "start m1"]);
+}
+
+// TEST_SCENARIO: the migration's whole sequence on the runner: a machine created stopped takes a seed into its share, and the ensure that then boots it rewrites the share without removing the seed, because that boot is the one that reads it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_uploaded_to_a_stopped_machine_is_still_there_when_it_boots() {
+    let h = Harness::new("seed-boot");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    let mut seeding = h.server.claim_seed("m1").unwrap();
+    seeding.write(b"a home").unwrap();
+    let result = seeding.commit().unwrap();
+    assert_eq!(result.bytes, 6);
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let seed = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::SEED_FILE);
+    assert_eq!(fs::read(seed).unwrap(), b"a home");
+}
+
+// TEST_SCENARIO: a machine with an action in flight may be about to boot, so a seed claimed then could be read half-written; it is refused, as is a second upload to a machine that already has one running. And while a seed is being uploaded, an ensure that asks for the machine running is stored but boots nothing until the upload is done; the next ensure boots it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_and_a_boot_never_overlap() {
+    let h = Harness::new("seed-overlap");
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(
+        h.server.claim_seed("m1").err().map(|e| e.status),
+        Some(409),
+        "a seed was claimed while the machine was starting"
+    );
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+
+    let seeding = h.server.claim_seed("m1").unwrap();
+    assert_eq!(h.server.claim_seed("m1").err().map(|e| e.status), Some(409));
+    let calls = h.fake.calls().len();
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(!h.server.converging("m1"), "a boot started mid-upload");
+    assert_eq!(h.fake.calls().len(), calls);
+    drop(seeding);
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_for_a_machine_deleted_mid_upload_is_not_committed() {
+    let h = Harness::new("seed-deleted");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let mut seeding = h.server.claim_seed("m1").unwrap();
+    seeding.write(b"half").unwrap();
+    h.server.delete("m1").unwrap();
+
+    assert_eq!(seeding.commit().err().map(|e| e.status), Some(409));
+    assert!(!h.dir.join("machines/m1").exists());
+}
+
 // TEST_SCENARIO: a machine's record names the cache tree it boots by path, read at every start. A tree gone from under a stopped machine — the image directory moved or relaid between runner releases — is resolved again when the machine next starts, its record moved to the new tree and its digest recorded again; without that the machine fails every start until its image changes, which for a hibernated agent is never. The stored spec has not changed, so nothing else may trigger it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stopped_machine_whose_tree_is_gone_resolves_its_image_again() {
@@ -1268,7 +1348,7 @@ async fn a_stop_ends_the_boot_wait() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_on_an_old_version_answers_at_once() {
     let h = Harness::new("wait-stale");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let current = h.settle("m1").await;
     assert_ne!(current.version, 0, "a known machine has a version");
     let started = Instant::now();
@@ -1286,7 +1366,7 @@ async fn a_wait_on_an_old_version_answers_at_once() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_on_the_current_version_answers_on_the_next_change() {
     let h = Harness::new("wait-change");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let server = h.server.clone();
     let waiting = tokio::task::spawn_blocking(move || {
@@ -1307,7 +1387,7 @@ async fn a_wait_on_the_current_version_answers_on_the_next_change() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_with_no_change_answers_when_it_ends() {
     let h = Harness::new("wait-timeout");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let started = Instant::now();
     let answer = h
@@ -1322,7 +1402,7 @@ async fn a_wait_with_no_change_answers_when_it_ends() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_the_runner_answers_a_waiting_read_at_once() {
     let h = Harness::new("wait-close");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let started = Instant::now();
     let waiting = h.wait("m1", before.version, Duration::from_secs(20));
@@ -1393,7 +1473,7 @@ async fn a_probe_answering_after_a_delete_leaves_nothing_behind() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ended_worker_does_not_end_the_next_one() {
     let h = Harness::new("settle");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     h.machine("m1", |m| {
         m.converging = true;
         m.asked = 1;

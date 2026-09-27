@@ -47,6 +47,14 @@ pub struct MachineStatus {
     pub version: u64,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct SeedResult {
+    pub bytes: u64,
+    pub sha256: String,
+}
+
 fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
     *n == T::default()
 }
@@ -173,6 +181,13 @@ mod tests {
                 memory_mib: 2048,
                 message: "up".into(),
                 version: 1,
+            },
+        );
+        matches_the_contract(
+            "seed-result",
+            &SeedResult {
+                bytes: 1234,
+                sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
             },
         );
     }

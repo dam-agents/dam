@@ -52,10 +52,18 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# Reads a seed upload's body frame by frame, so a home of many GiB is never
+# held in memory. Already in the lock by way of axum.
+http-body-util = "0.1"
+# The seed uploader's client: streamed request bodies over rustls, trusting
+# only the runner's CA. Already in the lock, with these features, by way of
+# smolvm; futures-util turns the uploader's channel into the body stream.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = { version = "0.3", default-features = false }
+
 [dev-dependencies]
 # Drives the router in-process, the way the controller's client reaches it,
-# without binding a socket. Both are already in the lock by way of axum.
-http-body-util = "0.1"
+# without binding a socket. Already in the lock by way of axum.
 tower = { version = "0.5", features = ["util"] }
 # Backdating a file is how eviction's oldest-write-first order is tested.
 filetime = "0.2"

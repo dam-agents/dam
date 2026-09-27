@@ -5,7 +5,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::guest;
 
@@ -465,18 +465,12 @@ fn offer_trust_cache(root: &Path) {
     std::env::set_var(TRUST_CACHE_ENV, &trust);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the first boot seeds the home from whatever the image ships there, so a home an image baked is the home the agent starts from. Every later boot finds the store and mounts it as it is.
+// UNIT_BOUNDARY_DESCRIPTION: the first boot seeds the home from whatever the image ships there, so a home an image baked is the home the agent starts from — or, for an agent moved here from the container backend, from the seed of its old volume the runner put in the share. Every later boot finds the store and mounts it as it is.
 fn persist_home(root: &Path) {
     let path = Path::new(guest::AGENT_HOME);
     let store = guest::agent_store(root);
-    match needs_seed(&store) {
-        Ok(true) => {
-            if let Err(e) = seed(path, &store) {
-                fatal!("seeding {} onto the disk: {e}", path.display());
-            }
-        }
-        Ok(false) => {}
-        Err(e) => fatal!("reading {} on the disk: {e}", store.display()),
+    if let Err(e) = prepare_home(path, Path::new(guest::SHARE_SEED_FILE), &store) {
+        fatal!("seeding {} onto the disk: {e}", path.display());
     }
     if let Err(e) = mkdir_all(path) {
         fatal!("creating the guest mountpoint {}: {e}", path.display());
@@ -485,6 +479,21 @@ fn persist_home(root: &Path) {
         fatal!("mounting {} from the disk: {e}", path.display());
     }
     logf!("persisting {}", path.display());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since.
+fn prepare_home(home: &Path, archive: &Path, store: &Path) -> io::Result<()> {
+    if !needs_seed(store)? {
+        return Ok(());
+    }
+    match fs::metadata(archive) {
+        Ok(_) => {
+            logf!("seeding {} from {}", home.display(), archive.display());
+            seed_from_archive(archive, home, store)
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => seed(home, store),
+        Err(e) => Err(e),
+    }
 }
 
 fn needs_seed(store: &Path) -> io::Result<bool> {
@@ -497,22 +506,219 @@ fn needs_seed(store: &Path) -> io::Result<bool> {
 
 // UNIT_BOUNDARY_DESCRIPTION: the copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
 fn seed(from: &Path, store: &Path) -> io::Result<()> {
+    stage(store, |staged| match fs::symlink_metadata(from) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => mkdir_all(staged),
+        Err(e) => Err(e),
+        Ok(source) => copy_tree(from, staged, &source),
+    })
+}
+
+fn seed_from_archive(archive: &Path, home: &Path, store: &Path) -> io::Result<()> {
+    stage(store, |staged| extract(archive, home, staged))
+}
+
+fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
     if let Some(parent) = store.parent().filter(|p| !p.as_os_str().is_empty()) {
         mkdir_all(parent)?;
     }
     let staged = with_suffix(store, ".seeding");
     remove_all(&staged)?;
-    match fs::symlink_metadata(from) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => mkdir_all(&staged)?,
-        Err(e) => return Err(e),
-        Ok(source) => {
-            if let Err(e) = copy_tree(from, &staged, &source) {
-                let _ = remove_all(&staged);
-                return Err(e);
+    if let Err(e) = fill(&staged) {
+        let _ = remove_all(&staged);
+        return Err(e);
+    }
+    fs::rename(&staged, store)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: restores a seed into `to` as copy_tree reproduces an image's home: owner and mode from each entry, the mode set after the entry exists so the umask cannot drop a bit, and symlinks recreated as symlinks and never followed. Times are restored too, since they are part of what an agent's tools read, such as a build that compares them. Directories get their mode and time last, deepest first: a directory's time moves as entries are written into it, and a read-only one would refuse them. The seed comes from a volume the agent could write to, so every name is checked before it is used — an absolute name, a `..`, a link whose target is either of those, or a path through a symlink the seed itself put there could each write outside the store, and any of them fails the whole seed. Devices and fifos are skipped, as copy_tree skips them. A seed with no entry for the home itself gives the store the owner and mode of the image's home, as seeding from the image would.
+fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<()> {
+    mkdir_all(to)?;
+    let mut dirs: Vec<(PathBuf, u32, u64)> = Vec::new();
+    let mut rooted = false;
+    let mut entries = tar::Archive::new(File::open(archive)?);
+    for entry in entries.entries()? {
+        let mut entry = entry?;
+        let name = entry.path()?.into_owned();
+        let relative = inside(&name)?;
+        let target = to.join(&relative);
+        let kind = entry.header().entry_type();
+        let header = entry.header();
+        let mode = header.mode()? & 0o7777;
+        let uid = id_of(header.uid()?)?;
+        let gid = id_of(header.gid()?)?;
+        let mtime = header.mtime()?;
+        if relative.as_os_str().is_empty() && !kind.is_dir() {
+            return Err(refused(
+                &name,
+                "names the home itself as something other than a directory",
+            ));
+        }
+        no_symlink_between(to, &relative, &name)?;
+        if let Some(parent) = target.parent() {
+            mkdir_all(parent)?;
+        }
+        match kind {
+            tar::EntryType::Directory => {
+                if relative.as_os_str().is_empty() {
+                    rooted = true;
+                } else {
+                    make_dir(&target)?;
+                }
+                std::os::unix::fs::lchown(&target, Some(uid), Some(gid))?;
+                dirs.push((target, mode, mtime));
+                continue;
+            }
+            tar::EntryType::Regular | tar::EntryType::Continuous | tar::EntryType::GNUSparse => {
+                clear(&target)?;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&target)?;
+                if let Err(e) = io::copy(&mut entry, &mut file) {
+                    let _ = close(file);
+                    return Err(e);
+                }
+                close(file)?;
+            }
+            tar::EntryType::Symlink => {
+                let link = entry
+                    .link_name()?
+                    .ok_or_else(|| refused(&name, "is a symlink with no target"))?;
+                clear(&target)?;
+                std::os::unix::fs::symlink(link, &target)?;
+            }
+            tar::EntryType::Link => {
+                let link = entry
+                    .link_name()?
+                    .ok_or_else(|| refused(&name, "is a hard link with no target"))?
+                    .into_owned();
+                let linked = inside(&link)?;
+                no_symlink_between(to, &linked, &link)?;
+                clear(&target)?;
+                fs::hard_link(to.join(linked), &target)?;
+                continue;
+            }
+            _ => {
+                logf!(
+                    "WARNING: not seeding {}, which is neither a file, a directory nor a symlink",
+                    name.display()
+                );
+                continue;
+            }
+        }
+        std::os::unix::fs::lchown(&target, Some(uid), Some(gid))?;
+        if kind != tar::EntryType::Symlink {
+            fs::set_permissions(&target, fs::Permissions::from_mode(mode))?;
+        }
+        set_mtime(&target, mtime)?;
+    }
+    if !rooted {
+        if let Ok(info) = fs::metadata(home) {
+            std::os::unix::fs::lchown(to, Some(info.uid()), Some(info.gid()))?;
+            dirs.push((to.to_path_buf(), info.mode() & 0o7777, info.mtime() as u64));
+        }
+    }
+    for (dir, mode, mtime) in dirs.iter().rev() {
+        fs::set_permissions(dir, fs::Permissions::from_mode(*mode))?;
+        set_mtime(dir, *mtime)?;
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed's name as a path below the store, or a refusal when it could leave it. `.` components are dropped, so `./.bashrc` and `.bashrc` are one name and `.` is the home itself.
+fn inside(name: &Path) -> io::Result<PathBuf> {
+    let mut relative = PathBuf::new();
+    for part in name.components() {
+        match part {
+            Component::Normal(part) => relative.push(part),
+            Component::CurDir => {}
+            Component::RootDir | Component::ParentDir | Component::Prefix(_) => {
+                return Err(refused(name, "leaves the home"));
             }
         }
     }
-    fs::rename(&staged, store)
+    Ok(relative)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a symlink the seed itself created is a way out of the store for every later entry named through it, so no directory an entry is written through may be one. Components that do not exist yet are created as directories.
+fn no_symlink_between(to: &Path, relative: &Path, name: &Path) -> io::Result<()> {
+    let mut at = to.to_path_buf();
+    for part in relative.parent().into_iter().flat_map(Path::components) {
+        at.push(part);
+        match fs::symlink_metadata(&at) {
+            Ok(info) if info.file_type().is_symlink() => {
+                return Err(refused(name, "is written through a symlink"));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a later entry of one name replaces an earlier one, as tar itself unpacks, but never a directory: replacing one would drop everything the seed already put in it.
+fn clear(target: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(target) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+        Ok(info) if info.is_dir() => Err(refused(target, "is already a directory")),
+        Ok(_) => fs::remove_file(target),
+    }
+}
+
+fn make_dir(target: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(target) {
+        Ok(info) if info.is_dir() => Ok(()),
+        Ok(_) => {
+            fs::remove_file(target)?;
+            mkdir_all(target)
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => mkdir_all(target),
+        Err(e) => Err(e),
+    }
+}
+
+fn id_of(id: u64) -> io::Result<u32> {
+    u32::try_from(id).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("owner {id} does not fit a uid"),
+        )
+    })
+}
+
+fn refused(name: &Path, why: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("the seed's entry {} {why}", name.display()),
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sets an entry's modification time without following it, so a symlink gets its own time and its target keeps its own. The access time is left as it is.
+fn set_mtime(path: &Path, mtime: u64) -> io::Result<()> {
+    let path = cstring(path.as_os_str())?;
+    let times = [
+        libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_OMIT,
+        },
+        libc::timespec {
+            tv_sec: libc::time_t::try_from(mtime).unwrap_or(libc::time_t::MAX),
+            tv_nsec: 0,
+        },
+    ];
+    // SAFETY: the path is a NUL-terminated string that outlives the call, and `times` is the two-element array utimensat(2) reads.
+    let rc = unsafe {
+        libc::utimensat(
+            libc::AT_FDCWD,
+            path.as_ptr(),
+            times.as_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    };
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: ownership and mode are copied, not just content. An image's home belongs to the user its harness runs as, and a tree reproduced as root's would leave that user unable to write its own home. Mode is set after the entry exists rather than at creation, because creation masks it through the umask this process inherited — which would quietly drop the group-write, setgid and sticky bits an image relies on, once, on the only boot that seeds. Sockets, devices and fifos are skipped: they are not state an agent carries across a boot, and reproducing them needs privileges this copy should not assume.
@@ -807,6 +1013,228 @@ mod tests {
             !store.join("half").exists(),
             "the abandoned staging directory is discarded, not adopted"
         );
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one entry of a hand-built seed. The name is written into the header raw, as a hostile seed would write it, because the tar writer itself refuses the names these tests need.
+    struct Entry<'a> {
+        name: &'a str,
+        kind: tar::EntryType,
+        mode: u32,
+        link: Option<&'a str>,
+        body: &'a [u8],
+    }
+
+    fn entry<'a>(name: &'a str, kind: tar::EntryType, mode: u32) -> Entry<'a> {
+        Entry {
+            name,
+            kind,
+            mode,
+            link: None,
+            body: b"",
+        }
+    }
+
+    fn owner() -> (u32, u32) {
+        // SAFETY: geteuid(2) and getegid(2) read no memory of this process and cannot fail.
+        let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+        if uid == 0 {
+            (1000, 1000)
+        } else {
+            (uid, gid)
+        }
+    }
+
+    fn seed_tar(dir: &Path, entries: &[Entry<'_>]) -> PathBuf {
+        let (uid, gid) = owner();
+        let path = dir.join("seed.tar");
+        let mut builder = tar::Builder::new(File::create(&path).unwrap());
+        for e in entries {
+            let mut header = tar::Header::new_gnu();
+            let name = &mut header.as_old_mut().name;
+            name[..e.name.len()].copy_from_slice(e.name.as_bytes());
+            header.set_entry_type(e.kind);
+            header.set_mode(e.mode);
+            header.set_uid(u64::from(uid));
+            header.set_gid(u64::from(gid));
+            header.set_mtime(1_000_000_000);
+            header.set_size(e.body.len() as u64);
+            if let Some(link) = e.link {
+                header.set_link_name(link).unwrap();
+            }
+            header.set_cksum();
+            builder.append(&header, e.body).unwrap();
+        }
+        builder.finish().unwrap();
+        path
+    }
+
+    // TEST_SCENARIO: an agent moved from the container backend brings its old home as a seed in the share. The first boot restores exactly that home and not the image's: the home's own mode, a private file with its mode, owner and time, an empty directory, a symlink out of the home as the link it is, and a file's second name as the same file. A fifo is not state an agent carries and is skipped, as seeding from the image skips it. Ownership other than this process's own is asserted only when the test runs as root, since only root may give a file away.
+    #[test]
+    fn a_seed_in_the_share_restores_the_old_home_instead_of_the_image() {
+        let share = TempDir::new("share");
+        let archive = seed_tar(
+            share.path(),
+            &[
+                entry("./", tar::EntryType::Directory, 0o750),
+                Entry {
+                    body: b"export A=1\n",
+                    ..entry("./.bashrc", tar::EntryType::Regular, 0o600)
+                },
+                entry("./empty/", tar::EntryType::Directory, 0o700),
+                Entry {
+                    link: Some("/etc/passwd"),
+                    ..entry("./out", tar::EntryType::Symlink, 0o777)
+                },
+                Entry {
+                    link: Some("./.bashrc"),
+                    ..entry("./again", tar::EntryType::Link, 0o600)
+                },
+                entry("./pipe", tar::EntryType::Fifo, 0o644),
+            ],
+        );
+        let image = TempDir::new("image");
+        fs::write(image.path().join("from-the-image"), b"baked").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+
+        prepare_home(image.path(), &archive, &store).unwrap();
+
+        let bashrc = store.join(".bashrc");
+        assert_eq!(fs::read(&bashrc).unwrap(), b"export A=1\n");
+        assert_eq!(mode(&bashrc) & 0o7777, 0o600);
+        assert_eq!(fs::metadata(&bashrc).unwrap().mtime(), 1_000_000_000);
+        assert_eq!(
+            mode(&store) & 0o7777,
+            0o750,
+            "the home's own mode was not restored"
+        );
+        assert_eq!(mode(&store.join("empty")) & 0o7777, 0o700);
+        assert_eq!(
+            fs::read_link(store.join("out")).unwrap(),
+            Path::new("/etc/passwd")
+        );
+        assert_eq!(
+            fs::metadata(store.join("again")).unwrap().ino(),
+            fs::metadata(&bashrc).unwrap().ino(),
+            "a hard link became a copy"
+        );
+        assert!(!store.join("pipe").exists());
+        assert!(
+            !store.join("from-the-image").exists(),
+            "the image's home was seeded too"
+        );
+        let (uid, gid) = owner();
+        let info = fs::metadata(&bashrc).unwrap();
+        assert_eq!((info.uid(), info.gid()), (uid, gid));
+    }
+
+    // TEST_SCENARIO: the seed is made from a volume the agent could write to, so it is not trusted to stay inside the home. A name that is absolute, one that climbs out with `..`, a hard link to a file outside, and a file written through a symlink the seed planted a moment earlier could each write anywhere in the guest's root. Each fails the whole seed: nothing lands outside, and no store is left for a later boot to mount as though it were complete.
+    #[test]
+    fn a_seed_that_would_write_outside_the_home_is_refused() {
+        let outside = TempDir::new("outside");
+        let escape = outside.path().to_string_lossy().into_owned();
+        let absolute = format!("{escape}/absolute");
+        let cases: Vec<Vec<Entry<'_>>> = vec![
+            vec![Entry {
+                body: b"x",
+                ..entry(&absolute, tar::EntryType::Regular, 0o644)
+            }],
+            vec![Entry {
+                body: b"x",
+                ..entry("./a/../../climbed", tar::EntryType::Regular, 0o644)
+            }],
+            vec![Entry {
+                link: Some("../../etc/passwd"),
+                ..entry("./linked", tar::EntryType::Link, 0o644)
+            }],
+            vec![
+                Entry {
+                    link: Some(&escape),
+                    ..entry("./planted", tar::EntryType::Symlink, 0o777)
+                },
+                Entry {
+                    body: b"x",
+                    ..entry("./planted/through", tar::EntryType::Regular, 0o644)
+                },
+            ],
+        ];
+        for (i, case) in cases.iter().enumerate() {
+            let share = TempDir::new("hostile");
+            let archive = seed_tar(share.path(), case);
+            let disk = TempDir::new("disk");
+            let store = disk.path().join("agent");
+
+            let refused = prepare_home(Path::new("/nonexistent"), &archive, &store);
+
+            assert!(refused.is_err(), "case {i} was seeded");
+            assert!(!store.exists(), "case {i} left a store behind");
+            assert!(
+                !with_suffix(&store, ".seeding").exists(),
+                "case {i} left its staging"
+            );
+        }
+        assert_eq!(
+            fs::read_dir(outside.path()).unwrap().count(),
+            0,
+            "a seed wrote outside the home"
+        );
+    }
+
+    // TEST_SCENARIO: a boot cut short while it restored a seed leaves only the staging directory. The next boot does not take it for a store, and restores the seed again from the start.
+    #[test]
+    fn an_interrupted_seed_from_the_share_is_restored_again() {
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        let staged = with_suffix(&store, ".seeding");
+        fs::create_dir_all(&staged).unwrap();
+        fs::write(staged.join("half"), b"partial").unwrap();
+        let share = TempDir::new("share");
+        let archive = seed_tar(
+            share.path(),
+            &[Entry {
+                body: b"complete",
+                ..entry("whole", tar::EntryType::Regular, 0o644)
+            }],
+        );
+
+        prepare_home(Path::new("/nonexistent"), &archive, &store).unwrap();
+
+        assert_eq!(fs::read(store.join("whole")).unwrap(), b"complete");
+        assert!(!store.join("half").exists());
+    }
+
+    // TEST_SCENARIO: the seed is still in the share after the boot that restored it, until the controller removes it. A later boot must mount the store the agent has been writing to, not restore the old home over it.
+    #[test]
+    fn an_existing_store_is_left_alone_even_with_a_seed_in_the_share() {
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        fs::create_dir_all(&store).unwrap();
+        fs::write(store.join("file"), b"the agent's work").unwrap();
+        let share = TempDir::new("share");
+        let archive = seed_tar(
+            share.path(),
+            &[Entry {
+                body: b"the old home",
+                ..entry("file", tar::EntryType::Regular, 0o644)
+            }],
+        );
+
+        prepare_home(Path::new("/nonexistent"), &archive, &store).unwrap();
+
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
+    }
+
+    // TEST_SCENARIO: with no seed in the share the first boot seeds from the image's home, as every machine not moved from a container does.
+    #[test]
+    fn without_a_seed_the_image_home_is_seeded() {
+        let image = TempDir::new("image");
+        fs::write(image.path().join("file"), b"baked").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+
+        prepare_home(image.path(), &disk.path().join("no-seed.tar"), &store).unwrap();
+
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"baked");
     }
 
     // TEST_SCENARIO: a failure shows at the end of a log, so the cap on the previous boot trims its start. Trimming the whole file, or keeping the head, would throw away the only record of why a machine died.

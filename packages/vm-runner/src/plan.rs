@@ -86,7 +86,7 @@ pub fn reads_ready(state: State) -> bool {
     matches!(state, State::Running | State::Creating | State::Starting)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, or none when it already is what was asked. `state` is what the runtime reports; an action already in flight is never planned over.
+// UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, or none when it already is what was asked. `state` is what the runtime reports; an action already in flight is never planned over. A stopped spec that carries a whole shape creates an absent machine without booting it, so its home can be seeded before the first boot reads it; a bare stop, which names no shape, still creates nothing.
 pub fn step(
     applied: Option<&MachineSpec>,
     desired: &MachineSpec,
@@ -95,7 +95,11 @@ pub fn step(
     dead_for_long: bool,
 ) -> Option<Action> {
     if !desired.running {
-        return (state == State::Running).then_some(Action::Stop);
+        return match state {
+            State::Running => Some(Action::Stop),
+            State::Absent if shaped(desired) => Some(Action::Create),
+            _ => None,
+        };
     }
     match state {
         State::Absent => Some(Action::Create),
@@ -125,10 +129,12 @@ pub const REQUIRED: &str = "image, cpus, memoryMiB and storageGiB are required";
 
 pub const BAD_IMAGE: &str = "invalid image reference";
 
+fn shaped(spec: &MachineSpec) -> bool {
+    !spec.image.is_empty() && spec.cpus >= 1 && spec.memory_mib >= 1 && spec.storage_gib >= 1
+}
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
-    if spec.running
-        && (spec.image.is_empty() || spec.cpus < 1 || spec.memory_mib < 1 || spec.storage_gib < 1)
-    {
+    if spec.running && !shaped(spec) {
         return Err(REQUIRED);
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
@@ -203,11 +209,27 @@ mod tests {
         );
         for down in [State::Absent, State::Stopped] {
             assert_eq!(
-                step(Some(&stop), &stop, down, false, false),
+                step(Some(&stop), &stop, down, false, false).filter(|a| *a == Action::Stop),
                 None,
                 "{down} was stopped again"
             );
         }
+    }
+
+    // TEST_SCENARIO: a machine whose home is seeded from an agent's old volume must exist before its first boot, because the seed is uploaded into its share and platform-init reads it only on the boot that finds no home on the disk. So a stopped spec with a whole shape creates an absent machine, and never boots it. A bare stop names no shape — the controller sends one for a machine it no longer knows — and it must still create nothing, or a stop would fail on an empty image.
+    #[test]
+    fn a_shaped_stop_creates_an_absent_machine_and_a_bare_stop_does_not() {
+        let stop = MachineSpec {
+            running: false,
+            ..running_spec()
+        };
+        assert_eq!(
+            step(None, &stop, State::Absent, false, false),
+            Some(Action::Create)
+        );
+        assert_eq!(step(Some(&stop), &stop, State::Stopped, false, false), None);
+        let bare = MachineSpec::default();
+        assert_eq!(step(None, &bare, State::Absent, false, false), None);
     }
 
     // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image and egress allowlist included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.

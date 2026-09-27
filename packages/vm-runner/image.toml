@@ -3,8 +3,10 @@
 # run as one pod that holds /dev/kvm (a device-plugin resource, or privileged
 # locally) and hosts vm-backend agents as microVMs. Same image everywhere; only
 # the pod's device grant differs per cluster. The task compiles the runner, the
-# image cache service and platform-init from this crate, fetches the smolvm
-# release smolvm.pin names and crane, and copies them in.
+# image cache service, the seed uploader (/usr/local/bin/vm-seed, which the
+# controller's migration Job runs from this image) and platform-init from this
+# crate, fetches the smolvm release smolvm.pin names and crane, and copies them
+# in.
 
 # tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
 # expands the ext4 templates onto the runner's claim, once per release, so the

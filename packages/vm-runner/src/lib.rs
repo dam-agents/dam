@@ -16,6 +16,7 @@ mod metrics;
 mod plan;
 pub mod preload;
 pub mod runtime;
+pub mod seed;
 pub mod server;
 mod share;
 mod state;

@@ -1,14 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::rejection::QueryRejection;
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, put};
 use axum::{Json, Router};
+use http_body_util::BodyExt;
 
 use serde::Deserialize;
 
@@ -21,6 +22,10 @@ pub fn router(server: Arc<Server>, token: &str) -> Router {
     let machines = Router::new()
         .route("/machines", get(list))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
+        .route(
+            "/machines/{id}/seed",
+            put(seed).delete(unseed).layer(DefaultBodyLimit::disable()),
+        )
         .route_layer(middleware::from_fn_with_state(
             Arc::<str>::from(token),
             authorized,
@@ -160,6 +165,66 @@ async fn remove(State(server): State<Arc<Server>>, Path(id): Path<String>) -> Re
     .await
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how many body chunks may wait between the connection and the thread writing the seed. The body is streamed and never held whole, because a seed is an agent's whole home and can be many GiB; this bound is what makes a slow disk slow the uploader down instead of filling the runner's memory.
+const SEED_CHUNKS: usize = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: stores the tar of a migrated agent's old home in its machine's share, for platform-init to seed the home from on the first boot. The body goes chunk by chunk to a blocking thread that writes and hashes it, and the seed is committed only once the whole body arrived and every byte is on the disk. Any failure — the body refused as too large, the connection cut, the disk full — drops the upload, which removes what was staged. A seed refused as too large is answered before the body is read to its end.
+async fn seed(State(server): State<Arc<Server>>, Path(id): Path<String>, body: Body) -> Response {
+    if !crate::state::is_machine_id(&id) {
+        return plain(StatusCode::BAD_REQUEST, "invalid machine id");
+    }
+    let mut seeding = match tokio::task::spawn_blocking(move || server.claim_seed(&id)).await {
+        Ok(Ok(seeding)) => seeding,
+        Ok(Err(e)) => return rejected(e),
+        Err(e) => return plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    let (chunks, mut received) = tokio::sync::mpsc::channel::<Bytes>(SEED_CHUNKS);
+    let writer = tokio::task::spawn_blocking(move || {
+        while let Some(chunk) = received.blocking_recv() {
+            seeding.write(&chunk)?;
+        }
+        Ok(seeding)
+    });
+    let mut body = body;
+    let read = loop {
+        match body.frame().await {
+            None => break Ok(()),
+            Some(Err(e)) => break Err(format!("reading the seed: {e}")),
+            Some(Ok(frame)) => {
+                let Ok(data) = frame.into_data() else {
+                    continue;
+                };
+                if chunks.send(data).await.is_err() {
+                    break Ok(());
+                }
+            }
+        }
+    };
+    drop(chunks);
+    let seeding = match writer.await {
+        Ok(Ok(seeding)) => seeding,
+        Ok(Err(e)) => return rejected(e),
+        Err(e) => return plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    if let Err(message) = read {
+        let _ = tokio::task::spawn_blocking(move || drop(seeding)).await;
+        return plain(StatusCode::BAD_REQUEST, &message);
+    }
+    blocking(move || match seeding.commit() {
+        Ok(result) => Json(result).into_response(),
+        Err(e) => rejected(e),
+    })
+    .await
+}
+
+async fn unseed(State(server): State<Arc<Server>>, Path(id): Path<String>) -> Response {
+    blocking(move || match server.remove_seed(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => rejected(e),
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,12 +263,66 @@ mod tests {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a runtime that reports every machine in one state the test sets, for tests about what may be done to a machine in a given state.
+    struct Parked(std::sync::Mutex<State>);
+
+    impl Runtime for Parked {
+        fn state(&self, _: &str) -> anyhow::Result<State> {
+            Ok(*crate::locked(&self.0))
+        }
+        fn create(&self, _: &str, _: &Machine<'_>) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn start(&self, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn stop(&self, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn image_present(&self, _: &str) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+    }
+
     struct Api {
         router: Router,
-        _dir: crate::testdir::TempDir,
+        dir: crate::testdir::TempDir,
+    }
+
+    impl Api {
+        fn state_dir(&self) -> std::path::PathBuf {
+            self.dir.path().join("machines")
+        }
+
+        // UNIT_BOUNDARY_DESCRIPTION: leaves a machine on disk as a create would, with its share and its stored spec, without fetching an image.
+        fn created(&self, id: &str, storage_gib: i32) -> std::path::PathBuf {
+            let share = self.state_dir().join(id).join(crate::share::SHARE_DIR);
+            std::fs::create_dir_all(&share).unwrap();
+            crate::state::write_spec(
+                &self.state_dir(),
+                id,
+                &MachineSpec {
+                    image: "quay.io/x/vm:1".into(),
+                    storage_gib,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            share
+        }
     }
 
     fn api(name: &str) -> Api {
+        api_on(name, Arc::new(Idle))
+    }
+
+    fn api_on(name: &str, runtime: Arc<dyn Runtime>) -> Api {
         let dir = crate::testdir::TempDir::new(&format!("http-{name}"));
         let server = Server::start(
             Config {
@@ -218,12 +337,12 @@ mod tests {
                 reserve_mib: 0,
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
             },
-            Arc::new(Idle),
+            runtime,
         )
         .unwrap();
         Api {
             router: router(server, "secret"),
-            _dir: dir,
+            dir,
         }
     }
 
@@ -234,6 +353,16 @@ mod tests {
         token: Option<&str>,
         body: &str,
     ) -> (StatusCode, String) {
+        send(api, method, path, token, body.as_bytes().to_vec()).await
+    }
+
+    async fn send(
+        api: &Api,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        body: Vec<u8>,
+    ) -> (StatusCode, String) {
         let mut request = Request::builder().method(method).uri(path);
         if let Some(token) = token {
             request = request.header("authorization", format!("Bearer {token}"));
@@ -241,7 +370,7 @@ mod tests {
         let response = api
             .router
             .clone()
-            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .oneshot(request.body(Body::from(body)).unwrap())
             .await
             .unwrap();
         let status = response.status();
@@ -265,6 +394,8 @@ mod tests {
             ("GET", "/machines/m1"),
             ("PUT", "/machines/m1"),
             ("DELETE", "/machines/m1"),
+            ("PUT", "/machines/m1/seed"),
+            ("DELETE", "/machines/m1/seed"),
         ] {
             assert_eq!(
                 call(&api, method, path, None, SPEC).await,
@@ -288,6 +419,13 @@ mod tests {
                 call(&api, method, "/machines/..", Some("secret"), SPEC).await,
                 (StatusCode::BAD_REQUEST, "invalid machine id\n".to_string()),
                 "{method}"
+            );
+        }
+        for method in ["PUT", "DELETE"] {
+            assert_eq!(
+                call(&api, method, "/machines/Agent/seed", Some("secret"), "").await,
+                (StatusCode::BAD_REQUEST, "invalid machine id\n".to_string()),
+                "{method} seed"
             );
         }
     }
@@ -356,7 +494,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_status_read_can_wait_for_a_change() {
         let api = api("wait");
-        let (_, body) = call(&api, "PUT", "/machines/m1", Some("secret"), SPEC).await;
+        let (_, body) = call(
+            &api,
+            "PUT",
+            "/machines/m1",
+            Some("secret"),
+            r#"{"running":false}"#,
+        )
+        .await;
         let held: MachineStatus = serde_json::from_str(&body).unwrap();
         assert_ne!(held.version, 0);
 
@@ -387,6 +532,96 @@ mod tests {
                 "invalid wait or since\n".to_string()
             )
         );
+    }
+
+    // TEST_SCENARIO: the migration Job uploads an agent's old home as one tar body, many times the 2 MB axum lets an extractor read by default. The body is stored whole in the machine's share and answered with the byte count and SHA-256 the uploader checks against what it sent; the seed is world-readable for the guest, and no staged copy is left beside it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_larger_than_the_default_body_limit_is_stored_and_counted() {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::PermissionsExt;
+        let api = api_on("seed", Arc::new(Parked(State::Stopped.into())));
+        let share = api.created("m1", 1);
+        let body: Vec<u8> = (0..3u32 << 20).map(|i| (i % 251) as u8).collect();
+
+        let (status, answer) = send(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some("secret"),
+            body.clone(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        let result: crate::api::SeedResult = serde_json::from_str(&answer).unwrap();
+        assert_eq!(result.bytes, body.len() as u64);
+        assert_eq!(result.sha256, format!("{:x}", Sha256::digest(&body)));
+        let stored = share.join(crate::share::SEED_FILE);
+        assert_eq!(std::fs::read(&stored).unwrap(), body);
+        assert_eq!(
+            std::fs::metadata(&stored).unwrap().permissions().mode() & 0o777,
+            crate::share::SEED_MODE
+        );
+        assert_eq!(
+            std::fs::read_dir(&share).unwrap().count(),
+            1,
+            "a staged file was left in the share"
+        );
+    }
+
+    // TEST_SCENARIO: a seed goes only to a machine that exists and is stopped. One never created has no share to hold it and answers 404; one that is running, or booting, has a guest that could read the seed half-written, and answers 409. Neither leaves a seed or a staged file behind.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_goes_only_to_a_stopped_machine_that_exists() {
+        let runtime = Arc::new(Parked(State::Running.into()));
+        let api = api_on("seed-guard", runtime.clone());
+        let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let share = api.created("m1", 1);
+        for state in [State::Running, State::Starting, State::Unknown] {
+            *crate::locked(&runtime.0) = state;
+            let (status, body) =
+                call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
+            assert_eq!(status, StatusCode::CONFLICT, "{state}: {body}");
+        }
+        assert_eq!(std::fs::read_dir(&share).unwrap().count(), 0);
+    }
+
+    // TEST_SCENARIO: a home larger than the disk it is restored onto could never fit there, so a body past the machine's storage size is refused with 413 and the staged file is removed. A machine whose spec gives it no storage accepts no seed at all, which is how this is reached without a GiB of test data.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_larger_than_the_disk_is_refused_and_leaves_nothing() {
+        let api = api_on("seed-large", Arc::new(Parked(State::Stopped.into())));
+        let share = api.created("m1", 0);
+        let (status, _) = send(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some("secret"),
+            vec![0; 1 << 20],
+        )
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(std::fs::read_dir(&share).unwrap().count(), 0);
+    }
+
+    // TEST_SCENARIO: the controller removes a machine's seed once it has booted from it, and may retry that on every reconcile, so a delete answers 204 whether or not a seed is there — including for a machine that was never created.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn removing_a_seed_is_idempotent() {
+        let api = api_on("unseed", Arc::new(Parked(State::Stopped.into())));
+        assert_eq!(
+            call(&api, "DELETE", "/machines/m1/seed", Some("secret"), "").await,
+            (StatusCode::NO_CONTENT, String::new())
+        );
+        let share = api.created("m1", 1);
+        let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
+        assert_eq!(status, StatusCode::OK);
+        for _ in 0..2 {
+            assert_eq!(
+                call(&api, "DELETE", "/machines/m1/seed", Some("secret"), "").await,
+                (StatusCode::NO_CONTENT, String::new())
+            );
+        }
+        assert!(!share.join(crate::share::SEED_FILE).exists());
     }
 
     // TEST_SCENARIO: the token comparison must not stop at the first differing byte, and must refuse a token that is a prefix of the real one — the two shortcuts a hand-written comparison takes.

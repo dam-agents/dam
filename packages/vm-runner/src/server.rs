@@ -9,7 +9,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::api::{MachineSpec, MachineStatus, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY};
+use crate::api::{
+    MachineSpec, MachineStatus, SeedResult, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY,
+};
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capacity::Capacity;
@@ -24,7 +26,7 @@ use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{admissible, reads_ready, step, Action, Health};
 use crate::runtime::{redact, Machine, Runtime, Update};
-use crate::share::{write_share, SHARE_DIR};
+use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
 };
@@ -81,7 +83,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -89,6 +91,7 @@ struct MachineEntry {
     action: Option<Action>,
     converging: bool,
     deleting: bool,
+    seeding: bool,
     failure: Option<Failed>,
     health: Health,
     restarts: i32,
@@ -157,6 +160,27 @@ impl Rejected {
     fn internal(message: impl Into<String>) -> Self {
         Self {
             status: 500,
+            message: message.into(),
+        }
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: 404,
+            message: message.into(),
+        }
+    }
+
+    fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: 409,
+            message: message.into(),
+        }
+    }
+
+    fn too_large(message: impl Into<String>) -> Self {
+        Self {
+            status: 413,
             message: message.into(),
         }
     }
@@ -287,7 +311,7 @@ impl Server {
             .collect())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it.
+    // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
     pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
         check_id(id)?;
         admissible(&spec).map_err(Rejected::bad_request)?;
@@ -313,11 +337,7 @@ impl Server {
                 self.dead_for_long(id),
             );
             let converging = self.converging(id);
-            let boots = if converging {
-                spec.running
-            } else {
-                action.is_some_and(|a| a != Action::Stop)
-            };
+            let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
                 if let Err(e) = self.room_for(id, &spec) {
@@ -337,7 +357,7 @@ impl Server {
             }
             entry.desired = Some(spec);
             entry.asked += 1;
-            if entry.converging {
+            if entry.converging || entry.seeding {
                 return Ok(status);
             }
             let Some(action) = action else {
@@ -451,6 +471,55 @@ impl Server {
             }
             _ => Ok(()),
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: takes the right to write a machine's seed. Only a machine that exists and is stopped with nothing in flight is seeded, because the seed is read by the guest's first boot and a machine that is booting could read it half-written. The claim is held until the returned upload is committed or dropped, and no worker starts meanwhile. The machine's disk size bounds the seed: a home larger than the disk it is restored onto could never fit there.
+    pub fn claim_seed(self: &Arc<Self>, id: &str) -> Result<Seeding, Rejected> {
+        check_id(id)?;
+        let spec = read_spec(&self.config.state_dir, id)
+            .ok_or_else(|| Rejected::not_found(format!("machine {id} does not exist")))?;
+        {
+            let mut machines = locked(&self.machines);
+            let closed = machines.closed;
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            if closed || entry.converging || entry.deleting || entry.seeding {
+                return Err(Rejected::conflict(format!(
+                    "machine {id} is busy; a seed is written only to a stopped machine with nothing in flight"
+                )));
+            }
+            entry.seeding = true;
+        }
+        let mut seeding = Seeding {
+            server: self.clone(),
+            id: id.to_string(),
+            limit: u64::try_from(spec.storage_gib).unwrap_or(0) << 30,
+            file: None,
+        };
+        match self.runtime.state(id) {
+            Ok(State::Stopped) => {}
+            Ok(state) => {
+                return Err(Rejected::conflict(format!(
+                    "machine {id} is {state}; a seed is written only to a stopped machine"
+                )))
+            }
+            Err(e) => return Err(Rejected::internal(format!("{e:#}"))),
+        }
+        let share = state::require_machine_dir(&self.config.state_dir, id)
+            .map_err(|e| Rejected::bad_request(e.to_string()))?
+            .join(SHARE_DIR);
+        seeding.file = Some(
+            SeedFile::create(&share)
+                .map_err(|e| Rejected::internal(format!("staging the seed: {e}")))?,
+        );
+        Ok(seeding)
+    }
+
+    pub fn remove_seed(&self, id: &str) -> Result<(), Rejected> {
+        check_id(id)?;
+        let share = state::require_machine_dir(&self.config.state_dir, id)
+            .map_err(|e| Rejected::bad_request(e.to_string()))?
+            .join(SHARE_DIR);
+        share::remove_seed(&share).map_err(|e| Rejected::internal(e.to_string()))
     }
 
     fn converging(&self, id: &str) -> bool {
@@ -587,6 +656,9 @@ impl Server {
         )?;
         write_spec(&self.config.state_dir, id, spec)?;
         self.forwarder.publish(id, port)?;
+        if !spec.running {
+            return Ok(());
+        }
         self.start_machine(id, Action::Create)
     }
 
@@ -1097,6 +1169,59 @@ impl Server {
             };
         }
         (state, status)
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted.
+pub struct Seeding {
+    server: Arc<Server>,
+    id: String,
+    limit: u64,
+    file: Option<SeedFile>,
+}
+
+impl Seeding {
+    pub fn write(&mut self, chunk: &[u8]) -> Result<(), Rejected> {
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| Rejected::internal("the seed was not staged"))?;
+        if file.bytes().saturating_add(chunk.len() as u64) > self.limit {
+            return Err(Rejected::too_large(format!(
+                "the seed is larger than machine {}'s {} byte disk",
+                self.id, self.limit
+            )));
+        }
+        file.write(chunk)
+            .map_err(|e| Rejected::internal(format!("writing the seed: {e}")))
+    }
+
+    pub fn commit(mut self) -> Result<SeedResult, Rejected> {
+        let file = self
+            .file
+            .take()
+            .ok_or_else(|| Rejected::internal("the seed was not staged"))?;
+        let deleting = locked(&self.server.machines)
+            .entries
+            .get(&self.id)
+            .is_none_or(|e| e.deleting);
+        if deleting {
+            return Err(Rejected::conflict(format!(
+                "machine {} was deleted while its seed was uploaded",
+                self.id
+            )));
+        }
+        file.commit()
+            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))
+    }
+}
+
+impl Drop for Seeding {
+    fn drop(&mut self) {
+        drop(self.file.take());
+        if let Some(entry) = locked(&self.server.machines).entries.get_mut(&self.id) {
+            entry.seeding = false;
+        }
     }
 }
 
