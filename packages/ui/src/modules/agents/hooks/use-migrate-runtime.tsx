@@ -1,8 +1,16 @@
 import { useCallback, useState } from "react";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import { useMigrateRuntimeMutation } from "../api/mutations.js";
+import { agentsKeys } from "../api/queries.js";
+
+const AGENT_LISTS = [
+  agentsKeys.listWithChannels(),
+  trpc.agents.list.queryKey(),
+];
 
 export function useMigrateRuntime() {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -30,9 +38,19 @@ export function useMigrateRuntime() {
       )
         return;
       setPendingIds((ids) => new Set(ids).add(agent.id));
-      // UNIT_BOUNDARY_DESCRIPTION: `mutate`'s per-call callbacks fire only for the latest call, so the first of two overlapping migrations would never be cleared; each call's own promise settles for that call alone. Errors are already toasted by the mutation, so the rejection carries nothing more to report.
+      // UNIT_BOUNDARY_DESCRIPTION: `mutate`'s per-call callbacks fire only for the latest call, so the first of two overlapping migrations would never be cleared; each call's own promise settles for that call alone. The row stays pending until the agents list it reads has refetched too: until then the cached agent shows no migration, and a row released early offers Migrate again for one the server has already started. The refetch joins the one the mutation's invalidation began rather than starting another. Errors are already toasted by the mutation, so the rejection carries nothing more to report.
       await migrate
         .mutateAsync({ id: agent.id })
+        .then(() =>
+          Promise.all(
+            AGENT_LISTS.map((queryKey) =>
+              queryClient.refetchQueries(
+                { queryKey, type: "active" },
+                { cancelRefetch: false },
+              ),
+            ),
+          ),
+        )
         .catch(() => undefined)
         .finally(() =>
           setPendingIds((ids) => {
