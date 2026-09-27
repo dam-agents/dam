@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-24
+Last verified: 2026-09-27
 
 ## Overview
 
@@ -173,9 +173,9 @@ Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port 
 
 ### Hibernate
 
-Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
+Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which the reconciler stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. An unreachable runner does not hold the gateway up. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
-**The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back. The sweep runs whatever the cluster-wide default is: an install that defaults to never-hibernate still serves the Agents that opt in. It also sweeps once at start-up, before its first tick — a restart forgets what the last sweep saw, and without that first pass a short window would go unserved for a full interval every time the controller comes back. It skips any Agent already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
+**The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back. It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw. It skips any Agent already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree. The Agent stays awake while `active-session` is set, or while `last-activity` falls within the idle timeout. The gate fails open — a missing or unparseable stamp keeps it running — so hibernation only ever follows a *positive* idle signal, never absent data.
 2. **agent-runtime's live `idle` flag** — before scaling down, the checker probes the pod. The runtime is authoritative about its own idleness and reports one boolean; the controller reads nothing more into it. An unreachable pod counts as *not busy*, which permits hibernation.
@@ -204,7 +204,7 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret, and asks the VM runner to delete a vm Agent's machine and disk. Sessions are agent-owned files on the PVC (or the machine's disk) and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight Runs are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
+The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret, and asks the VM runner to delete a vm Agent's machine and disk, from a retrying queue; the [orphan sweep](vm-runner.md#runner-lifecycle) collects what a down runner leaves. Sessions are agent-owned files on the PVC (or the machine's disk) and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight Runs are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Agent-scoped Postgres rows, schedules included, go with it on any deletion path ([persistence](persistence.md#lifetime)).
 
