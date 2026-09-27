@@ -505,7 +505,7 @@ func TestVMBackendStopsTheMachineOnHardStop(t *testing.T) {
 func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.Delete(context.Background(), "my-agent", agent.Labels)
+	r.Delete(context.Background(), "my-agent", AgentOwner(agent.Labels))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
@@ -551,11 +551,11 @@ func TestADeleteReachesOnlyTheOwnersRunner(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	other := addRunner(t, r, "owner-b")
 
-	r.Delete(ctx, "my-agent", agent.Labels)
+	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 	assert.Empty(t, other.deleted, "another owner's runner is not asked about this Agent's machine")
 
-	r.Delete(ctx, "no-runner-agent", map[string]string{envoyOwnerLabel: "owner-without-runner"})
+	r.Delete(ctx, "no-runner-agent", "owner-without-runner")
 	_, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName("owner-without-runner"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "a delete does not mint credentials for a runner that does not exist")
 }
@@ -566,7 +566,7 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	other := addRunner(t, r, "owner-b")
 
-	r.Delete(context.Background(), "my-agent", nil)
+	r.Delete(context.Background(), "my-agent", "")
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }

@@ -102,9 +102,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/resize"]
     verbs: ["update", "patch"]
+  # watch: a runner's pod becoming ready requeues that owner's vm agents.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "create", "update", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]

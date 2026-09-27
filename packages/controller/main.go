@@ -175,6 +175,11 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	defer agentQueue.ShutDown()
 	agentReconciler.WithRequeue(ctx, agentQueue.AddAfter)
 
+	deleteQueue := workqueue.NewTypedRateLimitingQueueWithConfig(
+		workqueue.NewTypedItemExponentialFailureRateLimiter[deletedAgent](time.Second, 5*time.Minute),
+		workqueue.TypedRateLimitingQueueConfig[deletedAgent]{Name: "agent-delete"})
+	defer deleteQueue.ShutDown()
+
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
 		UpdateFunc: func(oldObj, newObj interface{}) {
@@ -185,10 +190,47 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
-				agentReconciler.Delete(ctx, u.GetName(), u.GetLabels())
+				deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels())})
 			}
 		},
 	})
+	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
+
+	var runnerInformer cache.SharedIndexInformer
+	if cfg.VM.Enabled {
+		runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+			informers.WithNamespace(cfg.Namespace),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
+			}),
+		)
+		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
+		requeueOwner := func(obj interface{}) {
+			if m, err := meta.Accessor(obj); err == nil {
+				for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
+					agentQueue.Add(name)
+				}
+			}
+		}
+		if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: requeueOwner,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if resourceVersionChanged(oldObj, newObj) {
+					requeueOwner(newObj)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					obj = tombstone.Obj
+				}
+				requeueOwner(obj)
+			},
+		}); err != nil {
+			slog.Error("watching VM runner deployments", "error", err)
+			return
+		}
+		runnerFactory.Start(ctx.Done())
+	}
 
 	podInformer.TypedInformer().AddTypedEventHandler(coreinformers.PodHandlerFuncs{
 		AddFunc: func(pod *corev1.Pod) { enqueuePodOwner(pod, agentQueue) },
@@ -207,7 +249,11 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced}
+	if runnerInformer != nil {
+		synced = append(synced, runnerInformer.HasSynced)
+	}
+	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
 		return
 	}
@@ -271,6 +317,38 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents c
 			}
 			queue.Forget(name)
 			finish(telemetry.OutcomeSuccess, nil)
+		}()
+	}
+}
+
+type deletedAgent struct {
+	name, owner string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how many times a deleted Agent's cleanup is retried. The backoff doubles from a second to five minutes, so this is about three quarters of an hour; past it the orphan sweep, which finds machines no Agent claims, collects what is left.
+const maxDeleteRetries = 12
+
+// UNIT_BOUNDARY_DESCRIPTION: cleans up deleted Agents off the informer's goroutine. Removing a vm agent's machine is a call to its owner's runner, and a runner that is restarting would otherwise hold up every other event the informer delivers.
+func runDeleteWorker(ctx context.Context, r *reconciler.AgentReconciler, queue workqueue.TypedRateLimitingInterface[deletedAgent]) {
+	for {
+		item, shutdown := queue.Get()
+		if shutdown {
+			return
+		}
+		func() {
+			defer queue.Done(item)
+			err := r.Delete(ctx, item.name, item.owner)
+			if err == nil {
+				queue.Forget(item)
+				return
+			}
+			if queue.NumRequeues(item) >= maxDeleteRetries {
+				slog.ErrorContext(ctx, "deleted agent cleanup: giving up, the orphan sweep collects the rest", "agent", item.name, "owner", item.owner, "error", err)
+				queue.Forget(item)
+				return
+			}
+			slog.WarnContext(ctx, "deleted agent cleanup failed; retrying", "agent", item.name, "owner", item.owner, "error", err)
+			queue.AddRateLimited(item)
 		}()
 	}
 }

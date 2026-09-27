@@ -617,7 +617,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
 
-	r.Delete(ctx, "my-agent", nil)
+	r.Delete(ctx, "my-agent", "")
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=my-agent",

@@ -53,6 +53,7 @@ type AgentReconciler struct {
 	agentCache     cache.GenericLister
 	vmRunning      sync.Map
 	resizeNotices  sync.Map
+	notReadyPolls  sync.Map
 	ownerless      sync.Map
 	machineWatchMu sync.Mutex
 	machineWatches map[string]*machineWatch
@@ -455,16 +456,25 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 	})
 }
 
-func (r *AgentReconciler) Delete(ctx context.Context, name string, labels map[string]string) {
+// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat.
+func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error {
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
-	r.deleteMachine(ctx, name, labels[envoyOwnerLabel])
+	if err := r.deleteMachine(ctx, name, owner); err != nil {
+		return err
+	}
 	r.vmRunning.Delete(name)
+	r.notReadyPolls.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
 	unresolvedGrants.forget(name)
+	return nil
+}
+
+func AgentOwner(labels map[string]string) string {
+	return labels[envoyOwnerLabel]
 }
 
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {

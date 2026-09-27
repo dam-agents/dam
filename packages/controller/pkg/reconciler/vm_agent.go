@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -32,8 +33,9 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: runner instead; the health poll is the
 	// UNIT_BOUNDARY_DESCRIPTION: backstop, and the only thing that notices a
 	// UNIT_BOUNDARY_DESCRIPTION: ready guest going quiet.
-	vmReadinessPoll = 3 * time.Second
-	vmHealthPoll    = time.Minute
+	vmReadinessPoll   = 3 * time.Second
+	vmNotReadyPollMax = time.Minute
+	vmHealthPoll      = time.Minute
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 )
@@ -270,47 +272,64 @@ func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string, v
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
-func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) {
+func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) error {
 	r.unwatchMachine(name)
 	if !r.config.VM.Enabled {
-		return
+		return nil
 	}
 	if owner == "" {
-		r.deleteMachineEverywhere(ctx, name)
-		return
+		return r.deleteMachineEverywhere(ctx, name)
 	}
 	_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
-		return
+		return nil
 	}
 	if err != nil {
-		slog.Warn("deleting machine: reading the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
-		return
+		return fmt.Errorf("reading the owner's VM runner: %w", err)
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
-		slog.Warn("deleting machine: reaching the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
-		return
+		return fmt.Errorf("reaching the owner's VM runner: %w", err)
 	}
 	if err := client.Delete(ctx, name); err != nil {
-		slog.Warn("deleting machine", "agent", name, "owner", owner, "error", err)
+		return fmt.Errorf("deleting the machine: %w", err)
 	}
+	return nil
 }
 
-func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
+func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) error {
 	runners, err := r.knownRunners(ctx)
 	if err != nil {
-		slog.Warn("deleting machine: listing VM runners failed", "agent", name, "error", err)
-		return
+		return fmt.Errorf("listing VM runners: %w", err)
 	}
+	var errs []error
 	for _, runner := range runners {
 		if runner.client == nil {
 			continue
 		}
 		if err := runner.client.Delete(ctx, name); err != nil {
-			slog.Warn("deleting machine", "agent", name, "owner", runner.owner, "error", err)
+			errs = append(errs, fmt.Errorf("owner %s: %w", runner.owner, err))
 		}
 	}
+	return errors.Join(errs...)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the vm agents of one owner, from the informer cache, for requeueing them when their runner's Deployment changes — its pod becoming ready is what they are waiting for, and nothing about the Agents themselves changes then.
+func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+	if r.agentCache == nil || owner == "" {
+		return nil
+	}
+	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner}))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, obj := range items {
+		if u, ok := obj.(*unstructured.Unstructured); ok && anyVMAgent([]unstructured.Unstructured{*u}) {
+			names = append(names, u.GetName())
+		}
+	}
+	return names
 }
 
 func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) error {
@@ -345,8 +364,10 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	if r.requeue != nil {
 		poll := vmHealthPoll
-		if !runnerReached {
-			poll = vmReadinessPoll
+		if runnerReached {
+			r.notReadyPolls.Delete(agent.Name)
+		} else {
+			poll = r.nextNotReadyPoll(agent.Name)
 		}
 		r.requeue(agent.Name, poll)
 	}
@@ -359,6 +380,20 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		restartReason = "GuestStoppedAnswering"
 	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent whose runner is not ready yet is looked at again after 3s, then twice as long each time up to a minute. A runner that never comes up — unschedulable, a pull that fails — would otherwise cost a full reconcile of every one of its owner's agents every three seconds; the runner Deployment's own changes requeue them the moment it does become ready.
+func (r *AgentReconciler) nextNotReadyPoll(name string) time.Duration {
+	n := 0
+	if v, ok := r.notReadyPolls.Load(name); ok {
+		n = v.(int)
+	}
+	poll := vmReadinessPoll << n
+	if poll >= vmNotReadyPollMax {
+		return vmNotReadyPollMax
+	}
+	r.notReadyPolls.Store(name, n+1)
+	return poll
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {
