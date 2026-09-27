@@ -855,8 +855,8 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     h.settle("m1").await;
     let after_first = h.crane_calls();
     assert_eq!(
-        after_first, 3,
-        "one resolution, one config read and one export"
+        after_first, 4,
+        "one resolution, one config read, one manifest read and one export"
     );
     h.server.put("m2", spec(true)).unwrap();
     h.settle("m2").await;
@@ -1055,7 +1055,7 @@ async fn a_pinned_reference_is_never_resolved() {
     assert!(
         fetched
             .lines()
-            .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
+            .any(|l| l.starts_with(&format!("export quay.io/x/vm@{digest} - "))),
         "{fetched}"
     );
     assert_eq!(h.entry("m1"), digest_path(&h.dir.join("images"), &digest));

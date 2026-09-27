@@ -102,12 +102,18 @@ pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Work
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a stopped machine's env after an update. Keys the controller has dropped since the last write are removed, and every key it sends is set. Keys that only the image named are kept, because the controller never sent them and so never dropped them.
+// UNIT_BOUNDARY_DESCRIPTION: a stopped machine's env after an update. With the image's own env known it is built again from the image and the desired spec, by the rule a create follows, so a key the controller stops overriding goes back to the image's value — dropping an override of PATH leaves the image's PATH, not none. Without it, keys the controller has dropped since the last write are removed and every key it sends is set, and keys only the image named are kept, because the controller never sent them and so never dropped them.
 pub fn updated_env(
     current: &[(String, String)],
     applied: Option<&MachineSpec>,
     desired: &MachineSpec,
+    image_env: Option<&[String]>,
 ) -> Vec<(String, String)> {
+    if let Some(image_env) = image_env {
+        let mut env = image_values(image_env);
+        env.extend(desired.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        return env.into_iter().collect();
+    }
     let mut env: BTreeMap<String, String> = current.iter().cloned().collect();
     if let Some(applied) = applied {
         for key in applied.env.keys() {
@@ -118,6 +124,22 @@ pub fn updated_env(
     }
     env.extend(desired.env.iter().map(|(k, v)| (k.clone(), v.clone())));
     env.into_iter().collect()
+}
+
+fn image_values(image_env: &[String]) -> BTreeMap<String, String> {
+    image_env
+        .iter()
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record. A machine booted from an archive has no record beside its image, and gives nothing.
+pub fn image_env_beside(rootfs: &Path) -> Option<Vec<String>> {
+    crate::launch::read_launch(rootfs.parent()?)
+        .ok()
+        .flatten()
+        .map(|launch| launch.env)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the size the storage disk grows to, or nothing. A disk can grow and cannot shrink, so a smaller request leaves it alone. With no applied spec there is nothing known to grow from.
@@ -347,7 +369,7 @@ mod tests {
         let applied = spec_with_env(&[("OLD", "gone"), ("TOKEN", "v1")]);
         let desired = spec_with_env(&[("TOKEN", "v2"), ("NEW", "x")]);
         assert_eq!(
-            updated_env(&current, Some(&applied), &desired),
+            updated_env(&current, Some(&applied), &desired, None),
             vec![
                 ("NEW".to_string(), "x".to_string()),
                 ("PATH".to_string(), "/usr/bin".to_string()),
@@ -355,9 +377,57 @@ mod tests {
             ]
         );
         assert_eq!(
-            updated_env(&current, None, &desired).len(),
+            updated_env(&current, None, &desired, None).len(),
             4,
             "with no applied spec nothing is known to have been dropped"
+        );
+    }
+
+    // TEST_SCENARIO: an Agent that overrode a key its image also sets, and then stopped overriding it, must get the image's value back. Removing the key would leave a machine with no PATH at all. With the image's env known, an update gives the env a create of the same spec would.
+    #[test]
+    fn an_update_that_drops_an_override_restores_the_images_value() {
+        let image_env = [
+            "PATH=/usr/local/bin:/usr/bin".to_string(),
+            "A=image".to_string(),
+        ];
+        let applied = spec_with_env(&[("PATH", "/custom"), ("TOKEN", "v1")]);
+        let desired = spec_with_env(&[("TOKEN", "v2")]);
+        let current = vec![
+            ("A".to_string(), "image".to_string()),
+            ("PATH".to_string(), "/custom".to_string()),
+            ("TOKEN".to_string(), "v1".to_string()),
+        ];
+        let updated = updated_env(&current, Some(&applied), &desired, Some(&image_env));
+        assert_eq!(
+            updated,
+            vec![
+                ("A".to_string(), "image".to_string()),
+                ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
+                ("TOKEN".to_string(), "v2".to_string()),
+            ]
+        );
+        let launch = launch(
+            &["/entry"],
+            &[],
+            &image_env.each_ref().map(|s| s.as_str()),
+            "/",
+        );
+        assert_eq!(updated, workload(&desired, &launch).unwrap().env);
+
+        let dir = crate::testdir::TempDir::new("image-env");
+        fs::create_dir_all(dir.path().join("rootfs")).unwrap();
+        fs::write(
+            dir.path().join(crate::launch::LAUNCH_FILE),
+            r#"{"cmd":["serve"],"env":["PATH=/bin"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            image_env_beside(&dir.path().join("rootfs")),
+            Some(vec!["PATH=/bin".to_string()])
+        );
+        assert_eq!(
+            image_env_beside(&dir.path().join("archives/archive.tar")),
+            None
         );
     }
 

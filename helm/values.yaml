@@ -362,10 +362,13 @@ virtualization:
   # Runners hold the trees their machines boot by naming them to the service
   # every minute; eviction never takes a held tree. An entry fetched with
   # credentials that an anonymous read cannot reach is served only to a runner
-  # whose forwarded credentials read the image's manifest, so naming a
-  # reference is not enough to borrow another owner's private image. The
-  # service keeps that knowledge in memory, so after it restarts each such
-  # entry is checked against the registry again.
+  # whose forwarded credentials read the image's manifest in a repository the
+  # entry was fetched from, so naming a digest, under any registry, is not
+  # enough to borrow another owner's private image. The service keeps what is
+  # public in memory, so after it restarts each such entry is checked against
+  # the registry again. The service runs with every capability dropped but
+  # the four an unpack needs — CHOWN, FOWNER, FSETID and DAC_OVERRIDE — so an
+  # SCC named in `runner.scc` must admit FSETID too.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte

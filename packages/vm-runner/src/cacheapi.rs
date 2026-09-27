@@ -13,9 +13,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::api::{REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
-use crate::cache::PULL_TIMEOUT;
 use crate::fetch::{failure_reason, unusable, Refusal};
-use crate::imagecache::{Fetched, ImageCache, Images, Lookup, Resolved};
+use crate::imagecache::{Fetched, ImageCache, Images, Lookup, Resolved, RESOLVE_DEADLINE};
 
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's API, and the runner's client for it. It is HTTP/1.1 with JSON bodies over a Unix socket in the cache directory itself. The service mounts that directory read-write and each runner mounts it read-only, and a socket on a read-only mount can still be connected to but not replaced — so a runner reaches the service and cannot put a socket of its own in its place for other runners to reach.
 
@@ -127,8 +126,8 @@ pub struct CacheClient {
     socket: PathBuf,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a request may wait for its answer. A resolve can include a whole fetch, so it gets longer than one may run. A hold is answered at once, and it is made when the runner starts, so a service that has hung costs the runner seconds rather than a start that waits out a fetch.
-pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(PULL_TIMEOUT.as_secs() + 60);
+// UNIT_BOUNDARY_DESCRIPTION: how long a request may wait for its answer. The service gives a whole resolve, fetch included, one deadline, and the client waits a minute past it, so a service that answers at its deadline is heard rather than cut off. A hold is answered at once, and it is made when the runner starts, so a service that has hung costs the runner seconds rather than a start that waits out a fetch.
+pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(RESOLVE_DEADLINE.as_secs() + 60);
 pub const HOLD_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl CacheClient {
@@ -164,7 +163,18 @@ impl CacheClient {
         )
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a service that took the request and did not answer in time is reachable, and is most likely still fetching, so this is not the failure that lets the runner boot a tree it holds instead. It is said as what it is, rather than as a socket that could not be reached.
     fn unreachable(&self, e: std::io::Error) -> Lookup {
+        if matches!(
+            e.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ) {
+            return Lookup::failed(unusable(format!(
+                "the node's image cache service at {} took the request and did not answer within {}s",
+                self.socket.display(),
+                RESOLVE_TIMEOUT.as_secs()
+            )));
+        }
         Lookup {
             resolved: Err(unusable(self.unreachable_message(e))),
             fetched: None,
@@ -278,5 +288,18 @@ mod tests {
             b"HTTP/1.1 422 Unprocessable Entity\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{\r\n1\r\n}\r\n0\r\n\r\n";
         assert_eq!(parse_response(chunked), Some((422, b"{}".to_vec())));
         assert_eq!(parse_response(b"garbage"), None);
+    }
+
+    // TEST_SCENARIO: a resolve that takes as long as the service's own deadline must still be heard, so the client waits longer than that deadline. A service that took the request and did not answer is said to be slow, not unreachable, so the runner does not fall back to a tree it holds while the service is still fetching; a socket nobody listens on is unreachable.
+    #[test]
+    fn a_slow_service_is_told_apart_from_a_lost_one() {
+        assert!(RESOLVE_TIMEOUT > RESOLVE_DEADLINE);
+        let client = CacheClient::new(PathBuf::from("/nonexistent/.cache.sock"));
+        let slow = client.unreachable(std::io::ErrorKind::WouldBlock.into());
+        assert!(!slow.unreachable);
+        let message = slow.resolved.err().unwrap().to_string();
+        assert!(message.contains("did not answer"), "{message}");
+        let lost = client.unreachable(std::io::ErrorKind::ConnectionRefused.into());
+        assert!(lost.unreachable);
     }
 }
