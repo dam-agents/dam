@@ -27,6 +27,9 @@ pub struct Smolvm {
 
 const USER: &str = "root";
 
+// UNIT_BOUNDARY_DESCRIPTION: where smolvm's gateway forwards a guest's DNS. The gateway answers every guest query on port 53, whatever address it was sent to, by relaying it from the runner's own network to this resolver, and its egress allowlist never gates that relay — so with smolvm's default, the runner's resolver, a guest that holds nothing but its gateway's address could still tunnel data out through DNS. A guest needs no resolver: its proxy and its allowlist are addresses, and every name it asks for travels through that proxy and is resolved by the paired gateway pod. The runner's own loopback has nothing listening on port 53 and never leaves the pod, so every relayed query is refused where it starts.
+const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
+
 // UNIT_BOUNDARY_DESCRIPTION: the label smolvm stores on every machine this runner creates. smolvm never reads it; it is how an operator listing smolvm's machines tells the runner's own from anything else in the same database.
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
@@ -90,6 +93,7 @@ impl Runtime for Smolvm {
             if let Some(gib) = storage_gib {
                 raw_storage_disk(id, gib)?;
             }
+            self.db.update_vm(id, |r| r.dns = Some(GUEST_DNS_SINK))?;
             Ok(())
         })
     }
@@ -160,13 +164,14 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. The record's resolver is pinned to the sink on every start, so a machine created by an earlier runner boots with it too.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir);
         }
+        self.db.update_vm(id, |r| r.dns = Some(GUEST_DNS_SINK))?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
             kill_orphans(&self.proc_root, &dir);
@@ -395,6 +400,42 @@ mod tests {
         );
         assert!(!record.ephemeral, "a machine must survive a stop");
         assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
+        assert_eq!(
+            record.dns,
+            Some(GUEST_DNS_SINK),
+            "the gateway relays guest DNS past the allowlist, so it must relay it nowhere"
+        );
+    }
+
+    // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver, which relays the guest's DNS out of the pod. Its next start pins the sink before anything boots, so the record the VMM reads names nowhere — even when, as here, the boot itself then fails.
+    #[test]
+    fn every_start_relays_guest_dns_nowhere() {
+        let home = Home::new("dns");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let spec = spec();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+        smolvm.db.update_vm("m1", |r| r.dns = None).unwrap();
+
+        let _ = smolvm.start("m1");
+
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().dns,
+            Some(GUEST_DNS_SINK)
+        );
     }
 
     // TEST_SCENARIO: a storage disk of smolvm's default size would otherwise be a qcow2 overlay over the template in the runner image, named by its path there — a runner upgrade that ships another template would change the bytes under that agent's home. The create leaves a raw disk behind instead, which smolvm then boots as it is.
