@@ -238,10 +238,11 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
 	if halt != nil {
 		if err := halt(ctx, owner, name); err != nil {
-			return err
+			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
 	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{

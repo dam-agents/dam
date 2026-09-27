@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -153,4 +154,19 @@ func TestANewMITMCARebootsRunningMachinesOneAtATime(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, first))
 	require.NoError(t, r.Reconcile(ctx, second))
 	assert.Equal(t, "MITM-CA-2", node.spec("second").CACert, "once the first is back, the second takes its turn")
+}
+
+// TEST_SCENARIO: an idle vm agent is hibernated while its owner's runner cannot be reached. The machine cannot be stopped yet, but that is no reason to keep its gateway up and the agent reported as running: the gateway is scaled down and the agent reads hibernated, and the agent's next reconcile stops the machine.
+func TestHibernatingWhileTheRunnerIsUnreachableStillScalesTheGatewayDown(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
+
+	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
+
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+	reason, _ := agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, apiv1.ReasonHibernated, reason)
 }
