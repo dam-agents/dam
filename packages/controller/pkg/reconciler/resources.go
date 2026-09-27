@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -46,6 +47,26 @@ const annRollRev = "agent-platform.ai/roll-rev"
 
 func sanitizeMountName(path string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's secretRef names a Secret by name alone, in the namespace that also holds every other owner's credentials, the runners' tokens and the gateways' keys, and every key of it lands in the agent's environment on both backends. So only a Secret carrying the Agent's own owner label is honoured, and never one the platform manages — the credentials a gateway injects and the pull Secrets the api-server writes carry the managed-by label, and a runner's token and certificate its component — because those are meant for everything except the agent. The refusal names the label to add rather than the Secret's contents, so an operator's Secret that predates the rule is one label away from working.
+func (r *AgentReconciler) ownedSecretRef(ctx context.Context, agent *apiv1.Agent) (*corev1.Secret, error) {
+	name := agent.Spec.SecretRef
+	if name == "" {
+		return nil, nil
+	}
+	sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("reading secretRef %s: %w", name, err)
+	}
+	owner := agent.Labels[envoyOwnerLabel]
+	if owner == "" || sec.Labels[envoyOwnerLabel] != owner {
+		return nil, fmt.Errorf("secretRef %s does not carry this agent's owner label (%s), so its keys are not given to the agent; label the Secret with its owner to use it", name, envoyOwnerLabel)
+	}
+	if sec.Labels[envoyManagedByLabel] != "" || sec.Labels["app.kubernetes.io/component"] == vmRunnerComponent {
+		return nil, fmt.Errorf("secretRef %s is a Secret the platform manages, which is never given to an agent", name)
+	}
+	return sec, nil
 }
 
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {

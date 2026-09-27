@@ -88,10 +88,18 @@ type VMRunnerSpec struct {
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
 	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
+	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
+	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
+}
+
+type VMRunnerClusterDNS struct {
+	Namespace string            `json:"namespace,omitempty"`
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	Ports     []int32           `json:"ports,omitempty"`
 }
 
 type VMRunnerRollout struct {

@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -862,7 +863,7 @@ func TestEveryCacheIsBounded(t *testing.T) {
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent. The one peer that does sit in the agent namespace is the owner's own runtime-migration Job.
 func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil, nil)
 
 	require.Len(t, np.Spec.Ingress, 3, "the machine API and published ports, the migration Job's machine API, and the scrape port")
 	for _, rule := range np.Spec.Ingress {
@@ -879,7 +880,7 @@ func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
 
 // TEST_SCENARIO: the scrape port carries no token, so the NetworkPolicy is its only gate — it must admit the platform's collector to that port alone, and nothing else may reach it, while the collector reaches nothing but it.
 func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil, nil)
 
 	var scrapers []string
 	for _, rule := range np.Spec.Ingress {
@@ -904,7 +905,7 @@ func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort, nil, nil, nil)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -1125,14 +1126,14 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 
 // TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
 func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
-	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
+	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil, nil)
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
 		"with nowhere named, the runner still pulls images and the policy only admits callers")
 	assert.Empty(t, open.Spec.Egress)
 
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"}, nil)
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
-	require.Len(t, confined.Spec.Egress, 3, "DNS, the owner's gateways, and what the install named")
+	require.Len(t, confined.Spec.Egress, 2, "the owner's gateways and what the install named; a runner given no resolver gets no DNS")
 
 	var sawGateway, sawCIDR bool
 	for _, rule := range confined.Spec.Egress {
@@ -1149,8 +1150,8 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 			}
 			if to.IPBlock != nil && to.IPBlock.CIDR == "0.0.0.0/0" {
 				sawCIDR = true
-				assert.Equal(t, []string{"10.128.0.0/14"}, to.IPBlock.Except,
-					"an open block matches in-cluster addresses too, so the cluster's own ranges are subtracted")
+				assert.Equal(t, []string{"10.128.0.0/14", "169.254.0.0/16", "100.100.100.200/32"}, to.IPBlock.Except,
+					"an open block matches in-cluster addresses too, so the cluster's own ranges are subtracted, and the metadata endpoints always are")
 			}
 		}
 	}
@@ -1162,7 +1163,7 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
 	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
 		[]string{"203.0.113.0/24", "0.0.0.0/0"},
-		[]string{"10.128.0.0/14", "172.30.0.0/16"})
+		[]string{"10.128.0.0/14", "172.30.0.0/16"}, nil)
 
 	blocks := map[string][]string{}
 	for _, rule := range rules {
@@ -1175,8 +1176,98 @@ func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
 
 	assert.Empty(t, blocks["203.0.113.0/24"],
 		"a registry block carries no cluster exception, because the API server would reject the policy")
-	assert.Equal(t, []string{"10.128.0.0/14", "172.30.0.0/16"}, blocks["0.0.0.0/0"],
+	assert.Equal(t, []string{"10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16", "100.100.100.200/32"}, blocks["0.0.0.0/0"],
 		"an open block carries them, which is where they do the work")
+}
+
+// TEST_SCENARIO: the metadata endpoint hands out the node's own credentials, so an install that opens the runner wide must not open it too. Every block containing a metadata range has it subtracted even when the install forgot to, an exception the install already wrote is not repeated, and a block that names the endpoint itself is not rendered at all.
+func TestTheMetadataEndpointIsNeverReachable(t *testing.T) {
+	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
+		[]string{"0.0.0.0/0", "::/0", "169.254.0.0/15", "169.254.169.254/32", "203.0.113.0/24", "fd00::/8"},
+		[]string{"169.254.0.0/16"}, nil)
+
+	blocks := map[string][]string{}
+	for _, rule := range rules {
+		for _, to := range rule.To {
+			if to.IPBlock != nil {
+				blocks[to.IPBlock.CIDR] = to.IPBlock.Except
+			}
+		}
+	}
+	assert.Equal(t, []string{"169.254.0.0/16", "100.100.100.200/32"}, blocks["0.0.0.0/0"],
+		"the install's own exception covers link-local, so only the rest is added")
+	assert.Equal(t, []string{"fe80::/10", "fd00:ec2::254/128"}, blocks["::/0"], "an IPv6 block loses the IPv6 endpoints")
+	assert.Equal(t, []string{"169.254.0.0/16"}, blocks["169.254.0.0/15"])
+	assert.NotContains(t, blocks, "169.254.169.254/32", "a block inside link-local names the endpoint itself")
+	assert.Empty(t, blocks["203.0.113.0/24"], "a block holding no endpoint keeps no exception, which Kubernetes would reject")
+	assert.Equal(t, []string{"fd00:ec2::254/128"}, blocks["fd00::/8"])
+}
+
+// TEST_SCENARIO: port 53 open to every address is a two-way channel from an escaped guest to any host that answers there. A runner that caches on its own claim resolves its registry, and reaches only the resolver the install named — the node's resolver by address under Default, the cluster DNS pods by label under ClusterFirst, which are selected as pods because policy applies after the Service address is translated. A runner on the node cache or on staged images resolves nothing and gets no DNS at all, and one left with no resolver named gets none rather than an open port.
+func TestTheRunnerReachesOnlyTheResolverItUses(t *testing.T) {
+	own := config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}}
+	rule := runnerDNSRule(own)
+	require.NotNil(t, rule)
+	require.Len(t, rule.To, 1)
+	require.NotNil(t, rule.To[0].IPBlock)
+	assert.Equal(t, "10.0.2.3/32", rule.To[0].IPBlock.CIDR)
+	require.Len(t, rule.Ports, 2)
+	for _, p := range rule.Ports {
+		assert.Equal(t, int32(53), p.Port.IntVal)
+	}
+
+	cluster := runnerDNSRule(config.VMRunnerSpec{DNSPolicy: "ClusterFirst", ClusterDNS: config.VMRunnerClusterDNS{
+		Namespace: "openshift-dns", PodLabels: map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}, Ports: []int32{5353},
+	}})
+	require.NotNil(t, cluster)
+	require.Len(t, cluster.To, 1)
+	assert.Nil(t, cluster.To[0].IPBlock)
+	assert.Equal(t, "openshift-dns", cluster.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	assert.Equal(t, "default", cluster.To[0].PodSelector.MatchLabels["dns.operator.openshift.io/daemonset-dns"])
+	for _, p := range cluster.Ports {
+		assert.Equal(t, int32(5353), p.Port.IntVal, "the pods' own port, since policy sees the translated destination")
+	}
+
+	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}, ImageCacheHostPath: "/var/lib/platform-images"}),
+		"the node's cache service resolves the registry, not the runner")
+	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}, ImageArchiveHostPath: "/var/lib/platform-archives"}),
+		"staged images need no registry")
+	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{}), "no resolver named is no DNS, never DNS anywhere")
+	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSPolicy: "ClusterFirst"}))
+
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, nil, rule)
+	for _, r := range confined.Spec.Egress {
+		for _, p := range r.Ports {
+			if p.Port != nil && p.Port.IntVal == 53 {
+				assert.NotEmpty(t, r.To, "a DNS rule without a destination admits port 53 everywhere")
+			}
+		}
+	}
+}
+
+// TEST_SCENARIO: a runner hosts untrusted guests, so its container holds only the capabilities it adds and none of the runtime's defaults, cannot raise them through exec, and runs under the runtime's default seccomp profile. AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
+func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
+	sc := runnerSecurityContext(config.VMRunnerSpec{ImageCacheHostPath: "/var/lib/platform-images"})
+	require.NotNil(t, sc.Capabilities)
+	assert.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop)
+	assert.Equal(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}, sc.Capabilities.Add)
+	require.NotNil(t, sc.AllowPrivilegeEscalation)
+	assert.False(t, *sc.AllowPrivilegeEscalation)
+	require.NotNil(t, sc.SeccompProfile)
+	assert.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, sc.SeccompProfile.Type)
+	require.NotNil(t, sc.AppArmorProfile)
+	assert.Equal(t, corev1.AppArmorProfileTypeUnconfined, sc.AppArmorProfile.Type)
+	require.NotNil(t, sc.RunAsUser)
+	assert.Equal(t, int64(0), *sc.RunAsUser)
+}
+
+// TEST_SCENARIO: the runner's token is the machine API's credential, so it is 256 bits from the operating system's generator, and two runners never share one.
+func TestARunnerTokenCarriesTwoHundredFiftySixBits(t *testing.T) {
+	a, b := newRunnerToken(), newRunnerToken()
+	assert.Len(t, a, 64)
+	assert.NotEqual(t, a, b)
+	_, err := hex.DecodeString(a)
+	assert.NoError(t, err)
 }
 
 // TEST_SCENARIO: an agent the runner refused is parked and retried every 30s, so the gateway must not be brought up and taken down on that cadence — a scheduled and killed pod each cycle, for an agent that cannot run.
@@ -1209,7 +1300,7 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
-// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns — so that runner holds CHOWN and FOWNER. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds NET_ADMIN for the per-machine NAT and DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds NET_ADMIN for the per-machine NAT and DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
 func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1223,7 +1314,7 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 		return caps.Add
 	}
 
-	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE", "CHOWN", "FOWNER"},
+	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE", "CHOWN", "FOWNER", "FSETID"},
 		capsFor(func(*config.VMRunnerSpec) {}), "the runner that unpacks into its own claim")
 	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"},
 		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
@@ -1307,4 +1398,68 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "info", env["RUST_LOG"],
 		"or a slow boot reports no phases, and debug would bury them under every status call")
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
+}
+
+func envSecret(t *testing.T, r *AgentReconciler, name string, labels map[string]string) {
+	t.Helper()
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents", Labels: labels},
+		Data:       map[string][]byte{"SECRET_TOKEN": []byte("s3cr3t-value")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a secretRef names a Secret by name alone, in the namespace that holds every owner's credentials and every runner's token, and all of its keys land in the guest's environment. A Secret labelled with the Agent's own owner is honoured; one with another owner's label, with no owner label at all, or one the platform manages is refused, and none of its values reaches the machine.
+func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.SecretRef = "mine"
+	r, node, _ := setupVMReconciler(t, agent)
+	envSecret(t, r, "mine", map[string]string{envoyOwnerLabel: testOwner})
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "s3cr3t-value", node.spec("my-agent").Env["SECRET_TOKEN"])
+
+	for name, labels := range map[string]map[string]string{
+		"theirs":    {envoyOwnerLabel: "someone-else"},
+		"unlabeled": nil,
+		"managed":   {envoyOwnerLabel: testOwner, envoyManagedByLabel: "api-server"},
+		"runner":    {envoyOwnerLabel: testOwner, "app.kubernetes.io/component": vmRunnerComponent},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := vmAgentCR()
+			agent.Spec.SecretRef = name
+			r, node, _ := setupVMReconciler(t, agent)
+			envSecret(t, r, name, labels)
+			err := r.Reconcile(context.Background(), agent)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "secretRef "+name)
+			assert.NotContains(t, err.Error(), "s3cr3t-value", "the refusal names the Secret, never its contents")
+			for _, v := range node.spec("my-agent").Env {
+				assert.NotEqual(t, "s3cr3t-value", v)
+			}
+		})
+	}
+}
+
+// TEST_SCENARIO: the container backend hands a secretRef to the kubelet as envFrom, so the same Secret the vm backend refuses must never reach a StatefulSet there either — the check runs before the pod is rendered. An operator's Secret that predates the rule needs only its owner label to work again.
+func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
+	agent := agentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	agent.Spec.SecretRef = "theirs"
+	r, _ := setupReconciler(t, agent)
+	envSecret(t, r, "theirs", map[string]string{envoyOwnerLabel: "someone-else"})
+
+	err := r.Reconcile(context.Background(), agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "secretRef theirs")
+	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "no pod may be rendered with another owner's Secret as its environment")
+
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), "theirs", metav1.GetOptions{})
+	require.NoError(t, err)
+	sec.Labels[envoyOwnerLabel] = testOwner
+	_, err = r.client.CoreV1().Secrets("test-agents").Update(context.Background(), sec, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	got, err := r.ownedSecretRef(context.Background(), agent)
+	require.NoError(t, err, "labelling the Secret with its owner is all an existing one needs")
+	assert.Equal(t, "theirs", got.Name)
 }
