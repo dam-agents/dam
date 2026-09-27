@@ -287,6 +287,13 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 		if existing.DeletionTimestamp != nil {
 			return errRunnerTerminating
 		}
+		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), refs) {
+			updated, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("restoring the runner claim's labels and owner: %w", err)
+			}
+			existing = updated
+		}
 		if sizeErr != nil {
 			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
 			return nil

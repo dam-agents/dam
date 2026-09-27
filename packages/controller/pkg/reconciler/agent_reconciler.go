@@ -45,6 +45,8 @@ type AgentReconciler struct {
 	runners        map[string]runnerConn
 	runnerEndpoint func(owner string) string
 	runnerRollMu   sync.Mutex
+	runnerRoll     runnerRollView
+	rollViewTTL    time.Duration
 	requeue        func(name string, after time.Duration)
 	lifetime       context.Context
 	podResize      atomic.Int32
@@ -60,7 +62,7 @@ type AgentReconciler struct {
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
-	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg}
+	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL}
 	r.busyProbe = func(ctx context.Context, name string) bool {
 		return agentPodIsBusy(ctx, r.config.Namespace, name)
 	}

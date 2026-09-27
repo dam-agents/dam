@@ -69,6 +69,21 @@ func StartReconcile(ctx context.Context, kind, name string) (context.Context, fu
 	}
 }
 
+var runnerRollStalled = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.roll_stalled",
+		metric.WithDescription("VM runner rolls whose new pod was not ready by the settle timeout, and which keep their place in the roll"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RunnerRollStalled(ctx context.Context) {
+	if c := runnerRollStalled(); c != nil {
+		c.Add(ctx, 1)
+	}
+}
+
 func SetRequeues(ctx context.Context, n int) {
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("platform.reconcile.requeues", n))
 }

@@ -11,9 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -23,6 +25,7 @@ import (
 func setupRolloutReconciler(t *testing.T, owners ...string) (*AgentReconciler, map[string]*fakeNode) {
 	t.Helper()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
+	r.rollViewTTL = 0
 	cs := r.client.(*fake.Clientset)
 	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
@@ -222,4 +225,98 @@ func TestTheSweepRollsRunnersNoAgentReconciles(t *testing.T) {
 		}
 		settleRunnerPod(t, r, owners[pass])
 	}
+}
+
+// TEST_SCENARIO: a runner release whose pod never becomes ready — a bad image, a missing device. Past the settle timeout the roll keeps its place rather than moving on to break the next owner too, and the runner is marked stalled. Once its pod is ready the mark is cleared and the roll moves on.
+func TestARollWhosePodNeverStartsHaltsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the next owner does not roll onto a pod that does not start")
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, dep.Annotations[annRunnerStalled])
+
+	settleRunnerPod(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
+	dep, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, dep.Annotations[annRunnerStalled])
+}
+
+// TEST_SCENARIO: the rollout sweep offers every runner its turn, and each turn asks which runners are mid-roll. That answer is kept for a few seconds, so a pass over many owners lists the runner Deployments a bounded number of times rather than once per owner.
+func TestTheRolloutSweepListsRunnersOncePerPass(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b", "owner-c", "owner-d")
+	r.rollViewTTL = runnerRollViewTTL
+	r.config.VM.Runner.Image = runnerV2
+	cs := r.client.(*fake.Clientset)
+	cs.ClearActions()
+
+	r.ReconcileRunnerRollout(ctx)
+
+	lists := 0
+	for _, a := range cs.Actions() {
+		if a.GetVerb() == "list" && a.GetResource().Resource == "deployments" {
+			lists++
+		}
+	}
+	assert.Equal(t, 2, lists, "one List for the sweep's own order, one for the runners mid-roll")
+}
+
+// TEST_SCENARIO: every runner is rolled when this hash changes, which reboots every vm machine of the install. A change to how the controller renders the runner pod must therefore be deliberate: this pins the hash for a fixed configuration, so an unintended rendering change fails here rather than in a fleet-wide reboot.
+func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "b322a8e888c05ee2", dep.Annotations[annRunnerTemplate])
+}
+
+// TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts.
+func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	_, err := r.client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "sa-now"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	deps := r.client.AppsV1().Deployments("test-agents")
+	dep, err := deps.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	delete(dep.Annotations, annRunnerRolledAt)
+	delete(dep.Labels, "app.kubernetes.io/instance")
+	dep.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "ServiceAccount", Name: "platform-vm-runner", UID: "sa-before"}}
+	_, err = deps.Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	pvcs := r.client.CoreV1().PersistentVolumeClaims("test-agents")
+	pvc, err := pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	pvc.OwnerReferences = nil
+	_, err = pvcs.Update(ctx, pvc, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	dep, err = deps.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "platform", dep.Labels["app.kubernetes.io/instance"])
+	require.Len(t, dep.OwnerReferences, 1)
+	assert.Equal(t, types.UID("sa-now"), dep.OwnerReferences[0].UID)
+	assert.Empty(t, dep.Annotations[annRunnerRolledAt], "restoring metadata does not start a roll")
+	pvc, err = pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, pvc.OwnerReferences, 1)
+	assert.Equal(t, types.UID("sa-now"), pvc.OwnerReferences[0].UID)
 }
