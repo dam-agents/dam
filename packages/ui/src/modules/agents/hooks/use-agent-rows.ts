@@ -89,7 +89,7 @@ export function useAgentRows() {
     updatePending: update.updatingId === agent.id,
     updateBusy: update.updatingId !== null || update.updatingAll,
     onUpdate: () => void update.updateOne(agent),
-    migratePending: migrate.migratingId === agent.id,
+    migratePending: migrate.isMigrating(agent.id),
     onMigrate: () => void migrate.migrateOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),

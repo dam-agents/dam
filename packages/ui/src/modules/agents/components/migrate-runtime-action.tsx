@@ -20,7 +20,27 @@ interface Props {
 export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
   const action = migrateAction(agent, useVmRuntime(), pending);
   if (!action) return null;
-  const migrating = action.kind === "migrating";
+
+  // UNIT_BOUNDARY_DESCRIPTION: a running migration disables the button, and a disabled button takes no pointer events, so a hover card on it would never open in the one state that has something to report. That state's text rides the button's tooltip instead, which the button shows even while disabled.
+  if (action.kind === "migrating") {
+    return (
+      <span onClick={(e) => e.stopPropagation()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled
+          tooltip={
+            action.message ??
+            "Copying the home directory to the new sandbox runtime"
+          }
+          className="shrink-0 font-medium text-accent"
+        >
+          <Migrate size={16} />
+          Migrating…
+        </Button>
+      </span>
+    );
+  }
 
   return (
     <span onClick={(e) => e.stopPropagation()}>
@@ -29,12 +49,11 @@ export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
           <Button
             variant="ghost"
             size="sm"
-            disabled={migrating}
             className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
             onClick={onMigrate}
           >
             <Migrate size={16} />
-            {migrating ? "Migrating…" : "Migrate"}
+            Migrate
           </Button>
         </HoverCardTrigger>
         <HoverCardContent
@@ -48,11 +67,6 @@ export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
             with the workspace and settings, is copied over, and the agent is
             unavailable while the copy runs. This cannot be undone from the UI.
           </p>
-          {action.kind === "migrating" && action.message && (
-            <p className="rounded-md bg-warning/15 px-2 py-1.5 text-warning-fg">
-              {action.message}
-            </p>
-          )}
         </HoverCardContent>
       </HoverCard>
     </span>
