@@ -5,6 +5,9 @@ pub const SHARE_PATH: &str = "/platform";
 pub const INIT_PATH: &str = "/platform/init";
 pub const SHARE_CA_DIR: &str = "/platform/ca";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share once this machine has booted with its home on the disk, and never removes it. smolvm formats a storage disk it cannot mount, and a formatted disk looks exactly like a disk that was never seeded. Without this file platform-init would seed a fresh home on it and boot as if nothing was lost. With it, platform-init knows the home must already be there, and refuses to boot when it is not.
+pub const SEEDED_PATH: &str = "/platform/seeded";
+
 // UNIT_BOUNDARY_DESCRIPTION: where the image expects the platform's MITM CA. The share carries it and platform-init binds it here, so an image's own trust setup is the same sequence on both backends.
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 
@@ -48,7 +51,7 @@ mod tests {
     // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init and the CA directory directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init or no CA.
     #[test]
     fn the_share_paths_are_inside_the_share() {
-        for path in [INIT_PATH, SHARE_CA_DIR] {
+        for path in [INIT_PATH, SHARE_CA_DIR, SEEDED_PATH] {
             let parent = Path::new(path).parent().expect("a share path has a parent");
             assert_eq!(
                 parent,

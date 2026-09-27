@@ -75,7 +75,7 @@ pub struct Workload {
     pub command: Vec<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the guest's command and environment. platform-init runs first and execs the image's own entrypoint, so the image's entrypoint, command, env and working directory all come from its launch record. The platform's env wins over the image's, because it is what makes the guest an agent. The env is sorted by key so two creates of one spec write one record.
+// UNIT_BOUNDARY_DESCRIPTION: the guest's command and environment. platform-init runs first and starts the image's own entrypoint, so the image's entrypoint, command, env and working directory all come from its launch record. The platform's env wins over the image's, because it is what makes the guest an agent. The env is sorted by key so two creates of one spec write one record.
 pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Workload> {
     let mut env: BTreeMap<String, String> = launch
         .env
@@ -298,7 +298,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: platform-init has to be the machine's entrypoint on every boot, or the agent's home is never mounted and its work is lost at the first stop. It runs first and execs what the image names — entrypoint then command — from the working directory the image names.
+    // TEST_SCENARIO: platform-init has to be the machine's entrypoint on every boot, or the agent's home is never mounted and its work is lost at the first stop. It runs first and starts what the image names — entrypoint then command — from the working directory the image names.
     #[test]
     fn platform_init_runs_first_and_hands_off_to_what_the_image_names() {
         let w = workload(
