@@ -435,6 +435,21 @@ func TestStorageMigration_SkipsVMBackend(t *testing.T) {
 	assert.Empty(t, jobs.Items)
 }
 
+// TEST_SCENARIO: a container Agent whose runtime migration is under way keeps the volumes the copy reads and the abort resumes on, so the storage migration leaves them alone until the runtime migration has ended one way or the other.
+func TestStorageMigration_SkipsAgentMidRuntimeMigration(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annRuntimeMigration: runtimeMigrationRequested}
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration])
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
+}
+
 func renderedAgentSTS(name string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},

@@ -268,6 +268,9 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		if agent.Spec.IsVM() {
 			continue
 		}
+		if !inFlight[name] && runtimeMigrationOf(agent.Annotations, agent.Status).active() {
+			continue
+		}
 		if !inFlight[name] {
 			if slots <= 0 {
 				continue
