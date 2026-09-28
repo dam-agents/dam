@@ -230,36 +230,6 @@ func (r *AgentReconciler) runtimeMigrationGrafts(ctx context.Context, agent *api
 	return grafts, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a persisted path from outside HOME and where below HOME it moved. The machine's root is fresh on every boot, so the copy Job has the seed carry a boot hook that links each such path to its new place again at every boot. Every moved path gets one, whether or not a volume was ever made for it, since the agent's software still looks there.
-type runtimeMigrationLink struct {
-	Path string `json:"path"`
-	At   string `json:"at"`
-}
-
-func runtimeMigrationLinks(agent *apiv1.Agent) ([]runtimeMigrationLink, error) {
-	raw := agent.Annotations[annRuntimeMigrationMounts]
-	if raw == "" {
-		return nil, nil
-	}
-	var moved map[string]string
-	if err := json.Unmarshal([]byte(raw), &moved); err != nil {
-		return nil, fmt.Errorf("the migration's mounts annotation is not a map of paths: %w", err)
-	}
-	var links []runtimeMigrationLink
-	for old, to := range moved {
-		if old == agentHomeDir || strings.HasPrefix(old, agentHomeDir+"/") {
-			continue
-		}
-		at, ok := strings.CutPrefix(to, agentHomeDir+"/")
-		if !ok || at == "" {
-			return nil, fmt.Errorf("the migration moves %s to %s, which is not inside %s", old, to, agentHomeDir)
-		}
-		links = append(links, runtimeMigrationLink{Path: old, At: at})
-	}
-	sort.Slice(links, func(i, j int) bool { return links[i].Path < links[j].Path })
-	return links, nil
-}
-
 func recordedGrafts(agent *apiv1.Agent) ([]runtimeMigrationGraft, error) {
 	raw := agent.Annotations[annRuntimeMigrationGrafts]
 	if raw == "" {
@@ -330,14 +300,10 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err != nil {
 			return r.noteRuntimeMigration(ctx, name, err)
 		}
-		links, err := runtimeMigrationLinks(agent)
-		if err != nil {
-			return r.noteRuntimeMigration(ctx, name, err)
-		}
 		if err := r.applySeedCapability(ctx, agent, owner); err != nil {
 			return err
 		}
-		desired, err := r.buildRuntimeMigrationJob(agent, owner, source, grafts, links)
+		desired, err := r.buildRuntimeMigrationJob(agent, owner, source, grafts)
 		if err != nil {
 			return err
 		}
@@ -584,8 +550,8 @@ func (r *AgentReconciler) noteRuntimeMigration(ctx context.Context, name string,
 	return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{annRuntimeMigrationMessage: new(msg)})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME, with the boot hook that links each moved path back — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
-func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source string, grafts []runtimeMigrationGraft, links []runtimeMigrationLink) (*batchv1.Job, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
+func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source string, grafts []runtimeMigrationGraft) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
 	spec := cfg.VM.Runner
@@ -630,13 +596,6 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			},
 		}}},
-	}
-	if len(links) > 0 {
-		encoded, err := json.Marshal(links)
-		if err != nil {
-			return nil, err
-		}
-		command = append(command, "--links", string(encoded))
 	}
 	for i, g := range grafts {
 		volume := "extra-" + strconv.Itoa(i)

@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use clap::Parser;
 use vm_runner::api::SeedResult;
-use vm_runner::seed::{write_layout, Graft, Limits, Link, Options, OwnerMap, Tally};
+use vm_runner::seed::{write_layout, Graft, Limits, Options, OwnerMap, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -18,8 +18,6 @@ struct Args {
     source: PathBuf,
     #[arg(long = "graft", value_parser = parse_graft)]
     grafts: Vec<Graft>,
-    #[arg(long, value_parser = parse_links, default_value = "[]")]
-    links: Links,
     #[arg(long)]
     url: String,
     #[arg(long = "token-file")]
@@ -67,16 +65,6 @@ fn parse_graft(value: &str) -> Result<Graft, String> {
         at: PathBuf::from(at),
         source: PathBuf::from(source),
     })
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the persisted paths from outside the home the migration moved, as a JSON list of `{"path", "at"}`. JSON rather than a separator, because a path the agent's spec named may hold any character a separator could be.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Links(Vec<Link>);
-
-fn parse_links(value: &str) -> Result<Links, String> {
-    serde_json::from_str(value)
-        .map(Links)
-        .map_err(|e| format!("{value:?} is not a JSON list of {{\"path\", \"at\"}}: {e}"))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how much of the tar is gathered before it is handed to the connection, and how many such chunks may wait for it. Together they bound what the upload holds in memory, whatever the size of the home.
@@ -129,7 +117,6 @@ fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
     let tarred = write_layout(
         &args.source,
         &args.grafts,
-        &args.links.0,
         &options,
         Tally::new(Channel {
             chunks,
@@ -347,7 +334,6 @@ mod tests {
         assert_eq!(args.source, PathBuf::from("/old-home"));
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
         assert!(args.grafts.is_empty());
-        assert!(args.links.0.is_empty());
         assert_eq!(args.result_file, None);
         assert_eq!(
             args.map_owner,
@@ -431,36 +417,6 @@ mod tests {
                 "{bad:?}"
             );
         }
-    }
-
-    // TEST_SCENARIO: the Job passes the moved paths as one JSON list, and a list that does not parse is refused at the start rather than seeding a machine whose paths are never linked.
-    #[test]
-    fn the_links_the_migration_job_passes_are_read() {
-        let base = [
-            "vm-seed",
-            "--source",
-            "/h",
-            "--url",
-            "u",
-            "--token-file",
-            "t",
-            "--ca-file",
-            "c",
-        ];
-        let args = Args::try_parse_from(
-            base.iter()
-                .copied()
-                .chain(["--links", r#"[{"path":"/data","at":".persisted/data"}]"#]),
-        )
-        .unwrap();
-        assert_eq!(
-            args.links.0,
-            vec![Link {
-                path: PathBuf::from("/data"),
-                at: PathBuf::from(".persisted/data")
-            }]
-        );
-        assert!(Args::try_parse_from(base.iter().copied().chain(["--links", "/data"])).is_err());
     }
 
     // TEST_SCENARIO: the Job passes one `--graft` per other volume, in the order it mounted them. Each is read as the place below the home and the mount, split at the last `=` so a place the spec named with one in it still reaches the archive whole.

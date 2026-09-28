@@ -357,6 +357,7 @@ fn spec(running: bool) -> MachineSpec {
         running,
         pull_auths: Vec::new(),
         migration: None,
+        links: Vec::new(),
         expect_seed: None,
     }
 }
