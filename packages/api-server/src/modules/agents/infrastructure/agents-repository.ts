@@ -77,7 +77,7 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state.
+// UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state; a write with no version to name is refused as a conflict.
 export interface RuntimeMigrationWrite {
   spec?: Record<string, unknown>;
   annotations: Record<string, string | null>;
@@ -171,13 +171,12 @@ export function createAgentsRepository(
       if (!obj) return { ok: false, reason: "not-found" };
       if (owner && !agentIsOwnedBy(obj, owner))
         return { ok: false, reason: "not-found" };
+      if (!patch.resourceVersion) return { ok: false, reason: "conflict" };
       try {
         const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
           metadata: {
             annotations: patch.annotations,
-            ...(patch.resourceVersion
-              ? { resourceVersion: patch.resourceVersion }
-              : {}),
+            resourceVersion: patch.resourceVersion,
           },
           ...(patch.spec ? { spec: patch.spec } : {}),
         });

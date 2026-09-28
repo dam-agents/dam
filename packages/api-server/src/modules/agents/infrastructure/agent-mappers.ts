@@ -43,8 +43,9 @@ import {
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 import {
-  isRuntimeMigratable,
   runtimeMigrationOf,
+  runtimeMigrationRefusal,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -70,6 +71,7 @@ export interface InfraAgent {
   id: string;
   name: string;
   createdAt?: string;
+  resourceVersion?: string;
   templateId?: string;
   owner?: string;
   spec: AgentSpec;
@@ -84,7 +86,6 @@ export interface InfraAgent {
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
-  resourceVersion?: string;
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationTarget?: string;
   runtimeMigrationSnapshot?: string;
@@ -201,6 +202,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     id,
     name: spec.name,
     ...(createdAt ? { createdAt } : {}),
+    ...(resourceVersion ? { resourceVersion } : {}),
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
     owner: agentOwner(obj),
     spec,
@@ -221,7 +223,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
-    ...(resourceVersion ? { resourceVersion } : {}),
     ...(runtimeMigration ? { runtimeMigration } : {}),
     ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
       ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
@@ -272,6 +273,7 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
+  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -283,7 +285,8 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable: isRuntimeMigratable(infra.spec),
+    runtimeMigratable:
+      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

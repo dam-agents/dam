@@ -22,6 +22,7 @@ import {
 import {
   movedStorageSize,
   runtimeMigrationOf,
+  type AgentMount,
 } from "../../modules/agents/domain/runtime-migration.js";
 import {
   assembleAgent,
@@ -37,6 +38,10 @@ import { fakeK8s } from "../helpers/fake-k8s.js";
 configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
+const CHART_MOUNTS = [
+  { path: "/home/agent", persist: true },
+  { path: "/tmp", persist: false },
+];
 const REQUEST = "agent-platform.ai/runtime-migration";
 const TARGET = "agent-platform.ai/runtime-migration-target";
 const SNAPSHOT = "agent-platform.ai/runtime-migration-snapshot";
@@ -116,12 +121,16 @@ function writes(...agents: (InfraAgent | null)[]): {
 function harness(opts?: {
   agent?: InfraAgent | null;
   virtualizationEnabled?: boolean;
+  defaultMounts?: AgentMount[];
 }) {
   const agent = opts?.agent === undefined ? infraAgent() : opts.agent;
   const deps = writes(agent);
   const run = executeRuntimeMigration({
     owner: OWNER,
-    virtualizationEnabled: opts?.virtualizationEnabled ?? true,
+    migration: {
+      virtualizationEnabled: opts?.virtualizationEnabled ?? true,
+      defaultMounts: opts?.defaultMounts ?? CHART_MOUNTS,
+    },
     defaultStorageSize: "10Gi",
     ...deps,
   });
@@ -142,6 +151,7 @@ describe("runtime migration request", () => {
         [SNAPSHOT]: JSON.stringify({
           backend: null,
           mounts: [{ path: "/home/agent", persist: true }],
+          effectiveMounts: [{ path: "/home/agent", persist: true }],
           storageSize: null,
           runtimeClassName: "gvisor",
           nodeSelector: { pool: "agents" },
@@ -186,6 +196,80 @@ describe("runtime migration request", () => {
       "/data": "/home/agent/.persisted/data",
     });
     expect(h.writeMigration.mock.calls[0]?.[1].spec).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: an Agent that names no mounts gets the install's template defaults from the controller. The migration plans from those same mounts, so a default that persists a path outside HOME moves with the Agent in the target shape, and the snapshot records the spec as it was — naming no mounts — beside the mounts the controller rendered.
+  it("plans from the template defaults when the agent names no mounts", async () => {
+    const h = harness({
+      agent: infraAgent({ spec: { name: "my-agent", image: "img" } }),
+      defaultMounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/data", persist: true, size: "5Gi" },
+      ],
+    });
+    expect((await h.run("agent-1")).ok).toBe(true);
+    const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
+    expect(JSON.parse(annotations[TARGET] ?? "")).toEqual({
+      mounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/home/agent/.persisted/data", persist: true, size: "5Gi" },
+      ],
+      storageSize: "15Gi",
+    });
+    const snapshot = JSON.parse(annotations[SNAPSHOT] ?? "");
+    expect(snapshot.mounts).toBeNull();
+    expect(snapshot.effectiveMounts).toEqual([
+      { path: "/home/agent", persist: true },
+      { path: "/data", persist: true, size: "5Gi" },
+    ]);
+    expect(annotations[MOUNTS]).toBe(
+      JSON.stringify({ "/data": "/home/agent/.persisted/data" }),
+    );
+  });
+
+  // TEST_SCENARIO: the refusal is checked on one read and the request is written later, against that read's resourceVersion. A write that keeps losing the race to another change — a storage migration, a second request — is reported as a concurrent update to retry rather than an error.
+  it("reports a write that keeps losing a race as a concurrent update", async () => {
+    const h = harness();
+    h.writeMigration.mockResolvedValue({ ok: false, reason: "conflict" });
+    expect(await h.run("agent-1")).toEqual({
+      ok: false,
+      error: { type: "ConcurrentUpdate" },
+    });
+  });
+
+  // TEST_SCENARIO: nothing but HOME survives on the machine, so an Agent that does not persist HOME has nothing to carry over and is refused rather than moved empty.
+  it("refuses an agent whose home is not persisted", async () => {
+    for (const mounts of [
+      [{ path: "/home/agent", persist: false }],
+      [{ path: "/tmp", persist: false }],
+    ]) {
+      const h = harness({
+        agent: infraAgent({ spec: { name: "my-agent", image: "img", mounts } }),
+      });
+      expect(await h.run("agent-1")).toEqual({
+        ok: false,
+        error: { type: "HomeNotPersisted" },
+      });
+      expect(h.writeMigration).not.toHaveBeenCalled();
+    }
+  });
+
+  // TEST_SCENARIO: a running migration is checked before anything else, so even a request for an Agent that also reads as a vm Agent — one the previous api-server switched at once — says the move is under way, not that it is done.
+  it("reports a running migration before an agent already on vm", async () => {
+    const runtimeMigration = runtimeMigrationOf({
+      requested: "copying",
+      vm: true,
+    });
+    const h = harness({
+      agent: infraAgent({
+        spec: { name: "my-agent", image: "img", backend: { type: "vm" } },
+        ...(runtimeMigration ? { runtimeMigration } : {}),
+      }),
+    });
+    expect(await h.run("agent-1")).toEqual({
+      ok: false,
+      error: { type: "RuntimeMigrationInProgress" },
+    });
   });
 
   it("rejects an unknown or unowned agent", async () => {
@@ -274,6 +358,8 @@ describe("runtime migration request", () => {
             { path: "/proc/x", persist: true },
             { path: "/home", persist: true },
             { path: "/opt/../etc", persist: true },
+            { path: "/home/agent/../srv", persist: true },
+            { path: "/home/agent/./cache", persist: true },
             { path: "/home/agent/.persisted/x", persist: false },
           ],
         },
@@ -289,8 +375,11 @@ describe("runtime migration request", () => {
       "/proc/x",
       "/home",
       "/opt/../etc",
+      "/home/agent/../srv",
+      "/home/agent/./cache",
       "/home/agent/.persisted/x",
     ]);
+    expect(res.error.paths[5]?.reason).toBe("it is not a plain absolute path");
     expect(res.error.paths[0]?.reason).toContain("/etc/platform");
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
@@ -380,7 +469,7 @@ describe("a migration write that keeps conflicting", () => {
     deps.writeMigration.mockResolvedValue({ ok: false, reason: "conflict" });
     expect(
       await executeAbortRuntimeMigration({ owner: OWNER, ...deps })("agent-1"),
-    ).toEqual({ ok: false, error: { type: "RuntimeMigrationChanging" } });
+    ).toEqual({ ok: false, error: { type: "ConcurrentUpdate" } });
     expect(deps.writeMigration).toHaveBeenCalledTimes(3);
   });
 });
@@ -469,7 +558,8 @@ describe("the moved agent's disk", () => {
   it("is left alone when only HOME moves", () => {
     expect(
       movedStorageSize(
-        spec({ mounts: [{ path: "/home/agent", persist: true }] }),
+        spec({}),
+        [{ path: "/home/agent", persist: true }],
         {},
         "10Gi",
       ),
@@ -484,7 +574,12 @@ describe("the moved agent's disk", () => {
       ],
     });
     expect(
-      movedStorageSize(s, { "/data": "/home/agent/.persisted/data" }, "10Gi"),
+      movedStorageSize(
+        s,
+        s.mounts ?? [],
+        { "/data": "/home/agent/.persisted/data" },
+        "10Gi",
+      ),
     ).toBe("11Gi");
   });
 
@@ -493,20 +588,19 @@ describe("the moved agent's disk", () => {
     const moves = { "/data": "/home/agent/.persisted/data" };
     expect(
       movedStorageSize(
-        spec({
-          storageSize: "50Gi",
-          mounts: [
-            { path: "/home/agent", persist: true, size: "1Gi" },
-            { path: "/data", persist: true, size: "1Gi" },
-          ],
-        }),
+        spec({ storageSize: "50Gi" }),
+        [
+          { path: "/home/agent", persist: true, size: "1Gi" },
+          { path: "/data", persist: true, size: "1Gi" },
+        ],
         moves,
         "10Gi",
       ),
     ).toBe("50Gi");
     expect(
       movedStorageSize(
-        spec({ mounts: [{ path: "/data", persist: true, size: "1e3" }] }),
+        spec({}),
+        [{ path: "/data", persist: true, size: "1e3" }],
         moves,
         "10Gi",
       ),
@@ -518,6 +612,7 @@ function viewOf(
   annotations: Record<string, string>,
   spec?: object,
   status?: object,
+  virtualizationEnabled = true,
 ) {
   const infra = parseInfraAgent({
     metadata: { name: "agent-1", annotations },
@@ -534,6 +629,7 @@ function viewOf(
     runtimeFeaturesOf(null),
     [],
     [],
+    { virtualizationEnabled, defaultMounts: CHART_MOUNTS },
   );
   return toAgentView(agent);
 }
@@ -617,14 +713,41 @@ describe("the agent view's runtime migration", () => {
     ).toBe("requested");
   });
 
+  // TEST_SCENARIO: the view offers the migration from the same refusal the request checks, so the browser never offers a move the request then refuses: not while a storage migration runs, not when the install has no VM runner, not for an Agent that does not persist HOME, and not while a migration of its own is under way, failed or being undone.
+  it("does not offer a migration the request would refuse", () => {
+    expect(
+      viewOf({ "agent-platform.ai/storage-migration": "running" })
+        .runtimeMigratable,
+    ).toBe(false);
+    expect(viewOf({}, undefined, undefined, false).runtimeMigratable).toBe(
+      false,
+    );
+    expect(
+      viewOf({}, { mounts: [{ path: "/tmp", persist: false }] })
+        .runtimeMigratable,
+    ).toBe(false);
+    expect(
+      viewOf({ [REQUEST]: "requested" }, {}, condition("Failed"))
+        .runtimeMigratable,
+    ).toBe(false);
+    expect(viewOf({}, {}, condition("Copying")).runtimeMigratable).toBe(false);
+  });
+
   it("offers the migration only to a container agent whose paths can all move", () => {
     expect(viewOf({}).runtimeMigratable).toBe(true);
     expect(viewOf({}, { backend: { type: "vm" } }).runtimeMigratable).toBe(
       false,
     );
     expect(
-      viewOf({}, { mounts: [{ path: "/data", persist: true }] })
-        .runtimeMigratable,
+      viewOf(
+        {},
+        {
+          mounts: [
+            { path: "/home/agent", persist: true },
+            { path: "/data", persist: true },
+          ],
+        },
+      ).runtimeMigratable,
     ).toBe(true);
     expect(
       viewOf({}, { mounts: [{ path: "/proc/x", persist: true }] })
@@ -694,6 +817,18 @@ describe("the Backend's immutability", () => {
         resourceVersion: "40",
       }),
     ).toEqual({ ok: false, reason: "conflict" });
+  });
+
+  // TEST_SCENARIO: a read that carried no resourceVersion cannot condition the write, so the write is refused as a conflict rather than sent unconditioned.
+  it("refuses a write it cannot condition on a resourceVersion", async () => {
+    const h = repoHarness();
+    expect(
+      await h.repo.writeRuntimeMigration("agent-1", OWNER, {
+        annotations: {},
+        resourceVersion: undefined,
+      }),
+    ).toEqual({ ok: false, reason: "conflict" });
+    expect(h.patch).not.toHaveBeenCalled();
   });
 
   it("does not migrate another owner's agent", async () => {

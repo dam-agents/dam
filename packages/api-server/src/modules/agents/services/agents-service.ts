@@ -50,6 +50,10 @@ import {
   executeRuntimeMigration,
   type RuntimeMigrationWrite,
 } from "./runtime-migration.js";
+import type {
+  AgentMount,
+  RuntimeMigrationContext,
+} from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -514,6 +518,7 @@ export function createAgentsService(deps: {
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   agentDefaultStorageSize?: string;
+  agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
@@ -570,6 +575,11 @@ export function createAgentsService(deps: {
     refs: SlackConversationRef[],
   ) => Promise<(SlackConversationRef & { name: string | null })[]>;
 }): AgentsService {
+  const runtimeMigrationContext: RuntimeMigrationContext = {
+    virtualizationEnabled: deps.virtualizationEnabled === true,
+    defaultMounts: deps.agentDefaultMounts,
+  };
+
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
     secretRef: string | undefined,
@@ -678,6 +688,7 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
+      runtimeMigrationContext,
       checklists.get(infra.id),
     );
   }
@@ -822,6 +833,7 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
+        runtimeMigrationContext,
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -887,6 +899,7 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
+          runtimeMigrationContext,
           checklistMap.get(infra.id),
         );
       });
@@ -1080,6 +1093,7 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
+        runtimeMigrationContext,
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1330,7 +1344,7 @@ export function createAgentsService(deps: {
     async migrateRuntime(id) {
       const result = await executeRuntimeMigration({
         ...runtimeMigrationWrites,
-        virtualizationEnabled: deps.virtualizationEnabled === true,
+        migration: runtimeMigrationContext,
         defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
       })(id);
       if (!result.ok) return result;
