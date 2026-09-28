@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -756,6 +757,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		"--url", url,
 		"--token-file", runtimeMigrationCredsPath + "/token",
 		"--ca-file", runtimeMigrationCredsPath + "/ca.crt",
+		"--map-owner", runtimeMigrationOwnerMap(cfg),
 	}
 	mounts := []corev1.VolumeMount{
 		{Name: "home", MountPath: runtimeMigrationSourcePath, ReadOnly: true},
@@ -831,4 +833,18 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
 	job.Spec.Template.Spec.RuntimeClassName = nil
 	return job, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the container ran the agent as the install's agent uid and gid, and a machine's harness runs as root, so the seed maps that uid and gid to root. The ids come from the same security context the agent's pods and the storage migration read, with the same fallback.
+func runtimeMigrationOwnerMap(cfg *config.Config) string {
+	uid, gid := migrationFallbackUID, migrationFallbackGID
+	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
+		if sc.RunAsUser != nil {
+			uid = *sc.RunAsUser
+		}
+		if sc.RunAsGroup != nil {
+			gid = *sc.RunAsGroup
+		}
+	}
+	return fmt.Sprintf("%d:%d:0", uid, gid)
 }

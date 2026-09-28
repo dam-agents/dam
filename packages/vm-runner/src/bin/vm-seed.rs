@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use clap::Parser;
 use vm_runner::api::SeedResult;
-use vm_runner::seed::{write_layout, Graft, Link, Tally};
+use vm_runner::seed::{write_layout, Graft, Limits, Link, Options, OwnerMap, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -26,6 +26,34 @@ struct Args {
     token_file: PathBuf,
     #[arg(long = "ca-file")]
     ca_file: PathBuf,
+    #[arg(long = "map-owner", value_parser = parse_owner_map, default_value = CONTAINER_TO_MACHINE)]
+    map_owner: OwnerMap,
+    #[arg(long = "max-bytes")]
+    max_bytes: Option<u64>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the container ran the agent as uid and gid 65532, and a machine's harness runs as root.
+const CONTAINER_TO_MACHINE: &str = "65532:0";
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner map is `UID:GID:TO`, or `FROM:TO` when the uid and gid are the same, all numeric ids; each entry owned by that uid, or by that gid, is stored as owned by TO.
+fn parse_owner_map(value: &str) -> Result<OwnerMap, String> {
+    let id = |part: &str| {
+        part.parse::<u32>()
+            .map_err(|e| format!("{part:?} in {value:?} is not a numeric id: {e}"))
+    };
+    match value.split(':').collect::<Vec<_>>()[..] {
+        [from, to] => Ok(OwnerMap {
+            uid: id(from)?,
+            gid: id(from)?,
+            to: id(to)?,
+        }),
+        [uid, gid, to] => Ok(OwnerMap {
+            uid: id(uid)?,
+            gid: id(gid)?,
+            to: id(to)?,
+        }),
+        _ => Err(format!("{value:?} is not UID:GID:TO or FROM:TO")),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a graft is `AT=DIR`: where the volume goes, relative to the home, and where the Job mounted it. The split is at the last `=`, because the Job names the mount and never puts one in it, while the place comes from a path the agent's spec declared.
@@ -53,24 +81,29 @@ fn parse_links(value: &str) -> Result<Links, String> {
 const CHUNK: usize = 256 << 10;
 const CHUNKS: usize = 16;
 
+// UNIT_BOUNDARY_DESCRIPTION: the longest a partial chunk waits before it is sent anyway. The runner drops an upload that sends nothing for minutes, and a walk over many small entries on a slow volume can take that long to fill a chunk while it is still making progress.
+const CHUNK_WAIT: Duration = Duration::from_secs(10);
+
 type Chunks = tokio::sync::mpsc::Sender<io::Result<Vec<u8>>>;
 
 // UNIT_BOUNDARY_DESCRIPTION: the tar's writer: it hands the archive to the request body in chunks, from the blocking thread that walks the home. A connection that is gone is a write that fails, which stops the walk.
 struct Channel {
     chunks: Chunks,
     buf: Vec<u8>,
+    flushed: Instant,
 }
 
 impl Write for Channel {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         self.buf.extend_from_slice(data);
-        if self.buf.len() >= CHUNK {
+        if self.buf.len() >= CHUNK || self.flushed.elapsed() >= CHUNK_WAIT {
             self.flush()?;
         }
         Ok(data.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        self.flushed = Instant::now();
         if self.buf.is_empty() {
             return Ok(());
         }
@@ -84,13 +117,22 @@ impl Write for Channel {
 // UNIT_BOUNDARY_DESCRIPTION: archives the source into the channel and answers with the tally of what it sent. An archive that fails part-way ends the body with an error rather than letting it end cleanly, so the runner sees a broken upload and stores nothing, instead of committing a tar that stops in the middle.
 fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
     let abort = chunks.clone();
+    let options = Options {
+        owner: Some(args.map_owner),
+        limits: Limits {
+            bytes: args.max_bytes,
+            ..Limits::default()
+        },
+    };
     let tarred = write_layout(
         &args.source,
         &args.grafts,
         &args.links.0,
+        &options,
         Tally::new(Channel {
             chunks,
             buf: Vec::with_capacity(CHUNK),
+            flushed: Instant::now(),
         }),
     )
     .and_then(Tally::finish);
@@ -294,6 +336,53 @@ mod tests {
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
         assert!(args.grafts.is_empty());
         assert!(args.links.0.is_empty());
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 65532,
+                gid: 65532,
+                to: 0
+            }
+        );
+        assert_eq!(args.max_bytes, None);
+    }
+
+    // TEST_SCENARIO: without `--map-owner` every migration maps the container's agent to the machine's root, so the controller's Job needs no new flag. One that names another uid and gid is read as those, and one that is not two or three numeric ids is refused at the start rather than seeding a home with the wrong owner.
+    #[test]
+    fn the_owner_map_defaults_to_the_containers_agent_becoming_root() {
+        let base = [
+            "vm-seed",
+            "--source",
+            "/h",
+            "--url",
+            "u",
+            "--token-file",
+            "t",
+            "--ca-file",
+            "c",
+        ];
+        let args = Args::try_parse_from(base.iter().copied().chain([
+            "--map-owner",
+            "1000:2000:0",
+            "--max-bytes",
+            "4096",
+        ]))
+        .unwrap();
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 1000,
+                gid: 2000,
+                to: 0
+            }
+        );
+        assert_eq!(args.max_bytes, Some(4096));
+        for bad in ["65532", "a:0", "0:-1", "1:2:3:4", ""] {
+            assert!(
+                Args::try_parse_from(base.iter().copied().chain(["--map-owner", bad])).is_err(),
+                "{bad:?}"
+            );
+        }
     }
 
     // TEST_SCENARIO: the Job passes the moved paths as one JSON list, and a list that does not parse is refused at the start rather than seeding a machine whose paths are never linked.
