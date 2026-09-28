@@ -565,7 +565,7 @@ async fn a_guest_that_answers_is_ready_before_its_start_returns() {
     }
 }
 
-// TEST_SCENARIO: a guest answers only after platform-init has put the agent's home on the disk, so its first answer is when the runner records in the share that this disk holds a home. platform-init reads that record to refuse a later boot that finds the home gone, which is what a disk smolvm reformatted looks like; a machine that has never answered has no record, so its first boot still seeds.
+// TEST_SCENARIO: a guest answers only after platform-init has put the agent's home on the disk, so its first answer is when the runner records in the share that this disk holds a home. The stand-in guest answers from the moment it listens, so it listens only once the start that boots it is under way, as a real guest's would. platform-init reads that record to refuse a later boot that finds the home gone, which is what a disk smolvm reformatted looks like; a machine that has never answered has no record, so its first boot still seeds.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_first_answer_records_that_the_disk_holds_a_home() {
     let h = Harness::new("seeded");
@@ -576,8 +576,12 @@ async fn the_first_answer_records_that_the_disk_holds_a_home() {
         !share::seeded(&share),
         "a machine that has not answered was recorded as seeded"
     );
-    let _guest = guest(h.base);
     let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.fake.calls().iter().any(|c| c == "start m1") {
+        assert!(Instant::now() < deadline, "the machine was never started");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let _guest = guest(h.base);
     while !h.server.status("m1").ready {
         assert!(Instant::now() < deadline, "the guest was never ready");
         tokio::time::sleep(Duration::from_millis(20)).await;
