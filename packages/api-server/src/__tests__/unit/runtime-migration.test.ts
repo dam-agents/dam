@@ -373,6 +373,18 @@ describe("aborting a runtime migration", () => {
   });
 });
 
+describe("a migration write that keeps conflicting", () => {
+  // TEST_SCENARIO: an Agent the controller keeps writing to while the user acts is refused as changing, which the browser shows as a conflict to try again, rather than failing the request as a server error.
+  it("is refused as changing once its attempts are spent", async () => {
+    const deps = writes(migrating("Copying"));
+    deps.writeMigration.mockResolvedValue({ ok: false, reason: "conflict" });
+    expect(
+      await executeAbortRuntimeMigration({ owner: OWNER, ...deps })("agent-1"),
+    ).toEqual({ ok: false, error: { type: "RuntimeMigrationChanging" } });
+    expect(deps.writeMigration).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("retrying a runtime migration", () => {
   // TEST_SCENARIO: a retry is asked only of a failed migration, and is a stamp the controller compares with the time it failed; it writes nothing else.
   it("stamps a failed migration and refuses any other", async () => {

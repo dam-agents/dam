@@ -45,16 +45,17 @@ interface WriteDeps {
 // UNIT_BOUNDARY_DESCRIPTION: how often a write that lost the race with the controller's status write is decided again from a fresh read. The controller writes status a handful of times per phase, so a second read almost always settles it.
 const WRITE_ATTEMPTS = 3;
 
-class RuntimeMigrationConflict extends Error {}
+type WriteRefusal =
+  { type: "AgentNotFound" } | { type: "RuntimeMigrationChanging" };
 
-// UNIT_BOUNDARY_DESCRIPTION: reads the Agent live, decides from what it read, and writes against that version. When the controller wrote in between, the write conflicts and the decision is made again from a fresh read, so an abort never lands on a migration that has just been verified.
+// UNIT_BOUNDARY_DESCRIPTION: reads the Agent live, decides from what it read, and writes against that version. When the controller wrote in between, the write conflicts and the decision is made again from a fresh read, so an abort never lands on a migration that has just been verified. An Agent that keeps changing past the attempts is refused as changing, for the user to try again, rather than failing the request.
 async function decideAndWrite<E>(
   deps: WriteDeps,
   id: string,
   decide: (
     agent: InfraAgent,
   ) => { error: E } | { write: RuntimeMigrationWrite },
-): Promise<Outcome<E | { type: "AgentNotFound" }>> {
+): Promise<Outcome<E | WriteRefusal>> {
   for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
     const agent = await deps.getAgent(id);
     if (!agent) return err({ type: "AgentNotFound" as const });
@@ -65,9 +66,7 @@ async function decideAndWrite<E>(
     if (written.reason === "not-found")
       return err({ type: "AgentNotFound" as const });
   }
-  throw new RuntimeMigrationConflict(
-    `agent ${id} kept changing while its runtime migration was being written`,
-  );
+  return err({ type: "RuntimeMigrationChanging" as const });
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: requests the move of one container Agent to the vm Backend. No spec is written: the request records the target shape, a snapshot of the fields the switch will change, and where each persisted path goes, and the controller builds the machine beside the container from them.

@@ -140,7 +140,8 @@ export type MigrateRuntimeError =
   | { type: "VirtualizationDisabled" }
   | { type: "RuntimeMigrationInProgress" }
   | { type: "StorageMigrationInProgress" }
-  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] };
+  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
+  | { type: "RuntimeMigrationChanging" };
 
 export interface UnmovablePath {
   path: string;
@@ -153,7 +154,8 @@ export type MigrateRuntimeResult =
 export type AbortRuntimeMigrationError =
   | { type: "AgentNotFound" }
   | { type: "NoRuntimeMigration" }
-  | { type: "RuntimeMigrationVerified" };
+  | { type: "RuntimeMigrationVerified" }
+  | { type: "RuntimeMigrationChanging" };
 
 export type AbortRuntimeMigrationResult =
   { ok: true; value: Agent } | { ok: false; error: AbortRuntimeMigrationError };
@@ -161,7 +163,8 @@ export type AbortRuntimeMigrationResult =
 export type RetryRuntimeMigrationError =
   | { type: "AgentNotFound" }
   | { type: "NoRuntimeMigration" }
-  | { type: "RuntimeMigrationNotFailed" };
+  | { type: "RuntimeMigrationNotFailed" }
+  | { type: "RuntimeMigrationChanging" };
 
 export type RetryRuntimeMigrationResult =
   { ok: true; value: Agent } | { ok: false; error: RetryRuntimeMigrationError };

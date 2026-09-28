@@ -142,3 +142,32 @@ function inProgress(migration: RuntimeMigrationView): MigrateAction {
     abortable: migration.abortable,
   };
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how many requests are in flight for each agent. A count rather than a set, so an abort and a retry of the same agent both have to settle before its buttons come back.
+export type InFlightIds = ReadonlyMap<string, number>;
+
+type InFlightUpdate = (next: (ids: InFlightIds) => InFlightIds) => void;
+
+function counted(ids: InFlightIds, id: string, by: number): InFlightIds {
+  const next = new Map(ids);
+  const n = (next.get(id) ?? 0) + by;
+  if (n > 0) next.set(id, n);
+  else next.delete(id);
+  return next;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs one request for one agent and keeps it counted as in flight until that request itself settles. A mutation's variables name only its latest call, so they cannot say which of several rows is still waiting. A failure is already toasted by the mutation, so it is swallowed here.
+export async function whileInFlight(
+  id: string,
+  update: InFlightUpdate,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  update((ids) => counted(ids, id, 1));
+  try {
+    await run();
+  } catch {
+    return;
+  } finally {
+    update((ids) => counted(ids, id, -1));
+  }
+}

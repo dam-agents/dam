@@ -4,12 +4,15 @@
 // TEST_OVERVIEW: runtime and offered the migration, and a migrating agent shows
 // TEST_OVERVIEW: the migration in progress with its phase and the controller's
 // TEST_OVERVIEW: reason, a failed one distinctly, and the way back until the
-// TEST_OVERVIEW: agent has started on the new runtime.
+// TEST_OVERVIEW: agent has started on the new runtime. Each row's Abort and
+// TEST_OVERVIEW: Retry stay busy exactly as long as that row's own request.
 import { describe, expect, test } from "vitest";
 
 import {
+  type InFlightIds,
   migrateAction,
   runtimeBadge,
+  whileInFlight,
 } from "../../modules/agents/utils/runtime-migration.js";
 import type { AgentView, RuntimeMigrationView } from "../../types.js";
 
@@ -180,5 +183,53 @@ describe("migrateAction", () => {
         false,
       )?.kind,
     ).toBe("migrating");
+  });
+});
+
+describe("whileInFlight", () => {
+  function tracker() {
+    let ids: InFlightIds = new Map();
+    const update = (next: (current: InFlightIds) => InFlightIds) => {
+      ids = next(ids);
+    };
+    const deferred = () => {
+      let settle: (ok: boolean) => void = () => {};
+      const promise = new Promise<void>((resolve, reject) => {
+        settle = (ok) => (ok ? resolve() : reject(new Error("refused")));
+      });
+      return { promise, settle };
+    };
+    return { busy: (id: string) => (ids.get(id) ?? 0) > 0, update, deferred };
+  }
+
+  // TEST_SCENARIO: aborting one row and then another keeps the first busy until its own request settles, and a failed request frees its row too; a mutation's latest variables would have released the first row as soon as the second started.
+  test("keeps each row busy until its own request settles", async () => {
+    const t = tracker();
+    const a = t.deferred();
+    const b = t.deferred();
+    const runA = whileInFlight("a", t.update, () => a.promise);
+    const runB = whileInFlight("b", t.update, () => b.promise);
+    expect([t.busy("a"), t.busy("b")]).toEqual([true, true]);
+    b.settle(true);
+    await runB;
+    expect([t.busy("a"), t.busy("b")]).toEqual([true, false]);
+    a.settle(false);
+    await runA;
+    expect(t.busy("a")).toBe(false);
+  });
+
+  // TEST_SCENARIO: an abort and a retry of the same agent in flight together both have to settle before its buttons come back.
+  test("counts two requests for one agent", async () => {
+    const t = tracker();
+    const abort = t.deferred();
+    const retry = t.deferred();
+    const runAbort = whileInFlight("a", t.update, () => abort.promise);
+    const runRetry = whileInFlight("a", t.update, () => retry.promise);
+    retry.settle(true);
+    await runRetry;
+    expect(t.busy("a")).toBe(true);
+    abort.settle(true);
+    await runAbort;
+    expect(t.busy("a")).toBe(false);
   });
 });

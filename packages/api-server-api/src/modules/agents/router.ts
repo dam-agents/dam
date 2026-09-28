@@ -185,6 +185,12 @@ export const agentsRouter = t.router({
             code: "PRECONDITION_FAILED",
             message: `The new runtime keeps an agent's data in its home directory and cannot move ${res.error.paths.map((p) => `${p.path} (${p.reason})`).join("; ")}`,
           });
+        case "RuntimeMigrationChanging":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the request was being made — try again",
+          });
       }
     }),
 
@@ -207,6 +213,12 @@ export const agentsRouter = t.router({
             message:
               "This agent has already started on the new runtime, so the move can no longer be undone",
           });
+        case "RuntimeMigrationChanging":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the request was being made — try again",
+          });
       }
     }),
 
@@ -228,6 +240,12 @@ export const agentsRouter = t.router({
             code: "CONFLICT",
             message:
               "This agent's move has not failed, so there is nothing to retry",
+          });
+        case "RuntimeMigrationChanging":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the request was being made — try again",
           });
       }
     }),
