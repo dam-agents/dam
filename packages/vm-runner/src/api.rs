@@ -23,6 +23,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: the docker configs this machine's image is fetched with, one per pull Secret a pod would list and tried in that order, as the kubelet does. They are credentials in transit: cleared before the spec is stored, and they never reach smolvm or the guest.
     #[serde(rename = "pullAuths", skip_serializing_if = "Vec::is_empty")]
     pub pull_auths: Vec<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the links plan: each persisted path from outside HOME that a runtime migration moved below it, as the absolute path the agent's software still uses. The runner writes it into the machine's share, where the guest reads it on every boot and cannot change it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
     // UNIT_BOUNDARY_DESCRIPTION: the seed this machine's home must be restored from, as the migration's upload was answered: the controller sends it while a runtime migration boots the machine, and not after. With it the runner starts the machine only while its share holds exactly that seed, and platform-init seeds the home from that seed or not at all, never from the image. It says nothing about the machine's shape, so a change to it alone restarts nothing.
     #[serde(rename = "expectSeed", skip_serializing_if = "Option::is_none")]
     pub expect_seed: Option<SeedResult>,
@@ -174,6 +177,7 @@ mod tests {
                 revision: "r1".into(),
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],
+                links: vec!["/data".into()],
                 expect_seed: Some(SeedResult {
                     bytes: 1234,
                     sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"

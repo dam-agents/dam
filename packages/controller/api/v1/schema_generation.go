@@ -31,7 +31,10 @@ const (
 	// controller reads the Secret and folds its keys into the machine's env.
 	// Agent gen 11: the vm backend now rejects nodeSelector too — it places a
 	// pod, and a vm agent's machine is placed with its owner's VM runner.
-	AgentSchemaGeneration = 11
+	// Agent gen 12: movedFrom added to Mount — the path outside HOME a
+	// runtime migration moved a persisted mount from, which the vm backend
+	// puts back on every boot; an older CRD would prune it.
+	AgentSchemaGeneration = 12
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

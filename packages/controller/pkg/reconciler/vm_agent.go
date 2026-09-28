@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -101,6 +102,10 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
+	links, err := resolveVMLinks(spec, defaults)
+	if err != nil {
+		return vmrunner.MachineStatus{}, false, err
+	}
 
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -128,6 +133,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Revision:   agent.Annotations[annRollRev],
 		Running:    running,
 		PullAuths:  pullAuths,
+		Links:      links,
 		ExpectSeed: runtimeMigrationExpectSeed(agent),
 	}
 	st, err := runner.Ensure(ctx, name, machine)
@@ -472,4 +478,33 @@ func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaul
 		}
 	}
 	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the links plan the machine is sent: the old path of every persisted mount a runtime migration moved below HOME, sorted. The Agent spec is where it lives, because every boot needs it and the migration's own annotations are gone once it finishes. Only a mount at the same path below the persisted directory may name one, and only a plain path outside HOME: platform-init acts on the plan as root, so a hand-edited spec that points a link anywhere else is refused here rather than sent.
+func resolveVMLinks(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) ([]string, error) {
+	var links []string
+	for _, m := range resolveSpecMounts(spec, defaults) {
+		if m.MovedFrom == "" {
+			continue
+		}
+		if !m.Persist || !plainAbsolutePath(m.MovedFrom) || m.MovedFrom == agentHomeDir || strings.HasPrefix(m.MovedFrom, agentHomeDir+"/") || strings.HasPrefix(agentHomeDir, m.MovedFrom+"/") || m.Path != agentPersistedDir+m.MovedFrom {
+			return nil, fmt.Errorf("the mount %s says it was moved from %s, but only a persisted mount at %s<path> may name a plain <path> outside %s it was moved from",
+				m.Path, m.MovedFrom, agentPersistedDir, agentHomeDir)
+		}
+		links = append(links, m.MovedFrom)
+	}
+	sort.Strings(links)
+	return links, nil
+}
+
+func plainAbsolutePath(p string) bool {
+	if len(p) < 2 || p[0] != '/' || strings.ContainsAny(p, "\n\x00") {
+		return false
+	}
+	for _, part := range strings.Split(p[1:], "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
 }

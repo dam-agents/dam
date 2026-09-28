@@ -374,27 +374,30 @@ func TestAMigrationWithNothingToCopyEndsAtOnce(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "there is nothing to copy, so no copy runs")
 }
 
-// TEST_SCENARIO: a volume without a home is not "nothing to copy", and neither is an agent whose moved path needs the link only a copied home carries. Both wait in `requested` and say why, rather than boot a machine that silently starts from the image.
-func TestAMigrationThatMayHaveSomethingToCopyWaits(t *testing.T) {
+// TEST_SCENARIO: a volume without a home is not "nothing to copy": the migration waits in `requested` and says why, rather than boot a machine that silently starts from the image.
+func TestAMigrationWithAVolumeButNoHomeWaits(t *testing.T) {
 	ctx := context.Background()
-	for name, movedPath := range map[string]bool{"a volume without a home": false, "a moved path": true} {
-		t.Run(name, func(t *testing.T) {
-			agent := migratingAgentCR()
-			if movedPath {
-				agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data"}`
-			}
-			r, node, _ := setupMigrationReconciler(t, agent)
-			if !movedPath {
-				_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, mountPVC("data-my-agent-0", "/data"), metav1.CreateOptions{})
-				require.NoError(t, err)
-			}
-			require.NoError(t, r.Reconcile(ctx, agent))
-			agent = reloaded(t, r, agent)
-			assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration])
-			assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "no volume holds this agent's home")
-			assert.False(t, node.spec("my-agent").Running)
-		})
-	}
+	agent := migratingAgentCR()
+	r, node, _ := setupMigrationReconciler(t, agent)
+	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, mountPVC("data-my-agent-0", "/data"), metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration])
+	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "no volume holds this agent's home")
+	assert.False(t, node.spec("my-agent").Running)
+}
+
+// TEST_SCENARIO: a path moved from outside HOME needs no seed: its link is in the machine's links plan, taken from the Agent's spec, and platform-init makes it on every boot. So an Agent with such a path and no volume at all has nothing to copy either, and its migration ends at once.
+func TestAMovedPathWithNothingToCopyDoesNotHoldTheMigration(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data"}`
+	r, _, _ := setupMigrationReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigration)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationMounts)
 }
 
 // TEST_SCENARIO: every phase before the copy has landed keeps the agent down, whatever its activity says; from `booting` on it runs as any agent does.
@@ -538,15 +541,15 @@ func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
 	}}
 }
 
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
+// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still in the machine's links plan, since the agent's software still looks there. The plan comes from the spec, not the seed, so the copy Job carries none.
 func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
 	agent.Spec.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
-		{Path: "/home/agent/.persisted/data", Persist: true},
+		{Path: "/home/agent/.persisted/data", Persist: true, MovedFrom: "/data"},
 		{Path: "/home/agent/cache", Persist: true},
-		{Path: "/home/agent/.persisted/never", Persist: true},
+		{Path: "/home/agent/.persisted/never", Persist: true, MovedFrom: "/never"},
 	}
 	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
 	r, node, _ := setupMigrationReconciler(t, agent)
@@ -576,8 +579,9 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	pod := job.Spec.Template.Spec
 	command := pod.Containers[0].Command
 	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
-	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
-		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
+	assert.NotContains(t, strings.Join(command, " "), "--links", "the seed carries no plan and nothing to run")
+	assert.Equal(t, []string{"/data", "/never"}, node.spec("my-agent").Links,
+		"every path moved from outside HOME is in the machine's links plan, even one no volume was made for; one under HOME keeps its place and needs no link")
 	claims := map[string]string{}
 	for _, v := range pod.Volumes {
 		if v.PersistentVolumeClaim != nil {
