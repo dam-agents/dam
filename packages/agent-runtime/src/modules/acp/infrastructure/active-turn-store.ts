@@ -40,9 +40,14 @@ export interface ActiveTurnStore {
  * runtime never saw — the process went down (an OOM group-kill, an eviction)
  * with the turn still running. `attempts` counts recovery resumes so a
  * continuation that dies again cannot crash-loop the pod; a re-record of a
- * still-marked session preserves its count. Its own document, separate from
- * session metadata, so a corrupt write here cannot take run accounting or user
- * text with it.
+ * still-marked session preserves its count. Only a marker inherited from the
+ * previous process is a leftover. Recovery reads leftovers a few seconds after
+ * boot, and a turn this process starts before that, such as the first chat
+ * message after a restart, is live work: counting its marker would resume the
+ * Session with an interruption notice and run a second turn nobody asked for.
+ * So a session this process records or removes is no longer a leftover. Its own
+ * document, separate from session metadata, so a corrupt write here cannot take
+ * run accounting or user text with it.
  */
 export function createActiveTurnStore(
   backend: DocumentStoreBackend,
@@ -52,9 +57,11 @@ export function createActiveTurnStore(
     schema: stateSchema,
     initial: () => ({ sessions: {} }),
   });
+  const inherited = new Set(Object.keys(store.read().sessions));
 
   return {
     record(sessionId) {
+      inherited.delete(sessionId);
       const { sessions } = store.read();
       const existing = sessions[sessionId];
       store.write({
@@ -65,6 +72,7 @@ export function createActiveTurnStore(
       });
     },
     remove(sessionId) {
+      inherited.delete(sessionId);
       const { sessions } = store.read();
       if (sessions[sessionId] === undefined) return;
       const next = { ...sessions };
@@ -83,9 +91,9 @@ export function createActiveTurnStore(
       });
     },
     leftovers() {
-      return Object.entries(store.read().sessions).map(
-        ([sessionId, marker]) => ({ sessionId, ...marker }),
-      );
+      return Object.entries(store.read().sessions)
+        .filter(([sessionId]) => inherited.has(sessionId))
+        .map(([sessionId, marker]) => ({ sessionId, ...marker }));
     },
   };
 }
