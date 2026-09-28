@@ -61,6 +61,7 @@ type AgentReconciler struct {
 	preflightMu     sync.Mutex
 	preflight       vmPreflightResult
 	preflightDone   bool
+	migrationCopyMu sync.Mutex
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -162,7 +163,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	lastActivity := agent.Annotations[annLastActivity]
 	alwaysOn := idleTimeout <= 0
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true"
+	migrationBoot := agent.Annotations[annRuntimeMigration] == runtimeMigrationBooting
+	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migrationBoot
 	overBudget := ""
 	parked := false
 	if running {
@@ -174,7 +176,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err != nil {
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
 			}
-			if refusal != "" {
+			if refusal != "" && !migrationBoot {
 				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
 				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
@@ -243,8 +245,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		if err := r.prepareRuntimeMigration(ctx, agent); err != nil {
+		migrationStep, err := r.prepareRuntimeMigration(ctx, agent)
+		if err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
+		}
+		if migrationStep.note == "" {
+			migrationStep.note = runtimeMigrationBootHeld(agent.Annotations, hardStop, overBudget)
 		}
 		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
 			secretRefused = refusal
@@ -258,7 +264,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return r.setMachineError(ctx, agent, err)
 		}
 		timer.mark("vmMachine")
-		if err := r.continueRuntimeMigration(ctx, agent, machine, runnerReached); err != nil {
+		if err := r.continueRuntimeMigration(ctx, agent, machine, runnerReached, migrationStep); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {

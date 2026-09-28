@@ -354,8 +354,13 @@ virtualization:
   # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
   # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
   # the controller deletes it when the window passes or the agent is deleted.
+  # `concurrency` caps the copy Jobs running at once in the install and
+  # `ownerConcurrency` those of one owner, whose copies all land on the same
+  # runner claim; a migration past either cap waits, and says so on the Agent.
   runtimeMigration:
     retention: 168h
+    concurrency: 10
+    ownerConcurrency: 1
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a

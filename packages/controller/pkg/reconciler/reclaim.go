@@ -143,7 +143,7 @@ func reclaimEligible(annotations map[string]string, idleTimeout time.Duration, n
 	if annotations[annSweepable] == "true" {
 		return time.Time{}, false
 	}
-	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" {
+	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" || annotations[annRuntimeMigration] != "" {
 		return time.Time{}, false
 	}
 	last, err := time.Parse(time.RFC3339, annotations[annLastActivity])

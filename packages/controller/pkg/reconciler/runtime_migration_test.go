@@ -66,7 +66,7 @@ func completeJob(t *testing.T, r *AgentReconciler, condition batchv1.JobConditio
 func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
 	for _, obj := range []any{homePVC("home-agent-my-agent-0"), containerAgentPod()} {
 		switch o := obj.(type) {
 		case *corev1.PersistentVolumeClaim:
@@ -166,7 +166,7 @@ func TestTheRetentionWindowIsConfiguredAndNotExtendedByARetry(t *testing.T) {
 	agent := migratingAgentCR()
 	agent.Annotations[annRuntimeMigration] = runtimeMigrationBooting
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
 	r.config.VM.RuntimeMigration.Retention = config.Duration(48 * time.Hour)
 	pvc := homePVC("home-agent-my-agent-0")
 	pvc.Labels[LabelPool] = "10gi"
@@ -191,7 +191,7 @@ func TestTheRetentionWindowIsConfiguredAndNotExtendedByARetry(t *testing.T) {
 func TestTheSweepDeletesRetainedVolumesPastTheirWindowOrAgent(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
+	r, _, _ := setupMigrationReconciler(t, agent)
 	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	orphan := retainedPVC("orphaned", future)
@@ -217,7 +217,7 @@ func TestTheSweepDeletesRetainedVolumesPastTheirWindowOrAgent(t *testing.T) {
 func TestDeletingTheAgentDeletesItsRetainedVolumes(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
+	r, _, _ := setupMigrationReconciler(t, agent)
 	other := retainedPVC("other", time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
 	other.Labels[LabelRetainedFor] = "other-agent"
 	for _, p := range []*corev1.PersistentVolumeClaim{retainedPVC("mine", time.Now().Add(time.Hour).UTC().Format(time.RFC3339)), other} {
@@ -253,7 +253,9 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	agent := migratingAgentCR()
 	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
+	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, homePVC("home-agent-my-agent-0"), metav1.CreateOptions{})
+	require.NoError(t, err)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -263,7 +265,7 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	assert.Equal(t, runtimeMigrationCopying, agent.Annotations[annRuntimeMigration])
 	assert.NotEmpty(t, agent.Annotations[annRuntimeMigrationMessage], "the user is told the copy is stuck")
 	assert.False(t, node.spec("my-agent").Running)
-	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err, "a fresh failure is kept for its logs until the retry delay passes")
 
 	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
@@ -278,7 +280,9 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	agent := migratingAgentCR()
 	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
+	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, homePVC("home-agent-my-agent-0"), metav1.CreateOptions{})
+	require.NoError(t, err)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
@@ -315,16 +319,51 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 		reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage])
 }
 
-// TEST_SCENARIO: an agent with no volume at HOME has nothing to copy. The migration says so rather than booting a machine that would silently start from the image.
-func TestAMigrationWithNoHomeVolumeSaysSo(t *testing.T) {
+// TEST_SCENARIO: an agent created and never woken has no volume at all, so once its StatefulSet is gone there is provably nothing to copy. It boots from the image, as a new vm Agent does, and the message says why — it is not left in `requested` forever.
+func TestAMigrationWithNothingToCopyBootsFromTheImage(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration])
-	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "no volume holds this agent's home")
-	assert.False(t, node.spec("my-agent").Running)
+	assert.Equal(t, runtimeMigrationBooting, agent.Annotations[annRuntimeMigration])
+	assert.Equal(t, runtimeMigrationNothingToCopy, agent.Annotations[annRuntimeMigrationMessage])
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.True(t, node.spec("my-agent").Running, "the machine boots without a seed")
+	assert.Equal(t, runtimeMigrationNothingToCopy, agent.Annotations[annRuntimeMigrationMessage], "the message stays while the machine boots")
+	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "there is nothing to copy, so no copy runs")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigration)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationMessage)
+}
+
+// TEST_SCENARIO: a volume without a home is not "nothing to copy", and neither is an agent whose moved path needs the link only a copied home carries. Both wait in `requested` and say why, rather than boot a machine that silently starts from the image.
+func TestAMigrationThatMayHaveSomethingToCopyWaits(t *testing.T) {
+	ctx := context.Background()
+	for name, movedPath := range map[string]bool{"a volume without a home": false, "a moved path": true} {
+		t.Run(name, func(t *testing.T) {
+			agent := migratingAgentCR()
+			if movedPath {
+				agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data"}`
+			}
+			r, node, _ := setupMigrationReconciler(t, agent)
+			if !movedPath {
+				_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, mountPVC("data-my-agent-0", "/data"), metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, r.Reconcile(ctx, agent))
+			agent = reloaded(t, r, agent)
+			assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration])
+			assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "no volume holds this agent's home")
+			assert.False(t, node.spec("my-agent").Running)
+		})
+	}
 }
 
 // TEST_SCENARIO: every phase before the copy has landed keeps the agent down, whatever its activity says; from `booting` on it runs as any agent does.
@@ -383,7 +422,7 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		{Path: "/home/agent/.persisted/never", Persist: true},
 	}
 	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
-	r, node, _ := setupVMReconciler(t, agent)
+	r, node, _ := setupMigrationReconciler(t, agent)
 	for _, p := range []*corev1.PersistentVolumeClaim{
 		homePVC("home-agent-my-agent-0"),
 		mountPVC("data-my-agent-0", "/data"),

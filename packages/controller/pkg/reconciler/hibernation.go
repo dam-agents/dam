@@ -21,7 +21,7 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" || runtimeMigrationHoldsDown(annotations) {
 		return false
 	}
-	if idleTimeout <= 0 {
+	if idleTimeout <= 0 || annotations[annRuntimeMigration] == runtimeMigrationBooting {
 		return true
 	}
 	if annotations[annActiveSession] == "true" {

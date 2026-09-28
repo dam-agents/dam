@@ -218,6 +218,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.RuntimeMigration.Retention < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.retention is %s, it must not be negative", cfg.VM.RuntimeMigration.Retention.AsDuration())
 	}
+	if cfg.VM.RuntimeMigration.Concurrency < 0 || cfg.VM.RuntimeMigration.OwnerConcurrency < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.concurrency and ownerConcurrency must not be negative (got %d and %d)", cfg.VM.RuntimeMigration.Concurrency, cfg.VM.RuntimeMigration.OwnerConcurrency)
+	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
 	}
