@@ -55,6 +55,7 @@ export type {
   TemplateUpdate,
   UpgradeAgentError,
   MigrateRuntimeError,
+  UnmovablePath,
   MigrateRuntimeResult,
   RuntimeMigration,
   RuntimeMigrationPhase,

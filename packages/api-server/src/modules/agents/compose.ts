@@ -67,6 +67,7 @@ export function composeAgentsModule(deps: {
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
+  agentDefaultStorageSize?: string;
   virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
@@ -96,6 +97,7 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
+      agentDefaultStorageSize: deps.agentDefaultStorageSize,
       virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),

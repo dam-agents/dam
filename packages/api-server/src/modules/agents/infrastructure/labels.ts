@@ -18,6 +18,8 @@ export const EXPERIMENT_ACTIVE_KEY = "agent-platform.ai/experiment-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
 export const RUNTIME_MIGRATION_KEY = "agent-platform.ai/runtime-migration";
+export const RUNTIME_MIGRATION_MOUNTS_KEY =
+  "agent-platform.ai/runtime-migration-mounts";
 export const RUNTIME_MIGRATION_MESSAGE_KEY =
   "agent-platform.ai/runtime-migration-message";
 export const STORAGE_MIGRATION_KEY = "agent-platform.ai/storage-migration";

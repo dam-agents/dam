@@ -333,6 +333,10 @@ spec:
               value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
             - name: AGENT_DEFAULT_MEMORY_LIMIT
               value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+            # The size a persisted mount without one of its own gets, which a
+            # runtime migration adds up to size the moved agent's disk.
+            - name: AGENT_DEFAULT_STORAGE_SIZE
+              value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
             # Default per-user ceiling (#1900), same value the controller
             # enforces with; display-only here (the meter's ceiling figure).
             - name: DEFAULT_USER_CPU_BUDGET

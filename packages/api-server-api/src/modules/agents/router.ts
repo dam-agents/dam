@@ -178,10 +178,10 @@ export const agentsRouter = t.router({
             message:
               "This agent's storage is being migrated — try again once it finishes",
           });
-        case "PersistsOutsideHome":
+        case "PersistsUnmovablePaths":
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: `The new runtime keeps only the home directory, and this agent persists ${res.error.paths.join(", ")}`,
+            message: `The new runtime keeps an agent's data in its home directory and cannot move ${res.error.paths.map((p) => `${p.path} (${p.reason})`).join("; ")}`,
           });
       }
     }),

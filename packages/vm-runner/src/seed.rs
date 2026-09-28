@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
@@ -10,17 +10,115 @@ use crate::api::SeedResult;
 
 // UNIT_BOUNDARY_DESCRIPTION: the tar an agent's old home is carried in when the agent moves from the container backend to a machine. It holds the contents of the home, named relative to it and with the home itself as `.`, so platform-init can restore the tree as the agent store and give the store the home's own owner and mode. Every entry keeps its numeric owner, mode and mtime — no user names, because the uid inside the machine is the one the image already uses — and symlinks are stored as symlinks, never followed, so a link out of the home is not a way to pack the rest of the volume. A file with several names is stored once and linked, so a seed is never larger than the home. Sockets, fifos and devices are skipped with a warning, as platform-init skips them when it seeds from an image: they are not state an agent carries across a boot.
 pub fn write_tar<W: Write>(source: &Path, into: W) -> io::Result<W> {
-    let root = fs::symlink_metadata(source)?;
-    if !root.is_dir() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{} is not a directory", source.display()),
-        ));
+    write_layout(source, &[], into)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: another volume of the agent's, carried into the same seed at `at`, a path relative to the home. On the container backend each persisted mount is a volume of its own, and one mounted inside another hides whatever the outer volume holds at that path; the machine keeps a single tree, so each volume is placed where it now lives under the home.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Graft {
+    pub at: PathBuf,
+    pub source: PathBuf,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed that holds the home and, grafted into it, the agent's other volumes. The archive is still exactly the home as the machine will have it, so the reader that restores it needs no second format and every check it makes on a name still holds. What a graft covers is left out of the tree it is grafted into, because on the container that part was hidden under the other volume and the agent never saw it. Directories on the way to a graft that no tree holds are added with the home's owner, so the agent's user can write to them; one that a tree holds as a file or a symlink fails the seed, since the graft could only land there by replacing it or by writing through a link.
+pub fn write_layout<W: Write>(home: &Path, grafts: &[Graft], into: W) -> io::Result<W> {
+    let root = directory(home)?;
+    let mut sorted = grafts.to_vec();
+    sorted.sort_by(|a, b| a.at.cmp(&b.at));
+    for (i, graft) in sorted.iter().enumerate() {
+        if graft.at.as_os_str().is_empty()
+            || !graft
+                .at
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+        {
+            return Err(invalid(format!(
+                "{} is not a path inside the home",
+                graft.at.display()
+            )));
+        }
+        if sorted[..i].iter().any(|g| g.at == graft.at) {
+            return Err(invalid(format!("{} is grafted twice", graft.at.display())));
+        }
+        directory(&graft.source)?;
     }
+    let skip: HashSet<PathBuf> = sorted.iter().map(|g| g.at.clone()).collect();
     let mut builder = tar::Builder::new(into);
     let mut linked = HashMap::new();
-    append(&mut builder, source, Path::new("."), &root, &mut linked)?;
+    let mut walk = Walk {
+        skip: &skip,
+        linked: &mut linked,
+    };
+    append(&mut builder, home, Path::new("."), &root, &mut walk)?;
+    let mut made = HashSet::new();
+    for graft in &sorted {
+        let mut ancestors: Vec<&Path> = graft
+            .at
+            .ancestors()
+            .skip(1)
+            .filter(|a| !a.as_os_str().is_empty())
+            .collect();
+        ancestors.reverse();
+        for dir in ancestors {
+            if made.contains(dir) {
+                continue;
+            }
+            let (tree, below) = holder(home, &sorted, dir);
+            match fs::symlink_metadata(tree.join(below)) {
+                Ok(info) if info.is_dir() => {}
+                Ok(_) => {
+                    return Err(invalid(format!(
+                        "{} is not a directory in the volume that holds it, so {} cannot be grafted below it",
+                        dir.display(),
+                        graft.at.display()
+                    )))
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    let mut header = tar::Header::new_gnu();
+                    header.set_metadata_in_mode(&root, tar::HeaderMode::Complete);
+                    header.set_mode(0o755);
+                    builder.append_data(&mut header, dir, io::empty())?;
+                }
+                Err(e) => return Err(e),
+            }
+            made.insert(dir.to_path_buf());
+        }
+        let info = fs::symlink_metadata(&graft.source)?;
+        append(&mut builder, &graft.source, &graft.at, &info, &mut walk)?;
+        made.insert(graft.at.clone());
+    }
     builder.into_inner()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which tree holds `dir`, a path relative to the home, and where in that tree it is: the deepest graft at or above it, else the home itself.
+fn holder<'a>(home: &'a Path, grafts: &'a [Graft], dir: &'a Path) -> (&'a Path, &'a Path) {
+    grafts
+        .iter()
+        .filter(|g| dir.starts_with(&g.at))
+        .max_by_key(|g| g.at.components().count())
+        .map_or((home, dir), |g| {
+            (g.source.as_path(), dir.strip_prefix(&g.at).unwrap_or(dir))
+        })
+}
+
+fn directory(path: &Path) -> io::Result<fs::Metadata> {
+    let info = fs::symlink_metadata(path)?;
+    if !info.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a directory", path.display()),
+        ));
+    }
+    Ok(info)
+}
+
+fn invalid(message: String) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
+}
+
+struct Walk<'a> {
+    skip: &'a HashSet<PathBuf>,
+    linked: &'a mut HashMap<(u64, u64), PathBuf>,
 }
 
 fn append<W: Write>(
@@ -28,7 +126,7 @@ fn append<W: Write>(
     from: &Path,
     name: &Path,
     info: &fs::Metadata,
-    linked: &mut HashMap<(u64, u64), PathBuf>,
+    walk: &mut Walk<'_>,
 ) -> io::Result<()> {
     let kind = info.file_type();
     let mut header = tar::Header::new_gnu();
@@ -46,11 +144,14 @@ fn append<W: Write>(
             } else {
                 name.join(entry.file_name())
             };
-            append(builder, &entry.path(), &named, &child, linked)?;
+            if walk.skip.contains(&named) {
+                continue;
+            }
+            append(builder, &entry.path(), &named, &child, walk)?;
         }
     } else if kind.is_file() {
         let identity = (info.dev(), info.ino());
-        if let Some(first) = linked.get(&identity).filter(|_| info.nlink() > 1) {
+        if let Some(first) = walk.linked.get(&identity).filter(|_| info.nlink() > 1) {
             header.set_entry_type(tar::EntryType::Link);
             header.set_size(0);
             builder.append_link(&mut header, name, first)?;
@@ -69,7 +170,7 @@ fn append<W: Write>(
             )));
         }
         if info.nlink() > 1 {
-            linked.insert(identity, name.to_path_buf());
+            walk.linked.insert(identity, name.to_path_buf());
         }
     } else {
         tracing::warn!(path = %from.display(), "not archiving an entry that is neither a file, a directory nor a symlink");
@@ -229,5 +330,105 @@ mod tests {
         fs::write(dir.path().join("file"), b"x").unwrap();
         assert!(write_tar(&dir.path().join("file"), Vec::new()).is_err());
         assert!(write_tar(&dir.path().join("absent"), Vec::new()).is_err());
+    }
+
+    fn graft(at: &str, source: &Path) -> Graft {
+        Graft {
+            at: PathBuf::from(at),
+            source: source.to_path_buf(),
+        }
+    }
+
+    // TEST_SCENARIO: a volume that was mounted outside the home is carried into the seed below the home. The directory on the way to it, which no volume holds, is added with the home's owner and an ordinary mode, so the agent's user can write there; the volume's own root keeps its mode; and its files arrive under the new name.
+    #[test]
+    fn a_volume_outside_the_home_is_grafted_below_it() {
+        let home = TempDir::new("layout-home");
+        let data = TempDir::new("layout-data");
+        fs::write(home.path().join(".bashrc"), b"a").unwrap();
+        fs::write(data.path().join("db"), b"rows").unwrap();
+        fs::set_permissions(data.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let owner = fs::metadata(home.path()).unwrap();
+
+        let found = entries(
+            &write_layout(
+                home.path(),
+                &[graft(".persisted/data", data.path())],
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+
+        let names: Vec<&str> = found.iter().map(|(name, ..)| name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                ".",
+                ".bashrc",
+                ".persisted",
+                ".persisted/data",
+                ".persisted/data/db"
+            ]
+        );
+        let (_, kind, header, _) = &found[2];
+        assert_eq!(*kind, tar::EntryType::Directory);
+        assert_eq!(header.mode().unwrap() & 0o7777, 0o755);
+        assert_eq!(header.uid().unwrap(), u64::from(owner.uid()));
+        assert_eq!(found[3].2.mode().unwrap() & 0o7777, 0o700);
+        assert_eq!(found[4].3, b"rows");
+    }
+
+    // TEST_SCENARIO: a volume that was mounted inside the home hid whatever the home's own volume held at that path, so the agent never saw it. The seed carries the mounted volume there and leaves the hidden files out, rather than merging two trees the agent never saw together. A second volume inside the first is left out of the first in the same way.
+    #[test]
+    fn a_grafted_volume_replaces_what_it_hid() {
+        let home = TempDir::new("layout-nested-home");
+        let cache = TempDir::new("layout-cache");
+        let deeper = TempDir::new("layout-deeper");
+        fs::create_dir(home.path().join("cache")).unwrap();
+        fs::write(home.path().join("cache").join("hidden"), b"old").unwrap();
+        fs::write(cache.path().join("fresh"), b"new").unwrap();
+        fs::create_dir(cache.path().join("sub")).unwrap();
+        fs::write(cache.path().join("sub").join("hidden"), b"old").unwrap();
+        fs::write(deeper.path().join("inner"), b"x").unwrap();
+
+        let found = entries(
+            &write_layout(
+                home.path(),
+                &[
+                    graft("cache/sub", deeper.path()),
+                    graft("cache", cache.path()),
+                ],
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+
+        let names: Vec<&str> = found.iter().map(|(name, ..)| name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![".", "cache", "cache/fresh", "cache/sub", "cache/sub/inner"]
+        );
+    }
+
+    // TEST_SCENARIO: a graft only lands on a directory. One below a file or a symlink of the home would have to replace it or write through the link, and one whose place is not a plain path inside the home, or that is named twice, is a Job built wrong. Each fails the seed rather than sending a tree the restore would refuse half-way.
+    #[test]
+    fn a_graft_that_cannot_land_fails_the_seed() {
+        let home = TempDir::new("layout-refused");
+        let data = TempDir::new("layout-refused-data");
+        fs::write(home.path().join(".persisted"), b"a file").unwrap();
+        std::os::unix::fs::symlink("/etc", home.path().join("link")).unwrap();
+        for grafts in [
+            vec![graft(".persisted/data", data.path())],
+            vec![graft("link/data", data.path())],
+            vec![graft("../data", data.path())],
+            vec![graft("/data", data.path())],
+            vec![graft("", data.path())],
+            vec![graft("a", data.path()), graft("a", data.path())],
+            vec![graft("a", &data.path().join("absent"))],
+        ] {
+            assert!(
+                write_layout(home.path(), &grafts, Vec::new()).is_err(),
+                "{grafts:?} was archived"
+            );
+        }
     }
 }

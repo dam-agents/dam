@@ -83,6 +83,10 @@ pub fn run(command: Vec<OsString>) -> ! {
     fresh_root(&root);
     bind_ca();
     persist_home(&root, fs::metadata(guest::SEEDED_PATH).is_ok());
+    persist_moved_paths(
+        Path::new(guest::AGENT_HOME),
+        std::env::var_os(guest::PERSISTED_PATHS_ENV),
+    );
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
@@ -669,6 +673,81 @@ fn persist_home(root: &Path, seeded_before: bool) {
         fatal!("mounting {} from the disk: {e}", path.display());
     }
     logf!("persisting {}", path.display());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent a runtime migration moved here may have persisted paths outside its home on the container backend. Their data now lives below the home, at guest::persisted_at, and each path the controller names is bound from there back over the fresh root, so the agent's software finds its data where it always did and whatever it writes there lands on the disk. The fresh root is rebuilt every boot, so the binds are too. A path that is not movable is skipped with a warning: the controller never names one, and binding it would hide what the guest needs. A directory below the home that is missing is created as the home's owner; one the agent turned into a file or a symlink is skipped with a warning rather than failing the boot, because only the agent could have done that and a machine that never boots again cannot be put right. A bind that fails for any other reason fails the boot, as persisting the home does.
+fn persist_moved_paths(home: &Path, listed: Option<OsString>) {
+    for path in moved_paths(listed) {
+        if let Err(why) = guest::movable(&path) {
+            announce(&format!("WARNING: not persisting {why}"));
+            continue;
+        }
+        let data = guest::persisted_at(home, &path);
+        if let Err(e) = prepare_moved(home, &data) {
+            announce(&format!(
+                "WARNING: not persisting {} from {}: {e}; what the agent writes there is lost at the next stop",
+                path.display(),
+                data.display()
+            ));
+            continue;
+        }
+        if let Err(e) = mkdir_all(&path) {
+            fatal!("creating the guest mountpoint {}: {e}", path.display());
+        }
+        if let Err(e) = mount(&data, &path, libc::MS_BIND) {
+            fatal!("mounting {} from {}: {e}", path.display(), data.display());
+        }
+        logf!("persisting {} in {}", path.display(), data.display());
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the paths to bind, one per line, parents before children, and without a path whose parent is also listed: its data is already inside its parent's directory, so the parent's bind shows it.
+fn moved_paths(listed: Option<OsString>) -> Vec<PathBuf> {
+    let Some(listed) = listed else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = listed
+        .as_bytes()
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| PathBuf::from(OsStr::from_bytes(line)))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    let mut kept: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        if !kept.iter().any(|parent| path.starts_with(parent)) {
+            kept.push(path);
+        }
+    }
+    kept
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: walks from the home down to a moved path's directory, creating what is missing as the home's owner and refusing any step that is not a directory. The walk runs before the image's entrypoint, so nothing in the guest can swap a directory for a link between the check and the bind.
+fn prepare_moved(home: &Path, data: &Path) -> io::Result<()> {
+    let owner = fs::metadata(home)?;
+    let below = data
+        .strip_prefix(home)
+        .map_err(|_| io::Error::other(format!("{} is not below the home", data.display())))?;
+    let mut at = home.to_path_buf();
+    for part in below.components() {
+        at.push(part);
+        match fs::symlink_metadata(&at) {
+            Ok(info) if info.is_dir() => {}
+            Ok(_) => {
+                return Err(io::Error::other(format!(
+                    "{} is not a directory",
+                    at.display()
+                )))
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                DirBuilder::new().mode(0o755).create(&at)?;
+                std::os::unix::fs::lchown(&at, Some(owner.uid()), Some(owner.gid()))?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since.
@@ -1632,6 +1711,42 @@ mod tests {
         prepare_home(Path::new("/nonexistent"), &archive, &store, false).unwrap();
 
         assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
+    }
+
+    // TEST_SCENARIO: the controller names the moved paths one per line. No list and an empty one bind nothing, as on every machine that was never moved; a repeated path is bound once; and a path whose parent is also listed is left to its parent's bind, since its data is inside the parent's directory already and a second bind would only cover the same files again.
+    #[test]
+    fn moved_paths_are_bound_parents_first_and_once() {
+        assert!(moved_paths(None).is_empty());
+        assert!(moved_paths(Some(OsString::new())).is_empty());
+        assert_eq!(
+            moved_paths(Some(OsString::from(
+                "/var/lib/app\n/data/cache\n/data\n\n/data"
+            ))),
+            vec![PathBuf::from("/data"), PathBuf::from("/var/lib/app")]
+        );
+    }
+
+    // TEST_SCENARIO: a moved path's directory below the home is where its bind comes from. A missing one is created with the home's owner, so the agent's user can write to its own data after a boot that found it gone; one the agent turned into a symlink is refused, since a bind through it would show whatever the link names — the whole disk, say — at the moved path, and so is one turned into a file.
+    #[test]
+    fn a_moved_paths_directory_is_made_or_refused_but_never_followed() {
+        let home = TempDir::new("moved-home");
+        let owner = fs::metadata(home.path()).unwrap();
+
+        let data = guest::persisted_at(home.path(), Path::new("/var/lib/app"));
+        prepare_moved(home.path(), &data).unwrap();
+        let made = fs::symlink_metadata(&data).unwrap();
+        assert!(made.is_dir());
+        assert_eq!(made.uid(), owner.uid());
+        prepare_moved(home.path(), &data).unwrap();
+
+        let linked = guest::persisted_at(home.path(), Path::new("/linked/x"));
+        std::os::unix::fs::symlink("/", home.path().join(".persisted").join("linked")).unwrap();
+        assert!(prepare_moved(home.path(), &linked).is_err());
+
+        let file = guest::persisted_at(home.path(), Path::new("/file"));
+        fs::write(&file, b"not a directory").unwrap();
+        assert!(prepare_moved(home.path(), &file).is_err());
+        assert!(prepare_moved(home.path(), Path::new("/elsewhere")).is_err());
     }
 
     // TEST_SCENARIO: with no seed in the share the first boot seeds from the image's home, as every machine not moved from a container does.

@@ -1,4 +1,17 @@
 {
   "agentHome": "/home/agent",
-  "caFile": "/etc/platform/ca/ca.crt"
+  "caFile": "/etc/platform/ca/ca.crt",
+  "persistedDir": ".persisted",
+  "persistedPathsEnv": "PLATFORM_PERSISTED_PATHS",
+  "unmovablePaths": [
+    "/proc",
+    "/sys",
+    "/dev",
+    "/platform",
+    "/mnt/platform",
+    "/workspace",
+    "/storage",
+    "/etc/platform",
+    "/var/cache/platform"
+  ]
 }

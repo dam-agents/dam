@@ -130,7 +130,12 @@ export type MigrateRuntimeError =
   | { type: "VirtualizationDisabled" }
   | { type: "RuntimeMigrationInProgress" }
   | { type: "StorageMigrationInProgress" }
-  | { type: "PersistsOutsideHome"; paths: string[] };
+  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] };
+
+export interface UnmovablePath {
+  path: string;
+  reason: string;
+}
 
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };

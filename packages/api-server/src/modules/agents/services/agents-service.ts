@@ -45,10 +45,11 @@ import {
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
   RUNTIME_MIGRATION_KEY,
+  RUNTIME_MIGRATION_MOUNTS_KEY,
 } from "../infrastructure/labels.js";
 import {
-  RUNTIME_MIGRATION_SPEC_PATCH,
   runtimeMigrationRefusal,
+  runtimeMigrationSpecPatch,
 } from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
@@ -489,6 +490,7 @@ export interface RuntimeMigrationPatch {
 export function executeRuntimeMigration(deps: {
   owner: string | undefined;
   virtualizationEnabled: boolean;
+  defaultStorageSize: string;
   getAgent: (id: string) => Promise<InfraAgent | null>;
   writeMigration: (
     id: string,
@@ -505,10 +507,16 @@ export function executeRuntimeMigration(deps: {
     const refusal = runtimeMigrationRefusal(infra, deps.virtualizationEnabled);
     if (refusal) return err(refusal);
 
-    const patched = await deps.writeMigration(id, {
-      spec: { ...RUNTIME_MIGRATION_SPEC_PATCH },
-      annotations: { [RUNTIME_MIGRATION_KEY]: "requested" },
-    });
+    const { spec, moves } = runtimeMigrationSpecPatch(
+      infra.spec,
+      deps.defaultStorageSize,
+    );
+    const annotations: Record<string, string> = {
+      [RUNTIME_MIGRATION_KEY]: "requested",
+    };
+    if (Object.keys(moves).length > 0)
+      annotations[RUNTIME_MIGRATION_MOUNTS_KEY] = JSON.stringify(moves);
+    const patched = await deps.writeMigration(id, { spec, annotations });
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.runtime-migrate", {
       category: "resource",
@@ -554,6 +562,7 @@ export function createAgentsService(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
+  agentDefaultStorageSize?: string;
   virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
@@ -1353,6 +1362,7 @@ export function createAgentsService(deps: {
       const result = await executeRuntimeMigration({
         owner: deps.owner,
         virtualizationEnabled: deps.virtualizationEnabled === true,
+        defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
         getAgent: (agentId) => deps.repo.getLive(agentId, deps.owner),
         writeMigration: (agentId, patch) =>
           deps.repo.migrateBackend(agentId, deps.owner, patch),

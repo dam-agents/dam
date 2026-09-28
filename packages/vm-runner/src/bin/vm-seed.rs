@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use clap::Parser;
 use vm_runner::api::SeedResult;
-use vm_runner::seed::{write_tar, Tally};
+use vm_runner::seed::{write_layout, Graft, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old volume, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -16,12 +16,25 @@ use vm_runner::seed::{write_tar, Tally};
 struct Args {
     #[arg(long)]
     source: PathBuf,
+    #[arg(long = "graft", value_parser = parse_graft)]
+    grafts: Vec<Graft>,
     #[arg(long)]
     url: String,
     #[arg(long = "token-file")]
     token_file: PathBuf,
     #[arg(long = "ca-file")]
     ca_file: PathBuf,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a graft is `AT=DIR`: where the volume goes, relative to the home, and where the Job mounted it. The split is at the last `=`, because the Job names the mount and never puts one in it, while the place comes from a path the agent's spec declared.
+fn parse_graft(value: &str) -> Result<Graft, String> {
+    let (at, source) = value
+        .rsplit_once('=')
+        .ok_or_else(|| format!("{value:?} is not AT=DIR"))?;
+    Ok(Graft {
+        at: PathBuf::from(at),
+        source: PathBuf::from(source),
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how much of the tar is gathered before it is handed to the connection, and how many such chunks may wait for it. Together they bound what the upload holds in memory, whatever the size of the home.
@@ -59,8 +72,9 @@ impl Write for Channel {
 // UNIT_BOUNDARY_DESCRIPTION: archives the source into the channel and answers with the tally of what it sent. An archive that fails part-way ends the body with an error rather than letting it end cleanly, so the runner sees a broken upload and stores nothing, instead of committing a tar that stops in the middle.
 fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
     let abort = chunks.clone();
-    let tarred = write_tar(
+    let tarred = write_layout(
         &args.source,
+        &args.grafts,
         Tally::new(Channel {
             chunks,
             buf: Vec::with_capacity(CHUNK),
@@ -147,7 +161,7 @@ fn main() -> anyhow::Result<()> {
     anyhow::ensure!(!token.is_empty(), "{} is empty", args.token_file.display());
     let client = client(&args.ca_file)?;
     let started = Instant::now();
-    tracing::info!(source = %args.source.display(), url = %args.url, "seed upload starting");
+    tracing::info!(source = %args.source.display(), grafts = args.grafts.len(), url = %args.url, "seed upload starting");
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -248,7 +262,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the migration Job runs this binary with these four flags, and a flag it does not know is a Job that fails on every attempt without moving a byte.
+    // TEST_SCENARIO: the migration Job runs this binary with these four flags and no graft for an agent that persists only its home, and a flag it does not know is a Job that fails on every attempt without moving a byte.
     #[test]
     fn the_flags_the_migration_job_passes_are_accepted() {
         let args = Args::try_parse_from([
@@ -265,5 +279,54 @@ mod tests {
         .unwrap();
         assert_eq!(args.source, PathBuf::from("/old-home"));
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
+        assert!(args.grafts.is_empty());
+    }
+
+    // TEST_SCENARIO: the Job passes one `--graft` per other volume, in the order it mounted them. Each is read as the place below the home and the mount, split at the last `=` so a place the spec named with one in it still reaches the archive whole.
+    #[test]
+    fn the_grafts_the_migration_job_passes_are_read_in_order() {
+        let args = Args::try_parse_from([
+            "vm-seed",
+            "--source",
+            "/mnt/home",
+            "--graft",
+            ".persisted/data=/mnt/extra/0",
+            "--graft",
+            ".persisted/a=b=/mnt/extra/1",
+            "--url",
+            "https://runner:8443/machines/m1/seed",
+            "--token-file",
+            "/t",
+            "--ca-file",
+            "/c",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.grafts,
+            vec![
+                Graft {
+                    at: PathBuf::from(".persisted/data"),
+                    source: PathBuf::from("/mnt/extra/0")
+                },
+                Graft {
+                    at: PathBuf::from(".persisted/a=b"),
+                    source: PathBuf::from("/mnt/extra/1")
+                },
+            ]
+        );
+        assert!(Args::try_parse_from([
+            "vm-seed",
+            "--source",
+            "/h",
+            "--graft",
+            "no-equals",
+            "--url",
+            "u",
+            "--token-file",
+            "t",
+            "--ca-file",
+            "c",
+        ])
+        .is_err());
     }
 }

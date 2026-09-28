@@ -1,16 +1,24 @@
 // TEST_OVERVIEW: moving one agent from the container runtime to the vm
 // TEST_OVERVIEW: runtime. The api-server refuses every agent the controller
 // TEST_OVERVIEW: could not move, and otherwise writes one merge patch that
-// TEST_OVERVIEW: switches the Backend and asks the controller to start the copy.
+// TEST_OVERVIEW: switches the Backend, rewrites persisted paths to where they
+// TEST_OVERVIEW: live below HOME, and asks the controller to start the copy.
 // TEST_OVERVIEW: The controller reports progress in annotations, and the
 // TEST_OVERVIEW: api-server reads them back into the phase the browser shows.
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
-import { toAgentView, type Agent } from "api-server-api";
+import { toAgentView, type Agent, type AgentSpec } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
 import {
   executeRuntimeMigration,
   type RuntimeMigrationPatch,
 } from "../../modules/agents/services/agents-service.js";
+import {
+  AGENT_HOME,
+  PERSISTED_DIR,
+  UNMOVABLE_PATHS,
+  movedStorageSize,
+} from "../../modules/agents/domain/runtime-migration.js";
 import {
   assembleAgent,
   parseInfraAgent,
@@ -59,6 +67,7 @@ function harness(opts?: {
   const run = executeRuntimeMigration({
     owner: OWNER,
     virtualizationEnabled: opts?.virtualizationEnabled ?? true,
+    defaultStorageSize: "10Gi",
     getAgent: async () => agent,
     writeMigration,
   });
@@ -82,25 +91,45 @@ describe("runtime migration request", () => {
     });
   });
 
-  it("refuses a persisted mount nested under HOME, which is a volume of its own the copy would leave behind", async () => {
+  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the mounts are rewritten to match in the same write, the disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
+  it("moves persisted paths below HOME and says where each went", async () => {
     const h = harness({
       agent: infraAgent({
         spec: {
           name: "my-agent",
           image: "img",
+          storageSize: "10Gi",
           mounts: [
             { path: "/home/agent", persist: true },
-            { path: "/home/agent/cache", persist: true },
-            { path: "/tmp", persist: false },
+            { path: "/home/agent/cache", persist: true, size: "5Gi" },
+            { path: "/data", persist: true, size: "20Gi" },
+            { path: "/scratch", persist: false },
           ],
         },
       }),
     });
-    expect(await h.run("agent-1")).toEqual({
-      ok: false,
-      error: { type: "PersistsOutsideHome", paths: ["/home/agent/cache"] },
+    expect((await h.run("agent-1")).ok).toBe(true);
+    expect(h.writeMigration).toHaveBeenCalledWith("agent-1", {
+      spec: {
+        backend: { type: "vm" },
+        runtimeClassName: null,
+        nodeSelector: null,
+        storageSize: "35Gi",
+        mounts: [
+          { path: "/home/agent", persist: true },
+          { path: "/home/agent/cache", persist: true, size: "5Gi" },
+          { path: "/home/agent/.persisted/data", persist: true, size: "20Gi" },
+          { path: "/scratch", persist: false },
+        ],
+      },
+      annotations: {
+        "agent-platform.ai/runtime-migration": "requested",
+        "agent-platform.ai/runtime-migration-mounts": JSON.stringify({
+          "/home/agent/cache": "/home/agent/cache",
+          "/data": "/home/agent/.persisted/data",
+        }),
+      },
     });
-    expect(h.writeMigration).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown or unowned agent", async () => {
@@ -165,8 +194,8 @@ describe("runtime migration request", () => {
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: a vm machine keeps only HOME. A persisted path outside it would be dropped without a word, so the api-server refuses and names the path.
-  it("rejects an agent that persists a path outside HOME", async () => {
+  // TEST_SCENARIO: some paths cannot be bound back in a machine: the root, one at, inside or above HOME or a path the platform lays out, one that is not a plain path, and one already inside HOME's persisted directory, where moved paths go. Each is refused with its reason before the agent is switched, and nothing is written.
+  it("refuses paths the machine cannot keep, naming why", async () => {
     const h = harness({
       agent: infraAgent({
         spec: {
@@ -175,16 +204,99 @@ describe("runtime migration request", () => {
           mounts: [
             { path: "/home/agent", persist: true },
             { path: "/data", persist: true },
-            { path: "/home/agentx", persist: true },
+            { path: "/etc", persist: true },
+            { path: "/proc/x", persist: true },
+            { path: "/home", persist: true },
+            { path: "/opt/../etc", persist: true },
+            { path: "/home/agent/.persisted/x", persist: false },
           ],
         },
       }),
     });
-    expect(await h.run("agent-1")).toEqual({
-      ok: false,
-      error: { type: "PersistsOutsideHome", paths: ["/data", "/home/agentx"] },
-    });
+    const res = await h.run("agent-1");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.type).toBe("PersistsUnmovablePaths");
+    if (res.error.type !== "PersistsUnmovablePaths") return;
+    expect(res.error.paths.map((p) => p.path)).toEqual([
+      "/etc",
+      "/proc/x",
+      "/home",
+      "/opt/../etc",
+      "/home/agent/.persisted/x",
+    ]);
+    expect(res.error.paths[0]?.reason).toContain("/etc/platform");
     expect(h.writeMigration).not.toHaveBeenCalled();
+  });
+});
+
+describe("the moved agent's disk", () => {
+  const spec = (over: Partial<AgentSpec>): AgentSpec => ({
+    name: "a",
+    image: "img",
+    ...over,
+  });
+
+  it("is left alone when only HOME moves", () => {
+    expect(
+      movedStorageSize(
+        spec({ mounts: [{ path: "/home/agent", persist: true }] }),
+        {},
+        "10Gi",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("adds up every volume, each falling back as the container sized it", () => {
+    const s = spec({
+      mounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/data", persist: true, size: "500Mi" },
+      ],
+    });
+    expect(
+      movedStorageSize(s, { "/data": "/home/agent/.persisted/data" }, "10Gi"),
+    ).toBe("11Gi");
+  });
+
+  // TEST_SCENARIO: a disk never gets smaller than the Agent asks for, and a size that cannot be read leaves the disk as the Agent asks rather than guessing.
+  it("never shrinks below what the agent asks, nor guesses", () => {
+    const moves = { "/data": "/home/agent/.persisted/data" };
+    expect(
+      movedStorageSize(
+        spec({
+          storageSize: "50Gi",
+          mounts: [
+            { path: "/home/agent", persist: true, size: "1Gi" },
+            { path: "/data", persist: true, size: "1Gi" },
+          ],
+        }),
+        moves,
+        "10Gi",
+      ),
+    ).toBe("50Gi");
+    expect(
+      movedStorageSize(
+        spec({ mounts: [{ path: "/data", persist: true, size: "1e3" }] }),
+        moves,
+        "10Gi",
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("the guest contract", () => {
+  // TEST_SCENARIO: platform-init binds moved paths back from below HOME and refuses the same paths this api-server refuses to move. The two are in different languages, so both are held to the runner's guest fixture: a mismatch would move a path the machine then will not bind, and the agent's data would sit unseen below HOME.
+  it("moves paths where platform-init binds them from and refuses what it refuses", () => {
+    const guest = JSON.parse(
+      readFileSync(
+        new URL("../../../../vm-runner/contract/guest.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { agentHome: string; persistedDir: string; unmovablePaths: string[] };
+    expect(guest.agentHome).toBe(AGENT_HOME);
+    expect(guest.persistedDir).toBe(PERSISTED_DIR);
+    expect(guest.unmovablePaths).toEqual(UNMOVABLE_PATHS);
   });
 });
 
@@ -233,13 +345,17 @@ describe("the agent view's runtime migration", () => {
     ).toEqual({ phase: "requested" });
   });
 
-  it("offers the migration only to a container agent that persists HOME alone", () => {
+  it("offers the migration only to a container agent whose paths can all move", () => {
     expect(viewOf({}).runtimeMigratable).toBe(true);
     expect(viewOf({}, { backend: { type: "vm" } }).runtimeMigratable).toBe(
       false,
     );
     expect(
       viewOf({}, { mounts: [{ path: "/data", persist: true }] })
+        .runtimeMigratable,
+    ).toBe(true);
+    expect(
+      viewOf({}, { mounts: [{ path: "/proc/x", persist: true }] })
         .runtimeMigratable,
     ).toBe(false);
   });
