@@ -188,7 +188,7 @@ test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   ).rejects.toThrow(/already runs on the new runtime/);
 });
 
-// TEST_SCENARIO: the volume the copy was read from outlives the move. It is kept for the install's retention window, marked with the agent it was retained for and the path it held, so an operator can still recover the agent's work from before the move. Deleting the agent deletes it.
+// TEST_SCENARIO: the volume the copy was read from outlives the move. It is kept for the install's retention window, marked with the agent it was retained for and the path it held, so an operator can still recover the agent's work from before the move. Deleting the agent deletes it, and the volumes are read strictly, so a failed read is never mistaken for none left.
 test("retains the old home volume until the agent is deleted", async () => {
   test.setTimeout(300_000);
   const retained = retainedVolumes(agentId);
@@ -199,9 +199,18 @@ test("retains the old home volume until the agent is deleted", async () => {
   await api.agents.delete.mutate({ id: deleted });
   agentId = "";
   await expect
-    .poll(() => retainedVolumes(deleted).length, {
-      timeout: 120_000,
-      message: "the retained volume outlived its agent",
-    })
+    .poll(
+      () => {
+        try {
+          return retainedVolumes(deleted).length;
+        } catch (e) {
+          return `the volumes could not be read: ${String(e)}`;
+        }
+      },
+      {
+        timeout: 120_000,
+        message: "the retained volume outlived its agent",
+      },
+    )
     .toBe(0);
 });

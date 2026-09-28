@@ -372,7 +372,7 @@ func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
 	}}
 }
 
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for is left out, since there is nothing of it to carry.
+// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
 func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
@@ -410,6 +410,8 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	pod := job.Spec.Template.Spec
 	command := pod.Containers[0].Command
 	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
+	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
+		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
 	claims := map[string]string{}
 	for _, v := range pod.Volumes {
 		if v.PersistentVolumeClaim != nil {
@@ -433,29 +435,4 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		require.NoError(t, err, name)
 		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
 	}
-}
-
-// TEST_SCENARIO: a migrated Agent's machine is told which paths to bind back from below HOME: every persisted mount under HOME's persisted directory, as the path it held before the move. A value the Agent's secret tries to set is not honoured, because it would bind paths the spec never declared; an Agent with nothing moved gets no such variable at all, since a change of env restarts a running machine.
-func TestAMachineIsToldWhichMovedPathsToBindBack(t *testing.T) {
-	agent := vmAgentCR()
-	agent.Spec.SecretRef = "my-agent-env"
-	agent.Spec.Mounts = []apiv1.Mount{
-		{Path: "/home/agent", Persist: true},
-		{Path: "/home/agent/.persisted/var/lib/app", Persist: true},
-		{Path: "/home/agent/.persisted/data", Persist: true},
-		{Path: "/home/agent/.persisted/scratch", Persist: false},
-	}
-	r, node, _ := setupVMReconciler(t, agent)
-	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-env", Namespace: "test-agents", Labels: map[string]string{envoyOwnerLabel: testOwner}},
-		Data:       map[string][]byte{vmPersistedPathsEnv: []byte("/etc")},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-	assert.Equal(t, "/data\n/var/lib/app", node.spec("my-agent").Env[vmPersistedPathsEnv])
-
-	agent.Spec.Mounts = agent.Spec.Mounts[:1]
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-	assert.NotContains(t, node.spec("my-agent").Env, vmPersistedPathsEnv)
 }

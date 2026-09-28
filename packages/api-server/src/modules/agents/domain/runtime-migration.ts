@@ -8,11 +8,11 @@ import type {
 
 export const AGENT_HOME = "/home/agent";
 
-// UNIT_BOUNDARY_DESCRIPTION: where the migration puts a persisted path from outside HOME, below HOME, so the machine's one disk keeps it; the machine binds it back at its old path at boot. Held to the runner's guest contract by a test, as is UNMOVABLE_PATHS.
-export const PERSISTED_DIR = ".persisted";
+// UNIT_BOUNDARY_DESCRIPTION: where the migration puts a persisted path from outside HOME, below HOME, so the machine's one disk keeps it; a boot hook the migration puts in the home links the old path to it on every boot.
+const PERSISTED_DIR = ".persisted";
 
-// UNIT_BOUNDARY_DESCRIPTION: guest paths the platform lays out or the kernel owns. A persisted path at one of them, inside one, or above one would hide it once bound back in the machine, so the migration refuses it.
-export const UNMOVABLE_PATHS: readonly string[] = [
+// UNIT_BOUNDARY_DESCRIPTION: guest paths the platform lays out or the kernel owns. A persisted path at one of them, inside one, or above one would replace it with a link into the home at boot, so the migration refuses it.
+const UNMOVABLE_PATHS: readonly string[] = [
   "/proc",
   "/sys",
   "/dev",
@@ -68,7 +68,7 @@ export interface PersistedMoves {
   unmovable: UnmovablePath[];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where each persisted path of a container Agent goes on the machine. On the container backend every persisted mount is a volume of its own; the machine has one disk holding HOME, so the controller copies each volume into it. A path under HOME stays where it is. A path outside HOME moves to the same path below HOME's persisted directory — /data to /home/agent/.persisted/data — and the machine binds it back at /data. What cannot be moved is named with the reason: a path the machine would have to bind over the platform's own, and one already inside the persisted directory, whose place a moved path would take.
+// UNIT_BOUNDARY_DESCRIPTION: where each persisted path of a container Agent goes on the machine. On the container backend every persisted mount is a volume of its own; the machine has one disk holding HOME, so the controller copies each volume into it. A path under HOME stays where it is. A path outside HOME moves to the same path below HOME's persisted directory — /data to /home/agent/.persisted/data — and a boot hook links /data to it. What cannot be moved is named with the reason: a path whose link would replace one the platform lays out, or HOME or anything above it, and one already inside the persisted directory, whose place a moved path would take.
 export function planPersistedMoves(spec: AgentSpec): PersistedMoves {
   const persistedDir = `${AGENT_HOME}/${PERSISTED_DIR}`;
   const moves: Record<string, string> = {};

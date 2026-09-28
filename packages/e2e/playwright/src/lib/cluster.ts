@@ -118,7 +118,7 @@ export interface RetainedVolume {
 }
 
 export function retainedVolumes(agent: string): RetainedVolume[] {
-  const out = kubectlOrEmpty(
+  const out = kubectl(
     "-n",
     AGENT_NS,
     "get",

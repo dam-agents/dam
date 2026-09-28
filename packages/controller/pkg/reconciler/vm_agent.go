@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
@@ -24,24 +23,6 @@ import (
 
 // UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
 const vmBackendEnv = "PLATFORM_BACKEND"
-
-// UNIT_BOUNDARY_DESCRIPTION: a runtime migration moves a persisted path from outside HOME, such as /data, to the same path below HOME's persisted directory, where the machine's disk keeps it, and the machine is told each such path in its environment, one per line, so platform-init binds the moved directory back where the agent's software looks for it. The controller always decides the value: one the Agent's secret or image sets is dropped, since it would ask platform-init to bind paths this Agent's spec never declared. It is only set when there is something to bind, because a change of env restarts a running machine.
-const (
-	vmPersistedDir      = ".persisted"
-	vmPersistedPathsEnv = "PLATFORM_PERSISTED_PATHS"
-)
-
-func movedPersistedPaths(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) []string {
-	prefix := agentHomeDir + "/" + vmPersistedDir + "/"
-	var moved []string
-	for _, m := range resolveSpecMounts(spec, defaults) {
-		if rel, ok := strings.CutPrefix(m.Path, prefix); ok && m.Persist && rel != "" {
-			moved = append(moved, "/"+rel)
-		}
-	}
-	sort.Strings(moved)
-	return moved
-}
 
 const (
 	// UNIT_BOUNDARY_DESCRIPTION: how soon an agent is reconciled again when
@@ -115,10 +96,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	env[vmBackendEnv] = "vm"
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
-	delete(env, vmPersistedPathsEnv)
-	if moved := movedPersistedPaths(spec, defaults); len(moved) > 0 {
-		env[vmPersistedPathsEnv] = strings.Join(moved, "\n")
-	}
 
 	storageGiB, err := resolveVMDiskGiB(spec, defaults)
 	if err != nil {

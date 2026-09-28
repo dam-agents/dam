@@ -5,7 +5,6 @@
 // TEST_OVERVIEW: live below HOME, and asks the controller to start the copy.
 // TEST_OVERVIEW: The controller reports progress in annotations, and the
 // TEST_OVERVIEW: api-server reads them back into the phase the browser shows.
-import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import { toAgentView, type Agent, type AgentSpec } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
@@ -13,12 +12,7 @@ import {
   executeRuntimeMigration,
   type RuntimeMigrationPatch,
 } from "../../modules/agents/services/agents-service.js";
-import {
-  AGENT_HOME,
-  PERSISTED_DIR,
-  UNMOVABLE_PATHS,
-  movedStorageSize,
-} from "../../modules/agents/domain/runtime-migration.js";
+import { movedStorageSize } from "../../modules/agents/domain/runtime-migration.js";
 import {
   assembleAgent,
   parseInfraAgent,
@@ -194,7 +188,7 @@ describe("runtime migration request", () => {
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: some paths cannot be bound back in a machine: the root, one at, inside or above HOME or a path the platform lays out, one that is not a plain path, and one already inside HOME's persisted directory, where moved paths go. Each is refused with its reason before the agent is switched, and nothing is written.
+  // TEST_SCENARIO: some paths cannot be linked back in a machine without breaking it: the root, one at, inside or above HOME or a path the platform lays out, one that is not a plain path, and one already inside HOME's persisted directory, where moved paths go. Each is refused with its reason before the agent is switched, and nothing is written.
   it("refuses paths the machine cannot keep, naming why", async () => {
     const h = harness({
       agent: infraAgent({
@@ -282,21 +276,6 @@ describe("the moved agent's disk", () => {
         "10Gi",
       ),
     ).toBeUndefined();
-  });
-});
-
-describe("the guest contract", () => {
-  // TEST_SCENARIO: platform-init binds moved paths back from below HOME and refuses the same paths this api-server refuses to move. The two are in different languages, so both are held to the runner's guest fixture: a mismatch would move a path the machine then will not bind, and the agent's data would sit unseen below HOME.
-  it("moves paths where platform-init binds them from and refuses what it refuses", () => {
-    const guest = JSON.parse(
-      readFileSync(
-        new URL("../../../../vm-runner/contract/guest.json", import.meta.url),
-        "utf8",
-      ),
-    ) as { agentHome: string; persistedDir: string; unmovablePaths: string[] };
-    expect(guest.agentHome).toBe(AGENT_HOME);
-    expect(guest.persistedDir).toBe(PERSISTED_DIR);
-    expect(guest.unmovablePaths).toEqual(UNMOVABLE_PATHS);
   });
 });
 

@@ -67,20 +67,15 @@ func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	assert.Equal(t, flag(args, "port-max"), int(*published.EndPort))
 }
 
-// TEST_SCENARIO: guest paths are named by the controller and laid out by platform-init: the agent home, which the controller sets as HOME and platform-init bind-mounts the disk onto, the CA file, which the controller names in NODE_EXTRA_CA_CERTS and platform-init binds from the machine's share, and the directory below HOME a migration moved persisted paths to, with the variable that names them. Neither side can import the other's constant, so both are held to one fixture — a home nobody mounts loses the agent's work at the first stop, and a CA file that is not there fails every intercepted TLS call.
+// TEST_SCENARIO: two guest paths are named by the controller and laid out by platform-init: the agent home, which the controller sets as HOME and platform-init bind-mounts the disk onto, and the CA file, which the controller names in NODE_EXTRA_CA_CERTS and platform-init binds from the machine's share. Neither side can import the other's constant, so both are held to one fixture — a home nobody mounts loses the agent's work at the first stop, and a CA file that is not there fails every intercepted TLS call.
 func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	var guest struct {
-		AgentHome         string   `json:"agentHome"`
-		CAFile            string   `json:"caFile"`
-		PersistedDir      string   `json:"persistedDir"`
-		PersistedPathsEnv string   `json:"persistedPathsEnv"`
-		UnmovablePaths    []string `json:"unmovablePaths"`
+		AgentHome string `json:"agentHome"`
+		CAFile    string `json:"caFile"`
 	}
 	readRunnerContract(t, "guest.json", &guest)
 
 	assert.Equal(t, guest.AgentHome, agentHomeDir)
-	assert.Equal(t, guest.PersistedDir, vmPersistedDir, "a moved path the controller names is bound from where platform-init looks")
-	assert.Equal(t, guest.PersistedPathsEnv, vmPersistedPathsEnv)
 	env := envToMap(agentPlatformEnv("my-agent", testConfig, agentHomeDir, "http://10.96.42.42:10000"))
 	assert.Equal(t, guest.CAFile, env["NODE_EXTRA_CA_CERTS"])
 }
