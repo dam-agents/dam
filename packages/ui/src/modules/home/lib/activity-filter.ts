@@ -1,6 +1,5 @@
 import { SessionMode, SessionType } from "api-server-api";
 
-import type { AgentView } from "../../../types.js";
 import type { FeedItem } from "./feed-item.js";
 
 export type ChannelType =
@@ -53,10 +52,7 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
-export function channelTypeFor(
-  item: FeedItem,
-  agents: readonly AgentView[],
-): ChannelType {
+export function channelTypeFor(item: FeedItem): ChannelType {
   if (item.kind === "approval") return "chat";
   const { session } = item;
   if (session.scheduleId || session.type === SessionType.ScheduleCron)
@@ -64,9 +60,6 @@ export function channelTypeFor(
   if (session.mode === SessionMode.Terminal) return "terminal";
   if (session.type === SessionType.ChannelSlack) return "slack";
   if (session.type === SessionType.ChannelTelegram) return "telegram";
-  const agent = agents.find((candidate) => candidate.id === item.agentId);
-  if (agent?.channels.some((channel) => channel.type === "slack"))
-    return "slack";
   return "chat";
 }
 
@@ -86,11 +79,10 @@ function matchesState(item: FeedItem, state: StateFilter): boolean {
 export function applyActivityFilters(
   items: readonly FeedItem[],
   filters: ActivityFilters,
-  agents: readonly AgentView[],
 ): FeedItem[] {
   return items.filter(
     (item) =>
-      filters.channelTypes.has(channelTypeFor(item, agents)) &&
+      filters.channelTypes.has(channelTypeFor(item)) &&
       matchesState(item, filters.state),
   );
 }

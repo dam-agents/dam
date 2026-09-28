@@ -28,9 +28,9 @@ const ICON_TINT: Record<RowKind, string> = {
   approval: "bg-warning/10 text-warning",
 };
 
-function rowKind(item: FeedItem, agents: readonly AgentView[]): RowKind {
+function rowKind(item: FeedItem): RowKind {
   if (item.kind === "approval") return "approval";
-  const channel = channelTypeFor(item, agents);
+  const channel = channelTypeFor(item);
   if (channel === "schedule") return "schedule";
   if (channel === "slack") return "slack";
   if (channel === "telegram") return "telegram";
@@ -130,7 +130,7 @@ export function NotificationRow({
   onDismiss?: () => void;
   onOpenArtifact: (artifactId: string) => void;
 }) {
-  const kind = rowKind(item, agents);
+  const kind = rowKind(item);
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
   const avatars = useAgentAvatars() && avatarName !== undefined;
