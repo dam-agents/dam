@@ -175,31 +175,37 @@ data:
       {{- end }}
       "users": [
         {{- if .Values.keycloak.testUser.enabled }}
+        {{- $testUsers := list (dict "username" .Values.keycloak.testUser.username "password" .Values.keycloak.testUser.password "firstName" "Dev" "lastName" "User" "email" "dev@platform.local") }}
+        {{- range .Values.keycloak.extraTestUsers }}
+        {{- $testUsers = append $testUsers (dict "username" .username "password" .password "firstName" "E2E" "lastName" .username "email" (printf "%s@platform.local" .username)) }}
+        {{- end }}
+        {{- range $testUsers }}
         {
-          "username": {{ .Values.keycloak.testUser.username | quote }},
+          "username": {{ .username | quote }},
           "enabled": true,
           "emailVerified": true,
-          "firstName": "Dev",
-          "lastName": "User",
-          "email": "dev@platform.local",
+          "firstName": {{ .firstName | quote }},
+          "lastName": {{ .lastName | quote }},
+          "email": {{ .email | quote }},
           "credentials": [
             {
               "type": "password",
-              "value": {{ .Values.keycloak.testUser.password | quote }},
+              "value": {{ .password | quote }},
               "temporary": false
             }
           ]
-          {{- if .Values.keycloak.requiredRole }}
-          ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
+          {{- if $.Values.keycloak.requiredRole }}
+          ,"realmRoles": [{{ $.Values.keycloak.requiredRole | quote }}]
           {{- end }}
-          {{- if and .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
+          {{- if and $.Values.keycloak.inspectorRole $.Values.keycloak.slackInstallerRole }}
           ,"groups": ["/inspectors", "/slack-installers"]
-          {{- else if .Values.keycloak.inspectorRole }}
+          {{- else if $.Values.keycloak.inspectorRole }}
           ,"groups": ["/inspectors"]
-          {{- else if .Values.keycloak.slackInstallerRole }}
+          {{- else if $.Values.keycloak.slackInstallerRole }}
           ,"groups": ["/slack-installers"]
           {{- end }}
         },
+        {{- end }}
         {{- end }}
         {
           "username": {{ printf "service-account-%s" (lower .Values.keycloak.apiClientId) | quote }},

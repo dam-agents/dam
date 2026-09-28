@@ -7,6 +7,7 @@ import {
   keycloakClientId,
   keycloakRealm,
   keycloakUrl,
+  type E2eUser,
   testUser,
 } from "../config.js";
 import type { ApiClient } from "./api-client.js";
@@ -79,7 +80,7 @@ async function oneKeycloakLoginAtATime<T>(login: () => Promise<T>): Promise<T> {
 }
 
 export async function getAccessToken(
-  user: { username: string; password: string } = testUser,
+  user: E2eUser = testUser,
 ): Promise<string> {
   const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
   const res = await oneKeycloakLoginAtATime(() =>
@@ -104,10 +105,13 @@ export async function getAccessToken(
   return data.access_token;
 }
 
-export async function submitKeycloakLoginForm(page: Page): Promise<void> {
+export async function submitKeycloakLoginForm(
+  page: Page,
+  user: E2eUser = testUser,
+): Promise<void> {
   await oneKeycloakLoginAtATime(async () => {
-    await page.locator("#username").fill(testUser.username);
-    await page.locator("#password").fill(testUser.password);
+    await page.locator("#username").fill(user.username);
+    await page.locator("#password").fill(user.password);
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL(
       (url) =>
@@ -121,7 +125,10 @@ export async function acceptTerms(api: ApiClient): Promise<void> {
   await api.terms.accept.mutate({ version: current.version });
 }
 
-export async function loginViaUi(page: Page): Promise<void> {
+export async function loginViaUi(
+  page: Page,
+  user: E2eUser = testUser,
+): Promise<void> {
   await page.goto(baseUrl);
 
   const usernameField = page.locator("#username");
@@ -133,7 +140,7 @@ export async function loginViaUi(page: Page): Promise<void> {
   await expect(usernameField.or(termsButton).or(appSidebar)).toBeVisible();
 
   if (await usernameField.isVisible()) {
-    await submitKeycloakLoginForm(page);
+    await submitKeycloakLoginForm(page, user);
     await expect(termsButton.or(appSidebar)).toBeVisible();
   }
 

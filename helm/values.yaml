@@ -846,6 +846,11 @@ keycloak:
     enabled: false
     username: null
     password: null
+  # -- More known users beside testUser, each `{username, password}`, imported
+  # only while testUser is enabled and with its roles and groups. The e2e
+  # overlay adds the users a spec that must not share the test user's
+  # machines logs in as. Never set in production.
+  extraTestUsers: []
 
   # -- Database connection (empty host = use shared local postgres)
   db:
