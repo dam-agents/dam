@@ -168,13 +168,12 @@ export function createAgentsRepository(
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return { kind: "not-found" };
       if (owner && !agentIsOwnedBy(obj, owner)) return { kind: "not-found" };
+      if (!patch.resourceVersion) return { kind: "conflict" };
       try {
         const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
           metadata: {
             annotations: patch.annotations,
-            ...(patch.resourceVersion
-              ? { resourceVersion: patch.resourceVersion }
-              : {}),
+            resourceVersion: patch.resourceVersion,
           },
           spec: patch.spec,
         });

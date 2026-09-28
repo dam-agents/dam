@@ -513,6 +513,19 @@ describe("the Backend's immutability", () => {
     ).toEqual({ kind: "conflict" });
   });
 
+  // TEST_SCENARIO: a read that carried no resourceVersion cannot condition the write, so the flip is refused as a conflict rather than sent unconditioned.
+  it("refuses a flip it cannot condition on a resourceVersion", async () => {
+    const h = repoHarness();
+    expect(
+      await h.repo.migrateBackend("agent-1", OWNER, {
+        spec: {},
+        annotations: {},
+        resourceVersion: undefined,
+      }),
+    ).toEqual({ kind: "conflict" });
+    expect(h.patch).not.toHaveBeenCalled();
+  });
+
   it("does not migrate another owner's agent", async () => {
     const h = repoHarness();
     expect(
