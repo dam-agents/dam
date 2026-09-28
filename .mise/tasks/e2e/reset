@@ -43,6 +43,6 @@ kubectl wait --for=condition=Available deployment/platform-apiserver --timeout=3
 # (terms acceptance lived in the platform DB we just dropped; a fresh browser
 # context with no cookie makes Keycloak prompt for credentials again).
 echo "Clearing stored Playwright auth..."
-rm -f packages/e2e/playwright/.auth/user.json
+rm -f packages/e2e/playwright/.auth/*.json
 
 echo "e2e data reset complete."
