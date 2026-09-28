@@ -6,18 +6,6 @@
 e2e:
   enabled: true
 
-# Users of their own for the specs that must not share the dev user's VM
-# runner: the backend spec deletes its owner's runner, and every machine that
-# owner has reboots with it; the runtime migration spec turns its owner's
-# vm-sandboxes experiment off and on. On a user of their own they run beside
-# the rest of the suite (E2E_OWN_USERS, see packages/e2e/playwright/src/lib/lane.ts).
-keycloak:
-  extraTestUsers:
-    - username: e2e-backend
-      password: e2e-backend
-    - username: e2e-migration
-      password: e2e-migration
-
 # Shorten the queued-prompt park window from its 90s default. A spec that
 # proves prompts outlive an abandoned tab has to wait the window out in real
 # time, so the production value would cost every such spec a minute and a

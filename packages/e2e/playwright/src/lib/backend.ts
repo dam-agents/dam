@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import type { AgentState } from "api-server-api";
 
-import { baseUrl, type E2eUser, testUser } from "../config.js";
+import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
 import { AGENT_NS, kubectl } from "./cluster.js";
@@ -32,15 +32,13 @@ export async function setVmSandboxes(
 
 const tokenMaxAgeMs = 120_000;
 
-export function refreshingToken(
-  user: E2eUser = testUser,
-): () => Promise<string> {
+export function refreshingToken(): () => Promise<string> {
   let token: Promise<string> | undefined;
   let mintedAt = 0;
   return () => {
     if (!token || Date.now() - mintedAt > tokenMaxAgeMs) {
       mintedAt = Date.now();
-      token = getAccessToken(user);
+      token = getAccessToken();
       token.catch(() => {
         token = undefined;
       });

@@ -238,7 +238,7 @@ export -f pull_one
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
-# Step 6b's staging, which E2E_STAGE_VM_EARLY moves beside the chart install.
+# Step 6b's staging, which runs beside the chart install (see step 1d).
 stage_vm_images() {
   local image comp
   e2e_mark "vm images staging started"
@@ -367,12 +367,14 @@ else
     } > >(sed -u 's/^/[agent images] /') 2>&1 &
     AGENT_LOAD_PID=$!
   fi
-  # E2E_STAGE_VM_EARLY stages the vm-backend images (step 6b) as soon as the
-  # agent images are loaded, beside the chart install and the wait for its
-  # deployments, instead of after that wait. It starts only then, not beside
-  # the imports, for the reason the agent images load after the platform ones:
-  # the host's cores are shared, and the staging is the heavier job.
-  if [ -n "${E2E_STAGE_VM_EARLY:-}" ] && [ ${#VM_IMAGES[@]} -gt 0 ]; then
+  # The vm-backend images (step 6b) are staged as soon as the agent images are
+  # loaded, beside the chart install and the wait for its deployments: the
+  # staging needs only the image tars and the node, not the chart. It starts
+  # only then, not beside the imports, for the reason the agent images load
+  # after the platform ones: the host's cores are shared, and the staging is
+  # the heavier job. Measured on the CI vm lane, it took 18-30 s off the
+  # install, where it had run after the deployments were ready.
+  if [ ${#VM_IMAGES[@]} -gt 0 ]; then
     {
       until [ -s "$AGENT_IMAGES_LOADED" ]; do sleep 1; done
       [ "$(cat "$AGENT_IMAGES_LOADED")" = 0 ] || exit 1

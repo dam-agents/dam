@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and it turns its user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates for that user meanwhile. As the dev user, the Playwright config runs it after every other spec; with E2E_OWN_USERS=1 it runs as a user of its own, beside the rest of the suite. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. The migration refuses an Agent that persists a path outside HOME, so HOME is the only path this spec carries across.
+// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and the Playwright config runs it there after every other spec: it turns the e2e user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates meanwhile. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. The migration refuses an Agent that persists a path outside HOME, so HOME is the only path this spec carries across.
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -27,20 +27,16 @@ import {
   harnessName,
 } from "../../lib/fixtures.js";
 import { baseUrl } from "../../config.js";
-import { specUser } from "../../lib/own-users.js";
 
 const agentName = "e2e-runtime-migration";
-const witnessName = "e2e-runtime-migration-witness";
-const { user, own } = specUser("runtimeMigration");
 const markerPath = "e2e-migration-marker.txt";
 const marker = `home-migrates-${randomUUID()}`;
 
 test.describe.configure({ mode: "serial" });
 
 let api: ApiClient;
-const token = refreshingToken(user);
+const token = refreshingToken();
 let agentId = "";
-let witnessId = "";
 let sessionsBefore: string[] = [];
 
 function agentRow(page: Page, name: string) {
@@ -77,12 +73,10 @@ test.beforeAll(async () => {
   agentId = await createAgentOn(api, "container", agentName, harnessName, {
     neverIdle: true,
   });
-  if (own) witnessId = await createAgentOn(api, "vm", witnessName, harnessName);
 });
 
 test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
-  if (witnessId) await api.agents.delete.mutate({ id: witnessId });
   await setVmSandboxes(api, true);
 });
 
@@ -118,17 +112,19 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: with the vm-sandboxes experiment off, the UI does not offer the migration. The flags answer must have reached the page, or an absent button proves nothing. A vm Agent's row carries the "New runtime" badge with the experiment off, and the UI renders it only once that answer has arrived. As the dev user that vm Agent is the chain's UI-created e2e-agent. A user of its own has no chain, so the spec creates a vm Agent of its own for the badge.
+// TEST_SCENARIO: with the vm-sandboxes experiment off, the UI does not offer the migration. The flags answer must have reached the page, or an absent button proves nothing. The chain's e2e-agent is a vm Agent in this lane, and with the experiment off its row carries the "New runtime" badge, which the UI renders only once that answer has arrived.
 test("offers no Migrate button with the experiment off", async ({ page }) => {
-  const badgedName = own ? witnessName : chainAgentName;
-  const badged = (await api.agents.list.query()).find(
-    (a) => a.name === badgedName,
+  const chainAgent = (await api.agents.list.query()).find(
+    (a) => a.name === chainAgentName,
   );
-  expect(badged?.vm, `${badgedName} is a vm agent`).toBe(true);
+  expect(
+    chainAgent?.vm,
+    `the vm lane's UI-created ${chainAgentName} is a vm agent`,
+  ).toBe(true);
 
   await page.goto(baseUrl);
   await expect(
-    agentRow(page, badgedName).getByText("New runtime", { exact: true }),
+    agentRow(page, chainAgentName).getByText("New runtime", { exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible();

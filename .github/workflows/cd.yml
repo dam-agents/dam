@@ -682,9 +682,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-vm:
-    # The matrix entry `baseline` keeps the lane's own name, so a required
-    # check on it still reports.
-    name: ${{ matrix.config == 'baseline' && 'mise e2e (vm)' || format('mise e2e (vm, {0})', matrix.config) }}
+    name: mise e2e (vm)
     # The vm lane: the same smoke suite on an install with virtualization
     # enabled, where every agent the suite creates is a vm Agent. The chart's
     # own KVM device plugin, the runner's egressCidrs and the staged mock
@@ -704,41 +702,18 @@ jobs:
     # On a PR that changes the vm-runner its release build shares this runner
     # with the other image builds, so this lane has the longer budget.
     #
-    # Temporary: an experiment that runs the lane under several settings side
-    # by side, each on its own KVM runner, and prints each entry's per-phase
-    # timings to its job summary (e2e:timings). Every entry runs the whole
-    # suite and must pass. E2E_OWN_USERS runs the backend and runtime
-    # migration specs as users of their own, beside the rest of the suite
-    # (packages/e2e/playwright/src/lib/own-users.ts); E2E_WORKERS sets the
-    # Playwright workers (2 when empty); E2E_STAGE_VM_EARLY stages the mock
-    # image beside the chart install (cluster:install).
+    # The job summary carries the lane's per-phase timings (e2e:timings), from
+    # the marks E2E_TIMINGS collects and the Playwright JSON report.
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - config: baseline
-          - config: own-users
-            own-users: "1"
-          - config: own-users-early-stage
-            own-users: "1"
-            stage-vm-early: "1"
-          - config: own-users-3w
-            own-users: "1"
-            workers: "3"
     permissions:
       contents: read
       actions: read
     env:
       IS_SANDBOX: "1"
       E2E_VIRTUALIZATION: "1"
-      E2E_OWN_USERS: ${{ matrix.own-users }}
-      E2E_WORKERS: ${{ matrix.workers }}
-      E2E_STAGE_VM_EARLY: ${{ matrix.stage-vm-early }}
       E2E_TIMINGS: /tmp/e2e-timings
-      E2E_TIMINGS_LABEL: ${{ matrix.config }}
       E2E_REPORT_JSON: /tmp/playwright-report.json
     steps:
       - name: Record the job start
@@ -808,7 +783,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-report-vm-${{ matrix.config }}
+          name: playwright-report-vm
           path: *e2e-report-paths
           retention-days: 7
           if-no-files-found: ignore

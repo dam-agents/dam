@@ -1,25 +1,12 @@
 import { defineConfig, devices, type Project } from "@playwright/test";
 
 import { laneBackend } from "./src/lib/lane.js";
-import { type OwnUserSpec, specUser } from "./src/lib/own-users.js";
 
 const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
 
 const full = process.env.E2E_FULL === "1";
-
-function workersFromEnv(): number {
-  const raw = process.env.E2E_WORKERS;
-  if (raw === undefined || raw.trim() === "") return 2;
-  const workers = Number(raw);
-  if (!Number.isInteger(workers) || workers < 1 || workers > 8) {
-    throw new Error(
-      `E2E_WORKERS must be a whole number from 1 to 8, got "${raw}"`,
-    );
-  }
-  return workers;
-}
 
 type NamedProject = Project & { name: string };
 
@@ -173,61 +160,30 @@ const suite: NamedProject[] = [
     : []),
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: an own user's login waits for the dev user's, the suite's first visit to Keycloak, whose first login page can take longer than an assertion waits; by then Keycloak has served it once.
-function ownUserSetup(spec: OwnUserSpec, project: string): NamedProject {
-  return {
-    name: `${project}-user`,
-    testMatch: /00-own-user\.spec\.ts$/,
-    dependencies: ["auth"],
-    metadata: { ownUserOf: spec },
-    use: { ...devices["Desktop Chrome"] },
-  };
-}
-
-function backendSpecs(): NamedProject[] {
-  const backend = specUser("agentBackend");
-  const migration = specUser("runtimeMigration");
-  const afterSuite = suite.map(({ name }) => name);
-  const projects: NamedProject[] = [
-    ...(backend.own ? [ownUserSetup("agentBackend", "agent-backend")] : []),
-    {
-      name: "agent-backend",
-      testMatch: /19-.*\.spec\.ts$/,
-      dependencies: backend.own
-        ? ["agent-backend-user"]
-        : laneBackend === "vm"
-          ? afterSuite
-          : ["auth"],
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: backend.storageState,
-      },
-    },
-  ];
-  if (laneBackend !== "vm") return projects;
-  return [
-    ...projects,
-    ...(migration.own
-      ? [ownUserSetup("runtimeMigration", "runtime-migration")]
-      : []),
-    {
-      name: "runtime-migration",
-      testMatch: /20-.*\.spec\.ts$/,
-      dependencies: migration.own
-        ? ["runtime-migration-user"]
-        : ["agent-backend"],
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: migration.storageState,
-      },
-    },
-  ];
-}
+const backendSpecs: NamedProject[] = [
+  {
+    name: "agent-backend",
+    testMatch: /19-.*\.spec\.ts$/,
+    dependencies:
+      laneBackend === "vm" ? suite.map(({ name }) => name) : ["auth"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  ...(laneBackend === "vm"
+    ? [
+        {
+          name: "runtime-migration",
+          testMatch: /20-.*\.spec\.ts$/,
+          dependencies: ["agent-backend"],
+          use: { ...devices["Desktop Chrome"], storageState },
+        },
+      ]
+    : []),
+];
 
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
-  workers: workersFromEnv(),
+  workers: 2,
   retries: 0,
   reporter: [
     ["list"],
@@ -248,5 +204,5 @@ export default defineConfig({
       ],
     },
   },
-  projects: [...suite, ...backendSpecs()],
+  projects: [...suite, ...backendSpecs],
 });

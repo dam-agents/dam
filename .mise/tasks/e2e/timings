@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #MISE description="CI only: print an e2e run's per-phase timings as Markdown, from the marks in E2E_TIMINGS and the Playwright JSON report in E2E_REPORT_JSON"
 #MISE hide=true
-# cd.yml's vm lane appends this to the job summary, so runs with different
-# settings (E2E_OWN_USERS, E2E_WORKERS, E2E_STAGE_VM_EARLY) compare side by
-# side. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
+# cd.yml's vm lane appends this to the job summary, so a change to the lane
+# can be judged by where its time went. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
 # .mise/lib/cluster.sh writes them from cluster:install, e2e:install and
 # e2e:run, and the workflow adds the job's start and the times its background
 # k3s provision and image fetch finished. By path, like image:resolve; it
@@ -13,7 +12,7 @@ set -uo pipefail
 marks="${E2E_TIMINGS:-}"
 report="${E2E_REPORT_JSON:-}"
 
-echo "### e2e timings${E2E_TIMINGS_LABEL:+: $E2E_TIMINGS_LABEL}"
+echo "### e2e timings"
 echo
 if [ -z "$marks" ] || [ ! -s "$marks" ]; then
   echo "No timing marks were recorded (E2E_TIMINGS is unset or empty)."
