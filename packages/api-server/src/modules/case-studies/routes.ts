@@ -9,12 +9,10 @@ import type { CaseStudyInspectionService } from "./services/inspection-service.j
 
 type AppEnv = { Variables: ApiVariables };
 
-export type CaseStudiesRoutesDeps = {
+export function createCaseStudiesRoutes(deps: {
   inspection: CaseStudyInspectionService;
   inspectorRole: string;
-};
-
-export function createCaseStudiesRoutes(deps: CaseStudiesRoutesDeps) {
+}) {
   const routes = new Hono<AppEnv>();
 
   const inspectorOnly = async (c: Context<AppEnv>, next: Next) => {

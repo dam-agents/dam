@@ -1,4 +1,8 @@
-import type { SessionMode } from "api-server-api";
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
+  type SessionMode,
+} from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import {
@@ -15,12 +19,8 @@ import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
-import {
-  SESSION_CATEGORIES,
-  type SessionCategory,
-} from "../lib/session-category.js";
 
-export const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
+const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
 export interface SessionError {
   sessionId: string;

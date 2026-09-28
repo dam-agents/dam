@@ -1,6 +1,6 @@
 import { QUEUE_FULL_DESCRIPTION } from "../../acp/errors.js";
 
-export type SendOutcome = { report: false } | { report: true; message: string };
+type SendOutcome = { report: false } | { report: true; message: string };
 
 export interface SendFailureFacts {
   connectionClosed: boolean;

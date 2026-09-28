@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   canTransition,
-  isTerminal,
   sweepDecision,
 } from "../../modules/experiments/domain/lifecycle.js";
 
@@ -20,16 +19,6 @@ describe("canTransition", () => {
     expect(canTransition("failed", "running")).toBe(false);
     expect(canTransition("stopped", "running")).toBe(false);
     expect(canTransition("running", "draft")).toBe(false);
-  });
-});
-
-describe("isTerminal", () => {
-  it("marks completed/failed/stopped terminal, draft/running not", () => {
-    expect(isTerminal("completed")).toBe(true);
-    expect(isTerminal("failed")).toBe(true);
-    expect(isTerminal("stopped")).toBe(true);
-    expect(isTerminal("draft")).toBe(false);
-    expect(isTerminal("running")).toBe(false);
   });
 });
 

@@ -8,11 +8,9 @@ import { grantRivalries, grantRivalryWarning } from "../lib/grant-rivals.js";
 
 export function GrantRivalryCallout({
   granted,
-  inset,
   className,
 }: {
   granted: readonly ConnectionView[];
-  inset?: boolean;
   className?: string;
 }) {
   const rivalries = useMemo(() => grantRivalries(granted), [granted]);
@@ -21,7 +19,7 @@ export function GrantRivalryCallout({
     <Callout
       tone="warning"
       size="sm"
-      inset={inset}
+      inset
       className={cn("flex flex-col gap-1 text-sm text-foreground", className)}
       data-testid="grant-rivalry-callout"
     >

@@ -12,7 +12,7 @@ import {
   type ValidatedApiKey,
 } from "../../../modules/api-keys/index.js";
 
-export class ForbiddenError extends Error {
+class ForbiddenError extends Error {
   constructor(
     public readonly requiredRole: string,
     public readonly sub: string,
@@ -36,14 +36,14 @@ export function upgradeSourceIp(req: IncomingMessage): string | undefined {
   );
 }
 
-export class UnauthorizedError extends Error {
+class UnauthorizedError extends Error {
   constructor(public readonly reason: string) {
     super(`Unauthorized: ${reason}`);
     this.name = "UnauthorizedError";
   }
 }
 
-export class AuthUnavailableError extends Error {
+class AuthUnavailableError extends Error {
   readonly reason = "jwks-unavailable";
   constructor(cause: unknown) {
     super("Authentication unavailable: JWKS could not be retrieved", {
@@ -73,9 +73,6 @@ export interface AuthConfig {
   jwksUrl: string;
   audience?: string;
   requiredRole?: string;
-  uiClientId: string;
-  cliClientId: string;
-  coreRole?: string;
 }
 
 export interface AuthDeps {
@@ -184,10 +181,7 @@ export type AuthSite =
 export type WsAuthSite = Extract<AuthSite, { edge: "ws" }>;
 
 export type AuthDenialKind =
-  | "missing-token"
-  | "auth-unavailable"
-  | "unauthorized"
-  | "forbidden";
+  "missing-token" | "auth-unavailable" | "unauthorized" | "forbidden";
 
 export type AuthenticateResult =
   | { ok: true; principal: VerifiedPrincipal }

@@ -23,7 +23,7 @@ function linkedArtifactFor(
   );
 }
 
-export interface FilePromotion {
+interface FilePromotion {
   linked: LibraryArtifact | null;
   linkReady: boolean;
   promotable: boolean;

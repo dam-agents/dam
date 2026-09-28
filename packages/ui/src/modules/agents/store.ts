@@ -5,7 +5,7 @@ import type { PlatformStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import { routeToPath } from "../platform/lib/routes.js";
 
-export interface RestartingEntry {
+interface RestartingEntry {
   seenNonRunning: boolean;
   clickedAt: number;
   parkedAtClick: boolean;

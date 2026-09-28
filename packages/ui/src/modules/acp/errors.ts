@@ -49,7 +49,7 @@ export function isQueueFullError(e: unknown): boolean {
   return extractErrorMessage(e).startsWith(PROMPT_QUEUE_FULL_MESSAGE);
 }
 
-export interface SendErrorDescription {
+interface SendErrorDescription {
   message: string;
   hint?: string;
 }
@@ -89,7 +89,7 @@ export function describeSendError(raw: string): SendErrorDescription {
   return { message: raw };
 }
 
-export type ResumeErrorKind = "not-found" | "connection" | "other";
+type ResumeErrorKind = "not-found" | "connection" | "other";
 
 export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (e && typeof e === "object") {
@@ -105,10 +105,7 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
 }
 
 export type SessionFailureKind =
-  | "unavailable"
-  | "orphaned"
-  | "connection"
-  | "other";
+  "unavailable" | "orphaned" | "connection" | "other";
 
 export type SessionListing = "listed" | "absent" | "unknown";
 

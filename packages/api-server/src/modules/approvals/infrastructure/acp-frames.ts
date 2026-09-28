@@ -47,6 +47,6 @@ export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
   });
 }
 
-export const INJECT_CHANNEL_PREFIX = "inject:";
+const INJECT_CHANNEL_PREFIX = "inject:";
 export const injectChannelOf = (agentId: string): string =>
   `${INJECT_CHANNEL_PREFIX}${agentId}`;

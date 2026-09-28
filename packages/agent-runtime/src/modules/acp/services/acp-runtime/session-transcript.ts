@@ -19,8 +19,7 @@ interface SessionLog {
 }
 
 export type CachedMetadata =
-  | { cached: true; value: unknown; synthetic: boolean }
-  | { cached: false };
+  { cached: true; value: unknown; synthetic: boolean } | { cached: false };
 
 export interface ReplayClip {
   clipped: boolean;

@@ -28,13 +28,12 @@ import {
   encodeDataFrame,
   encodeExit,
 } from "api-server-api";
-import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
-import { createHarnessClient } from "./modules/runtime-channel/harness-client.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git/credential-helper.js";
@@ -51,16 +50,15 @@ import {
   createEnvPlugin,
   createEnvStateStore,
   createFilePlugin,
+  createHarnessClient,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
+  loadManifest,
   pluginStateRoot,
   readSkillInstallBootState,
-} from "./modules/runtime-channel/index.js";
-import {
-  loadManifest,
   resolveDrivers,
   type RuntimeManifest,
-} from "./modules/runtime-channel/manifest.js";
+} from "./modules/runtime-channel/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -80,18 +78,18 @@ try {
 
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
   const binding = resolveDrivers(manifest)["skill-ref"] as
-    | { paths?: unknown }
-    | undefined;
+    { paths?: unknown } | undefined;
   const raw = Array.isArray(binding?.paths) ? binding.paths : [];
   return raw
     .filter((p): p is string => typeof p === "string")
     .map((p) => expandHome(p, home));
 }
 
-const manifestPath = config.PLATFORM_DEV
-  ? join(__dir, "../../platform-base/runtime-manifest.yaml")
-  : join(__dir, "../runtime-manifest.yaml");
-const runtimeManifest = loadManifest(manifestPath);
+const runtimeManifest = loadManifest(
+  config.PLATFORM_DEV
+    ? join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml")
+    : join(__dir, "../runtime-manifest.yaml"),
+);
 
 const platformAgentId =
   process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
@@ -108,6 +106,7 @@ const kbPublish = composeKbPublish({
   harness: harnessClient,
   log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
 });
+const artifactApi = composeArtifactApi();
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const seedRoots = skillRefPaths(
@@ -217,12 +216,11 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   onHarnessConfigApplied: () => acpRuntime.recycleForConfig(),
-  manifestPath,
+  manifest: runtimeManifest,
   agentHome: homeDir,
   workDir,
   stateBackend,
-  apiServerUrl: config.API_SERVER_URL,
-  agentId: platformAgentId,
+  harnessClient,
   triggerDriver,
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
@@ -278,6 +276,7 @@ const CORS = {
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
+  artifactApi,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,

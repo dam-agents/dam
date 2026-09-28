@@ -13,9 +13,6 @@ import {
 import {
   INDEX_FORMAT_VERSION,
   MAX_WALK_DEPTH,
-  MAX_FILES,
-  PER_FILE_MAX_BYTES,
-  TOTAL_MAX_BYTES,
   bucketForPath,
   chooseBucketCount,
   parseManifest,
@@ -43,7 +40,7 @@ import type { KbShareRow } from "../domain/types.js";
 
 export const STALE_CLAIM_MS = 15 * 60 * 1000;
 
-const RUNTIME_UNSUPPORTED_MESSAGE =
+export const RUNTIME_UNSUPPORTED_MESSAGE =
   "the knowledge base agent's runtime does not support publishing — apply the pending agent update, then refresh the share";
 const UPLOAD_VERIFY_FAILED_MESSAGE =
   "publishing could not upload the snapshot — retry shortly";
@@ -56,8 +53,6 @@ const UPLOAD_VERIFY_FAILED_MESSAGE =
  * owner-visible failure for a self-healing race.
  */
 class StalePlanError extends Error {}
-
-export { RUNTIME_UNSUPPORTED_MESSAGE };
 
 export interface KbSharePublishGate extends KbPublishGate {
   purgeShareObjects(row: KbShareRow): Promise<void>;
@@ -98,8 +93,7 @@ export interface KbSharePublishGateDeps {
     ArtifactService,
     "put" | "get" | "delete" | "stat" | "createUploadUrl"
   >;
-  limits?: Partial<KbSharePublishLimits>;
-  now?: () => Date;
+  limits: KbSharePublishLimits;
 }
 
 export interface KbSharePublishLimits {
@@ -137,6 +131,12 @@ interface PendingPublish {
   previousStale: readonly StaleSnapshotEntry[];
 }
 
+function failureReason(err: unknown): string {
+  return err instanceof PublishFailure
+    ? err.message
+    : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+}
+
 function fromWireFailure(wire: {
   code: string;
   root?: string;
@@ -157,13 +157,8 @@ function fromWireFailure(wire: {
 export function createKbSharePublishGate(
   deps: KbSharePublishGateDeps,
 ): KbSharePublishGate {
-  const now = deps.now ?? (() => new Date());
-  const limits: KbSharePublishLimits = {
-    perFileMaxBytes: deps.limits?.perFileMaxBytes ?? PER_FILE_MAX_BYTES,
-    totalMaxBytes: deps.limits?.totalMaxBytes ?? TOTAL_MAX_BYTES,
-    maxFiles: deps.limits?.maxFiles ?? MAX_FILES,
-  };
-  const messageLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
+  const limits = deps.limits;
+  const walkLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
   const pending = new Map<string, PendingPublish>();
 
   function validatePlan(
@@ -172,7 +167,7 @@ export function createKbSharePublishGate(
   ): KbPublishInventoryFile[] {
     if (files.length > limits.maxFiles) {
       throw new PublishFailure(
-        `the share contains more than ${limits.maxFiles} files — narrow the share roots`,
+        publishFailureMessage({ code: "too-many-files" }, walkLimits),
       );
     }
     const rootSet = new Set(roots);
@@ -215,7 +210,7 @@ export function createKbSharePublishGate(
     }
     if (total > limits.totalMaxBytes) {
       throw new PublishFailure(
-        `the share exceeds ${Math.floor(limits.totalMaxBytes / (1024 * 1024))} MB of text content — narrow the share roots`,
+        publishFailureMessage({ code: "total-too-large" }, walkLimits),
       );
     }
     for (const root of roots) {
@@ -252,7 +247,7 @@ export function createKbSharePublishGate(
   }): Promise<readonly StaleSnapshotEntry[]> {
     const keep: StaleSnapshotEntry[] = [];
     const expired: StaleSnapshotEntry[] = [];
-    const nowMs = now().getTime();
+    const nowMs = Date.now();
     for (const entry of opts.stale) {
       const ageMs = nowMs - Date.parse(entry.replacedAt);
       const expiredNow = ageMs >= STALE_SNAPSHOT_GRACE_MS;
@@ -410,7 +405,7 @@ export function createKbSharePublishGate(
   }
 
   function reapAbandonedPending(): void {
-    const cutoff = now().getTime() - STALE_CLAIM_MS;
+    const cutoff = Date.now() - STALE_CLAIM_MS;
     for (const [ticket, entry] of pending) {
       if (entry.createdAtMs >= cutoff) continue;
       pending.delete(ticket);
@@ -438,7 +433,7 @@ export function createKbSharePublishGate(
         reportFailure(
           claimed,
           ticket,
-          publishFailureMessage(fromWireFailure(input.failure), messageLimits),
+          publishFailureMessage(fromWireFailure(input.failure), walkLimits),
         );
         return { outcome: "rejected" };
       }
@@ -558,7 +553,7 @@ export function createKbSharePublishGate(
           {
             snapshotId: claimed.snapshotId,
             snapshotManifestKey: claimed.snapshotManifestKey,
-            snapshotCreatedAt: claimed.snapshotCreatedAt ?? now(),
+            snapshotCreatedAt: claimed.snapshotCreatedAt ?? new Date(),
             documentCount: planFiles.length,
             totalSizeBytes,
             staleSnapshots,
@@ -578,12 +573,7 @@ export function createKbSharePublishGate(
 
       const order: KbPublishWorkOrder = {
         ticket,
-        caps: {
-          perFileMaxBytes: limits.perFileMaxBytes,
-          totalMaxBytes: limits.totalMaxBytes,
-          maxFiles: limits.maxFiles,
-          maxWalkDepth: MAX_WALK_DEPTH,
-        },
+        caps: walkLimits,
         bucketCount,
         blobs: [],
         segments: [],
@@ -612,7 +602,7 @@ export function createKbSharePublishGate(
         roots: claimed.roots,
         ticket,
         claimedAt,
-        createdAtMs: now().getTime(),
+        createdAtMs: Date.now(),
         snapshotId: mintSnapshotId(),
         shareId,
         planFiles,
@@ -633,10 +623,7 @@ export function createKbSharePublishGate(
         await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
         return { outcome: "busy" };
       }
-      const reason =
-        err instanceof PublishFailure
-          ? err.message
-          : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+      const reason = failureReason(err);
       reportFailure(claimed, ticket, reason);
       return { outcome: "rejected" };
     }
@@ -691,7 +678,7 @@ export function createKbSharePublishGate(
       }
     }
 
-    const createdAt = now();
+    const createdAt = new Date();
     const files: SnapshotManifestFile[] = entry.planFiles.map((f) => ({
       path: f.path,
       sizeBytes: f.sizeBytes,
@@ -775,10 +762,7 @@ export function createKbSharePublishGate(
       prepared = await prepareSnapshot(entry, report);
     } catch (err) {
       await dropAttemptManifest(entry);
-      const reason =
-        err instanceof PublishFailure
-          ? err.message
-          : `publish failed: ${err instanceof Error ? err.message : String(err)}`;
+      const reason = failureReason(err);
       reportFailure(entry, ticket, reason);
       return { outcome: "failed" };
     }

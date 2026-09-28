@@ -1,14 +1,9 @@
 import { cancel, isCancel } from "@clack/prompts";
 import { Command } from "commander";
 import type { ConnectionAuthKind } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
@@ -59,21 +54,12 @@ export function buildUpdateCommand(deps: {
         ref: string,
         opts: { value?: string; server?: string; json?: boolean },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
         const svc = deps.createConnectionService(host);
 
         const listed = await svc.list();
-        if (!listed.ok) {
-          printServiceError(listed.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(listed, host);
         const match = resolveConnectionRef(listed.value, ref);
         if (!match) {
           process.stderr.write(
@@ -116,10 +102,7 @@ export function buildUpdateCommand(deps: {
         }
 
         const result = await svc.update(match.id, value);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(

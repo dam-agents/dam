@@ -3,7 +3,7 @@ import {
   isTransientWakeFailure,
 } from "../../agents/index.js";
 
-export const WAKE_WAIT_PATIENCE_MS = 10 * 60 * 1000;
+const WAKE_WAIT_PATIENCE_MS = 10 * 60 * 1000;
 
 const WAKE_WAIT_BACKOFF_MS = [5_000, 15_000, 30_000];
 

@@ -2,7 +2,7 @@ import { clockLabel, dayLabel, sameLocalDay, timeAgo } from "@/lib/format-time";
 
 import type { Message } from "../../../types.js";
 
-export type ThreadItem =
+type ThreadItem =
   | { kind: "message"; message: Message; index: number }
   | { kind: "divider"; variant: "day" | "run"; at: string; key: string };
 

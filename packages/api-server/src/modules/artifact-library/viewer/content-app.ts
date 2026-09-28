@@ -11,6 +11,7 @@ import {
   allowed,
   denied,
   isRestricted,
+  parseVersion,
   PRIVATE_NO_STORE,
   type Authorized,
 } from "./authorize.js";
@@ -20,7 +21,6 @@ import {
   renderImageInner,
   renderTextKindInner,
 } from "./renderer.js";
-import { parseVersion } from "./version-query.js";
 
 const RENDER_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -75,8 +75,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
     if (!authorized.ok) return authorized.response;
 
     const artifact = authorized.artifact;
-    const requested = parseVersion(c.req.query("v"));
-    const version = requested ?? artifact.version;
+    const version = parseVersion(c.req.query("v")) ?? artifact.version;
     const versionArg = version === artifact.version ? undefined : version;
     const meta = await viewer.meta(artifact, versionArg);
     if (!meta) return c.text("not found", 404);

@@ -1,16 +1,16 @@
+import { defineConfig } from "eslint/config";
 import reactHooks from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import tseslint from "typescript-eslint";
 
 import base from "dev-config/eslint";
 
-export default [
+export default defineConfig([
   ...base,
   {
     ignores: [
       "src/kc.gen.tsx",
       "dist/**",
-      "dist_keycloak/**",
       "public/**",
     ],
   },
@@ -23,7 +23,7 @@ export default [
     ],
     rules: { "unicorn/filename-case": "off" },
   },
-  ...tseslint.config({
+  {
     files: ["src/**/*.{ts,tsx}"],
     extends: [tseslint.configs.recommended],
     plugins: {
@@ -38,5 +38,5 @@ export default [
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
     },
-  }),
-];
+  },
+]);

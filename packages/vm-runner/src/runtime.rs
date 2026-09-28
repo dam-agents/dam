@@ -16,6 +16,8 @@ pub trait Runtime: Send + Sync {
     fn start(&self, id: &str) -> anyhow::Result<()>;
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
+    fn image_present(&self, id: &str) -> anyhow::Result<bool>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
@@ -28,7 +30,7 @@ pub struct Machine<'a> {
     pub image: &'a str,
     pub host_port: u16,
     pub share: &'a Path,
-    pub launch: Option<&'a ImageLaunch>,
+    pub launch: &'a ImageLaunch,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the new shape of a stopped machine, written to its record in place so its disk and port stay. `applied` is the spec it last had, which says which env keys the controller has since dropped and whether the disk must grow. `image` is set when the machine moves to another image: what it boots now, named as for a create, and the launch that image names.
@@ -73,11 +75,8 @@ pub struct Workload {
     pub command: Vec<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the guest's command and environment. platform-init runs first and execs the image's own entrypoint, so the image's entrypoint, command, env and working directory all come from its launch record. The platform's env wins over the image's, because it is what makes the guest an agent. The env is sorted by key so two creates of one spec write one record.
-pub fn workload(spec: &MachineSpec, launch: Option<&ImageLaunch>) -> anyhow::Result<Workload> {
-    let Some(launch) = launch else {
-        anyhow::bail!(IMAGE_LAUNCH_UNKNOWN);
-    };
+// UNIT_BOUNDARY_DESCRIPTION: the guest's command and environment. platform-init runs first and starts the image's own entrypoint, so the image's entrypoint, command, env and working directory all come from its launch record. The platform's env wins over the image's, because it is what makes the guest an agent. The env is sorted by key so two creates of one spec write one record.
+pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Workload> {
     let mut env: BTreeMap<String, String> = launch
         .env
         .iter()
@@ -103,12 +102,18 @@ pub fn workload(spec: &MachineSpec, launch: Option<&ImageLaunch>) -> anyhow::Res
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a stopped machine's env after an update. Keys the controller has dropped since the last write are removed, and every key it sends is set. Keys that only the image named are kept, because the controller never sent them and so never dropped them.
+// UNIT_BOUNDARY_DESCRIPTION: a stopped machine's env after an update. With the image's own env known it is built again from the image and the desired spec, by the rule a create follows, so a key the controller stops overriding goes back to the image's value — dropping an override of PATH leaves the image's PATH, not none. Without it, keys the controller has dropped since the last write are removed and every key it sends is set, and keys only the image named are kept, because the controller never sent them and so never dropped them.
 pub fn updated_env(
     current: &[(String, String)],
     applied: Option<&MachineSpec>,
     desired: &MachineSpec,
+    image_env: Option<&[String]>,
 ) -> Vec<(String, String)> {
+    if let Some(image_env) = image_env {
+        let mut env = image_values(image_env);
+        env.extend(desired.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        return env.into_iter().collect();
+    }
     let mut env: BTreeMap<String, String> = current.iter().cloned().collect();
     if let Some(applied) = applied {
         for key in applied.env.keys() {
@@ -121,13 +126,26 @@ pub fn updated_env(
     env.into_iter().collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the size the storage disk grows to, or nothing. A disk can grow and cannot shrink, so a smaller request leaves it alone. With no applied spec there is nothing known to grow from.
-pub fn grown_storage(applied: Option<&MachineSpec>, desired: &MachineSpec) -> Option<u64> {
-    if applied?.storage_gib < desired.storage_gib {
-        u64::try_from(desired.storage_gib).ok()
-    } else {
-        None
-    }
+fn image_values(image_env: &[String]) -> BTreeMap<String, String> {
+    image_env
+        .iter()
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record. A machine booted from an archive has no record beside its image, and gives nothing.
+pub fn image_env_beside(rootfs: &Path) -> Option<Vec<String>> {
+    crate::launch::read_launch(rootfs.parent()?)
+        .ok()
+        .flatten()
+        .map(|launch| launch.env)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the size in GiB the storage disk grows to, or nothing. It is decided from the disk's own size in bytes, not from the applied spec: a spec lost, unreadable or written ahead of a grow that failed says nothing true about the disk, and a grow decided from it would be skipped. A disk can grow and cannot shrink, so a smaller request leaves it alone.
+pub fn grown_storage(disk_bytes: u64, desired: &MachineSpec) -> Option<u64> {
+    let want = u64::try_from(desired.storage_gib).ok()?;
+    (disk_bytes < want << 30).then_some(want)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes the Agent's secret values from text that may reach the Agent's status or a log line. Values of three characters or fewer are left alone: replacing them would mangle ordinary words and hide nothing.
@@ -209,20 +227,34 @@ pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied.
-pub fn clear_for_start(id: &str, proc_root: &Path, vm_dir: &Path) {
+// UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
+pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+pub fn clear_for_start(
+    id: &str,
+    proc_root: &Path,
+    vm_dir: &Path,
+    wait: Duration,
+) -> anyhow::Result<()> {
     if !vm_dir.is_dir() {
-        return;
+        return Ok(());
     }
-    if !vmm_gone(proc_root, vm_dir, VMM_EXIT_WAIT) {
+    if !vmm_gone(proc_root, vm_dir, wait) {
         kill_orphans(proc_root, vm_dir);
-        let _ = vmm_gone(proc_root, vm_dir, Duration::from_secs(1));
+        if !vmm_gone(proc_root, vm_dir, KILLED_EXIT_WAIT) {
+            anyhow::bail!(
+                "machine '{id}': its previous VMM (pid {:?}) still holds the machine's disks after SIGKILL, likely stuck in the kernel; refusing to boot a second VMM on the same disk",
+                orphan_pids(proc_root, vm_dir)
+            );
+        }
     }
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
     discard_overlay(id, proc_root, vm_dir);
     crate::console::clear_console(id, vm_dir);
+    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs one machine operation and logs it with its duration: info for every operation, a warning when it was slow or failed. The error is redacted because an operator's Secret reaches the guest through the env, and smolvm's own errors may echo the record they were given.
@@ -283,18 +315,18 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: platform-init has to be the machine's entrypoint on every boot, or the agent's home is never mounted and its work is lost at the first stop. It runs first and execs what the image names — entrypoint then command — from the working directory the image names.
+    // TEST_SCENARIO: platform-init has to be the machine's entrypoint on every boot, or the agent's home is never mounted and its work is lost at the first stop. It runs first and starts what the image names — entrypoint then command — from the working directory the image names.
     #[test]
     fn platform_init_runs_first_and_hands_off_to_what_the_image_names() {
         let w = workload(
             &spec_with_env(&[]),
-            Some(&launch(&["/entry", "-x"], &["serve"], &[], "/app")),
+            &launch(&["/entry", "-x"], &["serve"], &[], "/app"),
         )
         .unwrap();
         assert_eq!(w.command, vec![INIT_PATH, "/entry", "-x", "serve"]);
         assert_eq!(w.workdir.as_deref(), Some("/app"));
 
-        let bare = workload(&spec_with_env(&[]), Some(&launch(&[], &["run"], &[], ""))).unwrap();
+        let bare = workload(&spec_with_env(&[]), &launch(&[], &["run"], &[], "")).unwrap();
         assert_eq!(bare.command, vec![INIT_PATH, "run"]);
         assert_eq!(
             bare.workdir, None,
@@ -307,12 +339,12 @@ mod tests {
     fn the_platforms_env_wins_over_the_images() {
         let w = workload(
             &spec_with_env(&[("HOME", "/home/agent"), ("PLATFORM_BACKEND", "vm")]),
-            Some(&launch(
+            &launch(
                 &["/entry"],
                 &[],
                 &["HOME=/root", "PATH=/usr/bin", "NOEQUALS"],
                 "",
-            )),
+            ),
         )
         .unwrap();
         assert_eq!(
@@ -325,18 +357,16 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, whether the launch is missing or empty, and the refusal reaches the Agent's status, so its wording is pinned.
+    // TEST_SCENARIO: a machine whose image names nothing to run would boot and wait for an exec that never comes, with nothing saying why. It is refused instead, and the refusal reaches the Agent's status, so its wording is pinned.
     #[test]
     fn a_machine_with_nothing_to_run_is_refused() {
-        let none = workload(&spec_with_env(&[]), None).unwrap_err().to_string();
-        let empty = workload(&spec_with_env(&[]), Some(&launch(&[], &[], &["A=b"], "/")))
+        let empty = workload(&spec_with_env(&[]), &launch(&[], &[], &["A=b"], "/"))
             .unwrap_err()
             .to_string();
         assert_eq!(
-            none,
+            empty,
             "this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it"
         );
-        assert_eq!(empty, none);
     }
 
     // TEST_SCENARIO: an update must drop what the controller stopped sending, or a Secret key removed from an Agent stays in its guest forever. It must also keep what only the image set, which the controller never sent and so never removed.
@@ -350,7 +380,7 @@ mod tests {
         let applied = spec_with_env(&[("OLD", "gone"), ("TOKEN", "v1")]);
         let desired = spec_with_env(&[("TOKEN", "v2"), ("NEW", "x")]);
         assert_eq!(
-            updated_env(&current, Some(&applied), &desired),
+            updated_env(&current, Some(&applied), &desired, None),
             vec![
                 ("NEW".to_string(), "x".to_string()),
                 ("PATH".to_string(), "/usr/bin".to_string()),
@@ -358,25 +388,102 @@ mod tests {
             ]
         );
         assert_eq!(
-            updated_env(&current, None, &desired).len(),
+            updated_env(&current, None, &desired, None).len(),
             4,
             "with no applied spec nothing is known to have been dropped"
         );
     }
 
-    // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than what the machine has. Anything else would either fail the update or, worse, look like a shrink that silently did nothing.
+    // TEST_SCENARIO: an Agent that overrode a key its image also sets, and then stopped overriding it, must get the image's value back. Removing the key would leave a machine with no PATH at all. With the image's env known, an update gives the env a create of the same spec would.
     #[test]
-    fn storage_grows_only_when_asked_for_more() {
-        let mut applied = spec_with_env(&[]);
+    fn an_update_that_drops_an_override_restores_the_images_value() {
+        let image_env = [
+            "PATH=/usr/local/bin:/usr/bin".to_string(),
+            "A=image".to_string(),
+        ];
+        let applied = spec_with_env(&[("PATH", "/custom"), ("TOKEN", "v1")]);
+        let desired = spec_with_env(&[("TOKEN", "v2")]);
+        let current = vec![
+            ("A".to_string(), "image".to_string()),
+            ("PATH".to_string(), "/custom".to_string()),
+            ("TOKEN".to_string(), "v1".to_string()),
+        ];
+        let updated = updated_env(&current, Some(&applied), &desired, Some(&image_env));
+        assert_eq!(
+            updated,
+            vec![
+                ("A".to_string(), "image".to_string()),
+                ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
+                ("TOKEN".to_string(), "v2".to_string()),
+            ]
+        );
+        let launch = launch(
+            &["/entry"],
+            &[],
+            &image_env.each_ref().map(|s| s.as_str()),
+            "/",
+        );
+        assert_eq!(updated, workload(&desired, &launch).unwrap().env);
+
+        let dir = crate::testdir::TempDir::new("image-env");
+        fs::create_dir_all(dir.path().join("rootfs")).unwrap();
+        fs::write(
+            dir.path().join(crate::launch::LAUNCH_FILE),
+            r#"{"cmd":["serve"],"env":["PATH=/bin"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            image_env_beside(&dir.path().join("rootfs")),
+            Some(vec!["PATH=/bin".to_string()])
+        );
+        assert_eq!(
+            image_env_beside(&dir.path().join("archives/archive.tar")),
+            None
+        );
+    }
+
+    // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than the disk actually is. Anything else would either fail the update or, worse, look like a shrink that silently did nothing. The disk's own size decides, so a disk a lost spec or a failed grow left smaller than its spec claims still grows.
+    #[test]
+    fn storage_grows_only_when_the_disk_is_smaller_than_asked() {
         let mut desired = spec_with_env(&[]);
-        applied.storage_gib = 10;
         desired.storage_gib = 20;
-        assert_eq!(grown_storage(Some(&applied), &desired), Some(20));
-        desired.storage_gib = 10;
-        assert_eq!(grown_storage(Some(&applied), &desired), None);
+        assert_eq!(grown_storage(10 << 30, &desired), Some(20));
+        assert_eq!(grown_storage((20 << 30) - 1, &desired), Some(20));
+        assert_eq!(grown_storage(20 << 30, &desired), None);
         desired.storage_gib = 5;
-        assert_eq!(grown_storage(Some(&applied), &desired), None);
-        assert_eq!(grown_storage(None, &desired), None);
+        assert_eq!(grown_storage(10 << 30, &desired), None);
+    }
+
+    // TEST_SCENARIO: a VMM stuck in the kernel outlives SIGKILL and still holds the machine's disks. Clearing its lock and sockets would let a second VMM boot on the same storage disk beside it, so the start fails and says why, and the files that keep the second VMM out stay. A directory no VMM holds is cleared as before.
+    #[test]
+    fn a_start_refuses_a_disk_a_vmm_that_survived_sigkill_still_holds() {
+        let proc = TempDir::new("stuck-proc");
+        let vm = TempDir::new("stuck-vm");
+        fs::write(vm.path().join("vm.lock"), "").unwrap();
+        process(
+            &proc,
+            i32::MAX - 7,
+            &format!(
+                "/proc/self/exe\0_boot-vm\0{}/boot-config.json",
+                vm.path().display()
+            ),
+        );
+
+        let refused = clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refused.contains("still holds the machine's disks after SIGKILL"),
+            "{refused}"
+        );
+        assert!(
+            vm.path().join("vm.lock").exists(),
+            "the lock of the live VMM was removed"
+        );
+
+        fs::remove_dir_all(proc.path().join((i32::MAX - 7).to_string())).unwrap();
+        clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50)).unwrap();
+        assert!(!vm.path().join("vm.lock").exists());
     }
 
     // TEST_SCENARIO: an operator's Secret reaches the guest through the env, and a failure's text reaches the Agent's status. Every value long enough to mean something is replaced; a short one is left, since replacing `on` would mangle the sentence and hide nothing.

@@ -2,7 +2,7 @@ import type { ShareSession } from "./share-session.js";
 
 export type ViewDecision = "allow" | "deny";
 
-export function normalizeViewerEmail(email: string): string {
+function normalizeViewerEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 

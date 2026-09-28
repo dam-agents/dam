@@ -1,16 +1,11 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { KB_SHARE_STRING_PREFIX, parseKbShareString } from "api-server-api";
+import { KB_SHARE_STRING_PREFIX } from "api-server-api";
 
 const SHARE_ID_BYTES = 6;
 const SECRET_BYTES = 32;
 const TOKEN_HEADER_PREFIX = "x-kb-token-";
 const ROW_ID_PREFIX = "kbs-";
 const SHARE_ID_PATTERN = new RegExp(`^[0-9a-f]{${SHARE_ID_BYTES * 2}}$`);
-
-export interface ParsedShareString {
-  shareId: string;
-  secret: string;
-}
 
 export function mintShareId(): string {
   return randomBytes(SHARE_ID_BYTES).toString("hex");
@@ -22,10 +17,6 @@ export function mintShareSecret(): string {
 
 export function formatShareString(shareId: string, secret: string): string {
   return `${KB_SHARE_STRING_PREFIX}${shareId}_${secret}`;
-}
-
-export function parseShareString(value: string): ParsedShareString | null {
-  return parseKbShareString(value);
 }
 
 export function tokenHeaderName(shareId: string): string {

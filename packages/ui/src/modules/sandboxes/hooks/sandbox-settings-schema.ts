@@ -20,7 +20,4 @@ export const settingsSchema = z.object({
 export type SettingsValues = z.infer<typeof settingsSchema>;
 
 export type SandboxSettingsStatus =
-  | "no-agent"
-  | "loading"
-  | "not-found"
-  | "ready";
+  "no-agent" | "loading" | "not-found" | "ready";

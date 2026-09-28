@@ -41,14 +41,6 @@ import {
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
 
-export type { DialogState } from "./modules/platform/store/dialog.js";
-export type {
-  PendingPermission,
-  PermissionOption,
-  PermissionOutcome,
-} from "./modules/sessions/store/permissions.js";
-export type { SessionError } from "./modules/sessions/store/sessions.js";
-
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &

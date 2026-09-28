@@ -67,10 +67,8 @@ export function ChatArtifactsPanel({
   const openArtifactId = useStore((s) => s.openArtifactId);
   const openArtifact = useOpenArtifact();
 
-  const openRow = useCallback(
-    (id: string) => openArtifact(id === openArtifactId ? null : id),
-    [openArtifact, openArtifactId],
-  );
+  const openRow = (id: string) =>
+    openArtifact(id === openArtifactId ? null : id);
   const folderCollapse = useStore((s) =>
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );

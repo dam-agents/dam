@@ -729,71 +729,6 @@ func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *
 		rc["request_headers_to_remove"])
 }
 
-func secretWithEnvMappings(name, secretType string, rawJSON string) corev1.Secret {
-	s := ownerSecret(name, secretType, "")
-	if s.Annotations == nil {
-		s.Annotations = map[string]string{}
-	}
-	s.Annotations[envoyEnvMappingsAnn] = rawJSON
-	return s
-}
-
-func envByName(envs []corev1.EnvVar) map[string]string {
-	out := map[string]string{}
-	for _, e := range envs {
-		out[e.Name] = e.Value
-	}
-	return out
-}
-
-func TestCredentialEnvVars_ReadsEnvMappingsAnnotation(t *testing.T) {
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"generic",
-			`[{"envName":"FOO","placeholder":"foo-sentinel"},{"envName":"BAR","placeholder":"bar-sentinel"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "foo-sentinel", envs["FOO"])
-	assert.Equal(t, "bar-sentinel", envs["BAR"])
-	assert.Len(t, envs, 2)
-}
-
-func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"generic",
-			`[{"envName":"SHARED","placeholder":"first"}]`,
-		),
-		secretWithEnvMappings(
-			"platform-cred-zzz",
-			"generic",
-			`[{"envName":"SHARED","placeholder":"second"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "first", envs["SHARED"])
-	assert.Len(t, envs, 1)
-}
-
-func TestCredentialEnvVars_ConnectionEnvMappingsDeclareTheVars(t *testing.T) {
-	gh := ownerSecret("platform-conn-github", "connection", "github")
-	delete(gh.Annotations, envoyHostPatternAnn)
-	gh.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
-
-	ghe := ownerSecret("platform-conn-ghe", "connection", "github-enterprise")
-	delete(ghe.Annotations, envoyHostPatternAnn)
-	ghe.Annotations[envoyEnvMappingsAnn] =
-		`[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},` +
-			`{"envName":"GH_HOST","placeholder":"ghe.example.com"}]`
-
-	envs := envByName(credentialEnvVars([]corev1.Secret{gh, ghe}))
-	assert.Equal(t, "dummy-placeholder", envs["GH_TOKEN"])
-	assert.Equal(t, "ghe.example.com", envs["GH_HOST"])
-}
-
 func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 	s := ownerSecret("platform-conn-github", "connection", "github")
 	delete(s.Annotations, envoyHostPatternAnn)
@@ -1052,7 +987,7 @@ func TestChainsFromSecrets_SameHeaderFromTwoConnectionsBothSurvive(t *testing.T)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
 	assert.Equal(t, second.Name, chains[0].Credentials[1].SecretName)
 	assert.Equal(t, []string{"conn-a", "conn-b"}, chains[0].ConnectionIDs())
-	assert.True(t, chains[0].Contested())
+	assert.True(t, chains[0].ContestedAt("/"))
 }
 
 func TestChainsFromSecrets_SameHeaderTwiceWithinOneConnectionKeepsFirst(t *testing.T) {
@@ -1064,7 +999,7 @@ func TestChainsFromSecrets_SameHeaderTwiceWithinOneConnectionKeepsFirst(t *testi
 	chains := chainsFromSecrets([]corev1.Secret{only}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
-	assert.False(t, chains[0].Contested())
+	assert.False(t, chains[0].ContestedAt("/"))
 }
 
 func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *testing.T) {
@@ -1081,7 +1016,7 @@ func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *t
 	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2)
-	assert.False(t, chains[0].Contested())
+	assert.False(t, chains[0].ContestedAt("/"))
 	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-a", "/"))
 	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-b", "/"))
 }
@@ -1216,33 +1151,6 @@ func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	one := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}, nil)
 	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")}, nil)
 	assert.NotEqual(t, one, two)
-}
-
-func TestCredentialEnvVars_RespectsEnvMappingsAnnotation(t *testing.T) {
-	s := ownerSecret("platform-cred-x", "generic", "")
-	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},{"envName":"OTHER","placeholder":"ph"}]`
-
-	envs := credentialEnvVars([]corev1.Secret{s})
-
-	got := map[string]string{}
-	for _, e := range envs {
-		got[e.Name] = e.Value
-	}
-	assert.Equal(t, "dummy-placeholder", got["GH_TOKEN"])
-	assert.Equal(t, "ph", got["OTHER"])
-}
-
-func TestCredentialEnvVars_MalformedAnnotationContributesNothing(t *testing.T) {
-	broken := ownerSecret("platform-conn-broken", "connection", "broken")
-	broken.Annotations[envoyEnvMappingsAnn] = "not json"
-
-	ok := ownerSecret("platform-conn-ok", "connection", "ok")
-	ok.Annotations[envoyEnvMappingsAnn] = `[{"envName":"FOO","placeholder":"ph"}]`
-
-	envs := credentialEnvVars([]corev1.Secret{broken, ok})
-
-	require.Len(t, envs, 1)
-	assert.Equal(t, "FOO", envs[0].Name)
 }
 
 func http2CredentialedChain(secretName, host string) envoyHostChain {

@@ -1,6 +1,6 @@
 import type { ProviderPresetType } from "../../../types.js";
 
-export interface ProviderRowDef {
+interface ProviderRowDef {
   type: ProviderPresetType;
   description: string;
 }

@@ -15,6 +15,7 @@ import {
   sandboxSubtitle,
   type SandboxSubtitleLookup,
 } from "../utils/sandbox-subtitle.js";
+import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
@@ -42,6 +43,7 @@ export function useAgentRows() {
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
   const update = useUpdateSandbox();
+  const migrate = useMigrateRuntime();
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -87,6 +89,8 @@ export function useAgentRows() {
     updatePending: update.updatingId === agent.id,
     updateBusy: update.updatingId !== null || update.updatingAll,
     onUpdate: () => void update.updateOne(agent),
+    migratePending: migrate.isMigrating(agent.id),
+    onMigrate: () => void migrate.migrateOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
     onPause: () => suspend.pause(agent.id),

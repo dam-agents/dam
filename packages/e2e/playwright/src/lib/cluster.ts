@@ -10,7 +10,7 @@ function kubeconfig(): string {
   if (process.env.KUBECONFIG) return process.env.KUBECONFIG;
   if (process.env.IS_SANDBOX) return "/etc/rancher/k3s/k3s.yaml";
   const limaHome = process.env.LIMA_HOME ?? join(homedir(), ".lima");
-  const vm = process.env.E2E_VM_NAME ?? "platform-k3s-test";
+  const vm = process.env.LIMA_INSTANCE ?? "platform-k3s-test";
   return join(limaHome, vm, "copied-from-guest", "kubeconfig.yaml");
 }
 

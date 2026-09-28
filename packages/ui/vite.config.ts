@@ -38,6 +38,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    outDir: "dist/js",
+  },
   server: {
     port: 5173,
     proxy: {

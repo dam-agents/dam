@@ -1,0 +1,93 @@
+# Bob runtime manifest. Bob (≥1.0.6) reads MCP servers from
+# $HOME/.bob/settings/mcp.json; the legacy mcp_settings.json is migrated only
+# once, so the driver must write the canonical path. Other drivers keep the
+# defaults of the base manifest.
+manifestVersion: 1
+
+drivers:
+  env:
+    impl: env
+
+  file:
+    impl: file
+
+  mcp-entry:
+    impl: mcp-entry
+    path: "$HOME/.bob/settings/mcp.json"
+    keyPath: mcpServers
+    # 2.0 keys remote servers off `url` + `transportType` (verified against what
+    # `bob mcp add -t http` writes). 1.x's `httpUrl` is not read at all — the
+    # entry then loads with an empty URL and never connects. `transportType` is
+    # required: absent it, 2.0 treats the server as SSE, which 400s against the
+    # platform's streamable MCP endpoint.
+    extraFields:
+      transportType: http
+
+  skill-ref:
+    impl: skill-install
+    paths:
+      - "$HOME/.agents/skills"
+
+  # The Config panel writes into a `platform` section Bob itself ignores, not
+  # into `session.*`: bob-settings.mjs owns Bob's own keys on every harness
+  # start, and two writers on one key would fight. It resolves panel value over
+  # provider pin and translates the result — see the agent README.
+  harness-config:
+    file: "$HOME/.bob/settings/settings.json"
+    keys:
+      model: "platform.model"
+      mode: "platform.mode"
+      configOptions:
+        approvals: "platform.approvals"
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: Model Bob starts a session with
+          category: model
+          choices: []
+        - id: mode
+          name: Mode
+          description: Which persona Bob starts a session in
+          category: mode
+          choices:
+            - value: agent
+              name: "Agent"
+              description: "Takes an idea or a plan and implements it"
+            - value: plan
+              name: "Plan"
+              description: "Analyzes requirements and designs the steps, without implementing"
+            - value: ask
+              name: "Ask"
+              description: "Answers questions and explains, without changing the workspace"
+        - id: approvals
+          name: Approvals
+          description: Whether Bob asks before a tool call
+          category: approvals
+          choices:
+            - value: auto
+              name: "Auto-approve"
+              description: "Runs every tool without asking. Bob's ACP offers no middle setting — its safe-command allowlist is reachable from the terminal only."
+            - value: ask
+              name: "Ask every time"
+              description: "Prompts for every tool except file reads, including each shell command. Takes effect on the next harness start. Nobody is there to answer on a Slack or Telegram turn, so every prompt is refused — including the tool Bob replies with, which leaves it unable to answer in a channel at all. Bob offers no allowlist to exempt one: use Auto-approve for a channel-bound agent."
+    # Bob reads its model list from a LiteLLM-shaped /model/info under its own
+    # inference prefix, so discovery follows the same path Bob itself calls —
+    # the gateway rewrite that fronts a plain LiteLLM applies to both alike.
+    # Order is the priority: a connection that points Bob at another endpoint
+    # sets BOB_GATEWAY_URL, which is the variable Bob's own client reads, and
+    # the Bob Shell connection contributes BOB_DEFAULT_GATEWAY_URL for its own
+    # gateway. Two connections can be granted at once, so they must not compete
+    # for one name — the env rail resolves a duplicate by secret order.
+    # Only the redirect gets a seeded model: pointed at another provider, Bob's
+    # own default need not exist there. On its own gateway Bob keeps it.
+    modelDiscovery:
+      urlEnv:
+        - BOB_GATEWAY_URL
+        - BOB_DEFAULT_GATEWAY_URL
+      redirectEnv:
+        - BOB_GATEWAY_URL
+      pinEnv:
+        - BOB_SHELL_MODEL
+      path: /inference/v1/model/info
+      shape: litellm-model-info

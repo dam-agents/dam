@@ -21,10 +21,6 @@ type vmPreflightResult struct {
 	warnings []string
 }
 
-func (p vmPreflightResult) summary() string {
-	return strings.Join(p.problems, "; ")
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: turning virtualization on asks an install to get several things right at once — a device plugin, the runner's identity, its memory limit, its egress ranges, the image budget — and each one gone wrong shows up only much later, as a vm agent that never becomes ready and a pod the operator has to read by hand. This check reads the install against the cluster when the controller starts and again on every pass, logs what it finds whenever that changes, and keeps the problems so that a vm agent's status names them. Problems are what stop any runner from working. Warnings are setups that run but are likely mistakes, such as an egress range that also reaches the cluster's own addresses; they are logged only, because an install may choose them on purpose.
 func (r *AgentReconciler) CheckVMInstall(ctx context.Context) {
 	if !r.config.VM.Enabled {
@@ -52,7 +48,7 @@ func (r *AgentReconciler) CheckVMInstall(ctx context.Context) {
 func (r *AgentReconciler) vmPreflightProblems() string {
 	r.preflightMu.Lock()
 	defer r.preflightMu.Unlock()
-	return r.preflight.summary()
+	return strings.Join(r.preflight.problems, "; ")
 }
 
 func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {

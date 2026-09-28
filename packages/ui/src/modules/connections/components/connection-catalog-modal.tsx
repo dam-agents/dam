@@ -35,9 +35,6 @@ import { ConnectionMaintenanceDialog } from "./connection-update-credential-dial
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
-const SATELLITES_TAB = "satellites";
-
-type ModalTab = CatalogTab | typeof SATELLITES_TAB;
 
 type Pane =
   | { kind: "browse" }
@@ -72,12 +69,10 @@ export function ConnectionCatalogModal({
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
-  const [activeTab, setActiveTab] = useState<ModalTab>("apps");
+  const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
   const { data: satellites = NO_SATELLITES } = useSatellites({ live: true });
   const showSatellites =
     satellites.length > 0 && (!sandbox || satelliteGrant !== undefined);
-  const shownTab =
-    activeTab === SATELLITES_TAB && !showSatellites ? "apps" : activeTab;
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
   const {
@@ -85,31 +80,21 @@ export function ConnectionCatalogModal({
     templateById,
     loading: loadingCatalog,
   } = useCatalogGroups(connectionsQ.data ?? NO_CONNECTIONS);
-  const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
-  const catalogTabs = useMemo<TabDef<ModalTab>[]>(
-    () => [
-      ...CATALOG_TAB_ORDER.map((tab) => ({
+  const counts = useMemo(() => {
+    const base = catalogTabCounts(byTab);
+    return showSatellites
+      ? { ...base, mcp: base.mcp + satellites.length }
+      : base;
+  }, [byTab, showSatellites, satellites.length]);
+  const catalogTabs = useMemo<TabDef<CatalogTab>[]>(
+    () =>
+      CATALOG_TAB_ORDER.map((tab) => ({
         value: tab,
         label: CATALOG_TAB_LABEL[tab],
         trailing: <span className="text-muted-foreground">{counts[tab]}</span>,
         testId: `catalog-tab-${tab}`,
       })),
-      ...(showSatellites
-        ? [
-            {
-              value: SATELLITES_TAB,
-              label: "Satellites",
-              trailing: (
-                <span className="text-muted-foreground">
-                  {satellites.length}
-                </span>
-              ),
-              testId: `catalog-tab-${SATELLITES_TAB}`,
-            } satisfies TabDef<ModalTab>,
-          ]
-        : []),
-    ],
-    [counts, showSatellites, satellites.length],
+    [counts],
   );
   const grantedIds = sandbox?.grantedIds;
   const grantedConnections = useMemo(
@@ -204,7 +189,7 @@ export function ConnectionCatalogModal({
           <Tabs
             ariaLabel="Connection categories"
             tabs={catalogTabs}
-            value={pane.kind === "browse" ? shownTab : null}
+            value={pane.kind === "browse" ? activeTab : null}
             onValueChange={(tab) => {
               setActiveTab(tab);
               setPane({ kind: "browse" });
@@ -222,16 +207,7 @@ export function ConnectionCatalogModal({
                   Nothing this install offers satisfies this requirement.
                 </p>
               )}
-              {shownTab === SATELLITES_TAB && !narrowed && (
-                <CatalogSatellitesPane
-                  satellites={satellites}
-                  grant={satelliteGrant}
-                />
-              )}
-              {(
-                narrowed ??
-                (shownTab === SATELLITES_TAB ? [] : (byTab.get(shownTab) ?? []))
-              ).map((group) => (
+              {(narrowed ?? byTab.get(activeTab) ?? []).map((group) => (
                 <CatalogProviderCard
                   key={group.provider.id}
                   group={group}
@@ -245,6 +221,12 @@ export function ConnectionCatalogModal({
                   onGoToChannels={onGoToChannels}
                 />
               ))}
+              {activeTab === "mcp" && showSatellites && !narrowed && (
+                <CatalogSatellitesPane
+                  satellites={satellites}
+                  grant={satelliteGrant}
+                />
+              )}
             </div>
           )}
           {pane.kind === "create" &&

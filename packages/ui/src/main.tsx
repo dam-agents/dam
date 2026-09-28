@@ -8,16 +8,30 @@ import { createRoot } from "react-dom/client";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import { api } from "./api.js";
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { rememberReturnPath } from "./lib/return-path.js";
 import {
   parsePublicAgentPath,
+  parseRoute,
   routeToPath,
 } from "./modules/platform/lib/routes.js";
-import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
+
+async function preflightTermsGate(): Promise<boolean> {
+  if (parseRoute(window.location.pathname).view === "terms") return true;
+  try {
+    const [current, latest] = await Promise.all([
+      api.terms.current.query(),
+      api.terms.latestAcceptance.query(),
+    ]);
+    return !!latest && latest.version === current.version;
+  } catch {
+    return true;
+  }
+}
 
 async function main() {
   const publicAgentId = parsePublicAgentPath(window.location.pathname);

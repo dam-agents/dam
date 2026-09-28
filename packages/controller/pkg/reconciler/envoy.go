@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -31,7 +32,6 @@ const (
 	envoyQueryParamAnn          = "agent-platform.ai/injection-query-param"
 	envoyInjectionHTTP2Ann      = "agent-platform.ai/injection-http2"
 	envoyInjectionHostsAnn      = "agent-platform.ai/injection-hosts"
-	envoyEnvMappingsAnn         = "agent-platform.ai/env-mappings"
 	credentialSecretNamePrefix  = "platform-cred-"
 	envoyBootstrapVolume        = "envoy-bootstrap"
 	envoyBootstrapMount         = "/etc/envoy"
@@ -168,15 +168,6 @@ func (c envoyHostChain) ContestedAt(scope string) bool {
 	return false
 }
 
-func (c envoyHostChain) Contested() bool {
-	for _, scope := range c.PathScopes() {
-		if c.ContestedAt(scope) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -218,15 +209,6 @@ func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envo
 		}
 	}
 	return out
-}
-
-func (c envoyHostChain) HasQueryParamCredential() bool {
-	for _, cred := range c.Credentials {
-		if cred.QueryParamName != "" {
-			return true
-		}
-	}
-	return false
 }
 
 const envoySecretTypeAllowOnly = "allow-only"
@@ -364,46 +346,6 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	return items, nil
 }
 
-type envMapping struct {
-	EnvName     string `json:"envName"`
-	Placeholder string `json:"placeholder"`
-}
-
-func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
-	const fallbackPlaceholder = "dummy-placeholder"
-	seen := map[string]struct{}{}
-	add := func(envs []corev1.EnvVar, name, value string) []corev1.EnvVar {
-		if name == "" {
-			return envs
-		}
-		if _, dup := seen[name]; dup {
-			return envs
-		}
-		if value == "" {
-			value = fallbackPlaceholder
-		}
-		seen[name] = struct{}{}
-		return append(envs, corev1.EnvVar{Name: name, Value: value})
-	}
-	var envs []corev1.EnvVar
-	for _, s := range secrets {
-		raw := s.Annotations[envoyEnvMappingsAnn]
-		if raw == "" {
-			continue
-		}
-		var mappings []envMapping
-		if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
-			slog.Warn("invalid env-mappings annotation; skipping",
-				"namespace", s.Namespace, "secret", s.Name, "error", err)
-			continue
-		}
-		for _, m := range mappings {
-			envs = add(envs, m.EnvName, m.Placeholder)
-		}
-	}
-	return envs
-}
-
 type connectionHostInjection struct {
 	Host           string             `json:"host"`
 	PathPattern    string             `json:"pathPattern,omitempty"`
@@ -421,13 +363,6 @@ type connectionHostInjection struct {
 
 func sdsFileKeyForHost(host string) string {
 	return "host-" + base64.RawURLEncoding.EncodeToString([]byte(host)) + ".sds.yaml"
-}
-
-func sdsFileKey(e connectionHostInjection) string {
-	if e.SDSKey != "" {
-		return e.SDSKey
-	}
-	return sdsFileKeyForHost(e.Host)
 }
 
 func validPathRewrites(s corev1.Secret, e connectionHostInjection) []envoyPathRewrite {
@@ -522,7 +457,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 				HeaderName:     header,
 				QueryParamName: e.QueryParamName,
 				VolumeName:     "cred-" + s.Name,
-				SDSFileKey:     sdsFileKey(e),
+				SDSFileKey:     cmp.Or(e.SDSKey, sdsFileKeyForHost(e.Host)),
 			},
 		})
 	}
@@ -769,15 +704,13 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: EnvoyLeafSecretName(instanceName),
-					Optional:   ptrBool(false),
+					Optional:   new(false),
 				},
 			},
 		})
 	}
 	return volumes
 }
-
-func ptrBool(b bool) *bool { return &b }
 
 const envoyBootstrapTemplateRev = "v17-per-connection-routes"
 
@@ -855,8 +788,8 @@ func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Se
 		},
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities:           &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			ReadOnlyRootFilesystem: ptrBool(true),
-			RunAsNonRoot:           ptrBool(true),
+			ReadOnlyRootFilesystem: new(true),
+			RunAsNonRoot:           new(true),
 		},
 	}
 	c.Env = gatewayOTelEnv(instanceName, cfg)

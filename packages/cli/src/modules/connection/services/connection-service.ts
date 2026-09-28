@@ -7,14 +7,12 @@ import type {
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import type { AuthRequiredError, TransportError } from "../domain/errors.js";
+import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 
 type ConnResult<T> = Result<T, TransportError | AuthRequiredError>;
 
 export interface ConnectionService {
-  list(): Promise<
-    Result<readonly ConnectionView[], TransportError | AuthRequiredError>
-  >;
+  list(): Promise<ConnResult<readonly ConnectionView[]>>;
   listTemplates(): Promise<ConnResult<readonly ConnectionTemplateView[]>>;
   createConnection(
     input: ConnectionCreateInput,
@@ -24,20 +22,16 @@ export interface ConnectionService {
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
-  agentConnectionIds(
-    agentId: string,
-  ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
+  agentConnectionIds(agentId: string): Promise<ConnResult<readonly string[]>>;
   grant(
     agentId: string,
     add: readonly string[],
-  ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
+  ): Promise<ConnResult<readonly string[]>>;
   revoke(
     agentId: string,
     remove: readonly string[],
-  ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
-  disconnect(
-    id: string,
-  ): Promise<Result<void, TransportError | AuthRequiredError>>;
+  ): Promise<ConnResult<readonly string[]>>;
+  disconnect(id: string): Promise<ConnResult<void>>;
 }
 
 export function createConnectionService(deps: {

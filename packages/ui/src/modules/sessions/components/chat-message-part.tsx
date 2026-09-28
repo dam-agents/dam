@@ -1,13 +1,27 @@
 import { Document } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
 import type { MessagePart, Role } from "../../../types.js";
-import { HistoryBlock } from "./history-block.js";
+import { ActivityBlock } from "./activity-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
+
+function HistoryBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <ActivityBlock
+      label="Conversation history"
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+    >
+      <div className="whitespace-pre-wrap break-words">{text}</div>
+    </ActivityBlock>
+  );
+}
 
 interface Props {
   part: MessagePart;

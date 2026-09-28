@@ -6,9 +6,9 @@ import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
-import type { PermissionOption } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
+import type { PermissionOption } from "../store/permissions.js";
 import { ChatColumn } from "./chat-column.js";
 
 export type PermissionVerdict = Omit<VerdictPart, "kind">;

@@ -47,6 +47,7 @@ const handlerFor = (
   createTriggerPlugin({
     runPrecheck: allows,
     log: () => {},
+    reporter: { report: async () => {} },
     ...deps,
   }).bindEvent!(kind, { impl: "trigger" });
 

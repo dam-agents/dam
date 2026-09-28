@@ -9,12 +9,12 @@ import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
-export const slackChannelFormSchema = z.object({
+const slackChannelFormSchema = z.object({
   channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
   ambient: z.boolean(),
 });
 
-export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
 export function findSlackChannels(
   agent: AgentView | undefined,

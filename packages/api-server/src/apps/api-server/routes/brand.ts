@@ -14,10 +14,7 @@ interface IconCache {
   rasters: Map<number, Buffer>;
 }
 
-export function createBrandRoutes(
-  brand: Brand,
-  getEnv?: () => string | undefined,
-) {
+export function createBrandRoutes(brand: Brand) {
   const routes = new Hono();
 
   routes.get("/", (c) => c.json(brand satisfies Brand));
@@ -58,7 +55,7 @@ export function createBrandRoutes(
   const resolveSvg = (
     fallback: string = DEFAULT_BRAND_ICON_SVG,
   ): { svg: string; hash: string } => {
-    const svg = (getEnv?.() ?? process.env.BRAND_ICON_SVG)?.trim() || fallback;
+    const svg = process.env.BRAND_ICON_SVG?.trim() || fallback;
     const hash = createHash("sha256").update(svg).digest("hex").slice(0, 16);
     return { svg, hash };
   };

@@ -6,7 +6,6 @@ import { emit, EventType } from "../../../events.js";
 export interface OnboardingMarkerDeps {
   agents: Pick<AgentsService, "get">;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
-  now?: () => Date;
 }
 
 export type OnboardingMarker = (
@@ -25,10 +24,7 @@ export function createOnboardingMarker(
         message: "this agent was not created from a starter kit",
       });
     if (agent.starterKitOnboarded) return;
-    await deps.markAgentOnboarded(
-      agentId,
-      (deps.now ?? (() => new Date()))().toISOString(),
-    );
+    await deps.markAgentOnboarded(agentId, new Date().toISOString());
     emit({ type: EventType.AgentUpdated, agentId, ownerSub: owner });
     securityLog("info", "starter_kit.onboarded", {
       category: "resource",

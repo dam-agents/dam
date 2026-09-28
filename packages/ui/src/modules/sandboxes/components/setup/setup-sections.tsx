@@ -120,7 +120,6 @@ export function ConnectionsSetupSection({
   satelliteNames,
   onToggleSatellite,
   onOpenCatalog,
-  title,
   leading,
   excludeIds,
 }: {
@@ -129,9 +128,8 @@ export function ConnectionsSetupSection({
   satelliteNames: string[];
   onToggleSatellite: (name: string, granted: boolean) => void;
   onOpenCatalog: () => void;
-  title?: string;
   leading?: React.ReactNode;
-  excludeIds?: ReadonlySet<string>;
+  excludeIds: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
   const { data: satellites = NO_SATELLITES } = useSatellites();
@@ -146,7 +144,7 @@ export function ConnectionsSetupSection({
   );
   const staged = useMemo(
     () =>
-      excludeProviderConnections(granted).filter((c) => !excludeIds?.has(c.id)),
+      excludeProviderConnections(granted).filter((c) => !excludeIds.has(c.id)),
     [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
@@ -170,7 +168,7 @@ export function ConnectionsSetupSection({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={onOpenCatalog}
-        {...(title ? { title } : {})}
+        title="Connections"
         {...(leading || satellitesCard
           ? {
               leading: (

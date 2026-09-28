@@ -10,6 +10,8 @@ const INTERRUPTION_NOTICE = [
     "finished.",
   "Check the current state of the workspace before you continue, then carry " +
     "on with the task you were working on.",
+  "If this problem persists, stop and instruct the user to go to ⵗ → " +
+    "Configure agent → set Compute Resources dropdown to a higher tier.",
   "</turn-interrupted>",
 ].join("\n");
 

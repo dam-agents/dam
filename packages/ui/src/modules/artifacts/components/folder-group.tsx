@@ -39,13 +39,13 @@ const INERT_DROP: FolderDropCallbacks = {
   onDrop: () => {},
 };
 
-export interface FolderGroupActions {
+interface FolderGroupActions {
   onEditFolder: (folder: ArtifactFolder) => void;
   onDeleteFolder: (folder: ArtifactFolder) => void;
   onCopyFolderLink: (folder: ArtifactFolder) => Promise<string | null>;
 }
 
-export interface FolderSection {
+interface FolderSection {
   label: string;
   artifacts: LibraryArtifact[];
 }

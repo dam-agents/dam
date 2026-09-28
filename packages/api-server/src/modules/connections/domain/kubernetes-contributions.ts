@@ -110,6 +110,6 @@ export function decodeCaData(caData: string): string {
   return pem;
 }
 
-function isIpLiteral(host: string): boolean {
+export function isIpLiteral(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
 }

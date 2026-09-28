@@ -52,18 +52,18 @@ export interface ComposeAcpOptions {
     exportName?: string;
     command?: string[];
   };
-  isTerminalSessionActive?: (sessionId: string) => boolean;
-  backgroundWorkHolds?: boolean;
+  isTerminalSessionActive: (sessionId: string) => boolean;
+  backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
-  beforeFirstSpawn?: () => Promise<void>;
-  log?: (msg: string) => void;
+  beforeFirstSpawn: () => Promise<void>;
+  log: (msg: string) => void;
 }
 
 function historyProviderOf(
   opts: ComposeAcpOptions,
 ): HistoryProvider | undefined {
   const declared = opts.sessionHistory;
-  const log = (msg: string): void => opts.log?.(msg);
+  const { log } = opts;
   if (declared?.module !== undefined) {
     return createWorkerHistoryProvider({
       modulePath: declared.module,
@@ -122,9 +122,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
-    ...(opts.beforeFirstSpawn
-      ? { beforeFirstSpawn: opts.beforeFirstSpawn }
-      : {}),
+    beforeFirstSpawn: opts.beforeFirstSpawn,
     idleReapDelayMs: 3_000,
     ...(config.QUEUE_PARK_MS !== undefined
       ? { queueParkMs: config.QUEUE_PARK_MS }

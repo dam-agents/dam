@@ -25,7 +25,7 @@
       netpol sees the right thing for ambient-routed traffic (Istio
       iptables redirect happens in NAT/MANGLE before FILTER).
 */}}
-{{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $appName := include "platform.apiserver.fullname" . }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 func configWith(base config.AgentBase) *config.Config {
@@ -86,7 +86,7 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 func TestApplyTemplateScheduling_OverridesBase(t *testing.T) {
 	spec := &corev1.PodSpec{}
 	applyAgentBaseScheduling(spec, fullAgentBase())
-	applyTemplateScheduling(spec, &types.AgentSpec{
+	applyTemplateScheduling(spec, &apiv1.AgentSpec{
 		RuntimeClassName: "kata-qemu-nvidia-gpu",
 		NodeSelector:     map[string]string{"nvidia.com/gpu.present": "true"},
 	})
@@ -100,7 +100,7 @@ func TestApplyTemplateScheduling_OverridesBase(t *testing.T) {
 func TestApplyTemplateScheduling_EmptyKeepsBase(t *testing.T) {
 	spec := &corev1.PodSpec{}
 	applyAgentBaseScheduling(spec, fullAgentBase())
-	applyTemplateScheduling(spec, &types.AgentSpec{})
+	applyTemplateScheduling(spec, &apiv1.AgentSpec{})
 
 	require.NotNil(t, spec.RuntimeClassName)
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
@@ -145,7 +145,7 @@ func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testin
 
 	tmpl := *testAgent
 	tmpl.ImagePullPolicy = "Always"
-	tmpl.Resources = types.ResourceSpec{
+	tmpl.Resources = apiv1.ResourceSpec{
 		Requests: map[string]string{"cpu": "2", "memory": "4Gi"},
 	}
 	ss := BuildAgentStatefulSet("my-instance", &tmpl, &cfg, configMapOwnerRef(testOwnerCM), "")
@@ -162,7 +162,7 @@ func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testin
 	}
 	cfg.AgentTemplateDefaults.Env = []config.EnvVar{{Name: "PORT", Value: "8080"}}
 
-	bare := &types.AgentSpec{Image: "ghcr.io/myorg/agent:latest"}
+	bare := &apiv1.AgentSpec{Image: "ghcr.io/myorg/agent:latest"}
 	ss := BuildAgentStatefulSet("my-instance", bare, &cfg, configMapOwnerRef(testOwnerCM), "")
 
 	var sawHome bool

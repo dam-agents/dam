@@ -67,7 +67,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-					MaxUnavailable: ptrIntOrString(intstr.FromInt(1)),
+					MaxUnavailable: new(intstr.FromInt(1)),
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -80,8 +80,6 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 		},
 	}
 }
-
-func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 
 func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	gatewayName := GatewayName(agentName)

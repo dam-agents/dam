@@ -5,7 +5,6 @@ import {
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
-  type TemplateSpec,
   type ChannelConfig,
   type ContributionKind,
   type DriverFailure,
@@ -20,6 +19,7 @@ import {
   type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
+  type MigrateRuntimeError,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -44,7 +44,12 @@ import {
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
+  RUNTIME_MIGRATION_KEY,
 } from "../infrastructure/labels.js";
+import {
+  RUNTIME_MIGRATION_SPEC_PATCH,
+  runtimeMigrationRefusal,
+} from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -57,6 +62,7 @@ import {
   type RuntimeMutator,
   workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
+import type { ReadTemplateSpec } from "../../templates/index.js";
 import { ok, err } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -435,9 +441,7 @@ export function executeSlackBind(deps: {
 export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
   getAgent: (id: string) => Promise<InfraAgent | null>;
-  readTemplateSpec: (
-    id: string,
-  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readTemplateSpec: ReadTemplateSpec;
   patchImage: (id: string, image: string) => Promise<InfraAgent | null>;
 }) {
   return async (
@@ -476,15 +480,51 @@ export function executeTemplateUpgrade(deps: {
   };
 }
 
+export interface RuntimeMigrationPatch {
+  spec: Record<string, unknown>;
+  annotations: Record<string, string>;
+}
+
+export function executeRuntimeMigration(deps: {
+  owner: string | undefined;
+  virtualizationEnabled: boolean;
+  getAgent: (id: string) => Promise<InfraAgent | null>;
+  writeMigration: (
+    id: string,
+    patch: RuntimeMigrationPatch,
+  ) => Promise<InfraAgent | null>;
+}) {
+  return async (
+    id: string,
+  ): Promise<
+    { ok: true; value: InfraAgent } | { ok: false; error: MigrateRuntimeError }
+  > => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return err({ type: "AgentNotFound" as const });
+    const refusal = runtimeMigrationRefusal(infra, deps.virtualizationEnabled);
+    if (refusal) return err(refusal);
+
+    const patched = await deps.writeMigration(id, {
+      spec: { ...RUNTIME_MIGRATION_SPEC_PATCH },
+      annotations: { [RUNTIME_MIGRATION_KEY]: "requested" },
+    });
+    if (!patched) return err({ type: "AgentNotFound" as const });
+    securityLog("info", "agent.runtime-migrate", {
+      category: "resource",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      agentId: id,
+      result: "success",
+      detail: { fromBackend: "container", toBackend: "vm" },
+    });
+    return ok(patched);
+  };
+}
+
 export type AgentCleanupHook = (agentId: string) => Promise<void>;
 
-function preserveProtectedEnvs(
-  current: EnvVar[],
-  incoming: EnvVar[],
-): EnvVar[] {
-  const preserved = current.filter((e) => isProtectedAgentEnvName(e.name));
-  const user = incoming.filter((e) => !isProtectedAgentEnvName(e.name));
-  return [...preserved, ...user];
+function dropProtectedEnvs(env: EnvVar[]): EnvVar[] {
+  return env.filter((e) => !isProtectedAgentEnvName(e.name));
 }
 
 function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
@@ -503,9 +543,7 @@ export function createAgentsService(deps: {
   agentEnvRepo: AgentEnvRepository;
   agentIdleTimeoutMinutes: number;
   owner: string | undefined;
-  readTemplateSpec: (
-    id: string,
-  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
@@ -529,7 +567,6 @@ export function createAgentsService(deps: {
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
-  upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
   deleteSlackChannelByAgent: (
     agentId: string,
@@ -658,6 +695,27 @@ export function createAgentsService(deps: {
       status.workspaceFailures,
       checklists.get(infra.id),
     );
+  }
+
+  async function ownsOrDeny(id: string, surface: string): Promise<boolean> {
+    if (!deps.owner || (await deps.repo.isOwnedBy(id, deps.owner))) return true;
+    securityLog("warn", "authz.owner_mismatch", {
+      category: "authz",
+      actor: deps.owner,
+      actorKind: "user",
+      agentId: id,
+      decision: "deny",
+      reason: "not-owner",
+      detail: { surface },
+    });
+    return false;
+  }
+
+  async function namedAgent(
+    id: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const infra = await deps.repo.get(id, deps.owner);
+    return infra ? { id: infra.id, name: infra.name } : null;
   }
 
   const connectSlackImpl = async (
@@ -847,7 +905,7 @@ export function createAgentsService(deps: {
       let templateId: string | undefined;
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
-        if (!tmpl || tmpl.isOwned) {
+        if (!tmpl) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: `template "${input.templateId}" not found`,
@@ -978,10 +1036,7 @@ export function createAgentsService(deps: {
         throw e;
       }
 
-      const userEnv = preserveProtectedEnvs(
-        [],
-        [...templateEnv, ...(input.env ?? [])],
-      );
+      const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
       if (userEnv.length > 0)
         await deps.agentEnvRepo.replace(infra.id, userEnv);
 
@@ -1090,7 +1145,7 @@ export function createAgentsService(deps: {
 
       let env = input.env;
       if (env !== undefined) {
-        env = preserveProtectedEnvs([], env);
+        env = dropProtectedEnvs(env);
         if (input.name !== undefined)
           env = renamedTelemetryIdentity(env, input.name) ?? env;
         await deps.agentEnvRepo.replace(input.id, env);
@@ -1177,18 +1232,7 @@ export function createAgentsService(deps: {
     },
 
     async wake(id) {
-      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId: id,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "agent.wake" },
-        });
-        return null;
-      }
+      if (!(await ownsOrDeny(id, "agent.wake"))) return null;
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
       securityLog("info", "agent.wake", {
@@ -1203,18 +1247,7 @@ export function createAgentsService(deps: {
     },
 
     async retryWorkspace(id, kind) {
-      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId: id,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "agent.retryWorkspace" },
-        });
-        return null;
-      }
+      if (!(await ownsOrDeny(id, "agent.retryWorkspace"))) return null;
       const infra = await deps.repo.get(id);
       if (!infra) return null;
       if (!(await deps.contributionsProgress.retryWorkspaceMutation(id, kind)))
@@ -1232,18 +1265,7 @@ export function createAgentsService(deps: {
     },
 
     async stop(id) {
-      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId: id,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "agent.stop" },
-        });
-        return null;
-      }
+      if (!(await ownsOrDeny(id, "agent.stop"))) return null;
       const infra = await deps.repo.requestStop(id);
       if (!infra) return null;
       securityLog("info", "agent.stop", {
@@ -1257,18 +1279,7 @@ export function createAgentsService(deps: {
     },
 
     async pause(id) {
-      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId: id,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "agent.pause" },
-        });
-        return null;
-      }
+      if (!(await ownsOrDeny(id, "agent.pause"))) return null;
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
@@ -1298,6 +1309,23 @@ export function createAgentsService(deps: {
         patchImage: (agentId, image) =>
           deps.repo.updateSpec(agentId, deps.owner, { image }),
       })(id, expectedToImage);
+      if (!result.ok) return result;
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
+      return ok(await project(result.value));
+    },
+
+    async migrateRuntime(id) {
+      const result = await executeRuntimeMigration({
+        owner: deps.owner,
+        virtualizationEnabled: deps.virtualizationEnabled === true,
+        getAgent: (agentId) => deps.repo.getLive(agentId, deps.owner),
+        writeMigration: (agentId, patch) =>
+          deps.repo.migrateBackend(agentId, deps.owner, patch),
+      })(id);
       if (!result.ok) return result;
       emit({
         type: EventType.AgentUpdated,
@@ -1355,10 +1383,7 @@ export function createAgentsService(deps: {
       if (!binding) return err({ type: "ChatNotFound" as const });
       return executeTelegramUnbind({
         owner: deps.owner,
-        getAgent: async (id) => {
-          const infra = await deps.repo.get(id, deps.owner);
-          return infra ? { id: infra.id, name: infra.name } : null;
-        },
+        getAgent: namedAgent,
         binding,
       })(agentId, conversationId);
     },
@@ -1368,10 +1393,7 @@ export function createAgentsService(deps: {
       if (!binding) return err({ type: "FlowInvalid" as const });
       return executeTelegramBind({
         owner: deps.owner,
-        getAgent: async (id) => {
-          const infra = await deps.repo.get(id, deps.owner);
-          return infra ? { id: infra.id, name: infra.name } : null;
-        },
+        getAgent: namedAgent,
         binding,
       })(agentId, flowId);
     },
@@ -1420,10 +1442,7 @@ export function createAgentsService(deps: {
       if (!binding) return err({ type: "FlowInvalid" as const });
       return executeSlackBind({
         owner: deps.owner,
-        getAgent: async (id) => {
-          const infra = await deps.repo.get(id, deps.owner);
-          return infra ? { id: infra.id, name: infra.name } : null;
-        },
+        getAgent: namedAgent,
         findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId, teamId) =>
           connectSlackImpl(id, slackChannelId, undefined, teamId),

@@ -28,6 +28,14 @@ describe("file-codec", () => {
     expect(parseFile("yaml", "")).toEqual({});
   });
 
+  it("parses a comment-only yaml file as an empty object", () => {
+    expect(parseFile("yaml", "# nothing set yet\n")).toEqual({});
+  });
+
+  it("throws on a yaml file with more than one document", () => {
+    expect(() => parseFile("yaml", "a: 1\n---\nb: 2\n")).toThrow();
+  });
+
   it("treats text/ini as opaque strings on parse", () => {
     expect(parseFile("text", "hello")).toBe("hello");
     expect(parseFile("ini", "a=b")).toBe("a=b");

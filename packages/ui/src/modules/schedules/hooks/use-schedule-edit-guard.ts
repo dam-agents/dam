@@ -3,7 +3,7 @@ import type { Schedule } from "../../../types.js";
 import { scheduleLockNotice } from "../components/schedule-lock-notice.js";
 import { scheduleLock } from "../lib/schedule-lock.js";
 
-export type ScheduleEditGuard = (
+type ScheduleEditGuard = (
   schedule: Schedule,
   agentName: string,
   onEdit: () => void,

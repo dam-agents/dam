@@ -40,14 +40,6 @@ export const e2eRouter = t.router({
       return ctx.e2e.getReceivedPrompts(input.agentId);
     }),
 
-  reset: t.procedure
-    .input(e2eAgentIdInputSchema)
-    .output(resetResultSchema)
-    .mutation(({ ctx, input }) => {
-      gate(ctx);
-      return ctx.e2e.reset(input.agentId);
-    }),
-
   getEnv: t.procedure
     .input(e2eGetEnvInputSchema)
     .output(getEnvResultSchema)

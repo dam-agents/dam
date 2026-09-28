@@ -1,0 +1,23 @@
+# The tasks every TypeScript package has, which its .mise/config.toml takes
+# with `[task_config] includes`. A task the package defines itself replaces
+# the one here.
+[check]
+depends = [":check:*"]
+
+[fix]
+depends = [":fix:*"]
+
+["check:tsc"]
+extends = "ts:check:tsc"
+
+["check:lint"]
+extends = "ts:check:lint"
+
+["check:format"]
+extends = "ts:check:format"
+
+["fix:lint"]
+extends = "ts:fix:lint"
+
+["fix:format"]
+extends = "ts:fix:format"

@@ -1633,6 +1633,7 @@ version = "0.0.0"
 dependencies = [
  "libc",
  "serde_json",
+ "tar",
 ]
 
 [[package]]
@@ -2303,7 +2304,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "smolfile"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "serde",
  "smolvm-protocol",
@@ -2328,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "async-stream",
  "axum",
@@ -2351,6 +2352,7 @@ dependencies = [
  "parking_lot",
  "pkg-config",
  "reqwest",
+ "ring",
  "rusqlite",
  "rustls",
  "rustls-pemfile",
@@ -2388,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-cuda"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "getrandom 0.3.4",
  "libc",
@@ -2397,9 +2399,10 @@ dependencies = [
 
 [[package]]
 name = "smolvm-network"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "crossbeam-queue",
+ "getrandom 0.3.4",
  "humantime",
  "libc",
  "polling",
@@ -2410,11 +2413,12 @@ dependencies = [
 
 [[package]]
 name = "smolvm-pack"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "crc32fast",
  "dirs",
  "libc",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2429,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-protocol"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "base64",
  "serde",
@@ -2439,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-registry"
-version = "1.16.0"
+version = "1.16.2"
 dependencies = [
  "bytes",
  "dirs",
@@ -3051,9 +3055,11 @@ dependencies = [
  "axum-server",
  "clap",
  "filetime",
+ "futures-util",
  "http-body-util",
  "libc",
  "platform-init",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",

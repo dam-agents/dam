@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-#MISE description="Delete the entire k3s cluster (destroys all data). Options: --vm-name=NAME --force"
+#MISE description="Delete the entire k3s cluster (destroys all data). Honors LIMA_INSTANCE."
 #MISE raw=true
+#USAGE flag "--force" help="Skip the confirmation prompt"
 set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-LIMA_INSTANCE="platform-k3s"
-FORCE=false
-for arg in "$@"; do
-  case "$arg" in
-    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
-    --force) FORCE=true ;;
-  esac
-done
-
-if [ "$FORCE" != "true" ]; then
+if [ "${usage_force:-}" != true ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then
     echo "This will stop k3s and delete all cluster data."
   else

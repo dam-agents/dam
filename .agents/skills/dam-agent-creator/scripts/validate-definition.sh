@@ -7,7 +7,7 @@
 #                is flagged. Generation-time only: the skill names its references,
 #                and a generated repo's own CI passes none.
 # Prints PASS/WARN/FAIL lines; exit 0 = no FAILs, exit 1 = at least one FAIL.
-# Deliberately awk-free and BSD/GNU-portable (runs on dev macOS and the Linux pod).
+# BSD/GNU-portable (runs on dev macOS and the Linux pod).
 
 set -u
 export LC_ALL=C
@@ -195,17 +195,6 @@ if [ -d scripts ]; then
   for s in scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
     [ -e "$s" ] || continue
     if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
-    # this validator carries the literal 'awk' in its own detection pattern and message —
-    # skip the awk check on a copy of itself so it never self-flags
-    case "$(basename "$s")" in
-      validate-definition.sh) pass "$s awk check skipped (validator itself)"; continue ;;
-    esac
-    # comment-only lines don't count ("deliberately awk-free" headers), and an
-    # invocation always has whitespace/EOL after the word — "awk/diff" in a
-    # message string is not a call
-    grep -vE '^[[:space:]]*#' "$s" | grep -qE '(^|[^a-zA-Z0-9_])awk([[:space:]]|$)' \
-      && fail "$s uses awk — not available on the pod" \
-      || pass "$s is awk-free"
   done
 fi
 

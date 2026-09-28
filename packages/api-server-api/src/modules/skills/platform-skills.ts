@@ -2,10 +2,7 @@ import { EXPERIMENT_SKILL_NAME } from "../experiments/schemas.js";
 import type { LocalSkill } from "./types.js";
 
 export type PlatformFeatureId =
-  | "schedules"
-  | "invocations"
-  | "experiments"
-  | "connections";
+  "schedules" | "invocations" | "experiments" | "connections";
 
 export interface PlatformSkillFeature {
   id: PlatformFeatureId;

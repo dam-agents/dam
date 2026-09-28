@@ -1,9 +1,10 @@
 import { Close } from "@carbon/icons-react";
 import type { FormEventHandler, ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import type { ProviderPresetType } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
-import { IconButton } from "./icon-button.js";
 
 export function ProviderFormShell({
   provider,
@@ -31,17 +32,23 @@ export function ProviderFormShell({
           </div>
         </div>
         {onCancel && (
-          <IconButton
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
             onClick={onCancel}
-            label="Cancel"
-            hoverTone="neutral"
-            className="-mt-2 -mr-2 shrink-0"
+            aria-label="Cancel"
+            className="-mt-2 -mr-2 h-7 w-7 shrink-0"
           >
             <Close size={16} />
-          </IconButton>
+          </Button>
         )}
       </div>
       {children}
     </form>
   );
+}
+
+export function stripWhitespace(value: string): string {
+  return value.replace(/\s+/g, "");
 }

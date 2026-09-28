@@ -1,7 +1,7 @@
 import type { Event } from "agent-runtime-api";
 import { isWorkspaceMutationEventKind } from "agent-runtime-api";
 
-import type { EventDispatcher } from "./event-dispatcher.js";
+import type { EventDispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 
 export type WorkspaceFailureReport = (

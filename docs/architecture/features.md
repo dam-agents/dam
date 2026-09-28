@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-23
+Last verified: 2026-09-27
 
 ## Overview
 
@@ -24,7 +24,7 @@ simply never read again (Experiments, Knowledge Bases and the
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —
 whether this deployment supports microVMs — read from the chart's own value
-rather than from any stored row. A surface that needs both, like either form that
+rather than from any stored row. The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there. A surface that needs both, like either form that
 creates an agent, asks both and acts only once each has answered: an unanswered
 question reads like a no, and an agent would otherwise be created as
 something its author did not choose. **A kit that declares `backend: vm` is the exception, and reads neither answer**

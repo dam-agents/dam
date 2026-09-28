@@ -4,9 +4,7 @@ export {
   createExperimentsCleanupHook,
   listOpenExperimentDriverIds,
   reconcileExperimentPins,
-  type ExperimentPinPort,
 } from "./compose.js";
-export type { ExperimentInactivitySweep } from "./services/experiment-inactivity-sweep.js";
 export {
   CustomDataTooLargeError,
   ExperimentClosedError,
@@ -14,3 +12,4 @@ export {
   UnknownExperimentError,
 } from "./services/experiments-service.js";
 export type { ExperimentsRepository } from "./infrastructure/experiments-repository.js";
+export type { ExperimentPinPort } from "./services/reap-follow-up.js";

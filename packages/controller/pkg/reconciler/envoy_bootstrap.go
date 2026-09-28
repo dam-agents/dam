@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,10 +43,6 @@ type bootstrapParams struct {
 	AttributionID          string
 	AnyUpgrades            bool
 	OTel                   envoyOTelView
-}
-
-func (p bootstrapParams) attributionOverridden() bool {
-	return p.AttributionID != "" && p.AttributionID != p.InstanceID
 }
 
 func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
@@ -314,7 +311,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 	if c.Upgrades {
 		hcm["upgrade_configs"] = []any{ev{"upgrade_type": "websocket"}, ev{"upgrade_type": "spdy/3.1"}}
 	}
-	if p.OTel.Traces && !c.HasQueryParamCredential() {
+	if p.OTel.Traces && !slices.ContainsFunc(c.Credentials, func(cred envoyCredential) bool { return cred.QueryParamName != "" }) {
 		hcm["tracing"] = otelTracing(p, 1)
 	}
 	if p.OTel.AccessLogs {
@@ -383,10 +380,6 @@ func buildChainForwardRoutes(c envoyHostChain) []any {
 	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
-func connectionPathPrefix(connectionID string) string {
-	return "/" + connectionEgressPathSegment + "/" + connectionID + "/"
-}
-
 func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
 	route := buildChainRouteAction(c)
 	if rewrite != "" {
@@ -400,7 +393,7 @@ func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) e
 }
 
 func buildConnectionRoutes(c envoyHostChain, connectionID string) []any {
-	prefix := connectionPathPrefix(connectionID)
+	prefix := "/" + connectionEgressPathSegment + "/" + connectionID + "/"
 	emitted := map[string]bool{}
 	var routes []any
 	add := func(scope, match, rewrite string) {
@@ -519,7 +512,7 @@ func attributionHeaderMutations(p bootstrapParams) (add []any, remove []any) {
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}
-	if !p.attributionOverridden() {
+	if p.AttributionID == "" || p.AttributionID == p.InstanceID {
 		return add, []any{attributionInvocationHeader}
 	}
 	return append(add, ev{

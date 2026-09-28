@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { parseKbShareString } from "api-server-api";
 
 import { legacyShareRoots } from "../domain/legacy-roots.js";
 import type {
@@ -22,7 +23,6 @@ import {
   kbShareRowId,
   mintShareId,
   mintShareSecret,
-  parseShareString,
   secretsEqual,
   shareIdFromRowId,
 } from "../domain/share-string.js";
@@ -84,6 +84,14 @@ export function createKbSharesService(
       ...(asAgent ? { surface: "mcp" as const } : {}),
       agentId,
       result: "success",
+    });
+  }
+
+  function nudgePublish(agentId: string): void {
+    void deps.requestFlush(agentId).catch((err: unknown) => {
+      process.stderr.write(
+        `[kb-shares] publish nudge failed for ${agentId}: ${err}\n`,
+      );
     });
   }
 
@@ -176,11 +184,7 @@ export function createKbSharesService(
         throw err;
       }
       logShareAction("kb_share.created", input.agentId);
-      void deps.requestFlush(input.agentId).catch((err: unknown) => {
-        process.stderr.write(
-          `[kb-shares] publish nudge failed for ${input.agentId}: ${err}\n`,
-        );
-      });
+      nudgePublish(input.agentId);
       return rowToView(row);
     },
 
@@ -220,11 +224,7 @@ export function createKbSharesService(
       if (input.roots) {
         await deps.updateRoots(input.agentId, input.roots);
       }
-      void deps.requestFlush(input.agentId).catch((err: unknown) => {
-        process.stderr.write(
-          `[kb-shares] publish nudge failed for ${input.agentId}: ${err}\n`,
-        );
-      });
+      nudgePublish(input.agentId);
       const row = await requireActiveShare(input.agentId);
       return rowToView(row);
     },
@@ -240,7 +240,7 @@ export function createKbSharesService(
     async resolveLink(
       input: KbShareResolveInput,
     ): Promise<KbShareResolveResult> {
-      const parsed = parseShareString(input.shareString);
+      const parsed = parseKbShareString(input.shareString);
       if (!parsed) return { valid: false, name: null };
       const row = await deps.findActiveById(kbShareRowId(parsed.shareId));
       if (!row || !secretsEqual(row.secret, parsed.secret)) {

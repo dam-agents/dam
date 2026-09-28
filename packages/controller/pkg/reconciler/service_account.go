@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -28,8 +29,9 @@ func BuildServiceAccount(agentName string, cfg *config.Config, ownerRef metav1.O
 	}
 }
 
-func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *corev1.ServiceAccount) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
+	desired := BuildServiceAccount(agentName, r.config, ownerRef)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.CoreV1().ServiceAccounts(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
 			_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
@@ -48,7 +50,7 @@ func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *core
 				changed = true
 			}
 		}
-		if !hasOwnerRef(existing.OwnerReferences, desired.OwnerReferences[0]) {
+		if !slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
 			existing.OwnerReferences = append(existing.OwnerReferences, desired.OwnerReferences[0])
 			changed = true
 		}
@@ -63,20 +65,7 @@ func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *core
 		_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
-}
-
-func hasOwnerRef(existing []metav1.OwnerReference, want metav1.OwnerReference) bool {
-	for _, r := range existing {
-		if r.UID == want.UID {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
-	sa := BuildServiceAccount(agentName, r.config, ownerRef)
-	if err := r.applyServiceAccount(ctx, sa); err != nil {
+	if err != nil {
 		return fmt.Errorf("applying serviceaccount: %w", err)
 	}
 	return nil

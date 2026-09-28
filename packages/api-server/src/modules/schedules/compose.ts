@@ -42,13 +42,12 @@ export interface ComposeSchedulesAtBootOpts {
   ) => Promise<void>;
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
-  log?: (msg: string) => void;
 }
 
 export function composeSchedulesAtBoot(
   opts: ComposeSchedulesAtBootOpts,
 ): SchedulesBoot {
-  const log = opts.log ?? ((m) => process.stderr.write(`[schedules] ${m}\n`));
+  const log = (m: string) => process.stderr.write(`[schedules] ${m}\n`);
   const repo = createSchedulesRepository(opts.db);
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({

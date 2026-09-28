@@ -1,21 +1,21 @@
 import { WebSocket } from "ws";
 import type { WrapperFrameSender } from "../services/approvals-service.js";
 
+const CONNECT_TIMEOUT_MS = 5000;
+
 export interface CreateWrapperFrameSenderDeps {
   resolveWrapperUrl(agentId: string): string;
-  connectTimeoutMs?: number;
 }
 
 export function createWrapperFrameSender(
   deps: CreateWrapperFrameSenderDeps,
 ): WrapperFrameSender {
-  const connectTimeoutMs = deps.connectTimeoutMs ?? 5000;
   return {
     async send(agentId, frame) {
       const url = deps.resolveWrapperUrl(agentId);
       const ws = new WebSocket(url);
       try {
-        await waitForOpen(ws, connectTimeoutMs);
+        await waitForOpen(ws, CONNECT_TIMEOUT_MS);
         await sendAndDrain(ws, frame);
       } finally {
         if (

@@ -191,6 +191,16 @@ export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   });
 }
 
+export function useMigrateRuntimeMutation() {
+  return useMutation({
+    ...trpc.agents.migrateRuntime.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to move the agent to the new runtime",
+    },
+  });
+}
+
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),

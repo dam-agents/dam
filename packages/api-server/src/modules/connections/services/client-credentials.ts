@@ -4,7 +4,7 @@ import type {
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 
-export const CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS = 3600;
+const CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS = 3600;
 
 export type ClientCredentialsAuth = Extract<
   ConnectionAuthConfig,
@@ -17,10 +17,8 @@ export async function mintClientCredentialsToken(
     connectionRef: string;
     auth: ClientCredentialsAuth;
     clientSecret: string;
-    now?: () => number;
   },
 ): Promise<{ accessToken: string; expiresAt: number }> {
-  const now = opts.now ?? (() => Date.now());
   const provider: OAuthProvider = {
     id: opts.connectionRef,
     tokenEndpoint: opts.auth.tokenUrl,
@@ -39,6 +37,6 @@ export async function mintClientCredentialsToken(
     accessToken: tokens.accessToken,
     expiresAt:
       tokens.expiresAt ??
-      Math.floor(now() / 1000) + CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS,
+      Math.floor(Date.now() / 1000) + CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS,
   };
 }

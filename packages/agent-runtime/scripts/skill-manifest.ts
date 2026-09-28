@@ -13,7 +13,8 @@ const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
-const MANIFEST_REL = "packages/platform-base/skills-manifest.json";
+const MANIFEST_REL =
+  "packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json";
 const manifestFile = path.join(repoRoot, MANIFEST_REL);
 
 function git(args: string[]): string {
@@ -61,19 +62,17 @@ function gitBuffer(args: string[]): Buffer {
 }
 
 function skillSourceParents(): string[] {
-  const parents = [
-    "packages/platform-base/skills",
-    "packages/platform-base/dam-skills",
-  ];
   const agentsDir = path.join(repoRoot, "packages/agents");
-  for (const ent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-    if (!ent.isDirectory()) continue;
-    parents.push(
-      path.posix.join("packages/agents", ent.name, "workspace/.agents/skills"),
-      path.posix.join("packages/agents", ent.name, "dam-skills"),
+  return fs
+    .readdirSync(agentsDir, { withFileTypes: true })
+    .filter((ent) => ent.isDirectory())
+    .flatMap((ent) =>
+      [
+        "workspace/.agents/skills",
+        "rootfs/app/working-dir/.agents/skills",
+        "rootfs/usr/local/share/dam-skills",
+      ].map((sub) => path.posix.join("packages/agents", ent.name, sub)),
     );
-  }
-  return parents;
 }
 
 function currentSkillDirs(): { name: string; absDir: string }[] {

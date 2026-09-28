@@ -1,11 +1,8 @@
 import type { TokenSpendByModel } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
-import {
-  formatDurationMs,
-  formatTokens,
-  formatUsd,
-} from "../../modules/metrics/lib/format.js";
+import { formatDurationMs } from "../../lib/format-time.js";
+import { formatTokens, formatUsd } from "../../modules/metrics/lib/format.js";
 import { totalCostUsd } from "../../modules/metrics/lib/totals.js";
 
 describe("formatTokens", () => {

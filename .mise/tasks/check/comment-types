@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
-# The checker lives in the strip-comments task (same parser, same registry).
-# Not cached: it walks every tracked TS/JS/Go/Rust file, and a sources glob wide
-# enough to match that has to traverse node_modules.
-exec mise run strip-comments -- --check "$@"

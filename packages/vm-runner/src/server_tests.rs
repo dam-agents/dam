@@ -24,17 +24,19 @@ struct Updated {
     storage_gib: i32,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.
+// UNIT_BOUNDARY_DESCRIPTION: a runtime with no hypervisor behind it. It records each call in order, keeps each machine's state and the image its record names in memory, and can be told to boot slowly or fail once — which is everything the server's decisions depend on.
 #[derive(Default)]
 struct Fake {
     states: Mutex<HashMap<String, State>>,
     calls: Mutex<Vec<String>>,
-    created: Mutex<HashMap<String, (String, Option<ImageLaunch>)>>,
+    created: Mutex<HashMap<String, (String, ImageLaunch)>>,
+    images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
     console: Mutex<String>,
+    panic_on_state: AtomicBool,
 }
 
 impl Fake {
@@ -53,6 +55,10 @@ impl Fake {
 
 impl Runtime for Fake {
     fn state(&self, id: &str) -> anyhow::Result<State> {
+        assert!(
+            !self.panic_on_state.load(Ordering::SeqCst),
+            "the fake was told to panic"
+        );
         Ok(locked(&self.states)
             .get(id)
             .copied()
@@ -63,14 +69,18 @@ impl Runtime for Fake {
         self.record(format!("create {id}"));
         locked(&self.created).insert(
             id.to_string(),
-            (machine.image.to_string(), machine.launch.cloned()),
+            (machine.image.to_string(), machine.launch.clone()),
         );
+        locked(&self.images).insert(id.to_string(), machine.image.to_string());
         locked(&self.states).insert(id.to_string(), State::Stopped);
         Ok(())
     }
 
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
         self.record(format!("update {id}"));
+        if let Some((image, _)) = update.image {
+            locked(&self.images).insert(id.to_string(), image.to_string());
+        }
         locked(&self.updated).push(Updated {
             image: update.image.map(|(image, _)| image.to_string()),
             allow_cidrs: update.desired.allow_cidrs.clone(),
@@ -100,6 +110,13 @@ impl Runtime for Fake {
         self.record(format!("delete {id}"));
         locked(&self.states).remove(id);
         Ok(())
+    }
+
+    fn image_present(&self, id: &str) -> anyhow::Result<bool> {
+        Ok(locked(&self.images)
+            .get(id)
+            .map(Path::new)
+            .is_none_or(|image| !image.is_absolute() || image.exists()))
     }
 
     fn console_tail(&self, _id: &str) -> String {
@@ -355,7 +372,6 @@ async fn an_absent_machine_is_created_and_started() {
 
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
-    let launch = launch.unwrap();
     assert_eq!(launch.entrypoint, vec!["/entry"]);
     assert_eq!(launch.working_dir, "/app");
 
@@ -391,6 +407,118 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     assert_eq!(
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
+}
+
+// TEST_SCENARIO: an agent moving to this backend brings its home as a seed, which platform-init reads only on the first boot. So the controller creates its machine stopped: a stopped spec with a whole shape creates the machine, its share, spec and port, and never starts it. Only the ensure that asks for it running boots it, onto the same machine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_can_be_created_without_being_booted() {
+    let h = Harness::new("create-stopped");
+    h.server.put("m1", spec(false)).unwrap();
+    let parked = h.settle("m1").await;
+    assert_eq!(parked.state, STATE_STOPPED, "{parked:?}");
+    assert_eq!(h.fake.calls(), vec!["create m1"]);
+    assert!(read_spec(&h.dir.join("machines"), "m1").is_some());
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(h.fake.calls(), vec!["create m1", "update m1", "start m1"]);
+}
+
+// TEST_SCENARIO: the migration's whole sequence on the runner: a machine created stopped takes a seed into its share, and the ensure that then boots it rewrites the share without removing the seed, because that boot is the one that reads it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_uploaded_to_a_stopped_machine_is_still_there_when_it_boots() {
+    let h = Harness::new("seed-boot");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    let mut seeding = h.server.claim_seed("m1").unwrap();
+    seeding.write(b"a home").unwrap();
+    let result = seeding.commit().unwrap();
+    assert_eq!(result.bytes, 6);
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let seed = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::SEED_FILE);
+    assert_eq!(fs::read(seed).unwrap(), b"a home");
+}
+
+// TEST_SCENARIO: a machine with an action in flight may be about to boot, so a seed claimed then could be read half-written; it is refused, as is a second upload to a machine that already has one running. And while a seed is being uploaded, an ensure that asks for the machine running is stored but boots nothing until the upload is done; the next ensure boots it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_and_a_boot_never_overlap() {
+    let h = Harness::new("seed-overlap");
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(
+        h.server.claim_seed("m1").err().map(|e| e.status),
+        Some(409),
+        "a seed was claimed while the machine was starting"
+    );
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+
+    let seeding = h.server.claim_seed("m1").unwrap();
+    assert_eq!(h.server.claim_seed("m1").err().map(|e| e.status), Some(409));
+    let calls = h.fake.calls().len();
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(!h.server.converging("m1"), "a boot started mid-upload");
+    assert_eq!(h.fake.calls().len(), calls);
+    drop(seeding);
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_for_a_machine_deleted_mid_upload_is_not_committed() {
+    let h = Harness::new("seed-deleted");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let mut seeding = h.server.claim_seed("m1").unwrap();
+    seeding.write(b"half").unwrap();
+    h.server.delete("m1").unwrap();
+
+    assert_eq!(seeding.commit().err().map(|e| e.status), Some(409));
+    assert!(!h.dir.join("machines/m1").exists());
+}
+
+// TEST_SCENARIO: a machine's record names the cache tree it boots by path, read at every start. A tree gone from under a stopped machine — the image directory moved or relaid between runner releases — is resolved again when the machine next starts, its record moved to the new tree and its digest recorded again; without that the machine fails every start until its image changes, which for a hibernated agent is never. The stored spec has not changed, so nothing else may trigger it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_whose_tree_is_gone_resolves_its_image_again() {
+    let h = Harness::new("stale-tree");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    let tree = h.entry("m1");
+    let fetches = h.crane_calls();
+    fs::remove_dir_all(&tree).unwrap();
+    fs::remove_file(h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE)).unwrap();
+
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        ["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
+    assert!(h.crane_calls() > fetches, "the image was not fetched again");
+    assert!(
+        tree.join(ROOTFS_DIR).is_dir(),
+        "the tree was not unpacked again"
+    );
+    assert_eq!(
+        h.fake.last_update().image.map(PathBuf::from),
+        Some(h.entry("m1").join(ROOTFS_DIR)),
+        "the record was not moved to the new tree"
     );
 }
 
@@ -435,6 +563,26 @@ async fn a_guest_that_answers_is_ready_before_its_start_returns() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+// TEST_SCENARIO: a guest answers only after platform-init has put the agent's home on the disk, so its first answer is when the runner records in the share that this disk holds a home. platform-init reads that record to refuse a later boot that finds the home gone, which is what a disk smolvm reformatted looks like; a machine that has never answered has no record, so its first boot still seeds.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_answer_records_that_the_disk_holds_a_home() {
+    let h = Harness::new("seeded");
+    let share = h.dir.join("machines").join("m1").join(SHARE_DIR);
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(
+        !share::seeded(&share),
+        "a machine that has not answered was recorded as seeded"
+    );
+    let _guest = guest(h.base);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.server.status("m1").ready {
+        assert!(Instant::now() < deadline, "the guest was never ready");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(share::seeded(&share));
 }
 
 // TEST_SCENARIO: a machine being stopped keeps answering until it dies, and that answer says nothing about a machine that is going away — it is never reported ready.
@@ -812,8 +960,8 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     h.settle("m1").await;
     let after_first = h.crane_calls();
     assert_eq!(
-        after_first, 3,
-        "one resolution, one config read and one export"
+        after_first, 4,
+        "one resolution, one config read, one manifest read and one export"
     );
     h.server.put("m2", spec(true)).unwrap();
     h.settle("m2").await;
@@ -850,7 +998,7 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.unwrap().entrypoint, vec!["/from-archive"]);
+    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
     assert_eq!(h.crane_calls(), 0);
     assert!(
         !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
@@ -883,7 +1031,7 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), tree.join(ROOTFS_DIR));
-    assert_eq!(launch.unwrap().entrypoint, vec!["/from-tree"]);
+    assert_eq!(launch.entrypoint, vec!["/from-tree"]);
     assert_eq!(h.crane_calls(), 0);
 }
 
@@ -929,12 +1077,16 @@ async fn closing_the_runner_cancels_a_fetch_instead_of_abandoning_it() {
     );
 }
 
-// TEST_SCENARIO: a spec sent after close starts no worker and holds no memory, so nothing counts a machine that never started.
+// TEST_SCENARIO: a spec sent after close starts no worker and holds no memory, so nothing counts a machine that never started. It is answered 503, not 200: it was not stored, and the controller must not read it as taken.
 #[tokio::test(flavor = "multi_thread")]
 async fn no_action_starts_after_close() {
     let h = Harness::new("after-close");
     h.server.close().await;
-    h.server.put("m1", spec(true)).unwrap();
+    let refused = h.server.put("m1", spec(true)).unwrap_err();
+    assert_eq!(
+        refused.status, 503,
+        "a spec that was not stored was answered as taken"
+    );
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(h.fake.calls().is_empty());
     assert!(h.server.committing().is_empty());
@@ -1012,7 +1164,7 @@ async fn a_pinned_reference_is_never_resolved() {
     assert!(
         fetched
             .lines()
-            .any(|l| l == format!("export quay.io/x/vm@{digest} -")),
+            .any(|l| l.starts_with(&format!("export quay.io/x/vm@{digest} - "))),
         "{fetched}"
     );
     assert_eq!(h.entry("m1"), digest_path(&h.dir.join("images"), &digest));
@@ -1225,7 +1377,7 @@ async fn a_stop_ends_the_boot_wait() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_on_an_old_version_answers_at_once() {
     let h = Harness::new("wait-stale");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let current = h.settle("m1").await;
     assert_ne!(current.version, 0, "a known machine has a version");
     let started = Instant::now();
@@ -1243,7 +1395,7 @@ async fn a_wait_on_an_old_version_answers_at_once() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_on_the_current_version_answers_on_the_next_change() {
     let h = Harness::new("wait-change");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let server = h.server.clone();
     let waiting = tokio::task::spawn_blocking(move || {
@@ -1264,7 +1416,7 @@ async fn a_wait_on_the_current_version_answers_on_the_next_change() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wait_with_no_change_answers_when_it_ends() {
     let h = Harness::new("wait-timeout");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let started = Instant::now();
     let answer = h
@@ -1279,7 +1431,7 @@ async fn a_wait_with_no_change_answers_when_it_ends() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_the_runner_answers_a_waiting_read_at_once() {
     let h = Harness::new("wait-close");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     let before = h.settle("m1").await;
     let started = Instant::now();
     let waiting = h.wait("m1", before.version, Duration::from_secs(20));
@@ -1350,7 +1502,7 @@ async fn a_probe_answering_after_a_delete_leaves_nothing_behind() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ended_worker_does_not_end_the_next_one() {
     let h = Harness::new("settle");
-    h.server.put("m1", spec(false)).unwrap();
+    h.server.put("m1", MachineSpec::default()).unwrap();
     h.machine("m1", |m| {
         m.converging = true;
         m.asked = 1;
@@ -1435,7 +1587,7 @@ async fn a_machine_on_a_node_cache_boots_the_tree_the_service_unpacked() {
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
     assert_eq!(PathBuf::from(image), h.entry("m1").join(ROOTFS_DIR));
     assert!(h.entry("m1").join(ROOTFS_DIR).join("hello").exists());
-    assert_eq!(launch.unwrap().entrypoint, vec!["/entry"]);
+    assert_eq!(launch.entrypoint, vec!["/entry"]);
     assert_eq!(h.crane_log("export"), 1, "the service fetched it once");
 
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -1477,4 +1629,171 @@ async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() 
     assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
     assert!(refused.message.contains("cannot be reached"), "{refused:?}");
     assert!(!locked(&h.fake.created).contains_key("m3"));
+}
+
+// TEST_SCENARIO: a machine still booting holds its memory even when the spec stored behind the boot is a stop: the VMM is up until the stop that follows it runs. Admission counts it by the action in flight, so another machine that would only fit without it is refused until it is really down, and admitted after.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_with_a_stop_behind_it_still_counts_against_the_runners_memory() {
+    let h = Harness::with("capacity-stop-behind", |c| c.memory_mib = 3000);
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+
+    let refused = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    *locked(&h.fake.start_delay) = Duration::ZERO;
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_CREATING
+    );
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a failure recorded against a spec the controller then replaced says nothing about the new one. A spec that needs no action at all — here a stop without a shape, for a machine that was refused and so never made — clears it, with a new status version so a waiting read hears of it, rather than carrying the old refusal until some later action succeeds.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spec_that_needs_nothing_clears_the_failure_before_it() {
+    let h = Harness::with("stale-failure", |c| c.memory_mib = 1000);
+    let refused = h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    let stopped = h.server.put("m1", MachineSpec::default()).unwrap();
+    assert!(
+        stopped.reason.is_empty() && stopped.message.is_empty(),
+        "{stopped:?}"
+    );
+    assert_ne!(stopped.version, refused.version);
+    assert!(h.server.status("m1").reason.is_empty());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a crane whose layer fetch never ends, as a pull of a huge image over a slow registry does.
+fn stall_fetches(h: &Harness) {
+    fs::write(
+        h.dir.join("crane"),
+        "#!/bin/sh\nif [ \"$1\" = config ]; then printf '{\"config\":{\"Cmd\":[\"x\"]}}'; exit 0; fi\nsleep 60\n",
+    )
+    .unwrap();
+}
+
+// TEST_SCENARIO: a delete of a machine whose create is waiting on a fetch must not wait out the fetch's twenty minutes. The delete cancels the machine's own token, the create stops waiting at once, and the machine is gone well inside the controller's request timeout.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_does_not_wait_out_the_fetch_its_machine_is_waiting_on() {
+    let h = Harness::new("delete-fetch");
+    stall_fetches(&h);
+    h.server.put("m1", spec(true)).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(h.server.status("m1").state, STATE_CREATING);
+
+    let asked = Instant::now();
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.delete("m1"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        asked.elapsed() < Duration::from_secs(5),
+        "the delete waited out the fetch"
+    );
+    assert_eq!(h.server.status("m1").state, STATE_ABSENT);
+    assert!(!h.dir.join("machines/m1").exists());
+    assert!(!h.fake.calls().iter().any(|c| c.ends_with("m1")));
+    h.server.close().await;
+}
+
+// TEST_SCENARIO: an action that cannot be cancelled — a VMM call — may outlast what the controller waits for an answer. The delete then answers 503 rather than hang, nothing is removed under the call, the spec stored behind it is never acted on, and the delete the controller sends again once the call has returned removes the machine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_that_cannot_wait_for_the_action_answers_503_and_the_next_one_deletes() {
+    let h = Harness::new("delete-busy");
+    *locked(&h.fake.start_delay) = Duration::from_millis(800);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    let mut next = spec(true);
+    next.revision = "r2".into();
+    h.server.put("m1", next).unwrap();
+
+    let server = h.server.clone();
+    let busy =
+        tokio::task::spawn_blocking(move || server.delete_within("m1", Duration::from_millis(100)))
+            .await
+            .unwrap()
+            .unwrap_err();
+    assert_eq!(busy.status, 503, "{busy:?}");
+    assert!(h.dir.join("machines/m1").exists());
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.server.converging("m1") {
+        assert!(Instant::now() < deadline, "the worker never ended");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.delete("m1").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(h.fake.calls(), ["create m1", "start m1", "delete m1"]);
+    assert!(!h.dir.join("machines/m1").exists());
+}
+
+// TEST_SCENARIO: a probe that panics must not leave its machine marked as being probed. The prober skips a machine with a probe in flight, so a mark left set would stop every later probe of it, and its status would never move again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_that_panics_does_not_end_the_probing_of_its_machine() {
+    let h = Harness::new("probe-panic");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.fake.panic_on_state.store(true, Ordering::SeqCst);
+    h.machine("m1", |m| m.probed = None);
+    tokio::time::sleep(PROBE_TICK * 5).await;
+    h.fake.panic_on_state.store(false, Ordering::SeqCst);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.machine("m1", |m| m.probed.is_none()) {
+        assert!(
+            Instant::now() < deadline,
+            "the machine was never probed again after a probe panicked"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+// TEST_SCENARIO: a runner pod that is stopped takes its VMMs with it. Closing the runner stops each machine still running the way a controller's stop does, so the guest quiesces its disk before it goes, and leaves a stopped machine alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn closing_the_runner_stops_the_machines_it_runs() {
+    let h = Harness::new("close-stops");
+    for id in ["agent-a", "agent-b"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+    }
+    h.server.put("agent-b", spec(false)).unwrap();
+    assert_eq!(h.settle("agent-b").await.state, STATE_STOPPED);
+
+    h.server.close().await;
+
+    let calls = h.fake.calls();
+    let stops = |id: &str| calls.iter().filter(|c| **c == format!("stop {id}")).count();
+    assert_eq!(stops("agent-a"), 1, "{calls:?}");
+    assert_eq!(
+        stops("agent-b"),
+        1,
+        "the stopped machine was stopped again: {calls:?}"
+    );
+    assert_eq!(h.fake.state("agent-a").unwrap(), State::Stopped);
+}
+
+// TEST_SCENARIO: the pod's grace ends in a SIGKILL whatever the runner is doing, so a guest slow to stop must not hold the close past its window: the close returns when the window ends, and the kill of the pod is what ends that guest.
+#[tokio::test(flavor = "multi_thread")]
+async fn closing_the_runner_waits_for_a_slow_stop_only_within_its_window() {
+    let h = Harness::new("close-slow-stop");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.stop_delay) = Duration::from_secs(3);
+
+    let started = Instant::now();
+    h.server
+        .close_within(Duration::from_secs(1), Duration::from_millis(200))
+        .await;
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the close waited out the slow stop"
+    );
 }

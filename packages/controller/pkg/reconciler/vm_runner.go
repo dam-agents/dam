@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -44,8 +43,8 @@ const (
 	vmRunnerPortMin = 31000
 	vmRunnerPortMax = 31099
 
-	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call. The default thirty seconds would kill it at the end of that wait.
-	vmRunnerTerminationGraceSeconds = 45
+	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call, and then up to forty more while it stops every running machine, so each guest quiesces its disk before its VMM goes with the pod. The default thirty seconds would kill it in the middle of that.
+	vmRunnerTerminationGraceSeconds = 90
 )
 
 type runnerConn struct {
@@ -117,7 +116,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerPVC(ctx, owner, demand); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyRunnerService(ctx, owner); err != nil {
+	if err := r.applyService(ctx, r.buildRunnerService(owner, r.runnerOwnerRef(ctx))); err != nil {
 		return nil, false, err
 	}
 	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
@@ -296,22 +295,15 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 	return err
 }
 
-func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.Namespace
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
+func (r *AgentReconciler) buildRunnerService(owner string, ownerRefs []metav1.OwnerReference) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: r.runnerName(owner), Namespace: r.config.Namespace, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: ownerRefs},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  vmRunnerSelector(owner),
 			Ports:     []corev1.ServicePort{{Name: "machine-api", Port: vmRunnerPort, TargetPort: intstr.FromInt(vmRunnerPort)}},
 		},
 	}
-	cli := r.client.CoreV1().Services(ns)
-	if _, err := cli.Get(ctx, name, metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
-		return err
-	}
-	_, err := cli.Create(ctx, svc, metav1.CreateOptions{})
-	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
@@ -349,6 +341,12 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 					{Protocol: &tcp, Port: &api},
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
+			}, {
+				From: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					LabelRole:       RoleRuntimeMigration,
+					envoyOwnerLabel: owner,
+				}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &api}},
 			}, {
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
@@ -462,7 +460,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-			DefaultMode: ptr.To[int32](0o400),
+			DefaultMode: new(int32(0o400)),
 			Sources: []corev1.VolumeProjection{
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: name}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "tls.crt", Path: "tls.crt"}, {Key: "tls.key", Path: "tls.key"}}}},
@@ -497,10 +495,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
-					TerminationGracePeriodSeconds: ptr.To(int64(vmRunnerTerminationGraceSeconds)),
+					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
-					AutomountServiceAccountToken:  ptrBool(false),
-					EnableServiceLinks:            ptrBool(false),
+					AutomountServiceAccountToken:  new(false),
+					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
 					ImagePullSecrets:              spec.ImagePullSecrets,
@@ -540,8 +538,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							{Name: "metrics", ContainerPort: vmRunnerMetricsPort},
 						},
 						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-								Command: []string{"curl", "-skf", "-m", "3", fmt.Sprintf("https://127.0.0.1:%d/healthz", vmRunnerPort)},
+							ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+								Path:   "/healthz",
+								Port:   intstr.FromString("machine-api"),
+								Scheme: corev1.URISchemeHTTPS,
 							}},
 							TimeoutSeconds: 5,
 						},
@@ -612,9 +612,6 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	}
 	for _, del := range []func() error{
 		func() error {
-			if r.dynamic == nil {
-				return nil
-			}
 			return r.dynamic.Resource(certificateGVR).Namespace(ns).Delete(ctx, r.runnerTLSName(owner), opts)
 		},
 		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },

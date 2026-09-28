@@ -5,10 +5,9 @@ import { Button } from "@/components/ui/button";
 import { ownerInitials } from "../lib/owner-initials.js";
 
 export type PublicAgentPageState =
-  | { status: "loading" }
-  | { status: "ready"; agent: PublicAgent | null };
+  { status: "loading" } | { status: "ready"; agent: PublicAgent | null };
 
-export interface PublicAgentViewProps {
+interface PublicAgentViewProps {
   state: PublicAgentPageState;
   brand: Brand;
   openPath: string;

@@ -11,7 +11,7 @@ import { useStore } from "../../store.js";
 
 const IDLE_CLOSE_MS = 30_000;
 
-export type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
+type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
 
 function isAbnormalClose(code: number | undefined): boolean {
   return code !== undefined && code !== 1000 && code !== 1005;

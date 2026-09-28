@@ -9,8 +9,7 @@ import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { IBM_LITELLM_DESCRIPTION } from "../../lib/provider-rows.js";
-import { ProviderFormShell } from "../provider-form-shell.js";
-import { MODES, stripWhitespace } from "./modes.js";
+import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 
 const ibmLitellmCredentialSchema = z
   .object({ value: z.string() })
@@ -87,7 +86,7 @@ export function IbmLitellmForm({
           data-1p-ignore
           data-lpignore="true"
           data-form-type="other"
-          placeholder={MODES["api-key"].placeholder}
+          placeholder="sk-…"
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

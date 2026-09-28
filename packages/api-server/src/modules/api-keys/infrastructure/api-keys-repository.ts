@@ -1,7 +1,7 @@
 import type { Db } from "db";
 import { apiKeys, and, desc, eq, isNull, sql } from "db";
 import type { Scope } from "api-server-api";
-import type { ApiKeyRow } from "../domain/types.js";
+import type { ApiKeyRow, NewApiKey } from "../domain/types.js";
 
 function toRow(r: typeof apiKeys.$inferSelect): ApiKeyRow {
   return {
@@ -30,15 +30,7 @@ export function listApiKeysByOwner(db: Db) {
 }
 
 export function insertApiKey(db: Db) {
-  return async (row: {
-    id: string;
-    ownerSub: string;
-    name: string;
-    hash: string;
-    scopes: readonly Scope[];
-    agentIds: readonly string[] | null;
-    expiresAt: Date | null;
-  }): Promise<ApiKeyRow> => {
+  return async (row: NewApiKey): Promise<ApiKeyRow> => {
     const [inserted] = await db
       .insert(apiKeys)
       .values({

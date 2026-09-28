@@ -11,7 +11,7 @@ export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
 export type ApprovalVerdict = "allow_once" | "allow" | "deny_once" | "deny";
 
-export interface ExtAuthzPayload {
+interface ExtAuthzPayload {
   kind: "ext_authz";
   host: string;
   method: string;
@@ -20,17 +20,14 @@ export interface ExtAuthzPayload {
 }
 
 export type AcpPermissionOptionKind =
-  | "allow_once"
-  | "allow_always"
-  | "reject_once"
-  | "reject_always";
+  "allow_once" | "allow_always" | "reject_once" | "reject_always";
 
 export interface AcpPermissionOption {
   optionId: string;
   kind?: AcpPermissionOptionKind;
 }
 
-export interface AcpNativePayload {
+interface AcpNativePayload {
   kind: "acp_native";
   toolName: string;
   args?: unknown;

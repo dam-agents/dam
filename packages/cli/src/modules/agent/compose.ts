@@ -1,11 +1,7 @@
 import { Command } from "commander";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
@@ -18,10 +14,9 @@ import {
 } from "./services/agent-service.js";
 
 export interface AgentModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
-  serverEnvVar: string;
   templateService: (host: string) => TemplateService;
 }
 
@@ -31,11 +26,8 @@ export interface AgentModule {
 }
 
 export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): AgentService =>
-    createAgentService({ trpc: buildTrpc(host) });
+    createAgentService({ trpc: opts.buildTrpc(host) });
 
   const shared = {
     compatService: opts.compatService,
@@ -48,23 +40,13 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
   parent.addCommand(buildGetCommand(shared));
-  parent.addCommand(
-    buildCreateCommand({
-      ...shared,
-      createTemplateService: opts.templateService,
-      createTrpcClient: buildTrpc,
-    }),
-  );
-  parent.addCommand(
-    buildCreateInteractiveCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createAgentService: createService,
-      createTemplateService: opts.templateService,
-      createTrpcClient: buildTrpc,
-      serverEnvVar: opts.serverEnvVar,
-    }),
-  );
+  const createDeps = {
+    ...shared,
+    createTemplateService: opts.templateService,
+    createTrpcClient: opts.buildTrpc,
+  };
+  parent.addCommand(buildCreateCommand(createDeps));
+  parent.addCommand(buildCreateInteractiveCommand(createDeps));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
 

@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-09-16
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -35,7 +35,7 @@ conductor (#2784) would have baked loop shapes into the platform so every new
 shape (tournament, retry-with-backoff, dynamic fan-out) meant a platform
 change. Loops-as-code (#2821) put the shape in an ordinary script; this
 subsystem adds the piece that pivot dropped — observability. The **experiment
-SDK** (stdlib-only Python, baked into platform-base) is an instrumentation
+SDK** (stdlib-only Python, baked into every agent image) is an instrumentation
 layer: declaring the skeleton costs a handful of lines around code the driver
 would write anyway, and everything the platform learns arrives as reported
 data over the same waypoint-attributed per-agent HTTP surface the driver
@@ -322,6 +322,6 @@ publishes either — [artifact-library](artifact-library.md) owns that rule.
   [`packages/api-server/src/modules/experiments/`](../../packages/api-server/src/modules/experiments/)
 - Harness REST routes: [`packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts`](../../packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts)
 - Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
-- Authoring kit staged in the image: [`packages/agents/claude-code/dam-skills/`](../../packages/agents/claude-code/dam-skills/)
+- Authoring kit staged in the image: [`packages/agents/claude-code/rootfs/usr/local/share/dam-skills/`](../../packages/agents/claude-code/rootfs/usr/local/share/dam-skills/)
 - Shared kinded-create rail: [`packages/api-server/src/modules/agents/services/kinded-agent-create.ts`](../../packages/api-server/src/modules/agents/services/kinded-agent-create.ts)
 - UI module (chat dock, store, API bindings): [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

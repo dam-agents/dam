@@ -1,4 +1,4 @@
-import { composeScriptedMock } from "./modules/scripted-mock/index.js";
+import { composeScriptedMock } from "./modules/scripted-mock/compose.js";
 
 console.log = console.error;
 console.info = console.error;

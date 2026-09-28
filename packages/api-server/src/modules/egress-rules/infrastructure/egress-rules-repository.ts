@@ -62,7 +62,7 @@ export interface NewEgressRule {
   source: EgressRuleSource;
 }
 
-export interface TakeOwnershipInput {
+interface TakeOwnershipInput {
   id: string;
   method: string;
   pathPattern: string;

@@ -362,10 +362,13 @@ virtualization:
   # Runners hold the trees their machines boot by naming them to the service
   # every minute; eviction never takes a held tree. An entry fetched with
   # credentials that an anonymous read cannot reach is served only to a runner
-  # whose forwarded credentials read the image's manifest, so naming a
-  # reference is not enough to borrow another owner's private image. The
-  # service keeps that knowledge in memory, so after it restarts each such
-  # entry is checked against the registry again.
+  # whose forwarded credentials read the image's manifest in a repository the
+  # entry was fetched from, so naming a digest, under any registry, is not
+  # enough to borrow another owner's private image. The service keeps what is
+  # public in memory, so after it restarts each such entry is checked against
+  # the registry again. The service runs with every capability dropped but
+  # the four an unpack needs — CHOWN, FOWNER, FSETID and DAC_OVERRIDE — so an
+  # SCC named in `runner.scc` must admit FSETID too.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte
@@ -572,7 +575,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.39
+  image: docker.io/chrislusf/seaweedfs:4.47
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -603,7 +606,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.160.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.161.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -634,9 +637,9 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.27.0"
+        tag: "2.35.0"
       waitForMongodb:
-        image: "quay.io/dam-agents/busybox:1.37.0"
+        image: "quay.io/dam-agents/busybox:1.38.0"
 
   clickhouse:
     # Without an explicit image the operator injects its built-in default
@@ -668,7 +671,7 @@ keycloak:
   podAnnotations: {}
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
-  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  # version is pinned in the keycloak-theme package's `oci` task.
   # In published charts CI replaces the empty tag with the image's content
   # tag (the commit that last touched its inputs — see cd.yml `publish`),
   # so a release that doesn't change the image doesn't roll the pod.
@@ -677,7 +680,7 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
@@ -685,6 +688,8 @@ keycloak:
   # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
   # single `--features=` arg (a second `--features` would override, not merge).
   # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  # The image is pre-built for the base alone, so with any extra Keycloak
+  # re-runs its build at every start, which takes about 25 seconds.
   extraFeatures: []
 
   # -- Admin credentials (for Keycloak admin console)
@@ -1230,6 +1235,10 @@ apiServer:
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
+    # Istio's release host, which redirects every download to its R2 bucket.
+    # The Google Cloud Storage bucket still serves releases up to 1.30.
+    - blob.istio.io
+    - istio-release.r2.istio.io
     - istio-release.storage.googleapis.com
     - mirror.openshift.com
     # Supply-chain signing (cosign's TUF root)
@@ -1242,10 +1251,11 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
-    # Fedora packages: what the docker and containerd shims install at runtime.
-    # The image pins its repos to this one host precisely so it can be named
-    # here; the default metalink would resolve to a different mirror each time.
-    - dl.fedoraproject.org
+    # Debian packages: apt-get on a machine, where the agent is root.
+    - deb.debian.org
+    # Kernel sources and Alpine packages, for images built on them.
+    - "*.kernel.org"
+    - "*.alpinelinux.org"
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -1404,7 +1414,7 @@ controller:
       # Relaxing them gives the agent container privileges that bypass the
       # paired-pod credential split and the L7 ext_authz gate.
       # Agent ConfigMaps cannot set these — chart-only by design.
-      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      # UID 65532 is the agent user every agent image is built with.
       podSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532
@@ -1444,7 +1454,7 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -1454,7 +1464,7 @@ controller:
         # Hardened curl image for the probe. The probe is a `sh` loop, so it
         # needs a shell — use the `-builder` variant (the distroless curl image
         # has no shell). Any image works as long as it provides /bin/sh + curl.
-        image: registry.access.redhat.com/hi/curl:8.20-builder
+        image: registry.access.redhat.com/hi/curl:8.22-builder
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
@@ -1670,8 +1680,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
+  # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
@@ -1682,10 +1692,10 @@ controller:
   # task does this).
   envoyMitm:
     enabled: true
-    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
-    # collisions with other charts.
+    # -- Name of the bootstrap cluster issuer. Cluster-scoped, so consider
+    # collisions with other charts. The CA issuer is always
+    # `platform-mitm-ca-issuer`, the name the controller mints leaves from.
     bootstrapIssuerName: platform-selfsigned-bootstrap
-    caIssuerName: platform-mitm-ca-issuer
     # -- Where the CA Secret lives. Must equal cert-manager's
     # --cluster-resource-namespace flag (default `cert-manager`).
     caSecretNamespace: cert-manager
@@ -1693,9 +1703,6 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h # 10y
     caRenewBefore: 720h # 30d
-    # -- Per-agent leaf cert validity.
-    leafDuration: 2160h # 90d
-    leafRenewBefore: 360h # 15d
   # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
   # data plane no SDK or zero-code instrumentation can reach, so the controller
   # configures it natively in the rendered bootstrap — the exporter target
@@ -1722,8 +1729,8 @@ controller:
 # offered exactly when the image changed. Pinning `tag` to a fixed value in an
 # override opts that template out of upgrade detection, and non-image drift
 # (mounts/env/resources) is never detected.
-# `$HOME` in mount paths is substituted at chart render time
-# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+# `$HOME` in mount paths is substituted at chart render time with the fixed
+# agent home, /home/agent.
 # Every entry is a harness image the platform delivers. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.
@@ -1854,7 +1861,9 @@ e2e:
 # clone rides the gateway with the `github-enterprise` connection its kit
 # requires, and never sees this token.
 #
-# Leave `enterprise.tokenSecret.name` empty to read no enterprise host at all.
+# Leave `enterprise.token` empty to read no enterprise host at all. It is meant
+# to arrive through a secret values layer rather than a values file in git; the
+# chart stores it in the api-server's Secret, not the pod spec.
 # An empty `enterprise.host` falls back to the enterprise host the connection
 # presets already name (apiServer.oauthAppDefaults.githubEnterprise.host), so a
 # single-host install spells it once; setting it here does not change what those
@@ -1865,9 +1874,7 @@ e2e:
 github:
   enterprise:
     host: ""
-    tokenSecret:
-      name: ""
-      key: token
+    token: ""
 
 # -- Starter kit catalogs. The api-server reads every catalog listed here, in
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
@@ -1899,6 +1906,7 @@ starterKits:
       evox: { enabled: false }
       k-search: { enabled: true }
       software-developer: { enabled: false }
+      micro-manager: { enabled: true }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into

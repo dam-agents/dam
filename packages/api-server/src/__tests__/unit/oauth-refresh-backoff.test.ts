@@ -69,11 +69,7 @@ const rowFor = (id: string, auth: ConnectionAuthConfig = AUTH): RawRow => ({
 });
 
 type Mode =
-  | "transient"
-  | "revoked-grant"
-  | "revoked-grant-200"
-  | "invalid-client"
-  | "ok";
+  "transient" | "revoked-grant" | "revoked-grant-200" | "invalid-client" | "ok";
 
 const MODE_RESPONSES: Record<Mode, () => Response> = {
   transient: () => new Response("upstream unavailable", { status: 503 }),

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthConfigProbeError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface AuthConfig {
   issuer: string;
@@ -12,9 +13,7 @@ export interface AuthConfigProbe {
   probe(serverUrl: string): Promise<Result<AuthConfig, AuthConfigProbeError>>;
 }
 
-export interface HttpAuthConfigProbeOpts {
-  timeoutMs?: number;
-}
+const TIMEOUT_MS = 5000;
 
 const authConfigSchema = z.object({
   issuer: z.string().min(1),
@@ -22,22 +21,14 @@ const authConfigSchema = z.object({
   cliClientId: z.string().min(1).optional(),
 });
 
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-export function createAuthConfigProbe(
-  opts: HttpAuthConfigProbeOpts = {},
-): AuthConfigProbe {
-  const timeoutMs = opts.timeoutMs ?? 5000;
-
+export function createAuthConfigProbe(): AuthConfigProbe {
   return {
     async probe(serverUrl) {
       const url = `${serverUrl.replace(/\/+$/, "")}/api/auth/config`;
 
       let res: Response;
       try {
-        res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       } catch (e) {
         return err({
           kind: "auth-config-probe",

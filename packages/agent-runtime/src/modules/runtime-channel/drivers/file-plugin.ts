@@ -1,17 +1,10 @@
-import type {
-  Contribution,
-  DriverBinding,
-  KindHandler,
-  Plugin,
-} from "agent-runtime-api";
-import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
+import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
+import { applyFiles, type FileDesired } from "../infrastructure/file-ops.js";
 import { expandHome } from "../../../core/expand-home.js";
 
 const IMPL_NAME = "file";
 
 export function createFilePlugin(): Plugin {
-  const fileOps = createFileOps();
-
   return {
     name: IMPL_NAME,
 
@@ -34,7 +27,7 @@ export function createFilePlugin(): Plugin {
           });
           desired.set(path, list);
         }
-        await fileOps.apply(desired as Map<string, FileDesired[] | null>, {
+        await applyFiles(desired as Map<string, FileDesired[] | null>, {
           agentHome: ctx.agentHome,
           log: ctx.log,
         });
@@ -42,5 +35,3 @@ export function createFilePlugin(): Plugin {
     },
   };
 }
-
-export type { Contribution };

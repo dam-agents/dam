@@ -108,7 +108,7 @@ function usableEnterprise(
   if (host === "" && token === "") return undefined;
   if (host === "")
     throw new Error(
-      "an enterprise GitHub token is configured with no host to send it to: set github.enterprise.host, or clear github.enterprise.tokenSecret",
+      "an enterprise GitHub token is configured with no host to send it to: set github.enterprise.host, or clear github.enterprise.token",
     );
   if (host === PUBLIC_HOST)
     throw new Error(

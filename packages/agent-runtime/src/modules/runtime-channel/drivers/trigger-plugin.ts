@@ -3,6 +3,7 @@ import type {
   EventContext,
   EventHandler,
   EventOutcome,
+  EventReportInput,
   Plugin,
   ScheduleResetEventPayload,
   TriggerEventPayload,
@@ -16,11 +17,7 @@ import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js
 const IMPL_NAME = "trigger";
 
 export interface EventReporter {
-  report(input: {
-    eventId: string;
-    outcome: EventOutcome;
-    detail?: string;
-  }): Promise<void>;
+  report(input: EventReportInput): Promise<void>;
 }
 
 const WIRE_OUTCOME: Record<PrecheckOutcome["verdict"], EventOutcome> = {
@@ -38,7 +35,7 @@ export function createTriggerPlugin(deps: {
   stateStore: TriggerStateStore;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
-  reporter?: EventReporter;
+  reporter: EventReporter;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
@@ -89,7 +86,7 @@ export function createTriggerPlugin(deps: {
       `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
     );
     try {
-      await deps.reporter?.report({
+      await deps.reporter.report({
         eventId,
         outcome: WIRE_OUTCOME[outcome.verdict],
         ...(outcome.detail ? { detail: outcome.detail } : {}),

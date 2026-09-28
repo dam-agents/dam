@@ -6,14 +6,11 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { createActivityStamper } from "./activity-stamper.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
-import { boundedSet } from "../../../core/bounded-map.js";
 
-const ACTIVITY_DEBOUNCE_MS = 30_000;
-const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const EVICT_CHANNEL = "terminal:evict";
 
@@ -35,7 +32,7 @@ export function createTerminalRelay(
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
-  const lastActivity = new Map<string, number>();
+  const stamper = createActivityStamper(repo);
   const replicaId = randomUUID();
   const activeClients = new Map<string, WebSocket>();
   const clientKey = (agentId: string, sessionId: string) =>
@@ -144,21 +141,7 @@ export function createTerminalRelay(
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
             upstream.send(data, { binary: isBinary });
-
-            const now = Date.now();
-            if (
-              now - (lastActivity.get(agentId) ?? 0) >=
-              ACTIVITY_DEBOUNCE_MS
-            ) {
-              boundedSet(lastActivity, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
-              repo
-                .patchAnnotation(
-                  agentId,
-                  LAST_ACTIVITY_KEY,
-                  new Date().toISOString(),
-                )
-                .catch(() => {});
-            }
+            stamper.bump(agentId);
           });
 
           upstream.on("message", (data, isBinary) => {

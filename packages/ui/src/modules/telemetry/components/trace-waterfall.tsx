@@ -1,10 +1,10 @@
 import type { TurnDetail } from "api-server-api";
 import { useMemo } from "react";
 
+import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatDurationMs, formatUsd } from "../../metrics/lib/format.js";
-import { spanColor } from "../lib/span-color.js";
+import { formatUsd } from "../../metrics/lib/format.js";
 import {
   buildWaterfall,
   logCostUsd,
@@ -15,6 +15,22 @@ import {
   type TimelineRow,
 } from "../lib/waterfall.js";
 
+const KIND_COLORS: Record<string, string> = {
+  interaction: "#a56eff",
+  llm_request: "#1192e8",
+  tool: "#009d9a",
+  "tool.execution": "#0f9b98",
+  "tool.blocked_on_user": "#b28600",
+  hook: "#6929c4",
+};
+
+const FALLBACK = "#5f6a7a";
+
+function spanColor(name: string): string {
+  const short = name.startsWith("claude_code.") ? name.slice(12) : name;
+  return KIND_COLORS[short] ?? FALLBACK;
+}
+
 const offsetLabel = (ms: number): string =>
   ms < 1000 ? `+${Math.round(ms)}ms` : `+${(ms / 1000).toFixed(1)}s`;
 
@@ -22,17 +38,12 @@ export function TraceWaterfall({
   turn,
   selectedKey,
   onSelect,
-  compact = false,
 }: {
   turn: TurnDetail;
   selectedKey: string | null;
   onSelect: (key: string) => void;
-  compact?: boolean;
 }) {
   const wf = useMemo(() => buildWaterfall(turn), [turn]);
-  const labelCols = compact ? "minmax(0,150px)" : "minmax(0,240px)";
-  const indentPx = compact ? 10 : 14;
-  const metaCol = compact ? "56px" : "68px";
 
   if (wf.rows.length === 0) {
     return (
@@ -59,11 +70,11 @@ export function TraceWaterfall({
           "grid w-full items-center gap-3 rounded-sm py-[3px] text-left hover:bg-muted/60",
           selected && "bg-muted",
         )}
-        style={{ gridTemplateColumns: `${labelCols} 1fr ${metaCol}` }}
+        style={{ gridTemplateColumns: "minmax(0,240px) 1fr 68px" }}
       >
         <span
           className="flex min-w-0 items-center gap-1.5"
-          style={{ paddingLeft: `${depth * indentPx}px` }}
+          style={{ paddingLeft: `${depth * 14}px` }}
         >
           {!isSpan && (
             <span
@@ -136,12 +147,7 @@ export function TraceWaterfall({
 
   return (
     <div className="overflow-x-auto">
-      <div
-        className={cn(
-          "py-3",
-          compact ? "min-w-[380px] px-3" : "min-w-[620px] px-4",
-        )}
-      >
+      <div className="min-w-[620px] px-4 py-3">
         {wf.rows.map((row) => render(row, row.depth))}
 
         {wf.traceCount > 1 && (

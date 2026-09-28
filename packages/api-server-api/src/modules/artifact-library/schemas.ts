@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
 export const artifactKindSchema = z.enum([
   "html",
@@ -15,7 +16,7 @@ export const artifactVisibilitySchema = z.enum([
   "public",
 ]);
 
-export const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
+const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
 
 export const VIEWER_ALLOWLIST_MAX = 50;
 
@@ -24,8 +25,6 @@ export const viewerEmailSchema = z
   .trim()
   .toLowerCase()
   .pipe(z.email().max(254));
-
-export const artifactVersionAuthorSchema = z.enum(["user", "agent"]);
 
 export const ARTIFACT_TITLE_MAX_LENGTH = 300;
 
@@ -129,7 +128,7 @@ export const folderIdInputSchema = z.object({ id: z.string().min(1) });
 
 export const ARTIFACT_TOUCH_MARKER_VERSION = 1;
 
-export const artifactTouchMarkerSchema = z.object({
+const artifactTouchMarkerSchema = z.object({
   v: z.literal(ARTIFACT_TOUCH_MARKER_VERSION),
   artifactId: z.string().min(1),
   version: z.number().int().positive(),
@@ -150,3 +149,32 @@ export const artifactTouchListInputSchema = z.object({
   sessionIds: z.array(z.string().min(1)).min(1).max(50),
   limit: z.number().int().positive().max(200).optional(),
 });
+
+const artifactApiFailureReasonSchema = z.enum([
+  "invalid-request",
+  "not-allowed",
+  "agent-unreachable",
+  "unsupported-runtime",
+  "app-not-listening",
+  "timeout",
+  "response-too-large",
+  "too-many-requests",
+]);
+
+export const artifactCallAgentApiInputSchema =
+  artifactApiRequestInputSchema.safeExtend({
+    artifactId: z.string().min(1),
+  });
+
+export const artifactCallAgentApiResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    status: z.number().int(),
+    contentType: z.string().nullable(),
+    body: z.string(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    reason: artifactApiFailureReasonSchema,
+  }),
+]);

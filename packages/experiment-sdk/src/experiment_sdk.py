@@ -37,8 +37,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from types import TracebackType
+from typing import Any, Self
 
 __all__ = [
     "Experiment",
@@ -106,11 +108,11 @@ def _log(msg: str) -> None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _config() -> tuple[str, str]:
-    """Resolve (root_url, agent_id) from PLATFORM_MCP_URL, per call so tests
+def _config() -> str:
+    """Resolve the agent's API root from PLATFORM_MCP_URL, per call so tests
     can point the SDK at a stub server via the environment."""
     mcp_url = os.environ.get("PLATFORM_MCP_URL")
     if not mcp_url:
@@ -120,8 +122,7 @@ def _config() -> tuple[str, str]:
     m = re.match(r"^(https?://[^/]+)/api/agents/([^/]+)/mcp$", mcp_url)
     if not m:
         raise RuntimeError(f"unexpected PLATFORM_MCP_URL shape: {mcp_url}")
-    base, agent_id = m.group(1), m.group(2)
-    return f"{base}/api/agents/{agent_id}", agent_id
+    return f"{m.group(1)}/api/agents/{m.group(2)}"
 
 
 # 500 is transient here too: the api-server returns it while its own
@@ -144,7 +145,7 @@ def _request(
     server (spans upsert by id, a repeated finish answers 409), so they
     retry; ``spawn`` never does — a duplicated POST /invocations is a
     second worker, not a dup."""
-    root, _ = _config()
+    root = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
     if retry is None:
         retry = method == "GET"
@@ -304,7 +305,7 @@ def spawn(
     memory: str | None = None,
     cpu: str | None = None,
     label: str | None = None,
-    span: "Span | None" = None,
+    span: Span | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
 ) -> Any:
@@ -372,7 +373,7 @@ def spawn(
 
 # ---- experiment observation ----------------------------------------------------
 
-_ACTIVE_SPAN: contextvars.ContextVar["Span | None"] = contextvars.ContextVar(
+_ACTIVE_SPAN: contextvars.ContextVar[Span | None] = contextvars.ContextVar(
     "experiment_active_span", default=None
 )
 _CURRENT_ITERATION: contextvars.ContextVar[int | None] = contextvars.ContextVar(
@@ -381,11 +382,11 @@ _CURRENT_ITERATION: contextvars.ContextVar[int | None] = contextvars.ContextVar(
 
 
 class Stage:
-    def __init__(self, experiment: "Experiment", stage_id: str):
+    def __init__(self, experiment: Experiment, stage_id: str):
         self.id = stage_id
         self.experiment = experiment
 
-    def run(self, iteration: int | None = None) -> "Span":
+    def run(self, iteration: int | None = None) -> Span:
         """Open a span for one execution of this stage. Use as a context
         manager; set ``span.score`` before the block ends."""
         return self.experiment._open_span(self.id, iteration)
@@ -394,7 +395,7 @@ class Stage:
 class Loop:
     def __init__(
         self,
-        experiment: "Experiment",
+        experiment: Experiment,
         loop_id: str,
         description: str | None = None,
     ):
@@ -412,7 +413,7 @@ class Loop:
 
 
 class Span:
-    def __init__(self, experiment: "Experiment", span_id: str, stage: str):
+    def __init__(self, experiment: Experiment, span_id: str, stage: str):
         self.experiment = experiment
         self.span_id = span_id
         self.stage = stage
@@ -425,11 +426,16 @@ class Span:
         """Reference an Artifact Library id this span produced."""
         self._artifact_ids.append(artifact_id)
 
-    def __enter__(self) -> "Span":
+    def __enter__(self) -> Self:
         self._token = _ACTIVE_SPAN.set(self)
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         if self._token is not None:
             _ACTIVE_SPAN.reset(self._token)
         end: dict[str, Any] = {
@@ -663,7 +669,7 @@ class Experiment:
                     )
                 except ExperimentClosed:
                     break  # trace closed (Stop or terminal) — nothing to keep alive
-                except Exception:  # noqa: BLE001 — transient; retry next tick
+                except Exception:  # noqa: BLE001, S112 — transient; retry next tick
                     continue
 
         thread = threading.Thread(target=loop, name="experiment-heartbeat", daemon=True)
@@ -679,7 +685,7 @@ class Experiment:
         if error:
             body["error"] = error[:2000]
         try:
-            self._flush(force=True, ignore_backoff=True)
+            self._flush(ignore_backoff=True)
             _request(
                 "POST", f"/experiments/{self._experiment_id}/finish", body, retry=True
             )
@@ -690,10 +696,15 @@ class Experiment:
             return
         _log(f'experiment "{self.name}" finished: {status}')
 
-    def __enter__(self) -> "Experiment":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         if exc_type is SystemExit:
             return  # plan mode exits through here; nothing to report
         if exc_type is not None:
@@ -713,9 +724,9 @@ class Experiment:
             self._dropped_events += 1
         stale = time.monotonic() - self._last_flush > _EVENT_FLUSH_SECONDS
         if flush or stale or len(self._buffer) >= _EVENT_FLUSH_MAX:
-            self._flush(force=True)
+            self._flush()
 
-    def _flush(self, force: bool = False, ignore_backoff: bool = False) -> None:
+    def _flush(self, ignore_backoff: bool = False) -> None:
         """Report buffered events; the buffer is drained only once the POST
         lands. Reports are observability, so a transient outage costs
         latency, never the run: on failure the events stay buffered (the next
@@ -732,8 +743,6 @@ class Experiment:
         ladder per window instead of one per emit. ``finish`` passes
         ``ignore_backoff`` to buy the tail one last honest attempt."""
         if not self._buffer or self._experiment_id is None:
-            return
-        if not force and len(self._buffer) < _EVENT_FLUSH_MAX:
             return
         if not ignore_backoff and time.monotonic() < self._flush_blocked_until:
             return

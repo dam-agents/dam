@@ -72,7 +72,7 @@ describe("channel-manager bootstrap", () => {
     await manager.bootstrap(new Map([["agent-1", [channel]]]));
 
     expect(slackWorker.connect).toHaveBeenCalledTimes(1);
-    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1");
 
     await manager.stopAll();
   });
@@ -173,7 +173,7 @@ describe("channel-manager bootstrap", () => {
     };
     await manager.bootstrap(new Map([["agent-1", [channel]]]));
 
-    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1");
 
     await manager.stopAll();
     vi.useRealTimers();

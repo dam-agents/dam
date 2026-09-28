@@ -22,6 +22,7 @@ import {
   agentPauseInputSchema,
   agentStopInputSchema,
   agentUpgradeInputSchema,
+  agentMigrateRuntimeInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
@@ -143,6 +144,44 @@ export const agentsRouter = t.router({
             code: "CONFLICT",
             message:
               "The template changed since you reviewed the update — check the new version and retry",
+          });
+      }
+    }),
+
+  migrateRuntime: manageAgentsProcedure
+    .input(agentMigrateRuntimeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.migrateRuntime(input.id);
+      if (res.ok) return toAgentView(res.value);
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "AlreadyOnVm":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This agent already runs on the new runtime",
+          });
+        case "VirtualizationDisabled":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "The new runtime is not enabled on this install (virtualization.enabled)",
+          });
+        case "RuntimeMigrationInProgress":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This agent is already moving to the new runtime",
+          });
+        case "StorageMigrationInProgress":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent's storage is being migrated — try again once it finishes",
+          });
+        case "PersistsOutsideHome":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `The new runtime keeps only the home directory, and this agent persists ${res.error.paths.join(", ")}`,
           });
       }
     }),

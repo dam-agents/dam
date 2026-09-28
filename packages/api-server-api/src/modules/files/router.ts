@@ -19,8 +19,8 @@ const uploadOutputSchema = z.object({
   contentType: z.string().optional(),
 });
 
-export type UploadFileInput = z.infer<typeof uploadInputSchema>;
-export type UploadFileResult = z.infer<typeof uploadOutputSchema>;
+type UploadFileInput = z.infer<typeof uploadInputSchema>;
+type UploadFileResult = z.infer<typeof uploadOutputSchema>;
 
 export interface FilesService {
   upload(input: UploadFileInput): Promise<UploadFileResult>;

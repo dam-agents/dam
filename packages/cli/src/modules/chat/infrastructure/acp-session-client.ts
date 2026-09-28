@@ -1,10 +1,14 @@
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import {
+  client,
+  type AnyMessage,
+  type ClientConnection,
+  type Stream,
+} from "@agentclientprotocol/sdk";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsUrl } from "../../shared/ws-url.js";
 
 const TIMEOUT_MS = 120_000;
 
@@ -65,9 +69,7 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
 }
 
 export function acpUrl(host: string, agentId: string, token: string): string {
-  const proto = host.startsWith("https://") ? "wss:" : "ws:";
-  const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  return `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/acp?token=${encodeURIComponent(token)}`;
+  return wsUrl(host, `/api/agents/${encodeURIComponent(agentId)}/acp`, token);
 }
 
 function toSessionView(agentId: string, s: ListedSession): SessionView {
@@ -95,7 +97,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
 
 async function withConnection<T>(
   url: string,
-  fn: (conn: ClientSideConnection) => Promise<T>,
+  fn: (conn: ClientConnection) => Promise<T>,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
 
@@ -106,24 +108,14 @@ async function withConnection<T>(
     timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   };
 
-  const connection = new ClientSideConnection(
-    () => ({
-      requestPermission() {
-        return new Promise<never>(() => {});
-      },
-      async sessionUpdate() {
-        resetTimeout();
-      },
-      async writeTextFile() {
-        return {};
-      },
-      async readTextFile() {
-        return { content: "" };
-      },
-      async extNotification() {},
-    }),
-    stream,
-  );
+  const connection = client()
+    .onRequest("session/request_permission", () => new Promise<never>(() => {}))
+    .onNotification("session/update", () => {
+      resetTimeout();
+    })
+    .onRequest("fs/write_text_file", () => ({}))
+    .onRequest("fs/read_text_file", () => ({ content: "" }))
+    .connect(stream);
 
   const cleanup = () => {
     clearTimeout(timer);
@@ -136,7 +128,7 @@ async function withConnection<T>(
 
   try {
     ac.signal.addEventListener("abort", cleanup, { once: true });
-    await connection.initialize({
+    await connection.agent.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {},
       clientInfo: { name: "platform-cli-sessions", version: "1.0.0" },
@@ -174,7 +166,7 @@ export function createAcpSessionClient(opts: {
       return withConnection(
         acpUrl(opts.host, agentId, opts.token),
         async (conn) => {
-          const r = await conn.listSessions({ cwd: "." });
+          const r = await conn.agent.request("session/list", { cwd: "." });
           return (r.sessions ?? []).map((s) =>
             toSessionView(agentId, s as unknown as ListedSession),
           );
@@ -183,7 +175,7 @@ export function createAcpSessionClient(opts: {
     },
     async setMode(agentId, sessionId, mode) {
       await withConnection(acpUrl(opts.host, agentId, opts.token), (conn) =>
-        conn.unstable_resumeSession({
+        conn.agent.request("session/resume", {
           sessionId,
           cwd: ".",
           mcpServers: [],

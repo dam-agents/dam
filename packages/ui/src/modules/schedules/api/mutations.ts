@@ -7,7 +7,7 @@ const invalidatesScheduleList = {
   invalidates: [trpc.schedules.pathKey()],
 };
 
-export interface CreateScheduleInput {
+interface CreateScheduleInput {
   agentId: string;
   name: string;
   rrule: string;
@@ -34,7 +34,7 @@ export function useCreateSchedule() {
   });
 }
 
-export interface UpdateScheduleInput {
+interface UpdateScheduleInput {
   id: string;
   name: string;
   rrule: string;

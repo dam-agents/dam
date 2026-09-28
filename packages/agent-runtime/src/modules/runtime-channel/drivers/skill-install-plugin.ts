@@ -1,7 +1,8 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type {
+  Contribution,
   DriverBinding,
   KindHandler,
   Plugin,
@@ -11,13 +12,44 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 import {
-  createSkillInstallStateStore,
-  SKILL_INSTALL_PLUGIN_NAME,
-  type SkillInstallStateStore,
-} from "../infrastructure/skill-install-state-store.js";
+  openJsonFile,
+  type DocumentStore,
+} from "../../../core/document-store.js";
 import { expandHome } from "../../../core/expand-home.js";
 
-const IMPL_NAME = SKILL_INSTALL_PLUGIN_NAME;
+const IMPL_NAME = "skill-install";
+
+const STATE_FILE = "skill-install-state.json";
+
+const stateSchema = z.object({
+  installed: z.array(z.string()).catch([]).default([]),
+});
+
+const strictStateSchema = z.object({
+  installed: z.array(z.string()),
+});
+
+export type SkillInstallBootState =
+  | { kind: "ok"; installed: string[] }
+  | { kind: "absent" }
+  | { kind: "corrupt" };
+
+export function readSkillInstallBootState(
+  pluginStateRoot: string,
+): SkillInstallBootState {
+  const file = join(pluginStateRoot, IMPL_NAME, STATE_FILE);
+  if (!existsSync(file)) return { kind: "absent" };
+  try {
+    const parsed = strictStateSchema.safeParse(
+      JSON.parse(readFileSync(file, "utf8")),
+    );
+    return parsed.success
+      ? { kind: "ok", installed: parsed.data.installed }
+      : { kind: "corrupt" };
+  } catch {
+    return { kind: "corrupt" };
+  }
+}
 
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),
@@ -47,25 +79,27 @@ export function createSkillInstallPlugin(deps: {
         );
       }
       const configuredPaths = parsed.data.paths;
-      let stateStore: SkillInstallStateStore | undefined;
+      let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
 
       return async (contributions, ctx) => {
-        stateStore ??= createSkillInstallStateStore(ctx.pluginStateDir);
+        stateStore ??= openJsonFile(join(ctx.pluginStateDir, STATE_FILE), {
+          schema: stateSchema,
+          initial: () => ({ installed: [] }),
+        });
         const skillPaths = configuredPaths.map((p) =>
           expandHome(p, ctx.agentHome),
         );
         const resolvedPaths = skillPaths.map((p) => resolve(p));
-        const skillRefs = contributions.filter((c) => c.kind === "skill-ref");
-        const managed = new Set(stateStore.getInstalled());
+        const skillRefs = contributions.filter(
+          (c): c is Extract<Contribution, { kind: "skill-ref" }> =>
+            c.kind === "skill-ref",
+        );
+        const managed = new Set(stateStore.read().installed);
         ctx.log(
           `wanted (${skillRefs.length}): ${
             skillRefs.length === 0
               ? "<none>"
-              : skillRefs
-                  .map((c) =>
-                    c.kind === "skill-ref" ? `${c.name}@${c.version}` : "",
-                  )
-                  .join(", ")
+              : skillRefs.map((c) => `${c.name}@${c.version}`).join(", ")
           }; targets: ${resolvedPaths.join(", ") || "<none>"}; managed: ${
             [...managed].join(", ") || "<none>"
           }`,
@@ -74,8 +108,7 @@ export function createSkillInstallPlugin(deps: {
         const desired = new Set<string>();
         const installed = new Set<string>();
         const failed: string[] = [];
-        for (const c of contributions) {
-          if (c.kind !== "skill-ref") continue;
+        for (const c of skillRefs) {
           desired.add(c.name);
           const installInput: SkillInstallInput = {
             sourceUrl: c.sourceUrl,
@@ -116,7 +149,7 @@ export function createSkillInstallPlugin(deps: {
         const nextManaged = [...desired].filter(
           (name) => managed.has(name) || installed.has(name),
         );
-        stateStore.setInstalled(nextManaged);
+        stateStore.write({ installed: [...nextManaged].sort() });
         ctx.log(
           `managed now (${nextManaged.length}): ${
             nextManaged.join(", ") || "<none>"

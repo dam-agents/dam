@@ -12,7 +12,9 @@ import { emit, EventType } from "../../../events.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
-export interface ExtAuthzGateInput {
+export const approvalChannelOf = (id: string) => `approval:${id}`;
+
+interface ExtAuthzGateInput {
   agentId: string;
   host: string;
   method: string;
@@ -43,7 +45,7 @@ export interface EgressAttendance {
   hasInteractiveSession(agentId: string): Promise<boolean>;
 }
 
-export interface CreateExtAuthzGateDeps {
+interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
@@ -224,11 +226,17 @@ async function waitForVerdict(
     const checkResolved = async () => {
       const row = await deps.repo.getPending(id);
       if (!row || row.status !== "resolved") return;
-      settle({ verdict: verdictOf(row.verdict), reason: "hold-resolved" });
+      settle({
+        verdict:
+          row.verdict === "allow" || row.verdict === "allow_once"
+            ? "allow"
+            : "deny",
+        reason: "hold-resolved",
+      });
     };
 
     const unsubscribe = deps.bus.subscribe(
-      `approval:${id}`,
+      approvalChannelOf(id),
       () => void checkResolved(),
     );
     void checkResolved();
@@ -253,9 +261,4 @@ async function waitForVerdict(
       clearTimeout(timeout);
     }
   });
-}
-
-function verdictOf(v: string | null): ExtAuthzVerdict {
-  if (v === "allow" || v === "allow_once") return "allow";
-  return "deny";
 }

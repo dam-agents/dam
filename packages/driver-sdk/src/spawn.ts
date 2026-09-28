@@ -4,7 +4,7 @@ import type {
   InvocationView,
 } from "api-server-api";
 import { req, log, sleep } from "./http.js";
-import { s, type JsonSchema, type SchemaSpec } from "./schema.js";
+import { s, type SchemaSpec } from "./schema.js";
 
 export interface ImageInfo {
   id: string;
@@ -81,7 +81,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   const body: SpawnInvocationRequest = {
     prompt,
     connections,
-    schema: s(schema) as JsonSchema,
+    schema: s(schema),
   };
   if (template) body.templateId = template;
   if (image) body.image = image;

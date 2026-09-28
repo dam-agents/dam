@@ -1,5 +1,9 @@
 import type { ConnectionOptions } from "bullmq";
-import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
+import {
+  runtimeFeaturesOf,
+  workspaceMutationEventKinds,
+  type RuntimeFeatures,
+} from "agent-runtime-api";
 import type { Db } from "db";
 import type {
   ContributionKind,
@@ -15,6 +19,7 @@ import {
   createAgentsRuntimeRepo,
   type AgentsRuntimeRepo,
   type OutboxRepo,
+  type OutboxRow,
 } from "./infrastructure/outbox-repo.js";
 import { createAgentRuntimeClient } from "./infrastructure/agent-runtime-client.js";
 import {
@@ -23,14 +28,8 @@ import {
   type RunningWorker,
   type StateQueue,
 } from "./infrastructure/state-queue.js";
-import {
-  createStateBuilder,
-  type StateBuilder,
-} from "./services/state-builder.js";
-import {
-  createBuiltinContributions,
-  type BuiltinContributions,
-} from "./services/builtin-contributions.js";
+import { createStateBuilder } from "./services/state-builder.js";
+import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
   type IsAgentRunning,
@@ -48,8 +47,7 @@ import {
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import { emit, EventType } from "../../events.js";
-import { workspaceEvent } from "./domain/workspace-event.js";
-import { WORKSPACE_MUTATION_EVENT_KINDS } from "./domain/workspace-mutation.js";
+import { workspaceEvent } from "./domain/outbox-events.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -59,8 +57,6 @@ export interface RuntimeDeliveryComposition {
   sweep: CronSweep;
   hello: RuntimeDeliveryService;
   runtimeMutator: RuntimeMutator;
-  stateBuilder: StateBuilder;
-  builtin: BuiltinContributions;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -85,6 +81,24 @@ export interface ContributionsStatus {
   unsupportedKinds: ContributionKind[];
 }
 
+function statusOf(
+  agentId: string,
+  row: OutboxRow | null,
+  preparing: ReadonlySet<string>,
+  features: ReadonlyMap<string, RuntimeFeatures>,
+  workspace: ReadonlyMap<string, WorkspaceFailure[]>,
+): ContributionsStatus {
+  const { settled, failures } = progressOf(row);
+  return {
+    settled,
+    failures,
+    preparingWorkspace: preparing.has(agentId),
+    workspaceFailures: workspace.get(agentId) ?? [],
+    features: features.get(agentId) ?? runtimeFeaturesOf(null),
+    unsupportedKinds: row?.droppedContributionKinds ?? [],
+  };
+}
+
 export interface ComposeRuntimeDeliveryOpts {
   db: Db;
   namespace: string;
@@ -94,13 +108,12 @@ export interface ComposeRuntimeDeliveryOpts {
   harnessServerUrl: string;
   resolveOwner: (agentId: string) => Promise<string | null>;
   deliveryConcurrency: number;
-  log?: (msg: string) => void;
 }
 
 export function composeRuntimeDelivery(
   opts: ComposeRuntimeDeliveryOpts,
 ): RuntimeDeliveryComposition {
-  const log = opts.log ?? ((m) => getLogger().info(`[runtime] ${m}`));
+  const log = (m: string) => getLogger().info(`[runtime] ${m}`);
 
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);
@@ -139,7 +152,7 @@ export function composeRuntimeDelivery(
   });
 
   const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
-  for (const kind of WORKSPACE_MUTATION_EVENT_KINDS)
+  for (const kind of workspaceMutationEventKinds)
     eventOutcomeHandlers.set(kind, async (event) => {
       const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
         log(
@@ -182,8 +195,6 @@ export function composeRuntimeDelivery(
     sweep,
     hello,
     runtimeMutator,
-    stateBuilder,
-    builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
       const [row, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRow(agentId),
@@ -191,15 +202,7 @@ export function composeRuntimeDelivery(
         outboxRepo.runtimeFeaturesMany([agentId]),
         outboxRepo.workspaceFailures([agentId]),
       ]);
-      const { settled, failures } = progressOf(row);
-      return {
-        settled,
-        failures,
-        preparingWorkspace: preparing.has(agentId),
-        workspaceFailures: workspace.get(agentId) ?? [],
-        features: features.get(agentId) ?? runtimeFeaturesOf(null),
-        unsupportedKinds: row?.droppedContributionKinds ?? [],
-      };
+      return statusOf(agentId, row, preparing, features, workspace);
     },
 
     async retryWorkspaceMutation(agentId, kind): Promise<boolean> {
@@ -236,16 +239,10 @@ export function composeRuntimeDelivery(
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const row = byId.get(id) ?? null;
-        const { settled, failures } = progressOf(row);
-        result.set(id, {
-          settled,
-          failures,
-          preparingWorkspace: preparing.has(id),
-          workspaceFailures: workspace.get(id) ?? [],
-          features: features.get(id) ?? runtimeFeaturesOf(null),
-          unsupportedKinds: row?.droppedContributionKinds ?? [],
-        });
+        result.set(
+          id,
+          statusOf(id, byId.get(id) ?? null, preparing, features, workspace),
+        );
       }
       return result;
     },

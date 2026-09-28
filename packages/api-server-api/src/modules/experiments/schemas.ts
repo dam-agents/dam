@@ -58,10 +58,6 @@ export const planRegisterRequestSchema = z.object({
     .optional(),
 });
 
-export const planRegisterResponseSchema = z.object({
-  experimentId: z.string(),
-});
-
 const runStartEventSchema = z.object({
   type: z.literal("run-start"),
   scriptSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -113,10 +109,6 @@ export const traceEventSchema = z.discriminatedUnion("type", [
 
 export const appendEventsRequestSchema = z.object({
   events: z.array(traceEventSchema).min(1).max(500),
-});
-
-export const appendEventsResponseSchema = z.object({
-  accepted: z.number().int().nonnegative(),
 });
 
 export const finishRequestSchema = z.object({

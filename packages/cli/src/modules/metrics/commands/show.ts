@@ -1,22 +1,14 @@
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { TokenProvider } from "../../auth/index.js";
 import type { SessionsPort } from "../../chat/services/sessions-service.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderFittedTable, renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { MetricsService } from "../services/metrics-service.js";
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
@@ -63,21 +55,12 @@ export function buildMetricsCommand(deps: {
           json?: boolean;
         },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
-        const resolved = await createAgentResolver({
-          agentService: deps.createAgentService(host),
-        }).resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
+        const host = await resolveActiveHost(deps, opts.server);
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const fetchTitles = async (): Promise<Map<string, string>> => {
           const tok = await deps.tokenProvider.getValidAccessToken(host);
@@ -102,10 +85,7 @@ export function buildMetricsCommand(deps: {
           }),
           fetchTitles().catch(() => new Map<string, string>()),
         ]);
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
         const { tokenSpendByModel, contextPerCall } = result.value;
         const runtimeBySession = result.value.runtimeBySession.map((r) => ({
           ...r,

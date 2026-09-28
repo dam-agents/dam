@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,8 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 const AgentContainerName = "agent"
@@ -43,12 +44,8 @@ const (
 
 const annRollRev = "agent-platform.ai/roll-rev"
 
-func hostPortOf(proxyURL string) (string, string) {
-	hostPort := strings.TrimPrefix(proxyURL, "http://")
-	if h, p, err := net.SplitHostPort(hostPort); err == nil {
-		return h, p
-	}
-	return hostPort, "80"
+func sanitizeMountName(path string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")
 }
 
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
@@ -56,7 +53,10 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 }
 
 func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr string) []corev1.EnvVar {
-	proxyHost, proxyPort := hostPortOf(proxyAddr)
+	proxyHost, proxyPort := strings.TrimPrefix(proxyAddr, "http://"), "80"
+	if h, p, err := net.SplitHostPort(proxyHost); err == nil {
+		proxyHost, proxyPort = h, p
+	}
 	javaToolOptions := fmt.Sprintf(
 		"-Duser.home=%s -Dhttp.proxyHost=%s -Dhttp.proxyPort=%s -Dhttps.proxyHost=%s -Dhttps.proxyPort=%s",
 		agentHome, proxyHost, proxyPort, proxyHost, proxyPort,
@@ -73,14 +73,14 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "NO_PROXY", Value: "localhost,127.0.0.1,::1"},
 		{Name: "no_proxy", Value: "localhost,127.0.0.1,::1"},
 		{Name: "PLATFORM_AGENT_ID", Value: name},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "API_SERVER_URL", Value: fmt.Sprintf("http://%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)},
 		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 }
 
-func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
+func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -90,7 +90,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 	agentHome := agentHomeDir
 	specMounts := resolveSpecMounts(agentSpec, defaults)
-	specEnv := configEnvToTypes(defaults.Env)
 
 	replicas := int32(1)
 
@@ -109,7 +108,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 
 	env := agentPlatformEnv(name, cfg, agentHome, proxyAddr)
 
-	for _, e := range specEnv {
+	for _, e := range defaults.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 
@@ -127,7 +126,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	var pvcs []corev1.PersistentVolumeClaim
 
 	for _, m := range specMounts {
-		volName := types.SanitizeMountName(m.Path)
+		volName := sanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name: volName, MountPath: m.Path,
 		})
@@ -139,7 +138,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
 			}
-			if sc := effectiveStorageClass(agentSpec, base); sc != "" {
+			if sc := cmp.Or(agentSpec.StorageClass, base.StorageClass); sc != "" {
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -314,14 +313,18 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 }
 
-func resolveSpecMounts(agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) []types.Mount {
+func resolveSpecMounts(agentSpec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) []apiv1.Mount {
 	if len(agentSpec.Mounts) > 0 {
 		return agentSpec.Mounts
 	}
-	return configMountsToTypes(defaults.Mounts)
+	var out []apiv1.Mount
+	for _, m := range defaults.Mounts {
+		out = append(out, apiv1.Mount{Path: m.Path, Persist: m.Persist, Size: m.Size})
+	}
+	return out
 }
 
-func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) string {
+func effectiveMountSize(m apiv1.Mount, agentSpec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) string {
 	if m.Size != "" {
 		return m.Size
 	}
@@ -329,13 +332,6 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 		return agentSpec.StorageSize
 	}
 	return defaults.StorageSize
-}
-
-func effectiveStorageClass(agentSpec *types.AgentSpec, base config.AgentBase) string {
-	if agentSpec.StorageClass != "" {
-		return agentSpec.StorageClass
-	}
-	return base.StorageClass
 }
 
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {

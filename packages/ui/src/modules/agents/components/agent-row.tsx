@@ -37,6 +37,7 @@ import {
   agentFailures,
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
+import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
@@ -53,10 +54,11 @@ interface Props {
   updateBusy: boolean;
   onSelect: () => void;
   onUpdate: () => void;
+  migratePending: boolean;
+  onMigrate: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onShare?: () => void;
-  shareLabel?: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -77,10 +79,11 @@ export function AgentRow({
   updateBusy,
   onSelect,
   onUpdate,
+  migratePending,
+  onMigrate,
   onConfigure,
   configureLabel,
   onShare,
-  shareLabel,
   onWake,
   onRestart,
   onPause,
@@ -174,6 +177,11 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
+        <MigrateRuntimeAction
+          agent={agent}
+          pending={migratePending}
+          onMigrate={onMigrate}
+        />
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -204,7 +212,7 @@ export function AgentRow({
               </DropdownMenuItem>
               {onShareKnowledge && (
                 <DropdownMenuItem onSelect={onShareKnowledge}>
-                  {shareLabel ?? "Share knowledge base"}
+                  Share knowledge base
                 </DropdownMenuItem>
               )}
               {onAddToChannel && (messengers.slack || messengers.telegram) && (

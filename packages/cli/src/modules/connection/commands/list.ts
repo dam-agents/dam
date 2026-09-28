@@ -1,18 +1,10 @@
 import { Command } from "commander";
 import type { ConnectionView } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -73,21 +65,12 @@ export function buildListCommand(deps: {
         ref: string | undefined,
         opts: { server?: string; json?: boolean },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
         const svc = deps.createConnectionService(host);
 
         if (ref === undefined) {
           const result = await svc.list();
-          if (!result.ok) {
-            printServiceError(result.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          exitOnServiceError(result, host);
           if (opts.json) {
             return writeStdoutAndExit(
               `${JSON.stringify(result.value)}\n`,
@@ -103,27 +86,18 @@ export function buildListCommand(deps: {
           return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
         }
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const [idsRes, allRes] = await Promise.all([
-          svc.agentConnectionIds(resolved.value.id),
+          svc.agentConnectionIds(agent.id),
           svc.list(),
         ]);
-        if (!idsRes.ok) {
-          printServiceError(idsRes.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
-        if (!allRes.ok) {
-          printServiceError(allRes.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(idsRes, host);
+        exitOnServiceError(allRes, host);
 
         const byId = new Map(allRes.value.map((c) => [c.id, c]));
         const matched: ConnectionView[] = [];

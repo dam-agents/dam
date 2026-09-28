@@ -2,7 +2,7 @@ import { type ChildProcessByStdio, spawn } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 
-import { err, ok, type Result } from "./result.js";
+import { err, ok, type Result } from "agent-runtime-api";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 

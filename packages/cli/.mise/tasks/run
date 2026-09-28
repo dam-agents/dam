@@ -2,4 +2,4 @@
 #MISE description="Build the dam CLI and run it from dist (pass args after --)"
 #MISE depends=[":build"]
 set -euo pipefail
-node dist/bin.js "$@"
+node dist/js/bin.js "$@"

@@ -4,17 +4,14 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { createActivityStamper } from "./activity-stamper.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import { acpNativeRowId } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
-import { boundedSet } from "../../../core/bounded-map.js";
 
-const DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
-const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -51,19 +48,6 @@ function isRequest(msg: unknown): msg is JsonRpcRequest {
   return m.id !== undefined && typeof m.method === "string";
 }
 
-function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
-  return isRequest(msg) && msg.method === "session/request_permission";
-}
-
-function isPrompt(msg: unknown): msg is JsonRpcRequest {
-  return isRequest(msg) && msg.method === "session/prompt";
-}
-
-function hasPermissionOutcome(msg: JsonRpcResponse): boolean {
-  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
-  return typeof result?.outcome?.outcome === "string";
-}
-
 function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== "object" || msg === null) return false;
   const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
@@ -71,8 +55,6 @@ function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (m.method !== undefined) return false;
   return m.result !== undefined || m.error !== undefined;
 }
-
-const lastActivityTimestamps = new Map<string, number>();
 
 export function sanitizeCloseCode(code: number): number {
   if (
@@ -86,14 +68,6 @@ export function sanitizeCloseCode(code: number): number {
     return code;
   if (code >= 3000 && code <= 4999) return code;
   return 1011;
-}
-
-function shouldUpdateActivity(agentId: string): boolean {
-  const now = Date.now();
-  const last = lastActivityTimestamps.get(agentId) ?? 0;
-  if (now - last < DEBOUNCE_MS) return false;
-  boundedSet(lastActivityTimestamps, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
-  return true;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
@@ -113,15 +87,9 @@ export function createAcpRelay(
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
 ) {
-  const resolveIdentity = (
-    agentId: string,
-  ): Promise<{ ownerSub: string; agentId: string } | null> =>
-    repo
-      .resolveIdentity(agentId)
-      .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null));
-
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
+  const stamper = createActivityStamper(repo);
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -142,7 +110,7 @@ export function createAcpRelay(
           "passive",
         ) === "1";
 
-      let identity: { ownerSub: string; agentId: string } | null = null;
+      let identity: { owner: string; agentId: string } | null = null;
 
       const mirroredRows = new Map<string, string>();
 
@@ -178,7 +146,7 @@ export function createAcpRelay(
             agentId: identity.agentId,
             sessionId,
             rpcId: msg.id,
-            ownerSub: identity.ownerSub,
+            ownerSub: identity.owner,
             toolName,
             args: tc.rawInput,
             options,
@@ -190,7 +158,7 @@ export function createAcpRelay(
       }
 
       function trackIfPrompt(parsed: unknown): void {
-        if (!isPrompt(parsed)) return;
+        if (!isRequest(parsed) || parsed.method !== "session/prompt") return;
         if (
           actor.surface === "ui" &&
           parsed.params?._meta?.platform?.initiator === "system"
@@ -207,7 +175,9 @@ export function createAcpRelay(
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
-        if (!rowId || !hasPermissionOutcome(msg)) return;
+        const result = msg.result as
+          { outcome?: { outcome?: unknown } } | undefined;
+        if (!rowId || typeof result?.outcome?.outcome !== "string") return;
         approvals
           .resolveAcpNativeFromInSession(rowId)
           .then(() => mirroredRows.delete(key))
@@ -245,7 +215,8 @@ export function createAcpRelay(
         passive ? "?passive=1" : ""
       }`;
 
-      resolveIdentity(agentId)
+      repo
+        .resolveIdentity(agentId)
         .then((resolved) => {
           if (!resolved) {
             client.close(1011, "instance not found");
@@ -284,15 +255,7 @@ export function createAcpRelay(
             const parsed = isBinary ? null : tryParse(data);
             if (parsed !== null) trackIfPrompt(parsed);
 
-            if (!passive && shouldUpdateActivity(agentId)) {
-              repo
-                .patchAnnotation(
-                  agentId,
-                  LAST_ACTIVITY_KEY,
-                  new Date().toISOString(),
-                )
-                .catch(() => {});
-            }
+            if (!passive) stamper.bump(agentId);
 
             if (isBinary) {
               upstream.send(data, { binary: true });
@@ -313,7 +276,11 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
             client.send(data, { binary: false });
-            if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
+            if (
+              isRequest(parsed) &&
+              parsed.method === "session/request_permission"
+            )
+              mirrorPermissionRequest(parsed);
           });
 
           upstream.on("close", (code, reason) => {

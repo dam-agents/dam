@@ -3,6 +3,8 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +28,6 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -57,16 +58,11 @@ type AgentReconciler struct {
 	preflightDone  bool
 }
 
-func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
-	r := &AgentReconciler{client: client, config: cfg}
+func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
+	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg}
 	r.busyProbe = func(ctx context.Context, name string) bool {
 		return agentPodIsBusy(ctx, r.config.Namespace, name)
 	}
-	return r
-}
-
-func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
-	r.dynamic = d
 	return r
 }
 
@@ -133,10 +129,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("extAuthzService")
 
-	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 	timer.mark("authzPolicies")
@@ -236,6 +232,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
+		if err := r.prepareRuntimeMigration(ctx, agent); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
+		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -244,6 +243,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, fmt.Sprintf("reconciling vm machine: %v", err))
 		}
 		timer.mark("vmMachine")
+		if err := r.continueRuntimeMigration(ctx, agent, machine, runnerReached); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
 			r.recordParkedRetry(name)
@@ -369,7 +371,7 @@ func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 }
 
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return "PodNotReady", ""
 	}
@@ -393,17 +395,12 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 	if ss.Status.ObservedGeneration != ss.Generation {
 		return false
 	}
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return false
 	}
 	return isPodReady(*pod) &&
 		pod.Labels["controller-revision-hash"] == ss.Status.UpdateRevision
-}
-
-func (r *AgentReconciler) getPod(ctx context.Context, ssName string) *corev1.Pod {
-	pod, _ := r.readPod(ctx, ssName)
-	return pod
 }
 
 func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
@@ -427,10 +424,8 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if err != nil {
 			return err
 		}
-		for _, ref := range sec.OwnerReferences {
-			if ref.UID == ownerRef.UID {
-				return nil
-			}
+		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
+			return nil
 		}
 		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
 			APIVersion: ownerRef.APIVersion,
@@ -444,7 +439,6 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 }
 
 func (r *AgentReconciler) Delete(ctx context.Context, name string, labels map[string]string) {
-	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
@@ -460,9 +454,6 @@ func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, age
 	svcName := r.config.ExtAuthzServiceName(agentName)
 	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		slog.Warn("deleting per-agent ext-authz Service", "service", svcName, "agent", agentName, "error", err)
-	}
-	if r.dynamic == nil {
-		return
 	}
 	for _, name := range []string{agentName + "-harness-allow", agentName + "-extauthz-allow"} {
 		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
@@ -494,7 +485,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 	persisted := map[string]bool{}
 	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
 		if mnt.Persist {
-			persisted[types.SanitizeMountName(mnt.Path)] = true
+			persisted[sanitizeMountName(mnt.Path)] = true
 		}
 	}
 
@@ -534,7 +525,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		if !mnt.Persist {
 			continue
 		}
-		volName := types.SanitizeMountName(mnt.Path)
+		volName := sanitizeMountName(mnt.Path)
 		if _, ok := claims[volName]; ok {
 			continue
 		}
@@ -674,14 +665,8 @@ func agentNameFromLeafSecret(sec corev1.Secret) (string, bool) {
 	if sec.Type != corev1.SecretTypeTLS {
 		return "", false
 	}
-	const suffix = envoyLeafSecretSuffix
-	if len(sec.Name) <= len(suffix) {
-		return "", false
-	}
-	if sec.Name[len(sec.Name)-len(suffix):] != suffix {
-		return "", false
-	}
-	return sec.Name[:len(sec.Name)-len(suffix)], true
+	name, ok := strings.CutSuffix(sec.Name, envoyLeafSecretSuffix)
+	return name, ok && name != ""
 }
 
 func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error {
@@ -794,9 +779,6 @@ var certificateGVR = schema.GroupVersionResource{
 }
 
 func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
-	if r.dynamic == nil {
-		return fmt.Errorf("dynamic client not configured (cert-manager Certificate cannot be applied)")
-	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
 	if err != nil {
 		return fmt.Errorf("encoding Certificate: %w", err)
@@ -804,18 +786,22 @@ func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Ce
 	desiredU := &unstructured.Unstructured{Object: raw}
 	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
 	desiredU.SetKind("Certificate")
-	cli := r.dynamic.Resource(certificateGVR).Namespace(desired.Namespace)
+	return r.applyUnstructured(ctx, certificateGVR, desiredU)
+}
+
+func (r *AgentReconciler) applyUnstructured(ctx context.Context, gvr schema.GroupVersionResource, desired *unstructured.Unstructured) error {
+	cli := r.dynamic.Resource(gvr).Namespace(desired.GetNamespace())
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			_, err = cli.Create(ctx, desiredU, metav1.CreateOptions{})
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
 		}
-		desiredU.SetResourceVersion(existing.GetResourceVersion())
-		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

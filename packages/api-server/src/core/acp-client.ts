@@ -5,20 +5,26 @@ import {
   type AcpPermissionOption,
 } from "api-server-api";
 import { z } from "zod";
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
-import type {
-  ContentBlock,
-  InitializeResponse,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import {
+  client,
+  type AnyMessage,
+  type ClientConnection,
+  type ContentBlock,
+  type InitializeResponse,
+  type McpServer,
+  type NewSessionRequest,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionNotification,
+  type Stream,
+} from "@agentclientprotocol/sdk";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
+import { isPlatformMcpTool } from "./platform-mcp.js";
 import { securityLog } from "./security-log.js";
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
-const DEFAULT_STALL_PROBE_MS = 30 * 60 * 1000;
 const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
 const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
@@ -54,13 +60,13 @@ type ConnectionWatch =
     };
 
 async function probeTurnStatus(
-  connection: ClientSideConnection,
+  connection: ClientConnection,
   sessionId: string,
 ): Promise<AcpTurnStatus> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const raw = await Promise.race([
-      connection.extMethod(RUN_RESULT_METHOD, { sessionId }),
+      connection.agent.request(RUN_RESULT_METHOD, { sessionId }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error("stall probe timed out")),
@@ -78,6 +84,29 @@ async function probeTurnStatus(
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+interface ClientHandlers {
+  requestPermission: (
+    params: RequestPermissionRequest,
+  ) => Promise<RequestPermissionResponse>;
+  sessionUpdate?: (params: SessionNotification) => Promise<void>;
+}
+
+function connectClient(
+  stream: Stream,
+  handlers: ClientHandlers,
+): ClientConnection {
+  return client()
+    .onRequest("session/request_permission", (ctx) =>
+      handlers.requestPermission(ctx.params),
+    )
+    .onNotification("session/update", async (ctx) => {
+      await handlers.sessionUpdate?.(ctx.params);
+    })
+    .onRequest("fs/write_text_file", () => ({}))
+    .onRequest("fs/read_text_file", () => ({ content: "" }))
+    .connect(stream);
 }
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
@@ -148,10 +177,7 @@ export interface TriggerSessionResult {
 }
 
 export type SteerOutcome =
-  | "injected"
-  | "no-running-turn"
-  | "unsupported"
-  | "failed";
+  "injected" | "no-running-turn" | "unsupported" | "failed";
 
 const steerResponseSchema = z.object({
   outcome: z.string().optional(),
@@ -204,8 +230,7 @@ export function toPromptUpdate(update: unknown): PromptUpdate | null {
 }
 
 export type SendPromptOpts = (
-  | { resumeSessionId: string }
-  | { platformMeta?: PlatformSessionMeta }
+  { resumeSessionId: string } | { platformMeta?: PlatformSessionMeta }
 ) & {
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
@@ -248,16 +273,34 @@ function rejectOptionId(
   return refusal?.optionId ?? null;
 }
 
+function allowOnceOptionId(
+  options: readonly AcpPermissionOption[],
+): string | null {
+  const once = options.find((option) => option.kind === "allow_once");
+  return once?.optionId ?? null;
+}
+
+function permissionToolName(toolCall: unknown): string | null {
+  if (!toolCall || typeof toolCall !== "object") return null;
+  const { name } = toolCall as { name?: unknown };
+  return typeof name === "string" && name !== "" ? name : null;
+}
+
+function permissionToolLabel(toolCall: unknown): string | null {
+  if (!toolCall || typeof toolCall !== "object") return null;
+  const { title } = toolCall as { title?: unknown };
+  const named = permissionToolName(toolCall);
+  if (named) return named;
+  return typeof title === "string" && title !== "" ? title : null;
+}
+
 async function withAcpConnection<T>(
   url: string,
   agentId: string,
   clientName: string,
-  handlers: { sessionUpdate?: (params: any) => Promise<void> },
+  handlers: { sessionUpdate?: (params: SessionNotification) => Promise<void> },
   watch: ConnectionWatch,
-  fn: (
-    connection: ClientSideConnection,
-    init: InitializeResponse,
-  ) => Promise<T>,
+  fn: (connection: ClientConnection, init: InitializeResponse) => Promise<T>,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
 
@@ -298,39 +341,43 @@ async function withAcpConnection<T>(
     lastFrameAt = Date.now();
   });
 
-  const connection = new ClientSideConnection(
-    () => ({
-      async requestPermission(params: any) {
-        const optionId = rejectOptionId(params.options ?? []);
-        securityLog("warn", "approval.unattended_deny", {
+  const connection = connectClient(stream, {
+    async requestPermission(params) {
+      const toolName = permissionToolLabel(params.toolCall);
+      const sessionId = params.sessionId ?? null;
+      const allowId = isPlatformMcpTool(permissionToolName(params.toolCall))
+        ? allowOnceOptionId(params.options ?? [])
+        : null;
+      if (allowId) {
+        securityLog("info", "approval.platform_tool_allow", {
           category: "approval",
           actor: null,
           actorKind: "agent",
           agentId,
-          decision: "deny",
-          reason: "unattended-channel-turn",
-          detail: {
-            toolName: params.toolCall?.title ?? null,
-            sessionId: params.sessionId ?? null,
-          },
+          decision: "allow",
+          reason: "platform-mcp-surface",
+          detail: { toolName, sessionId },
         });
-        return optionId
-          ? { outcome: { outcome: "selected" as const, optionId } }
-          : { outcome: { outcome: "cancelled" as const } };
-      },
-      async sessionUpdate(params: any) {
-        await handlers.sessionUpdate?.(params);
-      },
-      async writeTextFile() {
-        return {};
-      },
-      async readTextFile() {
-        return { content: "" };
-      },
-      async extNotification() {},
-    }),
-    stream,
-  );
+        return {
+          outcome: { outcome: "selected" as const, optionId: allowId },
+        };
+      }
+      const optionId = rejectOptionId(params.options ?? []);
+      securityLog("warn", "approval.unattended_deny", {
+        category: "approval",
+        actor: null,
+        actorKind: "agent",
+        agentId,
+        decision: "deny",
+        reason: "unattended-channel-turn",
+        detail: { toolName, sessionId },
+      });
+      return optionId
+        ? { outcome: { outcome: "selected" as const, optionId } }
+        : { outcome: { outcome: "cancelled" as const } };
+    },
+    sessionUpdate: handlers.sessionUpdate,
+  });
 
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let probeTimer: ReturnType<typeof setInterval> | undefined;
@@ -382,12 +429,12 @@ async function withAcpConnection<T>(
   };
 
   try {
-    const init = await connection.initialize({
+    const init = await connection.agent.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
-    const result = await Promise.race([
+    return await Promise.race([
       fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
@@ -399,7 +446,6 @@ async function withAcpConnection<T>(
         });
       }),
     ]);
-    return result;
   } finally {
     cleanup();
   }
@@ -407,56 +453,30 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-export interface AcpTurnWatchConfig {
-  stallProbeMs?: number;
-}
-
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
-  turnWatch?: AcpTurnWatchConfig;
+  stallProbeMs: number;
 }): AcpClient {
-  return createAcpClientForUrl(
-    `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
-    opts.instanceName,
-    opts.turnWatch ?? {},
-  );
-}
-
-function createAcpClientForUrl(
-  url: string,
-  agentId: string,
-  turnWatch: AcpTurnWatchConfig,
-): AcpClient {
-  const stallProbeMs = turnWatch.stallProbeMs ?? DEFAULT_STALL_PROBE_MS;
+  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
+  const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       const { stream, ws } = await wsStream(url);
 
-      const connection = new ClientSideConnection(
-        () => ({
-          async requestPermission() {
-            return { outcome: { outcome: "cancelled" as const } };
-          },
-          async sessionUpdate() {},
-          async writeTextFile() {
-            return {};
-          },
-          async readTextFile() {
-            return { content: "" };
-          },
-          async extNotification() {},
-        }),
-        stream,
-      );
+      const connection = connectClient(stream, {
+        async requestPermission() {
+          return { outcome: { outcome: "cancelled" as const } };
+        },
+      });
 
       try {
-        await connection.initialize({
+        await connection.agent.request("initialize", {
           protocolVersion: 1,
           clientCapabilities: {},
           clientInfo: { name: "platform-sessions", version: "1.0.0" },
         });
-        const r = await connection.listSessions({ cwd: "." });
+        const r = await connection.agent.request("session/list", { cwd: "." });
         return (r.sessions ?? []).map((s: any): AcpSessionInfo => {
           const parsed = platformSessionMetaSchema.safeParse(
             s?._meta?.platform,
@@ -522,7 +542,7 @@ function createAcpClientForUrl(
           let sessionId: string;
           if ("resumeSessionId" in sendOpts) {
             try {
-              await connection.loadSession({
+              await connection.agent.request("session/load", {
                 sessionId: sendOpts.resumeSessionId,
                 cwd: ".",
                 mcpServers: [],
@@ -537,13 +557,14 @@ function createAcpClientForUrl(
             sessionId = sendOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const s = await connection.newSession({
+            const newSession: NewSessionRequest = {
               cwd: ".",
               mcpServers: [],
               ...(sendOpts.platformMeta && {
                 _meta: { platform: sendOpts.platformMeta },
               }),
-            } as Parameters<typeof connection.newSession>[0]);
+            };
+            const s = await connection.agent.request("session/new", newSession);
             sessionId = s.sessionId;
             watchSessionId = sessionId;
           }
@@ -572,7 +593,10 @@ function createAcpClientForUrl(
           }
 
           live = true;
-          await connection.prompt({ sessionId, prompt: finalBlocks });
+          await connection.agent.request("session/prompt", {
+            sessionId,
+            prompt: finalBlocks,
+          });
         },
       );
 
@@ -594,7 +618,7 @@ function createAcpClientForUrl(
           { kind: "deadline", ms: STEER_CEILING_MS },
           async (connection, init) => {
             if (!steeringSupported(init)) return "unsupported";
-            const raw = await connection.extMethod(STEER_METHOD, {
+            const raw = await connection.agent.request(STEER_METHOD, {
               sessionId,
               prompt: blocks,
               _meta: { steering: { idleBehavior: "promptRequired" } },
@@ -637,13 +661,13 @@ function createAcpClientForUrl(
           stallProbeMs,
           sessionId: () => watchSessionId,
         },
-        async (connection, _init) => {
+        async (connection) => {
           let sessionId: string;
-          const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
+          const mcpServers = (triggerOpts.mcpServers ?? []) as McpServer[];
 
           if ("resumeSessionId" in triggerOpts) {
             try {
-              await connection.unstable_resumeSession({
+              await connection.agent.request("session/resume", {
                 sessionId: triggerOpts.resumeSessionId,
                 cwd: ".",
                 mcpServers,
@@ -657,13 +681,16 @@ function createAcpClientForUrl(
             sessionId = triggerOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const s = await connection.newSession({ cwd: ".", mcpServers });
+            const s = await connection.agent.request("session/new", {
+              cwd: ".",
+              mcpServers,
+            });
             sessionId = s.sessionId;
             watchSessionId = sessionId;
             await triggerOpts.onSessionCreated(sessionId);
           }
 
-          const r = await connection.prompt({
+          const r = await connection.agent.request("session/prompt", {
             sessionId,
             prompt: [{ type: "text", text: triggerOpts.prompt }],
           });

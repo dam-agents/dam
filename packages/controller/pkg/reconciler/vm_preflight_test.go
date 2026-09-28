@@ -60,7 +60,7 @@ func preflightCluster(extra ...runtime.Object) []runtime.Object {
 }
 
 func runPreflight(cfg *config.Config, objects ...runtime.Object) vmPreflightResult {
-	r := NewAgentReconciler(fake.NewSimpleClientset(objects...), cfg)
+	r := NewAgentReconciler(fake.NewSimpleClientset(objects...), newFakeDynamic(), cfg)
 	return r.vmPreflight(context.Background())
 }
 

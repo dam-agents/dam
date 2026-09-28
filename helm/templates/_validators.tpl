@@ -32,12 +32,12 @@ serve. Fail at render instead, where the operator is looking.
 {{- $ghe := dig "enterprise" dict (.Values.github | default dict) -}}
 {{- $named := $ghe.host | default "" | trim -}}
 {{- $fallback := dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer | trim -}}
-{{- $secret := ($ghe.tokenSecret | default dict).name | default "" | trim -}}
-{{- if and $named (not $secret) -}}
-{{- fail (printf "github.enterprise.host is %q but github.enterprise.tokenSecret.name is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Name the secret, or clear the host." $named) -}}
+{{- $token := $ghe.token | default "" | trim -}}
+{{- if and $named (not $token) -}}
+{{- fail (printf "github.enterprise.host is %q but github.enterprise.token is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Set the token, or clear the host." $named) -}}
 {{- end -}}
-{{- if and $secret (not $named) (not $fallback) -}}
-{{- fail "github.enterprise.tokenSecret.name is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the secret — a token with no host to send it to reads nothing." -}}
+{{- if and $token (not $named) (not $fallback) -}}
+{{- fail "github.enterprise.token is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the token — a token with no host to send it to reads nothing." -}}
 {{- end -}}
 {{- end -}}
 
@@ -47,7 +47,7 @@ grants SCC access via the `system:serviceaccounts:<agentNamespace>`
 group. Both are meaningless if `agentNamespace` is empty.
 */}}
 {{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
-{{- if and .Values.openshift .Values.openshift.scc .Values.openshift.scc.anyuidCapNet .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
 {{- fail "openshift.scc.anyuidCapNet.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
 {{- end -}}

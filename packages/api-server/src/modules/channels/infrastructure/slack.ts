@@ -19,7 +19,6 @@ import {
   SessionType,
   type AgentsService,
 } from "api-server-api";
-import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   classifyInboundAttachment,
   type InboundAttachment,
@@ -49,7 +48,7 @@ import type {
   ThreadQuery,
   ThreadResult,
 } from "../services/channel-manager.js";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
   AcpTurnAbandonedError,
@@ -124,11 +123,13 @@ import {
 } from "./agent-footer.js";
 import {
   aboveBoundary,
+  formatThreadCursor,
   isAfterTs,
   lastOwnPostTs,
   laterTs,
   newestTs,
   nextBoundary,
+  parseThreadCursor,
   selectUnseen,
   type CatchUpSelection,
 } from "../domain/thread-catch-up.js";
@@ -177,21 +178,24 @@ function framePrompt(opts: {
   }
   parts.push(opts.text);
   const delivered = opts.files ?? [];
-  if (delivered.length > 0) parts.push(renderDeliveredFiles(delivered));
+  if (delivered.length > 0) {
+    const list = delivered.map((f) => `- ${f.name} → ${f.path}`).join("\n");
+    parts.push(
+      `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`,
+    );
+  }
   const text = parts.join("\n\n");
   if (opts.images.length === 0 && delivered.length === 0) return text;
   return [
     { type: "text", text },
     ...opts.images.map((i) => i.block),
-    ...delivered.map(
-      (f): ContentBlock => ({
-        type: "resource_link",
-        uri: `file://${f.path}`,
-        name: f.name,
-        size: f.size,
-        ...(f.contentType ? { mimeType: f.contentType } : {}),
-      }),
-    ),
+    ...delivered.map((f): ContentBlock => ({
+      type: "resource_link",
+      uri: `file://${f.path}`,
+      name: f.name,
+      size: f.size,
+      ...(f.contentType ? { mimeType: f.contentType } : {}),
+    })),
   ];
 }
 
@@ -203,11 +207,6 @@ function promptSafeName(name: string): string {
       .trim()
       .slice(0, 120) || "file"
   );
-}
-
-function renderDeliveredFiles(files: DeliveredFile[]): string {
-  const list = files.map((f) => `- ${f.name} → ${f.path}`).join("\n");
-  return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
 }
 
 function isDirectMessageId(channelId: string): boolean {
@@ -446,7 +445,7 @@ async function fetchSlackAttachments(
         const refused =
           looksLikeSignInPage(head) ||
           (classifyInboundAttachment(bytes).kind === "web_page" &&
-            !(await canReadFiles(gateway, teamId)));
+            !(await hasScope(gateway, teamId, "files:read")));
         if (bytes.length === 0 || refused) {
           getLogger().warn(
             {
@@ -543,15 +542,18 @@ function renderTurnFiles(attachments: {
 
 const THREAD_LOOKBACK = 50;
 
+const STALE_THREAD_CURSOR =
+  "that cursor is not one this thread handed you — a cursor comes back " +
+  "from a read of this same thread and reaches only backwards inside it, " +
+  "so one from another thread, or naming a point this thread does not " +
+  "reach, is refused rather than answered with some other window. Drop it " +
+  "and read the thread again from its end.";
+
 const CHANNEL_LOOKBACK = 50;
 
 const CHANNEL_CATCH_UP_CAP = 500;
 
 const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function windowFloorTs(nowMs: number): string {
-  return ((nowMs - CATCH_UP_WINDOW_MS) / 1000).toFixed(6);
-}
 
 async function readConversation(
   gateway: SlackGateway,
@@ -732,7 +734,7 @@ export interface SlackWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
-  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
+  start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
@@ -917,28 +919,13 @@ async function grantedScopes(
   }
 }
 
-async function canLookupUsers(
+async function hasScope(
   gw: SlackGateway,
   teamId: SlackWorkspace,
+  scope: string,
 ): Promise<boolean> {
   const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("users:read");
-}
-
-async function canReadFiles(
-  gw: SlackGateway,
-  teamId: SlackWorkspace,
-): Promise<boolean> {
-  const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("files:read");
-}
-
-async function canReadReactions(
-  gw: SlackGateway,
-  teamId: SlackWorkspace,
-): Promise<boolean> {
-  const scopes = await grantedScopes(gw, teamId);
-  return !scopes || scopes.has("reactions:read");
+  return !scopes || scopes.has(scope);
 }
 
 const SCOPE_WITHHELD_USERS =
@@ -993,7 +980,7 @@ async function turnContractContext(
   botUserId: string | null;
 }> {
   const [lookup, permalink, botUserId] = await Promise.all([
-    canLookupUsers(gw, teamId),
+    hasScope(gw, teamId, "users:read"),
     opts?.batched
       ? Promise.resolve(null)
       : gw.getPermalink(channel, eventTs, teamId).catch(() => null),
@@ -1002,39 +989,64 @@ async function turnContractContext(
   return { canLookupUsers: lookup, permalink, botUserId };
 }
 
-export function createSlackWorker(
-  makeAcpClient: AcpClientFactory,
-  createGateway: () => SlackGateway,
-  agents: () => AgentsService,
-  identityLinks: IdentityLinkService,
-  oauthConfig: KeycloakOAuthConfig,
-  pendingOAuthFlows: TtlStore<SlackOAuthPending>,
-  getInstanceOwner: (agentId: string) => Promise<string | null>,
-  channelRegistry: ChannelRegistry,
+export type SlackWorkerDeps = {
+  makeAcpClient: AcpClientFactory;
+  createGateway: () => SlackGateway;
+  agents: () => AgentsService;
+  identityLinks: IdentityLinkService;
+  oauthConfig: KeycloakOAuthConfig;
+  pendingOAuthFlows: TtlStore<SlackOAuthPending>;
+  getInstanceOwner: (agentId: string) => Promise<string | null>;
+  channelRegistry: ChannelRegistry;
   unbindSlackChannel: (
     agentId: string,
     slackChannelId: string,
-  ) => Promise<void>,
+  ) => Promise<void>;
   setSlackChannelAmbient: (
     agentId: string,
     slackChannelId: string,
     ambient: boolean,
-  ) => Promise<void>,
+  ) => Promise<void>;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
-  ) => Promise<boolean>,
-  brand: { name: string; short: string },
-  isTermsAccepted: (sub: string) => Promise<boolean>,
-  uiBaseUrl: string,
-  attendance: ChannelTurnAttendance,
-  workspaceFiles: AgentWorkspaceFilesFactory,
-  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace,
-  emit: (event: DomainEvent) => void = defaultEmit,
-  settleMs = 0,
-  wakeWait: WakeWaitOptions = {},
-  agentIcon: AgentIconUrl | null = null,
-): SlackWorker {
+  ) => Promise<boolean>;
+  brand: { name: string; short: string };
+  isTermsAccepted: (sub: string) => Promise<boolean>;
+  uiBaseUrl: string;
+  attendance: ChannelTurnAttendance;
+  workspaceFiles: AgentWorkspaceFilesFactory;
+  canonicalWorkspace: (teamId: SlackWorkspace) => SlackWorkspace;
+  emit?: (event: DomainEvent) => void;
+  settleMs?: number;
+  wakeWait?: WakeWaitOptions;
+  agentIcon?: AgentIconUrl | null;
+};
+
+export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
+  const {
+    makeAcpClient,
+    createGateway,
+    agents,
+    identityLinks,
+    oauthConfig,
+    pendingOAuthFlows,
+    getInstanceOwner,
+    channelRegistry,
+    unbindSlackChannel,
+    setSlackChannelAmbient,
+    setSlackDefault,
+    brand,
+    isTermsAccepted,
+    uiBaseUrl,
+    attendance,
+    workspaceFiles,
+    canonicalWorkspace,
+    emit = defaultEmit,
+    settleMs = 0,
+    wakeWait = {},
+    agentIcon = null,
+  } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
@@ -2108,7 +2120,7 @@ export function createSlackWorker(
     );
     const attribution =
       hasAgentAuthored || hasUnattributedBot
-        ? historyLegend(await canLookupUsers(gw, ctx.teamId), {
+        ? historyLegend(await hasScope(gw, ctx.teamId, "users:read"), {
             botLabel: hasUnattributedBot ? bot.label : null,
           })
         : null;
@@ -2178,7 +2190,7 @@ export function createSlackWorker(
       })),
       ctx.instanceName,
     );
-    const floor = windowFloorTs(Date.now());
+    const floor = ((Date.now() - CATCH_UP_WINDOW_MS) / 1000).toFixed(6);
     if (own === null) return floor;
     return ctx.conversationTs !== undefined ? own : laterTs(own, floor);
   }
@@ -2251,11 +2263,14 @@ export function createSlackWorker(
       return {
         frame: {
           context: lines,
-          contextLegend: catchUpLegend(await canLookupUsers(gw, ctx.teamId), {
-            botLabel: hasUnattributedBot ? bot.label : null,
-            someOmitted: readHasMore,
-            hasThreadMarker,
-          }),
+          contextLegend: catchUpLegend(
+            await hasScope(gw, ctx.teamId, "users:read"),
+            {
+              botLabel: hasUnattributedBot ? bot.label : null,
+              someOmitted: readHasMore,
+              hasThreadMarker,
+            },
+          ),
         },
         commit,
       };
@@ -3635,7 +3650,7 @@ export function createSlackWorker(
         throw new Error("Slack gateway failed to connect");
     },
 
-    async start(instanceName: string, _channel: StoredChannelConfig) {
+    async start(instanceName: string) {
       serving = true;
       const started = await ensureGateway();
       if (!started) {
@@ -4095,7 +4110,7 @@ export function createSlackWorker(
         requested.push({ raw, id });
       }
 
-      const lookupGranted = await canLookupUsers(gw, workspace);
+      const lookupGranted = await hasScope(gw, workspace, "users:read");
       const users = await Promise.all(
         requested.map(async ({ raw, id }): Promise<ChannelUser> => {
           if (id && !lookupGranted) {
@@ -4200,7 +4215,7 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      if (!(await canReadReactions(gw, target.teamId)))
+      if (!(await hasScope(gw, target.teamId, "reactions:read")))
         return { error: SCOPE_WITHHELD_REACTIONS };
 
       try {
@@ -4243,14 +4258,24 @@ export function createSlackWorker(
         };
       }
 
+      const asked =
+        query.cursor !== undefined ? parseThreadCursor(query.cursor) : null;
+      if (query.cursor !== undefined && asked?.threadTs !== query.threadTs)
+        return { error: STALE_THREAD_CURSOR };
+
       try {
         const read = await gw.getThreadTail({
           channel: target.id,
           threadTs: query.threadTs,
           limit: THREAD_LOOKBACK,
           teamId: target.teamId,
+          ...(asked !== null ? { before: asked.before } : {}),
         });
-        if (read.messages.length === 0) {
+        const opened =
+          read.opener !== null && read.messages[0]?.ts !== read.opener.ts
+            ? [read.opener, ...read.messages]
+            : read.messages;
+        if (opened.length === 0) {
           return {
             error:
               "no messages came back for that thread — it may not exist in " +
@@ -4258,22 +4283,37 @@ export function createSlackWorker(
               "no longer be valid",
           };
         }
+        const reached = read.messages.filter(
+          (message) => message.ts !== read.opener?.ts,
+        );
+        if (asked !== null && (read.hasMore || reached.length === 0))
+          return { error: STALE_THREAD_CURSOR };
         const bot = {
           userId: await gw.getBotUserId(target.teamId).catch(() => null),
           label: botHistoryLabel(brand),
         };
-        const entries = read.messages.map((message) => ({
+        const entries = opened.map((message) => ({
           message,
           footer: parseAgentFooter(message),
         }));
         const names = await resolveAuthorNames(entries, resolveAgentName);
+        const earlier =
+          read.hasEarlier && !read.hasMore ? read.messages[0]?.ts : undefined;
         return {
           messages: labelMessages(entries, names, instanceName, bot, {
             showThreadMarkers: false,
           }),
           conversationId: target.id,
           threadTs: query.threadTs,
-          hasMore: read.hasMore || read.messages[0]?.ts !== query.threadTs,
+          hasMore: read.hasEarlier || read.hasMore,
+          ...(earlier !== undefined
+            ? {
+                cursor: formatThreadCursor({
+                  threadTs: query.threadTs,
+                  before: earlier,
+                }),
+              }
+            : {}),
         };
       } catch (err) {
         return { error: formatError(err) };

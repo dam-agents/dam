@@ -1,0 +1,27 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Pull an image for the host's arch into a named image tar"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<ref>"
+#USAGE arg "<tar>"
+#USAGE arg "<name>" help="The name it imports as, e.g. platform-mock:latest"
+set -euo pipefail
+l="$(mktemp -d)"
+trap 'rm -rf "$l"' EXIT
+platform="linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
+# A registry can cut a layer download short ("error writing layer: unexpected
+# EOF" from quay.io, on a CI run that pulls five images at once), so a failed
+# pull is retried, each time into an empty layout.
+for attempt in 1 2 3; do
+  crane pull --format=oci --platform "$platform" "$usage_ref" "$l" && break
+  [ "$attempt" -lt 3 ] || exit 1
+  echo "pull of $usage_ref failed (attempt $attempt); retrying in $((attempt * 5))s" >&2
+  rm -rf "${l:?}"/* "${l:?}"/.[!.]* 2>/dev/null || true
+  sleep $((attempt * 5))
+done
+"$(dirname "$0")/name-layout" "$l" "$usage_name"
+mkdir -p "$(dirname "$usage_tar")"
+tar -C "$l" -cf "$usage_tar" $(ls -A "$l")
+# Older than any source, so a package's :oci task still builds the checkout
+# over a pulled image rather than taking it for its own output.
+touch -t 198001010000 "$usage_tar"

@@ -17,7 +17,6 @@ import { getErrorMessage } from "@/lib/errors";
 import { toScanFailure } from "@/lib/scan-failure";
 
 import { api } from "../../../api.js";
-import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
@@ -563,7 +562,8 @@ export function useSkillsSurface(
         return true;
       } catch (err) {
         const raw = getErrorMessage(err, `Failed to publish ${input.name}`);
-        const { message, cta } = parsePlatformCta(raw);
+        const cta = raw.match(/platform-cta:(\S+)/)?.[1] ?? null;
+        const message = raw.replace(/\nplatform-cta:\S+/, "").trim();
         emitToast({
           kind: "error",
           message,

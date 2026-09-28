@@ -6,14 +6,13 @@ export interface BlobHandoff {
   take(key: string): Promise<Buffer | null>;
 }
 
-export function createRedisBlobHandoff(
-  redis: Redis,
-  ttlSeconds = 120,
-): BlobHandoff {
+const TTL_SECONDS = 120;
+
+export function createRedisBlobHandoff(redis: Redis): BlobHandoff {
   return {
     async put(data) {
       const key = `blob:${randomUUID()}`;
-      await redis.set(key, data, "EX", ttlSeconds);
+      await redis.set(key, data, "EX", TTL_SECONDS);
       return key;
     },
 

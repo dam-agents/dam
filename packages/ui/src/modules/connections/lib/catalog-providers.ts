@@ -14,7 +14,7 @@ export const CATALOG_TAB_LABEL: Record<CatalogTab, string> = {
   "custom-headers": "Custom Headers",
 };
 
-export interface CatalogProvider {
+interface CatalogProvider {
   id: string;
   title: string;
   iconSlug: string | undefined;

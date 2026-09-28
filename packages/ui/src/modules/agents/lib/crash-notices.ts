@@ -22,7 +22,7 @@ const RESTART_CAUSES: Record<string, string> = {
   GuestStoppedAnswering: "stopped responding and restarted",
 };
 
-export function restartNotice(agent: WatchedAgent): string {
+function restartNotice(agent: WatchedAgent): string {
   const cause = agent.podRestartReason
     ? RESTART_CAUSES[agent.podRestartReason]
     : undefined;

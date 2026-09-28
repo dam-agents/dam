@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use vm_runner::embedded::Smolvm;
+use vm_runner::forward::LOOPBACK_OFFSET;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, templates};
@@ -110,7 +111,7 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     Ok(listener)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE the controller's termination grace on the runner pod covers.
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE and STOP_ON_CLOSE the controller's termination grace on the runner pod covers.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
@@ -145,20 +146,32 @@ fn main() -> anyhow::Result<()> {
         args.memory_mib > 0,
         "--memory-mib is required: without it the runner admits machines against no limit at all"
     );
-    anyhow::ensure!(
-        args.port_min <= args.port_max,
-        "--port-min is above --port-max"
-    );
+    check_ports(args.port_min, args.port_max)?;
     let token = std::fs::read_to_string(&args.token_file)
         .map_err(|e| anyhow::anyhow!("reading {}: {e}", args.token_file.display()))?;
     let token = token.trim().to_string();
     anyhow::ensure!(!token.is_empty(), "the token file is empty");
     configure_smolvm(&args.smolvm);
     prepare_host(&args)?;
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(serve(args, token))
+        .build()?;
+    let served = runtime.block_on(serve(args, token));
+    runtime.shutdown_timeout(RUNTIME_EXIT_WAIT);
+    served
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the process waits, once it has closed, for blocking work still running. Closing already waited its own bounded time for the machines; a runtime call past that is stuck, and a dropped tokio runtime would wait for it without end, past the pod's grace, into the SIGKILL.
+const RUNTIME_EXIT_WAIT: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: the port range as the runner can publish it. Each machine's guest port sits on loopback at its published port plus LOOPBACK_OFFSET, so a range whose top plus the offset passes 65535 would publish a machine on a port that does not exist, and the arithmetic would overflow at the first such machine instead of failing here at start.
+fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
+    anyhow::ensure!(min <= max, "--port-min is above --port-max");
+    anyhow::ensure!(
+        max.checked_add(LOOPBACK_OFFSET).is_some(),
+        "--port-max {max} plus the loopback offset {LOOPBACK_OFFSET} is above 65535"
+    );
+    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
@@ -205,7 +218,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
             reserve_mib: i32::try_from(args.reserve_mib)?,
             listen: None,
         },
-        runtime.clone(),
+        runtime,
     )?;
 
     let install = args
@@ -218,12 +231,12 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         .unwrap_or_default();
     let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
     server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
-    let reaper = runtime.clone();
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
-            reaper.reap();
+            smolvm::process::reap_vm_children();
         }
     });
 
@@ -317,6 +330,19 @@ mod tests {
         assert_eq!(boot_config(args(&["vm-runner"]).into_iter()), None);
     }
 
+    // TEST_SCENARIO: a machine's guest port is its published port plus the loopback offset. A range whose top would put that past 65535 is refused at start, not at the first machine published there, and the range the controller renders fits.
+    #[test]
+    fn a_port_range_whose_guest_ports_do_not_fit_is_refused() {
+        assert!(check_ports(31000, 31099).is_ok());
+        assert!(check_ports(31099, 31000).is_err());
+        let top = u16::MAX - LOOPBACK_OFFSET;
+        assert!(check_ports(top, top).is_ok());
+        let refused = check_ports(top, top + 1).unwrap_err().to_string();
+        assert!(refused.contains("above 65535"), "{refused}");
+        let args = Args::try_parse_from(pod_argv()).unwrap();
+        assert!(check_ports(args.port_min, args.port_max).is_ok());
+    }
+
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {
@@ -355,18 +381,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint passes ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
     fn entrypoint_args() -> Vec<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile");
-        let dockerfile = std::fs::read_to_string(path)
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/image.toml");
+        let config = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
-        let line = dockerfile
+        let line = config
             .lines()
-            .find(|line| line.starts_with("ENTRYPOINT "))
-            .expect("the runner image has an ENTRYPOINT");
+            .find(|line| line.starts_with("entrypoint = "))
+            .expect("the runner image has an entrypoint");
         let words: Vec<String> =
-            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
-                .expect("the ENTRYPOINT is in exec form");
+            serde_json::from_str(line.trim_start_matches("entrypoint = ").trim())
+                .expect("the entrypoint is one line of strings");
         let runner = words
             .iter()
             .position(|word| word == "vm-runner")

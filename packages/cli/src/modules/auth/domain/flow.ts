@@ -1,9 +1,7 @@
 import type { TokenEndpointResponse } from "./tokens.js";
 
 export type DeviceFlowFailure =
-  | "access-denied"
-  | "expired-token"
-  | "unexpected-response";
+  "access-denied" | "expired-token" | "unexpected-response";
 
 export interface SucceededTokens {
   accessToken: string;

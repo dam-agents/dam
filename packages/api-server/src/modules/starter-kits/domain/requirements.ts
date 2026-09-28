@@ -34,18 +34,3 @@ export function kitRef(
 ): string {
   return `${catalog}/${kitId}@${version}`;
 }
-
-export function parseKitRef(
-  ref: string,
-): { catalog: string; kitId: string; version: string } | null {
-  const at = ref.lastIndexOf("@");
-  if (at <= 0 || at === ref.length - 1) return null;
-  const path = ref.slice(0, at);
-  const slash = path.indexOf("/");
-  if (slash <= 0 || slash === path.length - 1) return null;
-  return {
-    catalog: path.slice(0, slash),
-    kitId: path.slice(slash + 1),
-    version: ref.slice(at + 1),
-  };
-}

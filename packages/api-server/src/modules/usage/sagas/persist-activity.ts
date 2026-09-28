@@ -4,6 +4,7 @@ import {
   events$,
   ofType,
   EventType,
+  type DomainEvent,
   type UserAuthenticated,
   type ChannelTurnRelayed,
   type SessionTurnRelayed,
@@ -45,692 +46,323 @@ export function startPersistActivitySaga(
 ): Subscription {
   const sub = new Subscription();
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<UserAuthenticated>(EventType.UserAuthenticated),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "auth",
-              actorSub: event.userSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: {},
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] auth insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
+  function persist<T extends DomainEvent>(
+    type: T["type"],
+    toRow: (event: T) => ActivityEventRow | null,
+    label?: string,
+  ): void {
+    sub.add(
+      events$()
+        .pipe(
+          ofType<T>(type),
+          mergeMap(async (event) => {
+            const row = toRow(event);
+            if (!row) return;
+            try {
+              await deps.insert(row);
+            } catch (err) {
+              process.stderr.write(
+                `[usage/persist-activity] ${label ?? row.type} insert failed: ${err}\n`,
+              );
+            }
+          }, STREAM_CONCURRENCY),
+        )
+        .subscribe(),
+    );
+  }
+
+  persist<UserAuthenticated>(EventType.UserAuthenticated, (event) => ({
+    type: "auth",
+    actorSub: event.userSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: {},
+  }));
+
+  persist<ChannelTurnRelayed>(
+    EventType.ChannelTurnRelayed,
+    (event) => ({
+      type: "channel_turn",
+      actorSub: event.actorSub,
+      agentId: event.agentId,
+      surface: event.channel,
+      outcome: event.outcome,
+      ...(event.externalActorId
+        ? { externalActorId: event.externalActorId }
+        : {}),
+      payload: {
+        ...(event.reason ? { reason: event.reason } : {}),
+      },
+    }),
+    "channel",
   );
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ChannelTurnRelayed>(EventType.ChannelTurnRelayed),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "channel_turn",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.channel,
-              outcome: event.outcome,
-              ...(event.externalActorId
-                ? { externalActorId: event.externalActorId }
-                : {}),
-              payload: {
-                ...(event.reason ? { reason: event.reason } : {}),
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] channel insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
+  persist<SessionTurnRelayed>(EventType.SessionTurnRelayed, (event) => ({
+    type: "session_turn",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: {},
+  }));
+
+  persist<AgentRelayAttached>(EventType.AgentRelayAttached, (event) => ({
+    type: "relay_attached",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: { relay: event.relay },
+  }));
+
+  persist<ScheduleFired>(EventType.ScheduleFired, (event) => ({
+    type: "schedule_fire",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: "scheduler",
+    outcome: event.outcome,
+    payload: {
+      scheduleId: event.scheduleId,
+      mode: event.mode,
+    },
+  }));
+
+  persist<ConnectionCreated>(EventType.ConnectionCreated, (event) => ({
+    type: "connection_added",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.kind,
+    outcome: "success",
+    payload: {
+      connectionKey: event.connectionKey,
+      templateId: event.templateId,
+    },
+  }));
+
+  persist<ConnectionRemoved>(EventType.ConnectionRemoved, (event) => ({
+    type: "connection_removed",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.kind,
+    outcome: "success",
+    payload: {
+      connectionKey: event.connectionKey,
+      templateId: event.templateId,
+    },
+  }));
+
+  persist<FilesImported>(EventType.FilesImported, (event) => ({
+    type: "files_imported",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: event.outcome,
+    payload: { bytes: event.bytes },
+  }));
+
+  persist<ContributionApplyFailed>(
+    EventType.ContributionApplyFailed,
+    (event) => ({
+      type: "contribution_apply_failed",
+      actorSub: null,
+      agentId: event.agentId,
+      surface: null,
+      outcome: "failure",
+      payload: { kind: event.kind, message: event.message },
+    }),
   );
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<SessionTurnRelayed>(EventType.SessionTurnRelayed),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "session_turn",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: {},
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] session_turn insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
+  persist<ContributionRecovered>(EventType.ContributionRecovered, (event) => ({
+    type: "contribution_recovered",
+    actorSub: null,
+    agentId: event.agentId,
+    surface: null,
+    outcome: "success",
+    payload: { kind: event.kind },
+  }));
+
+  persist<ContributionApplyGaveUp>(
+    EventType.ContributionApplyGaveUp,
+    (event) => ({
+      type: "contribution_apply_gave_up",
+      actorSub: null,
+      agentId: event.agentId,
+      surface: null,
+      outcome: "failure",
+      payload: { kind: event.kind, message: event.message },
+    }),
   );
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<AgentRelayAttached>(EventType.AgentRelayAttached),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "relay_attached",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: { relay: event.relay },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] relay_attached insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ArtifactPublished>(EventType.ArtifactPublished, (event) => ({
+    type: "artifact_published",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: {
+      artifactId: event.artifactId,
+      kind: event.kind,
+      visibility: event.visibility,
+    },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ScheduleFired>(EventType.ScheduleFired),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "schedule_fire",
-              actorSub: event.ownerSub,
-              agentId: event.agentId,
-              surface: "scheduler",
-              outcome: event.outcome,
-              payload: {
-                scheduleId: event.scheduleId,
-                mode: event.mode,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] schedule_fire insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ArtifactShared>(EventType.ArtifactShared, (event) => ({
+    type: "artifact_shared",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: {
+      artifactId: event.artifactId,
+      visibility: event.visibility,
+    },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ConnectionCreated>(EventType.ConnectionCreated),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "connection_added",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.kind,
-              outcome: "success",
-              payload: {
-                connectionKey: event.connectionKey,
-                templateId: event.templateId,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] connection_added insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ArtifactDeleted>(EventType.ArtifactDeleted, (event) => {
+    if (!event.actorSub) return null;
+    return {
+      type: "artifact_deleted",
+      actorSub: event.actorSub,
+      agentId: event.agentId ?? null,
+      surface: event.surface ?? null,
+      outcome: "success",
+      payload: { artifactId: event.artifactId },
+    };
+  });
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ConnectionRemoved>(EventType.ConnectionRemoved),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "connection_removed",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.kind,
-              outcome: "success",
-              payload: {
-                connectionKey: event.connectionKey,
-                templateId: event.templateId,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] connection_removed insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ArtifactViewed>(EventType.ArtifactViewed, (event) => ({
+    type: "artifact_viewed",
+    actorSub: null,
+    agentId: null,
+    surface: "share-host",
+    outcome: "success",
+    ownerSub: event.ownerSub,
+    payload: { artifactId: event.artifactId },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<FilesImported>(EventType.FilesImported),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "files_imported",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: event.outcome,
-              payload: { bytes: event.bytes },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] files_imported insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<AgentSkillChanged>(EventType.AgentSkillChanged, (event) => ({
+    type:
+      event.action === "installed" ? "skill_installed" : "skill_uninstalled",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: {
+      name: event.name,
+      origin: event.origin,
+      ...(event.source ? { source: event.source } : {}),
+    },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ContributionApplyFailed>(EventType.ContributionApplyFailed),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "contribution_apply_failed",
-              actorSub: null,
-              agentId: event.agentId,
-              surface: null,
-              outcome: "failure",
-              payload: { kind: event.kind, message: event.message },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] contribution_apply_failed insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<SkillPublished>(EventType.SkillPublished, (event) => ({
+    type: "skill_published",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: { name: event.name },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ContributionRecovered>(EventType.ContributionRecovered),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "contribution_recovered",
-              actorSub: null,
-              agentId: event.agentId,
-              surface: null,
-              outcome: "success",
-              payload: { kind: event.kind },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] contribution_recovered insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<SkillSetSaved>(EventType.SkillSetSaved, (event) => ({
+    type: "skill_set_saved",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: { skillCount: event.skillCount },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ContributionApplyGaveUp>(EventType.ContributionApplyGaveUp),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "contribution_apply_gave_up",
-              actorSub: null,
-              agentId: event.agentId,
-              surface: null,
-              outcome: "failure",
-              payload: { kind: event.kind, message: event.message },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] contribution_apply_gave_up insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<SkillSetDeleted>(EventType.SkillSetDeleted, (event) => ({
+    type: "skill_set_deleted",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: {},
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ArtifactPublished>(EventType.ArtifactPublished),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "artifact_published",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: {
-                artifactId: event.artifactId,
-                kind: event.kind,
-                visibility: event.visibility,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] artifact_published insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<KindedAgentCreated>(EventType.KindedAgentCreated, (event) => ({
+    type: "kinded_agent_created",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: { kind: event.kind },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ArtifactShared>(EventType.ArtifactShared),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "artifact_shared",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: {
-                artifactId: event.artifactId,
-                visibility: event.visibility,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] artifact_shared insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<StarterKitApplied>(EventType.StarterKitApplied, (event) => ({
+    type: "starter_kit_applied",
+    actorSub: event.actorSub,
+    agentId: event.agentId,
+    surface: event.surface,
+    outcome: "success",
+    payload: {
+      catalog: event.catalog,
+      kitId: event.kitId,
+      version: event.version,
+    },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ArtifactDeleted>(EventType.ArtifactDeleted),
-        mergeMap(async (event) => {
-          if (!event.actorSub) return;
-          try {
-            await deps.insert({
-              type: "artifact_deleted",
-              actorSub: event.actorSub,
-              agentId: event.agentId ?? null,
-              surface: event.surface ?? null,
-              outcome: "success",
-              payload: { artifactId: event.artifactId },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] artifact_deleted insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ExperimentChanged>(EventType.ExperimentChanged, (event) => {
+    if (!event.action || !event.actorSub) return null;
+    return {
+      type: `experiment_${event.action}`,
+      actorSub: event.actorSub,
+      agentId: null,
+      surface: event.surface ?? null,
+      outcome: "success",
+      payload: { experimentId: event.experimentId },
+    };
+  });
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ArtifactViewed>(EventType.ArtifactViewed),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "artifact_viewed",
-              actorSub: null,
-              agentId: null,
-              surface: "share-host",
-              outcome: "success",
-              ownerSub: event.ownerSub,
-              payload: { artifactId: event.artifactId },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] artifact_viewed insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<InvocationSpawned>(EventType.InvocationSpawned, (event) => ({
+    type: "invocation_spawned",
+    actorSub: event.ownerSub,
+    agentId: event.driverAgentId,
+    surface: "mcp",
+    outcome: "success",
+    payload: { targetAgentId: event.targetAgentId },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<AgentSkillChanged>(EventType.AgentSkillChanged),
-        mergeMap(async (event) => {
-          const type =
-            event.action === "installed"
-              ? "skill_installed"
-              : "skill_uninstalled";
-          try {
-            await deps.insert({
-              type,
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: {
-                name: event.name,
-                origin: event.origin,
-                ...(event.source ? { source: event.source } : {}),
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] ${type} insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<FeatureFlagChanged>(EventType.FeatureFlagChanged, (event) => ({
+    type: "feature_flag_changed",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: { feature: event.feature, enabled: event.enabled },
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<SkillPublished>(EventType.SkillPublished),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "skill_published",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: { name: event.name },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] skill_published insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<HarnessConfigChanged>(EventType.HarnessConfigChanged, (event) => {
+    if (!event.actorSub) return null;
+    return {
+      type: "harness_config_changed",
+      actorSub: event.actorSub,
+      agentId: event.agentId,
+      surface: event.surface ?? null,
+      outcome: "success",
+      payload: {},
+    };
+  });
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<SkillSetSaved>(EventType.SkillSetSaved),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "skill_set_saved",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: { skillCount: event.skillCount },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] skill_set_saved insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<ApiKeyChanged>(EventType.ApiKeyChanged, (event) => ({
+    type: `api_key_${event.action}`,
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: {},
+  }));
 
-  sub.add(
-    events$()
-      .pipe(
-        ofType<SkillSetDeleted>(EventType.SkillSetDeleted),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "skill_set_deleted",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: {},
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] skill_set_deleted insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<KindedAgentCreated>(EventType.KindedAgentCreated),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "kinded_agent_created",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: { kind: event.kind },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] kinded_agent_created insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<StarterKitApplied>(EventType.StarterKitApplied),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "starter_kit_applied",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface,
-              outcome: "success",
-              payload: {
-                catalog: event.catalog,
-                kitId: event.kitId,
-                version: event.version,
-              },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] starter_kit_applied insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ExperimentChanged>(EventType.ExperimentChanged),
-        mergeMap(async (event) => {
-          if (!event.action || !event.actorSub) return;
-          const type = `experiment_${event.action}`;
-          try {
-            await deps.insert({
-              type,
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface ?? null,
-              outcome: "success",
-              payload: { experimentId: event.experimentId },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] ${type} insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<InvocationSpawned>(EventType.InvocationSpawned),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "invocation_spawned",
-              actorSub: event.ownerSub,
-              agentId: event.driverAgentId,
-              surface: "mcp",
-              outcome: "success",
-              payload: { targetAgentId: event.targetAgentId },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] invocation_spawned insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<FeatureFlagChanged>(EventType.FeatureFlagChanged),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "feature_flag_changed",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: { feature: event.feature, enabled: event.enabled },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] feature_flag_changed insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<HarnessConfigChanged>(EventType.HarnessConfigChanged),
-        mergeMap(async (event) => {
-          if (!event.actorSub) return;
-          try {
-            await deps.insert({
-              type: "harness_config_changed",
-              actorSub: event.actorSub,
-              agentId: event.agentId,
-              surface: event.surface ?? null,
-              outcome: "success",
-              payload: {},
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] harness_config_changed insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<ApiKeyChanged>(EventType.ApiKeyChanged),
-        mergeMap(async (event) => {
-          const type = `api_key_${event.action}`;
-          try {
-            await deps.insert({
-              type,
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: event.surface,
-              outcome: "success",
-              payload: {},
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] ${type} insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
-
-  sub.add(
-    events$()
-      .pipe(
-        ofType<EntryPointChosen>(EventType.EntryPointChosen),
-        mergeMap(async (event) => {
-          try {
-            await deps.insert({
-              type: "entry_point_chosen",
-              actorSub: event.actorSub,
-              agentId: null,
-              surface: "ui",
-              outcome: "success",
-              payload: { choice: event.choice },
-            });
-          } catch (err) {
-            process.stderr.write(
-              `[usage/persist-activity] entry_point_chosen insert failed: ${err}\n`,
-            );
-          }
-        }, STREAM_CONCURRENCY),
-      )
-      .subscribe(),
-  );
+  persist<EntryPointChosen>(EventType.EntryPointChosen, (event) => ({
+    type: "entry_point_chosen",
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: "ui",
+    outcome: "success",
+    payload: { choice: event.choice },
+  }));
 
   return sub;
 }

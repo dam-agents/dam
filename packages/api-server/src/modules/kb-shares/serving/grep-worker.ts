@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 import { globToMatcher } from "./glob-matcher.js";
 
 export const GREP_DEADLINE_MS = 2000;
-export const GREP_MAX_MATCHES = 200;
+const GREP_MAX_MATCHES = 200;
 
 export interface GrepInputFile {
   path: string;
@@ -94,16 +94,14 @@ const GLOB_WORKER_SOURCE = `
 })();
 `;
 
-export function runGlobFilterWorker(input: {
-  glob: string;
-  paths: readonly string[];
-  deadlineMs?: number;
-}): Promise<string[]> {
+function runWorker<M, T>(
+  source: string,
+  workerData: unknown,
+  deadlineMs: number,
+  settleMessage: (message: M) => T,
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(GLOB_WORKER_SOURCE, {
-      eval: true,
-      workerData: { glob: input.glob, paths: input.paths },
-    });
+    const worker = new Worker(source, { eval: true, workerData });
     let settled = false;
     const settle = (fn: () => void): void => {
       if (settled) return;
@@ -114,10 +112,16 @@ export function runGlobFilterWorker(input: {
     };
     const deadline = setTimeout(
       () => settle(() => reject(new GrepDeadlineError())),
-      input.deadlineMs ?? GREP_DEADLINE_MS,
+      deadlineMs,
     );
-    worker.once("message", (message: { matched: string[] }) => {
-      settle(() => resolve(message.matched));
+    worker.once("message", (message: M) => {
+      settle(() => {
+        try {
+          resolve(settleMessage(message));
+        } catch (err) {
+          reject(err);
+        }
+      });
     });
     worker.once("error", (err) => settle(() => reject(err)));
     worker.once("exit", (code) => {
@@ -128,51 +132,39 @@ export function runGlobFilterWorker(input: {
   });
 }
 
+export function runGlobFilterWorker(input: {
+  glob: string;
+  paths: readonly string[];
+  deadlineMs?: number;
+}): Promise<string[]> {
+  return runWorker(
+    GLOB_WORKER_SOURCE,
+    { glob: input.glob, paths: input.paths },
+    input.deadlineMs ?? GREP_DEADLINE_MS,
+    (message: { matched: string[] }) => message.matched,
+  );
+}
+
 export function runGrepWorker(input: {
   pattern: string;
   files: readonly GrepInputFile[];
   contextLines: number;
-  deadlineMs?: number;
+  deadlineMs: number;
 }): Promise<GrepOutcome> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER_SOURCE, {
-      eval: true,
-      workerData: {
-        pattern: input.pattern,
-        files: input.files,
-        contextLines: input.contextLines,
-        maxMatches: GREP_MAX_MATCHES,
-      },
-    });
-    let settled = false;
-    const settle = (fn: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(deadline);
-      void worker.terminate();
-      fn();
-    };
-    const deadline = setTimeout(
-      () => settle(() => reject(new GrepDeadlineError())),
-      input.deadlineMs ?? GREP_DEADLINE_MS,
-    );
-    worker.once(
-      "message",
-      (message: GrepOutcome & { patternError?: string }) => {
-        settle(() => {
-          if (message.patternError) {
-            reject(new GrepPatternError(message.patternError));
-          } else {
-            resolve({ matches: message.matches, truncated: message.truncated });
-          }
-        });
-      },
-    );
-    worker.once("error", (err) => settle(() => reject(err)));
-    worker.once("exit", (code) => {
-      if (!settled && code !== 0) {
-        settle(() => reject(new GrepDeadlineError()));
+  return runWorker(
+    WORKER_SOURCE,
+    {
+      pattern: input.pattern,
+      files: input.files,
+      contextLines: input.contextLines,
+      maxMatches: GREP_MAX_MATCHES,
+    },
+    input.deadlineMs,
+    (message: GrepOutcome & { patternError?: string }) => {
+      if (message.patternError) {
+        throw new GrepPatternError(message.patternError);
       }
-    });
-  });
+      return { matches: message.matches, truncated: message.truncated };
+    },
+  );
 }

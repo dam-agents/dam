@@ -1,0 +1,36 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Gzip an OCI layout's plain-tar layers in place with pigz, before the layout is published"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<layout>"
+# A build writes the layers it makes as plain tars: packing and re-owning
+# then compress nothing, and a local cluster imports them as they are. A
+# published image is pulled over networks, so image:ci-build gzips those
+# layers as it pushes: pigz at level 1 on every core, with no name or time in
+# the header, so a layer always gets the same digest and a registry that
+# already holds it skips the upload. The config's diff ids name the
+# uncompressed content and stay as they are.
+set -euo pipefail
+l="$usage_layout"
+blob() { echo "$l/blobs/${1/://}"; }
+old="$(jq -r '.manifests[0].digest' "$l/index.json")"
+manifest="$(cat "$(blob "$old")")"
+plain="$(jq -r '[.layers[] | select(.mediaType == "application/vnd.oci.image.layer.v1.tar") | .digest] | unique[]' <<< "$manifest")"
+[ -n "$plain" ] || exit 0
+for d in $plain; do
+  pigz -1 -n -c < "$(blob "$d")" > "$l/blobs/sha256/gz.tmp"
+  h="$(sha256sum "$l/blobs/sha256/gz.tmp" | cut -c1-64)"
+  manifest="$(jq -c --arg d "$d" --arg n "sha256:$h" --argjson s "$(wc -c < "$l/blobs/sha256/gz.tmp")" \
+    '.layers |= map(if .digest == $d then .mediaType = "application/vnd.oci.image.layer.v1.tar+gzip" | .digest = $n | .size = $s else . end)' \
+    <<< "$manifest")"
+  mv "$l/blobs/sha256/gz.tmp" "$l/blobs/sha256/$h"
+  rm -f "$(blob "$d")"
+done
+h="$(printf '%s' "$manifest" | sha256sum | cut -c1-64)"
+printf '%s' "$manifest" > "$l/blobs/sha256/$h"
+jq --arg d "sha256:$h" --argjson s "$(wc -c < "$l/blobs/sha256/$h")" \
+  '.manifests[0].digest = $d | .manifests[0].size = $s' "$l/index.json" > "$l/index.json.new"
+mv "$l/index.json.new" "$l/index.json"
+# The docker-save manifest names the plain blobs; a pushed layout needs only
+# index.json.
+rm -f "$(blob "$old")" "$l/manifest.json"

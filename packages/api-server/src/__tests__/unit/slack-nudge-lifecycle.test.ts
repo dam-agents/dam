@@ -94,21 +94,21 @@ function harness(opts: {
     get: async () => ({ state: "running" }),
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => null } as never,
+    oauthConfig: {
       keycloakExternalUrl: "http://kc",
       keycloakUrl: "http://kc",
       keycloakRealm: "platform",
       keycloakClientId: "c",
       callbackUrl: "http://ui/api/slack/oauth/callback",
     } as never,
-    createMemoryTtlStore<SlackOAuthPending>(600_000),
-    async () => OWNER,
-    {
+    pendingOAuthFlows: createMemoryTtlStore<SlackOAuthPending>(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
@@ -118,17 +118,17 @@ function harness(opts: {
         },
       ],
     } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: () => {},
+  });
 
   return {
     worker,

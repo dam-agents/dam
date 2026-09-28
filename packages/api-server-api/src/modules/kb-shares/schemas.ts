@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const KB_SHARE_STRING_PREFIX = "kbshare_";
 
-export const kbShareRootSchema = z
+const kbShareRootSchema = z
   .string()
   .min(1)
   .max(200)
@@ -22,7 +22,7 @@ export const kbShareCreateInputSchema = z.object({
 
 export const kbShareRefreshInputSchema = kbShareCreateInputSchema;
 
-export const kbSharePublicNameSchema = z.string().trim().min(1).max(100);
+const kbSharePublicNameSchema = z.string().trim().min(1).max(100);
 
 export const kbShareSetNameInputSchema = z.object({
   agentId: z.string().min(1),
@@ -33,8 +33,7 @@ export const kbShareResolveInputSchema = z.object({
   shareString: z.string().min(1).max(200),
 });
 
-export const kbShareStringRegex =
-  /^kbshare_([0-9a-f]{12})_([A-Za-z0-9_-]{43})$/;
+const kbShareStringRegex = /^kbshare_([0-9a-f]{12})_([A-Za-z0-9_-]{43})$/;
 
 export function parseKbShareString(
   value: string,

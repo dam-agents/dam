@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const advisory = (max: number) =>
   z
@@ -14,6 +14,8 @@ export const backgroundWorkItemSchema = z.object({
   description: advisory(200),
   command: advisory(500),
 });
+
+export type BackgroundWorkItem = z.infer<typeof backgroundWorkItemSchema>;
 
 export const backgroundWorkReportSchema = z.object({
   items: z

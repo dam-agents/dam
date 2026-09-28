@@ -5,7 +5,7 @@ import {
   ORIGINAL_WORKSPACE,
   THREAD_TAIL_MAX_PAGES,
 } from "./slack-gateway.js";
-import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
+import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -51,11 +51,6 @@ const DEAD_CREDENTIAL = new Set([
   "token_revoked",
   "token_expired",
 ]);
-
-function slackRefusal(err: unknown): string | null {
-  const data = (err as { data?: { error?: unknown } } | null)?.data;
-  return typeof data?.error === "string" ? data.error : null;
-}
 
 function toSlackMessage(m: {
   ts?: string;
@@ -156,7 +151,8 @@ export function createBoltSlackGateway(
     try {
       identity = await bolt.client.auth.test({ token: deps.envBotToken });
     } catch (err) {
-      const refusal = slackRefusal(err);
+      const data = (err as { data?: { error?: unknown } } | null)?.data;
+      const refusal = typeof data?.error === "string" ? data.error : null;
       if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
       process.stderr.write(
         `[slack] Slack refuses the operator's bot token (${refusal}); bindings that name the original workspace by the empty string are served by nothing until it is replaced\n`,
@@ -435,34 +431,37 @@ export function createBoltSlackGateway(
     },
 
     async getThreadTail(args) {
-      if (!app) return { messages: [], hasMore: false };
+      const nothing = {
+        messages: [],
+        opener: null,
+        hasEarlier: false,
+        hasMore: false,
+      };
+      if (!app) return nothing;
+      const client = app.client;
       const token = await tokenFor(args.teamId);
-      if (!token) return { messages: [], hasMore: false };
-      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
-      let cursor: string | undefined;
-      let fold = emptyTailFold<SlackMessage>();
-      let stoppedShort = false;
-      for (let page = 0; ; page += 1) {
-        if (page >= maxPages) {
-          stoppedShort = true;
-          break;
-        }
-        const replies = await app.client.conversations.replies({
-          token,
-          channel: args.channel,
-          ts: args.threadTs,
+      if (!token) return nothing;
+      return foldThreadPages<SlackMessage, string>(
+        {
           limit: args.limit,
-          ...(cursor ? { cursor } : {}),
-        });
-        fold = foldTailPage(
-          fold,
-          (replies.messages ?? []).map(toSlackMessage),
-          args.limit,
-        );
-        cursor = replies.response_metadata?.next_cursor || undefined;
-        if (!cursor) break;
-      }
-      return { messages: fold.window, hasMore: stoppedShort };
+          maxPages: args.maxPages ?? THREAD_TAIL_MAX_PAGES,
+          opener: args.threadTs,
+          ...(args.before !== undefined ? { before: args.before } : {}),
+        },
+        async (from) => {
+          const replies = await client.conversations.replies({
+            token,
+            channel: args.channel,
+            ts: args.threadTs,
+            limit: args.limit,
+            ...(from ? { cursor: from } : {}),
+          });
+          return {
+            messages: (replies.messages ?? []).map(toSlackMessage),
+            next: replies.response_metadata?.next_cursor || undefined,
+          };
+        },
+      );
     },
 
     async getChannelHistory(args) {

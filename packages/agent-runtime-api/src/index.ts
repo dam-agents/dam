@@ -1,31 +1,21 @@
 export type { AppRouter } from "./router.js";
 export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
-export type {
-  FileContentNotice,
-  WorkspaceNotice,
-} from "./modules/files/types.js";
 export {
   fileContentNoticeSchema,
   workspaceNoticeSchema,
 } from "./modules/files/schemas.js";
 export type {
   PodSession,
-  PodSessionList,
   PodSessionMode,
-  PodSessionNotice,
   PodSessionType,
   SessionDirectoryEntry,
-  SessionDirectoryReport,
   SessionsService,
 } from "./modules/sessions/types.js";
 export {
-  podSessionListSchema,
   podSessionModeSchema,
   podSessionNoticeSchema,
-  podSessionSchema,
   podSessionTypeSchema,
-  sessionDirectoryEntrySchema,
   sessionDirectoryReportSchema,
 } from "./modules/sessions/schemas.js";
 
@@ -38,17 +28,6 @@ export type {
   FilesDomainError,
   FilesService,
 } from "./modules/files/types.js";
-export {
-  fileCreateInputSchema,
-  fileListDirsInputSchema,
-  fileMkdirInputSchema,
-  fileReadInputSchema,
-  fileRemoveInputSchema,
-  fileRenameInputSchema,
-  fileUploadInputSchema,
-  fileWriteInputSchema,
-  pathSchema,
-} from "./modules/files/schemas.js";
 export type {
   GitHubErrorBody,
   LocalSkill,
@@ -60,12 +39,7 @@ export type {
   SkillOrigin,
   SkillPublishInput,
   SkillPublishResult,
-  SkillListLocalInput,
   SkillReadLocalInput,
-  SkillReadLocalResult,
-  SkillReadPullRequestInput,
-  SkillReadSkillFileInput,
-  PullRequestDisposition,
   SkillScanInput,
   SkillsDomainError,
   SkillsService,
@@ -80,11 +54,7 @@ export {
   skillPublishInputSchema,
   skillListLocalInputSchema,
   skillReadLocalInputSchema,
-  skillReadPullRequestInputSchema,
-  skillReadSkillFileInputSchema,
-  skillScanInputSchema,
   skillUninstallInputSchema,
-  skillWriteLocalInputSchema,
 } from "./modules/skills/schemas.js";
 export {
   SKILL_SOURCE_ROOTS,
@@ -97,27 +67,18 @@ export {
   parseGithubRepo,
 } from "./modules/skills/git-url.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
-export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
+
 export type {
-  GithubRepo,
   NormalizedGitUrl,
   SourceLocation,
 } from "./modules/skills/git-url.js";
-export type { SshDomainError, SshService } from "./modules/ssh/types.js";
-export type {
-  HarnessConfigCurrent,
-  HarnessConfigService,
-} from "./modules/harness-config/types.js";
-export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
+export type { SshService } from "./modules/ssh/types.js";
+export type { HarnessConfigService } from "./modules/harness-config/types.js";
+
 export {
-  backgroundWorkItemSchema,
   backgroundWorkReportSchema,
+  type BackgroundWorkItem,
 } from "./modules/background-work/schemas.js";
-export type {
-  BackgroundWorkItem,
-  BackgroundWorkReport,
-  BackgroundWorkReporterContract,
-} from "./modules/background-work/types.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
 export {
@@ -131,43 +92,23 @@ export {
   runtimeFeaturesOf,
   type RuntimeFeatures,
   harnessConfigChoice,
-  harnessConfigOptionGroup,
   harnessConfigCatalog,
   harnessConfigCurrent,
   mergeMode,
-  fileFormat,
-  envContribution,
-  egressAllowContribution,
-  egressInjectContribution,
-  fileContribution,
-  mcpEntryContribution,
-  skillRefContribution,
-  triggerEvent,
-  eventOutcome,
   eventReportInput,
-  triggerEventPayload,
-  experimentExecuteEvent,
-  experimentExecuteEventPayload,
-  harnessConfigEvent,
-  harnessConfigEventPayload,
   initializationEventPayload,
   workspaceCommandEventPayload,
   workspaceSeedEventPayload,
-  stateSlice,
-  applyStateInput,
-  applyStateResult,
-  driverFailure,
   helloInput,
-  helloResult,
 } from "./modules/runtime/types.js";
 export type {
+  HarnessConfigCurrent,
   Contribution,
   ContributionKind,
   Event,
   EventKind,
   Capabilities,
   HarnessConfigChoice,
-  HarnessConfigOptionGroup,
   HarnessConfigCatalog,
   MergeMode,
   FileFormat,
@@ -175,13 +116,10 @@ export type {
   EventOutcome,
   EventReportInput,
   ExperimentExecuteEventPayload,
-  InitializationEventPayload,
   SatelliteOutcomeEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
-  WorkspaceCommandEventPayload,
   HarnessConfigEventPayload,
-  StateSlice,
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
@@ -198,12 +136,8 @@ export {
   type KindHandler,
   type Plugin,
   type PluginModule,
-  type PluginProtocolVersion,
-} from "./modules/plugin/index.js";
-export {
-  kbPublishSyncInputSchema,
-  type KbPublishSyncInput,
-} from "./modules/kb-publish/schemas.js";
+} from "./modules/plugin/types.js";
+export { type KbPublishSyncInput } from "./modules/kb-publish/schemas.js";
 export type {
   KbPublishExecuteReport,
   KbPublishPlan,
@@ -211,3 +145,13 @@ export type {
   KbPublishSegmentReport,
   KbPublishService,
 } from "./modules/kb-publish/types.js";
+export {
+  ARTIFACT_API_MAX_BODY_BYTES,
+  ARTIFACT_API_PORT,
+  ARTIFACT_API_TIMEOUT_MS,
+  artifactApiMethodSchema,
+  artifactApiRequestInputSchema,
+  type ArtifactApiRequestInput,
+  type ArtifactApiRequestResult,
+} from "./modules/artifact-api/schemas.js";
+export type { ArtifactApiService } from "./modules/artifact-api/types.js";

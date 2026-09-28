@@ -1,21 +1,4 @@
-import { artifactPromptSchema, type LibraryArtifact } from "api-server-api";
-
-export function canSendArtifactPrompt(
-  artifact: LibraryArtifact | null | undefined,
-  enabled: boolean,
-  agentId: string | null,
-  version: number | undefined,
-): boolean {
-  return (
-    enabled &&
-    artifact?.interactive === true &&
-    artifact.kind === "html" &&
-    artifact.visibility === "private" &&
-    agentId !== null &&
-    artifact.agentId === agentId &&
-    artifact.version === version
-  );
-}
+import { artifactPromptSchema } from "api-server-api";
 
 export function readArtifactPrompt(
   event: Pick<MessageEvent, "source" | "data">,

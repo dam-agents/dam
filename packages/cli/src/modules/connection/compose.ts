@@ -1,11 +1,8 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { BrowserOpener, TokenProvider } from "../auth/index.js";
+import type { BrowserOpener } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildConnectCommand } from "./commands/connect.js";
 import { buildDisconnectCommand } from "./commands/disconnect.js";
 import { buildGrantCommand } from "./commands/grant.js";
@@ -20,7 +17,7 @@ import {
 } from "./services/connection-service.js";
 
 export interface ConnectionModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -35,11 +32,8 @@ export interface ConnectionModule {
 export function composeConnectionModule(
   opts: ConnectionModuleOptions,
 ): ConnectionModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): ConnectionService =>
-    createConnectionService({ trpc: buildTrpc(host) });
+    createConnectionService({ trpc: opts.buildTrpc(host) });
 
   const agentScoped = {
     compatService: opts.compatService,

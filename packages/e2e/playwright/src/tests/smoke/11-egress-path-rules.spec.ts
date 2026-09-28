@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { waitForAgentRunning } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
+import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
 
@@ -9,6 +9,18 @@ const host = "postman-echo.com";
 const allowedUrl = `https://${host}/status/204`;
 const uncoveredUrl = `https://${host}/get`;
 const stillGatedUrl = `https://${host}/headers`;
+
+async function fetchStatus(
+  api: ApiClient,
+  agentId: string,
+  url: string,
+): Promise<number> {
+  try {
+    return (await api.e2e.performFetch.mutate({ agentId, url })).status;
+  } catch {
+    return 0;
+  }
+}
 
 test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   page,
@@ -42,24 +54,11 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
 
   await test.step("a request matching the rule passes without a prompt", async () => {
     await expect
-      .poll(
-        async () => {
-          try {
-            const { status } = await api.e2e.performFetch.mutate({
-              agentId,
-              url: allowedUrl,
-            });
-            return status;
-          } catch {
-            return 0;
-          }
-        },
-        {
-          timeout: 120_000,
-          intervals: [3_000],
-          message: "allowed path did not go through without approval",
-        },
-      )
+      .poll(() => fetchStatus(api, agentId, allowedUrl), {
+        timeout: 120_000,
+        intervals: [3_000],
+        message: "allowed path did not go through without approval",
+      })
       .toBe(204);
   });
 
@@ -79,24 +78,11 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
 
   await test.step("the approval unlocks exactly the approved path", async () => {
     await expect
-      .poll(
-        async () => {
-          try {
-            const { status } = await api.e2e.performFetch.mutate({
-              agentId,
-              url: uncoveredUrl,
-            });
-            return status;
-          } catch {
-            return 0;
-          }
-        },
-        {
-          timeout: 60_000,
-          intervals: [3_000],
-          message: "approved path did not unlock",
-        },
-      )
+      .poll(() => fetchStatus(api, agentId, uncoveredUrl), {
+        timeout: 60_000,
+        intervals: [3_000],
+        message: "approved path did not unlock",
+      })
       .toBe(200);
   });
 
@@ -121,12 +107,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       "approving a narrow prompt must not write a host-wide rule",
     ).toBe(false);
 
-    const gated = await api.e2e.performFetch
-      .mutate({ agentId, url: stillGatedUrl })
-      .then(
-        (r) => r.status,
-        () => 0,
-      );
-    expect(gated).not.toBe(200);
+    expect(await fetchStatus(api, agentId, stillGatedUrl)).not.toBe(200);
   });
 });

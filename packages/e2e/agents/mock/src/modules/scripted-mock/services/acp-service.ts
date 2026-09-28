@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   isRequest,
   isResponse,
@@ -6,7 +7,7 @@ import {
   type JsonRpcId,
 } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
-import { recordPrompt, type ProxyFetch } from "./control-service.js";
+import type { ProxyFetch } from "./control-service.js";
 import type {
   AcpChannel,
   ProcessRunner,
@@ -17,7 +18,7 @@ import type {
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
-const ASK_DIRECTIVE = /__ASK__\s+(\S+)/;
+const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const ASK_TIMEOUT_MS = 30_000;
 const EXPERIMENT_LAUNCH_DIRECTIVE =
   /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
@@ -28,17 +29,10 @@ export interface AcpServiceDeps {
   workspace: WorkspaceWriter;
   proxyFetch: ProxyFetch;
   processRunner: ProcessRunner;
-  slackReply?: SlackReplyPoster;
-  now?: () => Date;
-  sleep?: (ms: number) => Promise<void>;
-  newSessionId?: () => string;
+  slackReply: SlackReplyPoster;
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
-  const now = deps.now ?? (() => new Date());
-  const sleep =
-    deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
-  const newSessionId = deps.newSessionId ?? (() => randomUUID());
   const knownSessions = new Set<string>();
   const pendingAsks = new Map<JsonRpcId, (outcome: string) => void>();
 
@@ -62,13 +56,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
     try {
       switch (method) {
         case "initialize":
-          respondInitialize(id);
+          respond(id, {
+            protocolVersion: 1,
+            agentCapabilities: { sessionCapabilities: { close: {} } },
+          });
           return;
         case "authenticate":
           respond(id, null);
           return;
         case "session/new": {
-          const sid = newSessionId();
+          const sid = randomUUID();
           knownSessions.add(sid);
           respond(id, { sessionId: sid });
           return;
@@ -115,9 +112,9 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
     const promptPayload = (params as { prompt?: unknown }).prompt;
-    recordPrompt(deps.state, {
+    deps.state.receivedPrompts.push({
       sessionId: sid,
-      receivedAt: now().toISOString(),
+      receivedAt: new Date().toISOString(),
       prompt: promptPayload,
     });
 
@@ -149,9 +146,10 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
 
-    const askTool = ASK_DIRECTIVE.exec(promptStr)?.[1];
+    const asked = ASK_DIRECTIVE.exec(promptStr);
+    const askTool = asked?.[1];
     if (askTool) {
-      const outcome = await askPermission(sid, askTool);
+      const outcome = await askPermission(sid, askTool, asked?.[2]);
       const text = `permission ${outcome}`;
       emitText(sid, text);
       await maybeSlackReply(text, slackThreadTs);
@@ -187,12 +185,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
     text: string,
     threadTs: string | undefined,
   ): Promise<void> {
-    if (!threadTs || !deps.slackReply || text.trim() === "") return;
+    if (!threadTs || text.trim() === "") return;
     await deps.slackReply({ text, threadTs });
   }
 
-  function askPermission(sid: string, toolName: string): Promise<string> {
-    const askId = `ask-${newSessionId()}`;
+  function askPermission(
+    sid: string,
+    toolName: string,
+    displayTitle?: string,
+  ): Promise<string> {
+    const askId = `ask-${randomUUID()}`;
     return new Promise<string>((resolve) => {
       const settle = (outcome: string) => {
         clearTimeout(timer);
@@ -209,7 +211,11 @@ export function startAcpService(deps: AcpServiceDeps): void {
         method: "session/request_permission",
         params: {
           sessionId: sid,
-          toolCall: { toolCallId: askId, title: toolName },
+          toolCall: {
+            toolCallId: askId,
+            name: toolName,
+            title: displayTitle ?? toolName,
+          },
           options: [
             { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
             { optionId: "reject-once", name: "Reject", kind: "reject_once" },
@@ -237,21 +243,8 @@ export function startAcpService(deps: AcpServiceDeps): void {
     } catch (err) {
       text = `[fetch error] ${err instanceof Error ? err.message : String(err)}`;
     }
-    notify("session/update", {
-      sessionId: sid,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text },
-      },
-    });
+    emitText(sid, text);
     return text;
-  }
-
-  function respondInitialize(id: JsonRpcId): void {
-    respond(id, {
-      protocolVersion: 1,
-      agentCapabilities: { sessionCapabilities: { close: {} } },
-    });
   }
 
   function respond(id: JsonRpcId, result: unknown): void {

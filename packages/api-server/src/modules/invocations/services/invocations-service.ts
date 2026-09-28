@@ -18,20 +18,6 @@ import type {
   InvocationStatus,
 } from "../infrastructure/invocations-repository.js";
 
-export {
-  DEFAULT_INVOCATION_TTL_MS,
-  MIN_INVOCATION_TTL_MS,
-  MAX_INVOCATION_TTL_MS,
-};
-
-export function resolveInvocationTtlMs(ttlMs: number | undefined): number {
-  if (ttlMs === undefined) return DEFAULT_INVOCATION_TTL_MS;
-  return Math.min(
-    MAX_INVOCATION_TTL_MS,
-    Math.max(MIN_INVOCATION_TTL_MS, ttlMs),
-  );
-}
-
 export class AttenuationError extends Error {
   constructor(public readonly offending: string[]) {
     super(`connections not granted to the driver: ${offending.join(", ")}`);
@@ -160,7 +146,13 @@ export function createInvocationsService(deps: {
 
       const targetId = generateK8sName("agent");
       const expiresAt = new Date(
-        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
+        now().getTime() +
+          (input.ttlMs === undefined
+            ? DEFAULT_INVOCATION_TTL_MS
+            : Math.min(
+                MAX_INVOCATION_TTL_MS,
+                Math.max(MIN_INVOCATION_TTL_MS, input.ttlMs),
+              )),
       );
       await deps.repo.insert({
         id: targetId,

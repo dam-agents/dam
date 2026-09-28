@@ -1,0 +1,60 @@
+# Shared by every `mise oci` agent image; each agent's image.toml is a config
+# environment over it. Staged by //packages/agents:oci as mise/conf.d/base.toml.
+
+[tools]
+node = "26"
+aube = "latest"
+jq = "latest"
+fd = "latest"
+rg = "latest"
+gh = "2.101.0"
+uv = "latest"
+python = "3.12"
+kubectl = "latest"
+k3s = "latest"
+"npm:playwright" = "1.63.0"
+"npm:agent-browser" = "0.38.1"
+
+# The static bundle: trixie's docker.io is a release line behind.
+[tools."http:docker"]
+version = "29.8.1"
+
+[tools."http:docker".platforms]
+linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
+linux-arm64 = { url = "https://download.docker.com/linux/static/stable/aarch64/docker-{{version}}.tgz" }
+
+# docker's CLI plugins, which the image task links where docker looks for them.
+# buildx's releases carry a provenance file mise would otherwise pick.
+[tools."github:docker/buildx"]
+version = "latest"
+bin = "docker-buildx"
+
+[tools."github:docker/buildx".platforms]
+linux-x64 = { asset_pattern = "buildx-v{{ version }}.linux-amd64" }
+linux-arm64 = { asset_pattern = "buildx-v{{ version }}.linux-arm64" }
+
+[tools."github:docker/compose"]
+version = "latest"
+
+[oci]
+mount_point = "/usr/local/share/mise"
+user = "65532"
+workdir = "/app"
+entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
+cmd = ["node", "dist/server.js"]
+
+[oci.env]
+# mise prepends the tool bin directories. The agent's own aube globals come
+# last, so nothing in the home shadows an image tool.
+PATH = "/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/share/aube/bin"
+HOME = "/home/agent"
+SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+PYTHONPATH = "/usr/local/lib/platform-python"
+PORT = "8080"
+# apt-get on a machine never waits on a prompt nobody can answer.
+DEBIAN_FRONTEND = "noninteractive"
+# The one Chromium both use; containers have no user namespaces for its sandbox.
+PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
+AGENT_BROWSER_ARGS = "--no-sandbox"
+AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"

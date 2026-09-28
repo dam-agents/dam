@@ -1,6 +1,6 @@
 import type { FrequencyPreset } from "api-server-api";
 
-export type RunKind = FrequencyPreset["kind"];
+type RunKind = FrequencyPreset["kind"];
 
 export const RUN_OPTIONS: { value: RunKind; label: string }[] = [
   { value: "daily", label: "Daily" },

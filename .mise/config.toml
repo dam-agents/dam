@@ -1,4 +1,4 @@
-min_version = "2026.9.12"
+min_version = "2026.9.13"
 monorepo_root = true
 
 [monorepo]
@@ -7,12 +7,25 @@ lockfile = true
 
 [vars]
 repo_root = "{{config_root}}"
+# The base of every image this repo builds. Build tasks read them with
+# `mise config get -f .mise/config.toml vars.<name>`, since some run by path.
+# image:pack's bases are pinned by tag and digest, so a rebuild never picks up
+# a base update by itself: image:bump-bases re-pins the digests.
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:7a744630841040b345674186e3c54e5cafa1955b7ef0c21870e905cb8dd3814a"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:58f9030ce520821c61798d41ca52aa2b10ba5f20c49245f63ecffcfcaa3d464f"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c"
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:b1a78d4e21c3d3d820918253b4a260009c7cd5f5edf1831c8f490f1afac3b064"
+# The `mise oci` images' base, the agents' system-package image and the VM
+# runner, by tag alone: both take Debian's packages afresh at build time, and
+# the agents' rebuild them daily. Google's mirror: no Docker Hub rate limit on CI.
+base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
 auto = true
 
 [tools]
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
+"conda:pigz" = "2.8" # parallel gzip: image:ci-build compresses a published image's plain-tar layers
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
@@ -21,19 +34,21 @@ auto = true
 crane = "latest"
 fd = "latest"
 gh = "latest"
-go = "1.26"
+go = "1.27"
 gum = "latest"
-helm = "4.2.0"
-java = "21"
+helm = "4.3.0"
+java = "temurin-25" # a vendor build: a bare version resolves to jdk.java.net builds, which stop getting patches after six months
+jq = "latest"
 kubeconform = "latest"
 lima = "2"
 maven = "latest"
-nodejs = "24"
+nodejs = "26"
 pinact = "latest"
-pnpm = "12.3.4" # the single pnpm pin; the Docker builder stages read it too
-rust = { version = "1.94", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
+pnpm = "12.5.1" # the single pnpm pin
+rust = { version = "1.98", components = "rustfmt,clippy" } # the vm-runner crate; components are named here because mise installs rust without them
 trivy = "latest"
-uv = "0.9"
+usage = "latest"
+uv = "0.12"
 yq = "latest"
 zizmor = "latest"
 
@@ -61,7 +76,7 @@ deny_write = true
 
 [task_templates."ts:check:format"]
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
-sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc"]
+sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache.enabled = true
 deny_net = true
@@ -96,12 +111,18 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(fd --hidden --type f --full-path --exclude node_modules '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
+bad=$(fd --hidden --type f --full-path '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []
 deny_net = true
 deny_write = true
+
+# Not cached: it walks every tracked TS/JS/Go/Rust file, and a sources glob wide
+# enough to match that has to traverse node_modules.
+[tasks."check:comment-types"]
+description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+run = { task = "strip-comments", args = ["--check"] }
 
 # Not cached: the append-only comparison reads git history (merge-base with
 # origin/main), which no sources glob can key.

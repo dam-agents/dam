@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Context;
-use smolvm::agent::{state_probe, vm_data_dir, HostMount, PortMapping, VmResources};
+use smolvm::agent::{
+    state_probe, vm_data_dir, AgentClient, AgentManager, HostMount, PortMapping, VmResources,
+};
 use smolvm::config::{RecordState, VmRecord};
-use smolvm::data::image_source::{classify, resolve, ResolvedImage};
+use smolvm::data::image_source::{classify, packed_layers_dir_for_ref, resolve, ResolvedImage};
 use smolvm::db::SmolvmDb;
 use smolvm::embedded::{EmbeddedRuntime, MachineSpec as SmolvmSpec};
 use smolvm::network::NetworkBackend;
@@ -14,8 +17,9 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, discard_overlay, grown_storage, kill_orphans, timed, updated_env, workload,
-    Machine, Runtime, Update, GUEST_AGENT_PORT,
+    clear_for_start, discard_overlay, grown_storage, image_env_beside, kill_orphans, orphan_pids,
+    timed, updated_env, vmm_gone, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
+    VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -39,25 +43,40 @@ impl Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Called on the runner's own tick.
-    pub fn reap(&self) {
-        smolvm::process::reap_vm_children();
-    }
-
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
         Ok(self.db.get_vm(id)?)
+    }
+
+    fn existing(&self, id: &str) -> anyhow::Result<VmRecord> {
+        self.record(id)?
+            .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: runs a smolvm stop or delete, and powers the machine off when smolvm refuses it. smolvm stops a running guest only once the guest confirms its disks are quiesced, and when the guest does not confirm, it leaves the VMM running and fails the call. The runner still has to end the machine: the controller asked for the stop, a restart cannot apply a change without it, and a delete of a machine that never confirms would never finish. So a refusal while a VMM still holds the machine's directory kills that VMM, which is what a stop did before smolvm asked for the confirmation, and the call is made once more, against a machine that is now down.
+    fn ended(&self, id: &str, end: impl Fn() -> smolvm::Result<()>) -> anyhow::Result<()> {
+        let Err(refused) = end() else {
+            return Ok(());
+        };
+        let dir = vm_data_dir(id);
+        if orphan_pids(&self.proc_root, &dir).is_empty() {
+            return Err(refused.into());
+        }
+        tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
+        kill_orphans(&self.proc_root, &dir);
+        vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT);
+        Ok(end()?)
     }
 }
 
 impl Runtime for Smolvm {
-    // UNIT_BOUNDARY_DESCRIPTION: read the way `smolvm machine status` reads it: a record that says running is only running if its VMM is alive and its agent answers. A VMM whose agent died reads as stopped, so the next start takes it down rather than trusting it.
+    // UNIT_BOUNDARY_DESCRIPTION: read from the record and the VMM process. smolvm resolves a live VMM whose guest agent missed one vsock ping, with a three-second timeout, as unreachable, and that is what a busy guest looks like as well as a dead agent. It reads as running here: the machine is up and holds its memory, and whether it serves is the health prober's to judge, so a guest that stays quiet is restarted after the unhealthy grace, and counted, rather than rebooted on the first missed ping. Only a VMM that is gone reads as stopped.
     fn state(&self, id: &str) -> anyhow::Result<State> {
         Ok(match self.record(id)? {
             None => State::Absent,
-            Some(record) if state_probe::resolve_state(id, &record) == RecordState::Running => {
-                State::Running
-            }
-            Some(_) => State::Stopped,
+            Some(record) => match state_probe::resolve_state(id, &record) {
+                RecordState::Running | RecordState::Unreachable => State::Running,
+                _ => State::Stopped,
+            },
         })
     }
 
@@ -79,7 +98,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A VMM whose guest agent died reads as stopped, but its record says running while the process lives, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init boots every image on a fresh root: the root smolvm keeps on the disk for this machine, with the old image's changes in it, is never the one the new image runs on.
+    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A record can still say running while its VMM lives on after a stop that did not finish, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would, and waited out before the record is read again, since the record reads stopped only once the process is gone. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init boots every image on a fresh root: the root smolvm keeps on the disk for this machine, with the old image's changes in it, is never the one the new image runs on.
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
         let Update {
             desired,
@@ -88,17 +107,15 @@ impl Runtime for Smolvm {
         } = *update;
         let secrets: Vec<&str> = desired.env.values().map(String::as_str).collect();
         timed("update", id, &secrets, || {
-            let mut record = self
-                .record(id)?
-                .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+            let mut record = self.existing(id)?;
             if record.actual_state() == RecordState::Running
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let _ = self.runtime.stop_machine(id);
-                kill_orphans(&self.proc_root, &vm_data_dir(id));
-                record = self
-                    .record(id)?
-                    .ok_or_else(|| anyhow::anyhow!("machine '{id}' not found"))?;
+                let dir = vm_data_dir(id);
+                kill_orphans(&self.proc_root, &dir);
+                vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT);
+                record = self.existing(id)?;
             }
             if !matches!(
                 record.actual_state(),
@@ -114,20 +131,27 @@ impl Runtime for Smolvm {
                 ..record.vm_resources()
             }
             .validate()?;
-            let grown = grown_storage(applied, desired);
+            let disk = storage_disk_path(id);
+            let grown = match std::fs::metadata(&disk) {
+                Ok(on_disk) => grown_storage(on_disk.len(), desired),
+                Err(_) => grown_storage(record.storage_gb.unwrap_or(0) << 30, desired),
+            };
             if let Some(gib) = grown {
-                let disk = storage_disk_path(id);
                 if disk.exists() {
                     expand_disk::<Storage>(&disk, gib)?;
                 }
             }
             let allowed_cidrs = allowed_cidrs(desired)?;
-            let relaunch = match image {
-                Some((image, launch)) => {
-                    Some((resolved_image(image)?, workload(desired, Some(launch))?))
-                }
-                None => None,
-            };
+            let image_env = record
+                .image
+                .as_deref()
+                .and_then(packed_layers_dir_for_ref)
+                .and_then(|rootfs| image_env_beside(&rootfs));
+            let relaunch = image
+                .map(|(image, launch)| {
+                    anyhow::Ok((resolved_image(image)?, workload(desired, launch)?))
+                })
+                .transpose()?;
             self.db.update_vm(id, |r| {
                 r.cpus = cpus;
                 r.mem = mem;
@@ -143,19 +167,20 @@ impl Runtime for Smolvm {
                         r.workdir = workload.workdir;
                         r.env = workload.env;
                     }
-                    None => r.env = updated_env(&r.env, applied, desired),
+                    None => r.env = updated_env(&r.env, applied, desired, image_env.as_deref()),
                 }
             })?;
             Ok(())
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let _ = self.runtime.stop_machine(id);
-            clear_for_start(id, &self.proc_root, &dir);
+            clear_for_start(id, &self.proc_root, &dir, VMM_EXIT_WAIT)
+                .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
@@ -165,13 +190,28 @@ impl Runtime for Smolvm {
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
-        timed("stop", id, &[], || Ok(self.runtime.stop_machine(id)?))?;
+        terminate_workload(id);
+        timed("stop", id, &[], || {
+            self.ended(id, || self.runtime.stop_machine(id))
+        })?;
         discard_overlay(id, &self.proc_root, &vm_data_dir(id));
         Ok(())
     }
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
-        timed("delete", id, &[], || Ok(self.runtime.delete_machine(id)?))
+        timed("delete", id, &[], || {
+            self.ended(id, || self.runtime.delete_machine(id))
+        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a `local-dir:` or `local:` reference is mapped back to its host directory the way a start maps it, so this answers exactly what that start would find.
+    fn image_present(&self, id: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .existing(id)?
+            .image
+            .as_deref()
+            .and_then(packed_layers_dir_for_ref)
+            .is_none_or(|dir| dir.is_dir()))
     }
 
     fn console_tail(&self, id: &str) -> String {
@@ -179,6 +219,62 @@ impl Runtime for Smolvm {
             &vm_data_dir(id).join(console::CONSOLE_LOG),
             console::CONSOLE_TAIL_BYTES,
         )
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.
+pub const WORKLOAD_TERM_GRACE: Duration = Duration::from_secs(5);
+
+// UNIT_BOUNDARY_DESCRIPTION: the guest agent runs the workload as a crun container under this root and binary, as the pinned smolvm release lays out its agent root filesystem. They are not smolvm library API, so a smolvm upgrade that moves them makes the SIGTERM a no-op, never a failed stop; the test pins them to be looked at with every bump.
+const GUEST_CRUN: &str = "/usr/bin/crun --root /storage/containers/crun";
+
+// UNIT_BOUNDARY_DESCRIPTION: the shell the guest agent runs, in its own root and not the image's, to send SIGTERM to every container it runs — the machine's one workload — and wait up to `grace` for them to stop. Every failure is swallowed: the stop goes on to quiesce and power off either way.
+fn workload_term_script(grace: Duration) -> String {
+    format!(
+        r#"crun="{GUEST_CRUN}"
+ids=$($crun list -q 2>/dev/null) || exit 0
+[ -n "$ids" ] || exit 0
+for id in $ids; do $crun kill "$id" TERM 2>/dev/null; done
+end=$(( $(date +%s) + {secs} ))
+while [ "$(date +%s)" -lt "$end" ]; do
+  up=0
+  for id in $ids; do $crun state "$id" 2>/dev/null | grep -q '"status": *"running"' && up=1; done
+  [ "$up" = 0 ] && exit 0
+  sleep 0.2 2>/dev/null || sleep 1
+done
+exit 0
+"#,
+        secs = grace.as_secs()
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: asks the guest agent, over its vsock socket, to send the workload SIGTERM and wait for it, as a pod's container gets before its kill. The workload is platform-init exec'd into the image's entrypoint, so the signal reaches what the image runs as its first process. A guest that cannot be reached is not waited on. The manager is detached at once: dropped attached, it would shut the machine down itself.
+fn terminate_workload(id: &str) {
+    let Ok(manager) = AgentManager::for_vm(id) else {
+        return;
+    };
+    manager.detach();
+    let Ok(mut client) = AgentClient::connect_for_state_probe(manager.vsock_socket()) else {
+        return;
+    };
+    let command = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        workload_term_script(WORKLOAD_TERM_GRACE),
+    ];
+    let limit = WORKLOAD_TERM_GRACE + Duration::from_secs(5);
+    match client.vm_exec(command, Vec::new(), None, Some(limit), None) {
+        Ok((0, _, _)) => {}
+        Ok((code, _, _)) => {
+            tracing::warn!(
+                machine = id,
+                code,
+                "the workload's SIGTERM did not run cleanly; stopping the guest anyway"
+            )
+        }
+        Err(e) => {
+            tracing::warn!(machine = id, error = %e, "the workload could not be sent SIGTERM; stopping the guest anyway")
+        }
     }
 }
 
@@ -266,26 +362,23 @@ mod tests {
 
     struct Home {
         path: PathBuf,
+        _dir: crate::testdir::TempDir,
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl Home {
         fn new(name: &str) -> Self {
             let lock = HOME.lock().unwrap_or_else(|e| e.into_inner());
-            let path = std::env::temp_dir()
-                .join(format!("vm-runner-smolvm-{}-{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&path);
-            fs::create_dir_all(&path).unwrap();
+            let dir = crate::testdir::TempDir::new(&format!("smolvm-{name}"));
+            let path = dir.path().to_path_buf();
             std::env::set_var("HOME", &path);
             std::env::set_var("XDG_DATA_HOME", path.join("data"));
             std::env::set_var("XDG_CACHE_HOME", path.join("cache"));
-            Self { path, _lock: lock }
-        }
-    }
-
-    impl Drop for Home {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
+            Self {
+                path,
+                _dir: dir,
+                _lock: lock,
+            }
         }
     }
 
@@ -331,7 +424,7 @@ mod tests {
                     image: tree.to_str().unwrap(),
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -393,7 +486,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -421,7 +514,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -460,6 +553,57 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: the disk is grown from its own size, not from the spec the runner kept: a machine whose stored spec was lost is updated with no applied spec at all, and its disk still grows to the size asked for.
+    #[test]
+    fn a_disk_grows_to_the_size_asked_even_with_no_applied_spec() {
+        let home = Home::new("grow-unknown");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let created = spec();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &created,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+
+        let mut desired = spec();
+        desired.storage_gib = 25;
+        smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &desired,
+                    applied: None,
+                    image: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            fs::metadata(storage_disk_path("m1")).unwrap().len(),
+            25 << 30
+        );
+        assert_eq!(smolvm.record("m1").unwrap().unwrap().storage_gb, Some(25));
+    }
+
+    // TEST_SCENARIO: a stop sends the workload SIGTERM through the guest agent, in the agent's own root where crun runs it, before smolvm freezes the guest. The crun root and binary are the pinned smolvm release's layout and not its API, so they are pinned here to be checked on every smolvm bump, and the wait is bounded by the grace.
+    #[test]
+    fn a_stop_signals_the_workload_where_the_guest_agent_runs_it() {
+        let script = workload_term_script(WORKLOAD_TERM_GRACE);
+        assert!(script.contains(r#"crun="/usr/bin/crun --root /storage/containers/crun""#));
+        assert!(script.contains(r#"$crun kill "$id" TERM"#));
+        assert!(script.contains("+ 5 ))"), "{script}");
+        assert_eq!(WORKLOAD_TERM_GRACE, Duration::from_secs(5));
+    }
+
     // TEST_SCENARIO: a failure's text reaches the Agent's status, and the env it was given holds the Agent's Secret values. Neither may appear in it.
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
@@ -477,7 +621,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &home.path.join("missing"),
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap_err()
@@ -487,9 +631,9 @@ mod tests {
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
     }
 
-    // TEST_SCENARIO: a VMM whose guest agent died is reported stopped, so the server updates it before starting it again. Its record still says running while the process lives, and an update that refused it would leave the machine stuck: never restarted, its VMM never killed. The update takes that VMM down and applies.
+    // TEST_SCENARIO: a live VMM whose guest agent does not answer its ping is what a busy guest looks like, so it reads as running: the health prober decides whether it is restarted, after the unhealthy grace, and it keeps being counted against the runner's memory. Read as stopped, the next reconcile would start it, and the start would kill a guest that was only busy. An update that still finds such a VMM under a record that says running — a stop that did not finish — takes it down and applies, rather than leaving the machine stuck.
     #[test]
-    fn a_vmm_whose_agent_died_is_taken_down_by_an_update() {
+    fn a_vmm_whose_agent_does_not_answer_reads_running_and_an_update_takes_it_down() {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
@@ -504,7 +648,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -522,7 +666,7 @@ mod tests {
                 r.pid_start_time = smolvm::process::process_start_time(pid);
             })
             .unwrap();
-        assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
+        assert_eq!(smolvm.state("m1").unwrap(), State::Running);
 
         let mut desired = spec.clone();
         desired.cpus = 1;
@@ -547,6 +691,64 @@ mod tests {
         }
     }
 
+    // TEST_SCENARIO: smolvm refuses to stop a running guest that does not confirm its disks are quiesced, and leaves its VMM up. A stop the controller asked for must still end the machine, so the runner powers that VMM off and the machine reads stopped. Here the guest agent never answers at all.
+    #[test]
+    fn a_guest_that_does_not_confirm_its_stop_is_powered_off() {
+        let home = Home::new("unconfirmed");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let spec = spec();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .arg(format!("{}/", vm_data_dir("m1").display()))
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        smolvm
+            .db
+            .update_vm("m1", |r| {
+                r.state = RecordState::Running;
+                r.pid = Some(pid);
+                r.pid_start_time = smolvm::process::process_start_time(pid);
+            })
+            .unwrap();
+        let started = smolvm::process::process_start_time(pid).unwrap();
+        fs::write(
+            vm_data_dir("m1").join("agent.pid"),
+            format!("{pid}\n{started}\n"),
+        )
+        .unwrap();
+        assert!(
+            smolvm.runtime.stop_machine("m1").is_err(),
+            "smolvm stopped a guest that never confirmed, so this fallback is not needed"
+        );
+        assert!(vmm.try_wait().unwrap().is_none());
+
+        smolvm.stop("m1").unwrap();
+        assert!(
+            vmm.try_wait().unwrap().is_some(),
+            "the unconfirmed guest's VMM was left running"
+        );
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().actual_state(),
+            RecordState::Stopped
+        );
+    }
+
     // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its directory gone.
     #[test]
     fn a_delete_removes_the_machine_and_deleting_nothing_succeeds() {
@@ -566,7 +768,7 @@ mod tests {
                     image: "quay.io/x/vm:1",
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&launch),
+                    launch: &launch,
                 },
             )
             .unwrap();
@@ -597,7 +799,7 @@ mod tests {
                     image: old_tree.to_str().unwrap(),
                     host_port: 32000,
                     share: &share,
-                    launch: Some(&old_launch),
+                    launch: &old_launch,
                 },
             )
             .unwrap();

@@ -11,6 +11,7 @@ import {
   useInstallCapabilities,
   useSetFeature,
 } from "../api/queries.js";
+import { isFeatureOffered } from "../lib/visible-features.js";
 
 interface FeatureRow {
   id: FeatureId;
@@ -74,12 +75,10 @@ const FEATURE_ROWS: FeatureRow[] = [
 function FeatureRowCard({
   row,
   enabled,
-  unsupported,
   onToggle,
 }: {
   row: FeatureRow;
   enabled: boolean;
-  unsupported?: string;
   onToggle: (enabled: boolean) => void;
 }) {
   return (
@@ -96,11 +95,6 @@ function FeatureRowCard({
         <span className="mt-0.5 block text-sm text-muted-foreground">
           {row.description}
         </span>
-        {unsupported && (
-          <span className="mt-1 block text-sm text-warning-fg">
-            {unsupported}
-          </span>
-        )}
       </span>
       <Switch checked={enabled} onCheckedChange={onToggle} />
     </label>
@@ -120,21 +114,18 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.map((row) => (
-          <FeatureRowCard
-            key={row.id}
-            row={row}
-            enabled={flags?.[row.id] ?? false}
-            unsupported={
-              row.id === "vm-sandboxes" && install?.virtualization === false
-                ? "This install cannot run the new sandbox runtime, so agents keep the current one until an administrator enables virtualization."
-                : undefined
-            }
-            onToggle={(enabled) =>
-              setFeature.mutate({ feature: row.id, enabled })
-            }
-          />
-        ))}
+        {FEATURE_ROWS.filter((row) => isFeatureOffered(row.id, install)).map(
+          (row) => (
+            <FeatureRowCard
+              key={row.id}
+              row={row}
+              enabled={flags?.[row.id] ?? false}
+              onToggle={(enabled) =>
+                setFeature.mutate({ feature: row.id, enabled })
+              }
+            />
+          ),
+        )}
       </div>
     </div>
   );

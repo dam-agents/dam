@@ -3,11 +3,14 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
-import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
+import {
+  dedupeByName,
+  parseGithubRepo,
+  SKILL_SOURCE_ROOTS,
+} from "agent-runtime-api";
 import type { SourcePathReason } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import { detectHost } from "../domain/git-host.js";
 
 export class PublicArchiveNotFoundError extends Error {
   constructor(gitUrl: string) {
@@ -190,7 +193,7 @@ export async function scanPublicGithubArchive(
   subPath?: string,
   ref = "HEAD",
 ): Promise<Skill[]> {
-  const host = detectHost(gitUrl);
+  const host = parseGithubRepo(gitUrl);
   if (!host)
     throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
 
@@ -263,7 +266,7 @@ export async function readPublicGithubSkillFile(
   version: string,
   dir: string,
 ): Promise<string> {
-  const host = detectHost(gitUrl);
+  const host = parseGithubRepo(gitUrl);
   if (!host)
     throw new Error(`only GitHub URLs supported for public read: ${gitUrl}`);
   if (subPathEscapes(dir)) throw new Error(`skill dir rejected: ${dir}`);

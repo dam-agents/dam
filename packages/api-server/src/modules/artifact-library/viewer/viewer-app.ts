@@ -12,6 +12,7 @@ import {
   allowed,
   denied,
   isRestricted,
+  parseVersion,
   PRIVATE_NO_STORE,
   type Authorized,
 } from "./authorize.js";
@@ -24,7 +25,6 @@ import {
   renderWrapper,
 } from "./renderer.js";
 import { loginPath, readShareSession } from "./share-auth-routes.js";
-import { parseVersion } from "./version-query.js";
 
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;

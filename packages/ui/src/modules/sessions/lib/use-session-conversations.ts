@@ -11,9 +11,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import { slackChannelLabel } from "../../sandboxes/hooks/use-slack-channel-form.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
-export type SessionConversationLabel = (
-  session: SessionView,
-) => string | undefined;
+type SessionConversationLabel = (session: SessionView) => string | undefined;
 
 export function useSessionConversations(
   agentId: string | null,

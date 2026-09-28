@@ -1,5 +1,3 @@
-import type { z } from "zod";
-
 import type { LiveEvent } from "./schemas.js";
 
 export interface LiveEventsService {

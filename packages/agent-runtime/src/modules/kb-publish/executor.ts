@@ -20,11 +20,6 @@ const UPLOAD_RETRY_DELAY_MS = 250;
 
 export type KbPublishWork = Omit<KbPublishWorkOrder, "ticket">;
 
-function safeAbs(workDir: string, rel: string): string | null {
-  if (rel.startsWith("/") || rel.split("/").includes("..")) return null;
-  return join(workDir, rel);
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: uploads one object to a server-minted presigned
  * URL using the global fetch — agent pods run with NODE_USE_ENV_PROXY=1, so
@@ -69,9 +64,11 @@ export async function executeWork(opts: {
     path: string,
     expectedHash: string,
   ): Promise<Buffer | null> => {
-    const abs = safeAbs(opts.workDir, path);
-    if (!abs) return null;
-    const buf = await readTextFile(abs, work.caps.perFileMaxBytes);
+    if (path.startsWith("/") || path.split("/").includes("..")) return null;
+    const buf = await readTextFile(
+      join(opts.workDir, path),
+      work.caps.perFileMaxBytes,
+    );
     if (!buf || contentHash(buf) !== expectedHash) return null;
     return buf;
   };

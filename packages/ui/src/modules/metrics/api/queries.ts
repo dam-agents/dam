@@ -1,11 +1,11 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import { TRPCClientError } from "@trpc/client";
 import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
 import { keyAgentId } from "../lib/spend-key.js";
 import { totalCostUsd } from "../lib/totals.js";
-import { isMetricsUnavailable } from "../lib/unavailable.js";
 
 export function useSpendBreakdown(
   from: string,
@@ -27,7 +27,10 @@ export function useSpendBreakdown(
     placeholderData: (previous, previousQuery) =>
       keyAgentId(previousQuery?.queryKey) === agentId ? previous : undefined,
   });
-  const isUnavailable = metricsDisabled || isMetricsUnavailable(query.error);
+  const isUnavailable =
+    metricsDisabled ||
+    (query.error instanceof TRPCClientError &&
+      query.error.data?.code === "PRECONDITION_FAILED");
   useEffect(() => {
     if (isUnavailable) setMetricsDisabled(true);
   }, [isUnavailable]);

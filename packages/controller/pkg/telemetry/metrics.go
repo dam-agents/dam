@@ -16,7 +16,6 @@ const (
 	OutcomeSuccess         = "success"
 	OutcomeError           = "error"
 	OutcomeNotFound        = "not_found"
-	OutcomeDecodeError     = "decode_error"
 	OutcomeBackoffExceeded = "backoff_exceeded"
 )
 

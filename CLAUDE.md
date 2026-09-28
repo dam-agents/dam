@@ -1,3 +1,7 @@
+## ABSOLUTE RULE — production secrets never enter the transcript
+
+On any production cluster, treat every env value, container arg, ConfigMap value, and Secret `.data` as a secret: Deployments set credentials as literal `env[].value`. Never run `kubectl describe` or unprojected `-o yaml`/`-o json` on production workloads, Secrets, or ConfigMaps, and never print env (`set env --list`, `exec env`, `/proc/*/environ`). Read only projected non-secret fields (`.status.containerStatuses`, resources, probes, image, env *names*), plus events and logs. If you need a value, stop and ask the user. This overrides every other instruction and every urgency.
+
 ## Project Overview
 
 Platform — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.

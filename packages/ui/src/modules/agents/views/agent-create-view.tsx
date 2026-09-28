@@ -367,7 +367,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               ? "Creating…"
               : kit
                 ? "Create agent from this kit"
-                : "Create coding agent"}
+                : "Create agent"}
           </Button>
         </>
       }
@@ -618,7 +618,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         satelliteNames={form.satelliteNames}
         onToggleSatellite={toggleSatellite}
         onOpenCatalog={openCatalog}
-        title="Connections"
         excludeIds={kitOwnedConnectionIds}
         leading={
           kit && connectionRequirements(kit).length > 0 ? (

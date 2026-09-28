@@ -5,20 +5,26 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
 import type { AgentService } from "../services/agent-service.js";
-import { fetchOrFallback } from "../services/fetch-or-fallback.js";
-import { waitForRunning } from "../services/wait-for-state.js";
 import {
-  formatTransportError,
   printServiceError,
+  exitOnServiceError,
 } from "../../shared/trpc/print.js";
-import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
 import {
-  EXIT_BELOW_FLOOR,
+  errorReason,
+  parseEnvFlag,
+  validateAgentName,
+} from "./create-helpers.js";
+import { waitForRunningOrExit } from "./wait-or-exit.js";
+import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -165,19 +171,10 @@ async function runCreate(
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  const host = await resolveActiveHost(deps, {
-    flag: opts.server ? { server: opts.server } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, opts.server);
 
   const tmplResult = await deps.createTemplateService(host).list();
-  if (!tmplResult.ok) {
-    printServiceError(tmplResult.error, host);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  exitOnServiceError(tmplResult, host);
   const selectedTemplate = tmplResult.value.find((t) => t.id === template);
   if (!selectedTemplate) {
     process.stderr.write(
@@ -212,29 +209,25 @@ async function runCreate(
     }
     providerConnectionId = matches[0]!.id;
   }
-  const createInput = await parseOrExit(
-    agentCreateInputSchema,
-    {
-      name,
-      templateId: template,
-      connectionIds: [providerConnectionId],
-      providerConnectionId,
-      description: opts.description,
-      env: env.length > 0 ? env : undefined,
-    },
-    EXIT_INVALID_INPUT,
-  );
+  const createInput = await parseOrExit(agentCreateInputSchema, {
+    name,
+    templateId: template,
+    connectionIds: [providerConnectionId],
+    providerConnectionId,
+    description: opts.description,
+    env: env.length > 0 ? env : undefined,
+  });
   let agent: AgentView;
   try {
     agent = await trpc.agents.create.mutate(createInput);
   } catch (e) {
-    if ((e as any)?.data?.code === "BAD_REQUEST") {
+    if (trpcErrorCode(e) === "BAD_REQUEST") {
       process.stderr.write(
         `error: failed to create agent: ${errorReason(e)}\n`,
       );
       process.exit(EXIT_INVALID_INPUT);
     }
-    if ((e as any)?.data?.code === "NOT_FOUND") {
+    if (trpcErrorCode(e) === "NOT_FOUND") {
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
       );
@@ -249,60 +242,17 @@ async function runCreate(
     process.exit(EXIT_RUNTIME_FAILURE);
   }
 
-  let finalAgent = agent;
-  if (opts.wait) {
-    const svc = deps.createAgentService(host);
-    let firstStateSeen = false;
-    const waitResult = await waitForRunning(svc, agent.id, {
-      timeoutSeconds,
-      graceSeconds: 0,
-      onStateChange: (state) => {
-        if (opts.json) return;
-        if (!firstStateSeen) {
-          process.stderr.write(`Waiting for "${name}"… state: ${state}\n`);
-          firstStateSeen = true;
-        } else {
-          process.stderr.write(`state: ${state}\n`);
-        }
-      },
-    });
-
-    switch (waitResult.kind) {
-      case "ready":
-        finalAgent = waitResult.agent;
-        break;
-      case "error":
-        finalAgent = waitResult.agent;
-        if (opts.json) {
-          process.stdout.write(`${JSON.stringify(finalAgent)}\n`);
-        } else {
-          const reason = waitResult.agent.error ?? "unknown";
-          process.stderr.write(
-            `error: agent "${name}" (${waitResult.agent.id}) entered error state: ${reason}\n`,
-          );
-        }
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-      case "timeout":
-        if (opts.json) {
-          process.stdout.write(
-            `${JSON.stringify(await fetchOrFallback(svc, agent, "after wait timeout"))}\n`,
-          );
-        } else {
-          process.stderr.write(
-            `error: timed out waiting for "${name}" to reach running (current: ${waitResult.lastState})\n`,
-          );
-        }
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-      case "transport":
-        process.stderr.write(
-          `error: ${formatTransportError(waitResult.reason, host)}\n`,
-        );
-        process.exit(EXIT_RUNTIME_FAILURE);
-        return;
-    }
-  }
+  const finalAgent = opts.wait
+    ? await waitForRunningOrExit(deps.createAgentService(host), agent, {
+        host,
+        name,
+        timeoutSeconds,
+        graceSeconds: 0,
+        json: opts.json,
+        showIdOnError: true,
+        refreshContext: "after wait timeout",
+      })
+    : agent;
 
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(finalAgent)}\n`);
@@ -312,12 +262,4 @@ async function runCreate(
     );
   }
   process.exit(EXIT_SUCCESS);
-}
-
-function errorReason(e: unknown): string {
-  return e instanceof Error
-    ? e.message
-    : typeof e === "string"
-      ? e
-      : "unknown failure";
 }

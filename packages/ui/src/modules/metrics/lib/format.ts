@@ -1,7 +1,5 @@
 import { formatDurationMs } from "@/lib/format-time";
 
-export { formatDurationMs };
-
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,

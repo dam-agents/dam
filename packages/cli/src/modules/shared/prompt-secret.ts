@@ -1,6 +1,8 @@
-import { password } from "@clack/prompts";
+import { type CANCEL_SYMBOL, password } from "@clack/prompts";
 
-export function promptSecret(message: string): Promise<string | symbol> {
+export function promptSecret(
+  message: string,
+): Promise<string | typeof CANCEL_SYMBOL> {
   return password({
     message,
     validate(v) {

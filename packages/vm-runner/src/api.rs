@@ -11,17 +11,17 @@ pub struct MachineSpec {
     pub memory_mib: i32,
     #[serde(rename = "storageGiB")]
     pub storage_gib: i32,
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub env: std::collections::BTreeMap<String, String>,
-    #[serde(rename = "caCert", default, skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "caCert", skip_serializing_if = "String::is_empty")]
     pub ca_cert: String,
-    #[serde(rename = "allowCidrs", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "allowCidrs", skip_serializing_if = "Vec::is_empty")]
     pub allow_cidrs: Vec<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub revision: String,
     pub running: bool,
     // UNIT_BOUNDARY_DESCRIPTION: the docker configs this machine's image is fetched with, one per pull Secret a pod would list and tried in that order, as the kubelet does. They are credentials in transit: cleared before the spec is stored, and they never reach smolvm or the guest.
-    #[serde(rename = "pullAuths", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "pullAuths", skip_serializing_if = "Vec::is_empty")]
     pub pull_auths: Vec<String>,
 }
 
@@ -29,30 +29,34 @@ pub struct MachineSpec {
 #[serde(default)]
 pub struct MachineStatus {
     pub state: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub reason: String,
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    #[serde(skip_serializing_if = "is_zero")]
     pub restarts: i32,
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    #[serde(skip_serializing_if = "is_zero")]
     pub port: i32,
     pub ready: bool,
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    #[serde(skip_serializing_if = "is_zero")]
     pub cpus: i32,
-    #[serde(rename = "memoryMiB", default, skip_serializing_if = "is_zero_i32")]
+    #[serde(rename = "memoryMiB", skip_serializing_if = "is_zero")]
     pub memory_mib: i32,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub message: String,
     // UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this status changes. A status read given `since` with this value waits until it changes, which is how the controller learns that a booting guest answered without polling for it.
-    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    #[serde(skip_serializing_if = "is_zero")]
     pub version: u64,
 }
 
-fn is_zero_i32(n: &i32) -> bool {
-    *n == 0
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct SeedResult {
+    pub bytes: u64,
+    pub sha256: String,
 }
 
-fn is_zero_u64(n: &u64) -> bool {
-    *n == 0
+fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
+    *n == T::default()
 }
 
 pub const STATE_ABSENT: &str = "absent";
@@ -177,6 +181,13 @@ mod tests {
                 memory_mib: 2048,
                 message: "up".into(),
                 version: 1,
+            },
+        );
+        matches_the_contract(
+            "seed-result",
+            &SeedResult {
+                bytes: 1234,
+                sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
             },
         );
     }

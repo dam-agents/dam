@@ -1,4 +1,4 @@
-export const PERMISSION_LEVELS = ["read", "write", "admin"] as const;
+const PERMISSION_LEVELS = ["read", "write", "admin"] as const;
 export type PermissionLevel = (typeof PERMISSION_LEVELS)[number];
 
 export function levelsUpTo(granted: string): PermissionLevel[] {

@@ -9,6 +9,7 @@ import type {
   TokenSpendByModel,
 } from "api-server-api";
 
+import type { SessionSpend } from "../domain/spend-by-session-type.js";
 import type { SessionTypeSpend } from "./session-type-spend.js";
 
 export interface MetricsWindow {
@@ -18,10 +19,7 @@ export interface MetricsWindow {
   sessionId?: string;
 }
 
-export interface SessionSpend {
-  sessionId: string;
-  costUsd: number;
-}
+export type { SessionSpend };
 
 export interface TelemetryEvent {
   at: string;
@@ -87,7 +85,6 @@ export interface MetricsReader {
     window: MetricsWindow,
     limit: number,
   ): Promise<TraceSpan[]>;
-  close(): Promise<void>;
 }
 
 export interface OwnedAgent {

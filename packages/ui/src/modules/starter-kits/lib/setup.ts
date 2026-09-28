@@ -32,7 +32,7 @@ export function kitSeedRemovable(
   return kit.seed !== undefined && kit.install === undefined;
 }
 
-export interface GrantedConnection {
+interface GrantedConnection {
   id: string;
   templateId: string;
   name?: string;
@@ -43,12 +43,12 @@ export type TemplateIndex = ReadonlyMap<
   Pick<ConnectionTemplateView, "id" | "name" | "family">
 >;
 
-export interface RequirementStatus {
+interface RequirementStatus {
   requirement: StarterKitConnectionRequirement;
   satisfied: boolean;
 }
 
-export function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
+function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
   return [
     ...new Set([
       ...draft.connectionIds,
@@ -206,24 +206,6 @@ export function kitScheduleCadence(schedule: StarterKitSchedule): string {
   return schedule.cron;
 }
 
-export function effectiveTiming(
-  schedule: StarterKitSchedule,
-  override: StarterKitScheduleOverride | undefined,
-): { cron: string } | { rrule: string; timezone: string } {
-  if (override?.timing) return override.timing;
-  return "cron" in schedule
-    ? { cron: schedule.cron }
-    : { rrule: schedule.rrule, timezone: schedule.timezone };
-}
-
-export function describeTiming(
-  timing: { cron: string } | { rrule: string; timezone: string },
-): string {
-  return "cron" in timing
-    ? timing.cron
-    : `${rruleToText(timing.rrule)} (${timing.timezone})`;
-}
-
 export function withOverride(
   overrides: readonly StarterKitScheduleOverride[],
   name: string,
@@ -275,7 +257,7 @@ const HARNESS_LABEL: Record<HarnessFamily, string> = {
   bob: "Bob",
 };
 
-export function harnessFamilyLabel(
+function harnessFamilyLabel(
   harness: HarnessFamily | undefined,
 ): string | undefined {
   return harness ? HARNESS_LABEL[harness] : undefined;

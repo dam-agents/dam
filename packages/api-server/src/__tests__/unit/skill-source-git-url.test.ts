@@ -1,4 +1,4 @@
-import { normalizeGitUrl } from "agent-runtime-api";
+import { normalizeGitUrl, parseGithubRepo } from "agent-runtime-api";
 import { skillCreateSourceInputSchema } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -97,6 +97,30 @@ describe("normalizeGitUrl", () => {
     expect(
       normalizeGitUrl("https://github.com/dam-agents/dam/pull/12"),
     ).toEqual({ gitUrl: "https://github.com/dam-agents/dam" });
+  });
+});
+
+describe("parseGithubRepo", () => {
+  it("parses GitHub HTTPS URLs", () => {
+    expect(parseGithubRepo("https://github.com/foo/bar")).toEqual({
+      owner: "foo",
+      repo: "bar",
+    });
+  });
+
+  it("tolerates a trailing .git and/or trailing slash", () => {
+    for (const url of [
+      "https://github.com/foo/bar.git",
+      "https://github.com/foo/bar/",
+      "https://github.com/foo/bar.git/",
+    ])
+      expect(parseGithubRepo(url)).toEqual({ owner: "foo", repo: "bar" });
+  });
+
+  it("returns null for unsupported hosts", () => {
+    expect(parseGithubRepo("https://gitlab.com/foo/bar")).toBeNull();
+    expect(parseGithubRepo("git@github.com:foo/bar.git")).toBeNull();
+    expect(parseGithubRepo("not-a-url")).toBeNull();
   });
 });
 

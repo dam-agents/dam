@@ -48,8 +48,6 @@ const auth = createAuth({
   jwksUrl: "http://kc/jwks",
   audience: "platform-api",
   requiredRole: "platform-access",
-  uiClientId: "platform-ui",
-  cliClientId: "platform-cli",
 });
 const middleware = createAuthMiddleware(
   (token, site) => authenticatePrincipal(auth.verify, token, site),
@@ -174,8 +172,6 @@ describe("auth middleware audit", () => {
       {
         issuerUrl: "http://kc/realms/platform",
         jwksUrl: "http://kc/jwks",
-        uiClientId: "platform-ui",
-        cliClientId: "platform-cli",
       },
       { verifyApiKey: async () => ({ ok: false, error: "revoked" }) },
     );

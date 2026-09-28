@@ -1,5 +1,4 @@
-import type { TtlStore } from "../../../core/ttl-store.js";
-import { createFlowStore, type FlowStore } from "./telegram-flows.js";
+import type { FlowStore } from "./bind-flow-store.js";
 
 export interface SlackPendingBind {
   slackChannelId: string;
@@ -11,10 +10,3 @@ export interface SlackPendingBind {
 }
 
 export type SlackBindFlowStore = FlowStore<SlackPendingBind>;
-
-export function createSlackBindFlowStore(opts: {
-  now?: () => number;
-  store: TtlStore<SlackPendingBind>;
-}): SlackBindFlowStore {
-  return createFlowStore<SlackPendingBind>(opts);
-}

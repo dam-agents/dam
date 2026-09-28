@@ -34,7 +34,6 @@ export type SkillSource = z.infer<typeof skillSourceSchema>;
 export type Skill = z.infer<typeof skillSchema>;
 export type SkillListResult = z.infer<typeof skillListResultSchema>;
 export type LocalSkill = z.infer<typeof localSkillSchema>;
-export type SkillOrigin = NonNullable<LocalSkill["origin"]>;
 
 export type SkillCreateSourceInput = z.infer<
   typeof skillCreateSourceInputSchema
@@ -58,12 +57,12 @@ export type SkillSetEntry = z.infer<typeof skillSetEntrySchema>;
 
 export type SkillSet = z.infer<typeof skillSetSchema>;
 
-export type SkillSetCreateInput = z.infer<typeof skillSetCreateInputSchema>;
+type SkillSetCreateInput = z.infer<typeof skillSetCreateInputSchema>;
 
-export type SkillSetDeleteInput = z.infer<typeof skillSetDeleteInputSchema>;
+type SkillSetDeleteInput = z.infer<typeof skillSetDeleteInputSchema>;
 
-export type SkillSetApplyInput = z.infer<typeof skillSetApplyInputSchema>;
-export interface SkillEntriesApplyInput {
+type SkillSetApplyInput = z.infer<typeof skillSetApplyInputSchema>;
+interface SkillEntriesApplyInput {
   agentId: string;
   skills: SkillSetEntry[];
 }

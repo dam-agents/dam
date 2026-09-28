@@ -11,7 +11,7 @@ import { emit, EventType } from "../../../events.js";
 
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
-export interface RecordAcpNativePendingInput {
+interface RecordAcpNativePendingInput {
   agentId: string;
   sessionId: string;
   rpcId: number | string;
@@ -32,7 +32,7 @@ export interface ApprovalsRelayService {
   ): () => void;
 }
 
-export interface CreateApprovalsRelayServiceDeps {
+interface CreateApprovalsRelayServiceDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
 }

@@ -1,12 +1,11 @@
 import { Close } from "@carbon/icons-react";
-import type { ConnectionView } from "api-server-api";
+import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
-import { ConnectionStatusBadge } from "./connection-status-badge.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -21,6 +20,15 @@ export interface RowMaintenanceActions {
   onEditScope?: () => void;
   busy?: boolean;
 }
+
+const STATUS_PRESENTATION: Record<
+  Exclude<ConnectionStatus, "active">,
+  { label: string; variant: BadgeProps["variant"] }
+> = {
+  pending: { label: "Authorizing…", variant: "muted" },
+  expired: { label: "Expired", variant: "danger" },
+  disconnected: { label: "Disconnected", variant: "muted" },
+};
 
 interface Props {
   connection: ConnectionView;
@@ -67,7 +75,9 @@ export function CatalogConnectionRow({
             <span className="truncate">{tag}</span>
           </Badge>
           {connection.status !== "active" && (
-            <ConnectionStatusBadge status={connection.status} />
+            <Badge variant={STATUS_PRESENTATION[connection.status].variant}>
+              {STATUS_PRESENTATION[connection.status].label}
+            </Badge>
           )}
         </div>
         <ConnectionRowActions

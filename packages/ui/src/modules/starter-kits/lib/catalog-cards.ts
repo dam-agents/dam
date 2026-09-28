@@ -26,7 +26,7 @@ export function kitEgressPreset(
   return kit.egressPreset ?? "trusted";
 }
 
-export const CATEGORY_ORDER: StarterKitView["category"][] = [
+const CATEGORY_ORDER: StarterKitView["category"][] = [
   "software",
   "knowledge",
   "productivity",
@@ -40,7 +40,7 @@ export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
-export interface KitBadge {
+interface KitBadge {
   key: string;
   label: string;
   iconSlug?: string;

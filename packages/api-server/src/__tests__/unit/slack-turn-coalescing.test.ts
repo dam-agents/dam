@@ -1,7 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import { type AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
@@ -9,7 +9,6 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SteerOutcome } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const SESSION = "sess-1";
@@ -65,15 +64,15 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     turnStatus: async () => "unknown" as const,
   };
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => ({ ensureReady: async () => {} }) as unknown as AgentsService,
-    { resolve: async () => OWNER } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => ({ ensureReady: async () => {} }) as unknown as AgentsService,
+    identityLinks: { resolve: async () => OWNER } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
@@ -84,18 +83,18 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       ],
       resolveSlackChannelsByInstance: async () => [{ id: "C1", teamId: "" }],
     } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    (e) => events.push(e),
-    opts.settleMs ?? 0,
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: (e) => events.push(e),
+    settleMs: opts.settleMs ?? 0,
+  });
 
   return {
     gw,
@@ -104,7 +103,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     steered,
     worker,
     async start() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
     },
     hold() {
       holdTurns = true;

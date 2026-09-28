@@ -214,6 +214,7 @@ function typeLabelsIn(node) {
 
 function rowTypesByEvent() {
   const source = parse(PERSIST_SAGA);
+  const verbs = subscriptionVerbs(source);
   const byEvent = new Map();
 
   const collect = (statement) => {
@@ -227,7 +228,7 @@ function rowTypesByEvent() {
         ts.isPropertyAccessExpression(node) &&
         ts.isIdentifier(node.expression) &&
         node.expression.text === ENUM_NAME &&
-        inside === SUBSCRIBE_FN
+        verbs.has(inside)
       ) {
         events.push(node.name.text);
       }

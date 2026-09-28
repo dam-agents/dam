@@ -80,6 +80,25 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: removes the home a migration staged for the machine's first boot. The runner answers the same whether there was one or not, so a retry after a lost answer is harmless.
+func (c *Client) DeleteSeed(ctx context.Context, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.URL+"/machines/"+id+"/seed", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("VM runner: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("VM runner: delete seed %s: %s: %s", id, resp.Status, bytes.TrimSpace(raw))
+	}
+	return nil
+}
+
 func (c *Client) do(ctx context.Context, method, id string, body any) (MachineStatus, error) {
 	return c.send(ctx, c.HTTP, method, id, "", body)
 }

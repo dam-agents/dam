@@ -27,11 +27,6 @@ function counter(
   return write.kind === "increment" ? sql`${column} + 1` : write.value;
 }
 
-function clampLimit(limit: number | undefined): number {
-  if (limit === undefined) return DEFAULT_LIMIT;
-  return Math.min(Math.max(1, Math.trunc(limit)), MAX_LIMIT);
-}
-
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
   listForOwner(
@@ -126,7 +121,11 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
             : eq(schedulesTable.owner, owner),
         )
         .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt))
-        .limit(clampLimit(opts?.limit))) as InternalRow[];
+        .limit(
+          opts?.limit === undefined
+            ? DEFAULT_LIMIT
+            : Math.min(Math.max(1, Math.trunc(opts.limit)), MAX_LIMIT),
+        )) as InternalRow[];
       return rows.map(rowToSchedule);
     },
 

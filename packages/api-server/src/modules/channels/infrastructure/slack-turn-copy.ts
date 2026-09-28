@@ -1,5 +1,6 @@
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
-import { formatSlackTs, OUTBOUND_TOOL_PREFIX } from "./agent-footer.js";
+import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
+import { formatSlackTs } from "./agent-footer.js";
 
 const TOOL = OUTBOUND_TOOL_PREFIX;
 
@@ -33,17 +34,13 @@ function escapeFrameText(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function escapeFrameAttribute(value: string): string {
-  return escapeFrameText(value).replace(/"/g, "&quot;");
-}
-
 function quotePeerReply(name: string, text: string): string {
   const capped =
     text.length > PEER_REPLY_CHARS
       ? `${text.slice(0, PEER_REPLY_CHARS)}… (truncated)`
       : text;
   return (
-    `<already-replied agent="${escapeFrameAttribute(name)}">\n` +
+    `<already-replied agent="${escapeFrameText(name).replace(/"/g, "&quot;")}">\n` +
     `${escapeFrameText(capped)}\n</already-replied>`
   );
 }
@@ -52,12 +49,8 @@ export function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
 }
 
-function frameName(name: string): string {
-  return `"${escapeFrameText(name)}"`;
-}
-
 function joinNames(names: string[]): string {
-  const quoted = names.map(frameName);
+  const quoted = names.map((name) => `"${escapeFrameText(name)}"`);
   if (quoted.length <= 1) return quoted[0] ?? "";
   return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
 }

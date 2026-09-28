@@ -1,6 +1,6 @@
 import type { TelemetryLog, TelemetrySpan, TurnDetail } from "api-server-api";
 
-export interface SpanRow {
+interface SpanRow {
   kind: "span";
   key: string;
   span: TelemetrySpan;
@@ -11,7 +11,7 @@ export interface SpanRow {
   logs: TelemetryLog[];
 }
 
-export interface LogRow {
+interface LogRow {
   kind: "log";
   key: string;
   log: TelemetryLog;
@@ -22,7 +22,7 @@ export interface LogRow {
 
 export type TimelineRow = SpanRow | LogRow;
 
-export interface Waterfall {
+interface Waterfall {
   rows: TimelineRow[];
   startMs: number;
   totalMs: number;
@@ -185,7 +185,7 @@ export function logEventLabel(event: string): string {
   return event.startsWith("claude_code.") ? event.slice(12) : event;
 }
 
-export interface Placement {
+interface Placement {
   label: string;
   exact: boolean;
 }

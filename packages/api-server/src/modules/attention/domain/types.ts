@@ -23,10 +23,6 @@ export interface DismissalRow {
   dismissedAt: Date;
 }
 
-export function sessionItemId(agentId: string, sessionId: string): string {
-  return `${agentId}:${sessionId}`;
-}
-
 function sameTime(a: Date | null, b: Date | null): boolean {
   return (a?.getTime() ?? null) === (b?.getTime() ?? null);
 }

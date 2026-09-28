@@ -1,10 +1,8 @@
 import { rruleToText } from "api-server-api";
 
-import type { Schedule } from "../../../types.js";
+import { sameLocalDay } from "@/lib/format-time";
 
-function startOfDay(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
+import type { Schedule } from "../../../types.js";
 
 export function formatRunTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
@@ -12,9 +10,10 @@ export function formatRunTime(iso: string, now: Date = new Date()): string {
     hour: "numeric",
     minute: "2-digit",
   });
-  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-  if (dayDiff === 0) return `today at ${time}`;
-  if (dayDiff === 1) return `yesterday at ${time}`;
+  if (sameLocalDay(date, now)) return `today at ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameLocalDay(date, yesterday)) return `yesterday at ${time}`;
   const day = date.toLocaleDateString([], {
     month: "short",
     day: "numeric",
@@ -29,7 +28,7 @@ export function scheduleCadenceText(schedule: Schedule): string {
   return schedule.cron ?? "";
 }
 
-export interface LastRunStatus {
+interface LastRunStatus {
   label: string;
   className: string;
 }
@@ -64,7 +63,7 @@ export function clampText(text: string, max: number = CLAMP_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-export interface PrecheckAlert {
+interface PrecheckAlert {
   text: string;
   reason: string;
   urgent: boolean;

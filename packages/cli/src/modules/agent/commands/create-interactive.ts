@@ -25,17 +25,12 @@ import {
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentView } from "../domain/agent-view.js";
-import { validateAgentName } from "./create-helpers.js";
+import { errorReason, validateAgentName } from "./create-helpers.js";
 import { formatTransportError } from "../../shared/trpc/print.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -43,6 +38,7 @@ import {
   configInputsOf,
   validateConfigInputValue,
 } from "../../connection/index.js";
+import { trpcErrorCode } from "../../shared/trpc/classify.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
@@ -66,13 +62,8 @@ interface Cleanup {
   agentId: string | null;
 }
 
-function trpcCode(e: unknown): string | undefined {
-  if (typeof e !== "object" || e === null) return undefined;
-  return (e as { data?: { code?: string } }).data?.code;
-}
-
 function classifyFailure(e: unknown): "rollback" | "ambiguous" {
-  const code = trpcCode(e);
+  const code = trpcErrorCode(e);
   return code !== undefined && ROLLBACK_CODES.has(code)
     ? "rollback"
     : "ambiguous";
@@ -126,7 +117,6 @@ export interface CreateAgentInteractiveCommandDeps {
   createAgentService: (host: string) => AgentService;
   createTemplateService: (host: string) => TemplateService;
   createTrpcClient: (host: string) => TrpcClient;
-  serverEnvVar: string;
 }
 
 interface CliOpts {
@@ -160,15 +150,7 @@ async function runCreate(
 
   intro("dam agent create-interactive");
 
-  const flag = opts.server ? { server: opts.server } : undefined;
-
-  const host = await resolveActiveHost(deps, {
-    flag,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
+  const host = await resolveActiveHost(deps, opts.server);
 
   const name = await text({
     message: "Agent name",
@@ -224,7 +206,6 @@ async function runCreate(
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     { name, templateId },
-    EXIT_INVALID_INPUT,
     async () => {
       spin.stop("Invalid input");
       await flushCleanup(trpc, cleanup);
@@ -600,7 +581,7 @@ async function createConnectionWithRename(
       cleanup.newConnectionIds.push(created.id);
       return { id: created.id, name };
     } catch (e) {
-      if (trpcCode(e) === "CONFLICT") {
+      if (trpcErrorCode(e) === "CONFLICT") {
         const renamed = await text({
           message: `A connection named "${name}" already exists. Choose a different name`,
           validate(v) {
@@ -729,11 +710,9 @@ async function addOrReplaceGithubPat(
   }
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts = 5,
-  delayMs = 2000,
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const maxAttempts = 5;
+  const delayMs = 2000;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
@@ -744,10 +723,4 @@ async function withRetry<T>(
     }
   }
   throw new Error("withRetry: exhausted attempts");
-}
-
-function errorReason(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  return "unknown failure";
 }

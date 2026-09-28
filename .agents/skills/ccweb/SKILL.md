@@ -1,6 +1,7 @@
 ---
 name: ccweb
-description: Run and verify this repo inside a Claude Code on the web sandbox — the cloud container with no systemd, no KVM, no IPv6, a TLS-intercepting egress proxy and a fixed disk allowance. Use when a session there needs mise, docker, the local k3s cluster (`cluster:install` / `e2e:install` with `IS_SANDBOX=1`), platform images, or to drive the UI with agent-browser. Triggers on "ccweb", "Claude Code on the web", "cloud sandbox", "IS_SANDBOX", "agent-browser", and on these symptoms there - `failed to update /proc/self/oom_score_adj: Permission denied`, istio-cni `failed to Statfs "/host/proc/1/ns/net": permission denied`, ztunnel `Address family not supported by protocol`, `x509: certificate signed by unknown authority` inside `docker build`, pods `Evicted` with DiskPressure while `df` shows room, `kubectl logs` failing with `EOF` through the agent proxy.
+description: |
+  Run and verify this repo inside a Claude Code on the web sandbox — the cloud container with no systemd, no KVM, no IPv6, a TLS-intercepting egress proxy and a fixed disk allowance. Use when a session there needs mise, the local k3s cluster (`cluster:install` / `e2e:install` with `IS_SANDBOX=1`), platform images, or to drive the UI with agent-browser. Triggers on "ccweb", "Claude Code on the web", "cloud sandbox", "IS_SANDBOX", "agent-browser", and on these symptoms there - `failed to update /proc/self/oom_score_adj: Permission denied`, istio-cni `failed to Statfs "/host/proc/1/ns/net": permission denied`, ztunnel `Address family not supported by protocol`, pods `Evicted` with DiskPressure while `df` shows room, `kubectl logs` failing with `EOF` through the agent proxy.
 ---
 
 # Claude Code on the web sandbox
@@ -21,9 +22,7 @@ You are here when `CLAUDE_CODE_REMOTE=true`, PID 1 is `process_api`, and `/run/s
 | PID 1 not inspectable | istio-cni: `Statfs /host/proc/1/ns/net: permission denied` | `k3s-launcher`: k3s in its own PID namespace |
 | cgroup v1 | kubelet ≥ 1.35 refuses to start | `k3s-launcher`: `fail-cgroupv1=false` |
 | Fixed disk allowance far below the 252G the device reports | kubelet's 5% threshold evicts everything, then GCs images | `k3s-launcher`: absolute 2Gi eviction thresholds |
-| The proxy's CA is trusted on the host only | `RUN` steps in `docker build` fail TLS | [`pull-images`](scripts/pull-images) instead of building |
-| No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off |
-| Docker daemon not started | `docker` cannot connect | start it by hand (below) |
+| No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off, and the vm lane runs in CI only ([cluster-ops](../cluster-ops/SKILL.md)) |
 
 The launcher's workarounds are sandbox-only on purpose. Each one turns on only when its probe says it is needed, but clamping OOM scores or lowering eviction thresholds would change behavior on a real host.
 
@@ -32,7 +31,6 @@ The launcher's workarounds are sandbox-only on purpose. Each one turns on only w
 ```sh
 curl -fsSL https://mise.run | sh && export PATH="$HOME/.local/bin:$PATH"
 mise trust -a && mise install
-(nohup dockerd >/tmp/dockerd.log 2>&1 &) ; until docker info >/dev/null 2>&1; do sleep 1; done
 export IS_SANDBOX=1                        # every cluster:* / e2e:* task reads it
 .agents/skills/ccweb/scripts/pull-images   # api-server ui controller keycloak mock
 K3S_LAUNCHER="$PWD/.agents/skills/ccweb/scripts/k3s-launcher" SKIP_IMAGE_BUILD=1 mise run e2e:install
@@ -44,25 +42,16 @@ Run the install with a long timeout or in the background: the first run takes ab
 
 ## Images
 
-`docker build` cannot work here: the builder's `RUN` steps reach the network through the proxy but do not trust its CA. Do not edit Dockerfiles to inject it. Do not shadow `/usr/local/bin/docker` with a wrapper either: the permission classifier treats that as persistence and refuses it.
+No image build runs a container, so each builds here like on any Linux host. [`pull-images`](scripts/pull-images) is still the faster path for the images your change leaves alone.
 
 - **Unchanged code:** `pull-images` pulls CI's images. api-server, ui and controller come from the newest main commit at or behind your merge base. keycloak and agents come via `image:resolve`.
-- **Changed TypeScript in api-server:** build the bundle on the host and layer it over the published image. Nothing in that build touches the network:
-
-  ```sh
-  mise exec -- pnpm --filter api-server exec tsup
-  mkdir -p /tmp/apiimg/dist && cp packages/api-server/dist/*.js /tmp/apiimg/dist/
-  printf 'FROM platform-api-server:latest\nCOPY --chown=65532:0 dist/ /app/dist/\n' >/tmp/apiimg/Dockerfile
-  docker build -q -t platform-api-server:latest /tmp/apiimg
-  docker save platform-api-server:latest -o /tmp/api.tar && k3s ctr -n k8s.io images import /tmp/api.tar && rm /tmp/api.tar
-  mise run cluster:kubectl -- rollout restart deploy/platform-apiserver
-  ```
+- **Changed controller, ui, api-server or keycloak:** `mise run //packages/<pkg>:oci` (keycloak's package is `keycloak-theme`), then `mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path <component>)"`. None of these builds runs a container.
 
 - **Image gone from the node** (`ErrImageNeverPull` / `ImagePullBackOff` on `platform-*:latest`, typically after an eviction GC): pull it straight into containerd and re-tag it. For example: `k3s ctr -n k8s.io images pull --platform linux/amd64 quay.io/dam-agents/mock:<tag> && k3s ctr -n k8s.io images tag --force quay.io/dam-agents/mock:<tag> docker.io/library/platform-mock:latest`.
 
 ## Disk
 
-The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored twice, once in docker and once in k3s containerd. After an install, `docker builder prune -af` and `docker image prune -af` reclaim the docker copy, which the node no longer needs. After that, later install runs need `SKIP_IMAGE_LOAD=1`, or run `pull-images` again first, because the load step saves the images from docker.
+The allowance is roughly 30G per session, and `df` reports the whole device, not what is left of it. Images are stored twice: as the `dist/oci/` tars the install imports, and in k3s containerd. Deleting the tars needs `SKIP_IMAGE_LOAD=1` on later runs, or `pull-images` again first.
 
 ## Driving the UI with agent-browser
 
@@ -74,7 +63,7 @@ $AB open http://localhost:5555/ && $AB snapshot -i
 
 - **First login:** Keycloak form (`dev` / `dev`), then "I accept the Terms of Use".
 - **Creating an agent:** needs a provider. Add a placeholder under Settings → Providers → Anthropic → API Key. The mock harness never calls the model.
-- **Clicks that silently do nothing:** the app scrolls inside its own containers, not the page, and agent-browser does not scroll those before a click, so an element below the fold is clicked at off-screen coordinates. The agent form's "Create coding agent" button and the lower scopes in the API key dialog both hit this. Run `$AB scrollintoview @eN` before `$AB click @eN`. Checking `$AB get url` or a snapshot after each click catches a miss.
+- **Clicks that silently do nothing:** the app scrolls inside its own containers, not the page, and agent-browser does not scroll those before a click, so an element below the fold is clicked at off-screen coordinates. The agent form's "Create agent" button and the lower scopes in the API key dialog both hit this. Run `$AB scrollintoview @eN` before `$AB click @eN`. Checking `$AB get url` or a snapshot after each click catches a miss.
 - **No API calls in the network log:** the UI's tRPC runs over a WebSocket, so `$AB network requests` never shows them. Read `mise run cluster:kubectl -- logs deploy/platform-apiserver` instead.
 - **Hidden Experimental features tab:** click the version string under Settings → Account five times.
 - Screenshots belong in the scratchpad, not the repo.

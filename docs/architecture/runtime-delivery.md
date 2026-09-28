@@ -270,7 +270,7 @@ Redis is the signal path; BullMQ stores job state in Redis with relaxed durabili
 
 Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a kind — contribution **or** event — to an impl, resolved uniformly through the plugin registry. Built-in drivers are **on by default** with default bindings, so a manifest declares an entry only to *configure* a kind (e.g. `harness-config`'s file/keys/catalog), *override* its impl, or *disable* it with `false`; `impl` defaults to the kind name (so it's named only to override). The kinds advertised on `hello` are derived at boot from the resolved drivers — the built-in defaults, plus what the manifest declares, minus what it disables — never declared separately. Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
-The shipped manifests live beside their agents in [`packages/agents/`](../../packages/agents/).
+The default shipped manifest lives in the shared base, [`packages/agents/base/`](../../packages/agents/base/), a harness's own in its directory beside it.
 
 The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
 

@@ -18,6 +18,7 @@ import type {
   ArtifactRow,
   FolderRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
+import type { AgentApiPodClient } from "../../modules/artifact-library/infrastructure/agent-api-pod-client.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 describe("share-crypto — slugs", () => {
@@ -248,6 +249,18 @@ function stubArtifacts(
 
 const fakeArtifacts = stubArtifacts();
 
+function idleAgentApiDeps(): {
+  ensureReady: (agentId: string) => Promise<void>;
+  agentApi: AgentApiPodClient;
+} {
+  return {
+    ensureReady: () => Promise.resolve(),
+    agentApi: {
+      request: () => Promise.reject(new Error("agent api not expected")),
+    },
+  };
+}
+
 describe("share viewer resolution", () => {
   it("resolves only public artifacts — private reads as not-found", async () => {
     const viewer = createShareViewerService({
@@ -337,6 +350,7 @@ describe("library service — getPreviewHtml", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: fakeRepo([row]),
       owner: row.owner,
@@ -382,6 +396,7 @@ describe("library service — the kind cannot move", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: {
         ...fakeRepo(rows),
@@ -453,6 +468,7 @@ describe("library service — createAgentDownloadUrl", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: {
         ...fakeRepo(rows),
@@ -530,6 +546,7 @@ describe("library service — owner scoping", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: fakeRepo(rows),
       owner: "intruder",
@@ -644,6 +661,7 @@ describe("restricted sharing permissions", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface,
       repo,
       owner: "o1",
@@ -750,6 +768,7 @@ describe("library service — interactive is settled at create", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: {
         ...fakeRepo(rows),
@@ -835,6 +854,7 @@ describe("library service — an interactive artifact cannot be shared", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
       surface: "ui",
       repo: fakeRepo(rows),
       owner: "o1",

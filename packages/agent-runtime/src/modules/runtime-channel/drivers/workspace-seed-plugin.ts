@@ -1,6 +1,6 @@
 import { workspaceSeedEventPayload } from "agent-runtime-api";
 import { existsSync, readdirSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
@@ -17,16 +17,7 @@ import {
   createGitProtocolClient,
   type SeedTarget,
 } from "../../git/protocol-client.js";
-
-async function marked(path: string): Promise<boolean> {
-  try {
-    await readFile(path);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
-  }
-}
+import { sentinelExists } from "./sentinel.js";
 
 const IMPL_NAME = "workspace-seed";
 const DONE_SENTINEL = "seed.done";
@@ -64,25 +55,25 @@ export function createWorkspaceSeedPlugin(deps: {
     { url, ref, commit, branch, into }: WorkspaceSeedEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
-    const dest = into === "home" ? ctx.agentHome : deps.workDir;
+    const intoHome = into === "home";
+    const dest = intoHome ? ctx.agentHome : deps.workDir;
     const at = [branch, commit ?? ref].filter(Boolean).join(" @ ");
     const label = at ? `${url} (${at})` : url;
     const marker = (name: string) =>
-      join(ctx.pluginStateDir, into === "home" ? `home-${name}` : name);
+      join(ctx.pluginStateDir, intoHome ? `home-${name}` : name);
     const done = marker(DONE_SENTINEL);
     const started = marker(STARTED_SENTINEL);
-    if (await marked(done)) {
+    if (await sentinelExists(done)) {
       deps.log(`[workspace-seed] ${dest} already seeded, skipping`);
       return;
     }
     const hasGit = existsSync(join(dest, ".git"));
-    const ours = await marked(started);
+    const ours = await sentinelExists(started);
     if (hasGit && !ours) {
       throw new Error(
         `refusing to seed ${dest}: it already holds a repository the platform did not seed`,
       );
     }
-    const intoHome = into === "home";
     if (
       !intoHome &&
       !hasGit &&

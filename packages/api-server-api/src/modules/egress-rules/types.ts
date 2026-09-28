@@ -11,11 +11,7 @@ export type RuleVerdict = z.infer<typeof ruleVerdictSchema>;
 export type EgressPreset = z.infer<typeof egressPresetSchema>;
 
 export type EgressRuleSource =
-  | "manual"
-  | "inbox"
-  | `connection:${string}`
-  | "preset:trusted"
-  | "preset:all";
+  "manual" | "inbox" | `connection:${string}` | "preset:trusted" | "preset:all";
 
 export interface EgressRuleView {
   id: string;

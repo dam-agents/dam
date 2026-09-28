@@ -37,12 +37,9 @@ export interface SessionListPredicates {
   isRunning: (sessionId: string) => boolean;
 }
 
-function asMode(
-  value: string | undefined,
-  fallback: PodSessionMode,
-): PodSessionMode {
+function asMode(value: string | undefined): PodSessionMode {
   const parsed = podSessionModeSchema.safeParse(value);
-  return parsed.success ? parsed.data : fallback;
+  return parsed.success ? parsed.data : "chat";
 }
 
 function asType(value: string | undefined): PodSessionType {
@@ -58,7 +55,7 @@ function fromEntry(
 ): PodSession {
   return {
     sessionId,
-    mode: asMode(entry.meta.mode, "chat"),
+    mode: asMode(entry.meta.mode),
     type: asType(entry.meta.type),
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
@@ -138,7 +135,7 @@ export function sessionDirectoryEntries(
     .filter(([sessionId]) => !isTombstoned(sessionId))
     .map(([sessionId, entry]) => ({
       sessionId,
-      mode: asMode(entry.meta.mode, "chat"),
+      mode: asMode(entry.meta.mode),
       type: asType(entry.meta.type),
       createdAt: entry.createdAt,
     }));

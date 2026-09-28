@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { err, type Result } from "../../../result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -39,10 +39,7 @@ export function createTemplateService(deps: {
           kind: "transport",
           reason: `unexpected templates response: ${parsed.error.message}`,
         });
-      return { ok: true, value: parsed.data } as Result<
-        readonly Template[],
-        never
-      >;
+      return ok(parsed.data);
     },
   };
 }

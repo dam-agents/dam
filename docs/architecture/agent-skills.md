@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-14
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -18,9 +18,9 @@ A Local Skill's name **on the wire is its frontmatter `name:` when it has one**,
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in platform-base's [`runtime-manifest.yaml`](../../packages/platform-base/runtime-manifest.yaml).
+An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in the base [`runtime-manifest.yaml`](../../packages/agents/base/rootfs/app/runtime-manifest.yaml).
 
-Each per-agent Dockerfile ([`packages/agents/`](../../packages/agents/)) symlinks its harness-native skills dir onto that canonical store, so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
+Each harness image symlinks its harness-native skills dir onto that canonical store — the link ships in the harness's image tree ([`packages/agents/`](../../packages/agents/)) — so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
@@ -43,7 +43,7 @@ Some image-shipped skills exist to make a platform feature usable. Naming those 
 
 Image-shipped skills are managed per skill, not per volume: a local copy whose content matches a version the platform ever shipped is the platform's — seeded once per volume, overwritten when the image ships a newer version, deleted when the image stops shipping the name — and the moment it diverges it is the user's, never touched again. Three pieces carry that rule:
 
-- The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`packages/platform-base/`](../../packages/platform-base/)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
+- The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`dam-skill-manifest.json`](../../packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
 - The **Seed Ledger** — a per-volume record of which shipped skill names have been seeded, so each is copied into the Skill Paths exactly once and a skill the user then deletes is never resurrected. Retiring clears the entry — the platform's own removal must not count as the user's — so a skill re-shipped after retirement seeds again. It sits on the agent-writable volume, which is safe because it only ever suppresses copies of image content. Only pristine-workspace skills seed; staged skills never do. The whole-workspace first-boot seed ([persistence](persistence.md)) stays for everything that isn't a skill.
 - **Reconciliation** — runs when the pod applies a runtime-channel snapshot, and once at boot from the install driver's persisted set, because an image-only upgrade delivers no snapshot. A local skill whose hash appears in the manifest is updated or removed as above; anything else — including a copy that cannot be hashed — is left alone. A skill tracked as an Installed Skill Ref is exempt: its Source governs it. `PLATFORM_IMAGE_SKILL_RECONCILE=off` disables the whole pass on a pod, and the pass degrades to a logged no-op on its own when an input is missing: an image with no readable Shipped-Skill Manifest, or a pod whose runtime manifest yields no pristine workspace root distinct from the Skill Paths, leaves image skills unmanaged; a corrupt Seed Ledger heals in place — the next pass records every currently-shipped skill as already seeded without copying anything, so nothing the user deleted can resurrect, at the cost that a skill first shipped while the ledger was corrupt never auto-seeds on that volume.
 

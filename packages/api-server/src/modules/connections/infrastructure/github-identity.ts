@@ -25,10 +25,8 @@ function sanitizeName(name: string): string {
 
 export async function resolveGitHubIdentity(
   accessToken: string,
-  opts: { fetchImpl?: typeof fetch } = {},
 ): Promise<GitHubIdentity> {
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const res = await fetchImpl("https://api.github.com/user", {
+  const res = await fetch("https://api.github.com/user", {
     signal: AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${accessToken}`,

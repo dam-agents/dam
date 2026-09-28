@@ -6,7 +6,7 @@ import type { AuthStore, HostUrl } from "../infrastructure/auth-store.js";
 import type { AuthEnvReader } from "../infrastructure/auth-env-reader.js";
 import type { TokenEndpointClient } from "../infrastructure/token-endpoint-client.js";
 
-export const REFRESH_BUFFER_SECONDS = 60;
+const REFRESH_BUFFER_SECONDS = 60;
 
 export interface TokenProvider {
   getValidAccessToken(
@@ -31,12 +31,10 @@ export interface TokenProviderDeps {
   tokenEndpointClient: TokenEndpointClient;
   hostMetadata: HostMetadataResolver;
   now?: () => Date;
-  refreshBufferSeconds?: number;
 }
 
 export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
   const now = deps.now ?? (() => new Date());
-  const bufferSeconds = deps.refreshBufferSeconds ?? REFRESH_BUFFER_SECONDS;
 
   return {
     async getValidAccessToken(host) {
@@ -48,7 +46,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       const hostAuth = stored.value.get(host);
       if (!hostAuth) return err({ kind: "not-logged-in", host });
 
-      if (!isWithinRefreshBuffer(hostAuth, now(), bufferSeconds)) {
+      if (!isWithinRefreshBuffer(hostAuth, now(), REFRESH_BUFFER_SECONDS)) {
         return ok(hostAuth.accessToken);
       }
 
@@ -86,10 +84,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       }
 
       const newAuth: HostAuth = {
-        issuer: hostAuth.issuer,
-        username: hostAuth.username,
-        sub: hostAuth.sub,
-        cliClientId: hostAuth.cliClientId,
+        ...hostAuth,
         accessToken: body.access_token,
         refreshToken: body.refresh_token,
         expiresAt: new Date(now().getTime() + body.expires_in * 1000),

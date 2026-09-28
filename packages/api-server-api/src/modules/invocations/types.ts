@@ -12,7 +12,6 @@ export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
 export type InvocationView = z.infer<typeof invocationViewSchema>;
-export type InvocationStatus = InvocationView["status"];
 
 export interface InvocationTarget {
   driverAgentId: string;

@@ -7,8 +7,7 @@ import type {
   HarnessConfigCurrent,
   RuntimeChannelService,
 } from "agent-runtime-api";
-import type { Dispatcher } from "./dispatcher.js";
-import type { EventDispatcher } from "./event-dispatcher.js";
+import type { Dispatcher, EventDispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 import { processEvents } from "./event-loop.js";
 
@@ -20,7 +19,7 @@ export interface ApplyStateDeps {
   onSnapshotProcessed?: (
     contributions: ApplyStateInput["state"]["contributions"],
   ) => void;
-  reporter?: { report(input: EventReportInput): Promise<void> };
+  reporter: { report(input: EventReportInput): Promise<void> };
   log: (msg: string) => void;
 }
 
@@ -29,7 +28,7 @@ export function createRuntimeChannelService(
 ): RuntimeChannelService {
   const reportWorkspaceFailure = async (event: Event, message: string) => {
     try {
-      await deps.reporter?.report({
+      await deps.reporter.report({
         eventId: event.id,
         outcome: "failed",
         detail: message.slice(0, 2000),
@@ -56,7 +55,7 @@ export function createRuntimeChannelService(
   async function apply(input: ApplyStateInput): Promise<ApplyStateResult> {
     const local = deps.stateStore.read();
     const kindCounts = countByKind(input.state.contributions);
-    const eventCounts = countEventKinds(input.events);
+    const eventCounts = countByKind(input.events);
     deps.log(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
@@ -137,20 +136,9 @@ export function createRuntimeChannelService(
   }
 }
 
-function countByKind(
-  contribs: ApplyStateInput["state"]["contributions"],
-): string {
+function countByKind(items: readonly { kind: string }[]): string {
   const counts = new Map<string, number>();
-  for (const c of contribs) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
-  if (counts.size === 0) return "empty";
-  return Array.from(counts.entries())
-    .map(([k, n]) => `${k}=${n}`)
-    .join(",");
-}
-
-function countEventKinds(events: ApplyStateInput["events"]): string {
-  const counts = new Map<string, number>();
-  for (const e of events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  for (const c of items) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
   if (counts.size === 0) return "empty";
   return Array.from(counts.entries())
     .map(([k, n]) => `${k}=${n}`)

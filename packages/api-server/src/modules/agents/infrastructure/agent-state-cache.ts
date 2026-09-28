@@ -27,17 +27,16 @@ function ownerSelector(owner?: string): string | undefined {
   return owner ? `${LABEL_OWNER}=${owner}` : undefined;
 }
 
-function noChangeSignal(): AgentChangeSubscription {
-  return { changed: new Promise<void>(() => {}), cancel: () => {} };
-}
-
 export function createLiveAgentStateCache(live: LiveReads): AgentStateCache {
   return {
     get: (id) => live.getCustomObject(AGENTS_PLURAL, id),
     peekCached: () => null,
     list: (owner) =>
       live.listCustomObjects(AGENTS_PLURAL, ownerSelector(owner)),
-    whenChanged: noChangeSignal,
+    whenChanged: () => ({
+      changed: new Promise<void>(() => {}),
+      cancel: () => {},
+    }),
   };
 }
 

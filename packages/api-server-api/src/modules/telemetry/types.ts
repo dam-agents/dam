@@ -1,6 +1,5 @@
 import type { z } from "zod";
 import type {
-  telemetryExportQuerySchema,
   telemetryExportSignalSchema,
   telemetryLogsInputSchema,
   telemetryTurnInputSchema,
@@ -10,7 +9,6 @@ import type {
 export type TelemetryTurnsQuery = z.infer<typeof telemetryTurnsInputSchema>;
 export type TelemetryTurnQuery = z.infer<typeof telemetryTurnInputSchema>;
 export type TelemetryLogsQuery = z.infer<typeof telemetryLogsInputSchema>;
-export type TelemetryExportQuery = z.infer<typeof telemetryExportQuerySchema>;
 export type TelemetryExportSignal = z.infer<typeof telemetryExportSignalSchema>;
 
 export type TurnGrouping = "prompt-id" | "time";

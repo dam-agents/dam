@@ -2,6 +2,7 @@ import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { TokenTransportError } from "../domain/errors.js";
 import type { TokenEndpointResponse } from "../domain/tokens.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface TokenEndpointClient {
   exchangeDeviceCode(input: {
@@ -16,9 +17,7 @@ export interface TokenEndpointClient {
   }): Promise<Result<TokenEndpointResponse, TokenTransportError>>;
 }
 
-export interface HttpTokenEndpointClientOpts {
-  timeoutMs?: number;
-}
+const TIMEOUT_MS = 10_000;
 
 const successSchema = z.object({
   access_token: z.string().min(1),
@@ -31,10 +30,6 @@ const oauthErrorSchema = z.object({
   error: z.string().min(1),
   error_description: z.string().optional(),
 });
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 function classify(
   raw: unknown,
@@ -60,7 +55,6 @@ function classify(
 async function postTokenEndpoint(
   tokenEndpoint: string,
   body: URLSearchParams,
-  timeoutMs: number,
 ): Promise<Result<TokenEndpointResponse, TokenTransportError>> {
   let res: Response;
   try {
@@ -71,7 +65,7 @@ async function postTokenEndpoint(
         Accept: "application/json",
       },
       body,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (e) {
     return err({ kind: "token-transport", reason: errorMessage(e) });
@@ -97,11 +91,7 @@ async function postTokenEndpoint(
   return classify(raw);
 }
 
-export function createTokenEndpointClient(
-  opts: HttpTokenEndpointClientOpts = {},
-): TokenEndpointClient {
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-
+export function createTokenEndpointClient(): TokenEndpointClient {
   return {
     async exchangeDeviceCode({ tokenEndpoint, clientId, deviceCode }) {
       const body = new URLSearchParams({
@@ -109,7 +99,7 @@ export function createTokenEndpointClient(
         client_id: clientId,
         device_code: deviceCode,
       });
-      return postTokenEndpoint(tokenEndpoint, body, timeoutMs);
+      return postTokenEndpoint(tokenEndpoint, body);
     },
 
     async refresh({ tokenEndpoint, clientId, refreshToken }) {
@@ -118,7 +108,7 @@ export function createTokenEndpointClient(
         client_id: clientId,
         refresh_token: refreshToken,
       });
-      return postTokenEndpoint(tokenEndpoint, body, timeoutMs);
+      return postTokenEndpoint(tokenEndpoint, body);
     },
   };
 }

@@ -1,18 +1,14 @@
 import type { Db } from "db";
-import type { HarnessConfigSnapshotPatch } from "api-server-api";
-import { createHarnessConfigSnapshotRepo } from "./snapshot-repo.js";
+import {
+  createHarnessConfigSnapshotRepo,
+  type HarnessConfigSnapshotRepo,
+} from "./snapshot-repo.js";
 import { emit, EventType } from "../../../events.js";
 
 export function createHarnessConfigSnapshotWriter(deps: {
   db: Db;
   resolveOwner: (agentId: string) => Promise<string | null>;
-}): {
-  merge(
-    agentId: string,
-    patch: HarnessConfigSnapshotPatch,
-    opts: { confirmed: boolean },
-  ): Promise<void>;
-} {
+}): Pick<HarnessConfigSnapshotRepo, "merge"> {
   const repo = createHarnessConfigSnapshotRepo(deps.db);
   return {
     async merge(agentId, patch, opts) {

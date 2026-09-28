@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -154,7 +155,12 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 }
 
 func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) error {
-	_, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
+	return ensureMigrationServiceAccount(ctx, m.client, m.config.Namespace)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the identity every copy Job runs as — the storage migration's and the runtime migration's alike — carrying no API token, since a copy only ever touches volumes.
+func ensureMigrationServiceAccount(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	_, err := client.CoreV1().ServiceAccounts(namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
 	if err == nil {
 		return nil
 	}
@@ -164,15 +170,15 @@ func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) erro
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      migrationServiceAccount,
-			Namespace: m.config.Namespace,
+			Namespace: namespace,
 			Labels:    map[string]string{"agent-platform.ai/managed-by": "platform-controller"},
 		},
-		AutomountServiceAccountToken: ptrBool(false),
+		AutomountServiceAccountToken: new(false),
 	}
-	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
+	if _, err := client.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("creating migration service account: %w", err)
 	}
-	slog.Info("storage migration: service account ensured", "name", migrationServiceAccount)
+	slog.Info("migration service account ensured", "name", migrationServiceAccount)
 	return nil
 }
 
@@ -399,8 +405,8 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 		}
 		slog.Info("storage migration: gating agent for migration", "agent", name, "wasRunning", wasRunning)
 		return m.patchAgentAnnotations(ctx, name, map[string]*string{
-			annStorageMigration:           ptrString("migrating"),
-			annStorageMigrationWasRunning: ptrString(fmt.Sprintf("%t", wasRunning)),
+			annStorageMigration:           new("migrating"),
+			annStorageMigrationWasRunning: new(fmt.Sprintf("%t", wasRunning)),
 		})
 	}
 
@@ -439,9 +445,9 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 		}
 
 		switch {
-		case jobSucceeded(job):
+		case jobConditionTrue(job, batchv1.JobComplete):
 			return m.flip(ctx, agent, pairs, job.Name)
-		case jobFailed(job):
+		case jobConditionTrue(job, batchv1.JobFailed):
 			if m.now().Sub(job.CreationTimestamp.Time) < migrationJobRetryAfter {
 				return fmt.Errorf("copy job %s failed; retrying after %s", job.Name, migrationJobRetryAfter)
 			}
@@ -547,7 +553,7 @@ func (m *StorageMigrationManager) flip(ctx context.Context, agent *apiv1.Agent, 
 
 	for _, pair := range pairs {
 		if err := patchPVCLabels(ctx, m.client, m.config.Namespace, pair.target, map[string]*string{
-			LabelAgent:        ptrString(name),
+			LabelAgent:        new(name),
 			LabelMigrationFor: nil,
 		}); err != nil {
 			return fmt.Errorf("labeling target %s: %w", pair.target, err)
@@ -555,7 +561,7 @@ func (m *StorageMigrationManager) flip(ctx context.Context, agent *apiv1.Agent, 
 		if err := patchPVCLabels(ctx, m.client, m.config.Namespace, pair.old, map[string]*string{
 			LabelAgent:               nil,
 			LabelMount:               nil,
-			LabelMigrationSuperseded: ptrString(name),
+			LabelMigrationSuperseded: new(name),
 		}); err != nil {
 			return fmt.Errorf("stripping source %s: %w", pair.old, err)
 		}
@@ -602,7 +608,7 @@ func (m *StorageMigrationManager) finishFlip(ctx context.Context, agent *apiv1.A
 		annStorageMigrationWasRunning: nil,
 	}
 	if agent.Annotations[annStorageMigrationWasRunning] == "true" {
-		patch[annLastActivity] = ptrString(m.now().UTC().Format(time.RFC3339))
+		patch[annLastActivity] = new(m.now().UTC().Format(time.RFC3339))
 	}
 	if err := m.patchAgentAnnotations(ctx, name, patch); err != nil {
 		return err
@@ -623,6 +629,11 @@ func (m *StorageMigrationManager) agentPodPresent(ctx context.Context, agentName
 }
 
 func (m *StorageMigrationManager) patchAgentAnnotations(ctx context.Context, name string, ann map[string]*string) error {
+	return patchAgentAnnotations(ctx, m.dynamic, m.config.Namespace, name, ann)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a nil value removes the annotation. Entries are sorted so one change always renders as one patch.
+func patchAgentAnnotations(ctx context.Context, dyn dynamic.Interface, namespace, name string, ann map[string]*string) error {
 	entries := make([]string, 0, len(ann))
 	for k, v := range ann {
 		if v == nil {
@@ -633,7 +644,7 @@ func (m *StorageMigrationManager) patchAgentAnnotations(ctx context.Context, nam
 	}
 	sort.Strings(entries)
 	patch := fmt.Sprintf(`{"metadata":{"annotations":{%s}}}`, strings.Join(entries, ","))
-	_, err := m.dynamic.Resource(AgentsGVR).Namespace(m.config.Namespace).
+	_, err := dyn.Resource(AgentsGVR).Namespace(namespace).
 		Patch(ctx, name, k8stypes.MergePatchType, []byte(patch), metav1.PatchOptions{})
 	return err
 }
@@ -657,24 +668,10 @@ func patchPVCLabels(ctx context.Context, client kubernetes.Interface, namespace,
 	return err
 }
 
-func ptrString(s string) *string { return &s }
-
-func jobSucceeded(job *batchv1.Job) bool {
-	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-func jobFailed(job *batchv1.Job) bool {
-	for _, c := range job.Status.Conditions {
-		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
+func jobConditionTrue(job *batchv1.Job, condType batchv1.JobConditionType) bool {
+	return slices.ContainsFunc(job.Status.Conditions, func(c batchv1.JobCondition) bool {
+		return c.Type == condType && c.Status == corev1.ConditionTrue
+	})
 }
 
 func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Config, ownerRef metav1.OwnerReference) *batchv1.Job {
@@ -902,8 +899,8 @@ copy_verify() {
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
 					ServiceAccountName:           migrationServiceAccount,
-					AutomountServiceAccountToken: ptrBool(false),
-					EnableServiceLinks:           ptrBool(false),
+					AutomountServiceAccountToken: new(false),
+					EnableServiceLinks:           new(false),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser: &rootUID,
 					},

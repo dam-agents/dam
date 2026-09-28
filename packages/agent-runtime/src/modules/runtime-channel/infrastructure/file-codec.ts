@@ -1,4 +1,5 @@
-import { dump as stringifyYaml, load as parseYaml } from "js-yaml";
+import { dump as stringifyYaml } from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type { FileFormat } from "agent-runtime-api";
 
@@ -7,7 +8,7 @@ export function parseFile(format: FileFormat, content: string): unknown {
     case "json":
       return content ? JSON.parse(content) : {};
     case "yaml":
-      return parseYaml(content) ?? {};
+      return loadYamlDocument(content) ?? {};
     case "toml":
       return content ? parseToml(content) : {};
     case "ini":

@@ -85,8 +85,7 @@ describe("updateRRule sessionMode", () => {
 describe("createRRule createdBy", () => {
   function makeCreateDeps() {
     let created:
-      | { agentId: string; owner: string; spec: ScheduleSpec }
-      | undefined;
+      { agentId: string; owner: string; spec: ScheduleSpec } | undefined;
     const repo = {
       async create(input: {
         agentId: string;

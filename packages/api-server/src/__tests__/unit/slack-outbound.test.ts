@@ -10,7 +10,6 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
@@ -38,15 +37,15 @@ function harness(opts: {
     ensureReady: async () => {},
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => null } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
         opts.boundChannelId
@@ -55,17 +54,17 @@ function harness(opts: {
             )
           : [],
     },
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    canonicalWorkspace: (teamId) => teamId,
+    emit: () => {},
+  });
 
   return {
     gw,
@@ -74,11 +73,11 @@ function harness(opts: {
       text: string,
       options?: Parameters<typeof worker.postMessage>[2],
     ) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
       return worker.postMessage("agent-1", text, options);
     },
     async list() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
       return worker.listConversations("agent-1");
     },
     messages: () => gw.readOutbound().filter((r) => r.kind === "message"),
@@ -251,7 +250,7 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("a reply's attachment is uploaded into the same thread", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.start("agent-1");
     const result = await h.worker.reply("agent-1", {
       text: "lorem ipsum attached",
       threadTs: "1700000000.000100",

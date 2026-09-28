@@ -1,5 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
-import { AGENTS_PLURAL } from "./labels.js";
+import { AGENTS_PLURAL, GROUP, VERSION } from "./labels.js";
 
 export interface K8sClient {
   readonly namespace: string;
@@ -43,17 +43,10 @@ export interface KubeObject {
   status?: unknown;
 }
 
-const CR_GROUP = "agent-platform.ai";
-const CR_VERSION = "v1";
-
-function isStatus(err: unknown, code: number): boolean {
-  return (
-    err instanceof Error &&
-    "code" in err &&
-    (err as { code: number }).code === code
-  );
-}
-const is404 = (err: unknown) => isStatus(err, 404);
+const is404 = (err: unknown) =>
+  err instanceof Error &&
+  "code" in err &&
+  (err as { code: number }).code === 404;
 const isDnsSubdomainName = (name: string) =>
   /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/.test(name);
 
@@ -75,8 +68,8 @@ export function createK8sClient(
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
   const watcher = new k8s.Watch(kc);
   const crArgs = (plural: string) => ({
-    group: CR_GROUP,
-    version: CR_VERSION,
+    group: GROUP,
+    version: VERSION,
     namespace,
     plural,
   });
@@ -178,7 +171,7 @@ export function createK8sClient(
       let connection: AbortController | null = null;
       watcher
         .watch(
-          `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${plural}`,
+          `/apis/${GROUP}/${VERSION}/namespaces/${namespace}/${plural}`,
           {},
           (phase, obj) => {
             if (!stopped) onEvent(phase, obj as KubeObject);
@@ -223,11 +216,11 @@ export type AgentInformer = k8s.Informer<KubeObject> &
 export function createAgentInformer(namespace: string): AgentInformer {
   const kc = loadKubeConfig();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
-  const path = `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${AGENTS_PLURAL}`;
+  const path = `/apis/${GROUP}/${VERSION}/namespaces/${namespace}/${AGENTS_PLURAL}`;
   return k8s.makeInformer<KubeObject>(kc, path, async () => {
     const res = (await co.listNamespacedCustomObject({
-      group: CR_GROUP,
-      version: CR_VERSION,
+      group: GROUP,
+      version: VERSION,
       namespace,
       plural: AGENTS_PLURAL,
     })) as k8s.KubernetesListObject<KubeObject>;

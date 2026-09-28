@@ -1,4 +1,4 @@
-import yaml from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import * as path from "node:path";
 import type {
   ResolvedSkill,
@@ -99,7 +99,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       );
       return "rejected";
     }
-    const parsed = starterKitSchema.safeParse(yaml.load(text));
+    const parsed = starterKitSchema.safeParse(loadYamlDocument(text));
     if (!parsed.success) {
       getLogger().warn(
         {
@@ -208,7 +208,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       );
       return;
     }
-    const parsed = starterKitCatalogSchema.safeParse(yaml.load(text));
+    const parsed = starterKitCatalogSchema.safeParse(loadYamlDocument(text));
     if (!parsed.success) {
       getLogger().warn(
         { catalog: named.name, issues: parsed.error.issues },

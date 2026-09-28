@@ -1,86 +1,50 @@
 import type { Db } from "db";
-import type {
-  EgressPreset,
-  EgressRuleSource,
-  EgressRulesService,
-  RuleVerdict,
-} from "api-server-api";
+import type { EgressRulesService } from "api-server-api";
 import { createEgressRulesRepository } from "./infrastructure/egress-rules-repository.js";
-import { createEgressRulesService } from "./services/egress-rules-service.js";
+import {
+  createEgressRulesService,
+  type CreateEgressRulesServiceDeps,
+} from "./services/egress-rules-service.js";
 import { createPresetSeeder } from "./services/preset-seeder.js";
-import type { PresetSeeder } from "./services/preset-seeder.js";
 import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
-import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
 import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import { reconcileL7Promotions } from "./services/l7-promotion-reconcile.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { AGENTS_PLURAL } from "../agents/infrastructure/labels.js";
 
-export interface ComposeEgressRulesDeps {
-  db: Db;
-  ownerSub: string;
-  isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
-  l7Hosts?: AgentL7HostsPort;
-  presetSeeder?: PresetSeeder;
-  trustedHosts: readonly string[];
-}
-
-export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
+export function composeEgressRulesModule(
+  deps: Omit<CreateEgressRulesServiceDeps, "repo"> & { db: Db },
+): {
   service: EgressRulesService;
 } {
-  const repo = createEgressRulesRepository(deps.db);
-  const service = createEgressRulesService({
-    repo,
-    l7Hosts: deps.l7Hosts,
-    presetSeeder: deps.presetSeeder,
-    trustedHosts: deps.trustedHosts,
-    isAgentOwnedBy: deps.isAgentOwnedBy,
-    ownerSub: deps.ownerSub,
-  });
-  return { service };
+  const { db, ...serviceDeps } = deps;
+  return {
+    service: createEgressRulesService({
+      ...serviceDeps,
+      repo: createEgressRulesRepository(db),
+    }),
+  };
 }
 
-export interface EgressRuleMatchAdapter {
-  match(
-    agentId: string,
-    host: string,
-    method: string,
-    path: string,
-  ): Promise<{ verdict: RuleVerdict } | null>;
-}
-
-export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
+export function createEgressRuleMatchAdapter(db: Db) {
   const repo = createEgressRulesRepository(db);
   return {
-    async match(agentId, host, method, path) {
+    async match(agentId: string, host: string, method: string, path: string) {
       const row = await repo.findMatch(agentId, host, method, path);
       return row ? { verdict: row.verdict } : null;
     },
   };
 }
 
-export interface EgressRuleWriterAdapter {
-  insert(input: {
-    id: string;
-    agentId: string;
-    host: string;
-    method: string;
-    pathPattern: string;
-    verdict: RuleVerdict;
-    decidedBy: string;
-    source: EgressRuleSource;
-  }): Promise<EgressRuleWriteOutcome>;
-}
-
 export function createEgressRuleWriterAdapter(
   db: Db,
-  l7Hosts?: AgentL7HostsPort,
-): EgressRuleWriterAdapter {
+  l7Hosts: AgentL7HostsPort,
+) {
   return createEgressRuleWriter({
     repo: createEgressRulesRepository(db),
     l7Hosts,
@@ -114,12 +78,7 @@ export function createL7PromotionReconcile(
   return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });
 }
 
-export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
-export type { EgressPreset };
-export {
-  createAgentL7HostsPort,
-  type AgentL7HostsPort,
-} from "./infrastructure/k8s-agent-l7-hosts-port.js";
+export { createAgentL7HostsPort };
 
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);

@@ -35,10 +35,10 @@ jobs:
             base="$(dirname "$f")"
             # join lines first: a reference may wrap mid-sentence
             tr '\n' ' ' < "$f" | tr -s ' ' \
-              | grep -oE '\[?[A-Za-z0-9_./-]+\.md\)? → \*\*[^*]+\*\*' > "$tmp/refs" || true
+              | grep -oE '\[?`?[A-Za-z0-9_./-]+\.md`?\)? → \*\*[^*]+\*\*' > "$tmp/refs" || true
             while read -r ref; do
               [ -n "$ref" ] || continue
-              t="${ref%% → *}"; t="${t#[}"; t="${t%)}"
+              t="${ref%% → *}"; t="${t#[}"; t="${t%)}"; t="${t#\`}"; t="${t%\`}"
               label="${ref#* → \*\*}"; label="${label%\*\*}"
               path=
               for cand in "$base/$t" "$t" "docs/$t"; do

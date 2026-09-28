@@ -3,7 +3,7 @@ export const OP_OUTPUT = 0x01;
 export const OP_RESIZE = 0x02;
 export const OP_EXIT = 0x03;
 
-export type TerminalFrame =
+type TerminalFrame =
   | { op: typeof OP_INPUT | typeof OP_OUTPUT; data: Uint8Array }
   | { op: typeof OP_RESIZE; cols: number; rows: number }
   | { op: typeof OP_EXIT; code: number };
@@ -11,7 +11,7 @@ export type TerminalFrame =
 export function encodeDataFrame(
   op: typeof OP_INPUT | typeof OP_OUTPUT,
   data: Uint8Array | string,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const payload =
     typeof data === "string" ? new TextEncoder().encode(data) : data;
   const frame = new Uint8Array(1 + payload.byteLength);
@@ -20,7 +20,10 @@ export function encodeDataFrame(
   return frame;
 }
 
-export function encodeResize(cols: number, rows: number): Uint8Array {
+export function encodeResize(
+  cols: number,
+  rows: number,
+): Uint8Array<ArrayBuffer> {
   return new Uint8Array([
     OP_RESIZE,
     (cols >> 8) & 0xff,
@@ -30,7 +33,7 @@ export function encodeResize(cols: number, rows: number): Uint8Array {
   ]);
 }
 
-export function encodeExit(code: number): Uint8Array {
+export function encodeExit(code: number): Uint8Array<ArrayBuffer> {
   return new Uint8Array([OP_EXIT, code & 0xff]);
 }
 

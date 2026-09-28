@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildApproveCommand } from "./commands/approve.js";
 import { buildDenyCommand } from "./commands/deny.js";
 import { buildListCommand } from "./commands/list.js";
@@ -15,7 +11,7 @@ import {
 } from "./services/approval-service.js";
 
 export interface ApprovalModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -28,11 +24,8 @@ export interface ApprovalModule {
 export function composeApprovalModule(
   opts: ApprovalModuleOptions,
 ): ApprovalModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): ApprovalService =>
-    createApprovalService({ trpc: buildTrpc(host) });
+    createApprovalService({ trpc: opts.buildTrpc(host) });
 
   const agentScoped = {
     compatService: opts.compatService,

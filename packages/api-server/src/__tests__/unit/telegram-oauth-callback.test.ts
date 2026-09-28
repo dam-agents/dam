@@ -3,9 +3,10 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import {
-  createTelegramBindFlowStore,
-  type TelegramOAuthPending,
+import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
+import type {
+  TelegramOAuthPending,
+  TelegramPendingBind,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
 
@@ -38,7 +39,7 @@ function makeHarness(opts?: { pendingCreatedAt?: number }) {
     createdAt: opts?.pendingCreatedAt ?? Date.now(),
   });
 
-  const bindFlows = createTelegramBindFlowStore({
+  const bindFlows = createFlowStore<TelegramPendingBind>({
     store: createMemoryTtlStore(600_000),
   });
   const routes = new Hono().route(

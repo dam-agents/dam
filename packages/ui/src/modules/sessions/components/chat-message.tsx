@@ -7,13 +7,13 @@ import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import type { MessageTime } from "../lib/thread-items.js";
-import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
+import { WorkingDots } from "./working-dots.js";
 
-export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
+type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
 type Props = BaseProps & MessageTime;
 
@@ -173,7 +173,10 @@ export const ChatMessage = memo(function ChatMessage({
           )}
           {isAssistant && isLast && <PermissionStatusLine />}
           {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <BusyIndicator className="py-1" />
+            <span role="status" className="inline-flex items-center py-1">
+              <WorkingDots size="md" className="text-accent" />
+              <span className="sr-only">Working</span>
+            </span>
           )}
           {undelivered && (
             <UndeliveredNotice

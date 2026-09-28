@@ -1,5 +1,5 @@
-{{- $appName := printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- $apiserverName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $appName := include "platform.ui.fullname" . }}
+{{- $apiserverName := include "platform.apiserver.fullname" . }}
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -8,6 +8,8 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import { emit, EventType } from "../../../events.js";
 
+const TRIGGER_TTL_SECONDS = 3600;
+
 export type ActivityStamp = AgentActivityStamp;
 
 export interface SchedulerRunner {
@@ -39,7 +41,6 @@ export interface SchedulerRunnerDeps {
   onboardingPending?: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
-  triggerTtlSeconds?: number;
 }
 
 const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
@@ -53,7 +54,6 @@ export function createSchedulerRunner(
 ): SchedulerRunner {
   const log = deps.log ?? ((m) => process.stderr.write(`[schedules] ${m}\n`));
   const now = deps.now ?? (() => new Date());
-  const ttlSec = deps.triggerTtlSeconds ?? 3600;
 
   async function fire(
     scheduleId: string,
@@ -84,7 +84,7 @@ export function createSchedulerRunner(
     const expiresAt = triggerExpiry(
       firedAt,
       nextFireAt(sched.spec, firedAt),
-      ttlSec,
+      TRIGGER_TTL_SECONDS,
     );
     const payload: Record<string, unknown> = {
       scheduleId,
@@ -173,7 +173,7 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(scheduleId);
       if (!sched) return;
       const eventId = `reset:${scheduleId}:${now().getTime()}`;
-      const expiresAt = new Date(now().getTime() + ttlSec * 1000);
+      const expiresAt = new Date(now().getTime() + TRIGGER_TTL_SECONDS * 1000);
       await deps.runtimeMutator.bump(sched.agentId, [
         {
           id: eventId,

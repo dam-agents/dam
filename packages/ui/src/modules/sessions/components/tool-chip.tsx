@@ -14,7 +14,7 @@ export function stripFences(text: string): string {
   return text.replace(/^```\w*\n?/, "").replace(/\n?```\s*$/, "");
 }
 
-export function ToolContentBlock({ text }: { text: string }) {
+function ToolContentBlock({ text }: { text: string }) {
   const { copy, copied, state } = useCopy();
   const stripped = stripFences(text);
 

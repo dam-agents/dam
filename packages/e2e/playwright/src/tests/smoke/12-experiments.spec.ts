@@ -6,7 +6,6 @@ import {
   gotoAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
-  setMockReplyWithFiles,
   waitForAgentRunning,
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
@@ -40,7 +39,7 @@ test("experiment: plan, execute, watch it run to completion", async ({
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("register the plan by running the script in-pod", async () => {
-    await setMockReplyWithFiles(api, agentId, "script written", [
+    await setMockAgentReply(api, agentId, "script written", [
       { path: scriptPath, content: experimentScript },
     ]);
     await page.goto(baseUrl);

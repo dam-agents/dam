@@ -15,10 +15,6 @@ export function canTransition(
   return TRANSITIONS[from].includes(to);
 }
 
-export function isTerminal(status: ExperimentStatus): boolean {
-  return TRANSITIONS[status].length === 0;
-}
-
 export interface SweepView {
   status: ExperimentStatus;
   lastActivityAt: string | null;

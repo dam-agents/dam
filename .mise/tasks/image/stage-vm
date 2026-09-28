@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
-#MISE description="Stage a local image for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount. Usage: image:stage-vm -- <image-ref>. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+#MISE description="Stage an image tar for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount, by the name the tar carries. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+#USAGE arg "<tar>" help="An image tar, as the :oci tasks write"
 # The runner boots a staged tree as a shared read-only lower layer, so a
 # machine starts in seconds. A `docker save` archive staged instead is
 # flattened inside every guest on first boot under smolvm's fixed 600 s pull
 # window; on a slow host that flatten outran the window, the start failed and
 # the flatten began again from nothing.
 set -euo pipefail
-IMAGE="${1:?usage: image:stage-vm -- <image-ref>}"
-LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 IMAGE_DIR=/var/lib/platform-vm-images
 name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-cid="$(docker create "$IMAGE")"
-docker export "$cid" -o "$work/rootfs.tar"
-docker rm -f "$cid" >/dev/null
+# crane reads a docker-save tarball's layers as all gzip or all plain, judged
+# by the first layer alone, and a built image mixes the two: the layers its
+# build writes are plain tars, the ones it takes from its base stay gzip. Read
+# as plain, a gzip layer is a truncated tar ("reading tar: unexpected EOF"),
+# so the tar is unpacked to its OCI layout, every plain layer gzipped and the
+# docker-save manifest written again before crane flattens it. An image
+# pulled from a registry is gzip throughout and passes through unchanged.
+layout="$work/layout"
+mkdir -p "$layout"
+tar -xf "$usage_tar" -C "$layout"
+"$MISE_CONFIG_ROOT/.mise/tasks/image/gzip-layout" "$layout"
+"$MISE_CONFIG_ROOT/.mise/tasks/image/name-layout" "$layout" "$IMAGE"
+entries=()
+while IFS= read -r e; do entries+=("$e"); done < <(ls -A "$layout")
+tar -C "$layout" -cf - "${entries[@]}" | crane export - "$work/rootfs.tar"
+rm -rf "$layout"
 # The record the runner reads beside the tree: what the image says to run.
-docker image inspect "$IMAGE" | yq -o=json \
-  '.[0].Config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
+tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
+  '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   > "$work/launch.json"
 
 # Runs as root on the node: unpacks beside the live entry, moves the old entry
@@ -26,14 +40,16 @@ docker image inspect "$IMAGE" | yq -o=json \
 # tree at every moment — never a half-written one, and never none. A machine
 # already booted from the old tree keeps its mounted files until it restarts.
 # The archive an earlier stage left under the same name goes last: the runner
-# prefers the tree, and the archive only costs disk.
+# prefers the tree, and the archive only costs disk. The tree keeps the modes
+# the image gave it — the runner reads it with DAC_OVERRIDE, and a file the
+# image keeps from others, such as /etc/shadow, must stay that way in the guest.
 place='set -e
 dest="$1"; tar="$2"; launch="$3"
 rm -rf "$dest.new" "$dest.old"
 mkdir -p "$dest.new/rootfs"
 tar -xf "$tar" -C "$dest.new/rootfs"
 install -m 644 "$launch" "$dest.new/launch.json"
-chmod -R a+rX "$dest.new"
+chmod a+rx "$dest.new"
 [ ! -e "$dest" ] || mv "$dest" "$dest.old"
 mv "$dest.new" "$dest"
 rm -rf "$dest.old" "$dest.tar"'

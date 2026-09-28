@@ -8,11 +8,10 @@ export {
   listKbShareAgentIds,
   startKbShareSync,
   type KbShareAgentOps,
-  type KbShareStorePort,
 } from "./compose.js";
 export { registerKbShareTools } from "./mcp-tools.js";
+export { parseKbShareString as parseShareString } from "api-server-api";
 export {
-  parseShareString,
   shareIdFromTokenHeader,
   tokenHeaderName,
 } from "./domain/share-string.js";

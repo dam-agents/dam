@@ -87,7 +87,7 @@ data:
     {{- fail (printf "harnessTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
     {{- end }}
     {{- if $tmpl.imagePullSecret }}
-    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
+    imagePullSecretRef: {{ include "platform.harnessTemplate.pullSecretName" (dict "root" $ "name" $name) | quote }}
     {{- end }}
     {{- with $tmpl.imagePullSecretRef }}
     imagePullSecretRef: {{ . | quote }}

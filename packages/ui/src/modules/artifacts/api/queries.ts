@@ -3,7 +3,7 @@ import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
 
-export interface ArtifactListFilter {
+interface ArtifactListFilter {
   folderId?: string | null;
   agentId?: string;
   search?: string;
@@ -71,20 +71,13 @@ export function usePrefetchArtifactPreview() {
   const queryClient = useQueryClient();
   return useCallback(
     (id: string) => {
-      void queryClient.prefetchQuery({
-        ...trpc.artifactLibrary.preview.queryOptions({ id }),
-        staleTime: PREVIEW_STALE_MS,
-      });
+      void queryClient
+        .query({
+          ...trpc.artifactLibrary.preview.queryOptions({ id }),
+          staleTime: PREVIEW_STALE_MS,
+        })
+        .catch(() => {});
     },
     [queryClient],
   );
-}
-
-export function useFolderShareUrl(id: string | null) {
-  return useQuery({
-    ...trpc.artifactLibrary.folderShareUrl.queryOptions(
-      id ? { id } : skipToken,
-    ),
-    meta: { errorToast: "Couldn't resolve folder link" },
-  });
 }

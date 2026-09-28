@@ -18,7 +18,7 @@ const (
 )
 
 func shouldRun(annotations map[string]string, idleTimeout time.Duration, now time.Time) bool {
-	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" {
+	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" || runtimeMigrationHoldsDown(annotations) {
 		return false
 	}
 	if idleTimeout <= 0 {

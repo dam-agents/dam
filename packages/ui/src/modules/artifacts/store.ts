@@ -6,7 +6,7 @@ import {
 } from "../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../store.js";
 
-export const ARTIFACTS_SECTION_OPEN_STORAGE_KEY = "platform-artifacts-open";
+const ARTIFACTS_SECTION_OPEN_STORAGE_KEY = "platform-artifacts-open";
 
 export interface ArtifactsSlice {
   openArtifactId: string | null;

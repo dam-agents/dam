@@ -2,8 +2,14 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { KB_AGGREGATE_MCP_SERVER } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
+import {
+  errorResult,
+  textResult,
+  type ToolContent,
+} from "../../../core/mcp-tool-result.js";
 import {
   tokenize,
   type AnySnapshotManifest,
@@ -13,7 +19,6 @@ import { querySegments } from "../domain/segmented-query.js";
 import { extractSnippets } from "../domain/snippets.js";
 import type { KbShareRow } from "../domain/types.js";
 import {
-  GREP_DEADLINE_MS,
   GrepDeadlineError,
   GrepPatternError,
   runGlobFilterWorker,
@@ -39,23 +44,9 @@ export interface KbShareMcpAppDeps extends TokenAuthDeps {
   reader: SnapshotReader;
   agentName: (agentId: string) => Promise<string>;
   incrementQueryCount: (rowId: string) => Promise<void>;
-  markShareDirty?: (agentId: string) => Promise<void>;
+  markShareDirty: (agentId: string) => Promise<void>;
   limits: QueryLimits;
-  grepDeadlineMs?: number;
-}
-
-interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-function textResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }] };
-}
-
-function errorResult(text: string): ToolContent {
-  return { content: [{ type: "text", text }], isError: true };
+  grepDeadlineMs: number;
 }
 
 function staleness(manifest: AnySnapshotManifest): string {
@@ -73,7 +64,6 @@ function unexpectedError(tool: string, err: unknown): ToolContent {
 }
 
 export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
-  const grepDeadlineMs = deps.grepDeadlineMs ?? GREP_DEADLINE_MS;
   const healRequested = new Set<string>();
   function requestIndexHeal(row: KbShareRow, snapshotId: string): void {
     if (healRequested.has(snapshotId)) return;
@@ -82,7 +72,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
       { agentId: row.agentId, snapshotId },
       "kb_share.index_unreadable",
     );
-    void deps.markShareDirty?.(row.agentId).catch(() => {});
+    void deps.markShareDirty(row.agentId).catch(() => {});
   }
   function recordQuery(row: KbShareRow, tool: string): void {
     void deps.incrementQueryCount(row.id).catch(() => {});
@@ -133,7 +123,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
 
   function buildServer(shares: Map<string, KbShareRow>): McpServer {
     const server = new McpServer(
-      { name: "knowledge-bases", version: "1.0.0" },
+      { name: KB_AGGREGATE_MCP_SERVER, version: "1.0.0" },
       {
         instructions:
           "Read-only access to knowledge bases shared with this agent. Call list_knowledge_bases first to see what is available and how to navigate each one; every other tool takes a `kb` id from that list. These knowledge bases are live snapshots that can change between turns — before you state anything about their contents (counts, whether a document exists, what it says), call the relevant tool again in the current turn rather than reusing output from earlier in the conversation.",
@@ -365,7 +355,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
                 await runGlobFilterWorker({
                   glob,
                   paths: candidates.map((f) => f.path),
-                  deadlineMs: grepDeadlineMs,
+                  deadlineMs: deps.grepDeadlineMs,
                 }),
               );
               candidates = candidates.filter((f) => matched.has(f.path));
@@ -390,7 +380,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
               pattern,
               files,
               contextLines: contextLines ?? 1,
-              deadlineMs: grepDeadlineMs,
+              deadlineMs: deps.grepDeadlineMs,
             });
             recordQuery(resolved.row, "grep_documents");
             return textResult(
@@ -411,7 +401,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
           }
           if (err instanceof GrepDeadlineError) {
             return errorResult(
-              `grep exceeded its ${grepDeadlineMs / 1000} s time budget — narrow the pattern or glob and retry`,
+              `grep exceeded its ${deps.grepDeadlineMs / 1000} s time budget — narrow the pattern or glob and retry`,
             );
           }
           return unexpectedError("grep_documents", err);

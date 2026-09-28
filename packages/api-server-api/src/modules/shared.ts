@@ -10,7 +10,7 @@ export enum ChannelType {
   Telegram = "telegram",
 }
 
-export const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export function resourceNameSchema(example: string) {
   return z
@@ -23,10 +23,18 @@ export function resourceNameSchema(example: string) {
     );
 }
 
+export const PLATFORM_OUTBOUND_MCP_SERVER = "platform-outbound";
+export const KB_AGGREGATE_MCP_SERVER = "knowledge-bases";
+
+export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
+  PLATFORM_OUTBOUND_MCP_SERVER,
+  KB_AGGREGATE_MCP_SERVER,
+];
+
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export function isValidEnvName(name: string): boolean {
-  return name.length > 0 && ENV_NAME_RE.test(name);
+  return ENV_NAME_RE.test(name);
 }
 
 export const envVarSchema = z.object({

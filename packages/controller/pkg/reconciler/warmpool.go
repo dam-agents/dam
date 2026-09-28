@@ -86,7 +86,9 @@ func (m *WarmPoolManager) reconcile(ctx context.Context) {
 }
 
 func (m *WarmPoolManager) reconcileSize(ctx context.Context, poolKey string, target int) {
-	avail, err := m.listAvailable(ctx, poolKey)
+	avail, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: LabelPool + "=" + poolKey + "," + LabelPoolAvailable + "=true",
+	})
 	if err != nil {
 		slog.Warn("warm pool: listing spares failed", "pool", poolKey, "error", err)
 		return
@@ -95,7 +97,7 @@ func (m *WarmPoolManager) reconcileSize(ctx context.Context, poolKey string, tar
 	now := m.now()
 	maxAge := m.maxPendingAge()
 	var bound, pending, stale []corev1.PersistentVolumeClaim
-	for _, p := range avail {
+	for _, p := range avail.Items {
 		if isRWX(p.Spec.AccessModes) {
 			stale = append(stale, p)
 			continue
@@ -159,16 +161,6 @@ func (m *WarmPoolManager) gcRemovedPools(ctx context.Context, configured map[str
 			slog.Info("warm pool: reclaimed spare for removed pool", "pool", key, "pvc", p.Name)
 		}
 	}
-}
-
-func (m *WarmPoolManager) listAvailable(ctx context.Context, poolKey string) ([]corev1.PersistentVolumeClaim, error) {
-	list, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: LabelPool + "=" + poolKey + "," + LabelPoolAvailable + "=true",
-	})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
 }
 
 func (m *WarmPoolManager) deletePVC(ctx context.Context, name string) error {

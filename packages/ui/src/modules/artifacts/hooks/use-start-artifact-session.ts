@@ -6,7 +6,7 @@ import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { artifactSessionPrefill } from "../lib/session-prefill.js";
 
-export interface StartArtifactSession {
+interface StartArtifactSession {
   available: boolean;
   start: () => Promise<void>;
 }

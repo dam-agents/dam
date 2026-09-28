@@ -17,7 +17,6 @@ import {
   KitIllustration,
   useKitFilter,
 } from "../components/kit-browser.js";
-import { kitIcon } from "../lib/kit-icon.js";
 
 function FeaturedCard({
   kit,
@@ -30,7 +29,6 @@ function FeaturedCard({
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
   onOpen: () => void;
 }) {
-  const Icon = kitIcon(kit);
   return (
     <button
       type="button"
@@ -44,12 +42,7 @@ function FeaturedCard({
         className="min-h-[280px] border-kit-line md:border-r"
       />
       <div className="flex flex-col justify-center gap-3 p-8">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-lg border border-border">
-            <Icon size={18} />
-          </span>
-          <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
-        </div>
+        <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
         <p className="text-sm text-muted-foreground">
           {kit.tagline ?? kit.description}
         </p>
