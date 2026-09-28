@@ -7,7 +7,9 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
-use crate::guest;
+use sha2::{Digest, Sha256};
+
+use crate::guest::{self, SeedDigest};
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
 const TRUST_CACHE_ENV: &str = "PLATFORM_TRUST_CACHE";
@@ -82,7 +84,15 @@ pub fn run(command: Vec<OsString>) -> ! {
     logf!("storage disk claimed at {}", root.display());
     fresh_root(&root);
     bind_ca();
-    persist_home(&root, fs::metadata(guest::SEEDED_PATH).is_ok());
+    let expected = match expected_seed(Path::new(guest::SEED_EXPECTED_PATH)) {
+        Ok(expected) => expected,
+        Err(e) => fatal!("reading the seed the runner expects: {e}"),
+    };
+    persist_home(
+        &root,
+        fs::metadata(guest::SEEDED_PATH).is_ok(),
+        expected.as_ref(),
+    );
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
@@ -652,7 +662,7 @@ fn share_mounts() {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the first boot seeds the home from whatever the image ships there, so a home an image baked is the home the agent starts from — or, for an agent moved here from the container backend, from the seed of its old volume the runner put in the share. Every later boot finds the store and mounts it as it is. `seeded_before` is the runner's record that this machine's disk has held a home; a disk that has lost it is refused rather than seeded again.
-fn persist_home(root: &Path, seeded_before: bool) {
+fn persist_home(root: &Path, seeded_before: bool, expected: Option<&SeedDigest>) {
     let path = Path::new(guest::AGENT_HOME);
     let store = guest::agent_store(root);
     if let Err(e) = prepare_home(
@@ -660,6 +670,7 @@ fn persist_home(root: &Path, seeded_before: bool) {
         Path::new(guest::SHARE_SEED_FILE),
         &store,
         seeded_before,
+        expected,
     ) {
         fatal!("seeding {} onto the disk: {e}", path.display());
     }
@@ -853,19 +864,89 @@ fn run_hook(hook: &BootHook, home: &Path, limit: std::time::Duration) -> Result<
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since.
-fn prepare_home(home: &Path, archive: &Path, store: &Path, seeded_before: bool) -> io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since. When the runner expects a seed, the image's home is never the fallback: a store is restored from exactly that seed or the boot fails, and a store that exists boots only if it was restored from that seed. A migration whose seed went missing then fails where it is seen, instead of booting the image's home and being taken for done.
+fn prepare_home(
+    home: &Path,
+    archive: &Path,
+    store: &Path,
+    seeded_before: bool,
+    expected: Option<&SeedDigest>,
+) -> io::Result<()> {
+    let record = seeded_from_path(store);
     if !must_seed(store, seeded_before)? {
-        return Ok(());
+        return match expected {
+            Some(expected) => restored_from(&record, expected),
+            None => Ok(()),
+        };
     }
     match fs::metadata(archive) {
-        Ok(_) => {
+        Ok(info) => {
+            if let Some(expected) = expected.filter(|e| e.bytes != info.len()) {
+                return Err(io::Error::other(format!(
+                    "the seed in the share is {} bytes, but the runner expects seed {} of {} bytes. Refusing to restore the home from it",
+                    info.len(),
+                    expected.sha256,
+                    expected.bytes
+                )));
+            }
             logf!("seeding {} from {}", home.display(), archive.display());
-            seed_from_archive(archive, home, store)
+            let used = seed_from_archive(archive, home, store, expected, &record)?;
+            logf!("seeded {} from seed {used}", home.display());
+            Ok(())
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => seed(home, store),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => match expected {
+            Some(expected) => Err(io::Error::other(format!(
+                "the runner expects this home to be restored from seed {}, and the share holds no seed. Refusing to seed it from the image instead",
+                expected.sha256
+            ))),
+            None => seed(home, store),
+        },
         Err(e) => Err(e),
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed the runner put in the share as the one the home must come from, or none when the share names none. A record that is there but cannot be read is an error, because guessing would either boot the image's home or refuse a good one.
+fn expected_seed(path: &Path) -> io::Result<Option<SeedDigest>> {
+    match fs::read_to_string(path) {
+        Ok(text) => SeedDigest::parse(&text).map(Some).ok_or_else(|| {
+            io::Error::other(format!(
+                "{} holds {:?}, which is not a SHA-256 and a byte count",
+                path.display(),
+                text.trim()
+            ))
+        }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where the disk records the seed its store was restored from: the system store beside the agent store, so the agent's own home cannot hold a file of that name.
+fn seeded_from_path(store: &Path) -> PathBuf {
+    guest::system_store(
+        store.parent().unwrap_or_else(|| Path::new("/")),
+        guest::SEEDED_FROM_FILE,
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a store that exists while a seed is expected is a boot after the one that restored it — the controller keeps expecting the seed until it has seen the guest answer. It boots only if the disk records that very seed; any other home, the image's included, is not the one the migration brought.
+fn restored_from(record: &Path, expected: &SeedDigest) -> io::Result<()> {
+    let recorded = match fs::read_to_string(record) {
+        Ok(text) => text.trim().to_string(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
+    if recorded == expected.sha256 {
+        return Ok(());
+    }
+    let from = if recorded.is_empty() {
+        "no seed".to_string()
+    } else {
+        format!("seed {recorded}")
+    };
+    Err(io::Error::other(format!(
+        "the home on the disk was restored from {from}, but the runner expects seed {}. Refusing to boot a home the migration did not bring",
+        expected.sha256
+    )))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm formats a storage disk it cannot mount, and a disk it formatted has no store, exactly like a disk that was never seeded. Seeding that disk would boot the agent on an empty home and report it healthy. When the runner says this disk has held a home before, a missing store is therefore the loss of that home, and the boot stops so the loss is seen.
@@ -897,8 +978,62 @@ fn seed(from: &Path, store: &Path) -> io::Result<()> {
     })
 }
 
-fn seed_from_archive(archive: &Path, home: &Path, store: &Path) -> io::Result<()> {
-    stage(store, |staged| extract(archive, home, staged))
+// UNIT_BOUNDARY_DESCRIPTION: restores the store from the seed and answers with the seed's SHA-256, hashed as it was read, so the check costs no second pass over a home of many GiB. A seed that is not the one expected fails before its store is renamed into place. The disk's record of the seed is written before that rename too, so no store restored from a seed is ever without it.
+fn seed_from_archive(
+    archive: &Path,
+    home: &Path,
+    store: &Path,
+    expected: Option<&SeedDigest>,
+    record: &Path,
+) -> io::Result<String> {
+    let mut used = String::new();
+    stage(store, |staged| {
+        let read = extract(archive, home, staged)?;
+        if let Some(expected) = expected.filter(|e| **e != read) {
+            return Err(io::Error::other(format!(
+                "the seed in the share has SHA-256 {} and {} bytes, but the runner expects seed {} of {} bytes. Refusing to restore the home from it",
+                read.sha256, read.bytes, expected.sha256, expected.bytes
+            )));
+        }
+        write_record(record, read.sha256.as_bytes())?;
+        used = read.sha256;
+        Ok(())
+    })?;
+    Ok(used)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a small file replaced whole: written beside itself, flushed and renamed over, so a boot cut short leaves the old record or the new one.
+fn write_record(path: &Path, body: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        mkdir_all(parent)?;
+    }
+    let staged = with_suffix(path, ".new");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o644)
+        .open(&staged)?;
+    file.write_all(body)?;
+    file.sync_all()?;
+    close(file)?;
+    fs::rename(&staged, path)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed's reader, counting and hashing every byte the tar reader takes from it.
+struct Hashing<R> {
+    inner: R,
+    hasher: Sha256,
+    bytes: u64,
+}
+
+impl<R: io::Read> io::Read for Hashing<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.hasher.update(&buf[..n]);
+        self.bytes += n as u64;
+        Ok(n)
+    }
 }
 
 fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
@@ -915,12 +1050,16 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: restores a seed into `to` as copy_tree reproduces an image's home: owner and mode from each entry, the mode set after the entry exists so the umask cannot drop a bit, and symlinks recreated as symlinks and never followed. Times are restored too, since they are part of what an agent's tools read, such as a build that compares them. Directories get their mode and time last, deepest first: a directory's time moves as entries are written into it, and a read-only one would refuse them. The seed comes from a volume the agent could write to, so every name is checked before it is used — an absolute name, a `..`, a link whose target is either of those, or a path through a symlink the seed itself put there could each write outside the store, and any of them fails the whole seed. Devices and fifos are skipped, as copy_tree skips them. A seed with no entry for the home itself gives the store the owner and mode of the image's home, as seeding from the image would.
-fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<()> {
+fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<SeedDigest> {
     mkdir_all(to)?;
     let mut dirs: Vec<(PathBuf, u32, u64)> = Vec::new();
     let mut rooted = false;
-    let mut entries = tar::Archive::new(File::open(archive)?);
-    for entry in entries.entries()? {
+    let mut reader = tar::Archive::new(Hashing {
+        inner: File::open(archive)?,
+        hasher: Sha256::new(),
+        bytes: 0,
+    });
+    for entry in reader.entries()? {
         let mut entry = entry?;
         let name = entry.path()?.into_owned();
         let relative = inside(&name)?;
@@ -1007,7 +1146,12 @@ fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<()> {
         fs::set_permissions(dir, fs::Permissions::from_mode(*mode))?;
         set_mtime(dir, *mtime)?;
     }
-    Ok(())
+    let mut read = reader.into_inner();
+    io::copy(&mut read, &mut io::sink())?;
+    Ok(SeedDigest {
+        sha256: format!("{:x}", read.hasher.finalize()),
+        bytes: read.bytes,
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed's name as a path below the store, or a refusal when it could leave it. `.` components are dropped, so `./.bashrc` and `.bashrc` are one name and `.` is the home itself.
@@ -1689,7 +1833,7 @@ mod tests {
         let disk = TempDir::new("disk");
         let store = disk.path().join("agent");
 
-        prepare_home(image.path(), &archive, &store, false).unwrap();
+        prepare_home(image.path(), &archive, &store, false, None).unwrap();
 
         let bashrc = store.join(".bashrc");
         assert_eq!(fs::read(&bashrc).unwrap(), b"export A=1\n");
@@ -1756,7 +1900,7 @@ mod tests {
             let disk = TempDir::new("disk");
             let store = disk.path().join("agent");
 
-            let refused = prepare_home(Path::new("/nonexistent"), &archive, &store, false);
+            let refused = prepare_home(Path::new("/nonexistent"), &archive, &store, false, None);
 
             assert!(refused.is_err(), "case {i} was seeded");
             assert!(!store.exists(), "case {i} left a store behind");
@@ -1789,7 +1933,7 @@ mod tests {
             }],
         );
 
-        prepare_home(Path::new("/nonexistent"), &archive, &store, false).unwrap();
+        prepare_home(Path::new("/nonexistent"), &archive, &store, false, None).unwrap();
 
         assert_eq!(fs::read(store.join("whole")).unwrap(), b"complete");
         assert!(!store.join("half").exists());
@@ -1811,7 +1955,7 @@ mod tests {
             }],
         );
 
-        prepare_home(Path::new("/nonexistent"), &archive, &store, false).unwrap();
+        prepare_home(Path::new("/nonexistent"), &archive, &store, false, None).unwrap();
 
         assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
     }
@@ -1941,10 +2085,171 @@ mod tests {
             &disk.path().join("no-seed.tar"),
             &store,
             false,
+            None,
         )
         .unwrap();
 
         assert_eq!(fs::read(store.join("file")).unwrap(), b"baked");
+    }
+
+    fn digest_of(path: &Path) -> SeedDigest {
+        let body = fs::read(path).unwrap();
+        SeedDigest {
+            sha256: format!("{:x}", Sha256::digest(&body)),
+            bytes: body.len() as u64,
+        }
+    }
+
+    fn one_file_seed(dir: &Path, body: &'static [u8]) -> PathBuf {
+        seed_tar(
+            dir,
+            &[Entry {
+                body,
+                ..entry("file", tar::EntryType::Regular, 0o644)
+            }],
+        )
+    }
+
+    // TEST_SCENARIO: a migration's seed can go missing before the first boot — a runner claim lost or recreated, a node that crashed before the upload was durable, an operator. When the runner says a seed is expected, a first boot that finds none must not seed the image's home instead: that boot would answer, and the migration would be taken for done with the agent's work left behind. It fails, and leaves no store for a later boot to mount.
+    #[test]
+    fn an_expected_seed_that_is_missing_fails_the_boot_instead_of_seeding_the_image() {
+        let image = TempDir::new("image");
+        fs::write(image.path().join("file"), b"baked").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        let expected = SeedDigest {
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            bytes: 4,
+        };
+
+        let refused = prepare_home(
+            image.path(),
+            &disk.path().join("no-seed.tar"),
+            &store,
+            false,
+            Some(&expected),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(refused.contains(&expected.sha256), "{refused}");
+        assert!(!store.exists(), "the image's home was seeded");
+    }
+
+    // TEST_SCENARIO: the seed the runner expects is restored, hashed as it is read, and the disk records which seed it was. A later boot that still expects that seed — the controller has not yet seen the guest answer — mounts the store as it is. One that expects another seed refuses the home, because it is not the one this migration brought.
+    #[test]
+    fn the_expected_seed_is_restored_and_recorded_on_the_disk() {
+        let share = TempDir::new("share");
+        let archive = one_file_seed(share.path(), b"the old home");
+        let expected = digest_of(&archive);
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+
+        prepare_home(
+            Path::new("/nonexistent"),
+            &archive,
+            &store,
+            false,
+            Some(&expected),
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"the old home");
+        let record = disk.path().join("system").join(guest::SEEDED_FROM_FILE);
+        assert_eq!(fs::read_to_string(&record).unwrap(), expected.sha256);
+
+        fs::write(store.join("file"), b"work since").unwrap();
+        prepare_home(
+            Path::new("/nonexistent"),
+            &archive,
+            &store,
+            false,
+            Some(&expected),
+        )
+        .unwrap();
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"work since");
+
+        let other = SeedDigest {
+            sha256: "0".repeat(64),
+            ..expected
+        };
+        assert!(prepare_home(
+            Path::new("/nonexistent"),
+            &archive,
+            &store,
+            false,
+            Some(&other)
+        )
+        .is_err());
+    }
+
+    // TEST_SCENARIO: a seed that is there but not the one expected — changed after the upload, or cut short — is refused whole. The digest is only known once the whole tar is read, so the refusal comes after the unpack, and must still leave neither a store nor a record behind.
+    #[test]
+    fn a_seed_that_is_not_the_one_expected_is_refused() {
+        let share = TempDir::new("share");
+        let archive = one_file_seed(share.path(), b"the old home");
+        let honest = digest_of(&archive);
+        for expected in [
+            SeedDigest {
+                sha256: "0".repeat(64),
+                ..honest.clone()
+            },
+            SeedDigest {
+                bytes: honest.bytes + 1,
+                ..honest.clone()
+            },
+        ] {
+            let disk = TempDir::new("disk");
+            let store = disk.path().join("agent");
+            assert!(prepare_home(
+                Path::new("/nonexistent"),
+                &archive,
+                &store,
+                false,
+                Some(&expected)
+            )
+            .is_err());
+            assert!(!store.exists());
+            assert!(!disk.path().join("system").exists());
+        }
+    }
+
+    // TEST_SCENARIO: a disk whose home came from the image — booted before its seed arrived — must not pass for a migrated one when a seed is expected: it has no record of a seed, so the boot is refused.
+    #[test]
+    fn a_home_from_the_image_is_refused_when_a_seed_is_expected() {
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        fs::create_dir_all(&store).unwrap();
+        let expected = SeedDigest {
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            bytes: 4,
+        };
+        let refused = prepare_home(
+            Path::new("/nonexistent"),
+            &disk.path().join("seed.tar"),
+            &store,
+            true,
+            Some(&expected),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(refused.contains("no seed"), "{refused}");
+    }
+
+    // TEST_SCENARIO: the share names no expected seed for a machine that was never migrated, and that reads as none; a record the runner wrote that does not parse is an error, so the boot does not guess.
+    #[test]
+    fn the_expected_seed_record_is_read_strictly() {
+        let share = TempDir::new("share");
+        let path = share.path().join("seed-expected");
+        assert_eq!(expected_seed(&path).unwrap(), None);
+        let seed = SeedDigest {
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            bytes: 4,
+        };
+        fs::write(&path, seed.line()).unwrap();
+        assert_eq!(expected_seed(&path).unwrap(), Some(seed));
+        fs::write(&path, "garbage").unwrap();
+        assert!(expected_seed(&path).is_err());
     }
 
     // TEST_SCENARIO: a failure shows at the end of a log, so the cap on the previous boot trims its start. Trimming the whole file, or keeping the head, would throw away the only record of why a machine died.

@@ -7,7 +7,7 @@ use clap::Parser;
 use vm_runner::api::SeedResult;
 use vm_runner::seed::{write_layout, Graft, Link, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, the runner's token and CA, mounted from the Secrets the controller already keeps for that runner, and the file the verified answer is written to — the container's termination message, which is how the controller learns which seed the machine must boot from.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -26,6 +26,8 @@ struct Args {
     token_file: PathBuf,
     #[arg(long = "ca-file")]
     ca_file: PathBuf,
+    #[arg(long = "result-file")]
+    result_file: Option<PathBuf>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a graft is `AT=DIR`: where the volume goes, relative to the home, and where the Job mounted it. The split is at the last `=`, because the Job names the mount and never puts one in it, while the place comes from a path the agent's spec declared.
@@ -173,6 +175,7 @@ fn main() -> anyhow::Result<()> {
         .to_string();
     anyhow::ensure!(!token.is_empty(), "{} is empty", args.token_file.display());
     let client = client(&args.ca_file)?;
+    let result_file = args.result_file.clone();
     let started = Instant::now();
     tracing::info!(source = %args.source.display(), grafts = args.grafts.len(), url = %args.url, "seed upload starting");
     tokio::runtime::Builder::new_multi_thread()
@@ -221,6 +224,9 @@ fn main() -> anyhow::Result<()> {
                 sent.bytes,
                 sent.sha256
             );
+            if let Some(path) = &result_file {
+                write_result(path, &sent)?;
+            }
             tracing::info!(
                 bytes = sent.bytes,
                 sha256 = %sent.sha256,
@@ -229,6 +235,12 @@ fn main() -> anyhow::Result<()> {
             );
             anyhow::Ok(())
         })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the seed both sides agreed on, as the machine API's seed answer, once the runner's answer matched what was sent. It is written only on success, so a Job that failed carries its error as its message instead.
+fn write_result(path: &Path, sent: &SeedResult) -> anyhow::Result<()> {
+    std::fs::write(path, serde_json::to_vec(sent)?)
+        .with_context(|| format!("writing the seed's digest to {}", path.display()))
 }
 
 #[cfg(test)]
@@ -294,6 +306,42 @@ mod tests {
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
         assert!(args.grafts.is_empty());
         assert!(args.links.0.is_empty());
+        assert_eq!(args.result_file, None);
+    }
+
+    // TEST_SCENARIO: the Job names its termination message as the result file, and the controller reads the seed the machine must boot from out of it. What is written there is exactly the machine API's seed answer, so the controller decodes it with the type it decodes the runner's answers with.
+    #[test]
+    fn the_result_is_written_as_the_seed_answer() {
+        let args = Args::try_parse_from([
+            "vm-seed",
+            "--source",
+            "/h",
+            "--url",
+            "u",
+            "--token-file",
+            "t",
+            "--ca-file",
+            "c",
+            "--result-file",
+            "/dev/termination-log",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.result_file,
+            Some(PathBuf::from("/dev/termination-log"))
+        );
+
+        let dir = std::env::temp_dir().join(format!("vm-seed-result-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("result");
+        let sent = SeedResult {
+            bytes: 4,
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+        };
+        write_result(&path, &sent).unwrap();
+        let read: SeedResult = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(read, sent);
     }
 
     // TEST_SCENARIO: the Job passes the moved paths as one JSON list, and a list that does not parse is refused at the start rather than seeding a machine whose paths are never linked.
