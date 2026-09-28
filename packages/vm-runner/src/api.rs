@@ -23,7 +23,15 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: the docker configs this machine's image is fetched with, one per pull Secret a pod would list and tried in that order, as the kubelet does. They are credentials in transit: cleared before the spec is stored, and they never reach smolvm or the guest.
     #[serde(rename = "pullAuths", skip_serializing_if = "Vec::is_empty")]
     pub pull_auths: Vec<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: set while the controller is moving an Agent onto this machine from the container Backend. It is what lets a seed capability seed the machine at all: a machine never marked is never seeded by one, whatever it presents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration: Option<Migration>,
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Migration {}
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
@@ -167,6 +175,7 @@ mod tests {
                 revision: "r1".into(),
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],
+                migration: Some(Migration {}),
             },
         );
         matches_the_contract(

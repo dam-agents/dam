@@ -555,6 +555,17 @@ mod tests {
         assert!(!changed(&running_spec(), &desired));
     }
 
+    // TEST_SCENARIO: the controller marks a machine as migrating while it copies the home and drops the mark once the copy is done. The mark says what a seed capability may do, not what the machine is, so neither change reshapes it.
+    #[test]
+    fn a_migration_mark_is_never_a_reason_to_restart() {
+        let desired = MachineSpec {
+            migration: Some(crate::api::Migration {}),
+            ..running_spec()
+        };
+        assert!(!changed(&running_spec(), &desired));
+        assert!(!changed(&desired, &running_spec()));
+    }
+
     fn running_spec() -> MachineSpec {
         MachineSpec {
             image: "quay.io/x/vm:1".into(),
@@ -567,6 +578,7 @@ mod tests {
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),
+            migration: None,
         }
     }
 }

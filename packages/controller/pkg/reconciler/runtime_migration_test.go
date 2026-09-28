@@ -4,6 +4,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,7 @@ func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) 
 	assert.True(t, pod.Volumes[0].PersistentVolumeClaim.ReadOnly, "the copy never writes to the volume it copies")
 	assert.Equal(t, RoleRuntimeMigration, job.Spec.Template.Labels[LabelRole])
 	assert.Equal(t, testOwner, job.Spec.Template.Labels[envoyOwnerLabel], "the runner admits the Job by its owner, so it reaches no one else's runner")
+	assert.NotNil(t, node.spec("my-agent").Migration, "the machine is marked as migrating, which is what lets the Job's capability seed it")
 
 	completeJob(t, r, batchv1.JobComplete, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -118,10 +120,13 @@ func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) 
 	require.Equal(t, runtimeMigrationBooting, agent.Annotations[annRuntimeMigration])
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "a finished copy is cleaned up")
+	_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the finished copy's seed capability goes with it")
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	assert.True(t, node.spec("my-agent").Running, "the copied machine boots, even if the agent had been asleep")
+	assert.Nil(t, node.spec("my-agent").Migration, "once the copy is in, no capability may seed the machine again")
 	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
 	require.NoError(t, err, "the old volume is kept until the new guest has answered")
 	assert.Empty(t, node.seedGone)
@@ -363,6 +368,59 @@ func TestTheRunnerAdmitsItsOwnersMigrationJobToTheMachineAPIOnly(t *testing.T) {
 		}
 	}
 	assert.True(t, found)
+}
+
+// TEST_SCENARIO: the copy Job parses what an agent wrote, so it must hold nothing that could drive the owner's other machines. It mounts a seed capability minted for this one machine, expiring just past the Job's deadline, and never the runner's token — in no volume and no environment variable. The Secret holding it carries no owner label, since that label is what marks a user's credentials, and a retried Job gets a fresh capability rather than the spent one.
+func TestTheCopyJobCarriesASeedCapabilityAndNeverTheRunnersToken(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.applySeedCapability(ctx, agent, testOwner))
+	job, err := r.buildRuntimeMigrationJob(agent, testOwner, "home-agent-my-agent-0", nil, nil)
+	require.NoError(t, err)
+	pod := job.Spec.Template.Spec
+	var mounted []string
+	for _, v := range pod.Volumes {
+		if v.Secret != nil {
+			mounted = append(mounted, v.Secret.SecretName)
+		}
+		if v.Projected != nil {
+			for _, source := range v.Projected.Sources {
+				if source.Secret != nil {
+					mounted = append(mounted, source.Secret.Name)
+				}
+			}
+		}
+	}
+	assert.NotContains(t, mounted, r.runnerName(testOwner), "the runner's token is not mounted in the Job")
+	assert.ElementsMatch(t, []string{runtimeMigrationJobName("my-agent"), r.runnerTLSName(testOwner)}, mounted)
+	for _, c := range pod.Containers {
+		assert.Empty(t, c.Env)
+		assert.Empty(t, c.EnvFrom)
+		assert.NotContains(t, strings.Join(c.Command, " "), "node-token")
+	}
+	assert.Contains(t, pod.Containers[0].Command, runtimeMigrationCredsPath+"/"+runtimeMigrationCapabilityKey)
+
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, sec.Labels, envoyOwnerLabel)
+	require.Len(t, sec.OwnerReferences, 1)
+	assert.Equal(t, "my-agent", sec.OwnerReferences[0].Name)
+	capability := string(sec.Data[runtimeMigrationCapabilityKey])
+	assert.NotContains(t, capability, "node-token")
+	parts := strings.Split(capability, ".")
+	require.Len(t, parts, 4)
+	expires, err := strconv.ParseInt(parts[2], 10, 64)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now().Add(migrationJobDeadline+seedCapabilitySlack), time.Unix(expires, 0), time.Minute)
+	assert.Equal(t, vmrunner.MintSeedCapability("node-token", "my-agent", parts[1], expires), capability,
+		"the capability is signed for this agent's machine under the runner's token")
+
+	require.NoError(t, r.applySeedCapability(ctx, agent, testOwner))
+	again, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, capability, string(again.Data[runtimeMigrationCapabilityKey]))
 }
 
 func mountPVC(name, path string) *corev1.PersistentVolumeClaim {

@@ -7,7 +7,7 @@ use clap::Parser;
 use vm_runner::api::SeedResult;
 use vm_runner::seed::{write_layout, Graft, Link, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -103,7 +103,7 @@ fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a client that trusts the runner's CA and nothing else — not the public roots, and not a proxy the Job's environment may name — because the runner's CA signs runner certificates alone, and the token this upload carries is the runner's whole machine API.
+// UNIT_BOUNDARY_DESCRIPTION: a client that trusts the runner's CA and nothing else — not the public roots, and not a proxy the Job's environment may name — because the runner's CA signs runner certificates alone, and the capability this upload carries is good for seeding its one machine.
 fn client(ca_file: &Path) -> anyhow::Result<reqwest::Client> {
     let pem = std::fs::read(ca_file).with_context(|| format!("reading {}", ca_file.display()))?;
     let certs = reqwest::Certificate::from_pem_bundle(&pem)

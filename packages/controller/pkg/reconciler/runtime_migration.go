@@ -41,6 +41,8 @@ const (
 	runtimeMigrationSourcePath = "/mnt/home"
 	runtimeMigrationExtraPath  = "/mnt/extra"
 	runtimeMigrationCredsPath  = "/etc/vm-seed"
+
+	runtimeMigrationCapabilityKey = "capability"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: until the seed is on the runner, nothing may run: the old pod would keep writing to a volume that is being copied, and a machine that booted would seed its disk from the image and never look at the copy again.
@@ -281,6 +283,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err != nil {
 			return r.noteRuntimeMigration(ctx, name, err)
 		}
+		if err := r.applySeedCapability(ctx, agent, owner); err != nil {
+			return err
+		}
 		desired, err := r.buildRuntimeMigrationJob(agent, owner, source, grafts, links)
 		if err != nil {
 			return err
@@ -300,6 +305,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("deleting the home copy job: %w", err)
 		}
+		if err := r.deleteSeedCapability(ctx, name); err != nil {
+			return err
+		}
 		slog.Info("runtime migration: home copied, booting the machine", "agent", name)
 		return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
 			annRuntimeMigration:        new(runtimeMigrationBooting),
@@ -318,7 +326,65 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 			return nil
 		}
 		slog.Warn("runtime migration: deleting failed home copy job for retry", "agent", name, "job", job.Name)
-		return jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop})
+		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
+			return err
+		}
+		return r.deleteSeedCapability(ctx, name)
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a seed capability outlives its Job's active deadline: the time its pod may wait to be scheduled and pull the runner image before the deadline's clock matters. Past it the runner refuses the capability, and a retry is a new Job with a new one.
+const seedCapabilitySlack = 15 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job's one credential for the runner, kept in a Secret of the Job's own name that only its pod mounts. It is minted fresh for every Job the controller creates, never reused across them, and removed with the Job, so a Job's retry after failure carries a capability that has not been seen before. The Agent owns it, so deleting the Agent mid-copy takes it too. It carries no owner label, because a Secret with one is what the platform looks through for a user's credentials.
+func (r *AgentReconciler) applySeedCapability(ctx context.Context, agent *apiv1.Agent, owner string) error {
+	name, ns := agent.Name, r.config.Namespace
+	token, err := r.client.CoreV1().Secrets(ns).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading the runner's token to mint a seed capability: %w", err)
+	}
+	if len(token.Data["token"]) == 0 {
+		return fmt.Errorf("the runner's token Secret %s holds no token, so no seed capability can be minted", token.Name)
+	}
+	expires := time.Now().Add(migrationJobDeadline + seedCapabilitySlack)
+	capability, fingerprint, err := vmrunner.NewSeedCapability(string(token.Data["token"]), name, expires)
+	if err != nil {
+		return err
+	}
+	desired := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            runtimeMigrationJobName(name),
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{agentOwnerRef(agent)},
+			Labels: map[string]string{
+				LabelMigrationFor:              name,
+				LabelRole:                      RoleRuntimeMigration,
+				"agent-platform.ai/managed-by": "platform-controller",
+			},
+		},
+		Data: map[string][]byte{runtimeMigrationCapabilityKey: []byte(capability)},
+	}
+	secrets := r.client.CoreV1().Secrets(ns)
+	existing, err := secrets.Get(ctx, desired.Name, metav1.GetOptions{})
+	switch {
+	case k8serrors.IsNotFound(err):
+		_, err = secrets.Create(ctx, desired, metav1.CreateOptions{})
+	case err == nil:
+		existing.Data = desired.Data
+		_, err = secrets.Update(ctx, existing, metav1.UpdateOptions{})
+	}
+	if err != nil {
+		return fmt.Errorf("storing the seed capability: %w", err)
+	}
+	slog.Info("runtime migration: seed capability minted", "agent", name, "capability", fingerprint, "expires", expires.UTC().Format(time.RFC3339))
+	return nil
+}
+
+func (r *AgentReconciler) deleteSeedCapability(ctx context.Context, name string) error {
+	err := r.client.CoreV1().Secrets(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting the seed capability: %w", err)
 	}
 	return nil
 }
@@ -374,6 +440,9 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	if err := runner.DeleteSeed(ctx, name); err != nil {
 		return err
 	}
+	if err := r.deleteSeedCapability(ctx, name); err != nil {
+		return err
+	}
 	until := time.Now().Add(r.migrationRetention())
 	grafts, err := recordedGrafts(agent)
 	if err != nil {
@@ -404,7 +473,7 @@ func (r *AgentReconciler) noteRuntimeMigration(ctx context.Context, name string,
 	return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{annRuntimeMigrationMessage: new(msg)})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME, with the boot hook that links each moved path back — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the runner's token and the CA that signed its serving certificate. It runs where the agent's pods run, since that is where its volumes attach.
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME, with the boot hook that links each moved path back — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
 func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source string, grafts []runtimeMigrationGraft, links []runtimeMigrationLink) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
@@ -428,7 +497,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		runtimeMigrationSeedBinary,
 		"--source", runtimeMigrationSourcePath,
 		"--url", url,
-		"--token-file", runtimeMigrationCredsPath + "/token",
+		"--token-file", runtimeMigrationCredsPath + "/" + runtimeMigrationCapabilityKey,
 		"--ca-file", runtimeMigrationCredsPath + "/ca.crt",
 	}
 	mounts := []corev1.VolumeMount{
@@ -440,7 +509,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
 			DefaultMode: new(int32(0o400)),
 			Sources: []corev1.VolumeProjection{
-				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerName(owner)}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
+				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: runtimeMigrationJobName(name)}, Items: []corev1.KeyToPath{{Key: runtimeMigrationCapabilityKey, Path: runtimeMigrationCapabilityKey}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			},
 		}}},

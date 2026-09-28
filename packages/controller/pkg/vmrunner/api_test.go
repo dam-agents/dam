@@ -67,6 +67,7 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		Revision:   "r1",
 		Running:    true,
 		PullAuths:  []string{`{"auths":{}}`},
+		Migration:  &MachineMigration{},
 	})
 	matchesTheContract(t, "machine-status", MachineStatus{
 		State:     StateRunning,

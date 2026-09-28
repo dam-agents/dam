@@ -8,5 +8,6 @@
   "allowCidrs": ["10.0.0.1/32"],
   "revision": "r1",
   "running": true,
-  "pullAuths": ["{\"auths\":{}}"]
+  "pullAuths": ["{\"auths\":{}}"],
+  "migration": {}
 }

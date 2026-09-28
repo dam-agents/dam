@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::body::{Body, Bytes};
 use axum::extract::rejection::QueryRejection;
-use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -15,6 +15,7 @@ use http_body_util::BodyExt;
 use serde::Deserialize;
 
 use crate::api::MachineSpec;
+use crate::capability;
 use crate::server::{Rejected, Server};
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API as the controller's Go client reaches it: the routes, the bearer token, the status codes and the plain-text error bodies that client.go expects. Every handler hands its work to a blocking thread, because each one asks the runtime or the guest something that can take seconds.
@@ -134,6 +135,16 @@ impl Token {
             .clone();
         constant_time_eq(got, current.as_bytes())
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the key seed capabilities are checked with, derived from the token held now. A token the controller replaced therefore voids every capability minted under the old one, and the controller mints the next from the new.
+    fn seed_key(&self) -> [u8; 32] {
+        let current = self
+            .current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        capability::derive_key(current.as_bytes())
+    }
 }
 
 fn read_token(path: &std::path::Path) -> anyhow::Result<String> {
@@ -148,21 +159,74 @@ fn read_token(path: &std::path::Path) -> anyhow::Result<String> {
     Ok(token.to_string())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller, and a request without its token gets nothing, not even a status. The comparison takes the same time however much of the token matches.
-async fn authorized(State(token): State<Arc<Token>>, request: Request, next: Next) -> Response {
+// UNIT_BOUNDARY_DESCRIPTION: who a request was let in as. The owner's token opens every route; a seed capability opens only the seed upload of the machine it names, and the upload is told which one it carries, since what a capability may seed is narrower still.
+#[derive(Debug, Clone)]
+pub enum Authority {
+    Token,
+    Capability(capability::Verified),
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller with its token, and a request without it gets nothing, not even a status. The one exception is a runtime migration's copy Job, which carries a seed capability instead and is let in to `PUT /machines/{id}/seed` alone, for the machine the capability names and before it expires. The token comparison takes the same time however much of the token matches.
+async fn authorized(State(token): State<Arc<Token>>, mut request: Request, next: Next) -> Response {
     let got = request
         .headers()
         .get("authorization")
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    let got = got.strip_prefix("Bearer ").unwrap_or(got);
-    if !token.matches(got.as_bytes()) {
-        return plain(StatusCode::UNAUTHORIZED, "unauthorized");
+    let got = got.strip_prefix("Bearer ").unwrap_or(got).to_string();
+    if token.matches(got.as_bytes()) {
+        request.extensions_mut().insert(Authority::Token);
+        return next.run(request).await;
     }
-    next.run(request).await
+    let Some(machine) = seed_upload_of(&request).filter(|_| capability::looks_like(&got)) else {
+        return plain(StatusCode::UNAUTHORIZED, "unauthorized");
+    };
+    match capability::verify(&token.seed_key(), &got, &machine, unix_now()) {
+        Ok(verified) => {
+            request
+                .extensions_mut()
+                .insert(Authority::Capability(verified));
+            next.run(request).await
+        }
+        Err(refusal) => {
+            tracing::warn!(
+                target: "security",
+                event = "seed.deny",
+                machine = %machine,
+                capability = %capability::fingerprint(&got),
+                reason = ?refusal,
+                "a seed capability was refused"
+            );
+            match refusal {
+                capability::Refusal::Expired => {
+                    plain(StatusCode::UNAUTHORIZED, "the seed capability has expired")
+                }
+                capability::Refusal::Invalid => plain(StatusCode::UNAUTHORIZED, "unauthorized"),
+            }
+        }
+    }
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+// UNIT_BOUNDARY_DESCRIPTION: the machine a request uploads a seed to, or nothing for every other route. The id is not checked here: the handler refuses an invalid one, and a capability signed for a name that is not a machine id matches no machine.
+fn seed_upload_of(request: &Request) -> Option<String> {
+    if request.method() != axum::http::Method::PUT {
+        return None;
+    }
+    let id = request
+        .uri()
+        .path()
+        .strip_prefix("/machines/")?
+        .strip_suffix("/seed")?;
+    (!id.is_empty() && !id.contains('/')).then(|| id.to_string())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -243,11 +307,21 @@ async fn remove(State(server): State<Arc<Server>>, Path(id): Path<String>) -> Re
 const SEED_CHUNKS: usize = 16;
 
 // UNIT_BOUNDARY_DESCRIPTION: stores the tar of a migrated agent's old home in its machine's share, for platform-init to seed the home from on the first boot. The body goes chunk by chunk to a blocking thread that writes and hashes it, and the seed is committed only once the whole body arrived and every byte is on the disk. Any failure — the body refused as too large, the connection cut, the disk full — drops the upload, which removes what was staged. A seed refused as too large is answered before the body is read to its end.
-async fn seed(State(server): State<Arc<Server>>, Path(id): Path<String>, body: Body) -> Response {
+async fn seed(
+    State(server): State<Arc<Server>>,
+    Path(id): Path<String>,
+    Extension(authority): Extension<Authority>,
+    body: Body,
+) -> Response {
     if !crate::state::is_machine_id(&id) {
         return plain(StatusCode::BAD_REQUEST, "invalid machine id");
     }
-    let mut seeding = match tokio::task::spawn_blocking(move || server.claim_seed(&id)).await {
+    let capability = match authority {
+        Authority::Token => None,
+        Authority::Capability(verified) => Some(verified),
+    };
+    let claimed = tokio::task::spawn_blocking(move || server.claim_seed(&id, capability)).await;
+    let mut seeding = match claimed {
         Ok(Ok(seeding)) => seeding,
         Ok(Err(e)) => return rejected(e),
         Err(e) => return plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
@@ -695,6 +769,182 @@ mod tests {
             );
         }
         assert!(!share.join(crate::share::SEED_FILE).exists());
+    }
+
+    fn created_for_migration(api: &Api, id: &str) -> std::path::PathBuf {
+        let share = api.created(id, 1);
+        let mut spec = crate::state::read_spec(&api.state_dir(), id).unwrap();
+        spec.migration = Some(crate::api::Migration {});
+        crate::state::write_spec(&api.state_dir(), id, &spec).unwrap();
+        share
+    }
+
+    const NONCE: &str = "0123456789abcdef0123456789abcdef";
+
+    fn seed_capability(machine: &str, expires: u64) -> String {
+        capability::mint(&capability::derive_key(b"secret"), machine, NONCE, expires)
+    }
+
+    fn in_an_hour() -> u64 {
+        unix_now() + 3600
+    }
+
+    // TEST_SCENARIO: the copy Job carries a seed capability instead of the runner's token. It opens exactly one door — the seed upload of the machine it was minted for — and every other route, and the same route of another machine, answers 401 as if it carried nothing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_capability_opens_only_its_own_machines_seed_upload() {
+        let api = api_on("cap-scope", Arc::new(Parked(State::Stopped.into())));
+        let share = created_for_migration(&api, "m1");
+        created_for_migration(&api, "m2");
+        let capability = seed_capability("m1", in_an_hour());
+        for (method, path) in [
+            ("GET", "/machines"),
+            ("GET", "/machines/m1"),
+            ("PUT", "/machines/m1"),
+            ("DELETE", "/machines/m1"),
+            ("DELETE", "/machines/m1/seed"),
+            ("PUT", "/machines/m2/seed"),
+        ] {
+            assert_eq!(
+                call(&api, method, path, Some(&capability), SPEC).await,
+                (StatusCode::UNAUTHORIZED, "unauthorized\n".to_string()),
+                "{method} {path}"
+            );
+        }
+        assert!(!share.join(crate::share::SEED_FILE).exists());
+
+        let (status, body) = call(&api, "PUT", "/machines/m1/seed", Some(&capability), "tar").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            std::fs::read(share.join(crate::share::SEED_FILE)).unwrap(),
+            b"tar"
+        );
+    }
+
+    // TEST_SCENARIO: a capability outlives its Job only by its expiry. Presented after it, it is refused with a reason the Job's error carries to the Agent, and nothing is stored.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_expired_seed_capability_is_refused() {
+        let api = api_on("cap-expired", Arc::new(Parked(State::Stopped.into())));
+        let share = created_for_migration(&api, "m1");
+        let expired = seed_capability("m1", unix_now().saturating_sub(1));
+        assert_eq!(
+            call(&api, "PUT", "/machines/m1/seed", Some(&expired), "tar").await,
+            (
+                StatusCode::UNAUTHORIZED,
+                "the seed capability has expired\n".to_string()
+            )
+        );
+        assert!(!share.join(crate::share::SEED_FILE).exists());
+    }
+
+    // TEST_SCENARIO: a capability seeds once. Once it stored a seed, presenting it again is refused — while the seed is there, and after the controller removed it — and the nonce it spent is on the runner's claim, where a restarted runner still finds it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_capability_is_spent_by_its_upload() {
+        let api = api_on("cap-reuse", Arc::new(Parked(State::Stopped.into())));
+        let share = created_for_migration(&api, "m1");
+        let capability = seed_capability("m1", in_an_hour());
+        let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some(&capability), "first").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, _) = call(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some(&capability),
+            "second",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            call(&api, "DELETE", "/machines/m1/seed", Some("secret"), "")
+                .await
+                .0,
+            StatusCode::NO_CONTENT
+        );
+        let (status, body) = call(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some(&capability),
+            "second",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body.contains("already used"), "{body}");
+        assert!(!share.join(crate::share::SEED_FILE).exists());
+        let spent = std::fs::read_to_string(
+            api.state_dir()
+                .join("m1")
+                .join(crate::server::SPENT_CAPABILITIES_FILE),
+        )
+        .unwrap();
+        assert_eq!(spent.trim(), NONCE);
+    }
+
+    // TEST_SCENARIO: a capability never seeds a machine that is not being migrated — a sibling that was created as a vm Agent from the start — nor one whose disk already holds a home, nor one that already has a seed, since each would let the Job replace a home it has no business touching. The owner's token still seeds as it always did.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_capability_seeds_only_a_migrating_machine_with_no_home() {
+        let api = api_on("cap-guard", Arc::new(Parked(State::Stopped.into())));
+        let plain_share = api.created("m1", 1);
+        let (status, body) = call(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some(&seed_capability("m1", in_an_hour())),
+            "tar",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(body.contains("not being migrated"), "{body}");
+        assert!(!plain_share.join(crate::share::SEED_FILE).exists());
+
+        let seeded = created_for_migration(&api, "m2");
+        crate::share::record_seeded(&seeded).unwrap();
+        let (status, _) = call(
+            &api,
+            "PUT",
+            "/machines/m2/seed",
+            Some(&seed_capability("m2", in_an_hour())),
+            "tar",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(!seeded.join(crate::share::SEED_FILE).exists());
+
+        let staged = created_for_migration(&api, "m3");
+        std::fs::write(staged.join(crate::share::SEED_FILE), "checked").unwrap();
+        let (status, _) = call(
+            &api,
+            "PUT",
+            "/machines/m3/seed",
+            Some(&seed_capability("m3", in_an_hour())),
+            "tar",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            std::fs::read(staged.join(crate::share::SEED_FILE)).unwrap(),
+            b"checked"
+        );
+
+        created_for_migration(&api, "m4");
+        let (status, _) = call(&api, "PUT", "/machines/m4", Some("secret"), SPEC).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = call(
+            &api,
+            "PUT",
+            "/machines/m4/seed",
+            Some(&seed_capability("m4", in_an_hour())),
+            "tar",
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "the controller's latest spec dropped the mark: {body}"
+        );
+
+        let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     // TEST_SCENARIO: the controller replaces the token in the runner's Secret and the kubelet rewrites the file. The next read takes the new token and the old one stops working; a file caught empty or missing mid-swap keeps the token already held rather than locking the controller out.

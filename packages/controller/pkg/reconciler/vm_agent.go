@@ -129,6 +129,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Running:    running,
 		PullAuths:  pullAuths,
 	}
+	if runtimeMigrationHoldsDown(agent.Annotations) {
+		machine.Migration = &vmrunner.MachineMigration{}
+	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
 		return st, false, err

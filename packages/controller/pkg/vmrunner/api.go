@@ -22,7 +22,15 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: or passed to smolvm, and never logs them, so
 	// UNIT_BOUNDARY_DESCRIPTION: they never reach spec.json or the guest.
 	PullAuths []string `json:"pullAuths,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: set while a runtime migration copies an
+	// UNIT_BOUNDARY_DESCRIPTION: Agent's home onto this machine. It is what
+	// UNIT_BOUNDARY_DESCRIPTION: lets a seed capability seed the machine at
+	// UNIT_BOUNDARY_DESCRIPTION: all; the runner never reshapes a machine for it.
+	Migration *MachineMigration `json:"migration,omitempty"`
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
+type MachineMigration struct{}
 
 type MachineStatus struct {
 	State     string `json:"state"`
