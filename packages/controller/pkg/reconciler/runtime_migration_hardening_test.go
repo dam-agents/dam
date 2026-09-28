@@ -363,9 +363,9 @@ func TestAMigrationReportsItsStepsAsEvents(t *testing.T) {
 	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
-	completeJob(t, r, batchv1.JobComplete, time.Now())
+	completeCopy(t, r, testSeedAnnotation(t))
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
 
 	events := agentEvents(t, r)
@@ -421,9 +421,10 @@ func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
 func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	now := time.Now().UTC()
 	ann := map[string]string{
-		annRuntimeMigration: runtimeMigrationBooting,
-		annLastActivity:     now.Add(-3 * time.Hour).Format(time.RFC3339),
-		annReclaimedAt:      now.Format(time.RFC3339),
+		annRuntimeMigration:     runtimeMigrationBooting,
+		annRuntimeMigrationSeed: testSeedAnnotation(t),
+		annLastActivity:         now.Add(-3 * time.Hour).Format(time.RFC3339),
+		annReclaimedAt:          now.Format(time.RFC3339),
 	}
 	assert.True(t, shouldRun(ann, time.Hour, now), "idle for hours and reclaimed, a booting agent still runs")
 	_, eligible := reclaimEligible(ann, time.Hour, now)
@@ -437,6 +438,7 @@ func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	agent := migratingAgentCR()
 	agent.Annotations[annRuntimeMigration] = runtimeMigrationBooting
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
 	agent.Annotations[annStopRequested] = "true"
 	r, node, _ := setupMigrationReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -452,6 +454,7 @@ func TestABootingMigrationOverBudgetWaitsWithoutReclaiming(t *testing.T) {
 	agent := migratingAgentCR()
 	agent.Annotations[annRuntimeMigration] = runtimeMigrationBooting
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
 	r, node, _ := setupMigrationReconciler(t, agent)
 	r.busyProbe = func(context.Context, string) bool { return false }
 	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(ctx, peerSS, metav1.CreateOptions{})
