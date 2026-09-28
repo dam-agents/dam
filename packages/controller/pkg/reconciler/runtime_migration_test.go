@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,7 @@ func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOn
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
 	assert.NotEmpty(t, node.spec("my-agent").Image, "the preflight creates the machine")
 	assert.False(t, node.spec("my-agent").Running, "the preflight machine is created stopped")
+	assert.NotNil(t, node.spec("my-agent").Migration, "the preflight machine is marked as migrating, so the copy's capability can seed it")
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container keeps running through the preflight")
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -218,6 +220,7 @@ func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOn
 	assert.True(t, pod.Volumes[0].PersistentVolumeClaim.ReadOnly, "the copy never writes to the volume it copies")
 	assert.Equal(t, RoleRuntimeMigration, job.Spec.Template.Labels[LabelRole])
 	assert.Equal(t, testOwner, job.Spec.Template.Labels[envoyOwnerLabel], "the runner admits the Job by its owner, so it reaches no one else's runner")
+	assert.NotNil(t, node.spec("my-agent").Migration, "the machine is marked as migrating, which is what lets the Job's capability seed it")
 	assert.Contains(t, strings.Join(pod.Containers[0].Command, " "), "--result-file /dev/termination-log", "the copy says which seed it stored")
 
 	completeCopy(t, r, testSeedAnnotation(t))
@@ -225,10 +228,15 @@ func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOn
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
 	assert.JSONEq(t, testSeedAnnotation(t), agent.Annotations[annRuntimeMigrationSeed], "the seed the runner stored is what the boot is held to")
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a finished copy is cleaned up")
+	_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the finished copy's seed capability goes with it")
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	assert.True(t, node.spec("my-agent").Running, "the copied machine boots, even if the agent had been asleep")
+	assert.Nil(t, node.spec("my-agent").Migration, "once the copy is in, no capability may seed the machine again")
 	assert.Equal(t, int32(0), agentReplicas(t, r), "the container stays down while the machine holds the home")
 	assert.Equal(t, &testSeed, node.spec("my-agent").ExpectSeed, "the runner is told which seed the home must come from")
 
@@ -282,6 +290,17 @@ func TestThePreflightMachineTakesTheTargetShapeAndReportsWhyItIsNotReady(t *test
 }
 
 // TEST_SCENARIO: an abort before the verified boot removes what the vm side made — the copy Job, the machine with its seed, the record of the source volume and the condition — and the container comes back on the volumes it had, which never lost their labels.
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job's seed capability as its Secret holds it now, or "" when there is no such Secret.
+func seedCapabilityNow(t *testing.T, r *AgentReconciler) string {
+	t.Helper()
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return ""
+	}
+	require.NoError(t, err)
+	return string(sec.Data[runtimeMigrationCapabilityKey])
+}
+
 func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
@@ -293,6 +312,7 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	agent = reloaded(t, r, agent)
 	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
+	assert.NotEmpty(t, seedCapabilityNow(t, r), "the copy Job's capability is minted with it")
 	assert.Equal(t, int32(0), agentReplicas(t, r))
 
 	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
@@ -303,6 +323,7 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	assert.Contains(t, node.deleted, "my-agent", "the machine and its seed are removed")
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the copy Job is removed")
+	assert.Empty(t, seedCapabilityNow(t, r), "the copy Job's capability is removed with it")
 	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "my-agent", pvc.Labels[LabelAgent], "the old volume is left as it was")
@@ -333,6 +354,11 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
+	first := seedCapabilityNow(t, r)
+	require.NotEmpty(t, first)
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Zero(t, *job.Spec.BackoffLimit, "a Job is one pod, so each Job is exactly one attempt")
 
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -340,7 +366,7 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
 	assert.Contains(t, c.Message, "retrying (attempt 1 of 3)", "the user is told the copy is stuck")
 	assert.False(t, node.spec("my-agent").Running)
-	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err, "a fresh failure is kept for its logs until the retry delay passes")
 
 	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
@@ -348,8 +374,12 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	agent = reloaded(t, r, agent)
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an old failure is cleared so the next reconcile copies again")
+	assert.Empty(t, seedCapabilityNow(t, r), "the failed Job's capability goes with it")
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, int32(2), reloaded(t, r, agent).Status.RuntimeMigrationAttempts)
+	second := seedCapabilityNow(t, r)
+	assert.NotEmpty(t, second)
+	assert.NotEqual(t, first, second, "the next attempt carries a capability of its own")
 }
 
 // TEST_SCENARIO: the copy is bounded. Once its attempts are spent the migration is Failed, with the last attempt's reason, rather than retrying forever; the container stays down, since it was stopped for the copy, until the user acts. A retry the user asks for after the failure starts over from the preflight with a fresh machine and its attempts reset, and the container serves again meanwhile.
@@ -369,9 +399,11 @@ func TestACopyOutOfAttemptsFailsAndARetryStartsOver(t *testing.T) {
 	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
 	assert.Equal(t, metav1.ConditionFalse, c.Status)
 	assert.Contains(t, c.Message, "gave up after 3 attempts")
+	assert.Empty(t, seedCapabilityNow(t, r), "a failed migration leaves no capability behind")
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Nil(t, node.spec("my-agent").Migration, "a failed migration's machine is not seedable")
 	assert.Equal(t, int32(0), agentReplicas(t, r), "a failed migration keeps the stopped container stopped")
 	assert.False(t, node.spec("my-agent").Running)
 	assert.NotContains(t, node.deleted, "my-agent", "a failure alone removes nothing")
@@ -390,6 +422,8 @@ func TestACopyOutOfAttemptsFailsAndARetryStartsOver(t *testing.T) {
 	assert.Contains(t, node.deleted, "my-agent", "a retry starts from a fresh machine")
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container serves through the new preflight")
+	assert.NotNil(t, node.spec("my-agent").Migration, "the fresh machine is seedable again, by the next Job's capability")
+	assert.Empty(t, seedCapabilityNow(t, r), "no capability is minted before the next copy")
 }
 
 // TEST_SCENARIO: a migration is also bounded in time. One that has not got past its preflight within the budget is Failed with the reason it was waiting on, and since the container was never stopped it keeps serving.
@@ -576,6 +610,7 @@ func TestAMigrationWithNothingToCopyBootsFromTheImage(t *testing.T) {
 	agent = reloaded(t, r, agent)
 	assert.True(t, node.spec("my-agent").Running, "the machine boots without a seed")
 	assert.Nil(t, node.spec("my-agent").ExpectSeed, "and is held to none")
+	assert.Nil(t, node.spec("my-agent").Migration, "and can no longer be seeded")
 	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "there is nothing to copy, so no copy runs")
 
@@ -857,6 +892,61 @@ func TestTheRunnerAdmitsItsOwnersMigrationJobToTheMachineAPIOnly(t *testing.T) {
 		}
 	}
 	assert.True(t, found)
+}
+
+// TEST_SCENARIO: the copy Job parses what an agent wrote, so it must hold nothing that could drive the owner's other machines. It mounts a seed capability minted for this one machine, expiring just past the Job's deadline, and never the runner's token — in no volume and no environment variable. The Secret holding it carries no owner label, since that label is what marks a user's credentials, and a retried Job gets a fresh capability rather than the spent one.
+func TestTheCopyJobCarriesASeedCapabilityAndNeverTheRunnersToken(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.applySeedCapability(ctx, agent, testOwner))
+	job, err := r.buildRuntimeMigrationJob(agent, testOwner, "home-agent-my-agent-0", testRunnerPodIP, runtimeMigrationIdentity{uid: 65532, gid: 65532}, nil)
+	require.NoError(t, err)
+	pod := job.Spec.Template.Spec
+	var mounted []string
+	for _, v := range pod.Volumes {
+		if v.Secret != nil {
+			mounted = append(mounted, v.Secret.SecretName)
+		}
+		if v.Projected != nil {
+			for _, source := range v.Projected.Sources {
+				if source.Secret != nil {
+					mounted = append(mounted, source.Secret.Name)
+				}
+			}
+		}
+	}
+	assert.NotContains(t, mounted, r.runnerName(testOwner), "the runner's token is not mounted in the Job")
+	assert.ElementsMatch(t, []string{runtimeMigrationJobName("my-agent"), r.runnerTLSName(testOwner)}, mounted)
+	for _, c := range pod.Containers {
+		assert.Empty(t, c.Env)
+		assert.Empty(t, c.EnvFrom)
+		assert.NotContains(t, strings.Join(c.Command, " "), "node-token")
+	}
+	assert.Contains(t, pod.Containers[0].Command, runtimeMigrationCredsPath+"/"+runtimeMigrationCapabilityKey)
+	require.NotNil(t, job.Spec.BackoffLimit)
+	assert.Zero(t, *job.Spec.BackoffLimit, "a retried pod would present the capability its first pod may have spent")
+
+	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, sec.Labels, envoyOwnerLabel)
+	require.Len(t, sec.OwnerReferences, 1)
+	assert.Equal(t, "my-agent", sec.OwnerReferences[0].Name)
+	capability := string(sec.Data[runtimeMigrationCapabilityKey])
+	assert.NotContains(t, capability, "node-token")
+	parts := strings.Split(capability, ".")
+	require.Len(t, parts, 4)
+	expires, err := strconv.ParseInt(parts[2], 10, 64)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now().Add(migrationJobDeadline+seedCapabilitySlack), time.Unix(expires, 0), time.Minute)
+	assert.Equal(t, vmrunner.MintSeedCapability("node-token", "my-agent", parts[1], expires), capability,
+		"the capability is signed for this agent's machine under the runner's token")
+
+	require.NoError(t, r.applySeedCapability(ctx, agent, testOwner))
+	again, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, capability, string(again.Data[runtimeMigrationCapabilityKey]))
 }
 
 func mountPVC(name, path string) *corev1.PersistentVolumeClaim {

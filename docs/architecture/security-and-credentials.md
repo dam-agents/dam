@@ -639,10 +639,10 @@ differ:
   the agent's data drops to the agent's own uid, so a root-squashing
   source share never sees uid 0. The
   [runtime-migration](vm-runner.md#runtime-migration) Job reads the
-  volumes read-only, as root on block ones, with one owner's runner token and CA. The SA has no API roles and no mounted token, so it
+  volumes read-only, as root on block ones, sending them with a one-use seed capability. The SA has no API roles and no mounted token, so it
   cannot act against the API; it exists only to scope
   OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH)
-  for it alone. Neither pod joins the mesh.
+  for it. Neither pod joins the mesh.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the
   default pull secrets it preloads with
   ([persistence](vm-image-cache.md)).

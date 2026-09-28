@@ -14,6 +14,7 @@ use crate::api::{
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
+use crate::capability::Verified;
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::fetch::{failure_reason, seed_missing, unusable};
@@ -601,12 +602,16 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: takes the right to write a machine's seed. Only a machine that exists and is stopped with nothing in flight is seeded, because the seed is read by the guest's first boot and a machine that is booting could read it half-written. The claim is held until the returned upload is committed or dropped, and no worker starts meanwhile. The machine's disk size bounds the seed: a home larger than the disk it is restored onto could never fit there.
-    pub fn claim_seed(self: &Arc<Self>, id: &str) -> Result<Seeding, Rejected> {
+    // UNIT_BOUNDARY_DESCRIPTION: takes the right to write a machine's seed. Only a machine that exists and is stopped with nothing in flight is seeded, because the seed is read by the guest's first boot and a machine that is booting could read it half-written. The claim is held until the returned upload is committed or dropped, and no worker starts meanwhile. The machine's disk size bounds the seed: a home larger than the disk it is restored onto could never fit there. An upload let in by a seed capability rather than the token is held to more, checked under the same claim: see `capability_may_seed`.
+    pub fn claim_seed(
+        self: &Arc<Self>,
+        id: &str,
+        capability: Option<Verified>,
+    ) -> Result<Seeding, Rejected> {
         check_id(id)?;
         let spec = read_spec(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::not_found(format!("machine {id} does not exist")))?;
-        {
+        let desired = {
             let mut machines = locked(&self.machines);
             let closed = machines.closed;
             let entry = machines.entries.entry(id.to_string()).or_default();
@@ -616,12 +621,14 @@ impl Server {
                 )));
             }
             entry.seeding = true;
-        }
+            entry.desired.clone()
+        };
         let mut seeding = Seeding {
             server: self.clone(),
             id: id.to_string(),
             limit: u64::try_from(spec.storage_gib).unwrap_or(0) << 30,
             file: None,
+            capability: None,
         };
         match self.runtime.state(id) {
             Ok(State::Stopped) => {}
@@ -632,9 +639,24 @@ impl Server {
             }
             Err(e) => return Err(Rejected::internal(format!("{e:#}"))),
         }
-        let share = state::require_machine_dir(&self.config.state_dir, id)
-            .map_err(|e| Rejected::bad_request(e.to_string()))?
-            .join(SHARE_DIR);
+        let dir = state::require_machine_dir(&self.config.state_dir, id)
+            .map_err(|e| Rejected::bad_request(e.to_string()))?;
+        let share = dir.join(SHARE_DIR);
+        if let Some(verified) = capability {
+            let latest = desired.as_ref().unwrap_or(&spec);
+            if let Err(refused) = capability_may_seed(id, latest, &dir, &verified) {
+                tracing::warn!(
+                    target: "security",
+                    event = "seed.deny",
+                    machine = %id,
+                    capability = %verified.fingerprint,
+                    reason = %refused.message,
+                    "a seed capability was refused"
+                );
+                return Err(refused);
+            }
+            seeding.capability = Some(verified);
+        }
         seeding.file = Some(
             SeedFile::create(&share)
                 .map_err(|e| Rejected::internal(format!("staging the seed: {e}")))?,
@@ -1432,12 +1454,60 @@ impl Server {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted.
+// UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. Its disk must hold no home yet — no guest has answered from it — so a capability never replaces a home. A seed already stored but not yet booted from may be replaced: an attempt can store its seed and still fail, its answer lost, and only the next Job's fresh capability can then finish the copy, since the controller removes a seed only once the guest has booted from it. The controller moves past the copy only after a Job succeeds, and drops the migration mark then, so no capability reaches a seed it has accepted. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.
+fn capability_may_seed(
+    id: &str,
+    latest: &MachineSpec,
+    dir: &std::path::Path,
+    capability: &Verified,
+) -> Result<(), Rejected> {
+    let share = dir.join(SHARE_DIR);
+    if latest.migration.is_none() {
+        return Err(Rejected::conflict(format!(
+            "machine {id} is not being migrated; a seed capability seeds only a machine created for a migration"
+        )));
+    }
+    if share::seeded(&share) {
+        return Err(Rejected::conflict(format!(
+            "machine {id} already holds a home; a seed capability does not replace one"
+        )));
+    }
+    if spent_capabilities(dir).contains(&capability.nonce) {
+        return Err(Rejected::conflict(format!(
+            "this seed capability was already used on machine {id}; each seeds once"
+        )));
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the nonces of the seed capabilities a machine was seeded with, one per line, in its state directory rather than its share, since nothing in the guest has a reason to read them. It goes with the machine on delete.
+pub const SPENT_CAPABILITIES_FILE: &str = "seed-capabilities";
+
+fn spent_capabilities(dir: &std::path::Path) -> Vec<String> {
+    fs::read_to_string(dir.join(SPENT_CAPABILITIES_FILE))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+fn spend_capability(dir: &std::path::Path, nonce: &str) -> std::io::Result<()> {
+    let mut spent = spent_capabilities(dir);
+    spent.push(nonce.to_string());
+    crate::files::write(
+        &dir.join(SPENT_CAPABILITIES_FILE),
+        format!("{}\n", spent.join("\n")).as_bytes(),
+        state::SPEC_MODE,
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted. `capability` is the seed capability that let the upload in, when the token did not.
 pub struct Seeding {
     server: Arc<Server>,
     id: String,
     limit: u64,
     file: Option<SeedFile>,
+    capability: Option<Verified>,
 }
 
 impl Seeding {
@@ -1456,6 +1526,7 @@ impl Seeding {
             .map_err(|e| Rejected::internal(format!("writing the seed: {e}")))
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a capability is spent before the seed is stored, so it never seeds twice even when storing fails; the retry then takes the fresh capability the controller mints for its next Job. Every stored seed goes on the security trail with its size, digest and what let it in, naming a capability only by its fingerprint.
     pub fn commit(mut self) -> Result<SeedResult, Rejected> {
         let file = self
             .file
@@ -1473,6 +1544,10 @@ impl Seeding {
         }
         let dir = state::require_machine_dir(&self.server.config.state_dir, &self.id)
             .map_err(|e| Rejected::bad_request(e.to_string()))?;
+        if let Some(capability) = &self.capability {
+            spend_capability(&dir, &capability.nonce)
+                .map_err(|e| Rejected::internal(format!("recording the seed capability: {e}")))?;
+        }
         share::forget_seed_digest(&dir)
             .map_err(|e| Rejected::internal(format!("replacing the seed's record: {e}")))?;
         let stored = file
@@ -1480,6 +1555,21 @@ impl Seeding {
             .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))?;
         share::record_seed_digest(&dir, &stored)
             .map_err(|e| Rejected::internal(format!("recording the seed: {e:#}")))?;
+        let (authority, fingerprint, expires) = match &self.capability {
+            Some(c) => ("capability", c.fingerprint.as_str(), c.expires),
+            None => ("token", "", 0),
+        };
+        tracing::info!(
+            target: "security",
+            event = "seed.accept",
+            machine = %self.id,
+            bytes = stored.bytes,
+            sha256 = %stored.sha256,
+            authority,
+            capability = fingerprint,
+            expires,
+            "a seed was stored"
+        );
         Ok(stored)
     }
 }

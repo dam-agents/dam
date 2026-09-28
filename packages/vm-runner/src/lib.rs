@@ -2,6 +2,7 @@
 pub mod api;
 mod cache;
 pub mod cacheapi;
+mod capability;
 mod capacity;
 mod command;
 mod console;

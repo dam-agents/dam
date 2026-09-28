@@ -179,7 +179,7 @@ func TestTheCopyJobReachesOnlyItsOwnersRunner(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "the policy goes with the finished copy")
 }
 
-// TEST_SCENARIO: an abort mid-copy removes the copy Job's NetworkPolicy with the rest of what the vm side made, and so does a retry after a failure, which starts over.
+// TEST_SCENARIO: an abort mid-copy removes the copy Job's NetworkPolicy and its seed capability with the rest of what the vm side made, and so does a retry after a failure, which starts over.
 func TestAnAbortOrRetryRemovesTheCopyJobsNetworkPolicy(t *testing.T) {
 	ctx := context.Background()
 	for _, retry := range []bool{false, true} {
@@ -187,6 +187,8 @@ func TestAnAbortOrRetryRemovesTheCopyJobsNetworkPolicy(t *testing.T) {
 		r, _, _ := startCopy(t, agent, blockHome())
 		_, err := r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 		require.NoError(t, err)
+		_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+		require.NoError(t, err, "the Job's seed capability")
 		if retry {
 			require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", "my-agent", func(s *apiv1.AgentStatus) {
 				setRuntimeMigrating(s, apiv1.ReasonRuntimeMigrationFailed, "gave up", 0)
@@ -202,6 +204,8 @@ func TestAnAbortOrRetryRemovesTheCopyJobsNetworkPolicy(t *testing.T) {
 		require.NoError(t, r.Reconcile(ctx, agent))
 		_, err = r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 		assert.True(t, k8serrors.IsNotFound(err), "retry=%v", retry)
+		_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+		assert.True(t, k8serrors.IsNotFound(err), "the seed capability goes with it, retry=%v", retry)
 		want := "RuntimeMigrationAborted"
 		if retry {
 			want = "RuntimeMigrationRetrying"
@@ -243,6 +247,8 @@ func TestCopyJobsAreThrottledPerOwnerAndInTheInstall(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "the install's slots are taken")
 	assert.Contains(t, migrationMessage(t, r, agent), "migrations are copying in this install")
 	assert.Zero(t, reloaded(t, r, agent).Status.RuntimeMigrationAttempts, "a copy waiting for a slot spends no attempt")
+	_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "and mints no seed capability")
 
 	r.config.VM.RuntimeMigration.Concurrency = 3
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))

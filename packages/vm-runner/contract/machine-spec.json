@@ -9,6 +9,7 @@
   "revision": "r1",
   "running": true,
   "pullAuths": ["{\"auths\":{}}"],
+  "migration": {},
   "links": ["/data"],
   "expectSeed": {
     "bytes": 1234,
