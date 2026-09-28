@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -124,6 +125,35 @@ func completeJob(t *testing.T, r *AgentReconciler, condition batchv1.JobConditio
 	require.NoError(t, err)
 }
 
+var testSeed = vmrunner.SeedResult{Bytes: 4096, SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}
+
+func testSeedAnnotation(t *testing.T) string {
+	t.Helper()
+	encoded, err := json.Marshal(testSeed)
+	require.NoError(t, err)
+	return string(encoded)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job finishing as vm-seed does: its pod exits cleanly with the seed the runner stored as its termination message, and the Job completes.
+func completeCopy(t *testing.T, r *AgentReconciler, message string) {
+	t.Helper()
+	ctx := context.Background()
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: job.Name + "-done", Namespace: "test-agents",
+			Labels: map[string]string{batchv1.JobNameLabel: job.Name},
+		},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name:  "seed",
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0, Message: message}},
+		}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	completeJob(t, r, batchv1.JobComplete, time.Now())
+}
+
 func createAll(t *testing.T, r *AgentReconciler, objs ...any) {
 	t.Helper()
 	ctx := context.Background()
@@ -188,18 +218,21 @@ func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOn
 	assert.True(t, pod.Volumes[0].PersistentVolumeClaim.ReadOnly, "the copy never writes to the volume it copies")
 	assert.Equal(t, RoleRuntimeMigration, job.Spec.Template.Labels[LabelRole])
 	assert.Equal(t, testOwner, job.Spec.Template.Labels[envoyOwnerLabel], "the runner admits the Job by its owner, so it reaches no one else's runner")
+	assert.Contains(t, strings.Join(pod.Containers[0].Command, " "), "--result-file /dev/termination-log", "the copy says which seed it stored")
 
-	completeJob(t, r, batchv1.JobComplete, time.Now())
+	completeCopy(t, r, testSeedAnnotation(t))
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
+	assert.JSONEq(t, testSeedAnnotation(t), agent.Annotations[annRuntimeMigrationSeed], "the seed the runner stored is what the boot is held to")
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	assert.True(t, node.spec("my-agent").Running, "the copied machine boots, even if the agent had been asleep")
 	assert.Equal(t, int32(0), agentReplicas(t, r), "the container stays down while the machine holds the home")
+	assert.Equal(t, &testSeed, node.spec("my-agent").ExpectSeed, "the runner is told which seed the home must come from")
 
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
@@ -218,6 +251,8 @@ func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOn
 	assert.Nil(t, migrationCondition(agent), "the migration is over")
 	assert.Zero(t, agent.Status.RuntimeMigrationAttempts)
 	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSource)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSeed)
+	assert.Nil(t, node.spec("my-agent").ExpectSeed, "a machine past its boot expects no seed any more")
 	assert.Equal(t, []string{"my-agent"}, node.seedGone, "the staged seed goes once the Backend has switched")
 	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the container StatefulSet is removed after the switch")
@@ -279,10 +314,9 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 // TEST_SCENARIO: a guest that answers is verified only while the request still stands. An abort that the reconcile did not see yet — the Agent it holds is older than the stored one — wins, and the migration is not marked past its point of no return.
 func TestAVerifiedBootIsNotRecordedOverAnAbort(t *testing.T) {
 	ctx := context.Background()
-	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, time.Now())
-	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent := bootingAgentCR(t)
 	r, node, _ := setupVMReconciler(t, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
 	editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration))
 
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -554,6 +588,7 @@ func TestEachPhaseSaysWhichSideRuns(t *testing.T) {
 		agent := migratingAgentIn(tc.phase, time.Now())
 		if tc.source {
 			agent.Annotations[annRuntimeMigrationSource] = "home"
+			agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
 		}
 		m := runtimeMigrationOf(agent.Annotations, agent.Status)
 		assert.Equal(t, tc.holdsDown, m.holdsDown(), "%s (source %v) holds the agent down", tc.phase, tc.source)
@@ -619,10 +654,10 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{"home": "home-agent-my-agent-0", "extra-0": "data-my-agent-0", "extra-1": "home-agent-cache-my-agent-0"}, claims)
 
-	completeJob(t, r, batchv1.JobComplete, time.Now())
+	completeCopy(t, r, testSeedAnnotation(t))
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
@@ -646,6 +681,133 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		require.NoError(t, err, name)
 		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
 	}
+}
+
+// TEST_SCENARIO: a boot is held to the seed the copy stored, so a booting migration with no readable record of that seed — one that entered booting before the seed was recorded, or a record edited into something else — is not let run: a machine booted without the expectation could seed its home from the image.
+func TestABootWithNoRecordedSeedIsHeldDown(t *testing.T) {
+	for _, recorded := range []string{"", "not json", `{"bytes":0,"sha256":""}`, `{"bytes":4,"sha256":"ABC"}`} {
+		agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, time.Now())
+		if recorded != "" {
+			agent.Annotations[annRuntimeMigrationSeed] = recorded
+		}
+		m := runtimeMigrationOf(agent.Annotations, agent.Status)
+		assert.True(t, m.holdsDown(), "seed %q", recorded)
+		assert.False(t, m.machineMayRun(), "seed %q", recorded)
+		assert.Nil(t, runtimeMigrationExpectSeed(agent), "seed %q", recorded)
+	}
+	agent := bootingAgentCR(t)
+	assert.Equal(t, &testSeed, runtimeMigrationExpectSeed(agent), "a recorded seed is expected while booting")
+	verified := migratingAgentIn(apiv1.ReasonRuntimeMigrationVerified, time.Now())
+	verified.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
+	assert.Nil(t, runtimeMigrationExpectSeed(verified), "a verified machine is past the boot the seed was for")
+}
+
+func bootingAgentCR(t *testing.T) *apiv1.Agent {
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
+	agent.Status.RuntimeMigrationAttempts = 1
+	return agent
+}
+
+// TEST_SCENARIO: the seed can go missing between the copy and the boot — a lost runner claim, a crash, an operator — and the runner then refuses to start the machine rather than boot the image's home. The controller does not wait on a boot that cannot succeed: it deletes the machine and goes back to copying, which is safe because the old volume keeps its labels until the switch, and it says why.
+func TestABootWhoseSeedTheRunnerLostCopiesTheHomeAgain(t *testing.T) {
+	ctx := context.Background()
+	agent := bootingAgentCR(t)
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000, Reason: vmrunner.ReasonSeedMissing, Message: "the runner holds no seed for it"})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	assert.Contains(t, c.Message, "the runner holds no seed for it")
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSeed)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "the machine is made again, so the new copy lands on a fresh disk")
+	assert.Empty(t, node.seedGone)
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", pvc.Labels[LabelAgent], "the old volume is not retained, so the next copy still finds it")
+}
+
+// TEST_SCENARIO: a guest that answers proves only that it booted, not that its home is the copy. When the runner does not report the expected seed as the one the home came from — the image's home, or another seed — the migration is not verified, so the Backend is never switched and nothing is retained; the home is copied again onto a fresh machine.
+func TestAGuestWhoseHomeIsNotTheCopyIsNotVerified(t *testing.T) {
+	for _, from := range []string{"", strings.Repeat("0", 64)} {
+		ctx := context.Background()
+		agent := bootingAgentCR(t)
+		r, node, _ := setupVMReconciler(t, agent)
+		createAll(t, r, homePVC("home-agent-my-agent-0"))
+		node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: from})
+
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+		c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+		assert.Contains(t, c.Message, testSeed.SHA256, "from %q", from)
+		assert.False(t, agent.Spec.IsVM())
+		assert.Equal(t, "home-agent-my-agent-0", agent.Annotations[annRuntimeMigrationSource], "the migration keeps what it copies from")
+		assert.Empty(t, node.seedGone, "the seed is not deleted by a boot that did not use it")
+		assert.Equal(t, []string{"my-agent"}, node.deleted)
+		pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.NotContains(t, pvc.Labels, LabelRetainedFor)
+	}
+}
+
+// TEST_SCENARIO: a boot that keeps failing the seed match counts against the migration's attempts like a failing copy, so it ends Failed rather than copying again forever.
+func TestABootThatKeepsMissingTheSeedFails(t *testing.T) {
+	ctx := context.Background()
+	agent := bootingAgentCR(t)
+	agent.Status.RuntimeMigrationAttempts = runtimeMigrationMaxAttempts
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Contains(t, c.Message, "not from the copy")
+}
+
+// TEST_SCENARIO: a copy Job that completed without saying which seed it stored — its pod already gone, or a message that is not a seed — gives the boot nothing to be held to. The home is copied again rather than booted unchecked.
+func TestACopyThatDoesNotSayWhichSeedItStoredIsMadeAgain(t *testing.T) {
+	for _, message := range []string{"", "not a seed", `{"bytes":0,"sha256":""}`} {
+		ctx := context.Background()
+		agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+		agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+		r, node, _ := setupVMReconciler(t, agent)
+		node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+		if message == "" {
+			completeJob(t, r, batchv1.JobComplete, time.Now())
+		} else {
+			completeCopy(t, r, message)
+		}
+
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+		c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+		assert.Contains(t, c.Message, "copying it again", "message %q", message)
+		assert.NotContains(t, agent.Annotations, annRuntimeMigrationSeed)
+		_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+		assert.True(t, k8serrors.IsNotFound(err), "the copy is made again")
+		assert.False(t, node.spec("my-agent").Running)
+	}
+}
+
+// TEST_SCENARIO: an abort drops the record of the seed with the rest of the migration, so a later request never holds a boot to a copy from before.
+func TestAnAbortClearsTheRecordedSeed(t *testing.T) {
+	ctx := context.Background()
+	agent := bootingAgentCR(t)
+	r, _, _ := setupVMReconciler(t, agent)
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Nil(t, migrationCondition(agent))
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSeed)
 }
 
 // TEST_SCENARIO: the owner's runner admits its own migration Jobs to the machine API and nothing else new: not the published agent ports, and not a Job of another owner.

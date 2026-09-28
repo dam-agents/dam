@@ -18,6 +18,10 @@ libc = "0.2"
 # already in the lock by way of the runner; without its default xattr feature
 # it adds nothing beyond libc and filetime, and this binary restores no xattrs.
 tar = { version = "0.4", default-features = false }
+# Hashes the seed as it is unpacked, so the home is restored only from the seed
+# the runner was told to expect. Pure Rust, and already in the lock by way of
+# the runner.
+sha2 = "0.10"
 
 [dev-dependencies]
 # Reads the contract fixtures the controller's tests read too. Already in the

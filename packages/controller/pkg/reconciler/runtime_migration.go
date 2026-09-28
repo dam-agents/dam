@@ -36,6 +36,7 @@ const (
 	annRuntimeMigrationSource   = "agent-platform.ai/runtime-migration-source"
 	annRuntimeMigrationMounts   = "agent-platform.ai/runtime-migration-mounts"
 	annRuntimeMigrationGrafts   = "agent-platform.ai/runtime-migration-grafts"
+	annRuntimeMigrationSeed     = "agent-platform.ai/runtime-migration-seed"
 
 	runtimeMigrationRequested = "requested"
 	runtimeMigrationCopying   = "copying"
@@ -64,6 +65,7 @@ type runtimeMigration struct {
 	since     time.Time
 	attempts  int32
 	source    bool
+	seeded    bool
 	retry     time.Time
 }
 
@@ -72,6 +74,9 @@ func runtimeMigrationOf(annotations map[string]string, status apiv1.AgentStatus)
 		requested: annotations[annRuntimeMigration] != "",
 		source:    annotations[annRuntimeMigrationSource] != "",
 		attempts:  status.RuntimeMigrationAttempts,
+	}
+	if _, err := runtimeMigrationSeed(annotations); err == nil {
+		m.seeded = true
 	}
 	if t, err := time.Parse(time.RFC3339, annotations[annRuntimeMigrationRetry]); err == nil {
 		m.retry = t
@@ -105,11 +110,13 @@ func runtimeMigrationOfObject(u *unstructured.Unstructured) runtimeMigration {
 
 func (m runtimeMigration) active() bool { return m.requested || m.phase != "" }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A migration that failed after the container was stopped keeps it stopped until the user retries or aborts; one that failed in preflight never stopped it.
+// UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until the user retries or aborts; one that failed in preflight never stopped it.
 func (m runtimeMigration) holdsDown() bool {
 	switch m.phase {
 	case apiv1.ReasonRuntimeMigrationStopping, apiv1.ReasonRuntimeMigrationCopying:
 		return true
+	case apiv1.ReasonRuntimeMigrationBooting:
+		return !m.seeded
 	case apiv1.ReasonRuntimeMigrationFailed:
 		return m.source
 	}
@@ -126,6 +133,9 @@ func (m runtimeMigration) containerDown() bool {
 }
 
 func (m runtimeMigration) machineMayRun() bool {
+	if m.phase == apiv1.ReasonRuntimeMigrationBooting && !m.seeded {
+		return false
+	}
 	return !m.active() || m.vmSideRuns()
 }
 
@@ -174,6 +184,38 @@ func vmSideOf(agent *apiv1.Agent) *apiv1.Agent {
 		return nil
 	}
 	return target
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed a booting migration expects the machine's home to come from, as vm-seed verified the runner's answer to its upload. It is recorded when the copy Job completes and sent to the runner in the machine's spec for as long as the migration boots.
+func runtimeMigrationSeed(annotations map[string]string) (vmrunner.SeedResult, error) {
+	var seed vmrunner.SeedResult
+	raw := annotations[annRuntimeMigrationSeed]
+	if raw == "" {
+		return seed, errors.New("the seed the machine must boot from was not recorded")
+	}
+	if err := json.Unmarshal([]byte(raw), &seed); err != nil {
+		return seed, fmt.Errorf("the recorded seed is not readable: %w", err)
+	}
+	return seed, validSeed(seed)
+}
+
+func validSeed(seed vmrunner.SeedResult) error {
+	if seed.Bytes == 0 || len(seed.SHA256) != 64 || strings.Trim(seed.SHA256, "0123456789abcdef") != "" {
+		return fmt.Errorf("%d bytes with SHA-256 %q is not a seed", seed.Bytes, seed.SHA256)
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the machine's spec says about the seed: the one a booting migration expects, and nothing otherwise, so a machine whose migration was verified or ended boots whatever home its disk holds.
+func runtimeMigrationExpectSeed(agent *apiv1.Agent) *vmrunner.SeedResult {
+	if runtimeMigrationOf(agent.Annotations, agent.Status).phase != apiv1.ReasonRuntimeMigrationBooting {
+		return nil
+	}
+	seed, err := runtimeMigrationSeed(agent.Annotations)
+	if err != nil {
+		return nil
+	}
+	return &seed
 }
 
 func runtimeMigrationJobName(agentName string) string {
@@ -398,6 +440,7 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
 		annRuntimeMigrationSource:  nil,
 		annRuntimeMigrationGrafts:  nil,
+		annRuntimeMigrationSeed:    nil,
 		annRuntimeMigrationMessage: nil,
 	}); err != nil {
 		return err
@@ -415,9 +458,9 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what counts as the machine having booted from the copy: its guest answered. It is the point past which the migration cannot be aborted, so it lives in one place; once the guest reports which seed its home came from, matching that report against this migration's seed belongs here.
-func runtimeMigrationBootVerified(machine vmrunner.MachineStatus) bool {
-	return machine.Ready
+// UNIT_BOUNDARY_DESCRIPTION: what counts as the machine having booted from the copy: its guest answered, and the runner reports that its home was restored from exactly the seed this migration recorded. It is the point past which the migration cannot be aborted, so it lives in one place.
+func runtimeMigrationBootVerified(machine vmrunner.MachineStatus, expected vmrunner.SeedResult) bool {
+	return machine.Ready && machine.HomeSeededFrom == expected.SHA256
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: `Verified` is written only while the request still stands, in the same compare-and-swap as the status update: an abort that lands between the read and the write makes the write conflict, and the retry sees the request gone. The api-server's abort checks for `Verified` the same way, so exactly one of the two wins.
@@ -425,7 +468,21 @@ func (r *AgentReconciler) bootRuntimeMigration(ctx context.Context, agent *apiv1
 	if !runnerReached {
 		return nil
 	}
-	if runtimeMigrationBootVerified(machine) {
+	expected, err := runtimeMigrationSeed(agent.Annotations)
+	if err != nil {
+		return r.copyRuntimeMigrationAgain(ctx, agent, m, err.Error())
+	}
+	if machine.Reason == vmrunner.ReasonSeedMissing {
+		return r.copyRuntimeMigrationAgain(ctx, agent, m, "the runner does not hold the copied home: "+machine.Message)
+	}
+	if machine.Ready && !runtimeMigrationBootVerified(machine, expected) {
+		from := "the image"
+		if machine.HomeSeededFrom != "" {
+			from = "seed " + machine.HomeSeededFrom
+		}
+		return r.copyRuntimeMigrationAgain(ctx, agent, m, fmt.Sprintf("the new machine answered with a home from %s, not from the copy (seed %s)", from, expected.SHA256))
+	}
+	if runtimeMigrationBootVerified(machine, expected) {
 		applied, err := updateAgentStatusWhile(ctx, r.dynamic, r.config.Namespace, agent.Name,
 			func(u *unstructured.Unstructured) bool { return u.GetAnnotations()[annRuntimeMigration] != "" },
 			func(s *apiv1.AgentStatus) {
@@ -614,15 +671,30 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 	if err != nil {
 		return err
 	}
+	if job.DeletionTimestamp != nil {
+		return nil
+	}
 	prop := metav1.DeletePropagationBackground
 	switch {
 	case jobConditionTrue(job, batchv1.JobComplete):
+		seed, why, err := r.copyJobSeed(ctx, job)
+		if err != nil {
+			return err
+		}
 		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("deleting the home copy job: %w", err)
 		}
-		slog.Info("runtime migration: home copied, booting the machine", "agent", name)
+		if why != "" {
+			return r.noteRuntimeMigration(ctx, agent, m, fmt.Errorf("the home was copied, but %s; copying it again", why))
+		}
+		encoded, err := json.Marshal(seed)
+		if err != nil {
+			return err
+		}
+		slog.Info("runtime migration: home copied, booting the machine", "agent", name, "seedBytes", seed.Bytes, "seedSHA256", seed.SHA256)
 		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
-			annLastActivity: new(time.Now().UTC().Format(time.RFC3339)),
+			annRuntimeMigrationSeed: new(string(encoded)),
+			annLastActivity:         new(time.Now().UTC().Format(time.RFC3339)),
 		}); err != nil {
 			return err
 		}
@@ -688,6 +760,47 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 
 const copyFailureMax = 300
 
+// UNIT_BOUNDARY_DESCRIPTION: the seed a completed copy Job stored on the runner, as vm-seed wrote it to its termination message once the runner's answer matched what it sent. The pod that succeeded is the one to read. When none is left, or its message is not a seed, the reason says so and the home is copied again, because a boot that is not held to a known seed is exactly the hole the seed contract closes.
+func (r *AgentReconciler) copyJobSeed(ctx context.Context, job *batchv1.Job) (vmrunner.SeedResult, string, error) {
+	var seed vmrunner.SeedResult
+	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
+	if err != nil {
+		return seed, "", fmt.Errorf("listing the home copy job's pods: %w", err)
+	}
+	for i := range pods.Items {
+		for _, cs := range pods.Items[i].Status.ContainerStatuses {
+			t := cs.State.Terminated
+			if t == nil || t.ExitCode != 0 {
+				continue
+			}
+			if err := json.Unmarshal([]byte(t.Message), &seed); err != nil {
+				return seed, fmt.Sprintf("the copy's result is not a seed (%v)", err), nil
+			}
+			if err := validSeed(seed); err != nil {
+				return seed, "the copy's result " + err.Error(), nil
+			}
+			return seed, "", nil
+		}
+	}
+	return seed, "no pod of the copy is left to say which seed it stored", nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a boot that cannot prove it came from the copy — the seed was not recorded, the runner lost it, or the guest answered with a home from anything else — is not a verified migration. The old volumes still carry their labels, since only the switch releases them, so going back to `Copying` is safe. The machine is deleted first, so the new copy lands on a fresh disk that platform-init restores instead of keeping the home already there; the next reconcile creates the machine stopped again. The new copy is one more attempt, so a boot that keeps failing the match ends the migration as Failed like a copy that keeps failing.
+func (r *AgentReconciler) copyRuntimeMigrationAgain(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, why string) error {
+	name := agent.Name
+	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
+		return fmt.Errorf("deleting the machine to copy its home again: %w", err)
+	}
+	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
+		annRuntimeMigrationSeed: nil,
+	}); err != nil {
+		return err
+	}
+	msg := why + "; copying the home again"
+	slog.Warn("runtime migration: the boot is not proven to come from the copy", "agent", name, "reason", msg)
+	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationCopying, msg)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: runs once the Backend has switched: the seed is removed, each volume the copy was read from is retained for its window, and the migration's records and condition go. Until the switch those volumes kept their labels, so an abort could still resume the container on them.
 func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
@@ -721,6 +834,7 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		annRuntimeMigrationSource:   nil,
 		annRuntimeMigrationMounts:   nil,
 		annRuntimeMigrationGrafts:   nil,
+		annRuntimeMigrationSeed:     nil,
 	}); err != nil {
 		return err
 	}
@@ -757,6 +871,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		"--url", url,
 		"--token-file", runtimeMigrationCredsPath + "/token",
 		"--ca-file", runtimeMigrationCredsPath + "/ca.crt",
+		"--result-file", corev1.TerminationMessagePathDefault,
 		"--map-owner", runtimeMigrationOwnerMap(cfg),
 	}
 	mounts := []corev1.VolumeMount{
