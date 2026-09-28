@@ -125,6 +125,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
+      agentDefaultStorageSize: config.agentDefaultStorageSize,
+      agentDefaultMounts: config.agentDefaultMounts,
       virtualizationEnabled: config.virtualizationEnabled,
       resizeGate,
       owner: user.sub,

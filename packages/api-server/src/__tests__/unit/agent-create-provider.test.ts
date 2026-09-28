@@ -91,6 +91,7 @@ function setup(rows: Connection[] = [provider]) {
     }),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
+    agentDefaultMounts: [],
     agentIdleTimeoutMinutes: 30,
     cleanupHooks: [],
     readTemplateSpec: async () => null,
