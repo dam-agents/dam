@@ -1374,19 +1374,14 @@ export async function bootstrap() {
     db,
     listPinnedAgentIds: () =>
       agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
-    pin: {
-      set: (agentId) =>
-        agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "true"),
-      release: async (agentId) => {
-        await agentsRepo.patchAnnotation(
-          agentId,
-          LAST_ACTIVITY_KEY,
-          new Date().toISOString(),
-        );
-        await agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "");
-      },
+    release: async (agentId) => {
+      await agentsRepo.patchAnnotation(
+        agentId,
+        LAST_ACTIVITY_KEY,
+        new Date().toISOString(),
+      );
+      await agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "");
     },
-    log: (msg) => process.stderr.write(`${msg}\n`),
   });
   await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
     invocationPinReconciler.tick(),

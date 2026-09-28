@@ -40,7 +40,6 @@ export interface InvocationsRepository {
   listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
   listRunning(limit: number): Promise<InvocationRow[]>;
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
-  listRunningDriverIds(): Promise<string[]>;
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
   listByExperiment(
@@ -158,14 +157,6 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           ),
         );
       return rows.map(toRow);
-    },
-
-    async listRunningDriverIds() {
-      const rows = await db
-        .selectDistinct({ driverAgentId: invocationsTable.driverAgentId })
-        .from(invocationsTable)
-        .where(eq(invocationsTable.status, "running"));
-      return rows.map((r) => r.driverAgentId);
     },
 
     async listRunningAgentIds(olderThan) {

@@ -218,9 +218,9 @@ export function createInvocationsService(deps: {
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
       });
-      await deps.pinDriver?.(input.driverAgentId);
       let agent;
       try {
+        await deps.pinDriver?.(input.driverAgentId);
         agent = await deps.agents.create({
           id: targetId,
           name: invocationTargetName(

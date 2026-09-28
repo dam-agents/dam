@@ -23,7 +23,6 @@ import { createDriverCascade } from "./services/driver-cascade.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import {
   createInvocationPinReconciler,
-  type DriverPin,
   type InvocationPinReconciler,
 } from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
@@ -109,15 +108,14 @@ export function createInvocationSetupFailure(opts: {
 export function composeInvocationPinReconciler(opts: {
   db: Db;
   listPinnedAgentIds: () => Promise<string[]>;
-  pin: DriverPin;
-  log?: (msg: string) => void;
+  release: (driverAgentId: string) => Promise<void>;
 }): InvocationPinReconciler {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationPinReconciler({
-    listRunningDriverIds: () => repo.listRunningDriverIds(),
     listPinnedAgentIds: opts.listPinnedAgentIds,
-    pin: opts.pin,
-    ...(opts.log ? { log: opts.log } : {}),
+    hasRunningInvocation: async (driverAgentId) =>
+      (await repo.listRunningByDriver(driverAgentId)).length > 0,
+    release: opts.release,
   });
 }
 

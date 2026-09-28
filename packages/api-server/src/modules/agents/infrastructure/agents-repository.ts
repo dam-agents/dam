@@ -4,6 +4,7 @@ import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
+  INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
@@ -245,6 +246,7 @@ export function createAgentsRepository(
           annotations: {
             [STOP_REQUESTED_KEY]: new Date().toISOString(),
             [ACTIVE_SESSION_KEY]: "",
+            [INVOCATIONS_ACTIVE_KEY]: "",
           },
         },
       });
@@ -261,6 +263,7 @@ export function createAgentsRepository(
           annotations: {
             [STOP_REQUESTED_KEY]: pauseStamp,
             [ACTIVE_SESSION_KEY]: "",
+            [INVOCATIONS_ACTIVE_KEY]: "",
             [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
           },
         },

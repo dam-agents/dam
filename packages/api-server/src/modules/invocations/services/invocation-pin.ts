@@ -1,55 +1,31 @@
-export interface DriverPin {
-  set(driverAgentId: string): Promise<void>;
-  release(driverAgentId: string): Promise<void>;
-}
+import { getLogger } from "../../../core/logger.js";
 
 export interface InvocationPinReconciler {
-  tick(): Promise<{ set: number; released: number }>;
+  tick(): Promise<{ released: number }>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an Invocation can end on many paths (result, failed setup, deadline, restart, cascade), so the Invocation Pin is kept level-based rather than released by each of them: every tick pins exactly the Drivers that have a running Invocation, and releases the rest.
+// UNIT_BOUNDARY_DESCRIPTION: an Invocation can end on many paths (result, failed setup, deadline, restart, cascade), so no path releases the Invocation Pin itself: every tick releases the pin of each Driver that no longer has a running Invocation. Only a spawn sets a pin, so a pause or stop that cleared one is never overridden here.
 export function createInvocationPinReconciler(deps: {
-  listRunningDriverIds: () => Promise<string[]>;
   listPinnedAgentIds: () => Promise<string[]>;
-  pin: DriverPin;
-  log?: (msg: string) => void;
+  hasRunningInvocation: (driverAgentId: string) => Promise<boolean>;
+  release: (driverAgentId: string) => Promise<void>;
 }): InvocationPinReconciler {
   return {
     async tick() {
-      const [running, pinned] = await Promise.all([
-        deps.listRunningDriverIds(),
-        deps.listPinnedAgentIds(),
-      ]);
-      const runningSet = new Set(running);
-      const pinnedSet = new Set(pinned);
-      let set = 0;
       let released = 0;
-      for (const id of running) {
-        if (pinnedSet.has(id)) continue;
-        if (await attempt("set", id, () => deps.pin.set(id))) set++;
-      }
-      for (const id of pinned) {
-        if (runningSet.has(id)) continue;
-        if (await attempt("release", id, () => deps.pin.release(id)))
+      for (const id of await deps.listPinnedAgentIds()) {
+        try {
+          if (await deps.hasRunningInvocation(id)) continue;
+          await deps.release(id);
           released++;
+        } catch (err) {
+          getLogger().warn(
+            { err, agentId: id },
+            "invocation pin: release failed",
+          );
+        }
       }
-      return { set, released };
+      return { released };
     },
   };
-
-  async function attempt(
-    verb: string,
-    id: string,
-    run: () => Promise<void>,
-  ): Promise<boolean> {
-    try {
-      await run();
-      return true;
-    } catch (err) {
-      deps.log?.(
-        `[invocation-pin] ${verb} ${id} failed: ${err instanceof Error ? err.message : err}`,
-      );
-      return false;
-    }
-  }
 }

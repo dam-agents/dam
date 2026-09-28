@@ -356,6 +356,17 @@ describe("ensureReady", () => {
   });
 });
 
+const PIN_KEY = "agent-platform.ai/invocations-active";
+
+describe("requestStop", () => {
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestStop("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
+  });
+});
+
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
@@ -370,6 +381,14 @@ describe("requestPause settle", () => {
     };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(ann()[STOP_KEY]).toBe("");
+  });
+
+  // TEST_SCENARIO: a pause must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the pause settles.
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestPause("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {
