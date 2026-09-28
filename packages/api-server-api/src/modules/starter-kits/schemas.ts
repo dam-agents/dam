@@ -8,7 +8,11 @@ import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
-import { egressPresetSchema } from "../egress-rules/schemas.js";
+import {
+  egressPresetSchema,
+  egressRuleCreateInputSchema,
+  ruleVerdictSchema,
+} from "../egress-rules/schemas.js";
 import { precheckSchema, quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
@@ -93,6 +97,10 @@ export const starterKitImageSchema = z.object({
   providers: providerListSchema.optional(),
 });
 
+export const starterKitEgressRuleSchema = egressRuleCreateInputSchema
+  .omit({ agentId: true })
+  .extend({ verdict: ruleVerdictSchema.default("allow") });
+
 export const starterKitKnowledgeBaseSchema = z.object({
   shareRoots: z.array(z.string().min(1)).min(1).max(20),
 });
@@ -123,6 +131,7 @@ export const starterKitSchema = z.object({
   image: starterKitImageSchema.optional(),
   backend: z.literal("vm").optional(),
   egressPreset: egressPresetSchema.optional(),
+  egressRules: z.array(starterKitEgressRuleSchema).max(50).default([]),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
   install: starterKitInstallSchema.optional(),

@@ -119,6 +119,7 @@ function makeHarness(
     toggled: [] as string[],
     slack: [] as { agentId: string; channel: string; ambient?: boolean }[],
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
+    egressRules: [] as { agentId: string; hosts: string[] }[],
   };
   let nextScheduleId = 0;
   const seeded: { id: string; name: string; enabled: boolean }[] = [];
@@ -217,6 +218,11 @@ function makeHarness(
     },
     markAgentOnboarded: async (id, at) => {
       calls.onboarded.push({ id, at });
+    },
+    egressRules: {
+      async seed(agentId, rules) {
+        calls.egressRules.push({ agentId, hosts: rules.map((r) => r.host) });
+      },
     },
     runtimeMutator: {
       async bump(agentId, events) {
@@ -652,6 +658,7 @@ describe("starter kits: apply", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -766,6 +773,7 @@ describe("starter kits: apply", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -863,6 +871,7 @@ describe("starter kits: onboarding turn", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
       runtimeMutator: {
         bump: async () => {
           throw new Error("outbox down");
@@ -1079,6 +1088,27 @@ describe("starter kits: egress preset", () => {
     const plain = makeHarness(LOADED);
     await plain.service.apply(APPLY);
     expect(plain.calls.created[0]).not.toHaveProperty("egressPreset");
+  });
+
+  // TEST_SCENARIO: the kit's own egress rules land on the agent it just created, so the first session already runs under them.
+  it("seeds the kit's egress rules onto the new agent", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({
+        egressRules: [
+          {
+            host: "api.example.com",
+            method: "*",
+            pathPattern: "*",
+            verdict: "allow",
+          },
+        ],
+      }),
+    });
+    await service.apply(APPLY);
+    expect(calls.egressRules).toEqual([
+      { agentId: "agent-1", hosts: ["api.example.com"] },
+    ]);
   });
 });
 

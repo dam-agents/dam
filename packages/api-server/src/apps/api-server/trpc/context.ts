@@ -39,6 +39,7 @@ import {
   createAgentL7HostsPort,
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
+  createKitRulesSeederAdapter,
 } from "../../../modules/egress-rules/compose.js";
 import {
   findAgentByConversation,
@@ -222,6 +223,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templatesRepo,
       runtimeProgress: contributionsProgress,
     });
+    const l7Hosts = createAgentL7HostsPort(k8sClient);
     const { starterKits } = composeStarterKitsForOwner({
       owner: user.sub,
       repo: starterKitsRepo,
@@ -235,11 +237,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+      egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       virtualizationEnabled: config.virtualizationEnabled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
-    const l7Hosts = createAgentL7HostsPort(k8sClient);
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,

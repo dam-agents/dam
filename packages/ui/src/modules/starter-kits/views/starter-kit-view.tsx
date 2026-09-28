@@ -1,6 +1,7 @@
 import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
+  formatEgressRuleInline,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
@@ -423,6 +424,17 @@ function KitDetail({
               title={EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
               detail={EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]}
             />
+            {kit.egressRules.map((rule) => (
+              <Row
+                key={formatEgressRuleInline(rule)}
+                title={formatEgressRuleInline(rule)}
+                trailing={
+                  <Badge variant="muted" size="sm">
+                    added by the kit
+                  </Badge>
+                }
+              />
+            ))}
           </Section>
 
           {size && (

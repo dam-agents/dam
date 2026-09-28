@@ -6,6 +6,7 @@ import type {
   resolvedSkillSchema,
   starterKitCatalogEntrySchema,
   starterKitConnectionRequirementSchema,
+  starterKitEgressRuleSchema,
   onboardingStepSchema,
   starterKitResourcesSchema,
   starterKitScheduleOverrideSchema,
@@ -22,6 +23,7 @@ export type StarterKitScheduleOverride = z.infer<
   typeof starterKitScheduleOverrideSchema
 >;
 export type OnboardingStep = z.infer<typeof onboardingStepSchema>;
+export type StarterKitEgressRule = z.infer<typeof starterKitEgressRuleSchema>;
 export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 

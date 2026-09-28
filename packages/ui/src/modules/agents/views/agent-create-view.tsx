@@ -1,5 +1,5 @@
 import { Close, Gift } from "@carbon/icons-react";
-import type { StarterKitView } from "api-server-api";
+import { formatEgressRuleInline, type StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -560,6 +560,20 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               {EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]} You can change it in
               the agent&apos;s network settings once it is created.
             </div>
+            {kit.egressRules.length > 0 && (
+              <div className="mt-2 text-xs">
+                <div className="text-muted-foreground">
+                  The kit also adds these rules:
+                </div>
+                <ul className="mt-1 flex flex-col gap-0.5 font-mono">
+                  {kit.egressRules.map((rule) => (
+                    <li key={formatEgressRuleInline(rule)}>
+                      {formatEgressRuleInline(rule)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Callout>
         </section>
       )}

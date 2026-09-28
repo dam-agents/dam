@@ -135,6 +135,7 @@ export type {
   StarterKitApplyResult,
   StarterKitCatalogEntry,
   StarterKitConnectionRequirement,
+  StarterKitEgressRule,
   OnboardingStep,
   StarterKitResources,
   StarterKitSchedule,

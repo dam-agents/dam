@@ -6,6 +6,7 @@ import {
   type CreateEgressRulesServiceDeps,
 } from "./services/egress-rules-service.js";
 import { createPresetSeeder } from "./services/preset-seeder.js";
+import { createKitRulesSeeder } from "./services/kit-rules-seeder.js";
 import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
@@ -46,6 +47,13 @@ export function createEgressRuleWriterAdapter(
   l7Hosts: AgentL7HostsPort,
 ) {
   return createEgressRuleWriter({
+    repo: createEgressRulesRepository(db),
+    l7Hosts,
+  });
+}
+
+export function createKitRulesSeederAdapter(db: Db, l7Hosts: AgentL7HostsPort) {
+  return createKitRulesSeeder({
     repo: createEgressRulesRepository(db),
     l7Hosts,
   });
