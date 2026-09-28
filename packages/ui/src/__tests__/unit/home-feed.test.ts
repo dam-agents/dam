@@ -103,14 +103,10 @@ describe("the activity filters", () => {
     unread("slack", "2026-08-19T08:00:00Z", SessionType.ChannelSlack),
   ];
 
-  const agents = [{ id: "a-1", channels: [] }] as unknown as Parameters<
-    typeof channelTypeFor
-  >[1];
-
   // TEST_SCENARIO: an item is filed by how it arrived — a schedule fire, a Slack thread, or a plain chat — because that is what a user filters on.
   it("files each item under the channel it arrived through", () => {
     const byId = Object.fromEntries(
-      items.map((item) => [item.id, channelTypeFor(item, agents)]),
+      items.map((item) => [item.id, channelTypeFor(item)]),
     );
     expect(byId["sched"]).toBe("schedule");
     expect(byId["slack"]).toBe("slack");
@@ -122,35 +118,31 @@ describe("the activity filters", () => {
   it("keeps only the checked channel types", () => {
     const base = defaultActivityFilters();
     expect(isFiltered(base)).toBe(false);
-    expect(applyActivityFilters(items, base, agents)).toHaveLength(
-      items.length,
-    );
+    expect(applyActivityFilters(items, base)).toHaveLength(items.length);
 
     const onlySchedule = {
       ...base,
       channelTypes: new Set(["schedule" as const]),
     };
     expect(isFiltered(onlySchedule)).toBe(true);
-    expect(
-      applyActivityFilters(items, onlySchedule, agents).map((i) => i.id),
-    ).toEqual(["sched"]);
+    expect(applyActivityFilters(items, onlySchedule).map((i) => i.id)).toEqual([
+      "sched",
+    ]);
   });
 
   // TEST_SCENARIO: the state filter is separate from the type filter, so "in progress" means running whatever channel it came from.
   it("narrows by state independently of type", () => {
     const base = defaultActivityFilters();
-    const running = applyActivityFilters(
-      items,
-      { ...base, state: "in-progress" },
-      agents,
-    );
+    const running = applyActivityFilters(items, {
+      ...base,
+      state: "in-progress",
+    });
     expect(running.map((i) => i.id)).toEqual(["run"]);
 
-    const unreadOnly = applyActivityFilters(
-      items,
-      { ...base, state: "unread" },
-      agents,
-    );
+    const unreadOnly = applyActivityFilters(items, {
+      ...base,
+      state: "unread",
+    });
     expect(unreadOnly.map((i) => i.id).sort()).toEqual([
       "chat",
       "sched",
@@ -162,7 +154,7 @@ describe("the activity filters", () => {
   it("gives each state its own items", () => {
     const base = defaultActivityFilters();
     const byState = (state: "any" | "attention" | "in-progress" | "unread") =>
-      applyActivityFilters(items, { ...base, state }, agents)
+      applyActivityFilters(items, { ...base, state })
         .map((i) => i.id)
         .sort();
 

@@ -27,13 +27,14 @@ import {
 const SESSION = "sess-run";
 
 function inMemoryBackend(): DocumentStoreBackend {
+  const documents = new Map<string, unknown>();
   return {
-    open(_name, opts) {
-      let state = opts.initial();
+    open(name, opts) {
+      if (!documents.has(name)) documents.set(name, opts.initial());
       return {
-        read: () => state,
+        read: () => documents.get(name) as ReturnType<typeof opts.initial>,
         write(next) {
-          state = next;
+          documents.set(name, next);
         },
       };
     },
@@ -156,14 +157,15 @@ describe("acp-runtime: headless runs", () => {
    * boot recovery is about to resume that turn.
    */
   it("should answer interrupted for a leftover turn recovery gave up on", () => {
-    const activeTurns = createActiveTurnStore(inMemoryBackend());
-    activeTurns.record("sess-dead");
-    activeTurns.bumpAttempts("sess-dead");
-    activeTurns.record("sess-fresh");
+    const disk = inMemoryBackend();
+    const previousBoot = createActiveTurnStore(disk);
+    previousBoot.record("sess-dead");
+    previousBoot.bumpAttempts("sess-dead");
+    previousBoot.record("sess-fresh");
     const seeded = createWorld({
       sessionMetadata: createSessionMetadata().store,
       runResults: createRunResultStore(inMemoryBackend()),
-      activeTurns,
+      activeTurns: createActiveTurnStore(disk),
     });
     const client = seeded.connect();
 

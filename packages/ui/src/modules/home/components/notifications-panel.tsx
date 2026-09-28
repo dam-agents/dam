@@ -65,14 +65,10 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const live = sticky.merge(items).filter((item) => !isDismissed(item));
-  const visible = applyActivityFilters(live, filters, agents);
+  const visible = applyActivityFilters(live, filters);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
   const filtered = filtersDiffer(filters);
-  const approvals = applyActivityFilters(
-    useWaitingApprovals(),
-    filters,
-    agents,
-  );
+  const approvals = applyActivityFilters(useWaitingApprovals(), filters);
   const shown = needsYou ? approvals : visible;
 
   const toggleChannelType = (type: ChannelType) =>
