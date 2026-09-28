@@ -67,6 +67,7 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
+  setInvocationPin(id: string): Promise<boolean>;
   releaseInvocationPin(id: string): Promise<boolean>;
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
@@ -325,6 +326,18 @@ export function createAgentsRepository(
       const owner = agentOwner(obj);
       if (!owner) return null;
       return { owner, agentId: id };
+    },
+
+    async setInvocationPin(id) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) return false;
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          resourceVersion: obj.metadata?.resourceVersion,
+          annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
+        },
+      });
+      return true;
     },
 
     async releaseInvocationPin(id) {

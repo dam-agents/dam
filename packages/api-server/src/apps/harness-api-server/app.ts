@@ -18,7 +18,6 @@ import type {
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
-import { INVOCATIONS_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -158,12 +157,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       owner,
       agents: agentsServiceFor(owner),
       skills: composeSkills(owner),
-      pinDriver: (driverAgentId) =>
-        agentsRepo.patchAnnotation(
-          driverAgentId,
-          INVOCATIONS_ACTIVE_KEY,
-          "true",
-        ),
+      pinDriver: async (driverAgentId) => {
+        await agentsRepo.setInvocationPin(driverAgentId);
+      },
       runtimeMutator,
       wakeAgent,
       targetAdmission: createTargetAdmission({

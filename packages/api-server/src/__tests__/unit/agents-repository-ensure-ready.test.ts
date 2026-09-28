@@ -420,6 +420,56 @@ describe("releaseInvocationPin", () => {
   });
 });
 
+describe("setInvocationPin", () => {
+  const STOP_KEY = "agent-platform.ai/stop-requested";
+
+  function recordingHarness(stop: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![STOP_KEY] = stop;
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a pause landing in between makes the write fail rather than pin a paused Driver.
+  it("pins a running Driver in one conditional write", async () => {
+    const { repo, store, patches } = recordingHarness("");
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("true");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a Driver spawns inside the settle window of a pause; the pin would revive it once the pause settles, so the spawn leaves it unpinned.
+  it("writes nothing while a stop or pause stands", async () => {
+    const { repo, store, patches } = recordingHarness(
+      "2026-09-28T09:00:00.000Z",
+    );
+
+    expect(await repo.setInvocationPin("a1")).toBe(false);
+
+    expect(patches).toEqual([]);
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBeUndefined();
+  });
+});
+
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
