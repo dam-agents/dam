@@ -93,7 +93,8 @@
           "host": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 253
+            "maxLength": 253,
+            "pattern": "^(?:\\*|(?:\\*\\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*)$"
           },
           "port": {
             "type": "integer",
