@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
+use crate::api::{
+    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY, REASON_SEED_MISSING,
+};
 use crate::cache::PULL_TIMEOUT;
 use crate::command::{self, PipelineFailure};
 use crate::files;
@@ -41,6 +43,14 @@ pub fn unusable(detail: impl std::fmt::Display) -> anyhow::Error {
 pub fn out_of_capacity(detail: impl std::fmt::Display) -> anyhow::Error {
     Refusal {
         reason: REASON_OUT_OF_CAPACITY,
+        message: detail.to_string(),
+    }
+    .into()
+}
+
+pub fn seed_missing(detail: impl std::fmt::Display) -> anyhow::Error {
+    Refusal {
+        reason: REASON_SEED_MISSING,
         message: detail.to_string(),
     }
     .into()

@@ -920,12 +920,18 @@ mod tests {
             std::fs::read(share.join(crate::share::SEED_FILE)).unwrap(),
             b"retry"
         );
+        let answered: crate::api::SeedResult = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            crate::share::seed_digest(&api.state_dir().join("m1")),
+            Some(answered),
+            "the recorded digest follows the seed that replaced the lost one"
+        );
 
         let (status, body) = call(&api, "PUT", "/machines/m1/seed", Some(&first), "old").await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert!(body.contains("already used"), "{body}");
 
-        crate::share::record_seeded(&share).unwrap();
+        crate::share::record_seeded(&share, None).unwrap();
         let (status, body) = call(
             &api,
             "PUT",
@@ -959,7 +965,7 @@ mod tests {
         assert!(!plain_share.join(crate::share::SEED_FILE).exists());
 
         let seeded = created_for_migration(&api, "m2");
-        crate::share::record_seeded(&seeded).unwrap();
+        crate::share::record_seeded(&seeded, None).unwrap();
         let (status, _) = call(
             &api,
             "PUT",

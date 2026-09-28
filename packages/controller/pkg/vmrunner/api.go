@@ -27,6 +27,25 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: lets a seed capability seed the machine at
 	// UNIT_BOUNDARY_DESCRIPTION: all; the runner never reshapes a machine for it.
 	Migration *MachineMigration `json:"migration,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the seed this machine's home must be
+	// UNIT_BOUNDARY_DESCRIPTION: restored from, as the runner answered the
+	// UNIT_BOUNDARY_DESCRIPTION: migration's upload. It is sent only while a
+	// UNIT_BOUNDARY_DESCRIPTION: runtime migration boots the machine. The
+	// UNIT_BOUNDARY_DESCRIPTION: runner then starts the machine only while it
+	// UNIT_BOUNDARY_DESCRIPTION: holds exactly that seed, and platform-init
+	// UNIT_BOUNDARY_DESCRIPTION: restores the home from it or fails the boot,
+	// UNIT_BOUNDARY_DESCRIPTION: never falling back to the image's home.
+	ExpectSeed *SeedResult `json:"expectSeed,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed as the runner answers its upload: the
+// UNIT_BOUNDARY_DESCRIPTION: bytes it stored and their SHA-256 in lowercase
+// UNIT_BOUNDARY_DESCRIPTION: hex. vm-seed writes the answer it verified as
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job's termination message, which is how
+// UNIT_BOUNDARY_DESCRIPTION: the controller learns the seed to expect.
+type SeedResult struct {
+	Bytes  uint64 `json:"bytes"`
+	SHA256 string `json:"sha256"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
@@ -46,6 +65,13 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: `since`, and the runner answers once it has
 	// UNIT_BOUNDARY_DESCRIPTION: moved on.
 	Version uint64 `json:"version,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed the machine's home
+	// UNIT_BOUNDARY_DESCRIPTION: was restored from, known once a guest booted
+	// UNIT_BOUNDARY_DESCRIPTION: with that seed expected has answered. Empty
+	// UNIT_BOUNDARY_DESCRIPTION: for a home from the image. A runtime
+	// UNIT_BOUNDARY_DESCRIPTION: migration ends only when this is the seed it
+	// UNIT_BOUNDARY_DESCRIPTION: expects.
+	HomeSeededFrom string `json:"homeSeededFrom,omitempty"`
 }
 
 const (
@@ -64,4 +90,5 @@ const (
 	ReasonOutOfCapacity    = "MachineOutOfCapacity"
 	ReasonImageUnavailable = "MachineImageUnavailable"
 	ReasonBootFailed       = "MachineBootFailed"
+	ReasonSeedMissing      = "MachineSeedMissing"
 )

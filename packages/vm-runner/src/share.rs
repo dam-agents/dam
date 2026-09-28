@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::api::{MachineSpec, SeedResult};
 use crate::files;
+use crate::guest::{is_sha256, SeedDigest};
 use crate::state::machine_dir;
 
 // UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, and the CA the guest must trust. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
@@ -26,6 +27,12 @@ pub const SEED_MODE: u32 = 0o644;
 
 // UNIT_BOUNDARY_DESCRIPTION: the share's record that this machine's disk has held the agent's home, which platform-init reads at guest::SEEDED_PATH. The runner writes it the first time the machine's guest answers, which it does only after platform-init has put the home on the disk, and nothing removes it but the machine's delete: its whole point is to outlive a home that smolvm formatted away.
 pub const SEEDED_FILE: &str = "seeded";
+
+// UNIT_BOUNDARY_DESCRIPTION: the share's record of the seed the controller expects this machine's home to come from, which platform-init reads at guest::SEED_EXPECTED_PATH. write_share writes it from the spec and removes it when the spec expects none, so it is always the expectation of the boot about to run.
+pub const SEED_EXPECTED_FILE: &str = "seed-expected";
+
+// UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
+pub const SEED_DIGEST_FILE: &str = "seed-digest";
 
 // UNIT_BOUNDARY_DESCRIPTION: the modes the share's CA is written with, stated rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and two installs would write one machine's share differently.
 pub const CA_DIR_MODE: u32 = 0o755;
@@ -50,17 +57,61 @@ pub fn write_share(
     files::create_dir(&ca, CA_DIR_MODE)?;
     remove_staged_seed(&share)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
+    let expected = share.join(SEED_EXPECTED_FILE);
+    match &spec.expect_seed {
+        Some(seed) => files::write(&expected, digest_of(seed).line().as_bytes(), CA_MODE)?,
+        None => remove_if_present(&expected)?,
+    }
     copy_init(init, &share.join(INIT_FILE))
+}
+
+fn digest_of(seed: &SeedResult) -> SeedDigest {
+    SeedDigest {
+        sha256: seed.sha256.clone(),
+        bytes: seed.bytes,
+    }
 }
 
 pub fn seeded(share: &Path) -> bool {
     share.join(SEEDED_FILE).exists()
 }
 
-pub fn record_seeded(share: &Path) -> anyhow::Result<()> {
-    files::write(&share.join(SEEDED_FILE), b"", CA_MODE)?;
-    tracing::info!(share = %share.display(), "the storage disk holds a home; a boot that finds it gone is refused from now on");
+// UNIT_BOUNDARY_DESCRIPTION: the seed the seeded record says this machine's home was restored from, or empty for a home from the image, a record from before seeds were named, or no record at all.
+pub fn seeded_from(share: &Path) -> String {
+    fs::read_to_string(share.join(SEEDED_FILE))
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|sha| is_sha256(sha))
+        .unwrap_or_default()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the seeded record, naming the seed the boot expected when it has one. platform-init lets a guest start only once the home came from that seed, so a guest that answers names it truthfully.
+pub fn record_seeded(share: &Path, from: Option<&str>) -> anyhow::Result<()> {
+    files::write(
+        &share.join(SEEDED_FILE),
+        from.unwrap_or_default().as_bytes(),
+        CA_MODE,
+    )?;
+    tracing::info!(share = %share.display(), seed = from.unwrap_or("none"), "the storage disk holds a home; a boot that finds it gone is refused from now on");
     Ok(())
+}
+
+pub fn seed_digest(machine: &Path) -> Option<SeedResult> {
+    let body = fs::read(machine.join(SEED_DIGEST_FILE)).ok()?;
+    serde_json::from_slice(&body).ok()
+}
+
+pub fn record_seed_digest(machine: &Path, seed: &SeedResult) -> anyhow::Result<()> {
+    files::write(
+        &machine.join(SEED_DIGEST_FILE),
+        &serde_json::to_vec(seed)?,
+        CA_MODE,
+    )?;
+    Ok(())
+}
+
+pub fn forget_seed_digest(machine: &Path) -> io::Result<()> {
+    remove_if_present(&machine.join(SEED_DIGEST_FILE))
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -204,6 +255,55 @@ mod tests {
             format!("{}/{SEEDED_FILE}", guest::SHARE_PATH),
             "the guest looks for the seeded record where this module does not write it"
         );
+        assert_eq!(
+            guest::SEED_EXPECTED_PATH,
+            format!("{}/{SEED_EXPECTED_FILE}", guest::SHARE_PATH),
+            "the guest looks for the expected seed where this module does not write it"
+        );
+    }
+
+    // TEST_SCENARIO: the expected seed in the share is the expectation of the boot about to run. A spec that expects a seed writes it in the form platform-init parses, and a spec that no longer expects one removes it — otherwise a machine whose migration has ended, and whose seed the controller has deleted, would be refused by platform-init on every later boot.
+    #[test]
+    fn the_expected_seed_follows_the_spec() {
+        let dir = TempDir::new("expected");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let seed = SeedResult {
+            bytes: 4,
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+        };
+        let expecting = MachineSpec {
+            expect_seed: Some(seed.clone()),
+            ..Default::default()
+        };
+        write_share(dir.path(), "agent-a", &expecting, Some(&init)).unwrap();
+        let expected = dir
+            .path()
+            .join("agent-a")
+            .join(SHARE_DIR)
+            .join(SEED_EXPECTED_FILE);
+        assert_eq!(
+            SeedDigest::parse(&fs::read_to_string(&expected).unwrap()),
+            Some(digest_of(&seed))
+        );
+        assert_eq!(mode_of(&expected), CA_MODE, "the guest reads it");
+
+        write_share(dir.path(), "agent-a", &MachineSpec::default(), Some(&init)).unwrap();
+        assert!(!expected.exists());
+    }
+
+    // TEST_SCENARIO: the seeded record names the seed the home came from, which the runner reports to the controller. A record that names no seed — a home from the image, or one written before seeds were named — reports none rather than whatever the file holds.
+    #[test]
+    fn the_seeded_record_names_the_seed_or_nothing() {
+        let dir = TempDir::new("seeded-from");
+        let sha = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        assert_eq!(seeded_from(dir.path()), "");
+        record_seeded(dir.path(), None).unwrap();
+        assert_eq!(seeded_from(dir.path()), "");
+        record_seeded(dir.path(), Some(sha)).unwrap();
+        assert_eq!(seeded_from(dir.path()), sha);
+        fs::write(dir.path().join(SEEDED_FILE), b"not a digest").unwrap();
+        assert_eq!(seeded_from(dir.path()), "");
     }
 
     // TEST_SCENARIO: the seeded record is what lets platform-init refuse a disk smolvm has reformatted, so it must survive everything the share goes through while the machine exists: every ensure rewrites the share, and a rewrite that dropped the record would let the next boot seed a fresh home over the lost one without a word.
@@ -220,7 +320,7 @@ mod tests {
         let share = dir.path().join("agent-a").join(SHARE_DIR);
         assert!(!seeded(&share));
 
-        record_seeded(&share).unwrap();
+        record_seeded(&share, None).unwrap();
         write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
         assert!(seeded(&share));
         assert_eq!(

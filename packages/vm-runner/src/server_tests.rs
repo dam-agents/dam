@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
-    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING, STATE_ABSENT,
+    STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -357,6 +357,7 @@ fn spec(running: bool) -> MachineSpec {
         running,
         pull_auths: Vec::new(),
         migration: None,
+        expect_seed: None,
     }
 }
 
@@ -492,6 +493,88 @@ async fn a_seed_for_a_machine_deleted_mid_upload_is_not_committed() {
 
     assert_eq!(seeding.commit().err().map(|e| e.status), Some(409));
     assert!(!h.dir.join("machines/m1").exists());
+}
+
+fn expecting(running: bool, seed: &SeedResult) -> MachineSpec {
+    MachineSpec {
+        expect_seed: Some(seed.clone()),
+        ..spec(running)
+    }
+}
+
+fn upload(h: &Harness, id: &str, body: &[u8]) -> SeedResult {
+    let mut seeding = h.server.claim_seed(id, None).unwrap();
+    seeding.write(body).unwrap();
+    seeding.commit().unwrap()
+}
+
+// TEST_SCENARIO: a migration's seed can go missing between the upload and the boot — a lost runner claim, a crash, an operator. A machine whose spec expects a seed is then not started at all, under a reason of its own, so the controller copies the home again instead of the guest booting the image's home and the migration being taken for done. The same holds for a seed that is not the one expected.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_that_expects_a_seed_it_does_not_hold_is_not_started() {
+    let h = Harness::new("seed-missing");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = SeedResult {
+        bytes: 6,
+        sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+    };
+
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let refused = h.settle("m1").await;
+    assert_eq!(refused.state, STATE_STOPPED, "{refused:?}");
+    assert_eq!(refused.reason, REASON_SEED_MISSING, "{refused:?}");
+    assert!(refused.message.contains(&seed.sha256), "{refused:?}");
+    assert!(!h.fake.calls().iter().any(|c| c == "start m1"));
+
+    let other = upload(&h, "m1", b"a home");
+    assert_ne!(other.sha256, seed.sha256);
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let refused = h.settle("m1").await;
+    assert_eq!(refused.reason, REASON_SEED_MISSING, "{refused:?}");
+    assert!(refused.message.contains(&other.sha256), "{refused:?}");
+    assert!(!h.fake.calls().iter().any(|c| c == "start m1"));
+
+    h.server.remove_seed("m1").unwrap();
+    assert!(!h
+        .dir
+        .join("machines/m1")
+        .join(share::SEED_DIGEST_FILE)
+        .exists());
+}
+
+// TEST_SCENARIO: the seed the machine expects is the one it holds, so it boots with the expectation in its share for platform-init to enforce. Once its guest answers, the status names that seed as the one the home came from — the signal the controller ends the migration on — and it keeps naming it after the controller stops expecting a seed and removes it, without the guest being restarted for either.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_booted_from_its_expected_seed_reports_the_seed_its_home_came_from() {
+    let h = Harness::new("seed-reported");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = upload(&h, "m1", b"a home");
+    let share = h.dir.join("machines/m1").join(SHARE_DIR);
+
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    h.wait_for_call("start m1").await;
+    assert_eq!(
+        crate::guest::SeedDigest::parse(
+            &fs::read_to_string(share.join(share::SEED_EXPECTED_FILE)).unwrap()
+        )
+        .map(|d| d.sha256),
+        Some(seed.sha256.clone()),
+        "platform-init is not told which seed to expect"
+    );
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.home_seeded_from, seed.sha256);
+
+    h.server.remove_seed("m1").unwrap();
+    h.server.put("m1", spec(true)).unwrap();
+    let after = h.settle("m1").await;
+    assert_eq!(after.home_seeded_from, seed.sha256);
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        1,
+        "the end of the migration restarted the guest"
+    );
 }
 
 // TEST_SCENARIO: a machine's record names the cache tree it boots by path, read at every start. A tree gone from under a stopped machine — the image directory moved or relaid between runner releases — is resolved again when the machine next starts, its record moved to the new tree and its digest recorded again; without that the machine fails every start until its image changes, which for a hibernated agent is never. The stored spec has not changed, so nothing else may trigger it.

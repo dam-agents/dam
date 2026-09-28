@@ -566,6 +566,20 @@ mod tests {
         assert!(!changed(&desired, &running_spec()));
     }
 
+    // TEST_SCENARIO: the controller expects a seed while a migration boots the machine and stops expecting one once the migration ends. That says nothing about the machine's shape, so neither edge restarts a guest that is up; a restart there would reboot every freshly migrated agent the moment its migration finished.
+    #[test]
+    fn an_expected_seed_is_never_a_reason_to_restart() {
+        let expecting = MachineSpec {
+            expect_seed: Some(crate::api::SeedResult {
+                bytes: 4,
+                sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            }),
+            ..running_spec()
+        };
+        assert!(!changed(&expecting, &running_spec()));
+        assert!(!changed(&running_spec(), &expecting));
+    }
+
     fn running_spec() -> MachineSpec {
         MachineSpec {
             image: "quay.io/x/vm:1".into(),
@@ -579,6 +593,7 @@ mod tests {
             running: true,
             pull_auths: Vec::new(),
             migration: None,
+            expect_seed: None,
         }
     }
 }
