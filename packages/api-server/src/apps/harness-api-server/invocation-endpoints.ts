@@ -137,9 +137,7 @@ export function mountInvocationRoutes(
       ) {
         return c.json({ error: err.message }, 400);
       }
-      if (
-        err instanceof UnresolvableDriverError
-      ) {
+      if (err instanceof UnresolvableDriverError) {
         return c.json({ error: err.message }, 409);
       }
       throw err;

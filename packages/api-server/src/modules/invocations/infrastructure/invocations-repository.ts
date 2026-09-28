@@ -1,11 +1,8 @@
 import {
   and,
   eq,
-  isNotNull,
-  like,
   lt,
   inArray,
-  sql,
   type Db,
   invocations as invocationsTable,
 } from "db";

@@ -2,20 +2,18 @@ import { z } from "zod";
 
 export const podSessionModeSchema = z.enum(["chat", "terminal"]);
 
-export const podSessionTypeSchema = z
-  .enum([
-    "regular",
-    "channel_slack",
-    "channel_telegram",
-    "schedule_cron",
-    "cli_run",
-  ])
-  .catch("regular");
+export const podSessionTypeSchema = z.enum([
+  "regular",
+  "channel_slack",
+  "channel_telegram",
+  "schedule_cron",
+  "cli_run",
+]);
 
 export const podSessionSchema = z.object({
   sessionId: z.string().min(1),
   mode: podSessionModeSchema,
-  type: podSessionTypeSchema,
+  type: podSessionTypeSchema.catch("regular"),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
   title: z.string().nullable(),
@@ -36,7 +34,7 @@ export const podSessionNoticeSchema = z.object({
 export const sessionDirectoryEntrySchema = z.object({
   sessionId: z.string().min(1),
   mode: podSessionModeSchema,
-  type: podSessionTypeSchema,
+  type: podSessionTypeSchema.catch("regular"),
   createdAt: z.string(),
 });
 
