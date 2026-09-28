@@ -21,11 +21,10 @@ const guest = JSON.parse(
 describe("the persisted directory a migration moves paths into", () => {
   // TEST_SCENARIO: /data moves to the guest contract's persisted directory, which is below the guest's home.
   it("is the one the guest links moved paths to", () => {
-    const { moves } = planPersistedMoves({
-      name: "a",
-      image: "img",
-      mounts: [{ path: "/data", persist: true }],
-    });
+    const { moves } = planPersistedMoves([
+      { path: "/home/agent", persist: true },
+      { path: "/data", persist: true },
+    ]);
     expect(moves).toEqual({ "/data": `${guest.persistedDir}/data` });
     expect(guest.persistedDir.startsWith(`${guest.agentHome}/`)).toBe(true);
   });
