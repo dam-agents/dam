@@ -1,0 +1,87 @@
+{{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.virtualization.enabled }}
+{{/*
+SCC for the runtime migration's copy Job on OpenShift, bound to the
+`platform-migration` ServiceAccount alone. The Job reads an agent's old
+volumes read-only and streams them to its owner's VM runner. When any of
+them is a block volume it runs as uid 0 holding DAC_READ_SEARCH and no
+other capability: the volume's root holds a root-owned 0700 lost+found the
+agent's uid cannot open, and DAC_READ_SEARCH reads every file and directory
+while writing nothing. Everything else is as tight as restricted-v2: drop
+ALL, no privilege escalation, runtime/default seccomp, no host namespaces
+or host volumes, and only the volume types the Job mounts.
+
+Kept apart from the agents' `anyuid-cap-net` SCC, which every
+ServiceAccount in the agent namespace may use, so no agent pod or other
+workload there can ask for DAC_READ_SEARCH.
+
+Priority `null` (= 0) keeps the storage migration's grant path as it is:
+that Job runs as the same ServiceAccount with the runtime's default
+capabilities, and admission tries a higher-priority SCC it holds — the
+`anyuid` grant operators bind — before this one, which it would fail
+anyway since this SCC drops ALL.
+*/}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "platform.fullname" . }}-runtime-migration
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - DAC_READ_SEARCH
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - runtime/default
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+  - emptyDir
+  - persistentVolumeClaim
+  - projected
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.fullname" . }}-runtime-migration-scc-use
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["{{ include "platform.fullname" . }}-runtime-migration"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "platform.fullname" . }}-runtime-migration-scc
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "platform.fullname" . }}-runtime-migration-scc-use
+subjects:
+  - kind: ServiceAccount
+    name: platform-migration
+    namespace: {{ .Values.agentNamespace }}
+{{- end }}

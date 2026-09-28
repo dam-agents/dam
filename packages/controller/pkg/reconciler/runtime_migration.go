@@ -420,7 +420,7 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if why := r.copyJobFailure(ctx, job); why != "" {
 			reason = fmt.Sprintf("copying the home directory failed (%s); retrying", why)
 			if job.Annotations[annRuntimeMigrationMixedReader] == "true" && permissionDenied(why) {
-				reason += "; " + runtimeMigrationMixedHint
+				reason = fmt.Sprintf("copying the home directory failed: %s (%s); retrying", runtimeMigrationMixedHint, why)
 			}
 		}
 		if r.sanitizeFor(agent, reason) != agent.Annotations[annRuntimeMigrationMessage] {
@@ -542,6 +542,7 @@ func (r *AgentReconciler) runtimeMigrationCopySlot(ctx context.Context, owner st
 	return "", nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the advice for a mixed set whose share refused root. It comes before vm-seed's own error in the message, because the message is cut to a status line's length and a path in that error can be as long as the agent made it.
 const runtimeMigrationMixedHint = "this agent has both shared and block volumes, which one copy reads as root, and a share that squashes root refuses it; moving the shared volume to block storage first lets the copy finish"
 
 func permissionDenied(why string) bool {

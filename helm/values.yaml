@@ -1724,12 +1724,13 @@ controller:
     #
     # The runtime migration's copy Job (virtualization.runtimeMigration) runs
     # under the same ServiceAccount. When any volume it copies is a block
-    # (ReadWriteOnce) volume it runs as root holding DAC_READ_SEARCH alone, so
-    # the SCC must also permit that capability: `anyuid` adds none. The
-    # chart's `openshift.scc.anyuidCapNet` SCC, bound to every ServiceAccount
-    # in the agents namespace, permits it; without that SCC, grant one that
-    # does. A refused copy pod is reported on the Agent with the Job's
-    # FailedCreate event.
+    # (ReadWriteOnce) volume it runs as root holding DAC_READ_SEARCH alone,
+    # which `anyuid` does not permit. With `openshift.scc.anyuidCapNet` on,
+    # the chart renders a migration-only SCC for it — uid 0, DAC_READ_SEARCH,
+    # drop ALL, no escalation, runtime/default seccomp — bound to the
+    # `platform-migration` ServiceAccount alone; otherwise grant an SCC of
+    # that shape to it. The storage Job keeps its `anyuid` grant. A refused
+    # copy pod is reported on the Agent with the Job's FailedCreate event.
     #
     # The storage Job never mounts a token, joins no mesh, and
     # deliberately does not inherit the agents' runtimeClassName (Kata

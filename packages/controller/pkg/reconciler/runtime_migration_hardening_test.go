@@ -596,13 +596,15 @@ func TestAMixedSetOfVolumesReadsAsRootAndExplainsASquashedShare(t *testing.T) {
 	_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: job.Name + "-x", Namespace: "test-agents", Labels: map[string]string{batchv1.JobNameLabel: job.Name}},
 		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "seed", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
-			ExitCode: 1, FinishedAt: metav1.Now(), Message: "Error: archiving the seed: Permission denied (os error 13)",
+			ExitCode: 1, FinishedAt: metav1.Now(), Message: "Error: archiving the seed: reading /mnt/extra/0/" + strings.Repeat("deep/", 80) + "notes.md: Permission denied (os error 13)",
 		}}}}},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "moving the shared volume to block storage first")
+	msg := reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage]
+	assert.Contains(t, msg, runtimeMigrationMixedHint, "the advice survives the cut; vm-seed's long path is what is cut")
+	assert.True(t, strings.HasSuffix(msg, "…"), "the message was long enough to be cut")
 }
 
 // TEST_SCENARIO: a copy pod that admission refused — an SCC that does not permit what it asks for — never exists, so the Job's FailedCreate event is what the message carries, while the Job waits and once it has failed.

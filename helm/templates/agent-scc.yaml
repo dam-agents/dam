@@ -26,19 +26,13 @@ seccomp (all from restricted-v2). The two real relaxations are:
     mounts a hostPath, which this SCC refuses, so it runs under
     `virtualization.runner.scc`. The runner's own pod spec already asks
     for what this SCC requires — drop ALL, no escalation, runtime/default
-    seccomp — so admission changes nothing about it. DAC_READ_SEARCH is
-    the runtime migration's copy Job's alone: it reads an agent's block
-    volumes as root, whose root-owned 0700 lost+found the agent's uid
-    cannot open, and it reads and writes nothing else. It runs as the
-    `platform-migration` ServiceAccount, which the RoleBinding below
-    covers like every ServiceAccount in the agent namespace.
+    seccomp — so admission changes nothing about it.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init and for the VM runner,
-DAC_OVERRIDE, CHOWN, FOWNER and FSETID for the runner alone,
-DAC_READ_SEARCH for the runtime migration's copy Job.
+DAC_OVERRIDE, CHOWN, FOWNER and FSETID for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -60,7 +54,6 @@ allowedCapabilities:
   - FOWNER
   - FSETID
   - DAC_OVERRIDE
-  - DAC_READ_SEARCH
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny
