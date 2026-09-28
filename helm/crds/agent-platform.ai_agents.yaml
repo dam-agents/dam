@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "12"
+    agent-platform.ai/crd-schema-generation: "13"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -186,6 +186,14 @@ spec:
                 items:
                   description: Mount declares a volume mounted into the agent container.
                   properties:
+                    movedFrom:
+                      description: |-
+                        MovedFrom is the path outside HOME a runtime migration moved this
+                        persisted mount from, when Path is the same path below HOME/.persisted.
+                        On the vm backend the machine puts MovedFrom back on every boot as a
+                        link to Path, so the agent's software still finds its data there. Set
+                        only by the runtime migration.
+                      type: string
                     path:
                       description: Path is the absolute mount path inside the container.
                       type: string

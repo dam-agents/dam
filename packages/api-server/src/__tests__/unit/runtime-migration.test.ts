@@ -186,7 +186,12 @@ describe("runtime migration request", () => {
       mounts: [
         { path: "/home/agent", persist: true },
         { path: "/home/agent/cache", persist: true, size: "5Gi" },
-        { path: "/home/agent/.persisted/data", persist: true, size: "20Gi" },
+        {
+          path: "/home/agent/.persisted/data",
+          persist: true,
+          size: "20Gi",
+          movedFrom: "/data",
+        },
         { path: "/scratch", persist: false },
       ],
       storageSize: "35Gi",
@@ -212,7 +217,12 @@ describe("runtime migration request", () => {
     expect(JSON.parse(annotations[TARGET] ?? "")).toEqual({
       mounts: [
         { path: "/home/agent", persist: true },
-        { path: "/home/agent/.persisted/data", persist: true, size: "5Gi" },
+        {
+          path: "/home/agent/.persisted/data",
+          persist: true,
+          size: "5Gi",
+          movedFrom: "/data",
+        },
       ],
       storageSize: "15Gi",
     });
@@ -270,6 +280,26 @@ describe("runtime migration request", () => {
       ok: false,
       error: { type: "RuntimeMigrationInProgress" },
     });
+  });
+
+  // TEST_SCENARIO: the snapshot is what an abort writes back to a container Agent, and movedFrom belongs only to a switched Agent's mounts, so a stray one is never recorded to be restored — neither in the spec's own mounts nor in the rendered ones beside them.
+  it("records a snapshot without movedFrom", async () => {
+    const h = harness({
+      agent: infraAgent({
+        spec: {
+          name: "my-agent",
+          image: "img",
+          mounts: [{ path: "/home/agent", persist: true, movedFrom: "/stray" }],
+        },
+      }),
+    });
+    expect((await h.run("agent-1")).ok).toBe(true);
+    const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
+    const snapshot = JSON.parse(annotations[SNAPSHOT] ?? "");
+    expect(snapshot.mounts).toEqual([{ path: "/home/agent", persist: true }]);
+    expect(snapshot.effectiveMounts).toEqual([
+      { path: "/home/agent", persist: true },
+    ]);
   });
 
   it("rejects an unknown or unowned agent", async () => {
@@ -502,7 +532,13 @@ describe("retrying a runtime migration", () => {
 
 describe("the Backend switch", () => {
   const target = JSON.stringify({
-    mounts: [{ path: "/home/agent/.persisted/data", persist: true }],
+    mounts: [
+      {
+        path: "/home/agent/.persisted/data",
+        persist: true,
+        movedFrom: "/data",
+      },
+    ],
     storageSize: "30Gi",
   });
 
@@ -516,8 +552,8 @@ describe("the Backend switch", () => {
     return { sweep, writeMigration: deps.writeMigration };
   }
 
-  // TEST_SCENARIO: the api-server is the only spec writer, so it is the one that makes a migration permanent. Once the controller reports the boot verified, the spec takes the target shape — clearing runtimeClassName and nodeSelector, which the CRD rejects on the vm backend — and the request is withdrawn in the same write.
-  it("switches a verified agent to its target shape", async () => {
+  // TEST_SCENARIO: the api-server is the only spec writer, so it is the one that makes a migration permanent. Once the controller reports the boot verified, the spec takes the target shape — each moved mount keeping the movedFrom that is the machine's links plan from then on — — clearing runtimeClassName and nodeSelector, which the CRD rejects on the vm backend — and the request is withdrawn in the same write.
+  it("switches a verified agent to its target shape, movedFrom included", async () => {
     const s = switcher([
       migrating("Verified", { runtimeMigrationTarget: target }),
     ]);
@@ -527,7 +563,13 @@ describe("the Backend switch", () => {
         backend: { type: "vm" },
         runtimeClassName: null,
         nodeSelector: null,
-        mounts: [{ path: "/home/agent/.persisted/data", persist: true }],
+        mounts: [
+          {
+            path: "/home/agent/.persisted/data",
+            persist: true,
+            movedFrom: "/data",
+          },
+        ],
         storageSize: "30Gi",
       },
       annotations: CLEARED,

@@ -606,7 +606,7 @@ func TestEachPhaseSaysWhichSideRuns(t *testing.T) {
 	assert.False(t, runtimeMigrationOf(nil, apiv1.AgentStatus{}).active())
 }
 
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server said where each path went and gave the machine the rewritten mounts; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the switch retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
+// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server said where each path went and gave the machine the rewritten mounts; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the switch retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still in the machine's links plan, which the target shape carries as each moved mount's movedFrom, since the agent's software still looks there. The plan comes from the spec, not the seed, so the copy Job carries none.
 func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationStopping, time.Now())
@@ -616,7 +616,7 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		{Path: "/home/agent/cache", Persist: true},
 		{Path: "/never", Persist: true},
 	}
-	agent.Annotations[annRuntimeMigrationTarget] = `{"mounts":[{"path":"/home/agent","persist":true},{"path":"/home/agent/.persisted/data","persist":true},{"path":"/home/agent/cache","persist":true},{"path":"/home/agent/.persisted/never","persist":true}],"storageSize":"40Gi"}`
+	agent.Annotations[annRuntimeMigrationTarget] = `{"mounts":[{"path":"/home/agent","persist":true},{"path":"/home/agent/.persisted/data","persist":true,"movedFrom":"/data"},{"path":"/home/agent/cache","persist":true},{"path":"/home/agent/.persisted/never","persist":true,"movedFrom":"/never"}],"storageSize":"40Gi"}`
 	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
 	r, node, _ := setupVMReconciler(t, agent)
 	createAll(t, r,
@@ -643,8 +643,9 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	pod := job.Spec.Template.Spec
 	command := pod.Containers[0].Command
 	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
-	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
-		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
+	assert.NotContains(t, strings.Join(command, " "), "--links", "the seed carries no plan and nothing to run")
+	assert.Equal(t, []string{"/data", "/never"}, node.spec("my-agent").Links,
+		"the machine built beside the container takes its links plan from the target shape: every path moved from outside HOME, even one no volume was made for; one under HOME keeps its place and needs no link")
 	claims := map[string]string{}
 	for _, v := range pod.Volumes {
 		if v.PersistentVolumeClaim != nil {
@@ -665,9 +666,9 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
 		require.NoError(t, unstructured.SetNestedSlice(u.Object, []any{
 			map[string]any{"path": "/home/agent", "persist": true},
-			map[string]any{"path": "/home/agent/.persisted/data", "persist": true},
+			map[string]any{"path": "/home/agent/.persisted/data", "persist": true, "movedFrom": "/data"},
 			map[string]any{"path": "/home/agent/cache", "persist": true},
-			map[string]any{"path": "/home/agent/.persisted/never", "persist": true},
+			map[string]any{"path": "/home/agent/.persisted/never", "persist": true, "movedFrom": "/never"},
 		}, "spec", "mounts"))
 		withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget, annRuntimeMigrationMounts)(u)
 	})
