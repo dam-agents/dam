@@ -15,6 +15,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -24,28 +25,25 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-const testRunnerPodIP = "10.244.1.7"
-
-// UNIT_BOUNDARY_DESCRIPTION: a migration's copy Job pins its owner's runner pod by address, so the tests give the owner a ready runner pod beside the ready Deployment the VM tests already have.
 func setupMigrationReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fakeNode, *requeueLog) {
 	t.Helper()
-	r, node, requeued := setupVMReconciler(t, agent)
-	_, err := r.client.CoreV1().Pods("test-agents").Create(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner) + "-abc", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
-		Status: corev1.PodStatus{
-			PodIP:      testRunnerPodIP,
-			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
-		},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-	return r, node, requeued
+	return setupVMReconciler(t, agent)
 }
 
 func copyingAgentCR() *apiv1.Agent {
-	agent := migratingAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
 	return agent
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the message of the migration's condition on the stored Agent, which is what the user is shown for the phase.
+func migrationMessage(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) string {
+	t.Helper()
+	c := migrationCondition(reloaded(t, r, agent))
+	if c == nil {
+		return ""
+	}
+	return c.Message
 }
 
 func startCopy(t *testing.T, agent *apiv1.Agent, sources ...*corev1.PersistentVolumeClaim) (*AgentReconciler, *fakeNode, *batchv1.Job) {
@@ -145,10 +143,10 @@ func TestAMissingSourceVolumeIsNamed(t *testing.T) {
 	r, node, _ := setupMigrationReconciler(t, agent)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "home-agent-my-agent-0")
+	assert.Contains(t, migrationMessage(t, r, agent), "home-agent-my-agent-0")
 }
 
-// TEST_SCENARIO: the copy pod reaches its owner's runner and nothing else, and needs no resolver for it: the runner's name is pinned to the ready runner pod's address in the pod's hosts file, so the URL keeps the name the runner's certificate is issued for. Its NetworkPolicy admits nothing in and lets out only the machine API port of that owner's runner pods — no DNS — and goes once the copy has landed.
+// TEST_SCENARIO: the copy pod reaches its owner's runner and nothing else, and needs no resolver for it: the runner's name is pinned to the ready runner pod's address in the pod's hosts file, so the URL keeps the name the runner's certificate is issued for. Its NetworkPolicy admits nothing in and lets out only the machine API port of that owner's runner pods — no DNS — and goes once the copy has landed, and also when the migration is aborted mid-copy.
 func TestTheCopyJobReachesOnlyItsOwnersRunner(t *testing.T) {
 	ctx := context.Background()
 	agent := copyingAgentCR()
@@ -175,10 +173,41 @@ func TestTheCopyJobReachesOnlyItsOwnersRunner(t *testing.T) {
 	require.Len(t, rule.Ports, 1)
 	assert.Equal(t, int32(vmRunnerPort), rule.Ports[0].Port.IntVal, "the machine API alone, and no port 53")
 
-	completeJob(t, r, batchv1.JobComplete, time.Now())
-	require.NoError(t, r.Reconcile(ctx, agent))
+	completeCopy(t, r, testSeedAnnotation(t))
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
 	_, err = r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the policy goes with the finished copy")
+}
+
+// TEST_SCENARIO: an abort mid-copy removes the copy Job's NetworkPolicy with the rest of what the vm side made, and so does a retry after a failure, which starts over.
+func TestAnAbortOrRetryRemovesTheCopyJobsNetworkPolicy(t *testing.T) {
+	ctx := context.Background()
+	for _, retry := range []bool{false, true} {
+		agent := copyingAgentCR()
+		r, _, _ := startCopy(t, agent, blockHome())
+		_, err := r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+		require.NoError(t, err)
+		if retry {
+			require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", "my-agent", func(s *apiv1.AgentStatus) {
+				setRuntimeMigrating(s, apiv1.ReasonRuntimeMigrationFailed, "gave up", 0)
+			}))
+			agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+				ann := u.GetAnnotations()
+				ann[annRuntimeMigrationRetry] = time.Now().Add(time.Minute).UTC().Format(time.RFC3339)
+				u.SetAnnotations(ann)
+			})
+		} else {
+			agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+		}
+		require.NoError(t, r.Reconcile(ctx, agent))
+		_, err = r.client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+		assert.True(t, k8serrors.IsNotFound(err), "retry=%v", retry)
+		want := "RuntimeMigrationAborted"
+		if retry {
+			want = "RuntimeMigrationRetrying"
+		}
+		assert.Len(t, agentEvents(t, r)[want], 1, "retry=%v", retry)
+	}
 }
 
 // TEST_SCENARIO: an owner copies one migration at a time by default, and the install caps how many copy at once, so a wave of migrations cannot saturate storage or one runner's claim. A migration over either cap waits without a Job and says why; a finished copy holds no slot.
@@ -203,7 +232,7 @@ func TestCopyJobsAreThrottledPerOwnerAndInTheInstall(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the owner's slot is taken")
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "of this owner's migrations are copying")
+	assert.Contains(t, migrationMessage(t, r, agent), "of this owner's migrations are copying")
 
 	require.NoError(t, r.client.BatchV1().Jobs("test-agents").Delete(ctx, "rtm-sibling", metav1.DeleteOptions{}))
 	r.config.VM.RuntimeMigration.Concurrency = 2
@@ -212,13 +241,15 @@ func TestCopyJobsAreThrottledPerOwnerAndInTheInstall(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the install's slots are taken")
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "migrations are copying in this install")
+	assert.Contains(t, migrationMessage(t, r, agent), "migrations are copying in this install")
+	assert.Zero(t, reloaded(t, r, agent).Status.RuntimeMigrationAttempts, "a copy waiting for a slot spends no attempt")
 
 	r.config.VM.RuntimeMigration.Concurrency = 3
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err, "a free slot starts the copy")
-	assert.NotContains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMessage, "and the wait is no longer reported")
+	assert.Equal(t, int32(1), reloaded(t, r, agent).Status.RuntimeMigrationAttempts)
+	assert.Empty(t, migrationMessage(t, r, agent), "and the wait is no longer reported")
 }
 
 // TEST_SCENARIO: a copy Job left by a deleted Agent of the same name, finished or not, is not this Agent's copy: counting it as Complete would boot a machine whose seed was never written. It is removed and the copy runs again under this Agent.
@@ -241,7 +272,8 @@ func TestACopyJobOfAnEarlierAgentOfTheSameNameIsNotTrusted(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Equal(t, runtimeMigrationCopying, agent.Annotations[annRuntimeMigration], "the stale Job does not finish this copy")
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	assert.Zero(t, agent.Status.RuntimeMigrationAttempts, "removing a stale Job spends no attempt")
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the stale Job is removed")
 
@@ -251,62 +283,54 @@ func TestACopyJobOfAnEarlierAgentOfTheSameNameIsNotTrusted(t *testing.T) {
 	assert.True(t, ownedBy(job, agent), "the new Job is this Agent's")
 }
 
-// TEST_SCENARIO: while the migration waits in `requested` or `copying`, what the runner reports is written on the Agent: a runner that is not ready with the reason found for it, and a machine the runner failed to create, which stays absent rather than stopped. Once the runner can take the copy again, the message goes.
-func TestTheRunnersProblemsAreReportedBeforeTheMachineBoots(t *testing.T) {
+// TEST_SCENARIO: while the migration copies, what the vm side reports is its message: a machine the runner failed to create, which stays absent rather than stopped, and a runner that is not ready, with the reason found for it. Once the runner can take the copy, the copy starts and the message goes.
+func TestTheRunnersProblemsAreReportedWhileCopying(t *testing.T) {
 	ctx := context.Background()
 	agent := copyingAgentCR()
 	r, node, _ := setupMigrationReconciler(t, agent)
-	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, blockHome(), metav1.CreateOptions{})
-	require.NoError(t, err)
+	createAll(t, r, blockHome())
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonImageUnavailable, Message: "pulling quay.io/example/claude-code-vm:1: manifest unknown"})
 	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	assert.Equal(t, "the new machine is absent: pulling quay.io/example/claude-code-vm:1: manifest unknown", agent.Annotations[annRuntimeMigrationMessage])
+	assert.Equal(t, "the new machine is absent: pulling quay.io/example/claude-code-vm:1: manifest unknown", migrationMessage(t, r, agent))
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, "platform-vm-runner-"+runnerSuffix(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
 	dep.Status.ReadyReplicas = 0
 	_, err = r.client.AppsV1().Deployments("test-agents").UpdateStatus(ctx, dep, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, containerAgentPod(), metav1.CreateOptions{})
-	require.NoError(t, err)
-	for _, phase := range []string{runtimeMigrationRequested, runtimeMigrationCopying} {
-		agent.Annotations[annRuntimeMigration] = phase
-		require.NoError(t, r.Reconcile(ctx, agent))
-		assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "the owner's VM runner", phase)
-	}
-	require.NoError(t, r.client.CoreV1().Pods("test-agents").Delete(ctx, "my-agent-0", metav1.DeleteOptions{}))
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	assert.Contains(t, migrationMessage(t, r, agent), "the owner's VM runner")
 
 	dep.Status.ReadyReplicas = 1
 	_, err = r.client.AppsV1().Deployments("test-agents").UpdateStatus(ctx, dep, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
-	assert.NotContains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMessage)
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, migrationMessage(t, r, agent))
 }
 
-// TEST_SCENARIO: an old pod stuck terminating — its node gone quiet — would hold `requested` forever without a word. After a few minutes the message names the pod and its node, since only an operator who can reach that node can end it; a pod only just going says nothing.
+// TEST_SCENARIO: an old pod stuck terminating — its node gone quiet — would hold `Stopping` forever without a word. After a few minutes the message names the pod and its node, since only an operator who can reach that node can end it; a pod only just going says nothing.
 func TestAnOldPodStuckTerminatingIsNamedWithItsNode(t *testing.T) {
 	ctx := context.Background()
-	agent := migratingAgentCR()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationStopping, time.Now())
 	r, _, _ := setupMigrationReconciler(t, agent)
-	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, homePVC("home-agent-my-agent-0"), metav1.CreateOptions{})
-	require.NoError(t, err)
 	pod := containerAgentPod()
 	pod.Spec.NodeName = "worker-3"
 	pod.DeletionTimestamp = new(metav1.NewTime(time.Now().Add(-10 * time.Second)))
-	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
-	require.NoError(t, err)
+	createAll(t, r, homePVC("home-agent-my-agent-0"), pod)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.NotContains(t, agent.Annotations, annRuntimeMigrationMessage)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationStopping)
+	assert.Empty(t, migrationMessage(t, r, agent))
 
 	pod.DeletionTimestamp = new(metav1.NewTime(time.Now().Add(-10 * time.Minute)))
-	_, err = r.client.CoreV1().Pods("test-agents").Update(ctx, pod, metav1.UpdateOptions{})
+	_, err := r.client.CoreV1().Pods("test-agents").Update(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	require.NoError(t, r.Reconcile(ctx, agent))
-	msg := reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage]
+	msg := migrationMessage(t, r, agent)
 	assert.Contains(t, msg, "my-agent-0")
 	assert.Contains(t, msg, "worker-3")
 }
@@ -335,44 +359,50 @@ func TestACopyPodThatCannotStartSaysWhy(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "FailedAttachVolume: Multi-Attach error")
-	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], pod.Name)
+	assert.Contains(t, migrationMessage(t, r, agent), "FailedAttachVolume: Multi-Attach error")
+	assert.Contains(t, migrationMessage(t, r, agent), pod.Name)
 
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "copying the home directory failed (FailedAttachVolume: Multi-Attach error")
+	assert.Contains(t, migrationMessage(t, r, agent), "copying the home directory failed (FailedAttachVolume: Multi-Attach error")
 }
 
-// TEST_SCENARIO: a migration's steps are Events on the Agent: each phase it enters, a copy that failed — once, not on every reconcile that still sees the failed Job — and the move's end.
+// TEST_SCENARIO: a migration's steps are Events on the Agent: each phase it enters, a copy that failed — once, not on every reconcile that still sees the failed Job — the verified boot and, after the switch, the move's end.
 func TestAMigrationReportsItsStepsAsEvents(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
 	r, node, _ := setupMigrationReconciler(t, agent)
-	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, homePVC("home-agent-my-agent-0"), metav1.CreateOptions{})
-	require.NoError(t, err)
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	step := func() { require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent))) }
+	step()
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
-	require.NoError(t, r.Reconcile(ctx, agent))
+	step()
+	step()
+	step()
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	for range 3 {
-		agent = reloaded(t, r, agent)
-		require.NoError(t, r.Reconcile(ctx, agent))
+		step()
 	}
 	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
-	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
-	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	step()
+	step()
 	completeCopy(t, r, testSeedAnnotation(t))
-	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	step()
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
-	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	step()
+	requirePhase(t, reloaded(t, r, agent), apiv1.ReasonRuntimeMigrationVerified)
+	editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
+		withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget)(u)
+	})
+	step()
 
 	events := agentEvents(t, r)
-	assert.Len(t, events["RuntimeMigrationCopying"], 1)
+	for _, reason := range []string{"RuntimeMigrationStopping", "RuntimeMigrationCopying", "RuntimeMigrationBooting", "RuntimeMigrationVerified", "RuntimeMigrationFinished"} {
+		assert.Len(t, events[reason], 1, reason)
+	}
 	assert.Len(t, events["RuntimeMigrationCopyFailed"], 1, "a failure is reported once")
-	assert.Len(t, events["RuntimeMigrationBooting"], 1)
-	assert.Len(t, events["RuntimeMigrationFinished"], 1)
 }
 
 // TEST_SCENARIO: what vm-seed writes on failure names the agent's own files, and a file name can carry terminal escapes or a text-direction override. The message escapes every control and formatting character, replaces the runner's in-cluster URL, host and any address with a fixed phrase, and is cut to a status line's length.
@@ -391,7 +421,7 @@ func TestAMigrationMessageIsSafeToShow(t *testing.T) {
 	assert.Equal(t, runtimeMigrationMessageMax+1, len([]rune(long)), "cut by characters, never inside one")
 }
 
-// TEST_SCENARIO: the seed waits on the owner's runner claim beside the disk it is restored into, so from the copy until the guest has booted from it, the claim counts the size of the volumes it was read from. Once the migration is over it counts nothing.
+// TEST_SCENARIO: the seed waits on the owner's runner claim beside the disk it is restored into, so from the copy until the guest has booted from it, the claim counts the size of the volumes it was read from. Before the copy and once the boot is verified it counts nothing.
 func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
 	ctx := context.Background()
 	agent := copyingAgentCR()
@@ -400,13 +430,20 @@ func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
 	for name, size := range map[string]string{"home-agent-my-agent-0": "10Gi", "data-my-agent-0": "5Gi"} {
 		pvc := homePVC(name)
 		pvc.Spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)}
-		_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, pvc, metav1.CreateOptions{})
-		require.NoError(t, err)
+		createAll(t, r, pvc)
 	}
-	for phase, seed := range map[string]int64{runtimeMigrationCopying: 15 << 30, runtimeMigrationBooting: 15 << 30, runtimeMigrationRequested: 0, "": 0} {
-		a := agent.DeepCopy()
-		a.Annotations[annRuntimeMigration] = phase
-		d, err := r.ownerRunnerDemand(ctx, testOwner, a, false)
+	for phase, seed := range map[string]int64{
+		apiv1.ReasonRuntimeMigrationCopying:   15 << 30,
+		apiv1.ReasonRuntimeMigrationBooting:   15 << 30,
+		apiv1.ReasonRuntimeMigrationStopping:  0,
+		apiv1.ReasonRuntimeMigrationVerified:  0,
+		apiv1.ReasonRuntimeMigrationRequested: 0,
+	} {
+		a := migratingAgentIn(phase, time.Now())
+		a.Annotations = agent.Annotations
+		target, err := runtimeMigrationTargetAgent(a)
+		require.NoError(t, err)
+		d, err := r.ownerRunnerDemand(ctx, testOwner, target, false)
 		require.NoError(t, err)
 		assert.Equal(t, seed, d.seedBytes, "phase %q", phase)
 	}
@@ -417,33 +454,33 @@ func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
 	assert.Equal(t, "36Gi", runnerClaim(t, r), "20Gi of disk, 1Gi of headroom and the 15Gi seed beside it")
 }
 
-// TEST_SCENARIO: `booting` is proven only by a guest that answers, so until then nothing that parks an idle agent may stop it: not the idle timeout, not a reclaim stamp, and a booting agent is never picked to make room for another. A stop the user asks for still wins, and is said on the Agent.
+// TEST_SCENARIO: `Booting` is proven only by a guest that answers, so until then nothing that parks an idle agent may stop it: not the idle timeout, not a reclaim stamp, and a migrating agent is never picked to make room for another. A boot whose seed is not recorded is still held down. A stop the user asks for wins, and is said on the Agent.
 func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	now := time.Now().UTC()
-	ann := map[string]string{
-		annRuntimeMigration:     runtimeMigrationBooting,
-		annRuntimeMigrationSeed: testSeedAnnotation(t),
-		annLastActivity:         now.Add(-3 * time.Hour).Format(time.RFC3339),
-		annReclaimedAt:          now.Format(time.RFC3339),
-	}
-	assert.True(t, shouldRun(ann, time.Hour, now), "idle for hours and reclaimed, a booting agent still runs")
-	_, eligible := reclaimEligible(ann, time.Hour, now)
+	agent := bootingAgentCR(t)
+	agent.Annotations[annLastActivity] = now.Add(-3 * time.Hour).Format(time.RFC3339)
+	agent.Annotations[annReclaimedAt] = now.Format(time.RFC3339)
+	m := runtimeMigrationOf(agent.Annotations, agent.Status)
+	assert.True(t, shouldRunMigrating(agent.Annotations, m, time.Hour, now), "idle for hours and reclaimed, a booting agent still runs")
+	_, eligible := reclaimEligible(agent.Annotations, time.Hour, now)
 	assert.False(t, eligible)
 
-	ann[annStopRequested] = "true"
-	assert.False(t, shouldRun(ann, time.Hour, now), "a user's stop wins")
-	assert.Contains(t, runtimeMigrationBootHeld(ann, true, ""), "stopped before its new machine first answered")
+	unseeded := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, now)
+	assert.False(t, shouldRunMigrating(unseeded.Annotations, runtimeMigrationOf(unseeded.Annotations, unseeded.Status), 0, now), "a boot with no recorded seed stays down")
+
+	stopped := map[string]string{annStopRequested: "true"}
+	for k, v := range agent.Annotations {
+		stopped[k] = v
+	}
+	assert.False(t, shouldRunMigrating(stopped, m, time.Hour, now), "a user's stop wins")
 
 	ctx := context.Background()
-	agent := migratingAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationBooting
-	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
+	agent = bootingAgentCR(t)
 	agent.Annotations[annStopRequested] = "true"
 	r, node, _ := setupMigrationReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running)
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "the move finishes when it next starts")
+	assert.Contains(t, migrationMessage(t, r, agent), "the move goes on when it next starts")
 }
 
 // TEST_SCENARIO: a migration boot over the owner's budget waits and says why, and keeps being retried rather than parked until the next activity. It does not hibernate the owner's idle agents to make room: the user asked to move one agent, not to stop others.
@@ -451,10 +488,8 @@ func TestABootingMigrationOverBudgetWaitsWithoutReclaiming(t *testing.T) {
 	ctx := context.Background()
 	peer, peerSS := idlePeer("peer", "3900m", "1Gi", 10*time.Minute, nil)
 	peer.Labels[envoyOwnerLabel] = testOwner
-	agent := migratingAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationBooting
-	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
+	agent := bootingAgentCR(t)
+	agent.Spec.Resources.Limits = map[string]string{"cpu": "1500m", "memory": "3Gi"}
 	r, node, _ := setupMigrationReconciler(t, agent)
 	r.busyProbe = func(context.Context, string) bool { return false }
 	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(ctx, peerSS, metav1.CreateOptions{})
@@ -466,7 +501,7 @@ func TestABootingMigrationOverBudgetWaitsWithoutReclaiming(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running)
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "waiting for room in the owner's budget")
+	assert.Contains(t, migrationMessage(t, r, agent), "waiting for room in the owner's budget")
 	assert.Equal(t, int32(1), agentSSReplicas(t, r, "peer"), "the idle peer is left running")
 	_, retried := r.parkedRetry["my-agent"]
 	assert.True(t, retried, "the boot is retried on its own")
@@ -556,13 +591,13 @@ func TestAStorageMigrationGateOnAVMAgentIsReleased(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: the storage manager works from one List of the Agents, and an Agent can move to the vm backend after it. A copy that finished for such an Agent is not flipped — that would relabel and delete the very volume the runtime migration reads — and an Agent not yet gated is not gated.
+// TEST_SCENARIO: the storage manager works from one List of the Agents, and an Agent can be asked to migrate to the vm backend after it. A copy that finished for such an Agent is not flipped — that would relabel and delete the very volume the runtime migration reads — and an Agent not yet gated is not gated.
 func TestTheStorageManagerRechecksTheBackendBeforeActing(t *testing.T) {
 	ctx := context.Background()
 	stale := agentCR()
 	stale.Annotations = map[string]string{annStorageMigration: "migrating"}
 	moved := stale.DeepCopy()
-	moved.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	moved.Annotations[annRuntimeMigration] = runtimeMigrationRequested
 	target := rwxPVC("mig-home-agent-my-agent-0", "", "home-agent")
 	delete(target.Labels, LabelAgent)
 	target.Labels[LabelMigrationFor] = "my-agent"
@@ -581,7 +616,21 @@ func TestTheStorageManagerRechecksTheBackendBeforeActing(t *testing.T) {
 
 	fresh := agentCR()
 	require.NoError(t, m.migrateAgent(ctx, fresh, []corev1.PersistentVolumeClaim{*source}, ""))
-	assert.NotContains(t, getAgentAnnotations(t, m, "my-agent"), annStorageMigrationWasRunning, "a vm Agent is not gated")
+	assert.NotContains(t, getAgentAnnotations(t, m, "my-agent"), annStorageMigrationWasRunning, "a migrating Agent is not gated")
+}
+
+// TEST_SCENARIO: a gate set just before a runtime migration was requested would hold the container down with nobody to release it, since the storage manager leaves a migrating Agent alone. It is released, and the copy it started abandoned, as for a vm Agent.
+func TestAStorageMigrationGateOnAMigratingAgentIsReleased(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating", annRuntimeMigration: runtimeMigrationRequested}
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"}}
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"), job)
+
+	m.Reconcile(context.Background())
+
+	assert.NotContains(t, getAgentAnnotations(t, m, "my-agent"), annStorageMigration)
+	_, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err))
 }
 
 // TEST_SCENARIO: one process reads every volume, so a set of a shared and a block volume reads as root with DAC_READ_SEARCH, which reads the block volume's root-owned lost+found for certain. A share beside it that squashes root then refuses the copy, and that failure says so and what to do, rather than repeating a bare permission error.
@@ -605,7 +654,7 @@ func TestAMixedSetOfVolumesReadsAsRootAndExplainsASquashedShare(t *testing.T) {
 	require.NoError(t, err)
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
-	msg := reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage]
+	msg := migrationMessage(t, r, agent)
 	assert.Contains(t, msg, runtimeMigrationMixedHint, "the advice survives the cut; vm-seed's long path is what is cut")
 	assert.True(t, strings.HasSuffix(msg, "…"), "the message was long enough to be cut")
 }
@@ -629,9 +678,9 @@ func TestACopyPodRefusedAtAdmissionSaysWhy(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "the copy pod could not be created: FailedCreate")
+	assert.Contains(t, migrationMessage(t, r, agent), "the copy pod could not be created: FailedCreate")
 
 	completeJob(t, r, batchv1.JobFailed, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "copying the home directory failed (FailedCreate")
+	assert.Contains(t, migrationMessage(t, r, agent), "copying the home directory failed (FailedCreate")
 }

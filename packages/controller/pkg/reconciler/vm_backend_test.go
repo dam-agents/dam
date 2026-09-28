@@ -256,6 +256,19 @@ func readyRunnerDeployment() *appsv1.Deployment {
 	}
 }
 
+const testRunnerPodIP = "10.244.1.7"
+
+// UNIT_BOUNDARY_DESCRIPTION: the ready pod behind the ready runner Deployment. A runtime migration's copy Job pins its address; it has no node, so nothing resizes it.
+func readyRunnerPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner-" + runnerSuffix(testOwner) + "-pinned", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+		Status: corev1.PodStatus{
+			PodIP:      testRunnerPodIP,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+}
+
 func leafSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: EnvoyLeafSecretName("my-agent"), Namespace: "test-agents"},
@@ -296,7 +309,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		agent.Labels = map[string]string{}
 	}
 	agent.Labels[envoyOwnerLabel] = testOwner
-	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret(), runnerTLSSecret())
+	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",

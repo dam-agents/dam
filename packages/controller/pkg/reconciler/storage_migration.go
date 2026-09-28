@@ -128,7 +128,7 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 	}
 
 	for _, agent := range gated {
-		if agent.Spec.IsVM() {
+		if leftToRuntimeMigration(agent) {
 			m.releaseVMAgent(ctx, agent)
 			continue
 		}
@@ -269,7 +269,7 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		if agent.Spec.IsVM() {
+		if leftToRuntimeMigration(agent) {
 			if inFlight[name] {
 				m.releaseVMAgent(ctx, agent)
 			}
@@ -477,7 +477,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 	return m.finishFlip(ctx, agent)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the pass works from one List of the Agents, and an Agent can move to the vm backend while it runs. Gating or flipping a vm Agent would hold its machine down, or relabel the volumes a runtime migration is copying from, so both re-read the Agent first and leave one that moved to the release below.
+// UNIT_BOUNDARY_DESCRIPTION: the pass works from one List of the Agents, and an Agent can be asked to move to the vm backend while it runs. Gating or flipping such an Agent would hold its machine down, or relabel the volumes a runtime migration is copying from, so both re-read the Agent first and leave one that moved, or began to, to the release below.
 func (m *StorageMigrationManager) movedToVM(ctx context.Context, name string) (bool, error) {
 	u, err := m.dynamic.Resource(AgentsGVR).Namespace(m.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -490,14 +490,19 @@ func (m *StorageMigrationManager) movedToVM(ctx context.Context, name string) (b
 	if err != nil {
 		return false, err
 	}
-	if agent.Spec.IsVM() {
-		slog.Info("storage migration: agent moved to the vm backend mid-pass, not migrating it", "agent", name)
+	if leftToRuntimeMigration(agent) {
+		slog.Info("storage migration: agent moved to, or began moving to, the vm backend mid-pass, not migrating it", "agent", name)
 		return true, nil
 	}
 	return false, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm Agent keeps no volume the storage migration moves — a runtime migration reads its old ones as they are — so a gate left on one, set before the Backend changed, is released rather than held forever. The copy that gate started is abandoned: its Job and every target not yet flipped in are removed. A target already flipped in holds the verified copy and stays, and so does a superseded source, since a runtime migration may be reading it; the Agent owns both, so they go with it.
+// UNIT_BOUNDARY_DESCRIPTION: an Agent on the vm backend, or one whose runtime migration is under way — its spec still the container's while the copy reads its volumes — is the runtime migration's to move, never the storage migration's.
+func leftToRuntimeMigration(agent *apiv1.Agent) bool {
+	return agent.Spec.IsVM() || runtimeMigrationOf(agent.Annotations, agent.Status).active()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent the runtime migration moves keeps no volume the storage migration moves — the copy reads its old ones as they are — so a gate left on one, set before the migration was requested, is released rather than held forever. The copy that gate started is abandoned: its Job and every target not yet flipped in are removed. A target already flipped in holds the verified copy and stays, and so does a superseded source, since a runtime migration may be reading it; the Agent owns both, so they go with it.
 func (m *StorageMigrationManager) releaseVMAgent(ctx context.Context, agent *apiv1.Agent) {
 	name := agent.Name
 	prop := metav1.DeletePropagationBackground

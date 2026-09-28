@@ -16,12 +16,24 @@ import (
 )
 
 func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, mutate func(*apiv1.AgentStatus)) error {
+	_, err := updateAgentStatusWhile(ctx, dyn, namespace, name, nil, mutate)
+	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a status update that applies only while `guard` holds for the Agent as read. The update carries the version it read, so a write to the Agent in between — its annotations included — makes it conflict and read again, and the guard is asked again of what changed. Reports whether the update was applied, or was already in place.
+func updateAgentStatusWhile(ctx context.Context, dyn dynamic.Interface, namespace, name string, guard func(*unstructured.Unstructured) bool, mutate func(*apiv1.AgentStatus)) (bool, error) {
 	cli := dyn.Resource(AgentsGVR).Namespace(namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	applied := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		applied = false
 		obj, err := cli.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return fmt.Errorf("getting agent %s/%s: %w", namespace, name, err)
 		}
+		if guard != nil && !guard(obj) {
+			return nil
+		}
+		applied = true
 		var current apiv1.AgentStatus
 		if raw, ok, _ := unstructured.NestedMap(obj.Object, "status"); ok && raw != nil {
 			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw, &current); err != nil {
@@ -43,6 +55,7 @@ func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, na
 		_, err = cli.UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 		return err
 	})
+	return applied, err
 }
 
 func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReason, falseReason, message string, generation int64) {

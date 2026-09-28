@@ -19,15 +19,10 @@ import {
   type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
-  type MigrateRuntimeError,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
-import { match } from "ts-pattern";
-import type {
-  AgentsRepository,
-  MigrateBackendOutcome,
-} from "../infrastructure/agents-repository.js";
+import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
@@ -48,14 +43,16 @@ import {
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
-  RUNTIME_MIGRATION_KEY,
-  RUNTIME_MIGRATION_MOUNTS_KEY,
 } from "../infrastructure/labels.js";
 import {
-  runtimeMigrationRefusal,
-  runtimeMigrationSpecPatch,
-  type AgentMount,
-  type RuntimeMigrationContext,
+  executeAbortRuntimeMigration,
+  executeRetryRuntimeMigration,
+  executeRuntimeMigration,
+  type RuntimeMigrationWrite,
+} from "./runtime-migration.js";
+import type {
+  AgentMount,
+  RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
@@ -488,69 +485,6 @@ export function executeTemplateUpgrade(deps: {
   };
 }
 
-export interface RuntimeMigrationPatch {
-  spec: Record<string, unknown>;
-  annotations: Record<string, string>;
-  resourceVersion: string | undefined;
-}
-
-export function executeRuntimeMigration(deps: {
-  owner: string | undefined;
-  migration: RuntimeMigrationContext;
-  defaultStorageSize: string;
-  getAgent: (id: string) => Promise<InfraAgent | null>;
-  writeMigration: (
-    id: string,
-    patch: RuntimeMigrationPatch,
-  ) => Promise<MigrateBackendOutcome>;
-}) {
-  return async (
-    id: string,
-  ): Promise<
-    { ok: true; value: InfraAgent } | { ok: false; error: MigrateRuntimeError }
-  > => {
-    const infra = await deps.getAgent(id);
-    if (!infra) return err({ type: "AgentNotFound" as const });
-    const refusal = runtimeMigrationRefusal(infra, deps.migration);
-    if (refusal) return err(refusal);
-
-    const { spec, moves } = runtimeMigrationSpecPatch(
-      infra.spec,
-      deps.defaultStorageSize,
-      deps.migration.defaultMounts,
-    );
-    const annotations: Record<string, string> = {
-      [RUNTIME_MIGRATION_KEY]: "requested",
-    };
-    if (Object.keys(moves).length > 0)
-      annotations[RUNTIME_MIGRATION_MOUNTS_KEY] = JSON.stringify(moves);
-    const written = await deps.writeMigration(id, {
-      spec,
-      annotations,
-      resourceVersion: infra.resourceVersion,
-    });
-    const result = match(written)
-      .with({ kind: "migrated" }, (w) => ok(w.agent))
-      .with({ kind: "not-found" }, () =>
-        err({ type: "AgentNotFound" as const }),
-      )
-      .with({ kind: "conflict" }, () =>
-        err({ type: "ConcurrentUpdate" as const }),
-      )
-      .exhaustive();
-    if (!result.ok) return result;
-    securityLog("info", "agent.runtime-migrate", {
-      category: "resource",
-      actor: deps.owner ?? null,
-      actorKind: "user",
-      agentId: id,
-      result: "success",
-      detail: { fromBackend: "container", toBackend: "vm" },
-    });
-    return result;
-  };
-}
-
 export type AgentCleanupHook = (agentId: string) => Promise<void>;
 
 function dropProtectedEnvs(env: EnvVar[]): EnvVar[] {
@@ -757,6 +691,24 @@ export function createAgentsService(deps: {
       runtimeMigrationContext,
       checklists.get(infra.id),
     );
+  }
+
+  const runtimeMigrationWrites = {
+    owner: deps.owner,
+    getAgent: (agentId: string) => deps.repo.getLive(agentId, deps.owner),
+    writeMigration: (agentId: string, patch: RuntimeMigrationWrite) =>
+      deps.repo.writeRuntimeMigration(agentId, deps.owner, patch),
+  };
+
+  async function migrationUpdated(
+    infra: InfraAgent,
+  ): Promise<ReturnType<typeof assembleAgent>> {
+    emit({
+      type: EventType.AgentUpdated,
+      agentId: infra.id,
+      ...(deps.owner ? { ownerSub: deps.owner } : {}),
+    });
+    return project(infra);
   }
 
   async function ownsOrDeny(id: string, surface: string): Promise<boolean> {
@@ -1391,20 +1343,28 @@ export function createAgentsService(deps: {
 
     async migrateRuntime(id) {
       const result = await executeRuntimeMigration({
-        owner: deps.owner,
+        ...runtimeMigrationWrites,
         migration: runtimeMigrationContext,
         defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
-        getAgent: (agentId) => deps.repo.getLive(agentId, deps.owner),
-        writeMigration: (agentId, patch) =>
-          deps.repo.migrateBackend(agentId, deps.owner, patch),
       })(id);
       if (!result.ok) return result;
-      emit({
-        type: EventType.AgentUpdated,
-        agentId: id,
-        ...(deps.owner ? { ownerSub: deps.owner } : {}),
-      });
-      return ok(await project(result.value));
+      return ok(await migrationUpdated(result.value));
+    },
+
+    async abortRuntimeMigration(id) {
+      const result = await executeAbortRuntimeMigration(runtimeMigrationWrites)(
+        id,
+      );
+      if (!result.ok) return result;
+      return ok(await migrationUpdated(result.value));
+    },
+
+    async retryRuntimeMigration(id) {
+      const result = await executeRetryRuntimeMigration(runtimeMigrationWrites)(
+        id,
+      );
+      if (!result.ok) return result;
+      return ok(await migrationUpdated(result.value));
     },
 
     async ensureReady(id, opts) {

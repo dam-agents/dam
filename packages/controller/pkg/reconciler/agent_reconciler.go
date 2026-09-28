@@ -153,18 +153,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("egressNetworkPolicy")
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM(), r.config, ownerRef)); err != nil {
+	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
+	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("gatewayIngressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
-	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
+	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]
 	alwaysOn := idleTimeout <= 0
-	migrationBoot := agent.Annotations[annRuntimeMigration] == runtimeMigrationBooting
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migrationBoot
+	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migration.keepsUp()
 	overBudget := ""
 	parked := false
 	if running {
@@ -176,7 +176,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err != nil {
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
 			}
-			if refusal != "" && !migrationBoot {
+			if refusal != "" && !migration.keepsUp() {
 				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
 				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
@@ -241,21 +241,23 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
+	var migrationVMErr error
+	if migration.requested {
+		if err := r.beginRuntimeMigration(ctx, agent, &migration); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("starting runtime migration: %v", err))
+		}
+	}
 	if agentSpec.IsVM() {
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		migrationStep, err := r.prepareRuntimeMigration(ctx, agent)
-		if err != nil {
+		if err := r.prepareRuntimeMigration(ctx, agent, migration); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
-		}
-		if migrationStep.note == "" {
-			migrationStep.note = runtimeMigrationBootHeld(agent.Annotations, hardStop, overBudget)
 		}
 		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
 			secretRefused = refusal
 		}
-		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
+		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun(), true)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			r.publishCertificateWait(ctx, agent, err)
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -264,8 +266,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return r.setMachineError(ctx, agent, err)
 		}
 		timer.mark("vmMachine")
-		if err := r.continueRuntimeMigration(ctx, agent, machine, runnerReached, migrationStep); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+			}
 		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
@@ -285,14 +290,32 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		timer.mark("workspaceClaims")
 		applyPoolClaims(agentSS, claims)
 		stampRollRev(agentSS, rollRev)
-		if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
+		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+		}
+		if migration.containerDown() {
+			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("stopping the container for its runtime migration: %v", err))
+			}
 		}
 		timer.mark("agentStatefulSet")
 		if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 		}
 		timer.mark("agentService")
+		if migration.active() && migration.phase != apiv1.ReasonRuntimeMigrationFailed && r.requeue != nil {
+			r.requeue(name, runtimeMigrationPoll)
+		}
+		if migration.requested {
+			machine, runnerReached, migrationVMErr = r.reconcileMigrationMachine(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun())
+			timer.mark("migrationMachine")
+		}
+		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, migrationVMErr); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+			}
+		}
 	}
 
 	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)

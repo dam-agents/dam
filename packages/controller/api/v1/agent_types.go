@@ -176,6 +176,34 @@ const (
 	// ConditionReconciled reports whether the controller accepted and rendered
 	// the spec; its message carries the last reconcile error, if any.
 	ConditionReconciled = "Reconciled"
+	// ConditionRuntimeMigrating reports a runtime migration from the
+	// container backend to the vm backend. It is absent when none runs.
+	// True while the migration is under way, its reason naming the phase;
+	// False with ReasonRuntimeMigrationFailed once it gave up. The api-server
+	// switches the Backend when the reason is ReasonRuntimeMigrationVerified.
+	ConditionRuntimeMigrating = "RuntimeMigrating"
+)
+
+// Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
+// still the Agent's spec, so the migration can be aborted back to it.
+const (
+	// ReasonRuntimeMigrationRequested: the owner's runner and a stopped
+	// machine are being made while the container keeps running (preflight).
+	ReasonRuntimeMigrationRequested = "Requested"
+	// ReasonRuntimeMigrationStopping: preflight passed; the container is
+	// being stopped so its volumes can be copied.
+	ReasonRuntimeMigrationStopping = "Stopping"
+	// ReasonRuntimeMigrationCopying: the copy Job is streaming the volumes to
+	// the runner as the machine's seed.
+	ReasonRuntimeMigrationCopying = "Copying"
+	// ReasonRuntimeMigrationBooting: the machine boots from the seed.
+	ReasonRuntimeMigrationBooting = "Booting"
+	// ReasonRuntimeMigrationVerified: the guest answered after booting from
+	// the seed. The migration can no longer be aborted.
+	ReasonRuntimeMigrationVerified = "Verified"
+	// ReasonRuntimeMigrationFailed: the copy attempts or the time budget ran
+	// out. Terminal until the user retries or aborts.
+	ReasonRuntimeMigrationFailed = "Failed"
 )
 
 // ReasonHibernated is stamped on the readiness conditions when the idle checker
@@ -236,6 +264,11 @@ type AgentStatus struct {
 	// cause is one the classifier does not name.
 	// +optional
 	AgentPodRestartReason string `json:"agentPodRestartReason,omitempty"`
+	// RuntimeMigrationAttempts counts the copy attempts of the runtime
+	// migration in progress; the migration fails once they run out. Zero when
+	// no migration runs.
+	// +optional
+	RuntimeMigrationAttempts int32 `json:"runtimeMigrationAttempts,omitempty"`
 }
 
 // Mount declares a volume mounted into the agent container.
@@ -278,7 +311,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=12
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=13
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

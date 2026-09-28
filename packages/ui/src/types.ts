@@ -174,9 +174,21 @@ export interface AgentView {
   kind?: AgentKind;
 }
 
+export type RuntimeMigrationPhase =
+  | "requested"
+  | "stopping"
+  | "copying"
+  | "booting"
+  | "verified"
+  | "failed"
+  | "aborting";
+
 export interface RuntimeMigrationView {
-  phase: "requested" | "copying" | "booting";
+  phase: RuntimeMigrationPhase;
   message?: string;
+  attempts?: number;
+  abortable: boolean;
+  retryable: boolean;
 }
 
 interface QuietWindowView {

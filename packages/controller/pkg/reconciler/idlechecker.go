@@ -114,7 +114,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
 		}
-		if shouldRun(agent.GetAnnotations(), effective, now) {
+		if shouldRunMigrating(agent.GetAnnotations(), runtimeMigrationOfObject(agent), effective, now) {
 			continue
 		}
 

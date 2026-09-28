@@ -43,7 +43,8 @@ const (
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
+// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container.
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
@@ -141,7 +142,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return st, false, err
 	}
 
-	if st.Port > 0 {
+	if publish && st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
@@ -442,7 +443,7 @@ func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agen
 func anyVMAgent(items []unstructured.Unstructured) bool {
 	for i := range items {
 		backend, _, _ := unstructured.NestedString(items[i].Object, "spec", "backend", "type")
-		if backend == "vm" {
+		if backend == "vm" || items[i].GetAnnotations()[annRuntimeMigration] != "" {
 			return true
 		}
 	}
