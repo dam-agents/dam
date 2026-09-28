@@ -26,7 +26,7 @@ env:
   # node re-pulls it; rewrite-timestamp on the image outputs normalizes them to
   # this instant. It is deliberately a constant rather than the commit time —
   # a per-commit stamp would make every release differ again (#3495).
-  SOURCE_DATE_EPOCH: "1735689600"
+  SOURCE_DATE_EPOCH: "1790553600"
   # Pin mise so the lockfile (.mise/mise.lock) stays deterministic. Unpinned,
   # mise-action installs latest and each new release rewrites platform entries
   # and the generated header, churning the lockfile on unrelated PRs. Bump this in
