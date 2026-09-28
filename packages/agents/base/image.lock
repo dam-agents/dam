@@ -196,17 +196,17 @@ checksum = "sha256:6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961
 url = "https://dl.k8s.io/v1.37.0/bin/linux/amd64/kubectl"
 
 [[tools.node]]
-version = "26.9.0"
+version = "26.10.0"
 backend = "core:node"
 specifiers = ["26"]
 
 [tools.node."platforms.linux-arm64"]
-checksum = "sha256:d5077591aa38b48d90bf9b3ac10da8d2f40dce289b20294913c58c19f153eb12"
-url = "https://nodejs.org/dist/v26.9.0/node-v26.9.0-linux-arm64.tar.gz"
+checksum = "sha256:423a41bff8e2a2fa15e702fefe2919ef95823b2378744daccb8439302534b44f"
+url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:03d9104fc4f19652e74480fed11c023d75981464b7292f21a601c3f95ce7d90d"
-url = "https://nodejs.org/dist/v26.9.0/node-v26.9.0-linux-x64.tar.gz"
+checksum = "sha256:cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5ad8"
+url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
 version = "0.79.0"
@@ -215,16 +215,16 @@ backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.79.0"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
-version = "1.4.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.4.0", digest = "sha256:75677de80278b61005d8a9132b416fc82b76ec930421eb5e900ffb42c092cb0e" }
+version = "1.5.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.5.0", digest = "sha256:e301ec9bc1bc9c77c87599779d6c1a5c8c8133103bea5e715453c0128dd83a3a" }
 backend = "npm:@agentclientprotocol/sdk"
-specifiers = ["1.4.0"]
+specifiers = ["1.5.0"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
-version = "0.85.1"
-aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/0.85.1", digest = "sha256:5752d661db85ebfd04ad930e6622879d7f411af548c8051fdbd03a7037fc8b48" }
+version = "0.86.1"
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/0.86.1", digest = "sha256:3b8616c727af51fa0a2414600aede340b73e012d9c33e1d23eaf01dfde0c2ba5" }
 backend = "npm:@earendil-works/pi-coding-agent"
-specifiers = ["0.85.1"]
+specifiers = ["0.86.1"]
 
 [[tools."npm:@openai/codex"]]
 version = "0.155.1"
@@ -265,7 +265,7 @@ specifiers = ["v0.4.0"]
 version = "0.3.2"
 backend = "pipx:openevolve"
 specifiers = ["0.3.2"]
-uv = { path = ".mise/locks/pipx-openevolve/0.3.2", digest = "sha256:23266b9722ed0a05c562e3d9f7573f8bfa7444d841c968979bedab57fca91a9a" }
+uv = { path = ".mise/locks/pipx-openevolve/0.3.2", digest = "sha256:ac58b0e6159dabdec7a70210b1479f229a322d61d7ca7b1705a74c0aea7008b2" }
 
 [[tools.python]]
 version = "3.12.14"
@@ -298,18 +298,18 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15
 url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478120097"
 
 [[tools.uv]]
-version = "0.12.15"
+version = "0.12.17"
 backend = "aqua:astral-sh/uv"
 specifiers = ["latest"]
 
 [tools.uv."platforms.linux-arm64"]
-checksum = "sha256:0e9a3499b0587d449c9ff684c0160da607826e4af1cee220bc87f378702d3e08"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.15/uv-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/565630758"
+checksum = "sha256:d636d1b678e9e7f367ecb22b46bd1cabbed234d6bc3b4d96365d2b507f72f86c"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/573252936"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:f97935763c04be3e692460a7aaeaaab8fc3b78fcf8b389da820b38ae7423a638"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.15/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/565630898"
+checksum = "sha256:fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/573253080"
 provenance = "github-attestations"
