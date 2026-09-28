@@ -82,8 +82,7 @@ export function MockStateBar() {
             {screens.map((s) => {
               const active =
                 (s.label === "Home" && view === "home") ||
-                (s.label === "Activity feed cards" &&
-                  view === "card-gallery");
+                (s.label === "Activity feed cards" && view === "card-gallery");
               return (
                 <button
                   key={s.label}

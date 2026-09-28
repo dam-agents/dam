@@ -143,9 +143,6 @@ export function IconRail({
         </div>
         {expandedNav && (
           <div className="mt-4 flex min-h-0 flex-1 flex-col">
-            <div className="mb-2 px-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Agents
-            </div>
             <div className="flex-1 overflow-y-auto">
               <SidebarAgentList />
             </div>

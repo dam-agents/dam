@@ -56,9 +56,7 @@ function getFixtures(): Record<string, unknown> {
       : approvals.filter((a) => !resolvedApprovalIds.has(a.id)),
     "approvals.listForInstance": fresh
       ? []
-      : approvals
-          .slice(0, 2)
-          .filter((a) => !resolvedApprovalIds.has(a.id)),
+      : approvals.slice(0, 2).filter((a) => !resolvedApprovalIds.has(a.id)),
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,

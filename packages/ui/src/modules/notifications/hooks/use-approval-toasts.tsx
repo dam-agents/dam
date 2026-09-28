@@ -5,8 +5,8 @@ import { toast as sonner } from "sonner";
 import { useStore } from "../../../store.js";
 import { useNotifications } from "../api/queries.js";
 import { approvalHeadline } from "../lib/approval-copy.js";
-import { isNeedsYou } from "../lib/notification-types.js";
 import type { NotificationItem } from "../lib/notification-types.js";
+import { isNeedsYou } from "../lib/notification-types.js";
 
 export function fireApprovalToast(
   agentName: string,
@@ -28,10 +28,7 @@ export function fireApprovalToast(
         </div>
         <p className="min-w-0 flex-1 text-sm leading-snug">
           <span className="font-semibold text-foreground">{agentName}</span>
-          <span className="text-foreground">
-            {" "}
-            {headline.toLowerCase()}
-          </span>
+          <span className="text-foreground"> {headline.toLowerCase()}</span>
         </p>
       </button>
     ),

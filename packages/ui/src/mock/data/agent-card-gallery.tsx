@@ -409,7 +409,6 @@ function NotificationRowSection() {
   );
 }
 
-
 function CardDemo({
   agent,
   label,
@@ -451,17 +450,38 @@ function AgentCardSection() {
       <SectionHeader title="Agent Cards" />
 
       <div className="flex flex-col gap-8">
-        <CardDemo agent={fullAgent} label="§5-1 Full card — always-on, slack, schedules" />
+        <CardDemo
+          agent={fullAgent}
+          label="§5-1 Full card — always-on, slack, schedules"
+        />
         <CardDemo agent={bareAgent} label="§5-2 Bare card — nothing attached" />
-        <CardDemo agent={singularAgent} label="§5-3 One-of-each — singular forms" />
-        <CardDemo agent={hibernatedUnknownSkills} label="§5-4 Hibernated, unknown skills" />
-        <CardDemo agent={neverHibernatesButHibernated} label="§5-5a Never-hibernates but stopped" />
-        <CardDemo agent={neverHibernatesOverBudget} label="§5-5b Never-hibernates, over budget" />
+        <CardDemo
+          agent={singularAgent}
+          label="§5-3 One-of-each — singular forms"
+        />
+        <CardDemo
+          agent={hibernatedUnknownSkills}
+          label="§5-4 Hibernated, unknown skills"
+        />
+        <CardDemo
+          agent={neverHibernatesButHibernated}
+          label="§5-5a Never-hibernates but stopped"
+        />
+        <CardDemo
+          agent={neverHibernatesOverBudget}
+          label="§5-5b Never-hibernates, over budget"
+        />
         <CardDemo agent={knowledgeBaseAgent} label="§5-6 Knowledge base" />
         <CardDemo agent={experimentAgent} label="§5-7 Experiment" />
-        <CardDemo agent={packSkippedAgent} label="§5-8 Pack applied, partly skipped" />
+        <CardDemo
+          agent={packSkippedAgent}
+          label="§5-8 Pack applied, partly skipped"
+        />
         <CardDemo agent={errorAgent} label="§5-9 Error state" />
-        <CardDemo agent={temporaryDriverAgent} label="§5-10 Temporary-agent driver" />
+        <CardDemo
+          agent={temporaryDriverAgent}
+          label="§5-10 Temporary-agent driver"
+        />
         <CardDemo agent={demoPackAgent} label="§5-11 Demo pack agent" isDemo />
       </div>
     </div>
