@@ -34,7 +34,9 @@ const (
 	// Agent gen 12: movedFrom added to Mount — the path outside HOME a
 	// runtime migration moved a persisted mount from, which the vm backend
 	// puts back on every boot; an older CRD would prune it.
-	AgentSchemaGeneration = 12
+	// Agent gen 13: runtimeMigrationAttempts added to AgentStatus — the copy
+	// attempts of a runtime migration, which fails once they run out.
+	AgentSchemaGeneration = 13
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

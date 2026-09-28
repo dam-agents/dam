@@ -2,14 +2,19 @@
 // TEST_OVERVIEW: vm-sandboxes experiment off, only a vm agent is badged, as the
 // TEST_OVERVIEW: new runtime. With it on, a container agent is badged as the old
 // TEST_OVERVIEW: runtime and offered the migration, and a migrating agent shows
-// TEST_OVERVIEW: the migration in progress with the controller's reason.
+// TEST_OVERVIEW: the migration in progress with its phase and the controller's
+// TEST_OVERVIEW: reason, a failed one distinctly, and the way back until the
+// TEST_OVERVIEW: agent has started on the new runtime. Each row's Abort and
+// TEST_OVERVIEW: Retry stay busy exactly as long as that row's own request.
 import { describe, expect, test } from "vitest";
 
 import {
+  type InFlightIds,
   migrateAction,
   runtimeBadge,
+  whileInFlight,
 } from "../../modules/agents/utils/runtime-migration.js";
-import type { AgentView } from "../../types.js";
+import type { AgentView, RuntimeMigrationView } from "../../types.js";
 
 const ON = { answered: true, vm: true };
 const OFF = { answered: true, vm: false };
@@ -61,6 +66,43 @@ describe("runtimeBadge", () => {
   });
 });
 
+function migration(
+  phase: RuntimeMigrationView["phase"],
+  extra?: Partial<RuntimeMigrationView>,
+): RuntimeMigrationView {
+  return {
+    phase,
+    abortable: phase !== "verified" && phase !== "aborting",
+    retryable: phase === "failed",
+    ...extra,
+  };
+}
+
+describe("runtimeBadge during a migration", () => {
+  // TEST_SCENARIO: a migration the user started is badged with its phase whatever the experiment says, and a failed one with a badge of its own, so a stuck move is never mistaken for one still running.
+  test("shows the phase, and a failure distinctly", () => {
+    const copying = runtimeBadge(
+      agent({ runtimeMigration: migration("copying") }),
+      OFF,
+    );
+    expect(copying).toMatchObject({
+      kind: "migrating",
+      label: "Migrating: copying",
+    });
+    const failed = runtimeBadge(
+      agent({
+        runtimeMigration: migration("failed", { message: "runner is full" }),
+      }),
+      ON,
+    );
+    expect(failed).toEqual({
+      kind: "failed",
+      label: "Migration failed",
+      title: "runner is full",
+    });
+  });
+});
+
 describe("migrateAction", () => {
   test("offers the migration to a container agent when the experiment is on", () => {
     expect(migrateAction(agent({}), ON, false)).toEqual({ kind: "offer" });
@@ -79,30 +121,115 @@ describe("migrateAction", () => {
   });
 
   test("shows the request in flight while the mutation is pending", () => {
-    expect(migrateAction(agent({}), ON, true)).toEqual({ kind: "migrating" });
+    expect(migrateAction(agent({}), ON, true)).toEqual({ kind: "requesting" });
   });
 
-  // TEST_SCENARIO: the api-server sets the vm backend in the same write that requests the migration, so a migrating agent already reads as a vm agent; it must still show as migrating, not lose its button.
-  test("keeps showing a running migration on an agent already switched to vm", () => {
-    expect(
-      migrateAction(
-        agent({ vm: true, runtimeMigration: { phase: "copying" } }),
-        ON,
-        false,
-      ),
-    ).toEqual({ kind: "migrating" });
-  });
-
-  test("carries the controller's reason while a migration is retrying", () => {
+  // TEST_SCENARIO: each phase is named on the button, with the controller's reason as its tooltip, and the way back is offered until the agent has started on the new runtime.
+  test("shows each phase with its reason and an Abort until verified", () => {
     expect(
       migrateAction(
         agent({
-          vm: true,
-          runtimeMigration: { phase: "booting", message: "runner is full" },
+          runtimeMigration: migration("booting", { message: "runner is full" }),
         }),
         ON,
         false,
       ),
-    ).toEqual({ kind: "migrating", message: "runner is full" });
+    ).toEqual({
+      kind: "migrating",
+      label: "Booting…",
+      title: "runner is full",
+      abortable: true,
+    });
+    expect(
+      migrateAction(
+        agent({ runtimeMigration: migration("copying", { attempts: 2 }) }),
+        ON,
+        false,
+      ),
+    ).toMatchObject({ title: expect.stringMatching(/attempt 2/) });
+    expect(
+      migrateAction(
+        agent({ vm: true, runtimeMigration: migration("verified") }),
+        ON,
+        false,
+      ),
+    ).toMatchObject({ kind: "migrating", abortable: false });
+  });
+
+  // TEST_SCENARIO: a failed migration is its own state, not a spinner: it names why it failed and offers both Retry and Abort.
+  test("shows a failure with Retry and Abort", () => {
+    expect(
+      migrateAction(
+        agent({
+          runtimeMigration: migration("failed", { message: "gave up" }),
+        }),
+        ON,
+        false,
+      ),
+    ).toEqual({
+      kind: "failed",
+      title: "gave up",
+      abortable: true,
+      retryable: true,
+    });
+  });
+
+  // TEST_SCENARIO: a user who turned the experiment off while a move was under way must still be able to see it and undo it.
+  test("keeps showing a migration with the experiment off", () => {
+    expect(
+      migrateAction(
+        agent({ runtimeMigration: migration("copying") }),
+        OFF,
+        false,
+      )?.kind,
+    ).toBe("migrating");
+  });
+});
+
+describe("whileInFlight", () => {
+  function tracker() {
+    let ids: InFlightIds = new Map();
+    const update = (next: (current: InFlightIds) => InFlightIds) => {
+      ids = next(ids);
+    };
+    const deferred = () => {
+      let settle: (ok: boolean) => void = () => {};
+      const promise = new Promise<void>((resolve, reject) => {
+        settle = (ok) => (ok ? resolve() : reject(new Error("refused")));
+      });
+      return { promise, settle };
+    };
+    return { busy: (id: string) => (ids.get(id) ?? 0) > 0, update, deferred };
+  }
+
+  // TEST_SCENARIO: aborting one row and then another keeps the first busy until its own request settles, and a failed request frees its row too; a mutation's latest variables would have released the first row as soon as the second started.
+  test("keeps each row busy until its own request settles", async () => {
+    const t = tracker();
+    const a = t.deferred();
+    const b = t.deferred();
+    const runA = whileInFlight("a", t.update, () => a.promise);
+    const runB = whileInFlight("b", t.update, () => b.promise);
+    expect([t.busy("a"), t.busy("b")]).toEqual([true, true]);
+    b.settle(true);
+    await runB;
+    expect([t.busy("a"), t.busy("b")]).toEqual([true, false]);
+    a.settle(false);
+    await runA;
+    expect(t.busy("a")).toBe(false);
+  });
+
+  // TEST_SCENARIO: an abort and a retry of the same agent in flight together both have to settle before its buttons come back.
+  test("counts two requests for one agent", async () => {
+    const t = tracker();
+    const abort = t.deferred();
+    const retry = t.deferred();
+    const runAbort = whileInFlight("a", t.update, () => abort.promise);
+    const runRetry = whileInFlight("a", t.update, () => retry.promise);
+    retry.settle(true);
+    await runRetry;
+    expect(t.busy("a")).toBe(true);
+    abort.settle(true);
+    await runAbort;
+    expect(t.busy("a")).toBe(false);
   });
 });

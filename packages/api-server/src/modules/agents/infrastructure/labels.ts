@@ -22,6 +22,13 @@ export const RUNTIME_MIGRATION_MOUNTS_KEY =
   "agent-platform.ai/runtime-migration-mounts";
 export const RUNTIME_MIGRATION_MESSAGE_KEY =
   "agent-platform.ai/runtime-migration-message";
+export const RUNTIME_MIGRATION_TARGET_KEY =
+  "agent-platform.ai/runtime-migration-target";
+export const RUNTIME_MIGRATION_SNAPSHOT_KEY =
+  "agent-platform.ai/runtime-migration-snapshot";
+export const RUNTIME_MIGRATION_RETRY_KEY =
+  "agent-platform.ai/runtime-migration-retry";
+export const RUNTIME_MIGRATING_CONDITION = "RuntimeMigrating";
 export const STORAGE_MIGRATION_KEY = "agent-platform.ai/storage-migration";
 
 export const ANN_SWEEPABLE = "agent-platform.ai/sweepable";
