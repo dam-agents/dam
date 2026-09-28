@@ -173,10 +173,12 @@ const suite: NamedProject[] = [
     : []),
 ];
 
+// UNIT_BOUNDARY_DESCRIPTION: an own user's login waits for the dev user's, the suite's first visit to Keycloak, whose first login page can take longer than an assertion waits; by then Keycloak has served it once.
 function ownUserSetup(spec: OwnUserSpec, project: string): NamedProject {
   return {
     name: `${project}-user`,
     testMatch: /00-own-user\.spec\.ts$/,
+    dependencies: ["auth"],
     metadata: { ownUserOf: spec },
     use: { ...devices["Desktop Chrome"] },
   };
