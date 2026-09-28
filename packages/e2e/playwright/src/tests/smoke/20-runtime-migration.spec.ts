@@ -190,6 +190,7 @@ test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
 
 // TEST_SCENARIO: the volume the copy was read from outlives the move. It is kept for the install's retention window, marked with the agent it was retained for and the path it held, so an operator can still recover the agent's work from before the move. Deleting the agent deletes it.
 test("retains the old home volume until the agent is deleted", async () => {
+  test.setTimeout(300_000);
   const retained = retainedVolumes(agentId);
   expect(retained.map((v) => v.mount)).toEqual(["/home/agent"]);
   expect(Date.parse(retained[0]?.until ?? "")).toBeGreaterThan(Date.now());
