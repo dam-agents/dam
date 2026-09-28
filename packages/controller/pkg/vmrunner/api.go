@@ -22,6 +22,12 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: or passed to smolvm, and never logs them, so
 	// UNIT_BOUNDARY_DESCRIPTION: they never reach spec.json or the guest.
 	PullAuths []string `json:"pullAuths,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the links plan: each persisted path from
+	// UNIT_BOUNDARY_DESCRIPTION: outside HOME a runtime migration moved below
+	// UNIT_BOUNDARY_DESCRIPTION: it, as the path the agent's software still
+	// UNIT_BOUNDARY_DESCRIPTION: uses. The runner puts it in the machine's
+	// UNIT_BOUNDARY_DESCRIPTION: share, where the guest reads it every boot.
+	Links []string `json:"links,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the seed this machine's home must be
 	// UNIT_BOUNDARY_DESCRIPTION: restored from, as the runner answered the
 	// UNIT_BOUNDARY_DESCRIPTION: migration's upload. It is sent only while a

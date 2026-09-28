@@ -250,6 +250,13 @@ type Mount struct {
 	// Ignored when Persist is false.
 	// +optional
 	Size string `json:"size,omitempty"`
+	// MovedFrom is the path outside HOME a runtime migration moved this
+	// persisted mount from, when Path is the same path below HOME/.persisted.
+	// On the vm backend the machine puts MovedFrom back on every boot as a
+	// link to Path, so the agent's software still finds its data there. Set
+	// only by the runtime migration.
+	// +optional
+	MovedFrom string `json:"movedFrom,omitempty"`
 }
 
 // EnvVar is a plain name/value environment variable.
@@ -271,7 +278,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=11
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=12
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

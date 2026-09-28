@@ -106,7 +106,7 @@ describe("runtime migration request", () => {
     });
   });
 
-  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the mounts are rewritten to match in the same write, the disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
+  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the mounts are rewritten to match in the same write, the moved one naming the path it came from so the machine can put it back at every boot, the disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
   it("moves persisted paths below HOME and says where each went", async () => {
     const h = harness({
       agent: infraAgent({
@@ -133,7 +133,12 @@ describe("runtime migration request", () => {
         mounts: [
           { path: "/home/agent", persist: true },
           { path: "/home/agent/cache", persist: true, size: "5Gi" },
-          { path: "/home/agent/.persisted/data", persist: true, size: "20Gi" },
+          {
+            path: "/home/agent/.persisted/data",
+            persist: true,
+            size: "20Gi",
+            movedFrom: "/data",
+          },
           { path: "/scratch", persist: false },
         ],
       },
@@ -148,7 +153,7 @@ describe("runtime migration request", () => {
     });
   });
 
-  // TEST_SCENARIO: an Agent that names no mounts gets the install's template defaults from the controller. The migration plans from those same mounts, so a default that persists a path outside HOME moves with the Agent, written out as its mounts, instead of being flipped for the controller to refuse.
+  // TEST_SCENARIO: an Agent that names no mounts gets the install's template defaults from the controller. The migration plans from those same mounts, so a default that persists a path outside HOME moves with the Agent, written out as its mounts and naming the path it came from, instead of being flipped for the controller to refuse.
   it("plans from the template defaults when the agent names no mounts", async () => {
     const h = harness({
       agent: infraAgent({ spec: { name: "my-agent", image: "img" } }),
@@ -161,7 +166,12 @@ describe("runtime migration request", () => {
     const patch = h.writeMigration.mock.calls[0]?.[1];
     expect(patch?.spec.mounts).toEqual([
       { path: "/home/agent", persist: true },
-      { path: "/home/agent/.persisted/data", persist: true, size: "5Gi" },
+      {
+        path: "/home/agent/.persisted/data",
+        persist: true,
+        size: "5Gi",
+        movedFrom: "/data",
+      },
     ]);
     expect(patch?.spec.storageSize).toBe("15Gi");
     expect(
