@@ -201,6 +201,26 @@ export function useMigrateRuntimeMutation() {
   });
 }
 
+export function useAbortRuntimeMigrationMutation() {
+  return useMutation({
+    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to undo the move to the new runtime",
+    },
+  });
+}
+
+export function useRetryRuntimeMigrationMutation() {
+  return useMutation({
+    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to retry the move to the new runtime",
+    },
+  });
+}
+
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),

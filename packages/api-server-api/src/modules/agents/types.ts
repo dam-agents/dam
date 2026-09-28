@@ -49,11 +49,21 @@ export interface TemplateUpdate {
   toImage: string;
 }
 
-export type RuntimeMigrationPhase = "requested" | "copying" | "booting";
+export type RuntimeMigrationPhase =
+  | "requested"
+  | "stopping"
+  | "copying"
+  | "booting"
+  | "verified"
+  | "failed"
+  | "aborting";
 
 export interface RuntimeMigration {
   phase: RuntimeMigrationPhase;
   message?: string;
+  attempts?: number;
+  abortable: boolean;
+  retryable: boolean;
 }
 
 export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
@@ -167,6 +177,24 @@ export type PlanRuntimeMigrationResult =
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
+export type AbortRuntimeMigrationError =
+  | { type: "AgentNotFound" }
+  | { type: "NoRuntimeMigration" }
+  | { type: "RuntimeMigrationVerified" }
+  | { type: "ConcurrentUpdate" };
+
+export type AbortRuntimeMigrationResult =
+  { ok: true; value: Agent } | { ok: false; error: AbortRuntimeMigrationError };
+
+export type RetryRuntimeMigrationError =
+  | { type: "AgentNotFound" }
+  | { type: "NoRuntimeMigration" }
+  | { type: "RuntimeMigrationNotFailed" }
+  | { type: "ConcurrentUpdate" };
+
+export type RetryRuntimeMigrationResult =
+  { ok: true; value: Agent } | { ok: false; error: RetryRuntimeMigrationError };
+
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
   | { type: "ChannelAlreadyBound" }
@@ -235,6 +263,8 @@ export interface AgentsService {
   ) => Promise<UpgradeAgentResult>;
   migrateRuntime: (id: string) => Promise<MigrateRuntimeResult>;
   planRuntimeMigration: (id: string) => Promise<PlanRuntimeMigrationResult>;
+  abortRuntimeMigration: (id: string) => Promise<AbortRuntimeMigrationResult>;
+  retryRuntimeMigration: (id: string) => Promise<RetryRuntimeMigrationResult>;
   ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;
   connectSlack: (
     id: string,

@@ -9,6 +9,8 @@ import {
   runtimeMigrationRefusalReasons,
   toRuntimeMigrationPlanView,
   type AgentSpec,
+  type RuntimeMigration,
+  type RuntimeMigrationPhase,
 } from "api-server-api";
 
 import { goDurationMs } from "../../duration.js";
@@ -23,6 +25,7 @@ import {
   type InfraAgent,
 } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { wakeFailureUserCopy } from "../../modules/channels/infrastructure/wake-failure-copy.js";
+import { runtimeMigrationHold } from "../../modules/agents/domain/runtime-migration.js";
 
 const WEEK_MS = 7 * 24 * 3600_000;
 
@@ -223,17 +226,20 @@ describe("an agent mid-migration", () => {
   } as InfraAgent;
 
   // TEST_SCENARIO: the controller holds a migrating agent down, so without its own state it reads as starting and the chat waits on a wake that will not come.
-  it("reads as migrating while the migration runs", () => {
+  it("reads as migrating while the migration holds it", () => {
     expect(
-      computeAgentState({ ...base, runtimeMigration: { phase: "copying" } }),
+      computeAgentState({ ...base, runtimeMigrationHold: "migrating" }),
     ).toBe("migrating");
+    expect(computeAgentState({ ...base, runtimeMigrationHold: "failed" })).toBe(
+      "migrating",
+    );
+  });
+
+  // TEST_SCENARIO: through the preflight the container keeps running, so the agent reads as its container does.
+  it("reads as its container while nothing is held", () => {
     expect(
-      computeAgentState({
-        ...base,
-        ready: true,
-        runtimeMigration: { phase: "booting" },
-      }),
-    ).toBe("migrating");
+      computeAgentState({ ...base, ready: true, runtimeMigrationHold: "none" }),
+    ).toBe("running");
   });
 
   it("still reads a reconcile error as an error", () => {
@@ -241,7 +247,7 @@ describe("an agent mid-migration", () => {
       computeAgentState({
         ...base,
         error: "bad spec",
-        runtimeMigration: { phase: "copying" },
+        runtimeMigrationHold: "migrating",
       }),
     ).toBe("error");
   });
@@ -268,5 +274,44 @@ describe("an agent mid-migration", () => {
         failure,
       }).message,
     ).toBe("agent a1 was not started: the agent is moving to the new runtime");
+  });
+});
+
+describe("what a migration holds", () => {
+  const phase = (p: RuntimeMigrationPhase): RuntimeMigration => ({
+    phase: p,
+    abortable: false,
+    retryable: false,
+  });
+
+  // TEST_SCENARIO: the controller keeps the container running through the preflight, brings it back on an abort, and the machine answers once verified; none of these should refuse a wake.
+  it("holds nothing through the preflight, an abort or a verified boot", () => {
+    expect(runtimeMigrationHold(undefined, false)).toBe("none");
+    expect(runtimeMigrationHold(phase("requested"), false)).toBe("none");
+    expect(runtimeMigrationHold(phase("aborting"), true)).toBe("none");
+    expect(runtimeMigrationHold(phase("verified"), true)).toBe("none");
+  });
+
+  it("holds the agent from the stop until the machine has booted from the copy", () => {
+    expect(runtimeMigrationHold(phase("stopping"), false)).toBe("migrating");
+    expect(runtimeMigrationHold(phase("copying"), true)).toBe("migrating");
+    expect(runtimeMigrationHold(phase("booting"), true)).toBe("migrating");
+  });
+
+  // TEST_SCENARIO: a failure after the stop keeps the container stopped until the owner retries or aborts; a preflight failure never stopped it, so the agent still answers.
+  it("holds a failed migration only when it had stopped the container", () => {
+    expect(runtimeMigrationHold(phase("failed"), true)).toBe("failed");
+    expect(runtimeMigrationHold(phase("failed"), false)).toBe("none");
+  });
+
+  // TEST_SCENARIO: a move that failed after the stop waits on its owner, so a channel reply must not promise it comes back by itself.
+  it("says a failed move waits on the owner", () => {
+    const failure = { kind: "migration-failed" } as const;
+    expect(wakeFailureUserCopy(failure)).toMatch(
+      /failed, and it stays stopped until its owner retries or aborts/,
+    );
+    expect(wakeFailureReasonToken(failure)).toBe(
+      "wake-rejected:migration-failed",
+    );
   });
 });

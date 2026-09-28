@@ -24,6 +24,8 @@ import {
   agentUpgradeInputSchema,
   agentMigrateRuntimeInputSchema,
   agentPlanRuntimeMigrationInputSchema,
+  agentAbortRuntimeMigrationInputSchema,
+  agentRetryRuntimeMigrationInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
@@ -180,6 +182,62 @@ export const agentsRouter = t.router({
         case "PersistsUnmovablePaths":
         case "HomeNotPersisted":
           throw new TRPCError({ code: "PRECONDITION_FAILED", message });
+      }
+    }),
+
+  abortRuntimeMigration: manageAgentsProcedure
+    .input(agentAbortRuntimeMigrationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.abortRuntimeMigration(input.id);
+      if (res.ok) return toAgentView(res.value);
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "NoRuntimeMigration":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This agent is not moving to the new runtime",
+          });
+        case "RuntimeMigrationVerified":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent has already started on the new runtime, so the move can no longer be undone",
+          });
+        case "ConcurrentUpdate":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the request was being made — try again",
+          });
+      }
+    }),
+
+  retryRuntimeMigration: manageAgentsProcedure
+    .input(agentRetryRuntimeMigrationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.retryRuntimeMigration(input.id);
+      if (res.ok) return toAgentView(res.value);
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "NoRuntimeMigration":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This agent is not moving to the new runtime",
+          });
+        case "RuntimeMigrationNotFailed":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent's move has not failed, so there is nothing to retry",
+          });
+        case "ConcurrentUpdate":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the request was being made — try again",
+          });
       }
     }),
 

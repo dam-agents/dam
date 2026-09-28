@@ -32,6 +32,7 @@ import {
   setSlackChannelAmbient,
   setSlackChannelDefault,
   createAgentSweep,
+  createRuntimeMigrationSwitch,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -1050,7 +1051,8 @@ export async function bootstrap() {
       );
     },
     runtimeMigrating: async (agentId) =>
-      (await agentsRepo.get(agentId))?.runtimeMigration !== undefined,
+      ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
+      "none",
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1331,6 +1333,17 @@ export async function bootstrap() {
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
+
+  const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
+    listAgents: () => agentsRepo.list(),
+    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
+    writeMigration: (id, patch) =>
+      liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  await periodicJobs.register("runtime-migration-switch", 15_000, () =>
+    runtimeMigrationSwitch.tick(),
+  );
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);

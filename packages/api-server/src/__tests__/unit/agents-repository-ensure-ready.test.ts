@@ -291,6 +291,38 @@ describe("ensureReady", () => {
     ).toBeUndefined();
   });
 
+  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until the owner retries or aborts, so the wake is refused at once with a cause that says the move failed.
+  it("refuses at once while a failed migration keeps the agent stopped", async () => {
+    const obj = agentObj("a1", [
+      ...HIBERNATED,
+      { type: "RuntimeMigrating", status: "False", reason: "Failed" },
+    ]);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "requested";
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration-source"] =
+      "{}";
+    const { repo } = harness([obj]);
+    const err = await repo.ensureReady("a1").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err) && err.failure).toEqual({
+      kind: "migration-failed",
+    });
+  });
+
+  // TEST_SCENARIO: through the preflight the container keeps running, so a wake for it is served as usual.
+  it("serves a wake during the preflight", async () => {
+    const obj = agentObj("a1", [
+      ...READY,
+      { type: "RuntimeMigrating", status: "True", reason: "Requested" },
+    ]);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "requested";
+    const { repo } = harness([obj]);
+    await expect(repo.ensureReady("a1")).resolves.toBeUndefined();
+  });
+
   it("late ready at the deadline counts as success", async () => {
     const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
     const original = store.get("a1")!;

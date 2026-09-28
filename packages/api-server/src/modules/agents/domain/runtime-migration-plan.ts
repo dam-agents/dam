@@ -6,9 +6,9 @@ import type {
 
 import {
   effectiveMounts,
-  movedStorageSize,
   planPersistedMoves,
   runtimeMigrationRefusal,
+  runtimeMigrationRequest,
   type RuntimeMigrationContext,
 } from "./runtime-migration.js";
 
@@ -17,7 +17,7 @@ export interface PlanInputs extends RuntimeMigrationContext {
   retentionMs: number | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what moving one agent to the new runtime would do, read without writing anything, so the user can see it before they agree. It is built from the same move plan, disk sizing and refusal the migrate request uses, so the plan and the request cannot disagree. A sleeping agent is booted once to finish the move, because only a guest that answered proves the copy, and a booted agent counts against its owner's budget.
+// UNIT_BOUNDARY_DESCRIPTION: what moving one agent to the new runtime would do, read without writing anything, so the user can see it before they agree. It is read off the very request a migrate would record — its moves and the target disk size — and the same refusal the request checks, so the plan and the request cannot disagree. The unmovable paths come from the same move rule. A sleeping agent is booted once to finish the move, because only a guest that answered proves the copy, and a booted agent counts against its owner's budget.
 export function runtimeMigrationPlan(
   agent: {
     spec: AgentSpec;
@@ -28,15 +28,16 @@ export function runtimeMigrationPlan(
   },
   inputs: PlanInputs,
 ): RuntimeMigrationPlan {
-  const mounts = effectiveMounts(agent.spec, inputs.defaultMounts);
-  const { moves, unmovable } = planPersistedMoves(mounts);
-  const asked = agent.spec.storageSize ?? inputs.defaultStorageSize;
-  const resized = movedStorageSize(
+  const { target, moves } = runtimeMigrationRequest(
     agent.spec,
-    mounts,
-    moves,
     inputs.defaultStorageSize,
+    inputs.defaultMounts,
   );
+  const { unmovable } = planPersistedMoves(
+    effectiveMounts(agent.spec, inputs.defaultMounts),
+  );
+  const asked = agent.spec.storageSize ?? inputs.defaultStorageSize;
+  const resized = target.storageSize;
   return {
     moves: Object.entries(moves).map(([from, to]) => ({ from, to })),
     unmovable,

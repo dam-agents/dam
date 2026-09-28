@@ -21,6 +21,7 @@ export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-s
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
+export { createRuntimeMigrationSwitch } from "./services/runtime-migration.js";
 export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,

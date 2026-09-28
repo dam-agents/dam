@@ -659,7 +659,7 @@ differ:
   the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
   proxy port. The gateway injects credentials for any caller, so
   `<id>-gateway-ingress` admits that port only from the paired agent
-  pod and, for a vm Agent, the owner's VM runner.
+  pod and, for a machine, the owner's VM runner.
   DNS is not admitted — the agent addresses its gateway by ClusterIP,
   and name resolution for external hosts happens in the gateway, so
   anything in the pod that tries to resolve names directly fails

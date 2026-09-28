@@ -1,5 +1,7 @@
-import { Migrate } from "@carbon/icons-react";
+import { Migrate, Renew, Undo, WarningAlt } from "@carbon/icons-react";
+import type * as React from "react";
 import { type SyntheticEvent, useState } from "react";
+import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,38 +19,83 @@ import { MigrationRefusalList } from "./migration-plan-summary.js";
 interface Props {
   agent: AgentView;
   onMigrate: () => void;
+  onAbort: () => void;
+  onRetry: () => void;
   pending: boolean;
+  controlsBusy: boolean;
 }
 
-export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
+export function MigrateRuntimeAction({
+  agent,
+  onMigrate,
+  onAbort,
+  onRetry,
+  pending,
+  controlsBusy,
+}: Props) {
   const action = migrateAction(agent, useVmRuntime(), pending);
   if (!action) return null;
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-  // UNIT_BOUNDARY_DESCRIPTION: a running migration disables the button, and a disabled button takes no pointer events, so a hover card on it would never open in the one state that has something to report. That state's text rides the button's tooltip instead, which the button shows even while disabled.
-  if (action.kind === "migrating") {
-    return (
-      <span onClick={(e) => e.stopPropagation()}>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled
-          tooltip={
-            action.message ??
-            "Copying the home directory to the new sandbox runtime"
-          }
-          className="shrink-0 font-medium text-accent"
-        >
-          <Migrate size={16} />
-          Migrating…
-        </Button>
+  return match(action)
+    .with({ kind: "requesting" }, () => (
+      <span onClick={stop}>
+        <MigratingButton label="Migrating…" title="Requesting the move" />
       </span>
-    );
-  }
+    ))
+    .with({ kind: "migrating" }, (a) => (
+      <span className="flex items-center gap-1" onClick={stop}>
+        <MigratingButton label={a.label} title={a.title} />
+        {a.abortable && (
+          <AbortButton onAbort={onAbort} disabled={controlsBusy} />
+        )}
+      </span>
+    ))
+    .with({ kind: "failed" }, (a) => (
+      <span className="flex items-center gap-1" onClick={stop}>
+        <span
+          className="flex items-center gap-1 text-sm font-medium text-danger"
+          title={a.title}
+          role="status"
+          tabIndex={0}
+          aria-label={`Migration failed: ${a.title}`}
+        >
+          <WarningAlt size={16} aria-hidden />
+          Migration failed
+        </span>
+        {a.retryable && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={controlsBusy}
+            onClick={onRetry}
+            className="shrink-0 font-medium"
+          >
+            <Renew size={16} />
+            Retry
+          </Button>
+        )}
+        {a.abortable && (
+          <AbortButton onAbort={onAbort} disabled={controlsBusy} />
+        )}
+      </span>
+    ))
+    .with({ kind: "offer" }, () => (
+      <OfferButton onMigrate={onMigrate} stop={stop} />
+    ))
+    .with({ kind: "refused" }, () => <RefusedMigrate agentId={agent.id} />)
+    .exhaustive(() => null);
+}
 
-  if (action.kind === "refused") return <RefusedMigrate agentId={agent.id} />;
-
+function OfferButton({
+  onMigrate,
+  stop,
+}: {
+  onMigrate: () => void;
+  stop: (e: React.MouseEvent) => void;
+}) {
   return (
-    <span onClick={(e) => e.stopPropagation()}>
+    <span onClick={stop}>
       <HoverCard>
         <HoverCardTrigger asChild>
           <Button
@@ -71,7 +118,8 @@ export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
             The agent restarts on the new sandbox runtime. Its home directory,
             with the workspace and settings, is copied over, and the agent is
             unavailable while the copy runs. The next step shows exactly what
-            moves. This cannot be undone from the UI.
+            moves. The move can be undone until the agent first starts on the
+            new runtime.
           </p>
         </HoverCardContent>
       </HoverCard>
@@ -145,5 +193,43 @@ function RefusalReasons({ agentId }: { agentId: string }) {
     <div className="text-muted-foreground">
       <MigrationRefusalList plan={plan} />
     </div>
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a disabled button takes no pointer events, so a hover card on it would never open in the one state that has something to report. The phase's reason rides the button's tooltip instead, which the button shows even while disabled.
+function MigratingButton({ label, title }: { label: string; title: string }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled
+      tooltip={title}
+      className="shrink-0 font-medium text-accent"
+    >
+      <Migrate size={16} />
+      {label}
+    </Button>
+  );
+}
+
+function AbortButton({
+  onAbort,
+  disabled,
+}: {
+  onAbort: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      tone="danger"
+      disabled={disabled}
+      onClick={onAbort}
+      className="shrink-0 font-medium"
+    >
+      <Undo size={16} />
+      Abort
+    </Button>
   );
 }

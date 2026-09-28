@@ -54,6 +54,8 @@ export const agentUpgradeInputSchema = idSchema.extend({
 });
 export const agentMigrateRuntimeInputSchema = idSchema;
 export const agentPlanRuntimeMigrationInputSchema = idSchema;
+export const agentAbortRuntimeMigrationInputSchema = idSchema;
+export const agentRetryRuntimeMigrationInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });

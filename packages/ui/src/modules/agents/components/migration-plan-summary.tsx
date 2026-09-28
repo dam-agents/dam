@@ -58,7 +58,10 @@ export function MigrationPlanSummary({
           interrupted.
         </li>
       </ul>
-      <p>This cannot be undone from the UI.</p>
+      <p>
+        Until the agent has started on the new runtime, you can abort the move,
+        and it goes back to where it was.
+      </p>
     </div>
   );
 }

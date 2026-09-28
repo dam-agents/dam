@@ -2,6 +2,7 @@ export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
   | { kind: "migrating" }
+  | { kind: "migration-failed" }
   | { kind: "hibernated-not-scaled" }
   | { kind: "agent-pod-failed"; terminationReason: string }
   | { kind: "agent-pod-not-ready" }
@@ -94,6 +95,8 @@ export function wakeFailureReasonToken(c: WakeFailureCause): string {
       return "wake-rejected:over-budget";
     case "migrating":
       return "wake-rejected:migrating";
+    case "migration-failed":
+      return "wake-rejected:migration-failed";
     default:
       return `wake-timeout:${c.kind}`;
   }
@@ -115,6 +118,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
       return c.message;
     case "migrating":
       return "the agent is moving to the new runtime";
+    case "migration-failed":
+      return "the agent's move to the new runtime failed, and it stays stopped until its owner retries or aborts the move";
     case "hibernated-not-scaled":
       return "scale-up was never started";
     case "agent-pod-failed":
@@ -170,7 +175,9 @@ export class AgentWakeTimeoutError extends Error {
     failure: WakeFailureCause;
   }) {
     super(
-      args.failure.kind === "over-budget" || args.failure.kind === "migrating"
+      args.failure.kind === "over-budget" ||
+        args.failure.kind === "migrating" ||
+        args.failure.kind === "migration-failed"
         ? `agent ${args.agentId} was not started: ${describeWakeFailure(args.failure)}`
         : `agent ${args.agentId} did not become ready within ` +
             `${Math.round(args.timeoutMs / 1000)}s (${describeWakeFailure(args.failure)})`,

@@ -134,7 +134,7 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
   ).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The api-server switches the Backend in the same write that requests the migration, so the Agent reads as a vm Agent at once. It is settled once the controller has copied HOME, booted the machine from the copy and cleared the migration's state, and the machine is running.
+// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
 test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
   test.setTimeout(1_200_000);
   await setVmSandboxes(api, true);
@@ -153,11 +153,19 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
     .click();
 
   await expect
-    .poll(async () => (await api.agents.get.query({ id: agentId })).vm, {
-      timeout: 30_000,
-      message: "the Migrate button did not switch the agent to the vm Backend",
-    })
-    .toBe(true);
+    .poll(
+      async () => {
+        const agent = await api.agents.get.query({ id: agentId });
+        return agent.runtimeMigration
+          ? `${agent.vm ? "vm" : "container"}`
+          : "none";
+      },
+      {
+        timeout: 30_000,
+        message: "the Migrate button did not request a migration",
+      },
+    )
+    .toBe("container");
   await expect
     .poll(migrationProgress, {
       timeout: 900_000,

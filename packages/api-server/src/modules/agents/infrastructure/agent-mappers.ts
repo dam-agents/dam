@@ -30,8 +30,12 @@ import {
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
+  RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
+  RUNTIME_MIGRATION_SNAPSHOT_KEY,
+  RUNTIME_MIGRATION_SOURCE_KEY,
+  RUNTIME_MIGRATION_TARGET_KEY,
   STOP_REQUESTED_KEY,
   STORAGE_MIGRATION_KEY,
   VERSION,
@@ -40,8 +44,10 @@ import {
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 import {
+  runtimeMigrationHold,
   runtimeMigrationOf,
   runtimeMigrationRefusal,
+  type RuntimeMigrationHold,
   type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
@@ -61,6 +67,7 @@ interface AgentStatusObject {
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
+  runtimeMigrationAttempts?: number;
 }
 
 export interface InfraAgent {
@@ -83,6 +90,9 @@ export interface InfraAgent {
   hibernated: boolean;
   stopRequested: boolean;
   runtimeMigration?: RuntimeMigration;
+  runtimeMigrationHold?: RuntimeMigrationHold;
+  runtimeMigrationTarget?: string;
+  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -106,7 +116,7 @@ export function computeAgentState(
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
-  if (infra.runtimeMigration) return "migrating";
+  if ((infra.runtimeMigrationHold ?? "none") !== "none") return "migrating";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
@@ -182,11 +192,17 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? new Date(ready.lastTransitionTime)
       : undefined;
   const createdAt = createdAtOf(obj);
-  const resourceVersion = obj.metadata?.resourceVersion;
-  const runtimeMigration = runtimeMigrationOf(
-    annotations[RUNTIME_MIGRATION_KEY],
-    annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
+  const migrating = status.conditions?.find(
+    (c) => c.type === RUNTIME_MIGRATING_CONDITION,
   );
+  const runtimeMigration = runtimeMigrationOf({
+    requested: annotations[RUNTIME_MIGRATION_KEY],
+    legacyMessage: annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
+    ...(migrating ? { condition: migrating } : {}),
+    attempts: status.runtimeMigrationAttempts,
+    vm: crSpec.backend?.type === "vm",
+  });
+  const resourceVersion = obj.metadata?.resourceVersion;
   return {
     id,
     name: spec.name,
@@ -213,6 +229,18 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
     ...(runtimeMigration ? { runtimeMigration } : {}),
+    runtimeMigrationHold: runtimeMigrationHold(
+      runtimeMigration,
+      !!annotations[RUNTIME_MIGRATION_SOURCE_KEY],
+    ),
+    ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
+      ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
+      : {}),
+    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
+      ? {
+          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
+        }
+      : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,

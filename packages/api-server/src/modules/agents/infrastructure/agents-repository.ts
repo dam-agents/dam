@@ -1,11 +1,10 @@
-import { isConflict, type K8sClient } from "./k8s.js";
+import { isConflict, isNotFound, type K8sClient } from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
   LAST_ACTIVITY_KEY,
-  RUNTIME_MIGRATION_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
 import {
@@ -33,11 +32,6 @@ import {
 import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { getLogger } from "../../../core/logger.js";
 
-export type MigrateBackendOutcome =
-  | { kind: "migrated"; agent: InfraAgent }
-  | { kind: "not-found" }
-  | { kind: "conflict" };
-
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -56,15 +50,11 @@ export interface AgentsRepository {
   ): Promise<InfraAgent | null>;
   patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
   getLive(id: string, owner: string | undefined): Promise<InfraAgent | null>;
-  migrateBackend(
+  writeRuntimeMigration(
     id: string,
     owner: string | undefined,
-    patch: {
-      spec: Record<string, unknown>;
-      annotations: Record<string, string>;
-      resourceVersion: string | undefined;
-    },
-  ): Promise<MigrateBackendOutcome>;
+    patch: RuntimeMigrationWrite,
+  ): Promise<RuntimeMigrationWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
@@ -87,17 +77,44 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state; a write with no version to name is refused as a conflict.
+export interface RuntimeMigrationWrite {
+  spec?: Record<string, unknown>;
+  annotations: Record<string, string | null>;
+  resourceVersion: string | undefined;
+}
+
+export type RuntimeMigrationWriteResult =
+  | { ok: true; value: InfraAgent }
+  | { ok: false; reason: "not-found" | "conflict" };
+
 export interface AgentActivityStamp {
   previous: string | null;
   written: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through migrateBackend; every other spec write that names the Backend is a bug and fails loudly.
+// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through writeRuntimeMigration; every other spec write that names the Backend is a bug and fails loudly.
 function assertBackendUntouched(patch: Record<string, unknown>): void {
   if ("backend" in patch)
     throw new Error(
       "an agent's backend changes only through a runtime migration",
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a wake for an Agent a runtime migration holds down could only wait out the timeout, so it is refused at once, with a cause that says whether the move is under way or failed after it stopped the container.
+function refuseWhileMigrating(
+  id: string,
+  infra: InfraAgent,
+  durationMs: number,
+): void {
+  const hold = infra.runtimeMigrationHold ?? "none";
+  if (hold === "none") return;
+  throw new AgentWakeTimeoutError({
+    agentId: id,
+    timeoutMs: WAKE_TIMEOUT_MS,
+    durationMs,
+    failure: { kind: hold === "failed" ? "migration-failed" : "migrating" },
+  });
 }
 
 export function createAgentsRepository(
@@ -165,23 +182,25 @@ export function createAgentsRepository(
       return parseInfraAgent(obj);
     },
 
-    async migrateBackend(id, owner, patch) {
+    async writeRuntimeMigration(id, owner, patch) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return { kind: "not-found" };
-      if (owner && !agentIsOwnedBy(obj, owner)) return { kind: "not-found" };
-      if (!patch.resourceVersion) return { kind: "conflict" };
+      if (!obj) return { ok: false, reason: "not-found" };
+      if (owner && !agentIsOwnedBy(obj, owner))
+        return { ok: false, reason: "not-found" };
+      if (!patch.resourceVersion) return { ok: false, reason: "conflict" };
       try {
         const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
           metadata: {
             annotations: patch.annotations,
             resourceVersion: patch.resourceVersion,
           },
-          spec: patch.spec,
+          ...(patch.spec ? { spec: patch.spec } : {}),
         });
-        return { kind: "migrated", agent: parseInfraAgent(updated) };
-      } catch (err) {
-        if (isConflict(err)) return { kind: "conflict" };
-        throw err;
+        return { ok: true, value: parseInfraAgent(updated) };
+      } catch (e) {
+        if (isConflict(e)) return { ok: false, reason: "conflict" };
+        if (isNotFound(e)) return { ok: false, reason: "not-found" };
+        throw e;
       }
     },
 
@@ -377,14 +396,7 @@ export function createAgentsRepository(
         if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
           throw new AgentStoppedError(id);
         }
-        if (current.metadata?.annotations?.[RUNTIME_MIGRATION_KEY]) {
-          throw new AgentWakeTimeoutError({
-            agentId: id,
-            timeoutMs: WAKE_TIMEOUT_MS,
-            durationMs: 0,
-            failure: { kind: "migrating" },
-          });
-        }
+        refuseWhileMigrating(id, parseInfraAgent(current), 0);
         if (await repo.isReady(id)) {
           await bumpLastActivity(id);
           return;
@@ -414,6 +426,7 @@ export function createAgentsRepository(
               throw new AgentStoppedError(id);
             }
             const infra = parseInfraAgent(obj);
+            refuseWhileMigrating(id, infra, Date.now() - startedAt);
             if (infra.overBudget) {
               const graceOver =
                 Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;
