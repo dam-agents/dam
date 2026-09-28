@@ -779,10 +779,13 @@ mod tests {
         share
     }
 
-    const NONCE: &str = "0123456789abcdef0123456789abcdef";
-
     fn seed_capability(machine: &str, expires: u64) -> String {
-        capability::mint(&capability::derive_key(b"secret"), machine, NONCE, expires)
+        capability::mint(
+            &capability::derive_key(b"secret"),
+            machine,
+            &capability::fresh_nonce(),
+            expires,
+        )
     }
 
     fn in_an_hour() -> u64 {
@@ -877,7 +880,7 @@ mod tests {
                 .join(crate::server::SPENT_CAPABILITIES_FILE),
         )
         .unwrap();
-        assert_eq!(spent.trim(), NONCE);
+        assert_eq!(Some(spent.trim()), capability.split('.').nth(1));
     }
 
     // TEST_SCENARIO: a capability never seeds a machine that is not being migrated — a sibling that was created as a vm Agent from the start — nor one whose disk already holds a home, nor one that already has a seed, since each would let the Job replace a home it has no business touching. The owner's token still seeds as it always did.

@@ -120,10 +120,18 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 }
 
 #[cfg(test)]
+pub(crate) fn fresh_nonce() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; NONCE_HEX / 2];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut random| random.read_exact(&mut bytes))
+        .unwrap();
+    hex(&bytes)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-
-    const NONCE: &str = "00112233445566778899aabbccddeeff";
 
     // TEST_SCENARIO: the MAC is hand-written, so it is held to the published vectors: RFC 4231 cases 1 and 6, a short key and one longer than the block, which is hashed first.
     #[test]
@@ -164,8 +172,9 @@ mod tests {
     // TEST_SCENARIO: a capability names one machine. The Job for machine A presenting it on machine B's seed route is refused, as is a capability signed under another runner's token.
     #[test]
     fn a_capability_for_one_machine_is_refused_for_another() {
+        let nonce = fresh_nonce();
         let key = derive_key(b"token");
-        let capability = mint(&key, "agent-a", NONCE, 100);
+        let capability = mint(&key, "agent-a", &nonce, 100);
         assert!(verify(&key, &capability, "agent-a", 10).is_ok());
         assert_eq!(
             verify(&key, &capability, "agent-b", 10),
@@ -180,8 +189,9 @@ mod tests {
     // TEST_SCENARIO: a capability is good only until its expiry, which the controller sets just past the Job's active deadline. From that second on it is refused.
     #[test]
     fn an_expired_capability_is_refused() {
+        let nonce = fresh_nonce();
         let key = derive_key(b"token");
-        let capability = mint(&key, "agent-a", NONCE, 100);
+        let capability = mint(&key, "agent-a", &nonce, 100);
         assert!(verify(&key, &capability, "agent-a", 99).is_ok());
         assert_eq!(
             verify(&key, &capability, "agent-a", 100),
@@ -192,11 +202,12 @@ mod tests {
     // TEST_SCENARIO: the expiry and nonce are signed, so a Job that moves its own expiry forward, or strips a field, holds nothing the runner accepts.
     #[test]
     fn an_altered_capability_is_refused() {
+        let nonce = fresh_nonce();
         let key = derive_key(b"token");
-        let capability = mint(&key, "agent-a", NONCE, 100);
+        let capability = mint(&key, "agent-a", &nonce, 100);
         for altered in [
             capability.replace(".100.", ".999."),
-            capability.replace(NONCE, "ffffffffffffffffffffffffffffffff"),
+            capability.replace(nonce.as_str(), "ffffffffffffffffffffffffffffffff"),
             capability.rsplit_once('.').unwrap().0.to_string(),
             format!("{capability}.x"),
             capability.to_uppercase(),
@@ -213,10 +224,11 @@ mod tests {
     // TEST_SCENARIO: the key is derived from the token and is not the token, so a capability says nothing a Job could use against the other routes.
     #[test]
     fn the_key_is_not_the_token() {
+        let nonce = fresh_nonce();
         let key = derive_key(b"token");
         assert_ne!(&key[..5], b"token");
         assert_ne!(key, derive_key(b"token2"));
-        assert!(looks_like(&mint(&key, "a", NONCE, 1)));
+        assert!(looks_like(&mint(&key, "a", &nonce, 1)));
         assert!(!looks_like("0123abcd"));
     }
 }
