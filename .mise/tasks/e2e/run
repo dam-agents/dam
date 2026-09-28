@@ -107,8 +107,12 @@ mise run e2e:install
 # so its data is brand new, and the reset would only bounce the apiserver and
 # gate on it again. The stored login is the one piece of the reset that lives
 # outside the cluster.
-rm -f packages/e2e/playwright/.auth/user.json
+rm -f packages/e2e/playwright/.auth/*.json
 
+e2e_mark "suite started"
+suite_rc=0
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
-  mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"}
+  mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
+e2e_mark "suite finished"
+exit "$suite_rc"

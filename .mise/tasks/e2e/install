@@ -38,3 +38,4 @@ mise run cluster:install -- "${INSTALL_ARGS[@]}"
 
 # Readiness gate — shared task, see e2e:gate.
 mise run e2e:gate
+e2e_mark "gate passed"

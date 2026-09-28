@@ -8,6 +8,13 @@ else
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
+# e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
+# names, and does nothing without it. CI's vm lane sets it, and e2e:timings
+# turns the marks into the job's per-phase timing summary.
+e2e_mark() {
+  [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"
+}
+
 # What ztunnel logs for an expired mesh cert: its own SVID's, or a waypoint's
 # (it logs the failed HBONE handshake). The ztunnel-cert-watchdog CronJob in
 # cluster:install runs in the cluster and has its own copy; keep the two in sync.

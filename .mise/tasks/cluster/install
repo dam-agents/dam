@@ -15,6 +15,7 @@
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+e2e_mark "install started"
 
 if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
   mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
@@ -237,6 +238,18 @@ export -f pull_one
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
+# Step 6b's staging, which E2E_STAGE_VM_EARLY moves beside the chart install.
+stage_vm_images() {
+  local image comp
+  e2e_mark "vm images staging started"
+  for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
+    echo "Staging $image for the VM runners..."
+    comp="${image##*/}"; comp="${comp%%:*}"
+    mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")" || return 1
+  done
+  e2e_mark "vm images staging done"
+}
+
 # 1d. Load images into k3s (built at the top, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
@@ -343,12 +356,29 @@ else
     exit "$rc"
   } > >(sed -u 's/^/[images] /') 2>&1 &
   IMAGE_LOAD_PID=$!
+  AGENT_IMAGES_LOADED=$(mktemp)
   if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
     {
       until [ -s "$PLATFORM_IMAGES_LOADED" ]; do sleep 1; done
-      load_images "${AGENT_TASKS[@]}"
+      rc=0
+      load_images "${AGENT_TASKS[@]}" || rc=$?
+      echo "$rc" > "$AGENT_IMAGES_LOADED"
+      exit "$rc"
     } > >(sed -u 's/^/[agent images] /') 2>&1 &
     AGENT_LOAD_PID=$!
+  fi
+  # E2E_STAGE_VM_EARLY stages the vm-backend images (step 6b) as soon as the
+  # agent images are loaded, beside the chart install and the wait for its
+  # deployments, instead of after that wait. It starts only then, not beside
+  # the imports, for the reason the agent images load after the platform ones:
+  # the host's cores are shared, and the staging is the heavier job.
+  if [ -n "${E2E_STAGE_VM_EARLY:-}" ] && [ ${#VM_IMAGES[@]} -gt 0 ]; then
+    {
+      until [ -s "$AGENT_IMAGES_LOADED" ]; do sleep 1; done
+      [ "$(cat "$AGENT_IMAGES_LOADED")" = 0 ] || exit 1
+      stage_vm_images
+    } > >(sed -u 's/^/[stage-vm] /') 2>&1 &
+    STAGE_VM_PID=$!
   fi
 fi
 
@@ -673,6 +703,7 @@ kubectl label namespace default istio.io/dataplane-mode=ambient --overwrite
 if [ -n "${IMAGE_LOAD_PID:-}" ]; then
   wait "$IMAGE_LOAD_PID" || { echo "FATAL: loading the platform images failed" >&2; exit 1; }
 fi
+e2e_mark "platform images loaded"
 echo "Installing/upgrading Platform chart..."
 # Helm never upgrades the chart's crds/ on an existing release — on
 # this single-env local cluster the freeze has no value, so apply them directly.
@@ -716,6 +747,7 @@ fi
 # the upgrade with an ownership conflict. The chart is the source of truth here.
 helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
+e2e_mark "chart applied"
 if [ -n "${AGENT_LOAD_PID:-}" ]; then
   wait "$AGENT_LOAD_PID" || { echo "FATAL: loading the agent images failed" >&2; exit 1; }
 fi
@@ -746,17 +778,19 @@ fi
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
 kubectl wait --for=condition=Available deployment --all --timeout=10m
+e2e_mark "deployments ready"
 
 # 6b. vm-backend images onto the node, where every VM runner mounts them read
 # only: runners are per owner and created on demand, so there is no pod to copy
 # into at install time, and no registry for them to pull from. Each image is a
 # pre-flattened tree with its launch record, which a machine boots in seconds;
 # see image:stage-vm for why not an archive.
-for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
-  echo "Staging $image for the VM runners..."
-  comp="${image##*/}"; comp="${comp%%:*}"
-  mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")"
-done
+if [ -n "${STAGE_VM_PID:-}" ]; then
+  wait "$STAGE_VM_PID" || { echo "FATAL: staging the vm-backend images failed" >&2; exit 1; }
+else
+  stage_vm_images
+fi
+[ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not
