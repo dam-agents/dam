@@ -768,6 +768,7 @@ export async function bootstrap() {
     agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    agentDefaultMounts: config.agentDefaultMounts,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
       memory: config.agentDefaultMemoryLimit,
@@ -1289,6 +1290,7 @@ export async function bootstrap() {
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
       agentDefaultStorageSize: config.agentDefaultStorageSize,
+      agentDefaultMounts: config.agentDefaultMounts,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
