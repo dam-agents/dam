@@ -17,7 +17,6 @@ import {
   EXPERIMENT_ACTIVE_KEY,
   INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
-  LAST_ACTIVITY_KEY,
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
@@ -1375,12 +1374,7 @@ export async function bootstrap() {
     listPinnedAgentIds: () =>
       agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
     release: async (agentId) => {
-      await agentsRepo.patchAnnotation(
-        agentId,
-        LAST_ACTIVITY_KEY,
-        new Date().toISOString(),
-      );
-      await agentsRepo.patchAnnotation(agentId, INVOCATIONS_ACTIVE_KEY, "");
+      await agentsRepo.releaseInvocationPin(agentId);
     },
   });
   await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>

@@ -367,6 +367,59 @@ describe("requestStop", () => {
   });
 });
 
+describe("releaseInvocationPin", () => {
+  const ACTIVITY_KEY = "agent-platform.ai/last-activity";
+
+  function pinnedHarness(pin: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![PIN_KEY] = pin;
+    obj.metadata!.annotations![ACTIVITY_KEY] = "1970-01-01T00:00:00Z";
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: the release bumps the Driver's activity and drops its pin in one write that is conditional on the object it read, so a pause landing in between makes the write fail rather than revive the Driver.
+  it("clears a held pin and bumps activity in one conditional write", async () => {
+    const { repo, store, patches } = pinnedHarness("true");
+
+    expect(await repo.releaseInvocationPin("a1")).toBe(true);
+
+    const ann = store.get("a1")?.metadata?.annotations ?? {};
+    expect(ann[PIN_KEY]).toBe("");
+    expect(ann[ACTIVITY_KEY]).not.toBe("1970-01-01T00:00:00Z");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a pause cleared the pin and staled the clock after the reconcile listed this Driver; the release must leave that stale clock alone.
+  it("writes nothing once the pin is gone", async () => {
+    const { repo, store, patches } = pinnedHarness("");
+
+    expect(await repo.releaseInvocationPin("a1")).toBe(false);
+
+    expect(patches).toEqual([]);
+    expect(store.get("a1")?.metadata?.annotations?.[ACTIVITY_KEY]).toBe(
+      "1970-01-01T00:00:00Z",
+    );
+  });
+});
+
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
