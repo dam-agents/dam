@@ -73,6 +73,7 @@ export interface ApiServerDeps {
     | { kind: "resolved"; teamId: string }
     | { kind: "unknown" }
     | { kind: "unreachable" }
+    | { kind: "none" }
   >;
   slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;

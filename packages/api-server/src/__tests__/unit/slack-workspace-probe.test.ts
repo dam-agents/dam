@@ -48,16 +48,19 @@ describe("slack workspace probe", () => {
   });
 
   /**
-   * TEST_SCENARIO: No workspace is connected at all, so no conversation can
-   * belong to one, and nothing is asked.
+   * TEST_SCENARIO: No workspace is connected at all — a fresh install, or one
+   * whose only workspace's credential was rejected. Nothing is asked, and the
+   * answer is its own: reporting a conversation nobody can see would send the
+   * operator to check an id that is right, and reporting Slack as unreachable
+   * would send them to retry, when what is missing is a connected workspace.
    */
-  it("refuses every conversation while no workspace is connected", async () => {
+  it("reports that no workspace is connected rather than blaming the conversation", async () => {
     const probe = createSlackWorkspaceProbe({
       listInstalledWorkspaces: async () => [],
       conversationStanding: NEVER_ASKED,
     });
 
-    expect(await probe("C1")).toEqual({ kind: "unknown" });
+    expect(await probe("C1")).toEqual({ kind: "none" });
   });
 
   /**

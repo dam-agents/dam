@@ -220,6 +220,12 @@ export const agentsRouter = t.router({
             message:
               "Slack could not be asked which workspace that conversation belongs to. The conversation id may well be right — try again, and if it persists check that the app still holds the channels:read and groups:read scopes",
           });
+        case "NoSlackWorkspace":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "No Slack workspace is connected yet — an operator connects one under Settings → Slack workspaces",
+          });
       }
     }),
 
@@ -280,6 +286,12 @@ export const agentsRouter = t.router({
             code: "SERVICE_UNAVAILABLE",
             message:
               "Slack could not be asked which workspace this conversation belongs to",
+          });
+        case "NoSlackWorkspace":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "No Slack workspace is connected yet — an operator connects one under Settings → Slack workspaces",
           });
       }
     }),

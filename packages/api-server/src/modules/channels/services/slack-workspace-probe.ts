@@ -5,7 +5,8 @@ export type SlackConversationStanding = "member" | "known" | "unknown";
 export type SlackWorkspaceResolution =
   | { kind: "resolved"; teamId: SlackWorkspace }
   | { kind: "unknown" }
-  | { kind: "unreachable" };
+  | { kind: "unreachable" }
+  | { kind: "none" };
 
 export interface SlackWorkspaceProbeDeps {
   listInstalledWorkspaces: () => Promise<SlackWorkspace[]>;
@@ -45,12 +46,15 @@ export interface SlackWorkspaceProbeDeps {
  *
  * Workspaces arrive in the order they were connected. While only one is
  * connected no call is made at all: a single-workspace install answers without
- * ever asking Slack.
+ * ever asking Slack. With none connected there is nobody to ask, which is its
+ * own answer — neither a conversation nobody can see nor a Slack that did not
+ * reply, since telling the operator to check the id or to retry would both
+ * point away from the fix, which is connecting a workspace.
  */
 export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
   return async (slackChannelId: string): Promise<SlackWorkspaceResolution> => {
     const candidates = [...new Set(await deps.listInstalledWorkspaces())];
-    if (candidates.length === 0) return { kind: "unknown" };
+    if (candidates.length === 0) return { kind: "none" };
     if (candidates.length === 1) {
       return { kind: "resolved", teamId: candidates[0] };
     }
