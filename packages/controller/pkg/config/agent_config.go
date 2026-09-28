@@ -69,8 +69,14 @@ type AgentNPGateInit struct {
 }
 
 type VMConfig struct {
-	Enabled bool         `json:"enabled,omitempty"`
-	Runner  VMRunnerSpec `json:"runner,omitempty"`
+	Enabled          bool               `json:"enabled,omitempty"`
+	Runner           VMRunnerSpec       `json:"runner,omitempty"`
+	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy. Zero means the controller's default window.
+type VMRuntimeMigration struct {
+	Retention Duration `json:"retention,omitempty"`
 }
 
 type VMRunnerSpec struct {

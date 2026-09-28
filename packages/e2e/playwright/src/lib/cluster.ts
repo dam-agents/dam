@@ -110,3 +110,29 @@ export function scaleController(replicas: 0 | 1): void {
     );
   }
 }
+
+export interface RetainedVolume {
+  name: string;
+  mount: string;
+  until: string;
+}
+
+export function retainedVolumes(agent: string): RetainedVolume[] {
+  const out = kubectlOrEmpty(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pvc",
+    "-l",
+    `agent-platform.ai/retained-for=${agent}`,
+    "-o",
+    String.raw`jsonpath={range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-mount}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-until}{"\n"}{end}`,
+  );
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [name = "", mount = "", until = ""] = line.split("\t");
+      return { name, mount, until };
+    });
+}

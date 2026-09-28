@@ -493,16 +493,18 @@ func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, age
 }
 
 func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
-	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: LabelAgent + "=" + agentName},
-	)
-	if err != nil {
-		slog.Warn("listing PVCs for agent", "agent", agentName, "error", err)
-		return
-	}
-	for _, pvc := range pvcs.Items {
-		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
-			slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
+	for _, selector := range []string{LabelAgent + "=" + agentName, LabelRetainedFor + "=" + agentName} {
+		pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
+			metav1.ListOptions{LabelSelector: selector},
+		)
+		if err != nil {
+			slog.Warn("listing PVCs for agent", "agent", agentName, "selector", selector, "error", err)
+			continue
+		}
+		for _, pvc := range pvcs.Items {
+			if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
+				slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
+			}
 		}
 	}
 }
@@ -529,6 +531,9 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		return claims, nil
 	}
 	if !errors.IsNotFound(err) {
+		return nil, err
+	}
+	if err := r.refuseOverRetainedVolumes(ctx, name); err != nil {
 		return nil, err
 	}
 

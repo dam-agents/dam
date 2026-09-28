@@ -404,3 +404,22 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
 }
+
+// TEST_SCENARIO: the runtime migration's retention window comes from the chart as a duration. A negative one is a values typo, refused at start rather than read as "delete at once"; a set one is read as given.
+func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"-1h"}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	assert.Error(t, err)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"168h"}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 7*24*time.Hour, cfg.VM.RuntimeMigration.Retention.AsDuration())
+}

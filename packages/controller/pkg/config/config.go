@@ -215,6 +215,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
+	if cfg.VM.RuntimeMigration.Retention < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.retention is %s, it must not be negative", cfg.VM.RuntimeMigration.Retention.AsDuration())
+	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
 	}

@@ -18,7 +18,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one. The api-server is the one spec writer, so it flips the Backend and stamps the request in one patch; everything after is the controller's, and each phase is derived from cluster state so a restart resumes where it left off. `requested` takes the old pod down and records which volume holds HOME; `copying` creates the machine stopped and runs a Job that streams that volume to the owner's runner, where it waits as the machine's seed; `booting` lets the machine start, and platform-init seeds the fresh disk from it rather than from the image. The old volume is deleted only once the machine has answered, so a boot that fails still has the agent's work to fall back on.
+// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one. The api-server is the one spec writer, so it flips the Backend and stamps the request in one patch; everything after is the controller's, and each phase is derived from cluster state so a restart resumes where it left off. `requested` takes the old pod down and records which volume holds HOME; `copying` creates the machine stopped and runs a Job that streams that volume to the owner's runner, where it waits as the machine's seed; `booting` lets the machine start, and platform-init seeds the fresh disk from it rather than from the image. The old volume is released only once the machine has answered, so a boot that fails still has the agent's work to fall back on, and even then it is retained for a window rather than deleted.
 const (
 	annRuntimeMigration        = "agent-platform.ai/runtime-migration"
 	annRuntimeMigrationMessage = "agent-platform.ai/runtime-migration-message"
@@ -124,7 +124,7 @@ func (r *AgentReconciler) runtimeMigrationSource(ctx context.Context, agent *api
 	return "", fmt.Errorf("%d volumes are labelled as this agent's home and its statefulset mounts none of them", len(list.Items))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the `copying` and `booting` phases, run after the machine is ensured, since both read what the runner said about it. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise — and on success moves to `booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it. `booting` ends when the guest answers; the seed and the old volume are removed then, and not before.
+// UNIT_BOUNDARY_DESCRIPTION: the `copying` and `booting` phases, run after the machine is ensured, since both read what the runner said about it. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise — and on success moves to `booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it. `booting` ends when the guest answers; the seed is removed then, and not before, and the old volume is retained for its window.
 func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *apiv1.Agent, machine vmrunner.MachineStatus, runnerReached bool) error {
 	name := agent.Name
 	if !runnerReached {
@@ -254,9 +254,10 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	if err := runner.DeleteSeed(ctx, name); err != nil {
 		return err
 	}
+	until := time.Now().Add(r.migrationRetention())
 	if source := agent.Annotations[annRuntimeMigrationSource]; source != "" {
-		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, source, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("deleting the old home volume %s: %w", source, err)
+		if err := r.retainMigratedVolume(ctx, agent, source, agentHomeDir, until); err != nil {
+			return err
 		}
 	}
 	slog.Info("runtime migration: agent moved to the vm backend", "agent", name)

@@ -159,6 +159,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
 		start := time.Now()
 		agentReconciler.ReconcileOrphanPVCs(sctx)
+		agentReconciler.ReconcileRetainedVolumes(sctx)
 		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
 		agentReconciler.ReconcileOrphanMachines(sctx)
 		agentReconciler.ReconcileRunnerRollout(sctx)

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and the Playwright config runs it there after every other spec: it turns the e2e user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates meanwhile. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. The migration refuses an Agent that persists a path outside HOME, so HOME is the only path this spec carries across.
+// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and the Playwright config runs it there after every other spec: it turns the e2e user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates meanwhile. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. HOME is the only path this spec carries across, and the volume it was copied from is checked to be retained after the move and deleted with the Agent.
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -26,6 +26,7 @@ import {
   agentName as chainAgentName,
   harnessName,
 } from "../../lib/fixtures.js";
+import { retainedVolumes } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 const agentName = "e2e-runtime-migration";
@@ -185,4 +186,21 @@ test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   await expect(
     api.agents.migrateRuntime.mutate({ id: agentId }),
   ).rejects.toThrow(/already runs on the new runtime/);
+});
+
+// TEST_SCENARIO: the volume the copy was read from outlives the move. It is kept for the install's retention window, marked with the agent it was retained for and the path it held, so an operator can still recover the agent's work from before the move. Deleting the agent deletes it.
+test("retains the old home volume until the agent is deleted", async () => {
+  const retained = retainedVolumes(agentId);
+  expect(retained.map((v) => v.mount)).toEqual(["/home/agent"]);
+  expect(Date.parse(retained[0]?.until ?? "")).toBeGreaterThan(Date.now());
+
+  const deleted = agentId;
+  await api.agents.delete.mutate({ id: deleted });
+  agentId = "";
+  await expect
+    .poll(() => retainedVolumes(deleted).length, {
+      timeout: 120_000,
+      message: "the retained volume outlived its agent",
+    })
+    .toBe(0);
 });

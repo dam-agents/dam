@@ -346,6 +346,16 @@ virtualization:
     # API server's Service address or its own pod address with no exception
     # covering it.
     egressExceptCidrs: []
+  # Moving a container agent onto a machine (the Migrate button). Once the
+  # machine has booted from the copy, the volumes the copy was read from are
+  # kept for `retention` (a Go duration) rather than deleted, so an operator can
+  # still recover the agent's pre-migration work. A kept volume carries the
+  # label `agent-platform.ai/retained-for=<agent>` and the annotations
+  # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
+  # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
+  # the controller deletes it when the window passes or the agent is deleted.
+  runtimeMigration:
+    retention: 168h
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a
