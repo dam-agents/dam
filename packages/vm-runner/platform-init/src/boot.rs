@@ -1036,20 +1036,31 @@ impl<R: io::Read> io::Read for Hashing<R> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the staged tree is flushed to the disk before the rename, and the directory that holds the store after it, so the store is whole on the disk once it has its name. A store that exists is never seeded again, so a stop before the data reached the disk — on a disk with no journal most of all — would otherwise leave the name over files that were lost, and the next boot would take it as the agent's home.
 fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
-    if let Some(parent) = store.parent().filter(|p| !p.as_os_str().is_empty()) {
-        mkdir_all(parent)?;
-    }
+    let parent = store
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    mkdir_all(parent)?;
     let staged = with_suffix(store, ".seeding");
     remove_all(&staged)?;
-    if let Err(e) = fill(&staged) {
+    if let Err(e) = fill(&staged).and_then(|()| flush_filesystem(&staged)) {
         let _ = remove_all(&staged);
         return Err(e);
     }
-    fs::rename(&staged, store)
+    fs::rename(&staged, store)?;
+    File::open(parent)?.sync_all()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: restores a seed into `to` as copy_tree reproduces an image's home: owner and mode from each entry, the mode set after the entry exists so the umask cannot drop a bit, and symlinks recreated as symlinks and never followed. Times are restored too, since they are part of what an agent's tools read, such as a build that compares them. Directories get their mode and time last, deepest first: a directory's time moves as entries are written into it, and a read-only one would refuse them. The seed comes from a volume the agent could write to, so every name is checked before it is used — an absolute name, a `..`, a link whose target is either of those, or a path through a symlink the seed itself put there could each write outside the store, and any of them fails the whole seed. Devices and fifos are skipped, as copy_tree skips them. A seed with no entry for the home itself gives the store the owner and mode of the image's home, as seeding from the image would.
+// UNIT_BOUNDARY_DESCRIPTION: flushes everything written to the filesystem that holds `path`. One syncfs covers a whole seeded tree, where an fsync per file would cost a call for each of them.
+fn flush_filesystem(path: &Path) -> io::Result<()> {
+    let dir = File::open(path)?;
+    // SAFETY: syncfs(2) reads no memory, and `dir` keeps its descriptor open for the call.
+    succeeded(unsafe { libc::syncfs(dir.as_raw_fd()) } == 0)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: restores a seed into `to` as copy_tree reproduces an image's home: owner and mode from each entry, the mode set after the entry exists so the umask cannot drop a bit, and symlinks recreated as symlinks and never followed. Times are restored too, since they are part of what an agent's tools read, such as a build that compares them. Directories get their mode and time last, deepest first: a directory's time moves as entries are written into it, and a read-only one would refuse them. A sparse entry gets its holes back (see write_sparse). The seed comes from a volume the agent could write to, so every name is checked before it is used — an absolute name or a `..`, in an entry's name or in a hard link's target, or a path through a symlink the seed itself put there could each write outside the store, and any of them fails the whole seed. A symlink's own target is restored as it was, absolute or not: a home holds absolute links to places inside itself, and nothing here writes through a link, so a target cannot take a write outside the store. Devices and fifos are skipped, as copy_tree skips them. A seed with no entry for the home itself gives the store the owner and mode of the image's home, as seeding from the image would.
 fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<SeedDigest> {
     mkdir_all(to)?;
     let mut dirs: Vec<(PathBuf, u32, u64)> = Vec::new();
@@ -1098,7 +1109,12 @@ fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<SeedDigest> {
                     .create_new(true)
                     .mode(0o600)
                     .open(&target)?;
-                if let Err(e) = io::copy(&mut entry, &mut file) {
+                let written = if kind == tar::EntryType::GNUSparse {
+                    write_sparse(&mut entry, &mut file)
+                } else {
+                    io::copy(&mut entry, &mut file).map(drop)
+                };
+                if let Err(e) = written {
                     let _ = close(file);
                     return Err(e);
                 }
@@ -1152,6 +1168,35 @@ fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<SeedDigest> {
         sha256: format!("{:x}", read.hasher.finalize()),
         bytes: read.bytes,
     })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the block a sparse entry is restored in. The tar reader hands over a hole as the zeros it reads as, so each block of zeros is skipped by a seek instead of written, and the length is set at the end so a hole at the end of the file is kept too. A file of 64 MiB with a few bytes of data takes a few blocks of the disk, as it did on its old volume, instead of 64 MiB.
+const SPARSE_BLOCK: usize = 64 << 10;
+
+fn write_sparse(entry: &mut impl io::Read, file: &mut File) -> io::Result<()> {
+    let mut block = vec![0u8; SPARSE_BLOCK];
+    let mut at: u64 = 0;
+    loop {
+        let mut filled = 0;
+        while filled < block.len() {
+            match entry.read(&mut block[filled..]) {
+                Ok(0) => break,
+                Ok(n) => filled += n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        if filled == 0 {
+            break;
+        }
+        let chunk = &block[..filled];
+        if chunk.iter().any(|b| *b != 0) {
+            file.seek(SeekFrom::Start(at))?;
+            file.write_all(chunk)?;
+        }
+        at += filled as u64;
+    }
+    file.set_len(at)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed's name as a path below the store, or a refusal when it could leave it. `.` components are dropped, so `./.bashrc` and `.bashrc` are one name and `.` is the home itself.
@@ -1914,6 +1959,63 @@ mod tests {
             0,
             "a seed wrote outside the home"
         );
+    }
+
+    // TEST_SCENARIO: a sparse file comes in the seed as its data and a map of its holes, and the tar reader hands the holes over as zeros. The restore seeks past them rather than writing them, so a 64 MiB file with one block of data is 64 MiB long, reads back exactly, and takes a few blocks of the disk rather than 64 MiB, and a hole at its end is kept by its length. The digest the runner expects is of the whole tar as uploaded, so it matches only if the unpack hashes the sparse entry's map and data as they are read.
+    #[test]
+    fn a_sparse_file_in_the_seed_is_restored_with_its_holes() {
+        let size: u64 = 64 << 20;
+        let at: u64 = 32 << 20;
+        let data = vec![7u8; 4096];
+        let share = TempDir::new("sparse-share");
+        let archive = share.path().join("seed.tar");
+        let mut builder = tar::Builder::new(File::create(&archive).unwrap());
+        let mut header = tar::Header::new_gnu();
+        header.set_path("sparse").unwrap();
+        header.set_entry_type(tar::EntryType::GNUSparse);
+        header.set_mode(0o644);
+        header.set_mtime(1_000_000_000);
+        let owner = fs::metadata(share.path()).unwrap();
+        header.set_uid(owner.uid().into());
+        header.set_gid(owner.gid().into());
+        header.set_size(data.len() as u64);
+        let gnu = header.as_gnu_mut().unwrap();
+        gnu.set_real_size(size);
+        gnu.sparse[0].set_offset(at);
+        gnu.sparse[0].set_length(data.len() as u64);
+        gnu.sparse[1].set_offset(size);
+        gnu.sparse[1].set_length(0);
+        header.set_cksum();
+        builder.append(&header, data.as_slice()).unwrap();
+        builder.finish().unwrap();
+        drop(builder);
+        let disk = TempDir::new("sparse-disk");
+        let store = disk.path().join("agent");
+
+        let expected = digest_of(&archive);
+        prepare_home(
+            Path::new("/nonexistent"),
+            &archive,
+            &store,
+            false,
+            Some(&expected),
+        )
+        .unwrap();
+
+        let restored = store.join("sparse");
+        let info = fs::metadata(&restored).unwrap();
+        assert_eq!(info.len(), size);
+        assert!(
+            info.blocks() * 512 < 1 << 20,
+            "the holes were written out: {} blocks",
+            info.blocks()
+        );
+        let body = fs::read(&restored).unwrap();
+        assert_eq!(
+            &body[at as usize..at as usize + data.len()],
+            data.as_slice()
+        );
+        assert_eq!(body.iter().filter(|b| **b != 0).count(), data.len());
     }
 
     // TEST_SCENARIO: a boot cut short while it restored a seed leaves only the staging directory. The next boot does not take it for a store, and restores the seed again from the start.
