@@ -16,7 +16,7 @@ use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
-use crate::fetch::{failure_reason, unusable};
+use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
     CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
@@ -77,10 +77,11 @@ struct Failed {
     reason: &'static str,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a boot the runner waits on until its guest first answers: when it was asked, by which action, and the stuck-boot note once the prober writes one. The prober refreshes the note once per SLOW_BOOT_AFTER and not on every probe, because each new message is a new status version and a status write on the Agent.
+// UNIT_BOUNDARY_DESCRIPTION: a boot the runner waits on until its guest first answers: when it was asked, by which action, the seed its spec expected the home to come from, and the stuck-boot note once the prober writes one. The prober refreshes the note once per SLOW_BOOT_AFTER and not on every probe, because each new message is a new status version and a status write on the Agent.
 struct Boot {
     at: Instant,
     action: Action,
+    seed: Option<String>,
     note: Option<(String, Instant)>,
 }
 
@@ -641,12 +642,21 @@ impl Server {
         Ok(seeding)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: removes the seed a machine has booted from and, when no upload holds the claim, whatever a runner killed mid-upload staged beside it. The check and the removal share one critical section, so a claim taken meanwhile cannot have its fresh staged file removed under it.
     pub fn remove_seed(&self, id: &str) -> Result<(), Rejected> {
         check_id(id)?;
-        let share = state::require_machine_dir(&self.config.state_dir, id)
-            .map_err(|e| Rejected::bad_request(e.to_string()))?
-            .join(SHARE_DIR);
-        share::remove_seed(&share).map_err(|e| Rejected::internal(e.to_string()))
+        let dir = state::require_machine_dir(&self.config.state_dir, id)
+            .map_err(|e| Rejected::bad_request(e.to_string()))?;
+        let share = dir.join(SHARE_DIR);
+        {
+            let machines = locked(&self.machines);
+            if !machines.entries.get(id).is_some_and(|e| e.seeding) {
+                share::remove_staged_seed(&share).map_err(|e| Rejected::internal(e.to_string()))?;
+            }
+        }
+        share::remove_seed(&share)
+            .and_then(|()| share::forget_seed_digest(&dir))
+            .map_err(|e| Rejected::internal(e.to_string()))
     }
 
     fn converging(&self, id: &str) -> bool {
@@ -788,7 +798,8 @@ impl Server {
         if !spec.running {
             return Ok(());
         }
-        self.start_machine(id, Action::Create)
+        self.seed_ready(id, spec)?;
+        self.start_machine(id, Action::Create, spec)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. The stored spec is what the record holds, so it is written as the record is, before the boot: a boot that fails leaves the next action comparing against the shape the machine really has. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The image is also resolved again when the record's tree is gone from the host — evicted, or an image directory moved or relaid under a stopped machine — because a start boots the path the record names and would otherwise fail every time until the image changed. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
@@ -799,6 +810,7 @@ impl Server {
         auths: &[String],
         action: Action,
     ) -> anyhow::Result<()> {
+        self.seed_ready(id, spec)?;
         write_share(
             &self.config.state_dir,
             id,
@@ -838,7 +850,48 @@ impl Server {
             },
         )?;
         write_spec(&self.config.state_dir, id, spec)?;
-        self.start_machine(id, action)
+        self.start_machine(id, action, spec)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a machine whose spec expects a seed starts only while its share holds exactly that seed, or once its home is known to have come from it. A runner claim lost or recreated, a node that crashed before the upload was durable, or an operator can each take the seed away, and a machine started then would have platform-init refuse the boot at best. Refusing here, under a reason of its own, is what tells the controller to copy the home again rather than wait on a boot that can never succeed. A disk that already holds some other home is refused the same way, since that home is not the one the migration brought. The seed is compared by the digest its upload was answered with and by its size, not read again.
+    fn seed_ready(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
+        let Some(expected) = &spec.expect_seed else {
+            return Ok(());
+        };
+        let dir = state::require_machine_dir(&self.config.state_dir, id)?;
+        let share = dir.join(SHARE_DIR);
+        let from = share::seeded_from(&share);
+        if from == expected.sha256 {
+            return Ok(());
+        }
+        let wanted = format!(
+            "this machine's home is to be restored from seed {} of {} bytes",
+            expected.sha256, expected.bytes
+        );
+        if share::seeded(&share) {
+            let held = if from.is_empty() {
+                "a home that came from no seed".to_string()
+            } else {
+                format!("a home restored from seed {from}")
+            };
+            return Err(seed_missing(format!(
+                "{wanted}, but its disk already holds {held}; it is not started"
+            )));
+        }
+        let size = fs::metadata(share.join(share::SEED_FILE)).map(|m| m.len());
+        match (size, share::seed_digest(&dir)) {
+            (Ok(size), Some(stored)) if stored == *expected && size == expected.bytes => Ok(()),
+            (Err(_), _) => Err(seed_missing(format!(
+                "{wanted}, and the runner holds no seed for it; it is not started, so it cannot boot the image's home instead"
+            ))),
+            (Ok(_), Some(stored)) => Err(seed_missing(format!(
+                "{wanted}, but the runner holds seed {} of {} bytes; it is not started",
+                stored.sha256, stored.bytes
+            ))),
+            (Ok(_), None) => Err(seed_missing(format!(
+                "{wanted}, but the seed the runner holds has no record of a finished upload; it is not started"
+            ))),
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
@@ -915,11 +968,12 @@ impl Server {
         Some(Resolved { digest, launch })
     }
 
-    fn start_machine(&self, id: &str, action: Action) -> anyhow::Result<()> {
+    fn start_machine(&self, id: &str, action: Action, spec: &MachineSpec) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.boot = Some(Boot {
                 at: Instant::now(),
                 action,
+                seed: spec.expect_seed.as_ref().map(|seed| seed.sha256.clone()),
                 note: None,
             });
         }
@@ -1200,7 +1254,7 @@ impl Server {
         let answered = if seen.ready { entry.boot.take() } else { None };
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
-            self.record_seeded(id);
+            self.record_seeded(id, boot.seed.as_deref());
         }
         let mut seen = seen;
         let now = SystemTime::now();
@@ -1220,15 +1274,15 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a guest that answers has booted past platform-init, which starts the image only once the agent's home is on the disk. So the first answer of a boot is when the runner records, in the machine's share, that its disk holds a home; from then on platform-init refuses a boot that finds it gone. It is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on. A record that cannot be written is logged, and the next boot's answer tries again.
-    fn record_seeded(&self, id: &str) {
+    // UNIT_BOUNDARY_DESCRIPTION: a guest that answers has booted past platform-init, which starts the image only once the agent's home is on the disk. So the first answer of a boot is when the runner records, in the machine's share, that its disk holds a home; from then on platform-init refuses a boot that finds it gone. When the boot expected a seed, the record names it: platform-init starts the image only once the home came from exactly that seed, so the answer proves which seed the home holds, and that is what the status reports as the seed the home came from. Both are learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on. A record that cannot be written is logged, and the next boot's answer tries again.
+    fn record_seeded(&self, id: &str, from: Option<&str>) {
         let Some(share) =
             state::machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR))
         else {
             return;
         };
         if share.is_dir() && !share::seeded(&share) {
-            if let Err(e) = share::record_seeded(&share) {
+            if let Err(e) = share::record_seeded(&share, from) {
                 tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine's disk holds a home");
             }
         }
@@ -1327,6 +1381,10 @@ impl Server {
         let port = state::port(&self.config.state_dir, id);
         let applied = read_spec(&self.config.state_dir, id);
         let machines = locked(&self.machines);
+        // UNIT_BOUNDARY_DESCRIPTION: read under the lock that records a guest's first answer, which writes the seeded record before it marks the machine ready, so a status that reads ready never reads the record from before that answer.
+        let seeded_from = machine_dir(&self.config.state_dir, id)
+            .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
+            .unwrap_or_default();
         let entry = machines.entries.get(id);
         let action = entry.and_then(|e| e.action);
         let seen = entry.and_then(|e| e.seen.clone()).or(looked);
@@ -1351,6 +1409,7 @@ impl Server {
             version: entry.map_or(0, |e| e.version),
             ..MachineStatus::default()
         };
+        status.home_seeded_from = seeded_from;
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
@@ -1412,8 +1471,16 @@ impl Seeding {
                 self.id
             )));
         }
-        file.commit()
-            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))
+        let dir = state::require_machine_dir(&self.server.config.state_dir, &self.id)
+            .map_err(|e| Rejected::bad_request(e.to_string()))?;
+        share::forget_seed_digest(&dir)
+            .map_err(|e| Rejected::internal(format!("replacing the seed's record: {e}")))?;
+        let stored = file
+            .commit()
+            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))?;
+        share::record_seed_digest(&dir, &stored)
+            .map_err(|e| Rejected::internal(format!("recording the seed: {e:#}")))?;
+        Ok(stored)
     }
 }
 

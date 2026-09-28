@@ -1,4 +1,4 @@
-import { type K8sClient } from "./k8s.js";
+import { isConflict, type K8sClient } from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
@@ -33,6 +33,11 @@ import {
 import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { getLogger } from "../../../core/logger.js";
 
+export type MigrateBackendOutcome =
+  | { kind: "migrated"; agent: InfraAgent }
+  | { kind: "not-found" }
+  | { kind: "conflict" };
+
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -57,8 +62,9 @@ export interface AgentsRepository {
     patch: {
       spec: Record<string, unknown>;
       annotations: Record<string, string>;
+      resourceVersion: string | undefined;
     },
-  ): Promise<InfraAgent | null>;
+  ): Promise<MigrateBackendOutcome>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
@@ -161,13 +167,22 @@ export function createAgentsRepository(
 
     async migrateBackend(id, owner, patch) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
-      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: { annotations: patch.annotations },
-        spec: patch.spec,
-      });
-      return parseInfraAgent(updated);
+      if (!obj) return { kind: "not-found" };
+      if (owner && !agentIsOwnedBy(obj, owner)) return { kind: "not-found" };
+      if (!patch.resourceVersion) return { kind: "conflict" };
+      try {
+        const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+          metadata: {
+            annotations: patch.annotations,
+            resourceVersion: patch.resourceVersion,
+          },
+          spec: patch.spec,
+        });
+        return { kind: "migrated", agent: parseInfraAgent(updated) };
+      } catch (err) {
+        if (isConflict(err)) return { kind: "conflict" };
+        throw err;
+      }
     },
 
     async delete(id, owner?) {

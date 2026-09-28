@@ -174,9 +174,11 @@ export const agentsRouter = t.router({
         case "AlreadyOnVm":
         case "RuntimeMigrationInProgress":
         case "StorageMigrationInProgress":
+        case "ConcurrentUpdate":
           throw new TRPCError({ code: "CONFLICT", message });
         case "VirtualizationDisabled":
         case "PersistsUnmovablePaths":
+        case "HomeNotPersisted":
           throw new TRPCError({ code: "PRECONDITION_FAILED", message });
       }
     }),

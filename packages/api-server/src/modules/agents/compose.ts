@@ -63,6 +63,7 @@ type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
   agentDefaultStorageSize: string;
+  agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
   runtimeMigrationRetentionMs: number | null;
 }
 
@@ -103,6 +104,7 @@ export function composeAgentsModule(deps: {
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
       agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
+      agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
       runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,

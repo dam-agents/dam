@@ -131,7 +131,9 @@ export type MigrateRuntimeError =
   | { type: "VirtualizationDisabled" }
   | { type: "RuntimeMigrationInProgress" }
   | { type: "StorageMigrationInProgress" }
-  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] };
+  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
+  | { type: "HomeNotPersisted" }
+  | { type: "ConcurrentUpdate" };
 
 export interface UnmovablePath {
   path: string;

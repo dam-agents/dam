@@ -23,7 +23,11 @@ import {
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
-import type { AgentsRepository } from "../infrastructure/agents-repository.js";
+import { match } from "ts-pattern";
+import type {
+  AgentsRepository,
+  MigrateBackendOutcome,
+} from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
@@ -50,6 +54,8 @@ import {
 import {
   runtimeMigrationRefusal,
   runtimeMigrationSpecPatch,
+  type AgentMount,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
@@ -486,17 +492,18 @@ export function executeTemplateUpgrade(deps: {
 export interface RuntimeMigrationPatch {
   spec: Record<string, unknown>;
   annotations: Record<string, string>;
+  resourceVersion: string | undefined;
 }
 
 export function executeRuntimeMigration(deps: {
   owner: string | undefined;
-  virtualizationEnabled: boolean;
+  migration: RuntimeMigrationContext;
   defaultStorageSize: string;
   getAgent: (id: string) => Promise<InfraAgent | null>;
   writeMigration: (
     id: string,
     patch: RuntimeMigrationPatch,
-  ) => Promise<InfraAgent | null>;
+  ) => Promise<MigrateBackendOutcome>;
 }) {
   return async (
     id: string,
@@ -505,20 +512,34 @@ export function executeRuntimeMigration(deps: {
   > => {
     const infra = await deps.getAgent(id);
     if (!infra) return err({ type: "AgentNotFound" as const });
-    const refusal = runtimeMigrationRefusal(infra, deps.virtualizationEnabled);
+    const refusal = runtimeMigrationRefusal(infra, deps.migration);
     if (refusal) return err(refusal);
 
     const { spec, moves } = runtimeMigrationSpecPatch(
       infra.spec,
       deps.defaultStorageSize,
+      deps.migration.defaultMounts,
     );
     const annotations: Record<string, string> = {
       [RUNTIME_MIGRATION_KEY]: "requested",
     };
     if (Object.keys(moves).length > 0)
       annotations[RUNTIME_MIGRATION_MOUNTS_KEY] = JSON.stringify(moves);
-    const patched = await deps.writeMigration(id, { spec, annotations });
-    if (!patched) return err({ type: "AgentNotFound" as const });
+    const written = await deps.writeMigration(id, {
+      spec,
+      annotations,
+      resourceVersion: infra.resourceVersion,
+    });
+    const result = match(written)
+      .with({ kind: "migrated" }, (w) => ok(w.agent))
+      .with({ kind: "not-found" }, () =>
+        err({ type: "AgentNotFound" as const }),
+      )
+      .with({ kind: "conflict" }, () =>
+        err({ type: "ConcurrentUpdate" as const }),
+      )
+      .exhaustive();
+    if (!result.ok) return result;
     securityLog("info", "agent.runtime-migrate", {
       category: "resource",
       actor: deps.owner ?? null,
@@ -527,7 +548,7 @@ export function executeRuntimeMigration(deps: {
       result: "success",
       detail: { fromBackend: "container", toBackend: "vm" },
     });
-    return ok(patched);
+    return result;
   };
 }
 
@@ -564,6 +585,7 @@ export function createAgentsService(deps: {
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   agentDefaultStorageSize?: string;
+  agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
@@ -621,6 +643,11 @@ export function createAgentsService(deps: {
     refs: SlackConversationRef[],
   ) => Promise<(SlackConversationRef & { name: string | null })[]>;
 }): AgentsService {
+  const runtimeMigrationContext: RuntimeMigrationContext = {
+    virtualizationEnabled: deps.virtualizationEnabled === true,
+    defaultMounts: deps.agentDefaultMounts,
+  };
+
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
     secretRef: string | undefined,
@@ -729,6 +756,7 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
+      runtimeMigrationContext,
       checklists.get(infra.id),
     );
   }
@@ -855,6 +883,7 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
+        runtimeMigrationContext,
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -920,6 +949,7 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
+          runtimeMigrationContext,
           checklistMap.get(infra.id),
         );
       });
@@ -1113,6 +1143,7 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
+        runtimeMigrationContext,
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1363,7 +1394,7 @@ export function createAgentsService(deps: {
     async migrateRuntime(id) {
       const result = await executeRuntimeMigration({
         owner: deps.owner,
-        virtualizationEnabled: deps.virtualizationEnabled === true,
+        migration: runtimeMigrationContext,
         defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
         getAgent: (agentId) => deps.repo.getLive(agentId, deps.owner),
         writeMigration: (agentId, patch) =>
@@ -1383,7 +1414,7 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       return ok(
         runtimeMigrationPlan(infra, {
-          virtualizationEnabled: deps.virtualizationEnabled === true,
+          ...runtimeMigrationContext,
           defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),

@@ -70,6 +70,7 @@ function setup() {
     registrySecretPort: unused(),
     secretRefs: createAgentSecretRefPort(k8sWithSecrets()),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
+    agentDefaultMounts: [],
     agentIdleTimeoutMinutes: 30,
     cleanupHooks: [],
     readTemplateSpec: async () => null,

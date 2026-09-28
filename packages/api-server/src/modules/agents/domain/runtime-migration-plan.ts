@@ -5,13 +5,14 @@ import type {
 } from "api-server-api";
 
 import {
+  effectiveMounts,
   movedStorageSize,
   planPersistedMoves,
   runtimeMigrationRefusal,
+  type RuntimeMigrationContext,
 } from "./runtime-migration.js";
 
-export interface PlanInputs {
-  virtualizationEnabled: boolean;
+export interface PlanInputs extends RuntimeMigrationContext {
   defaultStorageSize: string;
   retentionMs: number | null;
 }
@@ -27,10 +28,12 @@ export function runtimeMigrationPlan(
   },
   inputs: PlanInputs,
 ): RuntimeMigrationPlan {
-  const { moves, unmovable } = planPersistedMoves(agent.spec);
+  const mounts = effectiveMounts(agent.spec, inputs.defaultMounts);
+  const { moves, unmovable } = planPersistedMoves(mounts);
   const asked = agent.spec.storageSize ?? inputs.defaultStorageSize;
   const resized = movedStorageSize(
     agent.spec,
+    mounts,
     moves,
     inputs.defaultStorageSize,
   );
@@ -41,6 +44,6 @@ export function runtimeMigrationPlan(
     storageResized: resized !== undefined && resized !== asked,
     bootsSleepingAgent: agent.hibernated || agent.stopRequested,
     retentionMs: inputs.retentionMs,
-    refusal: runtimeMigrationRefusal(agent, inputs.virtualizationEnabled),
+    refusal: runtimeMigrationRefusal(agent, inputs),
   };
 }

@@ -68,6 +68,14 @@ export function runtimeMigrationRefusalReasons(
       ];
     case "PersistsUnmovablePaths":
       return refusal.paths.map((p) => `${p.path} cannot be moved: ${p.reason}`);
+    case "HomeNotPersisted":
+      return [
+        "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
+      ];
+    case "ConcurrentUpdate":
+      return [
+        "This agent changed while the move was being requested — try again",
+      ];
   }
 }
 

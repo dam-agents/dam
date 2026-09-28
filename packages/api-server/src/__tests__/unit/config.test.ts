@@ -112,6 +112,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "RUNTIME_MIGRATION_RETENTION",
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
+    "AGENT_DEFAULT_MOUNTS",
   ];
   const saved: Record<string, string | undefined> = {};
 
@@ -130,14 +131,18 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window and disk default rather than none.
-  it("carries the chart's retention window and disk default", () => {
+  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window, disk default and default mounts rather than none.
+  it("carries the chart's retention window, disk default and default mounts", () => {
     process.env.RUNTIME_MIGRATION_RETENTION = "72h";
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       virtualizationEnabled: true,
       agentDefaultStorageSize: "20Gi",
+      agentDefaultMounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/tmp", persist: false },
+      ],
       runtimeMigrationRetentionMs: 72 * 3600_000,
     });
   });
@@ -154,5 +159,51 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     expect(
       agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
     ).toBeNull();
+  });
+});
+
+describe("loadConfig — runtime migration inputs", () => {
+  const KEYS = ["VIRTUALIZATION_ENABLED", "AGENT_DEFAULT_MOUNTS"];
+  const managed = [...Object.keys(REQUIRED_ENV), ...KEYS];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  // TEST_SCENARIO: an install that writes VIRTUALIZATION_ENABLED=false has no VM runner. Reading any non-empty string as true would offer the migration there and flip Agents onto a backend nothing runs.
+  it("reads VIRTUALIZATION_ENABLED as the boolean it spells", () => {
+    expect(loadConfig().virtualizationEnabled).toBe(false);
+    process.env.VIRTUALIZATION_ENABLED = "false";
+    expect(loadConfig().virtualizationEnabled).toBe(false);
+    process.env.VIRTUALIZATION_ENABLED = "true";
+    expect(loadConfig().virtualizationEnabled).toBe(true);
+  });
+
+  // TEST_SCENARIO: the runtime migration plans from the template default mounts the controller renders for an Agent that names none. Without the chart's value the api-server falls back to the chart's own default, HOME persisted and /tmp not.
+  it("reads the template default mounts the chart hands over", () => {
+    expect(loadConfig().agentDefaultMounts).toEqual([
+      { path: "/home/agent", persist: true },
+      { path: "/tmp", persist: false },
+    ]);
+    process.env.AGENT_DEFAULT_MOUNTS = JSON.stringify([
+      { path: "/home/agent", persist: true },
+      { path: "/data", persist: true, size: "5Gi" },
+    ]);
+    expect(loadConfig().agentDefaultMounts).toEqual([
+      { path: "/home/agent", persist: true },
+      { path: "/data", persist: true, size: "5Gi" },
+    ]);
   });
 });

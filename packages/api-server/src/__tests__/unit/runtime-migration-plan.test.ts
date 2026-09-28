@@ -28,6 +28,7 @@ const WEEK_MS = 7 * 24 * 3600_000;
 
 const INPUTS = {
   virtualizationEnabled: true,
+  defaultMounts: [{ path: "/home/agent", persist: true }],
   defaultStorageSize: "10Gi",
   retentionMs: WEEK_MS,
 };
@@ -141,6 +142,61 @@ describe("the runtime migration plan", () => {
     expect(
       runtimeMigrationRefusalReasons({ type: "RuntimeMigrationInProgress" }),
     ).toEqual(["This agent is already moving to the new runtime"]);
+    expect(
+      runtimeMigrationRefusalReasons({ type: "HomeNotPersisted" }),
+    ).toEqual([
+      "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
+    ]);
+    expect(
+      runtimeMigrationRefusalReasons({ type: "ConcurrentUpdate" }),
+    ).toEqual([
+      "This agent changed while the move was being requested — try again",
+    ]);
+  });
+
+  // TEST_SCENARIO: an agent whose home is not persisted has nothing the machine would keep; the plan says so before the user clicks, in the request's own words.
+  it("refuses an agent that does not persist its home", () => {
+    const view = toRuntimeMigrationPlanView(
+      runtimeMigrationPlan(
+        agent({ mounts: [{ path: "/home/agent", persist: false }] }),
+        INPUTS,
+      ),
+    );
+    expect(view.allowed).toBe(false);
+    expect(view.refusal?.type).toBe("HomeNotPersisted");
+  });
+
+  // TEST_SCENARIO: a mount path that is not plain cannot be placed by the copy even under HOME, so the plan names it with that reason.
+  it("names a path under HOME that is not plain", () => {
+    const view = toRuntimeMigrationPlanView(
+      runtimeMigrationPlan(
+        agent({
+          mounts: [
+            { path: "/home/agent", persist: true },
+            { path: "/home/agent/../etc", persist: true },
+          ],
+        }),
+        INPUTS,
+      ),
+    );
+    expect(view.refusal?.reasons).toEqual([
+      "/home/agent/../etc cannot be moved: it is not a plain absolute path",
+    ]);
+  });
+
+  // TEST_SCENARIO: an agent that names no mounts gets the install's template defaults from the controller, so the plan moves those same paths.
+  it("plans from the install's default mounts when the agent names none", () => {
+    const plan = runtimeMigrationPlan(agent({}), {
+      ...INPUTS,
+      defaultMounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/data", persist: true, size: "5Gi" },
+      ],
+    });
+    expect(plan.moves).toEqual([
+      { from: "/data", to: "/home/agent/.persisted/data" },
+    ]);
+    expect(plan.refusal).toBeNull();
   });
 });
 

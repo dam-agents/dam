@@ -30,6 +30,32 @@ const positiveQuantitySchema = z
     message: "must be a positive quantity",
   });
 
+const defaultMountsSchema = z
+  .string()
+  .default(
+    JSON.stringify([
+      { path: "/home/agent", persist: true },
+      { path: "/tmp", persist: false },
+    ]),
+  )
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z.array(
+      z.object({
+        path: z.string().min(1),
+        persist: z.boolean().default(false),
+        size: z.string().optional(),
+      }),
+    ),
+  );
+
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
@@ -68,7 +94,7 @@ const configSchema = z.object({
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  virtualizationEnabled: z.coerce.boolean().default(false),
+  virtualizationEnabled: z.stringbool().default(false),
   runtimeMigrationRetentionMs: z
     .string()
     .default("168h")
@@ -95,6 +121,7 @@ const configSchema = z.object({
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
+  agentDefaultMounts: defaultMountsSchema,
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
@@ -198,11 +225,12 @@ const validatedConfigSchema = configSchema
     },
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's disk default or retention window.
+// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's default mounts, disk default or retention window.
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
     agentDefaultStorageSize: config.agentDefaultStorageSize,
+    agentDefaultMounts: config.agentDefaultMounts,
     runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
   };
 }
@@ -264,6 +292,7 @@ export function loadConfig(): Config {
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,
+    agentDefaultMounts: process.env.AGENT_DEFAULT_MOUNTS,
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
