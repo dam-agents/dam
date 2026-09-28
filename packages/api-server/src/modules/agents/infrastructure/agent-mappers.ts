@@ -40,8 +40,9 @@ import {
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 import {
-  isRuntimeMigratable,
   runtimeMigrationOf,
+  runtimeMigrationRefusal,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -66,6 +67,7 @@ export interface InfraAgent {
   id: string;
   name: string;
   createdAt?: string;
+  resourceVersion?: string;
   templateId?: string;
   owner?: string;
   spec: AgentSpec;
@@ -179,6 +181,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? new Date(ready.lastTransitionTime)
       : undefined;
   const createdAt = createdAtOf(obj);
+  const resourceVersion = obj.metadata?.resourceVersion;
   const runtimeMigration = runtimeMigrationOf(
     annotations[RUNTIME_MIGRATION_KEY],
     annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
@@ -187,6 +190,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     id,
     name: spec.name,
     ...(createdAt ? { createdAt } : {}),
+    ...(resourceVersion ? { resourceVersion } : {}),
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
     owner: agentOwner(obj),
     spec,
@@ -249,6 +253,7 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
+  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -260,7 +265,8 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable: isRuntimeMigratable(infra.spec),
+    runtimeMigratable:
+      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

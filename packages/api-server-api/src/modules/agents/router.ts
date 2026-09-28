@@ -183,6 +183,18 @@ export const agentsRouter = t.router({
             code: "PRECONDITION_FAILED",
             message: `The new runtime keeps an agent's data in its home directory and cannot move ${res.error.paths.map((p) => `${p.path} (${p.reason})`).join("; ")}`,
           });
+        case "HomeNotPersisted":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
+          });
+        case "ConcurrentUpdate":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This agent changed while the move was being requested — try again",
+          });
       }
     }),
 
