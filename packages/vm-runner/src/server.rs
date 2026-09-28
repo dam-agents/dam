@@ -641,11 +641,18 @@ impl Server {
         Ok(seeding)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: removes the seed a machine has booted from and, when no upload holds the claim, whatever a runner killed mid-upload staged beside it. The check and the removal share one critical section, so a claim taken meanwhile cannot have its fresh staged file removed under it.
     pub fn remove_seed(&self, id: &str) -> Result<(), Rejected> {
         check_id(id)?;
         let share = state::require_machine_dir(&self.config.state_dir, id)
             .map_err(|e| Rejected::bad_request(e.to_string()))?
             .join(SHARE_DIR);
+        {
+            let machines = locked(&self.machines);
+            if !machines.entries.get(id).is_some_and(|e| e.seeding) {
+                share::remove_staged_seed(&share).map_err(|e| Rejected::internal(e.to_string()))?;
+            }
+        }
         share::remove_seed(&share).map_err(|e| Rejected::internal(e.to_string()))
     }
 

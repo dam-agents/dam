@@ -51,6 +51,7 @@ pub fn write_share(
     let share = base.join(SHARE_DIR);
     let ca = share.join(CA_DIR);
     files::create_dir(&ca, CA_DIR_MODE)?;
+    remove_staged_seed(&share)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
     files::write(&share.join(LINKS_FILE), &links_plan(&spec.links), CA_MODE)?;
     copy_init(init, &share.join(INIT_FILE))
@@ -147,10 +148,14 @@ impl SeedFile {
         Ok(())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: the seed's bytes are flushed before the rename and the share's directory after it, because a rename is only durable once the directory that holds it is. Without the second flush, a node that loses power after the runner answered could come back with the old seed or none, while the Job has already reported the copy done.
     pub fn commit(mut self) -> io::Result<SeedResult> {
         self.file.sync_all()?;
         fs::rename(&self.staged, &self.to)?;
         self.committed = true;
+        if let Some(share) = self.to.parent() {
+            fs::File::open(share)?.sync_all()?;
+        }
         Ok(SeedResult {
             bytes: self.bytes,
             sha256: format!("{:x}", self.hasher.clone().finalize()),
@@ -167,7 +172,16 @@ impl Drop for SeedFile {
 }
 
 pub fn remove_seed(share: &Path) -> io::Result<()> {
-    match fs::remove_file(share.join(SEED_FILE)) {
+    remove_if_present(&share.join(SEED_FILE))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner killed mid-upload leaves its staged seed behind, since no drop ran to remove it, and that file can be as large as the machine's disk. It is removed only where no upload can be in flight: whenever the share is written, which only a machine's own worker does, and no worker runs while a seed is claimed; and by the server when a seed is removed with no claim held. A new claim truncates it in place.
+pub fn remove_staged_seed(share: &Path) -> io::Result<()> {
+    remove_if_present(&staged_path(&share.join(SEED_FILE)))
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
@@ -496,6 +510,37 @@ mod tests {
         remove_seed(dir.path()).unwrap();
         remove_seed(dir.path()).unwrap();
         assert!(!dir.path().join(SEED_FILE).exists());
+    }
+
+    // TEST_SCENARIO: a runner killed mid-upload runs no drop, so its staged seed stays in the share, as large as the upload got. The next write of the share, which comes with the machine's next action, removes it and keeps the committed seed beside it; removing it again finds nothing and succeeds.
+    #[test]
+    fn a_seed_staged_by_a_runner_that_died_is_removed_with_the_next_share() {
+        let dir = TempDir::new("stale-seed");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        fs::create_dir_all(&share).unwrap();
+        fs::write(share.join(SEED_FILE), b"committed").unwrap();
+        let staged = share.join(format!("{SEED_FILE}{STAGED_SUFFIX}"));
+        fs::write(&staged, b"half an upload").unwrap();
+
+        write_share(
+            dir.path(),
+            "agent-a",
+            &MachineSpec {
+                ca_cert: "ca".into(),
+                ..Default::default()
+            },
+            Some(&init),
+        )
+        .unwrap();
+
+        assert!(!staged.exists(), "the staged seed outlived the share write");
+        assert_eq!(fs::read(share.join(SEED_FILE)).unwrap(), b"committed");
+        fs::write(&staged, b"again").unwrap();
+        remove_staged_seed(&share).unwrap();
+        remove_staged_seed(&share).unwrap();
+        assert!(!staged.exists());
     }
 
     fn mode_of(path: &Path) -> u32 {
