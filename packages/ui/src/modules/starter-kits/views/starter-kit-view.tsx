@@ -38,7 +38,6 @@ import {
   kitEgressPreset,
   VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
-import { kitIcon } from "../lib/kit-icon.js";
 import {
   describeAccepts,
   harnessesLine,
@@ -238,7 +237,6 @@ function KitDetail({
   kit: StarterKitView;
   onClose: () => void;
 }) {
-  const KitIcon = kitIcon(kit);
   const setView = useStore((s) => s.setView);
   const navigateToStarterKitSetup = useStore(
     (s) => s.navigateToStarterKitSetup,
@@ -274,9 +272,6 @@ function KitDetail({
           onClose={onClose}
         >
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground">
-              <KitIcon size={14} />
-            </span>
             {kit.connections.flatMap((req) =>
               acceptedTemplates(req.accepts, templates.data ?? [])
                 .flatMap((t) => (t.family ? [t.family] : []))

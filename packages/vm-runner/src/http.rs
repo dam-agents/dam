@@ -313,6 +313,19 @@ async fn seed(
     Extension(authority): Extension<Authority>,
     body: Body,
 ) -> Response {
+    receive_seed(server, id, authority, body, SEED_IDLE).await
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a seed upload may send nothing before it is dropped. The upload holds the machine's seed claim, and no worker starts the machine while it does, so an uploader that stalls without closing its connection would otherwise keep the machine down for as long as the connection lasts. The uploader sends at least every few seconds while it makes progress.
+const SEED_IDLE: Duration = Duration::from_secs(300);
+
+async fn receive_seed(
+    server: Arc<Server>,
+    id: String,
+    authority: Authority,
+    body: Body,
+    idle: Duration,
+) -> Response {
     if !crate::state::is_machine_id(&id) {
         return plain(StatusCode::BAD_REQUEST, "invalid machine id");
     }
@@ -335,7 +348,13 @@ async fn seed(
     });
     let mut body = body;
     let read = loop {
-        match body.frame().await {
+        let Ok(frame) = tokio::time::timeout(idle, body.frame()).await else {
+            break Err(format!(
+                "the seed upload sent nothing for {}s and was dropped",
+                idle.as_secs()
+            ));
+        };
+        match frame {
             None => break Ok(()),
             Some(Err(e)) => break Err(format!("reading the seed: {e}")),
             Some(Ok(frame)) => {
@@ -440,6 +459,7 @@ mod tests {
 
     struct Api {
         router: Router,
+        server: Arc<Server>,
         dir: crate::testdir::TempDir,
     }
 
@@ -489,7 +509,8 @@ mod tests {
         )
         .unwrap();
         Api {
-            router: router(server, Token::fixed("secret")),
+            router: router(server.clone(), Token::fixed("secret")),
+            server,
             dir,
         }
     }
@@ -969,6 +990,55 @@ mod tests {
 
         let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
         assert_eq!(status, StatusCode::OK);
+    }
+
+    // TEST_SCENARIO: an uploader that sends part of its seed and then nothing, without closing its connection, would hold the machine's seed claim for as long as the connection lasts, and no worker starts the machine meanwhile. Past the idle limit the upload is dropped with a message that says so, nothing is left in the share, and the claim is free for the next upload.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_seed_upload_that_stalls_is_dropped_and_frees_the_machine() {
+        use futures_util::StreamExt;
+        let api = api_on("seed-idle", Arc::new(Parked(State::Stopped.into())));
+        let share = api.created("m1", 1);
+        let stalled = futures_util::stream::iter([Ok::<_, std::io::Error>(Bytes::from_static(
+            b"part of a tar",
+        ))])
+        .chain(futures_util::stream::pending());
+
+        let response = receive_seed(
+            api.server.clone(),
+            "m1".into(),
+            Authority::Token,
+            Body::from_stream(stalled),
+            Duration::from_millis(200),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(
+            String::from_utf8_lossy(&body).contains("sent nothing"),
+            "{body:?}"
+        );
+        assert_eq!(std::fs::read_dir(&share).unwrap().count(), 0);
+        let (status, answer) = call(&api, "PUT", "/machines/m1/seed", Some("secret"), "tar").await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+    }
+
+    // TEST_SCENARIO: a runner killed mid-upload leaves its staged seed in the share. Removing the seed, which the controller does once the machine has booted, removes that too when no upload holds the claim.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn removing_a_seed_removes_one_a_dead_runner_staged() {
+        let api = api_on("unseed-stale", Arc::new(Parked(State::Stopped.into())));
+        let share = api.created("m1", 1);
+        let staged = share.join(format!(
+            "{}{}",
+            crate::share::SEED_FILE,
+            crate::share::STAGED_SUFFIX
+        ));
+        std::fs::write(&staged, b"half an upload").unwrap();
+
+        let (status, _) = call(&api, "DELETE", "/machines/m1/seed", Some("secret"), "").await;
+
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(!staged.exists());
     }
 
     // TEST_SCENARIO: the controller replaces the token in the runner's Secret and the kubelet rewrites the file. The next read takes the new token and the old one stops working; a file caught empty or missing mid-swap keeps the token already held rather than locking the controller out.
