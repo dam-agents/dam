@@ -31,8 +31,23 @@ INSTALL_ARGS=(
 # usable /dev/kvm (nested virtualization on the lima VM, or a KVM host in
 # sandbox mode), so it is opt-in: CI sets it only in its vm lane, cd.yml's
 # e2e-vm job on a KVM runner.
+#
+# That lane also gives the mock agents a 1Gi Size instead of the 2Gi default.
+# A vm Agent's machine gets its Size's memory, and the controller raises its
+# owner's runner pod's memory request to the sum over the running machines
+# plus the runner's 512Mi reserve, so the scheduler sees what the guests hold.
+# On the single 16 GB CI node the control plane requests about 5Gi, so three
+# owners' runners holding 2Gi machines (the specs that run as users of their
+# own, E2E_OWN_USERS) outgrew it: the resizes were deferred and the next
+# agent's gateway stayed Pending on memory. The mock replays scripts, and its
+# guest needs a fraction of 1Gi. The container lane keeps the default, so its
+# agents are sized as before.
 if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
-  INSTALL_ARGS+=(--set=virtualization.enabled=true)
+  INSTALL_ARGS+=(
+    --set=virtualization.enabled=true
+    --set=harnessTemplates.mock.resources.limits.cpu=1000m
+    --set=harnessTemplates.mock.resources.limits.memory=1Gi
+  )
 fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
 

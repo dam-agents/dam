@@ -722,13 +722,12 @@ jobs:
           - config: baseline
           - config: own-users
             own-users: "1"
-          - config: own-users-4w
+          - config: own-users-early-stage
             own-users: "1"
-            workers: "4"
-          - config: own-users-4w-early-stage
-            own-users: "1"
-            workers: "4"
             stage-vm-early: "1"
+          - config: own-users-3w
+            own-users: "1"
+            workers: "3"
     permissions:
       contents: read
       actions: read
