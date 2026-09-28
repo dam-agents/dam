@@ -30,8 +30,11 @@ import {
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
+  RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
+  RUNTIME_MIGRATION_SNAPSHOT_KEY,
+  RUNTIME_MIGRATION_TARGET_KEY,
   STOP_REQUESTED_KEY,
   STORAGE_MIGRATION_KEY,
   VERSION,
@@ -60,6 +63,7 @@ interface AgentStatusObject {
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
+  runtimeMigrationAttempts?: number;
 }
 
 export interface InfraAgent {
@@ -80,7 +84,10 @@ export interface InfraAgent {
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
+  resourceVersion?: string;
   runtimeMigration?: RuntimeMigration;
+  runtimeMigrationTarget?: string;
+  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -179,10 +186,17 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? new Date(ready.lastTransitionTime)
       : undefined;
   const createdAt = createdAtOf(obj);
-  const runtimeMigration = runtimeMigrationOf(
-    annotations[RUNTIME_MIGRATION_KEY],
-    annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
+  const migrating = status.conditions?.find(
+    (c) => c.type === RUNTIME_MIGRATING_CONDITION,
   );
+  const runtimeMigration = runtimeMigrationOf({
+    requested: annotations[RUNTIME_MIGRATION_KEY],
+    legacyMessage: annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
+    ...(migrating ? { condition: migrating } : {}),
+    attempts: status.runtimeMigrationAttempts,
+    vm: crSpec.backend?.type === "vm",
+  });
+  const resourceVersion = obj.metadata?.resourceVersion;
   return {
     id,
     name: spec.name,
@@ -207,7 +221,16 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
+    ...(resourceVersion ? { resourceVersion } : {}),
     ...(runtimeMigration ? { runtimeMigration } : {}),
+    ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
+      ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
+      : {}),
+    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
+      ? {
+          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
+        }
+      : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,

@@ -1,4 +1,4 @@
-import { type K8sClient } from "./k8s.js";
+import { isConflict, isNotFound, type K8sClient } from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
@@ -50,14 +50,11 @@ export interface AgentsRepository {
   ): Promise<InfraAgent | null>;
   patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
   getLive(id: string, owner: string | undefined): Promise<InfraAgent | null>;
-  migrateBackend(
+  writeRuntimeMigration(
     id: string,
     owner: string | undefined,
-    patch: {
-      spec: Record<string, unknown>;
-      annotations: Record<string, string>;
-    },
-  ): Promise<InfraAgent | null>;
+    patch: RuntimeMigrationWrite,
+  ): Promise<RuntimeMigrationWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
@@ -80,12 +77,23 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state.
+export interface RuntimeMigrationWrite {
+  spec?: Record<string, unknown>;
+  annotations: Record<string, string | null>;
+  resourceVersion: string | undefined;
+}
+
+export type RuntimeMigrationWriteResult =
+  | { ok: true; value: InfraAgent }
+  | { ok: false; reason: "not-found" | "conflict" };
+
 export interface AgentActivityStamp {
   previous: string | null;
   written: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through migrateBackend; every other spec write that names the Backend is a bug and fails loudly.
+// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through writeRuntimeMigration; every other spec write that names the Backend is a bug and fails loudly.
 function assertBackendUntouched(patch: Record<string, unknown>): void {
   if ("backend" in patch)
     throw new Error(
@@ -158,15 +166,27 @@ export function createAgentsRepository(
       return parseInfraAgent(obj);
     },
 
-    async migrateBackend(id, owner, patch) {
+    async writeRuntimeMigration(id, owner, patch) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
-      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: { annotations: patch.annotations },
-        spec: patch.spec,
-      });
-      return parseInfraAgent(updated);
+      if (!obj) return { ok: false, reason: "not-found" };
+      if (owner && !agentIsOwnedBy(obj, owner))
+        return { ok: false, reason: "not-found" };
+      try {
+        const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+          metadata: {
+            annotations: patch.annotations,
+            ...(patch.resourceVersion
+              ? { resourceVersion: patch.resourceVersion }
+              : {}),
+          },
+          ...(patch.spec ? { spec: patch.spec } : {}),
+        });
+        return { ok: true, value: parseInfraAgent(updated) };
+      } catch (e) {
+        if (isConflict(e)) return { ok: false, reason: "conflict" };
+        if (isNotFound(e)) return { ok: false, reason: "not-found" };
+        throw e;
+      }
     },
 
     async delete(id, owner?) {

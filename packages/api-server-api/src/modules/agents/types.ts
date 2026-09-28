@@ -48,11 +48,21 @@ export interface TemplateUpdate {
   toImage: string;
 }
 
-export type RuntimeMigrationPhase = "requested" | "copying" | "booting";
+export type RuntimeMigrationPhase =
+  | "requested"
+  | "stopping"
+  | "copying"
+  | "booting"
+  | "verified"
+  | "failed"
+  | "aborting";
 
 export interface RuntimeMigration {
   phase: RuntimeMigrationPhase;
   message?: string;
+  attempts?: number;
+  abortable: boolean;
+  retryable: boolean;
 }
 
 export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
@@ -140,6 +150,22 @@ export interface UnmovablePath {
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
+export type AbortRuntimeMigrationError =
+  | { type: "AgentNotFound" }
+  | { type: "NoRuntimeMigration" }
+  | { type: "RuntimeMigrationVerified" };
+
+export type AbortRuntimeMigrationResult =
+  { ok: true; value: Agent } | { ok: false; error: AbortRuntimeMigrationError };
+
+export type RetryRuntimeMigrationError =
+  | { type: "AgentNotFound" }
+  | { type: "NoRuntimeMigration" }
+  | { type: "RuntimeMigrationNotFailed" };
+
+export type RetryRuntimeMigrationResult =
+  { ok: true; value: Agent } | { ok: false; error: RetryRuntimeMigrationError };
+
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
   | { type: "ChannelAlreadyBound" }
@@ -207,6 +233,8 @@ export interface AgentsService {
     expectedToImage?: string,
   ) => Promise<UpgradeAgentResult>;
   migrateRuntime: (id: string) => Promise<MigrateRuntimeResult>;
+  abortRuntimeMigration: (id: string) => Promise<AbortRuntimeMigrationResult>;
+  retryRuntimeMigration: (id: string) => Promise<RetryRuntimeMigrationResult>;
   ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;
   connectSlack: (
     id: string,

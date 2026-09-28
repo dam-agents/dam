@@ -47,6 +47,12 @@ const is404 = (err: unknown) =>
   err instanceof Error &&
   "code" in err &&
   (err as { code: number }).code === 404;
+export const isNotFound = is404;
+
+export const isConflict = (err: unknown) =>
+  err instanceof Error &&
+  "code" in err &&
+  (err as { code: number }).code === 409;
 const isDnsSubdomainName = (name: string) =>
   /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/.test(name);
 

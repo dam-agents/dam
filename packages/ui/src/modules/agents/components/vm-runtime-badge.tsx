@@ -1,4 +1,10 @@
-import { Chemistry, ContainerRuntime } from "@carbon/icons-react";
+import {
+  Chemistry,
+  ContainerRuntime,
+  Migrate,
+  WarningAlt,
+} from "@carbon/icons-react";
+import { match } from "ts-pattern";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -9,13 +15,14 @@ import { runtimeBadge } from "../utils/runtime-migration.js";
 export function VmRuntimeBadge({ agent }: { agent: AgentView }) {
   const badge = runtimeBadge(agent, useVmRuntime());
   if (!badge) return null;
-  const Icon = badge.kind === "new" ? Chemistry : ContainerRuntime;
+  const { Icon, variant } = match(badge.kind)
+    .with("new", () => ({ Icon: Chemistry, variant: "template" as const }))
+    .with("old", () => ({ Icon: ContainerRuntime, variant: "muted" as const }))
+    .with("migrating", () => ({ Icon: Migrate, variant: "accent" as const }))
+    .with("failed", () => ({ Icon: WarningAlt, variant: "danger" as const }))
+    .exhaustive(() => ({ Icon: ContainerRuntime, variant: "muted" as const }));
   return (
-    <Badge
-      variant={badge.kind === "new" ? "template" : "muted"}
-      className="shrink-0 gap-1"
-      title={badge.title}
-    >
+    <Badge variant={variant} className="shrink-0 gap-1" title={badge.title}>
       <Icon size={12} aria-hidden /> {badge.label}
     </Badge>
   );

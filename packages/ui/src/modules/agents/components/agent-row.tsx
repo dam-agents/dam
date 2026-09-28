@@ -56,6 +56,9 @@ interface Props {
   onUpdate: () => void;
   migratePending: boolean;
   onMigrate: () => void;
+  migrationControlsBusy: boolean;
+  onAbortMigration: () => void;
+  onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onShare?: () => void;
@@ -81,6 +84,9 @@ export function AgentRow({
   onUpdate,
   migratePending,
   onMigrate,
+  migrationControlsBusy,
+  onAbortMigration,
+  onRetryMigration,
   onConfigure,
   configureLabel,
   onShare,
@@ -181,6 +187,9 @@ export function AgentRow({
           agent={agent}
           pending={migratePending}
           onMigrate={onMigrate}
+          controlsBusy={migrationControlsBusy}
+          onAbort={onAbortMigration}
+          onRetry={onRetryMigration}
         />
         <span
           title={agent.overBudgetMessage ?? undefined}

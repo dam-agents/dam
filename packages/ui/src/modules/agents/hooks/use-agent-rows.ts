@@ -20,6 +20,7 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
+import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
 import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
@@ -44,6 +45,7 @@ export function useAgentRows() {
   const wakeAgent = useWakeAgent();
   const update = useUpdateSandbox();
   const migrate = useMigrateRuntime();
+  const migrationControls = useRuntimeMigrationControls();
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -91,6 +93,9 @@ export function useAgentRows() {
     onUpdate: () => void update.updateOne(agent),
     migratePending: migrate.isMigrating(agent.id),
     onMigrate: () => void migrate.migrateOne(agent),
+    migrationControlsBusy: migrationControls.isBusy(agent.id),
+    onAbortMigration: () => void migrationControls.abortOne(agent),
+    onRetryMigration: () => void migrationControls.retryOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
     onPause: () => suspend.pause(agent.id),
