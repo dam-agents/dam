@@ -24,12 +24,15 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function recoveryWorld() {
+function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   const backend = createFileDocumentStoreBackend(dir);
   const resumed: string[] = [];
   const triggerDriver: TriggerSessionDriver = {
     start({ resumeSessionId }) {
-      if (resumeSessionId) resumed.push(resumeSessionId);
+      if (resumeSessionId) {
+        resumed.push(resumeSessionId);
+        onResume(resumeSessionId);
+      }
       return Promise.resolve({ sessionId: resumeSessionId ?? "fresh" });
     },
   };
@@ -62,5 +65,26 @@ describe("interrupted-turn recovery", () => {
     await world.recover(booted);
 
     expect(world.resumed).toEqual(["interrupted"]);
+  });
+
+  /**
+   * TEST_SCENARIO: the previous process died with turns running in `first` and
+   * `second`. While recovery is resuming `first`, a person sends a message in
+   * `second`, so a live turn takes it over. Recovery must not resume `second`
+   * from the list it read before that happened.
+   */
+  it("skips a session that goes live while an earlier one is resumed", async () => {
+    let booted: ReturnType<typeof createActiveTurnStore> | undefined;
+    const world = recoveryWorld((sessionId) => {
+      if (sessionId === "first") booted?.record("second");
+    });
+    const previous = createActiveTurnStore(world.backend);
+    previous.record("first");
+    previous.record("second");
+
+    booted = createActiveTurnStore(world.backend);
+    await world.recover(booted);
+
+    expect(world.resumed).toEqual(["first"]);
   });
 });
