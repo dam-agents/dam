@@ -1831,6 +1831,9 @@ mod tests {
         header.set_entry_type(tar::EntryType::GNUSparse);
         header.set_mode(0o644);
         header.set_mtime(1_000_000_000);
+        let owner = fs::metadata(share.path()).unwrap();
+        header.set_uid(owner.uid().into());
+        header.set_gid(owner.gid().into());
         header.set_size(data.len() as u64);
         let gnu = header.as_gnu_mut().unwrap();
         gnu.set_real_size(size);
