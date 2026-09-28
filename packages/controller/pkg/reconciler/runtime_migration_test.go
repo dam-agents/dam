@@ -107,6 +107,7 @@ func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) 
 	pod := job.Spec.Template.Spec
 	assert.Equal(t, "quay.io/dam-agents/vm-runner:1", pod.Containers[0].Image, "the copy runs the runner image's own tar writer")
 	assert.Contains(t, pod.Containers[0].Command, "https://platform-vm-runner-"+runnerSuffix(testOwner)+".test-agents.svc:4600/machines/my-agent/seed")
+	assert.Contains(t, strings.Join(pod.Containers[0].Command, " "), "--map-owner 65532:65532:0", "the container's agent becomes the machine's root")
 	assert.Equal(t, "home-agent-my-agent-0", pod.Volumes[0].PersistentVolumeClaim.ClaimName)
 	assert.True(t, pod.Volumes[0].PersistentVolumeClaim.ReadOnly, "the copy never writes to the volume it copies")
 	assert.Equal(t, RoleRuntimeMigration, job.Spec.Template.Labels[LabelRole])
@@ -474,4 +475,12 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 		require.NoError(t, err, name)
 		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
 	}
+}
+
+// TEST_SCENARIO: the seed maps the agent's container ids to the machine's root, so they are read from the install's agent security context: an install that runs its agents as another uid and gid gets those mapped, and one that sets neither falls back to the chart's 65532 as the storage migration does.
+func TestRuntimeMigrationOwnerMapFollowsTheAgentSecurityContext(t *testing.T) {
+	uid, gid := int64(1000), int64(2000)
+	custom := &config.Config{AgentBase: config.AgentBase{ContainerSecurityContext: &corev1.SecurityContext{RunAsUser: &uid, RunAsGroup: &gid}}}
+	assert.Equal(t, "1000:2000:0", runtimeMigrationOwnerMap(custom))
+	assert.Equal(t, "65532:65532:0", runtimeMigrationOwnerMap(&config.Config{}))
 }
