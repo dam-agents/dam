@@ -641,8 +641,7 @@ differ:
   [runtime-migration](vm-runner.md#runtime-migration) Job reads the
   volumes read-only, as root on block ones, with one owner's runner token and CA. The SA has no role bindings and no mounted token, so it
   cannot act against the API; it exists only to scope the
-  OpenShift SCC grant of uid 0 to these Jobs, an out-of-band
-  ops binding. Neither pod joins the mesh.
+  OpenShift SCC grant of uid 0 and DAC_READ_SEARCH to these Jobs. Neither pod joins the mesh.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the
   default pull secrets it preloads with
   ([persistence](vm-image-cache.md)).

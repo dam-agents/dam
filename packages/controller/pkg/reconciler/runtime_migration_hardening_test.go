@@ -580,3 +580,53 @@ func TestTheStorageManagerRechecksTheBackendBeforeActing(t *testing.T) {
 	require.NoError(t, m.migrateAgent(ctx, fresh, []corev1.PersistentVolumeClaim{*source}, ""))
 	assert.NotContains(t, getAgentAnnotations(t, m, "my-agent"), annStorageMigrationWasRunning, "a vm Agent is not gated")
 }
+
+// TEST_SCENARIO: one process reads every volume, so a set of a shared and a block volume reads as root with DAC_READ_SEARCH, which reads the block volume's root-owned lost+found for certain. A share beside it that squashes root then refuses the copy, and that failure says so and what to do, rather than repeating a bare permission error.
+func TestAMixedSetOfVolumesReadsAsRootAndExplainsASquashedShare(t *testing.T) {
+	ctx := context.Background()
+	agent := copyingAgentCR()
+	agent.Annotations[annRuntimeMigrationGrafts] = `[{"from":"/data","at":".persisted/data","pvc":"data-my-agent-0"}]`
+	share := mountPVC("data-my-agent-0", "/data")
+	share.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
+	r, _, job := startCopy(t, agent, blockHome(), share)
+	pod := job.Spec.Template.Spec
+	assert.Equal(t, int64(0), *pod.SecurityContext.RunAsUser)
+	assert.Equal(t, []corev1.Capability{"DAC_READ_SEARCH"}, pod.Containers[0].SecurityContext.Capabilities.Add)
+
+	_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: job.Name + "-x", Namespace: "test-agents", Labels: map[string]string{batchv1.JobNameLabel: job.Name}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "seed", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			ExitCode: 1, FinishedAt: metav1.Now(), Message: "Error: archiving the seed: Permission denied (os error 13)",
+		}}}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	completeJob(t, r, batchv1.JobFailed, time.Now())
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "moving the shared volume to block storage first")
+}
+
+// TEST_SCENARIO: a copy pod that admission refused — an SCC that does not permit what it asks for — never exists, so the Job's FailedCreate event is what the message carries, while the Job waits and once it has failed.
+func TestACopyPodRefusedAtAdmissionSaysWhy(t *testing.T) {
+	ctx := context.Background()
+	agent := copyingAgentCR()
+	r, _, job := startCopy(t, agent, blockHome())
+	job.UID = "copy-job"
+	_, err := r.client.BatchV1().Jobs("test-agents").Update(ctx, job, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Events("test-agents").Create(ctx, &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: job.Name + ".a", Namespace: "test-agents"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Job", Name: job.Name, UID: job.UID},
+		Type:           corev1.EventTypeWarning,
+		Reason:         "FailedCreate",
+		Message:        `Error creating: pods "rtm-my-agent-x" is forbidden: unable to validate against any security context constraint`,
+		LastTimestamp:  metav1.Now(),
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "the copy pod could not be created: FailedCreate")
+
+	completeJob(t, r, batchv1.JobFailed, time.Now())
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Contains(t, reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage], "copying the home directory failed (FailedCreate")
+}

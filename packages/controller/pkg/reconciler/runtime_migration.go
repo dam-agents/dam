@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -417,6 +419,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		reason := "copying the home directory failed; retrying"
 		if why := r.copyJobFailure(ctx, job); why != "" {
 			reason = fmt.Sprintf("copying the home directory failed (%s); retrying", why)
+			if job.Annotations[annRuntimeMigrationMixedReader] == "true" && permissionDenied(why) {
+				reason += "; " + runtimeMigrationMixedHint
+			}
 		}
 		if r.sanitizeFor(agent, reason) != agent.Annotations[annRuntimeMigrationMessage] {
 			r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyFailed", reason)
@@ -537,6 +542,12 @@ func (r *AgentReconciler) runtimeMigrationCopySlot(ctx context.Context, owner st
 	return "", nil
 }
 
+const runtimeMigrationMixedHint = "this agent has both shared and block volumes, which one copy reads as root, and a share that squashes root refuses it; moving the shared volume to block storage first lets the copy finish"
+
+func permissionDenied(why string) bool {
+	return strings.Contains(why, "Permission denied") || strings.Contains(why, "os error 13")
+}
+
 func ownedBy(obj metav1.Object, agent *apiv1.Agent) bool {
 	for _, ref := range obj.GetOwnerReferences() {
 		if ref.UID == agent.UID && ref.Kind == agentGVK.Kind {
@@ -563,11 +574,11 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 	}
 	if last == nil {
 		for i := range pods.Items {
-			if why := r.podWarning(ctx, &pods.Items[i]); why != "" {
+			if why := r.warningOn(ctx, pods.Items[i].Namespace, pods.Items[i].Name, pods.Items[i].UID); why != "" {
 				return why
 			}
 		}
-		return ""
+		return r.warningOn(ctx, job.Namespace, job.Name, job.UID)
 	}
 	lines := strings.Split(strings.TrimSpace(last.Message), "\n")
 	from := len(lines) - 1
@@ -597,22 +608,28 @@ func (r *AgentReconciler) copyPodWaiting(ctx context.Context, job *batchv1.Job) 
 		if pod.Status.Phase != corev1.PodPending {
 			continue
 		}
-		if why := r.podWarning(ctx, pod); why != "" {
+		if why := r.warningOn(ctx, pod.Namespace, pod.Name, pod.UID); why != "" {
 			return fmt.Sprintf("the copy pod %s is not starting: %s", pod.Name, why)
+		}
+	}
+	if len(pods.Items) == 0 {
+		if why := r.warningOn(ctx, job.Namespace, job.Name, job.UID); why != "" {
+			return "the copy pod could not be created: " + why
 		}
 	}
 	return ""
 }
 
-func (r *AgentReconciler) podWarning(ctx context.Context, pod *corev1.Pod) string {
-	events, err := r.client.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{FieldSelector: "involvedObject.name=" + pod.Name})
+// UNIT_BOUNDARY_DESCRIPTION: the latest warning Event on one object. A copy pod that cannot start says why only on itself, and one that admission refused — an SCC that does not permit what it asks for — never exists, so the Job's FailedCreate is where that is said.
+func (r *AgentReconciler) warningOn(ctx context.Context, namespace, name string, uid k8stypes.UID) string {
+	events, err := r.client.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{FieldSelector: "involvedObject.name=" + name})
 	if err != nil {
 		return ""
 	}
 	var latest *corev1.Event
 	for i := range events.Items {
 		e := &events.Items[i]
-		if e.InvolvedObject.Name != pod.Name || e.InvolvedObject.UID != pod.UID || e.Type != corev1.EventTypeWarning {
+		if e.InvolvedObject.Name != name || e.InvolvedObject.UID != uid || e.Type != corev1.EventTypeWarning {
 			continue
 		}
 		if latest == nil || eventTime(e).After(eventTime(latest)) {
@@ -800,16 +817,19 @@ func (r *AgentReconciler) deleteRuntimeMigrationNetworkPolicy(ctx context.Contex
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which identity the copy reads its volumes as. A shared volume — one that admits more than one node — may be a share that squashes root, where uid 0 is the weakest identity on the mount and gets EACCES on the agent's own 0600 files, so it is read as the agent's uid, with no capability at all. A volume only one node mounts is a block device that squashes nothing, and its filesystem root holds a root-owned 0700 lost+found the archive walks, which the agent's uid cannot open; it is read as root holding DAC_READ_SEARCH alone, which reads every file and directory and writes nothing. One shared volume among them puts the whole copy on the agent's uid.
+// UNIT_BOUNDARY_DESCRIPTION: which identity the copy reads its volumes as. A shared volume — one that admits more than one node — may be a share that squashes root, where uid 0 is the weakest identity on the mount and gets EACCES on the agent's own 0600 files, so a copy of shared volumes alone reads as the agent's uid, with no capability at all. A volume only one node mounts is a block device that squashes nothing, and its filesystem root holds a root-owned 0700 lost+found the archive walks, which the agent's uid cannot open; a copy with any such volume reads as root holding DAC_READ_SEARCH alone, which reads every file and directory and writes nothing. One process reads every volume, so a mixed set takes root, which reads the block volume for certain; a shared volume beside it that squashes root then fails with EACCES, and `mixed` lets that failure be explained.
 type runtimeMigrationIdentity struct {
 	uid, gid int64
 	caps     []corev1.Capability
+	mixed    bool
 }
+
+const annRuntimeMigrationMixedReader = "agent-platform.ai/runtime-migration-mixed-reader"
 
 func (r *AgentReconciler) runtimeMigrationReader(ctx context.Context, claims []string) (runtimeMigrationIdentity, string, error) {
 	uid, gid := migrationAgentIdentity(r.config)
 	agent := runtimeMigrationIdentity{uid: uid, gid: gid}
-	shared := false
+	shared, block := false, false
 	for _, name := range claims {
 		pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
@@ -818,16 +838,18 @@ func (r *AgentReconciler) runtimeMigrationReader(ctx context.Context, claims []s
 		if err != nil {
 			return runtimeMigrationIdentity{}, "", fmt.Errorf("reading the volume %s to copy: %w", name, err)
 		}
-		for _, mode := range pvc.Spec.AccessModes {
-			if mode == corev1.ReadWriteMany || mode == corev1.ReadOnlyMany {
-				shared = true
-			}
+		if slices.ContainsFunc(pvc.Spec.AccessModes, func(m corev1.PersistentVolumeAccessMode) bool {
+			return m == corev1.ReadWriteMany || m == corev1.ReadOnlyMany
+		}) {
+			shared = true
+		} else {
+			block = true
 		}
 	}
-	if shared {
+	if !block {
 		return agent, "", nil
 	}
-	return runtimeMigrationIdentity{uid: 0, gid: 0, caps: []corev1.Capability{"DAC_READ_SEARCH"}}, "", nil
+	return runtimeMigrationIdentity{uid: 0, gid: 0, caps: []corev1.Capability{"DAC_READ_SEARCH"}, mixed: shared}, "", nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the uid and gid that own an agent's files on the container backend, which every copy reads its source as. On a root-squashing share uid 0 is the weakest identity on the mount, while the agent's uid reads everything the agent wrote.
@@ -991,6 +1013,9 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 				},
 			},
 		},
+	}
+	if reader.mixed {
+		job.Annotations = map[string]string{annRuntimeMigrationMixedReader: "true"}
 	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
 	if rc := agent.Spec.RuntimeClassName; rc != "" {
