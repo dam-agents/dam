@@ -85,7 +85,7 @@ describe("runtime migration request", () => {
     });
   });
 
-  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the mounts are rewritten to match in the same write, the disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
+  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the mounts are rewritten to match in the same write, the moved one naming the path it came from so the machine can put it back at every boot, the disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
   it("moves persisted paths below HOME and says where each went", async () => {
     const h = harness({
       agent: infraAgent({
@@ -112,7 +112,12 @@ describe("runtime migration request", () => {
         mounts: [
           { path: "/home/agent", persist: true },
           { path: "/home/agent/cache", persist: true, size: "5Gi" },
-          { path: "/home/agent/.persisted/data", persist: true, size: "20Gi" },
+          {
+            path: "/home/agent/.persisted/data",
+            persist: true,
+            size: "20Gi",
+            movedFrom: "/data",
+          },
           { path: "/scratch", persist: false },
         ],
       },

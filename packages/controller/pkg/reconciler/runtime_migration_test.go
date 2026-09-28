@@ -372,15 +372,15 @@ func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
 	}}
 }
 
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
+// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still in the machine's links plan, since the agent's software still looks there. The plan comes from the spec, not the seed, so the copy Job carries none.
 func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
 	agent.Spec.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
-		{Path: "/home/agent/.persisted/data", Persist: true},
+		{Path: "/home/agent/.persisted/data", Persist: true, MovedFrom: "/data"},
 		{Path: "/home/agent/cache", Persist: true},
-		{Path: "/home/agent/.persisted/never", Persist: true},
+		{Path: "/home/agent/.persisted/never", Persist: true, MovedFrom: "/never"},
 	}
 	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
 	r, node, _ := setupVMReconciler(t, agent)
@@ -410,8 +410,9 @@ func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
 	pod := job.Spec.Template.Spec
 	command := pod.Containers[0].Command
 	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
-	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
-		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
+	assert.NotContains(t, strings.Join(command, " "), "--links", "the seed carries no plan and nothing to run")
+	assert.Equal(t, []string{"/data", "/never"}, node.spec("my-agent").Links,
+		"every path moved from outside HOME is in the machine's links plan, even one no volume was made for; one under HOME keeps its place and needs no link")
 	claims := map[string]string{}
 	for _, v := range pod.Volumes {
 		if v.PersistentVolumeClaim != nil {

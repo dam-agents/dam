@@ -7,11 +7,10 @@ use std::path::{Component, Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::api::SeedResult;
-use crate::guest;
 
 // UNIT_BOUNDARY_DESCRIPTION: the tar an agent's old home is carried in when the agent moves from the container backend to a machine. It holds the contents of the home, named relative to it and with the home itself as `.`, so platform-init can restore the tree as the agent store and give the store the home's own owner and mode. Every entry keeps its numeric owner, mode and mtime — no user names, because the uid inside the machine is the one the image already uses — and symlinks are stored as symlinks, never followed, so a link out of the home is not a way to pack the rest of the volume. A file with several names is stored once and linked, so a seed is never larger than the home. Sockets, fifos and devices are skipped with a warning, as platform-init skips them when it seeds from an image: they are not state an agent carries across a boot.
 pub fn write_tar<W: Write>(source: &Path, into: W) -> io::Result<W> {
-    write_layout(source, &[], &[], into)
+    write_layout(source, &[], into)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: another volume of the agent's, carried into the same seed at `at`, a path relative to the home. On the container backend each persisted mount is a volume of its own, and one mounted inside another hides whatever the outer volume holds at that path; the machine keeps a single tree, so each volume is placed where it now lives under the home.
@@ -21,20 +20,8 @@ pub struct Graft {
     pub source: PathBuf,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a persisted path from outside the home that the migration moved to `at` below it. The machine's root is fresh on every boot, so the seed carries a boot hook that links `path` to its new place each time, and the agent's software finds its data where it always did.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-pub struct Link {
-    pub path: PathBuf,
-    pub at: PathBuf,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a seed that holds the home and, grafted into it, the agent's other volumes, and for moved paths the boot hook that links them back. The archive is still exactly the home as the machine will have it, so the reader that restores it needs no second format and every check it makes on a name still holds. What a graft covers is left out of the tree it is grafted into, because on the container that part was hidden under the other volume and the agent never saw it. Directories on the way to a graft, a link's place or the hook that no tree holds are added with the home's owner, so the agent's user can write to them; one that a tree holds as a file or a symlink fails the seed, since the entry could only land there by replacing it or by writing through a link. The hook belongs to root and is mode 0755: platform-init runs it as root, and only its owner or root can change it.
-pub fn write_layout<W: Write>(
-    home: &Path,
-    grafts: &[Graft],
-    links: &[Link],
-    into: W,
-) -> io::Result<W> {
+// UNIT_BOUNDARY_DESCRIPTION: a seed that holds the home and, grafted into it, the agent's other volumes. The archive is still exactly the home as the machine will have it, so the reader that restores it needs no second format and every check it makes on a name still holds. What a graft covers is left out of the tree it is grafted into, because on the container that part was hidden under the other volume and the agent never saw it. Directories on the way to a graft that no tree holds are added with the home's owner, so the agent's user can write to them; one that a tree holds as a file or a symlink fails the seed, since the entry could only land there by replacing it or by writing through a link.
+pub fn write_layout<W: Write>(home: &Path, grafts: &[Graft], into: W) -> io::Result<W> {
     let root = directory(home)?;
     let mut sorted = grafts.to_vec();
     sorted.sort_by(|a, b| a.at.cmp(&b.at));
@@ -44,10 +31,6 @@ pub fn write_layout<W: Write>(
             return Err(invalid(format!("{} is grafted twice", graft.at.display())));
         }
         directory(&graft.source)?;
-    }
-    for link in links {
-        inside_home(&link.at)?;
-        plain_absolute(&link.path)?;
     }
     let skip: HashSet<PathBuf> = sorted.iter().map(|g| g.at.clone()).collect();
     let mut builder = tar::Builder::new(into);
@@ -68,23 +51,6 @@ pub fn write_layout<W: Write>(
         let info = fs::symlink_metadata(&graft.source)?;
         append(&mut builder, &graft.source, &graft.at, &info, &mut walk)?;
         dirs.made.insert(graft.at.clone());
-    }
-    if !links.is_empty() {
-        for link in links {
-            dirs.above(&mut builder, &link.at)?;
-            dirs.ensure(&mut builder, &link.at, &link.at)?;
-        }
-        let hook = Path::new(guest::BOOT_HOOK_DIR).join(guest::PERSISTED_PATHS_HOOK);
-        dirs.above(&mut builder, &hook)?;
-        let script = persisted_paths_hook(links);
-        let mut header = tar::Header::new_gnu();
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_mode(0o755);
-        header.set_uid(0);
-        header.set_gid(0);
-        header.set_mtime(root.mtime().max(0) as u64);
-        header.set_size(script.len() as u64);
-        builder.append_data(&mut header, &hook, script.as_bytes())?;
     }
     builder.into_inner()
 }
@@ -151,53 +117,6 @@ fn inside_home(at: &Path) -> io::Result<()> {
         )));
     }
     Ok(())
-}
-
-fn plain_absolute(path: &Path) -> io::Result<()> {
-    let mut parts = path.components();
-    let plain = parts.next() == Some(Component::RootDir)
-        && parts.clone().next().is_some()
-        && parts.all(|c| matches!(c, Component::Normal(_)))
-        && path.as_os_str() == path.components().collect::<PathBuf>().as_os_str();
-    if !plain {
-        return Err(invalid(format!(
-            "{} is not a plain absolute path",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the boot hook for moved paths. It runs on every boot, so it must be safe to run again: a link that already points into the home is left alone, and an empty directory or a dangling link at the old path — what a fresh root most likely holds there, if anything — is replaced. Anything else there is the image's, so it is logged and left, and so is a link the hook could not make; one path that cannot be linked never stops the others. Each path is quoted for the shell, whatever it holds.
-pub fn persisted_paths_hook(links: &[Link]) -> String {
-    let mut script = String::from(concat!(
-        "#!/bin/sh\n",
-        "link() {\n",
-        "  path=\"$1\"; target=\"$HOME/$2\"\n",
-        "  if [ -L \"$path\" ]; then\n",
-        "    [ \"$(readlink \"$path\")\" = \"$target\" ] && return 0\n",
-        "    if [ -e \"$path\" ]; then echo \"persisted-paths: not linking $path: it is a link to something else\" >&2; return 0; fi\n",
-        "    rm -f \"$path\" || return 0\n",
-        "  elif [ -d \"$path\" ]; then\n",
-        "    rmdir \"$path\" 2>/dev/null || { echo \"persisted-paths: not linking $path: it is a directory that is not empty\" >&2; return 0; }\n",
-        "  elif [ -e \"$path\" ]; then\n",
-        "    echo \"persisted-paths: not linking $path: something else is there\" >&2; return 0\n",
-        "  fi\n",
-        "  mkdir -p \"$(dirname \"$path\")\" && ln -s \"$target\" \"$path\" || echo \"persisted-paths: linking $path failed\" >&2\n",
-        "}\n",
-    ));
-    for link in links {
-        script.push_str(&format!(
-            "link {} {}\n",
-            shell_quote(&link.path),
-            shell_quote(&link.at)
-        ));
-    }
-    script
-}
-
-fn shell_quote(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: which tree holds `dir`, a path relative to the home, and where in that tree it is: the deepest graft at or above it, else the home itself.
@@ -463,7 +382,6 @@ mod tests {
             &write_layout(
                 home.path(),
                 &[graft(".persisted/data", data.path())],
-                &[],
                 Vec::new(),
             )
             .unwrap(),
@@ -508,7 +426,6 @@ mod tests {
                     graft("cache/sub", deeper.path()),
                     graft("cache", cache.path()),
                 ],
-                &[],
                 Vec::new(),
             )
             .unwrap(),
@@ -538,136 +455,9 @@ mod tests {
             vec![graft("a", &data.path().join("absent"))],
         ] {
             assert!(
-                write_layout(home.path(), &grafts, &[], Vec::new()).is_err(),
+                write_layout(home.path(), &grafts, Vec::new()).is_err(),
                 "{grafts:?} was archived"
             );
-        }
-    }
-
-    fn link(path: &str, at: &str) -> Link {
-        Link {
-            path: PathBuf::from(path),
-            at: PathBuf::from(at),
-        }
-    }
-
-    // TEST_SCENARIO: a migration that moved paths from outside the home carries the hook that links them back, in the home's boot hook directory, as a root-owned 0755 file, since platform-init runs it as root on every boot. The directory a moved path now lives in is there even when no volume was ever made for it, so the link does not dangle, and the hook names every moved path.
-    #[test]
-    fn a_seed_with_moved_paths_carries_their_boot_hook() {
-        let home = TempDir::new("layout-hook");
-        let data = TempDir::new("layout-hook-data");
-        let found = entries(
-            &write_layout(
-                home.path(),
-                &[graft(".persisted/data", data.path())],
-                &[
-                    link("/data", ".persisted/data"),
-                    link("/var/lib/app", ".persisted/var/lib/app"),
-                ],
-                Vec::new(),
-            )
-            .unwrap(),
-        );
-
-        let names: Vec<&str> = found.iter().map(|(name, ..)| name.as_str()).collect();
-        for dir in [".persisted/var/lib/app", ".platform", ".platform/boot.d"] {
-            let i = names
-                .iter()
-                .position(|n| n == &dir)
-                .unwrap_or_else(|| panic!("{dir} missing from {names:?}"));
-            assert_eq!(found[i].1, tar::EntryType::Directory);
-        }
-        let (_, kind, header, body) = found
-            .iter()
-            .find(|(name, ..)| name == ".platform/boot.d/10-persisted-paths.sh")
-            .expect("the hook is in the seed");
-        assert_eq!(*kind, tar::EntryType::Regular);
-        assert_eq!(header.mode().unwrap() & 0o7777, 0o755);
-        assert_eq!(header.uid().unwrap(), 0);
-        let script = String::from_utf8(body.clone()).unwrap();
-        assert!(
-            script.contains("link '/data' '.persisted/data'"),
-            "{script}"
-        );
-        assert!(
-            script.contains("link '/var/lib/app' '.persisted/var/lib/app'"),
-            "{script}"
-        );
-    }
-
-    // TEST_SCENARIO: a seed without moved paths carries no hook, and a moved path that is not a plain absolute path, or whose place is not inside the home, fails the seed rather than writing a hook that links somewhere else.
-    #[test]
-    fn a_seed_links_only_plain_paths_into_the_home() {
-        let home = TempDir::new("layout-nohook");
-        let found = entries(&write_layout(home.path(), &[], &[], Vec::new()).unwrap());
-        assert!(!found.iter().any(|(name, ..)| name.starts_with(".platform")));
-        for bad in [
-            link("data", ".persisted/data"),
-            link("/", ".persisted"),
-            link("/a/../etc", ".persisted/a"),
-            link("/data", "../data"),
-            link("/data", "/data"),
-        ] {
-            assert!(
-                write_layout(home.path(), &[], std::slice::from_ref(&bad), Vec::new()).is_err(),
-                "{bad:?}"
-            );
-        }
-    }
-
-    fn run_hook(script: &str, home: &Path) {
-        let path = home.join("hook.sh");
-        fs::write(&path, script).unwrap();
-        let status = std::process::Command::new("/bin/sh")
-            .arg(&path)
-            .env("HOME", home)
-            .status()
-            .unwrap();
-        assert!(status.success());
-    }
-
-    // TEST_SCENARIO: the hook runs on every boot, over a root that is fresh each time or, after a restart the runner did not see, the same one, so running it again must change nothing. It links an absent path, replaces an empty directory and a dangling link, leaves a correct link as it is, and leaves a non-empty directory, a file and a link to something else alone, since those are the image's; and it quotes a path with a quote in it.
-    #[test]
-    fn the_persisted_paths_hook_is_safe_to_run_on_every_boot() {
-        let home = TempDir::new("hook-home");
-        let root = TempDir::new("hook-root");
-        let at = |name: &str| root.path().join(name);
-        fs::create_dir(at("empty")).unwrap();
-        std::os::unix::fs::symlink(at("nowhere"), at("dangling")).unwrap();
-        fs::create_dir(at("full")).unwrap();
-        fs::write(at("full").join("kept"), b"x").unwrap();
-        fs::write(at("file"), b"x").unwrap();
-        std::os::unix::fs::symlink(home.path(), at("foreign")).unwrap();
-        let names = [
-            "absent/deeper",
-            "empty",
-            "dangling",
-            "full",
-            "file",
-            "foreign",
-            "it's",
-        ];
-        let links: Vec<Link> = names
-            .iter()
-            .map(|n| Link {
-                path: at(n),
-                at: PathBuf::from(format!(".persisted/{n}")),
-            })
-            .collect();
-        let script = persisted_paths_hook(&links);
-
-        for _ in 0..2 {
-            run_hook(&script, home.path());
-            for linked in ["absent/deeper", "empty", "dangling", "it's"] {
-                assert_eq!(
-                    fs::read_link(at(linked)).unwrap(),
-                    home.path().join(format!(".persisted/{linked}")),
-                    "{linked}"
-                );
-            }
-            assert!(at("full").join("kept").exists());
-            assert!(fs::symlink_metadata(at("file")).unwrap().is_file());
-            assert_eq!(fs::read_link(at("foreign")).unwrap(), home.path());
         }
     }
 }

@@ -23,6 +23,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: the docker configs this machine's image is fetched with, one per pull Secret a pod would list and tried in that order, as the kubelet does. They are credentials in transit: cleared before the spec is stored, and they never reach smolvm or the guest.
     #[serde(rename = "pullAuths", skip_serializing_if = "Vec::is_empty")]
     pub pull_auths: Vec<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the links plan: each persisted path from outside HOME that a runtime migration moved below it, as the absolute path the agent's software still uses. The runner writes it into the machine's share, where the guest reads it on every boot and cannot change it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -167,6 +170,7 @@ mod tests {
                 revision: "r1".into(),
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],
+                links: vec!["/data".into()],
             },
         );
         matches_the_contract(

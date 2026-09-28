@@ -736,6 +736,35 @@ func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
 }
 
+// TEST_SCENARIO: a runtime migration moves /data to HOME/.persisted/data and records where it came from on the mount, so the machine is sent that old path as its links plan on every ensure, and platform-init puts it back on every boot. A mount that names a link anywhere but its own place below the persisted directory, or a link into HOME or a path that is not plain, is refused before any machine is created, because platform-init acts on the plan as root.
+func TestAMovedMountIsSentAsTheMachinesLinksPlan(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/home/agent/.persisted/var/lib/app", Persist: true, MovedFrom: "/var/lib/app"},
+		{Path: "/home/agent/.persisted/data", Persist: true, MovedFrom: "/data"},
+	}
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, []string{"/data", "/var/lib/app"}, node.spec("my-agent").Links)
+
+	for _, bad := range []apiv1.Mount{
+		{Path: "/home/agent/.persisted/data", Persist: true, MovedFrom: "/elsewhere"},
+		{Path: "/home/agent/.persisted/etc", Persist: false, MovedFrom: "/etc"},
+		{Path: "/home/agent/.persisted/home/agent/x", Persist: true, MovedFrom: "/home/agent/x"},
+		{Path: "/home/agent/.persisted/home", Persist: true, MovedFrom: "/home"},
+		{Path: "/home/agent/.persisted/a/../etc", Persist: true, MovedFrom: "/a/../etc"},
+		{Path: "/home/agent/.persisted/a\n/etc", Persist: true, MovedFrom: "/a\n/etc"},
+	} {
+		agent := vmAgentCR()
+		agent.Spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true}, bad}
+		r, node, _ := setupVMReconciler(t, agent)
+		err := r.Reconcile(context.Background(), agent)
+		require.Error(t, err, "%+v was sent", bad)
+		assert.Empty(t, node.specs, "%+v reached a machine", bad)
+	}
+}
+
 // TEST_SCENARIO: a mount's own size wins over the Agent's storageSize on the container backend, so a spec that asks for 50Gi there must not quietly get the chart's default here. The machine has one disk, so the largest thing any persisted mount asks for is what it is sized to — the one field of Mount this backend could still drop without saying so.
 func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	disk := func(configure func(*apiv1.AgentSpec)) int {

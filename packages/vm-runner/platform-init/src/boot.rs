@@ -7,7 +7,7 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
-use crate::guest;
+use crate::{guest, links};
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
 const TRUST_CACHE_ENV: &str = "PLATFORM_TRUST_CACHE";
@@ -86,7 +86,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
-    run_boot_hooks(Path::new(guest::AGENT_HOME), BOOT_HOOK_LIMIT);
+    place_persisted_paths();
     enter_workdir(&workdir);
 
     let binary = match look_path(&command[0], std::env::var_os("PATH")) {
@@ -672,185 +672,46 @@ fn persist_home(root: &Path, seeded_before: bool) {
     logf!("persisting {}", path.display());
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long one boot hook may run before it is killed. A hook sits between the boot and the agent, so one that hangs must cost the boot a bounded wait and not the agent.
-const BOOT_HOOK_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
-
-// UNIT_BOUNDARY_DESCRIPTION: a hook written a moment ago can still be open for writing in a process forked meanwhile, and exec then fails with ETXTBSY until that process has exec'd too. That is over in milliseconds, so the start is tried again a few times rather than reported as a broken hook.
-const HOOK_BUSY_RETRIES: usize = 10;
-
-// UNIT_BOUNDARY_DESCRIPTION: the guest's root is a fresh overlay on every boot, so anything an agent needs outside its home — a runtime migration's symlink from an old persisted path into the home, say — has to be made again each time. platform-init does that by running the home's boot hooks, guest::BOOT_HOOK_DIR, just before it starts the image's entrypoint: every executable regular file there, in the byte order of its name, as root, with HOME set, one at a time. A hook that fails or runs past its limit is announced on the console and the boot goes on, because a machine that cannot boot cannot have its hook put right. The directory is in the home, which the agent writes, so what runs is kept to what the agent or the platform put there: neither the directory nor a hook may be a symlink, so nothing outside the home is run, and a hook must belong to root or to the home's owner.
-fn run_boot_hooks(home: &Path, limit: std::time::Duration) {
-    for hook in boot_hooks(home) {
-        match run_hook(&hook, home, limit) {
-            Ok(()) => logf!("boot hook {} done", hook.path.display()),
-            Err(why) => announce(&format!(
-                "WARNING: boot hook {} {why}; booting on",
-                hook.path.display()
-            )),
-        }
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a hook that passed every check, held open. It is run through its descriptor rather than by name, so the file that was checked is the file that runs, whatever happens to the name meanwhile. The descriptor is close-on-exec, so no other hook inherits it; the hook's own child clears that just before its exec, because a script's interpreter reads the script through it.
-struct BootHook {
-    path: PathBuf,
-    fd: std::os::fd::OwnedFd,
-}
-
-fn boot_hooks(home: &Path) -> Vec<BootHook> {
-    match fs::metadata(home) {
-        Ok(owner) => hooks_owned_by(home, owner.uid()),
-        Err(_) => Vec::new(),
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: opens `name` below the directory `at` without following a symlink at that last step, which is how every step from the home down to a hook is taken, so no link anywhere on the way leads out of the home.
-fn open_below(
-    at: libc::c_int,
-    name: &OsStr,
-    flags: libc::c_int,
-) -> io::Result<std::os::fd::OwnedFd> {
-    use std::os::fd::FromRawFd;
-    let name = cstring(name)?;
-    // SAFETY: openat(2) reads the NUL-terminated name, which outlives the call; the descriptor it returns is owned by nobody else.
-    let fd = unsafe { libc::openat(at, name.as_ptr(), flags | libc::O_NOFOLLOW) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fd was just returned by openat and is not owned elsewhere.
-    Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) })
-}
-
-fn hooks_owned_by(home: &Path, owner: u32) -> Vec<BootHook> {
-    let dir_flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC;
-    let mut dir = match open_below(libc::AT_FDCWD, home.as_os_str(), dir_flags) {
-        Ok(dir) => dir,
-        Err(_) => return Vec::new(),
+// UNIT_BOUNDARY_DESCRIPTION: puts back, on every boot, each persisted path a runtime migration moved below HOME, from the links plan in the share. A path that cannot be put back is named on the console and fails the boot, as a disk that cannot be mounted does: the agent would otherwise write to the fresh root there and lose it at the next stop, while looking healthy. Nothing from the home is run, here or anywhere else, so a `.platform/boot.d` an older home carries is never read.
+fn place_persisted_paths() {
+    let plan = match links::read_plan(Path::new(guest::SHARE_LINKS_FILE)) {
+        Ok(plan) => plan,
+        Err(e) => fatal!("reading the links plan {}: {e}", guest::SHARE_LINKS_FILE),
     };
-    for part in Path::new(guest::BOOT_HOOK_DIR).components() {
-        match open_below(dir.as_raw_fd(), part.as_os_str(), dir_flags) {
-            Ok(next) => dir = next,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
-            Err(e) => {
+    if plan.is_empty() {
+        return;
+    }
+    let mut failed = 0;
+    for (path, outcome) in links::apply(
+        Path::new("/"),
+        Path::new(guest::AGENT_HOME),
+        &plan,
+        &mut mount_over,
+    ) {
+        match outcome {
+            Ok(placed) => logf!("persisted path {}: {placed}", path.display()),
+            Err(why) => {
                 announce(&format!(
-                    "WARNING: not running boot hooks: {} is not a directory of the home ({e})",
-                    home.join(guest::BOOT_HOOK_DIR).display()
-                ));
-                return Vec::new();
-            }
-        }
-    }
-    let listed = Path::new("/proc/self/fd").join(dir.as_raw_fd().to_string());
-    let Ok(entries) = fs::read_dir(&listed) else {
-        return Vec::new();
-    };
-    let mut names: Vec<OsString> = entries
-        .filter_map(|e| e.ok().map(|e| e.file_name()))
-        .collect();
-    names.sort();
-    let shown = home.join(guest::BOOT_HOOK_DIR);
-    let mut hooks = Vec::new();
-    for name in names {
-        let path = shown.join(&name);
-        let single = Path::new(&name).components().count() == 1
-            && matches!(
-                Path::new(&name).components().next(),
-                Some(Component::Normal(_))
-            );
-        if !single {
-            continue;
-        }
-        let fd = match open_below(
-            dir.as_raw_fd(),
-            &name,
-            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_CLOEXEC,
-        ) {
-            Ok(fd) => fd,
-            Err(_) => {
-                logf!(
-                    "not running boot hook {}: not a regular file",
+                    "ERROR: persisted path {} was not put back: {why}",
                     path.display()
-                );
-                continue;
+                ));
+                failed += 1;
             }
-        };
-        let Ok(info) = fd.try_clone().and_then(|copy| File::from(copy).metadata()) else {
-            continue;
-        };
-        if !info.is_file() {
-            logf!(
-                "not running boot hook {}: not a regular file",
-                path.display()
-            );
-            continue;
         }
-        if info.uid() != 0 && info.uid() != owner {
-            announce(&format!(
-                "WARNING: not running boot hook {}: it belongs to neither root nor the home's owner",
-                path.display()
-            ));
-            continue;
-        }
-        if info.mode() & 0o111 == 0 {
-            continue;
-        }
-        hooks.push(BootHook { path, fd });
     }
-    hooks
+    if failed > 0 {
+        fatal!(
+            "{failed} persisted path(s) could not be put back, so the agent would write there to a root it loses at every stop; refusing to boot"
+        );
+    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one hook, run through its open descriptor, in a process group of its own so a kill at the limit ends whatever it started too. Its output goes where platform-init's does, the boot log.
-fn run_hook(hook: &BootHook, home: &Path, limit: std::time::Duration) -> Result<(), String> {
-    use std::os::unix::process::CommandExt;
-    let fd = hook.fd.as_raw_fd();
-    let exec = Path::new("/proc/self/fd").join(fd.to_string());
-    let spawn = || {
-        let mut command = std::process::Command::new(&exec);
-        command
-            .arg0(&hook.path)
-            .env("HOME", home)
-            .current_dir("/")
-            .stdin(std::process::Stdio::null())
-            .process_group(0);
-        // SAFETY: the closure runs in the forked child before exec and makes one async-signal-safe call, fcntl(2), on a descriptor the child inherited.
-        unsafe {
-            command.pre_exec(move || {
-                if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        command.spawn()
-    };
-    let mut attempt = spawn();
-    for _ in 0..HOOK_BUSY_RETRIES {
-        match &attempt {
-            Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) => {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                attempt = spawn();
-            }
-            _ => break,
-        }
-    }
-    let mut child = attempt.map_err(|e| format!("could not start ({e})"))?;
-    let started = std::time::Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return Ok(()),
-            Ok(Some(status)) => return Err(format!("failed ({status})")),
-            Ok(None) if started.elapsed() >= limit => {
-                if let Ok(group) = libc::pid_t::try_from(child.id()) {
-                    // SAFETY: kill(2) reads no memory. The hook is not reaped until the wait below, so its pid, and with it its process group, still names it.
-                    unsafe { libc::kill(-group, libc::SIGKILL) };
-                }
-                let _ = child.wait();
-                return Err(format!("ran past {}s and was killed", limit.as_secs()));
-            }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-            Err(e) => return Err(format!("could not be waited for ({e})")),
-        }
-    }
+fn mount_over(data: &std::os::fd::OwnedFd, image: &std::os::fd::OwnedFd) -> io::Result<()> {
+    mount(
+        &links::fd_path(data.as_raw_fd()),
+        &links::fd_path(image.as_raw_fd()),
+        libc::MS_BIND,
+    )
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since.
@@ -1814,118 +1675,6 @@ mod tests {
         prepare_home(Path::new("/nonexistent"), &archive, &store, false).unwrap();
 
         assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
-    }
-
-    fn hook_dir(home: &Path) -> PathBuf {
-        let dir = home.join(guest::BOOT_HOOK_DIR);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn hook(path: &Path, body: &str, mode: u32) {
-        fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
-    }
-
-    // TEST_SCENARIO: every boot runs the home's hooks before the agent starts, since the fresh root keeps nothing a hook made last time. The executable ones run in name order with HOME set; one that is not executable is left alone; one that fails and one that hangs past its limit are reported and the hooks after them still run, so no hook can keep the machine from booting.
-    #[test]
-    fn boot_hooks_run_in_order_and_a_broken_one_does_not_stop_the_boot() {
-        let home = TempDir::new("hooks");
-        let dir = hook_dir(home.path());
-        hook(
-            &dir.join("20-second"),
-            "echo second >> \"$HOME/ran\"",
-            0o755,
-        );
-        hook(&dir.join("10-first"), "echo first >> \"$HOME/ran\"", 0o700);
-        hook(&dir.join("15-fails"), "exit 3", 0o755);
-        hook(&dir.join("17-hangs"), "sleep 30", 0o755);
-        hook(
-            &dir.join("30-not-executable"),
-            "echo no >> \"$HOME/ran\"",
-            0o644,
-        );
-
-        let started = std::time::Instant::now();
-        run_boot_hooks(home.path(), std::time::Duration::from_secs(1));
-
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(10),
-            "the hanging hook was not killed at its limit"
-        );
-        assert_eq!(
-            fs::read_to_string(home.path().join("ran")).unwrap(),
-            "first\nsecond\n"
-        );
-    }
-
-    // TEST_SCENARIO: a hook is run through the descriptor it was checked through, so a name swapped for another file after the check — here, for a symlink out of the home — still runs the file that passed.
-    #[test]
-    fn a_boot_hook_runs_the_file_that_was_checked() {
-        let home = TempDir::new("hooks-swap");
-        let outside = TempDir::new("hooks-swap-outside");
-        let dir = hook_dir(home.path());
-        hook(&dir.join("10-hook"), "echo checked >> \"$HOME/ran\"", 0o755);
-        hook(
-            &outside.path().join("other"),
-            "echo swapped >> \"$HOME/ran\"",
-            0o755,
-        );
-        let hooks = boot_hooks(home.path());
-        fs::remove_file(dir.join("10-hook")).unwrap();
-        std::os::unix::fs::symlink(outside.path().join("other"), dir.join("10-hook")).unwrap();
-
-        for hook in &hooks {
-            run_hook(hook, home.path(), std::time::Duration::from_secs(10)).unwrap();
-        }
-
-        assert_eq!(
-            fs::read_to_string(home.path().join("ran")).unwrap(),
-            "checked\n"
-        );
-    }
-
-    // TEST_SCENARIO: the hook directory is in the home, which the agent writes, so nothing outside the home is run through it: a symlinked hook directory runs nothing, and a hook that is a symlink is skipped even when what it names is an executable. A missing directory runs nothing and is no error.
-    #[test]
-    fn boot_hooks_never_follow_a_symlink_out_of_the_home() {
-        let home = TempDir::new("hooks-links");
-        let outside = TempDir::new("hooks-outside");
-        hook(
-            &outside.path().join("script"),
-            "echo outside >> \"$HOME/ran\"",
-            0o755,
-        );
-        assert!(boot_hooks(home.path()).is_empty());
-
-        let dir = hook_dir(home.path());
-        std::os::unix::fs::symlink(outside.path().join("script"), dir.join("10-link")).unwrap();
-        assert!(boot_hooks(home.path()).is_empty());
-
-        fs::remove_dir_all(&dir).unwrap();
-        std::os::unix::fs::symlink(outside.path(), &dir).unwrap();
-        assert!(boot_hooks(home.path()).is_empty());
-    }
-
-    // TEST_SCENARIO: a hook runs as root, so only one the platform or the agent itself put there runs: a file owned by anyone other than root or the home's owner is skipped. The owner is passed in, so the rule is checked whether or not the test runs as root.
-    #[test]
-    fn only_hooks_owned_by_root_or_the_homes_owner_run() {
-        let home = TempDir::new("hooks-owner");
-        let dir = hook_dir(home.path());
-        hook(&dir.join("10-mine"), "true", 0o755);
-        let mine = fs::metadata(dir.join("10-mine")).unwrap().uid();
-
-        let found: Vec<PathBuf> = hooks_owned_by(home.path(), mine)
-            .into_iter()
-            .map(|h| h.path)
-            .collect();
-        assert_eq!(found, vec![dir.join("10-mine")]);
-        if mine != 0 {
-            assert!(hooks_owned_by(home.path(), mine + 1).is_empty());
-        } else {
-            std::os::unix::fs::lchown(dir.join("10-mine"), Some(4242), None).unwrap();
-            assert!(hooks_owned_by(home.path(), 4243).is_empty());
-            assert_eq!(hooks_owned_by(home.path(), 4242).len(), 1);
-        }
     }
 
     // TEST_SCENARIO: with no seed in the share the first boot seeds from the image's home, as every machine not moved from a container does.
