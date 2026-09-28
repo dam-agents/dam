@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "dev-config": "workspace:*",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
 }
