@@ -42,7 +42,7 @@ const (
 	runtimeMigrationCopying   = "copying"
 	runtimeMigrationBooting   = "booting"
 
-	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job that itself retries twice, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until the user retries or aborts.
+	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job of one pod, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until the user retries or aborts.
 	runtimeMigrationMaxAttempts = 3
 	runtimeMigrationBudget      = 6 * time.Hour
 
@@ -54,6 +54,8 @@ const (
 	runtimeMigrationSourcePath = "/mnt/home"
 	runtimeMigrationExtraPath  = "/mnt/extra"
 	runtimeMigrationCredsPath  = "/etc/vm-seed"
+
+	runtimeMigrationCapabilityKey = "capability"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: a migration as the controller reads it: whether the api-server's request stands, and the phase the RuntimeMigrating condition records. A request from before the condition existed carries its phase in the request annotation instead, which is read as the same phase so a migration the previous controller started resumes. `recorded` says whether the condition exists; `since` is when it last turned true, which is where the time budget starts; `source` says the old volumes were recorded, which happens only once the container is being stopped.
@@ -130,6 +132,18 @@ func (m runtimeMigration) vmSideRuns() bool {
 
 func (m runtimeMigration) containerDown() bool {
 	return m.holdsDown() || m.vmSideRuns()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a seed capability may seed the machine: from the preflight that builds it until the copy has landed. The runner reads this mark off the spec it holds, so the machine stops being seedable the moment the controller moves the migration to `Booting`, fails it, or drops the request.
+func (m runtimeMigration) seedable() bool {
+	if !m.requested {
+		return false
+	}
+	switch m.phase {
+	case apiv1.ReasonRuntimeMigrationRequested, apiv1.ReasonRuntimeMigrationStopping, apiv1.ReasonRuntimeMigrationCopying:
+		return true
+	}
+	return false
 }
 
 func (m runtimeMigration) machineMayRun() bool {
@@ -255,6 +269,9 @@ func (r *AgentReconciler) noteRuntimeMigration(ctx context.Context, agent *apiv1
 
 func (r *AgentReconciler) failRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, why string) error {
 	slog.Warn("runtime migration: failed", "agent", agent.Name, "phase", m.phase, "reason", why)
+	if err := r.deleteSeedCapability(ctx, agent.Name); err != nil {
+		return err
+	}
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationFailed, why)
 }
 
@@ -433,6 +450,9 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	prop := metav1.DeletePropagationBackground
 	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("deleting the home copy job: %w", err)
+	}
+	if err := r.deleteSeedCapability(ctx, name); err != nil {
+		return err
 	}
 	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
 		return err
@@ -616,6 +636,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err != nil {
 			return r.noteRuntimeMigration(ctx, agent, m, err)
 		}
+		if err := r.applySeedCapability(ctx, agent, owner); err != nil {
+			return err
+		}
 		desired, err := r.buildRuntimeMigrationJob(agent, owner, source, grafts)
 		if err != nil {
 			return err
@@ -649,6 +672,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("deleting the home copy job: %w", err)
 		}
+		if err := r.deleteSeedCapability(ctx, name); err != nil {
+			return err
+		}
 		if why != "" {
 			return r.noteRuntimeMigration(ctx, agent, m, fmt.Errorf("the home was copied, but %s; copying it again", why))
 		}
@@ -679,7 +705,65 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 			return nil
 		}
 		slog.Warn("runtime migration: deleting failed home copy job for retry", "agent", name, "job", job.Name)
-		return jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop})
+		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
+			return err
+		}
+		return r.deleteSeedCapability(ctx, name)
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a seed capability outlives its Job's active deadline: the time its pod may wait to be scheduled and pull the runner image before the deadline's clock matters. Past it the runner refuses the capability, and a retry is a new Job with a new one.
+const seedCapabilitySlack = 15 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job's one credential for the runner, kept in a Secret of the Job's own name that only its pod mounts. It is minted fresh for every Job the controller creates, never reused across them, and removed with the Job, so a Job's retry after failure carries a capability that has not been seen before. The Agent owns it, so deleting the Agent mid-copy takes it too. It carries no owner label, because a Secret with one is what the platform looks through for a user's credentials.
+func (r *AgentReconciler) applySeedCapability(ctx context.Context, agent *apiv1.Agent, owner string) error {
+	name, ns := agent.Name, r.config.Namespace
+	token, err := r.client.CoreV1().Secrets(ns).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading the runner's token to mint a seed capability: %w", err)
+	}
+	if len(token.Data["token"]) == 0 {
+		return fmt.Errorf("the runner's token Secret %s holds no token, so no seed capability can be minted", token.Name)
+	}
+	expires := time.Now().Add(migrationJobDeadline + seedCapabilitySlack)
+	capability, fingerprint, err := vmrunner.NewSeedCapability(string(token.Data["token"]), name, expires)
+	if err != nil {
+		return err
+	}
+	desired := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            runtimeMigrationJobName(name),
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{agentOwnerRef(agent)},
+			Labels: map[string]string{
+				LabelMigrationFor:              name,
+				LabelRole:                      RoleRuntimeMigration,
+				"agent-platform.ai/managed-by": "platform-controller",
+			},
+		},
+		Data: map[string][]byte{runtimeMigrationCapabilityKey: []byte(capability)},
+	}
+	secrets := r.client.CoreV1().Secrets(ns)
+	existing, err := secrets.Get(ctx, desired.Name, metav1.GetOptions{})
+	switch {
+	case k8serrors.IsNotFound(err):
+		_, err = secrets.Create(ctx, desired, metav1.CreateOptions{})
+	case err == nil:
+		existing.Data = desired.Data
+		_, err = secrets.Update(ctx, existing, metav1.UpdateOptions{})
+	}
+	if err != nil {
+		return fmt.Errorf("storing the seed capability: %w", err)
+	}
+	slog.Info("runtime migration: seed capability minted", "agent", name, "capability", fingerprint, "expires", expires.UTC().Format(time.RFC3339))
+	return nil
+}
+
+func (r *AgentReconciler) deleteSeedCapability(ctx context.Context, name string) error {
+	err := r.client.CoreV1().Secrets(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting the seed capability: %w", err)
 	}
 	return nil
 }
@@ -777,6 +861,9 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	if err := runner.DeleteSeed(ctx, name); err != nil {
 		return err
 	}
+	if err := r.deleteSeedCapability(ctx, name); err != nil {
+		return err
+	}
 	until := time.Now().Add(r.migrationRetention())
 	grafts, err := recordedGrafts(agent)
 	if err != nil {
@@ -810,7 +897,7 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the runner's token and the CA that signed its serving certificate. It runs where the agent's pods run, since that is where its volumes attach.
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
 func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source string, grafts []runtimeMigrationGraft) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
@@ -825,7 +912,12 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	for k, v := range labels {
 		podLabels[k] = v
 	}
-	backoff := int32(2)
+	// UNIT_BOUNDARY_DESCRIPTION: one attempt per Job, because a capability
+	// UNIT_BOUNDARY_DESCRIPTION: seeds once: a second pod of the same Job would
+	// UNIT_BOUNDARY_DESCRIPTION: present one its first pod may have spent. A
+	// UNIT_BOUNDARY_DESCRIPTION: failed Job is recreated with a fresh one, and
+	// UNIT_BOUNDARY_DESCRIPTION: each Job is one of the migration's attempts.
+	backoff := int32(0)
 	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
 	rootUID := int64(0)
@@ -834,7 +926,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		runtimeMigrationSeedBinary,
 		"--source", runtimeMigrationSourcePath,
 		"--url", url,
-		"--token-file", runtimeMigrationCredsPath + "/token",
+		"--token-file", runtimeMigrationCredsPath + "/" + runtimeMigrationCapabilityKey,
 		"--ca-file", runtimeMigrationCredsPath + "/ca.crt",
 		"--result-file", corev1.TerminationMessagePathDefault,
 		"--map-owner", runtimeMigrationOwnerMap(cfg),
@@ -848,7 +940,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
 			DefaultMode: new(int32(0o400)),
 			Sources: []corev1.VolumeProjection{
-				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerName(owner)}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
+				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: runtimeMigrationJobName(name)}, Items: []corev1.KeyToPath{{Key: runtimeMigrationCapabilityKey, Path: runtimeMigrationCapabilityKey}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			},
 		}}},

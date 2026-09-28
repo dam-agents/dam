@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-09-24
+Last verified: 2026-09-28
 
 ## Overview
 
@@ -54,7 +54,7 @@ Two disjoint mechanisms feed the one logger:
 
 The controller logs through Go's standard-library `log/slog`, configured once at startup ([`packages/controller/main.go`](../../packages/controller/main.go)). Output is one JSON object per line on **stderr** at the `LOG_LEVEL` level (`debug|info|warn|error`, default `info`); `debug` surfaces per-reconcile phase timing. As with the api-server, the level is the only knob — there is no per-feature toggle. The controller logs to stderr rather than stdout because its lines are pure diagnostics, not program output; Kubernetes merges both streams into the one container log, so a collector sees it either way.
 
-The controller carries **no audit trail**. It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
+The controller carries **no audit trail**. It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern. The one security record written elsewhere is the VM runner's: it logs each seed a [runtime migration](vm-runner.md#runtime-migration) stores (`seed.accept`) and each seed capability it refuses (`seed.deny`), with the machine and a fingerprint of the capability, never the capability itself.
 
 When operational telemetry is enabled (see [observability](observability.md)), the controller runs an **in-process OpenTelemetry SDK** and its `slog` records fan out to two destinations at the same level: the stderr JSON stream stays byte-identical (gaining `trace_id`/`span_id` fields on lines logged inside a reconcile span), and each record is additionally exported over OTLP with trace correlation. The SDK activates only when the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment is present — without it the logger is exactly the plain stderr handler and no OTel component exists in the process. (An earlier design kept the binary free of any in-process SDK in anticipation of operator-injected zero-code instrumentation; that was revised because zero-code hooks only known libraries and cannot produce the controller's reconcile-pass spans or queue metrics.)
 

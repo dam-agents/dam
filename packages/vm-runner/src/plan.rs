@@ -601,6 +601,17 @@ mod tests {
         assert!(!changed(&running_spec(), &desired));
     }
 
+    // TEST_SCENARIO: the controller marks a machine as migrating while it copies the home and drops the mark once the copy is done. The mark says what a seed capability may do, not what the machine is, so neither change reshapes it.
+    #[test]
+    fn a_migration_mark_is_never_a_reason_to_restart() {
+        let desired = MachineSpec {
+            migration: Some(crate::api::Migration {}),
+            ..running_spec()
+        };
+        assert!(!changed(&running_spec(), &desired));
+        assert!(!changed(&desired, &running_spec()));
+    }
+
     // TEST_SCENARIO: the controller expects a seed while a migration boots the machine and stops expecting one once the migration ends. That says nothing about the machine's shape, so neither edge restarts a guest that is up; a restart there would reboot every freshly migrated agent the moment its migration finished.
     #[test]
     fn an_expected_seed_is_never_a_reason_to_restart() {
@@ -627,6 +638,7 @@ mod tests {
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),
+            migration: None,
             links: Vec::new(),
             expect_seed: None,
         }

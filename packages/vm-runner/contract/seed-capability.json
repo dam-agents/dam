@@ -1,0 +1,8 @@
+{
+  "token": "3f1c9a0e5b7d2468ace013579bdf24680f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "machine": "my-agent",
+  "nonce": "00112233445566778899aabbccddeeff",
+  "expires": 1790000000,
+  "capability": "seedcap1.00112233445566778899aabbccddeeff.1790000000.66be810015e89bdc8c8f85c183417a78cf9443f67c71649d36d8eec3cc2b8676",
+  "fingerprint": "2b7a4cfcfd1dc168"
+}

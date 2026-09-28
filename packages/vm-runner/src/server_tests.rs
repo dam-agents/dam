@@ -356,6 +356,7 @@ fn spec(running: bool) -> MachineSpec {
         revision: "r1".into(),
         running,
         pull_auths: Vec::new(),
+        migration: None,
         links: Vec::new(),
         expect_seed: None,
     }
@@ -434,7 +435,7 @@ async fn a_seed_uploaded_to_a_stopped_machine_is_still_there_when_it_boots() {
     h.server.put("m1", spec(false)).unwrap();
     h.settle("m1").await;
 
-    let mut seeding = h.server.claim_seed("m1").unwrap();
+    let mut seeding = h.server.claim_seed("m1", None).unwrap();
     seeding.write(b"a home").unwrap();
     let result = seeding.commit().unwrap();
     assert_eq!(result.bytes, 6);
@@ -458,7 +459,7 @@ async fn a_seed_and_a_boot_never_overlap() {
     h.settle("m1").await;
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(
-        h.server.claim_seed("m1").err().map(|e| e.status),
+        h.server.claim_seed("m1", None).err().map(|e| e.status),
         Some(409),
         "a seed was claimed while the machine was starting"
     );
@@ -466,8 +467,11 @@ async fn a_seed_and_a_boot_never_overlap() {
     h.server.put("m1", spec(false)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
 
-    let seeding = h.server.claim_seed("m1").unwrap();
-    assert_eq!(h.server.claim_seed("m1").err().map(|e| e.status), Some(409));
+    let seeding = h.server.claim_seed("m1", None).unwrap();
+    assert_eq!(
+        h.server.claim_seed("m1", None).err().map(|e| e.status),
+        Some(409)
+    );
     let calls = h.fake.calls().len();
     h.server.put("m1", spec(true)).unwrap();
     assert!(!h.server.converging("m1"), "a boot started mid-upload");
@@ -484,7 +488,7 @@ async fn a_seed_for_a_machine_deleted_mid_upload_is_not_committed() {
     let h = Harness::new("seed-deleted");
     h.server.put("m1", spec(false)).unwrap();
     h.settle("m1").await;
-    let mut seeding = h.server.claim_seed("m1").unwrap();
+    let mut seeding = h.server.claim_seed("m1", None).unwrap();
     seeding.write(b"half").unwrap();
     h.server.delete("m1").unwrap();
 
@@ -500,7 +504,7 @@ fn expecting(running: bool, seed: &SeedResult) -> MachineSpec {
 }
 
 fn upload(h: &Harness, id: &str, body: &[u8]) -> SeedResult {
-    let mut seeding = h.server.claim_seed(id).unwrap();
+    let mut seeding = h.server.claim_seed(id, None).unwrap();
     seeding.write(body).unwrap();
     seeding.commit().unwrap()
 }
