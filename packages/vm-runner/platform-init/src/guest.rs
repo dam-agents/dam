@@ -11,6 +11,39 @@ pub const SHARE_SEED_FILE: &str = "/platform/seed.tar";
 // UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share once this machine has booted with its home on the disk, and never removes it. smolvm formats a storage disk it cannot mount, and a formatted disk looks exactly like a disk that was never seeded. Without this file platform-init would seed a fresh home on it and boot as if nothing was lost. With it, platform-init knows the home must already be there, and refuses to boot when it is not.
 pub const SEEDED_PATH: &str = "/platform/seeded";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share while a runtime migration boots the machine: the SHA-256 and byte count of the seed the home must come from, as the controller sent them. The guest reads it and cannot write it, because the share is read-only. With it, platform-init seeds a missing home from that seed alone and never from the image, and boots an existing home only if the disk records that it came from that seed. The runner removes it once the controller stops expecting a seed.
+pub const SEED_EXPECTED_PATH: &str = "/platform/seed-expected";
+
+// UNIT_BOUNDARY_DESCRIPTION: the system store file where platform-init records the SHA-256 of the seed it restored the home from. It is written before the restored home is renamed into place, so a home that exists and came from a seed always has it. A later boot that still expects a seed reads it to tell a home from that seed from any other.
+pub const SEEDED_FROM_FILE: &str = "seeded-from";
+
+// UNIT_BOUNDARY_DESCRIPTION: one seed as the share names it: a lowercase hex SHA-256 and a byte count, written as one line `SHA256 BYTES`. It is plain text rather than JSON so the guest's static binary parses it with nothing but std.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeedDigest {
+    pub sha256: String,
+    pub bytes: u64,
+}
+
+impl SeedDigest {
+    pub fn line(&self) -> String {
+        format!("{} {}\n", self.sha256, self.bytes)
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut fields = text.split_whitespace();
+        let sha256 = fields.next().filter(|sha| is_sha256(sha))?.to_string();
+        let bytes = fields.next()?.parse().ok()?;
+        fields.next().is_none().then_some(Self { sha256, bytes })
+    }
+}
+
+pub fn is_sha256(text: &str) -> bool {
+    text.len() == 64
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: where the image expects the platform's MITM CA. The share carries it and platform-init binds it here, so an image's own trust setup is the same sequence on both backends.
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 
@@ -80,6 +113,7 @@ mod tests {
             SHARE_SEED_FILE,
             SEEDED_PATH,
             SHARE_LINKS_FILE,
+            SEED_EXPECTED_PATH,
         ] {
             let parent = Path::new(path).parent().expect("a share path has a parent");
             assert_eq!(
@@ -87,6 +121,26 @@ mod tests {
                 Path::new(SHARE_PATH),
                 "{path} is not directly in the share"
             );
+        }
+    }
+
+    // TEST_SCENARIO: the runner writes the expected seed and platform-init reads it, in two binaries. What one writes the other must read back exactly. Anything else — a digest that is not lowercase hex SHA-256, a missing field, an extra one — reads as no record at all, so the guest refuses the boot rather than guess which seed was meant.
+    #[test]
+    fn the_expected_seed_reads_back_what_the_runner_writes_and_nothing_else() {
+        let seed = SeedDigest {
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            bytes: 4,
+        };
+        assert_eq!(SeedDigest::parse(&seed.line()), Some(seed.clone()));
+        for bad in [
+            "",
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08 4",
+            "abc 4",
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 -1",
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 4 5",
+        ] {
+            assert_eq!(SeedDigest::parse(bad), None, "{bad:?} was read");
         }
     }
 

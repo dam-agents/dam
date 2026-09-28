@@ -26,6 +26,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: the links plan: each persisted path from outside HOME that a runtime migration moved below it, as the absolute path the agent's software still uses. The runner writes it into the machine's share, where the guest reads it on every boot and cannot change it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the seed this machine's home must be restored from, as the migration's upload was answered: the controller sends it while a runtime migration boots the machine, and not after. With it the runner starts the machine only while its share holds exactly that seed, and platform-init seeds the home from that seed or not at all, never from the image. It says nothing about the machine's shape, so a change to it alone restarts nothing.
+    #[serde(rename = "expectSeed", skip_serializing_if = "Option::is_none")]
+    pub expect_seed: Option<SeedResult>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -48,6 +51,9 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this status changes. A status read given `since` with this value waits until it changes, which is how the controller learns that a booting guest answered without polling for it.
     #[serde(skip_serializing_if = "is_zero")]
     pub version: u64,
+    // UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed this machine's home was restored from, once a guest booted with that seed expected has answered. Empty for a home seeded from the image, and for one not yet known to be on the disk. The controller ends a runtime migration only when this is the seed it expects.
+    #[serde(rename = "homeSeededFrom", skip_serializing_if = "String::is_empty")]
+    pub home_seeded_from: String,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
@@ -109,6 +115,7 @@ pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
+pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 
 #[cfg(test)]
 mod tests {
@@ -171,6 +178,11 @@ mod tests {
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],
                 links: vec!["/data".into()],
+                expect_seed: Some(SeedResult {
+                    bytes: 1234,
+                    sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                        .into(),
+                }),
             },
         );
         matches_the_contract(
@@ -185,6 +197,8 @@ mod tests {
                 memory_mib: 2048,
                 message: "up".into(),
                 version: 1,
+                home_seeded_from:
+                    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
             },
         );
         matches_the_contract(
@@ -229,6 +243,7 @@ mod tests {
                 REASON_OUT_OF_CAPACITY,
                 REASON_IMAGE_UNAVAILABLE,
                 REASON_BOOT_FAILED,
+                REASON_SEED_MISSING,
             ])
         );
     }

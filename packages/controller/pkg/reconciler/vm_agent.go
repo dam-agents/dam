@@ -134,6 +134,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Running:    running,
 		PullAuths:  pullAuths,
 		Links:      links,
+		ExpectSeed: runtimeMigrationExpectSeed(agent),
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
