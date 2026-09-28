@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a runtime migration moves an Agent's home from the volume its container mounted onto the disk of a machine on its owner's runner. What must hold at every phase is that nothing runs while the copy is taken, the copy reaches the machine before its first boot, and the old volume outlives the migration until the new guest has answered and for a retention window after — so a failure anywhere, even one found after the move, leaves the agent's work where it was.
+// TEST_OVERVIEW: a runtime migration moves an Agent's home from the volume its container mounted onto the disk of a machine on its owner's runner, and can be undone until that machine has booted from the copy. What must hold at every phase is that the container keeps serving until the machine is proven to exist, nothing runs while the copy is taken, the copy reaches the machine before its first boot, and the old volumes stay the container's own until the Backend has switched — then are retained for a window rather than deleted. A migration that cannot finish stops at a Failed phase with its reason, from which it is aborted or retried.
 package reconciler
 
 import (
@@ -10,20 +10,40 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: a container Agent as the api-server leaves it when it requests a migration: its spec untouched, the request and the target shape in annotations.
 func migratingAgentCR() *apiv1.Agent {
-	agent := vmAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationRequested
+	agent := agentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	agent.Annotations = map[string]string{
+		annLastActivity:           time.Now().UTC().Format(time.RFC3339),
+		annRuntimeMigration:       runtimeMigrationRequested,
+		annRuntimeMigrationTarget: `{"storageSize":"10Gi"}`,
+	}
+	return agent
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a migrating Agent whose condition already records a phase, as a reconcile after a controller restart receives it.
+func migratingAgentIn(phase string, since time.Time) *apiv1.Agent {
+	agent := migratingAgentCR()
+	status := phase != apiv1.ReasonRuntimeMigrationFailed
+	cond := metav1.Condition{Type: apiv1.ConditionRuntimeMigrating, Status: metav1.ConditionFalse, Reason: phase, LastTransitionTime: metav1.NewTime(since)}
+	if status {
+		cond.Status = metav1.ConditionTrue
+	}
+	agent.Status.Conditions = []metav1.Condition{cond}
 	return agent
 }
 
@@ -41,14 +61,56 @@ func containerAgentPod() *corev1.Pod {
 	}}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Agent as the next reconcile would receive it, carrying whatever annotations the last one patched.
+// UNIT_BOUNDARY_DESCRIPTION: the Agent as the next reconcile would receive it, with whatever spec, annotations and status the last one wrote.
 func reloaded(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) *apiv1.Agent {
 	t.Helper()
 	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), agent.Name, metav1.GetOptions{})
 	require.NoError(t, err)
-	next := agent.DeepCopy()
-	next.Annotations = u.GetAnnotations()
+	next := &apiv1.Agent{}
+	require.NoError(t, runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, next))
 	return next
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the api-server writes to the stored Agent: the Backend switch after a verified boot, or an abort.
+func editStoredAgent(t *testing.T, r *AgentReconciler, agent *apiv1.Agent, edit func(u *unstructured.Unstructured)) *apiv1.Agent {
+	t.Helper()
+	cli := r.dynamic.Resource(AgentsGVR).Namespace("test-agents")
+	u, err := cli.Get(context.Background(), agent.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	edit(u)
+	_, err = cli.Update(context.Background(), u, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	return reloaded(t, r, agent)
+}
+
+func withoutAnnotations(keys ...string) func(u *unstructured.Unstructured) {
+	return func(u *unstructured.Unstructured) {
+		ann := u.GetAnnotations()
+		for _, k := range keys {
+			delete(ann, k)
+		}
+		u.SetAnnotations(ann)
+	}
+}
+
+func migrationCondition(agent *apiv1.Agent) *metav1.Condition {
+	return apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionRuntimeMigrating)
+}
+
+func requirePhase(t *testing.T, agent *apiv1.Agent, phase string) *metav1.Condition {
+	t.Helper()
+	c := migrationCondition(agent)
+	require.NotNil(t, c, "the migration's condition is on the Agent")
+	require.Equal(t, phase, c.Reason, "message: %s", c.Message)
+	return c
+}
+
+func agentReplicas(t *testing.T, r *AgentReconciler) int32 {
+	t.Helper()
+	ss, err := r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, ss.Spec.Replicas)
+	return *ss.Spec.Replicas
 }
 
 func completeJob(t *testing.T, r *AgentReconciler, condition batchv1.JobConditionType, created time.Time) {
@@ -62,46 +124,60 @@ func completeJob(t *testing.T, r *AgentReconciler, condition batchv1.JobConditio
 	require.NoError(t, err)
 }
 
-// TEST_SCENARIO: a migration walks every phase: the old pod is waited out and its StatefulSet and headless Service removed, the machine is created and left stopped while a Job streams the home volume to the owner's runner, and only once that Job has finished is the machine allowed to boot. The staged seed is removed after the guest answers, and not a reconcile sooner, and the old volume is then retained rather than deleted.
-func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) {
+func createAll(t *testing.T, r *AgentReconciler, objs ...any) {
+	t.Helper()
+	ctx := context.Background()
+	for _, obj := range objs {
+		var err error
+		switch o := obj.(type) {
+		case *corev1.PersistentVolumeClaim:
+			_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, o, metav1.CreateOptions{})
+		case *corev1.Pod:
+			_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, o, metav1.CreateOptions{})
+		case *batchv1.Job:
+			_, err = r.client.BatchV1().Jobs("test-agents").Create(ctx, o, metav1.CreateOptions{})
+		}
+		require.NoError(t, err)
+	}
+}
+
+// TEST_SCENARIO: a migration walks every phase. While the preflight makes the owner's runner and the machine, stopped, the container keeps running and keeps its Service. Only once the machine exists is the container scaled down and its home volume recorded; the Job streams that volume to the runner once the pod is gone, and only then may the machine boot. A guest that answers makes the migration Verified, and that alone changes nothing: the spec is still the container's and the old volume is still its own, until the api-server switches the Backend. Then the StatefulSet and headless Service go, the seed is removed, and the old volume is retained rather than deleted.
+func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOnlyAfterABoot(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	for _, obj := range []any{homePVC("home-agent-my-agent-0"), containerAgentPod()} {
-		switch o := obj.(type) {
-		case *corev1.PersistentVolumeClaim:
-			_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, o, metav1.CreateOptions{})
-			require.NoError(t, err)
-		case *corev1.Pod:
-			_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, o, metav1.CreateOptions{})
-			require.NoError(t, err)
-		}
-	}
-	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"}}, metav1.CreateOptions{})
-	require.NoError(t, err)
-	_, err = r.client.CoreV1().Services("test-agents").Create(ctx, &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		Spec:       corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
+	createAll(t, r, homePVC("home-agent-my-agent-0"), containerAgentPod())
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration], "the old pod is still there, so nothing moves on")
-	assert.Equal(t, "home-agent-my-agent-0", agent.Annotations[annRuntimeMigrationSource], "the volume holding HOME is recorded while it can still be found")
-	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "the container StatefulSet is removed")
-	assert.False(t, node.spec("my-agent").Running, "nothing boots while the old pod may still write to the volume")
-
-	require.NoError(t, r.client.CoreV1().Pods("test-agents").Delete(ctx, "my-agent-0", metav1.DeleteOptions{}))
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	require.Equal(t, runtimeMigrationCopying, agent.Annotations[annRuntimeMigration])
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
+	assert.NotEmpty(t, node.spec("my-agent").Image, "the preflight creates the machine")
+	assert.False(t, node.spec("my-agent").Running, "the preflight machine is created stopped")
+	assert.Equal(t, int32(1), agentReplicas(t, r), "the container keeps running through the preflight")
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "the agent Service still routes to the container")
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationStopping)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Equal(t, int32(0), agentReplicas(t, r), "the container is stopped once the machine exists")
+	assert.Equal(t, "home-agent-my-agent-0", agent.Annotations[annRuntimeMigrationSource], "the volume holding HOME is recorded while it can still be found")
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationStopping)
+
+	require.NoError(t, r.client.CoreV1().Pods("test-agents").Delete(ctx, "my-agent-0", metav1.DeleteOptions{}))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
 	assert.False(t, node.spec("my-agent").Running, "the machine stays stopped while its seed is written")
+	assert.Equal(t, int32(1), agent.Status.RuntimeMigrationAttempts)
 	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err, "a stopped machine gets its home copied")
 	pod := job.Spec.Template.Spec
@@ -115,27 +191,184 @@ func TestARuntimeMigrationCopiesTheHomeBeforeTheMachineFirstBoots(t *testing.T) 
 	completeJob(t, r, batchv1.JobComplete, time.Now())
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	require.Equal(t, runtimeMigrationBooting, agent.Annotations[annRuntimeMigration])
-	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "a finished copy is cleaned up")
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	assert.True(t, node.spec("my-agent").Running, "the copied machine boots, even if the agent had been asleep")
-	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
-	require.NoError(t, err, "the old volume is kept until the new guest has answered")
-	assert.Empty(t, node.seedGone)
+	assert.Equal(t, int32(0), agentReplicas(t, r), "the container stays down while the machine holds the home")
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	for _, key := range []string{annRuntimeMigration, annRuntimeMigrationSource, annRuntimeMigrationMessage} {
-		assert.NotContains(t, agent.Annotations, key)
-	}
-	assert.Equal(t, []string{"my-agent"}, node.seedGone, "the staged seed goes once the guest is up")
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
+	assert.False(t, agent.Spec.IsVM(), "the controller never writes the spec")
+	assert.Empty(t, node.seedGone, "the seed stays until the Backend has switched")
 	old, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", old.Labels[LabelAgent], "the old volume is still the container's until the switch")
+
+	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
+		withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget)(u)
+	})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Nil(t, migrationCondition(agent), "the migration is over")
+	assert.Zero(t, agent.Status.RuntimeMigrationAttempts)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSource)
+	assert.Equal(t, []string{"my-agent"}, node.seedGone, "the staged seed goes once the Backend has switched")
+	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the container StatefulSet is removed after the switch")
+	svc, err = r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "the machine's Service replaces the headless one")
+	old, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
 	require.NoError(t, err, "the old volume is retained, not deleted")
 	assertRetained(t, old, "/home/agent", time.Now().Add(defaultMigrationRetention))
+}
+
+// TEST_SCENARIO: the machine is shaped as the request's target, not as the container: it runs the Agent's image with the disk the api-server sized for every copied volume, and a request from before the machine exists is shown the preflight's own reason when the runner cannot make it.
+func TestThePreflightMachineTakesTheTargetShapeAndReportsWhyItIsNotReady(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	agent.Annotations[annRuntimeMigrationTarget] = `{"storageSize":"25Gi"}`
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonImageUnavailable, Message: "pulling ghcr.io/myorg/agent:latest was denied"})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
+	assert.Equal(t, "pulling ghcr.io/myorg/agent:latest was denied", c.Message)
+	assert.Equal(t, "ghcr.io/myorg/agent:latest", node.spec("my-agent").Image)
+	assert.Equal(t, 25, node.spec("my-agent").StorageGiB)
+	assert.Equal(t, int32(1), agentReplicas(t, r), "a preflight that cannot pass leaves the container serving")
+}
+
+// TEST_SCENARIO: an abort before the verified boot removes what the vm side made — the copy Job, the machine with its seed, the record of the source volume and the condition — and the container comes back on the volumes it had, which never lost their labels.
+func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), agentReplicas(t, r))
+
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Nil(t, migrationCondition(agent))
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSource)
+	assert.Contains(t, node.deleted, "my-agent", "the machine and its seed are removed")
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the copy Job is removed")
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", pvc.Labels[LabelAgent], "the old volume is left as it was")
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
+}
+
+// TEST_SCENARIO: a guest that answers is verified only while the request still stands. An abort that the reconcile did not see yet — the Agent it holds is older than the stored one — wins, and the migration is not marked past its point of no return.
+func TestAVerifiedBootIsNotRecordedOverAnAbort(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	requirePhase(t, reloaded(t, r, agent), apiv1.ReasonRuntimeMigrationBooting)
+}
+
+// TEST_SCENARIO: a copy that fails is reported and retried, and the machine is never booted from the image instead — that would seed a fresh home and the copy could never land. Each Job is one counted attempt.
+func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+
+	completeJob(t, r, batchv1.JobFailed, time.Now())
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	assert.Contains(t, c.Message, "retrying (attempt 1 of 3)", "the user is told the copy is stuck")
+	assert.False(t, node.spec("my-agent").Running)
+	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err, "a fresh failure is kept for its logs until the retry delay passes")
+
+	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "an old failure is cleared so the next reconcile copies again")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(2), reloaded(t, r, agent).Status.RuntimeMigrationAttempts)
+}
+
+// TEST_SCENARIO: the copy is bounded. Once its attempts are spent the migration is Failed, with the last attempt's reason, rather than retrying forever; the container stays down, since it was stopped for the copy, until the user acts. A retry the user asks for after the failure starts over from the preflight with a fresh machine and its attempts reset, and the container serves again meanwhile.
+func TestACopyOutOfAttemptsFailsAndARetryStartsOver(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Status.RuntimeMigrationAttempts = runtimeMigrationMaxAttempts
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: runtimeMigrationJobName("my-agent"), Namespace: "test-agents"}})
+	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Equal(t, metav1.ConditionFalse, c.Status)
+	assert.Contains(t, c.Message, "gave up after 3 attempts")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Equal(t, int32(0), agentReplicas(t, r), "a failed migration keeps the stopped container stopped")
+	assert.False(t, node.spec("my-agent").Running)
+	assert.NotContains(t, node.deleted, "my-agent", "a failure alone removes nothing")
+
+	failedAt := migrationCondition(agent).LastTransitionTime.Time
+	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		ann := u.GetAnnotations()
+		ann[annRuntimeMigrationRetry] = failedAt.Add(time.Second).UTC().Format(time.RFC3339)
+		u.SetAnnotations(ann)
+	})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
+	assert.Zero(t, agent.Status.RuntimeMigrationAttempts)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSource)
+	assert.Contains(t, node.deleted, "my-agent", "a retry starts from a fresh machine")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), agentReplicas(t, r), "the container serves through the new preflight")
+}
+
+// TEST_SCENARIO: a migration is also bounded in time. One that has not got past its preflight within the budget is Failed with the reason it was waiting on, and since the container was never stopped it keeps serving.
+func TestAMigrationPastItsTimeBudgetFails(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationRequested, time.Now().Add(-runtimeMigrationBudget-time.Minute))
+	agent.Status.Conditions[0].Message = "the owner's VM runner pod cannot be scheduled"
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Contains(t, c.Message, "did not finish within 6h0m0s")
+	assert.Contains(t, c.Message, "cannot be scheduled")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), agentReplicas(t, r), "a preflight failure never stopped the container")
 }
 
 func assertRetained(t *testing.T, pvc *corev1.PersistentVolumeClaim, mount string, until time.Time) {
@@ -247,40 +480,15 @@ func TestAContainerAgentIsNotStartedOverItsRetainedVolume(t *testing.T) {
 	assert.Contains(t, err.Error(), "recover or delete")
 }
 
-// TEST_SCENARIO: a copy that fails is reported and retried, and the machine is never booted from the image instead — that would seed a fresh home and the copy could never land.
-func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
-	ctx := context.Background()
-	agent := migratingAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
-	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
-	r, node, _ := setupVMReconciler(t, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
-	require.NoError(t, r.Reconcile(ctx, agent))
-
-	completeJob(t, r, batchv1.JobFailed, time.Now())
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	assert.Equal(t, runtimeMigrationCopying, agent.Annotations[annRuntimeMigration])
-	assert.NotEmpty(t, agent.Annotations[annRuntimeMigrationMessage], "the user is told the copy is stuck")
-	assert.False(t, node.spec("my-agent").Running)
-	_, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
-	require.NoError(t, err, "a fresh failure is kept for its logs until the retry delay passes")
-
-	completeJob(t, r, batchv1.JobFailed, time.Now().Add(-2*migrationJobRetryAfter))
-	require.NoError(t, r.Reconcile(ctx, agent))
-	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
-	assert.True(t, k8serrors.IsNotFound(err), "an old failure is cleared so the next reconcile copies again")
-}
-
 // TEST_SCENARIO: a failed copy names why. The last attempt's own error — vm-seed's error and its causes, carried as the pod's termination message — is shown with the retry, and an earlier attempt's older error is not.
 func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	ctx := context.Background()
-	agent := migratingAgentCR()
-	agent.Annotations[annRuntimeMigration] = runtimeMigrationCopying
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
 	r, node, _ := setupVMReconciler(t, agent)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
 	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
 	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, corev1.TerminationMessageFallbackToLogsOnError, job.Spec.Template.Spec.Containers[0].TerminationMessagePolicy)
@@ -311,37 +519,131 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	completeJob(t, r, batchv1.JobFailed, now)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t,
-		"copying the home directory failed (Error: uploading the seed to https://runner:4600/machines/my-agent/seed; 0: error sending request; 1: Connection refused (os error 111)); retrying",
-		reloaded(t, r, agent).Annotations[annRuntimeMigrationMessage])
+		"copying the home directory failed (Error: uploading the seed to https://runner:4600/machines/my-agent/seed; 0: error sending request; 1: Connection refused (os error 111)); retrying (attempt 1 of 3)",
+		migrationCondition(reloaded(t, r, agent)).Message)
 }
 
-// TEST_SCENARIO: an agent with no volume at HOME has nothing to copy. The migration says so rather than booting a machine that would silently start from the image.
+// TEST_SCENARIO: an agent with no volume at HOME has nothing to copy. The migration says so, in the phase that looks for the volume, rather than booting a machine that would silently start from the image.
 func TestAMigrationWithNoHomeVolumeSaysSo(t *testing.T) {
 	ctx := context.Background()
-	agent := migratingAgentCR()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationStopping, time.Now())
 	r, node, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
-	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration])
-	assert.Contains(t, agent.Annotations[annRuntimeMigrationMessage], "no volume holds this agent's home")
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationStopping)
+	assert.Contains(t, c.Message, "no volume holds this agent's home")
 	assert.False(t, node.spec("my-agent").Running)
 }
 
-// TEST_SCENARIO: every phase before the copy has landed keeps the agent down, whatever its activity says; from `booting` on it runs as any agent does.
-func TestOnlyABootingMigrationLetsTheAgentRun(t *testing.T) {
-	now := time.Now().UTC()
-	for phase, runs := range map[string]bool{
-		runtimeMigrationRequested: false,
-		runtimeMigrationCopying:   false,
-		"something-newer":         false,
-		runtimeMigrationBooting:   true,
-		"":                        true,
+// TEST_SCENARIO: which side may run in each phase. The preflight leaves the container serving; from the moment it stops until the copy has landed nothing runs; from `Booting` the machine runs and the container stays down; a failure keeps the container down only if the migration had already stopped it. A request from the previous controller, which kept its phase in the request itself, resumes in that phase.
+func TestEachPhaseSaysWhichSideRuns(t *testing.T) {
+	for _, tc := range []struct {
+		phase                          string
+		source                         bool
+		holdsDown, containerDown, vmUp bool
+	}{
+		{apiv1.ReasonRuntimeMigrationRequested, false, false, false, false},
+		{apiv1.ReasonRuntimeMigrationStopping, false, true, true, false},
+		{apiv1.ReasonRuntimeMigrationCopying, true, true, true, false},
+		{apiv1.ReasonRuntimeMigrationBooting, true, false, true, true},
+		{apiv1.ReasonRuntimeMigrationVerified, true, false, true, true},
+		{apiv1.ReasonRuntimeMigrationFailed, false, false, false, false},
+		{apiv1.ReasonRuntimeMigrationFailed, true, true, true, false},
 	} {
-		ann := map[string]string{annLastActivity: now.Format(time.RFC3339)}
-		if phase != "" {
-			ann[annRuntimeMigration] = phase
+		agent := migratingAgentIn(tc.phase, time.Now())
+		if tc.source {
+			agent.Annotations[annRuntimeMigrationSource] = "home"
 		}
-		assert.Equal(t, runs, shouldRun(ann, time.Hour, now), "phase %q", phase)
+		m := runtimeMigrationOf(agent.Annotations, agent.Status)
+		assert.Equal(t, tc.holdsDown, m.holdsDown(), "%s (source %v) holds the agent down", tc.phase, tc.source)
+		assert.Equal(t, tc.containerDown, m.containerDown(), "%s (source %v) keeps the container down", tc.phase, tc.source)
+		assert.Equal(t, tc.vmUp, m.machineMayRun(), "%s (source %v) lets the machine run", tc.phase, tc.source)
+	}
+	for legacy, phase := range map[string]string{
+		runtimeMigrationRequested: apiv1.ReasonRuntimeMigrationRequested,
+		runtimeMigrationCopying:   apiv1.ReasonRuntimeMigrationCopying,
+		runtimeMigrationBooting:   apiv1.ReasonRuntimeMigrationBooting,
+	} {
+		m := runtimeMigrationOf(map[string]string{annRuntimeMigration: legacy}, apiv1.AgentStatus{})
+		assert.Equal(t, phase, m.phase, legacy)
+	}
+	assert.False(t, runtimeMigrationOf(nil, apiv1.AgentStatus{}).active())
+}
+
+// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server said where each path went and gave the machine the rewritten mounts; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the switch retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
+func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationStopping, time.Now())
+	agent.Spec.Mounts = []apiv1.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/data", Persist: true},
+		{Path: "/home/agent/cache", Persist: true},
+		{Path: "/never", Persist: true},
+	}
+	agent.Annotations[annRuntimeMigrationTarget] = `{"mounts":[{"path":"/home/agent","persist":true},{"path":"/home/agent/.persisted/data","persist":true},{"path":"/home/agent/cache","persist":true},{"path":"/home/agent/.persisted/never","persist":true}],"storageSize":"40Gi"}`
+	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r,
+		homePVC("home-agent-my-agent-0"),
+		mountPVC("data-my-agent-0", "/data"),
+		mountPVC("home-agent-cache-my-agent-0", "/home/agent/cache"),
+	)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	grafts, err := recordedGrafts(agent)
+	require.NoError(t, err)
+	assert.Equal(t, []runtimeMigrationGraft{
+		{From: "/data", At: ".persisted/data", PVC: "data-my-agent-0"},
+		{From: "/home/agent/cache", At: "cache", PVC: "home-agent-cache-my-agent-0"},
+	}, grafts)
+	assert.Equal(t, 40, node.spec("my-agent").StorageGiB, "the machine's disk is the size the request gave it")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	pod := job.Spec.Template.Spec
+	command := pod.Containers[0].Command
+	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
+	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
+		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
+	claims := map[string]string{}
+	for _, v := range pod.Volumes {
+		if v.PersistentVolumeClaim != nil {
+			assert.True(t, v.PersistentVolumeClaim.ReadOnly, "the copy never writes to a volume it copies")
+			claims[v.Name] = v.PersistentVolumeClaim.ClaimName
+		}
+	}
+	assert.Equal(t, map[string]string{"home": "home-agent-my-agent-0", "extra-0": "data-my-agent-0", "extra-1": "home-agent-cache-my-agent-0"}, claims)
+
+	completeJob(t, r, batchv1.JobComplete, time.Now())
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
+	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
+		require.NoError(t, unstructured.SetNestedSlice(u.Object, []any{
+			map[string]any{"path": "/home/agent", "persist": true},
+			map[string]any{"path": "/home/agent/.persisted/data", "persist": true},
+			map[string]any{"path": "/home/agent/cache", "persist": true},
+			map[string]any{"path": "/home/agent/.persisted/never", "persist": true},
+		}, "spec", "mounts"))
+		withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget, annRuntimeMigrationMounts)(u)
+	})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	for _, key := range []string{annRuntimeMigration, annRuntimeMigrationMounts, annRuntimeMigrationGrafts} {
+		assert.NotContains(t, agent.Annotations, key)
+	}
+	for name, mount := range map[string]string{"home-agent-my-agent-0": "/home/agent", "data-my-agent-0": "/data", "home-agent-cache-my-agent-0": "/home/agent/cache"} {
+		pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err, name)
+		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
 	}
 }
 
@@ -370,69 +672,4 @@ func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
 		Name: name, Namespace: "test-agents",
 		Labels: map[string]string{LabelAgent: "my-agent", LabelMount: sanitizeMountName(path)},
 	}}
-}
-
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server rewrote its spec and said where each path went; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the guest has answered retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still linked back at boot, since the agent's software still looks there.
-func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
-	ctx := context.Background()
-	agent := migratingAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{
-		{Path: "/home/agent", Persist: true},
-		{Path: "/home/agent/.persisted/data", Persist: true},
-		{Path: "/home/agent/cache", Persist: true},
-		{Path: "/home/agent/.persisted/never", Persist: true},
-	}
-	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
-	r, node, _ := setupVMReconciler(t, agent)
-	for _, p := range []*corev1.PersistentVolumeClaim{
-		homePVC("home-agent-my-agent-0"),
-		mountPVC("data-my-agent-0", "/data"),
-		mountPVC("home-agent-cache-my-agent-0", "/home/agent/cache"),
-	} {
-		_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Create(ctx, p, metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	require.Equal(t, runtimeMigrationCopying, agent.Annotations[annRuntimeMigration])
-	grafts, err := recordedGrafts(agent)
-	require.NoError(t, err)
-	assert.Equal(t, []runtimeMigrationGraft{
-		{From: "/data", At: ".persisted/data", PVC: "data-my-agent-0"},
-		{From: "/home/agent/cache", At: "cache", PVC: "home-agent-cache-my-agent-0"},
-	}, grafts)
-
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
-	require.NoError(t, r.Reconcile(ctx, agent))
-	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
-	require.NoError(t, err)
-	pod := job.Spec.Template.Spec
-	command := pod.Containers[0].Command
-	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
-	assert.Contains(t, strings.Join(command, " "), `--links [{"path":"/data","at":".persisted/data"},{"path":"/never","at":".persisted/never"}]`,
-		"every path moved from outside HOME is linked back at boot, even one no volume was made for; one under HOME keeps its place and needs no link")
-	claims := map[string]string{}
-	for _, v := range pod.Volumes {
-		if v.PersistentVolumeClaim != nil {
-			assert.True(t, v.PersistentVolumeClaim.ReadOnly, "the copy never writes to a volume it copies")
-			claims[v.Name] = v.PersistentVolumeClaim.ClaimName
-		}
-	}
-	assert.Equal(t, map[string]string{"home": "home-agent-my-agent-0", "extra-0": "data-my-agent-0", "extra-1": "home-agent-cache-my-agent-0"}, claims)
-
-	completeJob(t, r, batchv1.JobComplete, time.Now())
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	for _, key := range []string{annRuntimeMigration, annRuntimeMigrationMounts, annRuntimeMigrationGrafts} {
-		assert.NotContains(t, agent.Annotations, key)
-	}
-	for name, mount := range map[string]string{"home-agent-my-agent-0": "/home/agent", "data-my-agent-0": "/data", "home-agent-cache-my-agent-0": "/home/agent/cache"} {
-		pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
-		require.NoError(t, err, name)
-		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
-	}
 }

@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "11"
+    agent-platform.ai/crd-schema-generation: "12"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -368,6 +368,13 @@ spec:
               observedGeneration:
                 description: ObservedGeneration is the spec generation last reconciled.
                 format: int64
+                type: integer
+              runtimeMigrationAttempts:
+                description: |-
+                  RuntimeMigrationAttempts counts the copy attempts of the runtime
+                  migration in progress; the migration fails once they run out. Zero when
+                  no migration runs.
+                format: int32
                 type: integer
             type: object
         type: object
