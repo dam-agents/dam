@@ -1395,7 +1395,7 @@ impl Server {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. It must hold no home yet — neither a guest that has answered from its disk nor a seed already stored — so a capability cannot replace a home or a seed the controller has checked. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.
+// UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. Its disk must hold no home yet — no guest has answered from it — so a capability never replaces a home. A seed already stored but not yet booted from may be replaced: an attempt can store its seed and still fail, its answer lost, and only the next Job's fresh capability can then finish the copy, since the controller removes a seed only once the guest has booted from it. The controller moves past the copy only after a Job succeeds, and drops the migration mark then, so no capability reaches a seed it has accepted. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.
 fn capability_may_seed(
     id: &str,
     latest: &MachineSpec,
@@ -1408,9 +1408,9 @@ fn capability_may_seed(
             "machine {id} is not being migrated; a seed capability seeds only a machine created for a migration"
         )));
     }
-    if share::seeded(&share) || share.join(share::SEED_FILE).exists() {
+    if share::seeded(&share) {
         return Err(Rejected::conflict(format!(
-            "machine {id} already holds a home or a seed; a seed capability does not replace one"
+            "machine {id} already holds a home; a seed capability does not replace one"
         )));
     }
     if spent_capabilities(dir).contains(&capability.nonce) {

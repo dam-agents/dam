@@ -401,6 +401,8 @@ func TestTheCopyJobCarriesASeedCapabilityAndNeverTheRunnersToken(t *testing.T) {
 		assert.NotContains(t, strings.Join(c.Command, " "), "node-token")
 	}
 	assert.Contains(t, pod.Containers[0].Command, runtimeMigrationCredsPath+"/"+runtimeMigrationCapabilityKey)
+	require.NotNil(t, job.Spec.BackoffLimit)
+	assert.Zero(t, *job.Spec.BackoffLimit, "a retried pod would present the capability its first pod may have spent")
 
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)

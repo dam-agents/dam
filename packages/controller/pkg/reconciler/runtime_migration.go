@@ -488,7 +488,11 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	for k, v := range labels {
 		podLabels[k] = v
 	}
-	backoff := int32(2)
+	// UNIT_BOUNDARY_DESCRIPTION: one attempt per Job, because a capability
+	// UNIT_BOUNDARY_DESCRIPTION: seeds once: a second pod of the same Job would
+	// UNIT_BOUNDARY_DESCRIPTION: present one its first pod may have spent. A
+	// UNIT_BOUNDARY_DESCRIPTION: failed Job is recreated with a fresh one.
+	backoff := int32(0)
 	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
 	rootUID := int64(0)

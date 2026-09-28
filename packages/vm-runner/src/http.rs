@@ -883,7 +883,44 @@ mod tests {
         assert_eq!(Some(spent.trim()), capability.split('.').nth(1));
     }
 
-    // TEST_SCENARIO: a capability never seeds a machine that is not being migrated — a sibling that was created as a vm Agent from the start — nor one whose disk already holds a home, nor one that already has a seed, since each would let the Job replace a home it has no business touching. The owner's token still seeds as it always did.
+    // TEST_SCENARIO: an attempt stored its seed and then failed — its answer lost, its pod evicted — so the controller runs a new Job with a fresh capability. That capability replaces the seed the machine has not booted from yet, or the migration could never leave the copy. The first capability stays spent, and once the guest has answered from its disk no capability replaces anything.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_next_jobs_capability_replaces_a_seed_not_yet_booted_from() {
+        let api = api_on("cap-replace", Arc::new(Parked(State::Stopped.into())));
+        let share = created_for_migration(&api, "m1");
+        let first = seed_capability("m1", in_an_hour());
+        let (status, _) = call(&api, "PUT", "/machines/m1/seed", Some(&first), "lost").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let next = seed_capability("m1", in_an_hour());
+        let (status, body) = call(&api, "PUT", "/machines/m1/seed", Some(&next), "retry").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            std::fs::read(share.join(crate::share::SEED_FILE)).unwrap(),
+            b"retry"
+        );
+
+        let (status, body) = call(&api, "PUT", "/machines/m1/seed", Some(&first), "old").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body.contains("already used"), "{body}");
+
+        crate::share::record_seeded(&share).unwrap();
+        let (status, body) = call(
+            &api,
+            "PUT",
+            "/machines/m1/seed",
+            Some(&seed_capability("m1", in_an_hour())),
+            "late",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(
+            std::fs::read(share.join(crate::share::SEED_FILE)).unwrap(),
+            b"retry"
+        );
+    }
+
+    // TEST_SCENARIO: a capability never seeds a machine that is not being migrated — a sibling that was created as a vm Agent from the start — nor one whose disk already holds a home, since either would let the Job replace a home it has no business touching. The owner's token still seeds as it always did.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_seed_capability_seeds_only_a_migrating_machine_with_no_home() {
         let api = api_on("cap-guard", Arc::new(Parked(State::Stopped.into())));
@@ -912,22 +949,6 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert!(!seeded.join(crate::share::SEED_FILE).exists());
-
-        let staged = created_for_migration(&api, "m3");
-        std::fs::write(staged.join(crate::share::SEED_FILE), "checked").unwrap();
-        let (status, _) = call(
-            &api,
-            "PUT",
-            "/machines/m3/seed",
-            Some(&seed_capability("m3", in_an_hour())),
-            "tar",
-        )
-        .await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(
-            std::fs::read(staged.join(crate::share::SEED_FILE)).unwrap(),
-            b"checked"
-        );
 
         created_for_migration(&api, "m4");
         let (status, _) = call(&api, "PUT", "/machines/m4", Some("secret"), SPEC).await;
