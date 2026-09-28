@@ -37,12 +37,13 @@ features:
       should_escape: false
 
 oauth_config:
-  # Only needed to install into more than one workspace. Slack hands the bot
-  # token over by copy-paste for the app's own workspace alone; every other
-  # workspace has to complete the OAuth exchange, which needs this redirect URL
-  # and public distribution activated (Manage Distribution). Replace the host
-  # with the platform's own — the URL is fetched by the installing admin's
-  # browser, never by Slack, so an internal host behind a VPN is fine.
+  # Every workspace, the app's own included, connects through the platform's
+  # install flow, which needs this redirect URL; no bot token is copied from
+  # Slack. Workspaces other than the app's own also need public distribution
+  # activated (Manage Distribution). Replace the host with the platform's own —
+  # the URL is fetched by the installing admin's browser, never by Slack, so an
+  # internal host behind a VPN is fine. Token rotation (OAuth & Permissions)
+  # also needs a redirect URL registered before Slack lets it be turned on.
   redirect_urls:
     - https://platform.example.com/api/slack/install/callback
   scopes:

@@ -1,6 +1,14 @@
 import { formatError } from "../../../core/format-error.js";
 
 const GRANT_TIMEOUT_MS = 10_000;
+const DEAD_CREDENTIAL = new Set([
+  "invalid_refresh_token",
+  "invalid_auth",
+  "not_authed",
+  "account_inactive",
+  "token_revoked",
+  "token_expired",
+]);
 
 export interface SlackRotatingToken {
   accessToken: string;
@@ -10,7 +18,7 @@ export interface SlackRotatingToken {
 
 export type SlackTokenGrantResult =
   | ({ ok: true } & SlackRotatingToken)
-  | { ok: false; refusal: string | null; error: string };
+  | { ok: false; credentialDead: boolean; error: string };
 
 export type SlackTokenGrant = (token: string) => Promise<SlackTokenGrantResult>;
 
@@ -66,15 +74,23 @@ export function createSlackTokenRotation(creds: {
       });
       body = (await res.json()) as SlackGrantResponse;
     } catch (err) {
-      return { ok: false, refusal: null, error: formatError(err) };
+      return { ok: false, credentialDead: false, error: formatError(err) };
     }
     if (!body.ok) {
       const refusal = body.error ?? "unknown";
-      return { ok: false, refusal, error: refusal };
+      return {
+        ok: false,
+        credentialDead: DEAD_CREDENTIAL.has(refusal),
+        error: refusal,
+      };
     }
     const token = rotatingTokenFrom(body, now());
     if (!token) {
-      return { ok: false, refusal: null, error: "incomplete-grant-response" };
+      return {
+        ok: false,
+        credentialDead: false,
+        error: "incomplete-grant-response",
+      };
     }
     return { ok: true, ...token };
   }

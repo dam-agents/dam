@@ -220,7 +220,7 @@ describe("slack install service — rotating tokens", () => {
       now: () => T0,
       refreshToken: async () => {
         refreshed++;
-        return { ok: false, refusal: null, error: "unexpected" };
+        return { ok: false, credentialDead: false, error: "unexpected" };
       },
     });
 
@@ -271,7 +271,7 @@ describe("slack install service — rotating tokens", () => {
       now: () => T0,
       refreshToken: async () => ({
         ok: false,
-        refusal: "invalid_refresh_token",
+        credentialDead: true,
         error: "invalid_refresh_token",
       }),
     });
@@ -292,13 +292,35 @@ describe("slack install service — rotating tokens", () => {
       now: () => T0,
       refreshToken: async () => ({
         ok: false,
-        refusal: "invalid_refresh_token",
+        credentialDead: true,
         error: "invalid_refresh_token",
       }),
     });
 
     expect(await svc.resolveBotToken("T-SECOND")).toBeNull();
     expect(states["T-SECOND"]).toBe("rejected");
+  });
+
+  /**
+   * TEST_SCENARIO: A refusal that may pass — Slack rate limiting the refresh —
+   * is not a dead credential. The expired token is not served, but the
+   * workspace stays in service for the next try rather than waiting for
+   * someone to re-authorize it.
+   */
+  it("leaves an expired credential unmarked when Slack only rate limits the refresh", async () => {
+    const { svc, states } = service({
+      installs: { "T-SECOND": installRow("T-SECOND", "secret-second") },
+      secrets: { "secret-second": rotating(T0 - 1) },
+      now: () => T0,
+      refreshToken: async () => ({
+        ok: false,
+        credentialDead: false,
+        error: "ratelimited",
+      }),
+    });
+
+    expect(await svc.resolveBotToken("T-SECOND")).toBeNull();
+    expect(states["T-SECOND"]).toBeUndefined();
   });
 
   /**
@@ -313,7 +335,7 @@ describe("slack install service — rotating tokens", () => {
       now: () => T0,
       refreshToken: async () => ({
         ok: false,
-        refusal: null,
+        credentialDead: false,
         error: "timeout",
       }),
     });
@@ -396,7 +418,7 @@ describe("slack install service — exchanging tokens that do not expire", () =>
         attempts++;
         return {
           ok: false,
-          refusal: "token_rotation_not_enabled",
+          credentialDead: false,
           error: "token_rotation_not_enabled",
         };
       },
@@ -446,5 +468,20 @@ describe("slack install service — exchanging tokens that do not expire", () =>
 
     expect(exchanged.sort()).toEqual([ENV_TOKEN, "xoxb-second"].sort());
     expect(installs[ORIGINAL_TEAM]).toBeDefined();
+  });
+
+  /**
+   * TEST_SCENARIO: The sweep runs unattended, from boot and from a periodic
+   * job, so a failure to even list the workspaces is logged rather than
+   * thrown — nothing awaits it that could handle the rejection.
+   */
+  it("does not throw when the workspaces cannot be listed", async () => {
+    const svc = createSlackInstallService({
+      list: async () => {
+        throw new Error("database unavailable");
+      },
+    } as unknown as SlackInstallServiceDeps);
+
+    await expect(svc.renewAll()).resolves.toBeUndefined();
   });
 });

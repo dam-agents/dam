@@ -85,8 +85,9 @@ export interface SlackInstallService {
  * any workspace goes dark. Slack keeps two tokens live per workspace, which an
  * hourly refresh stays within. The lock is what keeps two replicas from spending
  * the same refresh token, and the re-read inside it lets the later one pick up
- * what the earlier one wrote. A refresh Slack refuses once the token has
- * expired marks the credential, like any other rejection.
+ * what the earlier one wrote. Once the token has expired, a refresh Slack
+ * refuses as a dead credential marks it, like any other rejection; a refusal
+ * that may pass, such as being rate limited, only waits for the next try.
  *
  * A token that does not expire — minted before rotation was turned on — is
  * exchanged for a rotating pair once exchanging is enabled, under the same
@@ -258,7 +259,7 @@ export function createSlackInstallService(
       detail: { teamId: install.teamId, expired },
     });
     if (!expired) return token;
-    if (result.refusal !== null) {
+    if (result.credentialDead) {
       await deps.setState(install.teamId, "rejected");
     }
     return null;
@@ -308,8 +309,25 @@ export function createSlackInstallService(
 
   return {
     async renewAll(): Promise<void> {
+      const renewFailed = (err: unknown, teamId: string | null) =>
+        securityLog("error", "slack.token.renew.failed", {
+          category: "credential",
+          actor: null,
+          actorKind: "system",
+          surface: "slack",
+          result: "failure",
+          reason: formatError(err),
+          detail: { teamId },
+        });
+      let installs: SlackInstall[];
+      try {
+        installs = await deps.list();
+      } catch (err) {
+        renewFailed(err, null);
+        return;
+      }
       const teamIds = new Set(
-        (await deps.list())
+        installs
           .filter((i) => i.credentialState === "active")
           .map((i) => i.teamId),
       );
@@ -318,15 +336,7 @@ export function createSlackInstallService(
         try {
           await resolveBotToken(teamId);
         } catch (err) {
-          securityLog("error", "slack.token.renew.failed", {
-            category: "credential",
-            actor: null,
-            actorKind: "system",
-            surface: "slack",
-            result: "failure",
-            reason: formatError(err),
-            detail: { teamId },
-          });
+          renewFailed(err, teamId);
         }
       }
     },

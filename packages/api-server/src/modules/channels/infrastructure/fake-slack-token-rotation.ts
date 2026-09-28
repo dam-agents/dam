@@ -74,7 +74,11 @@ export function createFakeSlackTokenRotation(opts?: {
   }
 
   function refused(error: string): SlackTokenGrantResult {
-    return { ok: false, refusal: error, error };
+    return {
+      ok: false,
+      credentialDead: error === "invalid_refresh_token",
+      error,
+    };
   }
 
   return {
