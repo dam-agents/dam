@@ -10,30 +10,6 @@ import {
   runtimeMigrationRefusal,
 } from "./runtime-migration.js";
 
-const DURATION_UNITS_MS: Record<string, number> = {
-  ns: 1e-6,
-  us: 1e-3,
-  µs: 1e-3,
-  ms: 1,
-  s: 1e3,
-  m: 60e3,
-  h: 3600e3,
-};
-
-// UNIT_BOUNDARY_DESCRIPTION: the retention window is a chart value the controller reads as a Go duration, such as 168h or 72h30m. The api-server only shows it, so it reads the same syntax into milliseconds, and anything it cannot read is null, which the plan shows as an unknown window rather than a wrong one.
-export function goDurationMs(raw: string): number | null {
-  const text = raw.trim();
-  if (text === "0") return 0;
-  const part = /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/gy;
-  let total = 0;
-  let at = 0;
-  for (const m of text.matchAll(part)) {
-    total += Number(m[1]) * (DURATION_UNITS_MS[m[2] ?? ""] ?? 0);
-    at = (m.index ?? 0) + m[0].length;
-  }
-  return at > 0 && at === text.length ? total : null;
-}
-
 export interface PlanInputs {
   virtualizationEnabled: boolean;
   defaultStorageSize: string;

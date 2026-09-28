@@ -60,6 +60,12 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
+export interface AgentsInstallSettings {
+  virtualizationEnabled: boolean;
+  agentDefaultStorageSize: string;
+  runtimeMigrationRetentionMs: number | null;
+}
+
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
@@ -67,9 +73,7 @@ export function composeAgentsModule(deps: {
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
-  agentDefaultStorageSize?: string;
-  virtualizationEnabled?: boolean;
-  runtimeMigrationRetentionMs?: number | null;
+  install: AgentsInstallSettings;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
@@ -98,9 +102,9 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      agentDefaultStorageSize: deps.agentDefaultStorageSize,
-      virtualizationEnabled: deps.virtualizationEnabled,
-      runtimeMigrationRetentionMs: deps.runtimeMigrationRetentionMs,
+      agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
+      virtualizationEnabled: deps.install.virtualizationEnabled,
+      runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,

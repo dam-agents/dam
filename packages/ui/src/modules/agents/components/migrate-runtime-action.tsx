@@ -1,4 +1,5 @@
 import { Migrate } from "@carbon/icons-react";
+import { type SyntheticEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -44,38 +45,7 @@ export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
     );
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: an agent the api-server would refuse keeps a disabled Migrate. Its hover card hangs on the wrapper rather than on the disabled button, which takes no pointer events, and asks for the plan only when it opens, so a list of agents does not fetch a plan per row.
-  if (action.kind === "refused") {
-    return (
-      <span onClick={(e) => e.stopPropagation()}>
-        <HoverCard>
-          <HoverCardTrigger asChild>
-            <span tabIndex={0} data-testid="migrate-refused">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled
-                className="shrink-0 font-medium"
-              >
-                <Migrate size={16} />
-                Migrate
-              </Button>
-            </span>
-          </HoverCardTrigger>
-          <HoverCardContent
-            side="top"
-            align="end"
-            className="flex w-[340px] flex-col gap-2 text-sm"
-          >
-            <p className="font-bold text-foreground">
-              Can't move to the new runtime yet
-            </p>
-            <RefusalReasons agentId={agent.id} />
-          </HoverCardContent>
-        </HoverCard>
-      </span>
-    );
-  }
+  if (action.kind === "refused") return <RefusedMigrate agentId={agent.id} />;
 
   return (
     <span onClick={(e) => e.stopPropagation()}>
@@ -103,6 +73,57 @@ export function MigrateRuntimeAction({ agent, onMigrate, pending }: Props) {
             unavailable while the copy runs. The next step shows exactly what
             moves. This cannot be undone from the UI.
           </p>
+        </HoverCardContent>
+      </HoverCard>
+    </span>
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent the api-server would refuse keeps a disabled Migrate. Its reasons card hangs on the wrapper rather than on the disabled button, which takes no pointer events. Hover opens it with a pointer, and a tap, Enter or Space toggles it, because a touch screen never hovers. The card asks for the plan only when it opens, so a list of agents does not fetch a plan per row.
+function RefusedMigrate({ agentId }: { agentId: string }) {
+  const [open, setOpen] = useState(false);
+  const toggle = (e: SyntheticEvent) => {
+    e.stopPropagation();
+    setOpen((o) => !o);
+  };
+  return (
+    <span onClick={(e) => e.stopPropagation()}>
+      <HoverCard open={open} onOpenChange={setOpen}>
+        <HoverCardTrigger asChild>
+          <span
+            role="button"
+            tabIndex={0}
+            aria-expanded={open}
+            aria-label="Why this agent can't migrate"
+            data-testid="migrate-refused"
+            onClick={toggle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggle(e);
+              }
+            }}
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="pointer-events-none shrink-0 font-medium"
+            >
+              <Migrate size={16} />
+              Migrate
+            </Button>
+          </span>
+        </HoverCardTrigger>
+        <HoverCardContent
+          side="top"
+          align="end"
+          className="flex w-[340px] flex-col gap-2 text-sm"
+        >
+          <p className="font-bold text-foreground">
+            Can't move to the new runtime yet
+          </p>
+          <RefusalReasons agentId={agentId} />
         </HoverCardContent>
       </HoverCard>
     </span>

@@ -11,10 +11,8 @@ import {
   type AgentSpec,
 } from "api-server-api";
 
-import {
-  goDurationMs,
-  runtimeMigrationPlan,
-} from "../../modules/agents/domain/runtime-migration-plan.js";
+import { goDurationMs } from "../../duration.js";
+import { runtimeMigrationPlan } from "../../modules/agents/domain/runtime-migration-plan.js";
 import {
   AgentWakeTimeoutError,
   describeWakeFailure,

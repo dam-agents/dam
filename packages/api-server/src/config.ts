@@ -3,7 +3,7 @@ import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { getLogger } from "./core/logger.js";
-import { durationToMinutesStrict } from "./duration.js";
+import { durationToMinutesStrict, goDurationMs } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
 
@@ -69,7 +69,10 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.coerce.boolean().default(false),
-  runtimeMigrationRetention: z.string().default("168h"),
+  runtimeMigrationRetentionMs: z
+    .string()
+    .default("168h")
+    .transform(goDurationMs),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -195,6 +198,15 @@ const validatedConfigSchema = configSchema
     },
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's disk default or retention window.
+export function agentsInstallSettings(config: Config) {
+  return {
+    virtualizationEnabled: config.virtualizationEnabled,
+    agentDefaultStorageSize: config.agentDefaultStorageSize,
+    runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
+  };
+}
+
 export function loadConfig(): Config {
   return validatedConfigSchema.parse({
     serverVersion: pkg.version,
@@ -227,7 +239,7 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
-    runtimeMigrationRetention: process.env.RUNTIME_MIGRATION_RETENTION,
+    runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,

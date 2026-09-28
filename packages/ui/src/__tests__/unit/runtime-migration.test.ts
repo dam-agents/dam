@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import {
   migrateAction,
   planMoveLines,
-  retentionWindowText,
+  retentionSentence,
   runtimeBadge,
 } from "../../modules/agents/utils/runtime-migration.js";
 import type { AgentView } from "../../types.js";
@@ -129,14 +129,39 @@ describe("the confirm dialog's plan", () => {
     ]);
   });
 
-  test("says the retention window in days or hours", () => {
-    expect(retentionWindowText(7 * 24 * 3600_000)).toBe("7 days");
-    expect(retentionWindowText(24 * 3600_000)).toBe("1 day");
-    expect(retentionWindowText(36 * 3600_000)).toBe("36 hours");
+  test("says a whole number of days in days", () => {
+    expect(retentionSentence(7 * 24 * 3600_000)).toMatch(/kept for 7 days /);
+    expect(retentionSentence(24 * 3600_000)).toMatch(/kept for 1 day /);
   });
 
-  test("says nothing about a window it could not read", () => {
-    expect(retentionWindowText(null)).toBeNull();
-    expect(retentionWindowText(0)).toBeNull();
+  test("says a window that is not whole days in hours", () => {
+    expect(retentionSentence(36 * 3600_000)).toMatch(/kept for 36 hours /);
+    expect(retentionSentence(3600_000)).toMatch(/kept for 1 hour /);
+  });
+
+  // TEST_SCENARIO: a window under an hour used to round down to "0 hours", which reads as not kept; it is said in minutes instead.
+  test("says a window under an hour in minutes", () => {
+    expect(retentionSentence(30 * 60_000)).toMatch(/kept for 30 minutes /);
+    expect(retentionSentence(90 * 60_000)).toMatch(/kept for 90 minutes /);
+    expect(retentionSentence(60_000)).toMatch(/kept for 1 minute /);
+  });
+
+  test("says a window under a minute in seconds", () => {
+    expect(retentionSentence(45_000)).toMatch(/kept for 45 seconds /);
+    expect(retentionSentence(1500)).toMatch(/kept for 2 seconds /);
+  });
+
+  // TEST_SCENARIO: an install that sets the window to zero deletes the old volumes once the move is done; the dialog must not promise they are kept.
+  test("says a zero window keeps nothing", () => {
+    expect(retentionSentence(0)).toBe(
+      "The old volumes are not kept: they are deleted once the move has finished.",
+    );
+  });
+
+  // TEST_SCENARIO: null is the one case the api-server could not read the window; the dialog says the volumes are kept without naming a length it does not know.
+  test("names no length for a window the api-server could not read", () => {
+    expect(retentionSentence(null)).toBe(
+      "The old volumes are kept for a while after the move, so an admin can recover anything missing.",
+    );
   });
 });

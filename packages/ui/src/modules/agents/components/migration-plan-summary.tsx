@@ -1,7 +1,7 @@
 import type { RuntimeMigrationPlanView } from "../../../types.js";
 import {
   planMoveLines,
-  retentionWindowText,
+  retentionSentence,
 } from "../utils/runtime-migration.js";
 
 export function MigrationPlanSummary({
@@ -12,7 +12,6 @@ export function MigrationPlanSummary({
   plan: RuntimeMigrationPlanView;
 }) {
   const moves = planMoveLines(plan);
-  const retention = retentionWindowText(plan.retentionMs);
   return (
     <div className="flex flex-col gap-3" data-testid="migration-plan">
       <p>
@@ -47,11 +46,7 @@ export function MigrationPlanSummary({
             ? `Its disk is resized to ${plan.storageSize} to hold all of its saved folders.`
             : `Its disk is ${plan.storageSize}.`}
         </li>
-        <li>
-          {retention
-            ? `The old volumes are kept for ${retention} after the move, so an admin can recover anything missing.`
-            : "The old volumes are kept for a while after the move, so an admin can recover anything missing."}
-        </li>
+        <li>{retentionSentence(plan.retentionMs)}</li>
         {plan.bootsSleepingAgent && (
           <li>
             The agent is asleep now. It is started once to finish the move, and

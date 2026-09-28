@@ -6,6 +6,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
+import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import {
   createDisabledMetricsService,
@@ -125,7 +126,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
-      virtualizationEnabled: config.virtualizationEnabled,
+      install: agentsInstallSettings(config),
       resizeGate,
       owner: user.sub,
       db,

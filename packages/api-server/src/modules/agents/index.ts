@@ -29,7 +29,7 @@ export {
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
-export { goDurationMs } from "./domain/runtime-migration-plan.js";
+export type { AgentsInstallSettings } from "./compose.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";

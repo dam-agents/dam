@@ -62,16 +62,27 @@ function migrating(migration: RuntimeMigrationView): MigrateAction {
 }
 
 const AGENT_HOME = "/home/agent";
-const HOUR_MS = 3600_000;
-const DAY_MS = 24 * HOUR_MS;
+const WINDOW_UNITS: readonly { unit: string; ms: number }[] = [
+  { unit: "day", ms: 24 * 3600_000 },
+  { unit: "hour", ms: 3600_000 },
+  { unit: "minute", ms: 60_000 },
+  { unit: "second", ms: 1000 },
+];
 
-// UNIT_BOUNDARY_DESCRIPTION: the retention window in the words a person uses, whole days when it is a whole number of days and hours otherwise. The window is an install setting the plan passes through, so an unreadable one is said as such rather than guessed.
-export function retentionWindowText(ms: number | null): string | null {
-  if (ms === null || ms <= 0) return null;
-  const plural = (n: number, unit: string) =>
-    `${n} ${unit}${n === 1 ? "" : "s"}`;
-  if (ms % DAY_MS === 0) return plural(ms / DAY_MS, "day");
-  return plural(Math.round(ms / HOUR_MS), "hour");
+function windowText(ms: number): string {
+  const exact = WINDOW_UNITS.find((u) => ms % u.ms === 0);
+  const unit = exact ?? { unit: "second", ms: 1000 };
+  const n = exact ? ms / unit.ms : Math.ceil(ms / unit.ms);
+  return `${n} ${unit.unit}${n === 1 ? "" : "s"}`;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the confirm dialog says about the old volumes. The window is an install setting the plan passes through: null means the api-server could not read it, which is said as such rather than guessed; zero means the volumes are not kept at all; any other window is said in the largest unit it is a whole number of, so a week reads as 7 days and half an hour as 30 minutes.
+export function retentionSentence(ms: number | null): string {
+  if (ms === null)
+    return "The old volumes are kept for a while after the move, so an admin can recover anything missing.";
+  if (ms <= 0)
+    return "The old volumes are not kept: they are deleted once the move has finished.";
+  return `The old volumes are kept for ${windowText(ms)} after the move, so an admin can recover anything missing.`;
 }
 
 export interface PlanMoveLine {
