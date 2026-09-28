@@ -29,7 +29,6 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
-  SOURCE_DATE_EPOCH: "1735689600"
   MISE_LOCKED: "1"
 
 jobs:

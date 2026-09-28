@@ -20,6 +20,13 @@ inputs:
 runs:
   using: composite
   steps:
+    # Builds are reproducible per commit: every image this job builds carries
+    # the checked-out commit's time as its creation date, and the same commit
+    # always gives the same date. A fixed date instead ages every image, and
+    # admission policies refuse one created more than a year ago.
+    - shell: bash
+      run: |
+        [ -n "${SOURCE_DATE_EPOCH:-}" ] || echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
     # A PR never saves the tool cache: a branch must not write an entry main
     # then restores.
     - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
