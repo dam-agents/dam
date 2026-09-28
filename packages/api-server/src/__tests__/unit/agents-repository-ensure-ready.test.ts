@@ -391,11 +391,26 @@ describe("releaseInvocationPin", () => {
     return { repo, store, patches };
   }
 
-  // TEST_SCENARIO: the release bumps the Driver's activity and drops its pin in one write that is conditional on the object it read, so a pause landing in between makes the write fail rather than revive the Driver.
-  it("clears a held pin and bumps activity in one conditional write", async () => {
+  // TEST_SCENARIO: the reconcile reads a pinned Driver's version before it checks the Driver's Invocations, so the release can be conditional on that read.
+  it("reads the version of a pinned Driver", async () => {
+    const { repo } = pinnedHarness("true");
+
+    expect(await repo.readInvocationPin("a1")).toBe("7");
+  });
+
+  // TEST_SCENARIO: a pause cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
+  it("reads no version once the pin is gone", async () => {
+    const { repo, patches } = pinnedHarness("");
+
+    expect(await repo.readInvocationPin("a1")).toBeNull();
+    expect(patches).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the release bumps the Driver's activity and drops its pin in one write that is conditional on the version the reconcile read, so a pause or spawn landing in between makes the write fail.
+  it("clears the pin and bumps activity in one conditional write", async () => {
     const { repo, store, patches } = pinnedHarness("true");
 
-    expect(await repo.releaseInvocationPin("a1")).toBe(true);
+    await repo.releaseInvocationPin("a1", "7");
 
     const ann = store.get("a1")?.metadata?.annotations ?? {};
     expect(ann[PIN_KEY]).toBe("");
@@ -405,18 +420,6 @@ describe("releaseInvocationPin", () => {
         metadata: expect.objectContaining({ resourceVersion: "7" }),
       }),
     ]);
-  });
-
-  // TEST_SCENARIO: a pause cleared the pin and staled the clock after the reconcile listed this Driver; the release must leave that stale clock alone.
-  it("writes nothing once the pin is gone", async () => {
-    const { repo, store, patches } = pinnedHarness("");
-
-    expect(await repo.releaseInvocationPin("a1")).toBe(false);
-
-    expect(patches).toEqual([]);
-    expect(store.get("a1")?.metadata?.annotations?.[ACTIVITY_KEY]).toBe(
-      "1970-01-01T00:00:00Z",
-    );
   });
 });
 

@@ -108,11 +108,13 @@ export function createInvocationSetupFailure(opts: {
 export function composeInvocationPinReconciler(opts: {
   db: Db;
   listPinnedAgentIds: () => Promise<string[]>;
-  release: (driverAgentId: string) => Promise<void>;
+  readPin: (driverAgentId: string) => Promise<string | null>;
+  release: (driverAgentId: string, version: string) => Promise<void>;
 }): InvocationPinReconciler {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationPinReconciler({
     listPinnedAgentIds: opts.listPinnedAgentIds,
+    readPin: opts.readPin,
     hasRunningInvocation: async (driverAgentId) =>
       (await repo.listRunningByDriver(driverAgentId)).length > 0,
     release: opts.release,

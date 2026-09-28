@@ -1373,9 +1373,9 @@ export async function bootstrap() {
     db,
     listPinnedAgentIds: () =>
       agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
-    release: async (agentId) => {
-      await agentsRepo.releaseInvocationPin(agentId);
-    },
+    readPin: (agentId) => agentsRepo.readInvocationPin(agentId),
+    release: (agentId, version) =>
+      agentsRepo.releaseInvocationPin(agentId, version),
   });
   await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
     invocationPinReconciler.tick(),
