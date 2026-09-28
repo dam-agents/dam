@@ -69,6 +69,7 @@ export function composeAgentsModule(deps: {
   agentDefaultLimits: { cpu: string; memory: string };
   agentDefaultStorageSize?: string;
   virtualizationEnabled?: boolean;
+  runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
@@ -99,6 +100,7 @@ export function composeAgentsModule(deps: {
       agentDefaultLimits: deps.agentDefaultLimits,
       agentDefaultStorageSize: deps.agentDefaultStorageSize,
       virtualizationEnabled: deps.virtualizationEnabled,
+      runtimeMigrationRetentionMs: deps.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,

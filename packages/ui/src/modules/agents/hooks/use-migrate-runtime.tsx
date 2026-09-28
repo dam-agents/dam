@@ -1,11 +1,13 @@
 import { useCallback, useState } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import { useMigrateRuntimeMutation } from "../api/mutations.js";
-import { agentsKeys } from "../api/queries.js";
+import { agentsKeys, runtimeMigrationPlanOptions } from "../api/queries.js";
+import { MigrationPlanSummary } from "../components/migration-plan-summary.js";
 
 const AGENT_LISTS = [
   agentsKeys.listWithChannels(),
@@ -22,15 +24,25 @@ export function useMigrateRuntime() {
 
   const migrateOne = useCallback(
     async (agent: AgentView) => {
-      const msg = (
-        <>
-          Move agent <strong className="text-foreground">"{agent.name}"</strong>{" "}
-          to the new sandbox runtime? The agent stops, its home directory — the
-          workspace and settings — is copied over, and it restarts on the new
-          runtime. It is unavailable while the copy runs, and in-flight work is
-          interrupted. This cannot be undone from the UI.
-        </>
-      );
+      // UNIT_BOUNDARY_DESCRIPTION: the dialog shows what the api-server would do right now, so it asks for a fresh plan rather than one cached from a hover. A plan that refuses is reported instead of asked about, since the request would be refused the same way.
+      const plan = await queryClient
+        .fetchQuery({ ...runtimeMigrationPlanOptions(agent.id), staleTime: 0 })
+        .catch(() => null);
+      if (!plan) {
+        emitToast({
+          kind: "error",
+          message: "Couldn't load what the move would do — try again",
+        });
+        return;
+      }
+      if (!plan.allowed) {
+        emitToast({
+          kind: "error",
+          message: `"${agent.name}" can't move to the new runtime: ${plan.refusal?.reasons.join("; ") ?? ""}`,
+        });
+        return;
+      }
+      const msg = <MigrationPlanSummary name={agent.name} plan={plan} />;
       if (
         !(await showConfirm(msg, "Move to the new runtime", {
           confirmLabel: "Migrate",

@@ -39,6 +39,7 @@ export interface SchedulerRunnerDeps {
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
+  runtimeMigrating?: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
 }
@@ -69,13 +70,19 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} disabled; dropping`);
       return;
     }
+    const hold = async (result: string) => {
+      const after = nextFireAt(sched.spec, now());
+      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (after) await deps.queue.enqueue(scheduleId, after, now());
+    };
     if (await deps.onboardingPending?.(sched.agentId)) {
       log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
-      const after = nextFireAt(sched.spec, now());
-      await deps.repo
-        .recordFire(scheduleId, "held: onboarding not complete", after)
-        .catch(() => {});
-      if (after) await deps.queue.enqueue(scheduleId, after, now());
+      await hold("held: onboarding not complete");
+      return;
+    }
+    if (await deps.runtimeMigrating?.(sched.agentId)) {
+      log(`fire: agent ${sched.agentId} is moving to the new runtime; holding`);
+      await hold("held: moving to the new runtime");
       return;
     }
 

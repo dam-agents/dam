@@ -7,6 +7,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   migrateAction,
+  planMoveLines,
+  retentionWindowText,
   runtimeBadge,
 } from "../../modules/agents/utils/runtime-migration.js";
 import type { AgentView } from "../../types.js";
@@ -71,11 +73,15 @@ describe("migrateAction", () => {
     expect(migrateAction(agent({}), UNANSWERED, false)).toBeNull();
   });
 
-  test("offers nothing to a vm agent or one the api-server would refuse", () => {
+  test("offers nothing to a vm agent", () => {
     expect(migrateAction(agent({ vm: true }), ON, false)).toBeNull();
+  });
+
+  // TEST_SCENARIO: a container agent the api-server would refuse used to lose its button with no word why; it keeps a disabled one whose hover lists the reasons.
+  test("shows a refused action for a container agent the api-server would refuse", () => {
     expect(
       migrateAction(agent({ runtimeMigratable: false }), ON, false),
-    ).toBeNull();
+    ).toEqual({ kind: "refused" });
   });
 
   test("shows the request in flight while the mutation is pending", () => {
@@ -104,5 +110,33 @@ describe("migrateAction", () => {
         false,
       ),
     ).toEqual({ kind: "migrating", message: "runner is full" });
+  });
+});
+
+describe("the confirm dialog's plan", () => {
+  // TEST_SCENARIO: a path outside the home moves below it; the dialog names where it will live, in the ~ form the agent's shell shows, and a path already under the home is said to stay.
+  test("names where each moved path will live", () => {
+    expect(
+      planMoveLines({
+        moves: [
+          { from: "/data", to: "/home/agent/.persisted/data" },
+          { from: "/home/agent/cache", to: "/home/agent/cache" },
+        ],
+      }),
+    ).toEqual([
+      { from: "/data", to: "~/.persisted/data", stays: false },
+      { from: "/home/agent/cache", to: "~/cache", stays: true },
+    ]);
+  });
+
+  test("says the retention window in days or hours", () => {
+    expect(retentionWindowText(7 * 24 * 3600_000)).toBe("7 days");
+    expect(retentionWindowText(24 * 3600_000)).toBe("1 day");
+    expect(retentionWindowText(36 * 3600_000)).toBe("36 hours");
+  });
+
+  test("says nothing about a window it could not read", () => {
+    expect(retentionWindowText(null)).toBeNull();
+    expect(retentionWindowText(0)).toBeNull();
   });
 });

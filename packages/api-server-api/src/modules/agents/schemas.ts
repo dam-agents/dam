@@ -53,6 +53,7 @@ export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
 export const agentMigrateRuntimeInputSchema = idSchema;
+export const agentPlanRuntimeMigrationInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });

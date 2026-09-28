@@ -1,8 +1,8 @@
 import type {
   AgentSpec,
-  MigrateRuntimeError,
   RuntimeMigration,
   RuntimeMigrationPhase,
+  RuntimeMigrationRefusal,
   UnmovablePath,
 } from "api-server-api";
 
@@ -104,7 +104,7 @@ export function runtimeMigrationRefusal(
     storageMigrating?: boolean;
   },
   virtualizationEnabled: boolean,
-): MigrateRuntimeError | null {
+): RuntimeMigrationRefusal | null {
   if (isVmBackend(agent.spec)) return { type: "AlreadyOnVm" };
   if (!virtualizationEnabled) return { type: "VirtualizationDisabled" };
   if (agent.runtimeMigration) return { type: "RuntimeMigrationInProgress" };

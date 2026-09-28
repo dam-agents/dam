@@ -32,6 +32,7 @@ import {
   setSlackChannelAmbient,
   setSlackChannelDefault,
   createAgentSweep,
+  goDurationMs,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -1048,6 +1049,8 @@ export async function bootstrap() {
         agent.starterKitOnboarded === undefined
       );
     },
+    runtimeMigrating: async (agentId) =>
+      (await agentsRepo.get(agentId))?.runtimeMigration !== undefined,
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1288,6 +1291,9 @@ export async function bootstrap() {
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
+      runtimeMigrationRetentionMs: goDurationMs(
+        config.runtimeMigrationRetention,
+      ),
       agentDefaultStorageSize: config.agentDefaultStorageSize,
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,

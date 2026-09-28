@@ -354,6 +354,8 @@ virtualization:
   # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
   # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
   # the controller deletes it when the window passes or the agent is deleted.
+  # The api-server reads the same value to name the window in the Migrate
+  # dialog.
   runtimeMigration:
     retention: 168h
   # The CA the controller trusts a runner's serving certificate by. It is the

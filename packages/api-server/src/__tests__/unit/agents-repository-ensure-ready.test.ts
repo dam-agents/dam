@@ -271,6 +271,26 @@ describe("ensureReady", () => {
     ).toBe("2026-07-14T00:00:00Z");
   });
 
+  // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down until the copy has booted, so waiting for it would only run out the wake timeout. The wake refuses at once with a cause callers turn into "try again in a few minutes", and it does not poke the agent awake.
+  it("refuses at once while the agent is moving to the new runtime", async () => {
+    const obj = agentObj("a1", HIBERNATED);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "copying";
+    const { repo, store } = harness([obj]);
+    const err = await repo.ensureReady("a1").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err) && err.failure).toEqual({
+      kind: "migrating",
+    });
+    expect(
+      store.get("a1")?.metadata?.annotations?.[
+        "agent-platform.ai/last-activity"
+      ],
+    ).toBeUndefined();
+  });
+
   it("late ready at the deadline counts as success", async () => {
     const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
     const original = store.get("a1")!;

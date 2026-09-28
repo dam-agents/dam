@@ -1,4 +1,8 @@
-import type { Agent } from "./types.js";
+import type {
+  Agent,
+  RuntimeMigrationPlan,
+  RuntimeMigrationRefusal,
+} from "./types.js";
 
 export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
   return {
@@ -42,5 +46,45 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     ...(agent.onboardingSteps
       ? { onboardingSteps: agent.onboardingSteps }
       : {}),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the words for why an agent cannot move to the new runtime, one sentence per reason. The plan shows them before the user asks, and the migrate mutation refuses with the same sentences, so the two never disagree.
+export function runtimeMigrationRefusalReasons(
+  refusal: RuntimeMigrationRefusal,
+): string[] {
+  switch (refusal.type) {
+    case "AlreadyOnVm":
+      return ["This agent already runs on the new runtime"];
+    case "VirtualizationDisabled":
+      return [
+        "The new runtime is not enabled on this install (virtualization.enabled)",
+      ];
+    case "RuntimeMigrationInProgress":
+      return ["This agent is already moving to the new runtime"];
+    case "StorageMigrationInProgress":
+      return [
+        "This agent's storage is being migrated — try again once it finishes",
+      ];
+    case "PersistsUnmovablePaths":
+      return refusal.paths.map((p) => `${p.path} cannot be moved: ${p.reason}`);
+  }
+}
+
+export function toRuntimeMigrationPlanView(plan: RuntimeMigrationPlan) {
+  return {
+    moves: plan.moves,
+    unmovable: plan.unmovable,
+    storageSize: plan.storageSize,
+    storageResized: plan.storageResized,
+    bootsSleepingAgent: plan.bootsSleepingAgent,
+    retentionMs: plan.retentionMs,
+    allowed: plan.refusal === null,
+    refusal: plan.refusal
+      ? {
+          type: plan.refusal.type,
+          reasons: runtimeMigrationRefusalReasons(plan.refusal),
+        }
+      : null,
   };
 }

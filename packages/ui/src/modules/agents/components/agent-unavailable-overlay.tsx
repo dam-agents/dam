@@ -1,4 +1,11 @@
-import { Asleep, Play, Power, Renew, Warning } from "@carbon/icons-react";
+import {
+  Asleep,
+  Migrate,
+  Play,
+  Power,
+  Renew,
+  Warning,
+} from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +53,12 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     description:
       "Starting this agent would exceed your compute budget. Pause or stop " +
       "a running agent to free room, then start this one again.",
+  },
+  migrating: {
+    Icon: Migrate,
+    description:
+      "The agent is moving to the new sandbox runtime. It is back once its " +
+      "data has been copied, which takes a few minutes.",
   },
 };
 

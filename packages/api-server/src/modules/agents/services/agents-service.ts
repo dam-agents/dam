@@ -51,6 +51,7 @@ import {
   runtimeMigrationRefusal,
   runtimeMigrationSpecPatch,
 } from "../domain/runtime-migration.js";
+import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -564,6 +565,7 @@ export function createAgentsService(deps: {
   agentDefaultLimits: DefaultResourceLimits;
   agentDefaultStorageSize?: string;
   virtualizationEnabled?: boolean;
+  runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
@@ -1374,6 +1376,18 @@ export function createAgentsService(deps: {
         ...(deps.owner ? { ownerSub: deps.owner } : {}),
       });
       return ok(await project(result.value));
+    },
+
+    async planRuntimeMigration(id) {
+      const infra = await deps.repo.getLive(id, deps.owner);
+      if (!infra) return err({ type: "AgentNotFound" as const });
+      return ok(
+        runtimeMigrationPlan(infra, {
+          virtualizationEnabled: deps.virtualizationEnabled === true,
+          defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
+          retentionMs: deps.runtimeMigrationRetentionMs ?? null,
+        }),
+      );
     },
 
     async ensureReady(id, opts) {

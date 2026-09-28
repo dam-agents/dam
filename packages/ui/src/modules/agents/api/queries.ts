@@ -99,3 +99,14 @@ export function useAgentConnections(agentId: string | null) {
     refetchOnMount: "always",
   });
 }
+
+export function runtimeMigrationPlanOptions(agentId: string) {
+  return {
+    ...trpc.agents.planRuntimeMigration.queryOptions({ id: agentId }),
+    staleTime: 5000,
+  };
+}
+
+export function useRuntimeMigrationPlan(agentId: string) {
+  return useQuery(runtimeMigrationPlanOptions(agentId));
+}

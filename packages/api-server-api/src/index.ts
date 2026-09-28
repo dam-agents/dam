@@ -57,7 +57,11 @@ export type {
   MigrateRuntimeError,
   UnmovablePath,
   MigrateRuntimeResult,
+  PersistedMove,
+  PlanRuntimeMigrationResult,
   RuntimeMigration,
+  RuntimeMigrationPlan,
+  RuntimeMigrationRefusal,
   RuntimeMigrationPhase,
   ConnectSlackResult,
   BindSlackChannelResult,
@@ -73,7 +77,11 @@ export {
   agentKindSchema,
 } from "./modules/agents/schemas.js";
 export { isProtectedAgentEnvName } from "./modules/agents/types.js";
-export { toAgentView } from "./modules/agents/view.js";
+export {
+  runtimeMigrationRefusalReasons,
+  toAgentView,
+  toRuntimeMigrationPlanView,
+} from "./modules/agents/view.js";
 export type {
   BudgetReserved,
   BudgetsService,

@@ -104,6 +104,7 @@ export function computeAgentState(
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
+  if (infra.runtimeMigration) return "migrating";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";

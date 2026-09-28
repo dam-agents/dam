@@ -5,6 +5,7 @@ import {
   AGENTS_PLURAL,
   ANN_ROLL_REV,
   LAST_ACTIVITY_KEY,
+  RUNTIME_MIGRATION_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
 import {
@@ -360,6 +361,14 @@ export function createAgentsRepository(
         }
         if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
           throw new AgentStoppedError(id);
+        }
+        if (current.metadata?.annotations?.[RUNTIME_MIGRATION_KEY]) {
+          throw new AgentWakeTimeoutError({
+            agentId: id,
+            timeoutMs: WAKE_TIMEOUT_MS,
+            durationMs: 0,
+            failure: { kind: "migrating" },
+          });
         }
         if (await repo.isReady(id)) {
           await bumpLastActivity(id);
