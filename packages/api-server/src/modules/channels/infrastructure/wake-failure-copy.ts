@@ -11,6 +11,13 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       );
     case "over-budget":
       return `This agent can't start right now: ${c.message}.`;
+    case "migrating":
+      return "This agent is moving to the new runtime — try again in a few minutes.";
+    case "migration-failed":
+      return (
+        "This agent's move to the new runtime failed, and it stays stopped " +
+        "until its owner retries or aborts the move. Contact its owner."
+      );
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":

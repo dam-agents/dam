@@ -23,12 +23,17 @@ import {
   agentStopInputSchema,
   agentUpgradeInputSchema,
   agentMigrateRuntimeInputSchema,
+  agentPlanRuntimeMigrationInputSchema,
   agentAbortRuntimeMigrationInputSchema,
   agentRetryRuntimeMigrationInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
-import { toAgentView } from "./view.js";
+import {
+  runtimeMigrationRefusalReasons,
+  toAgentView,
+  toRuntimeMigrationPlanView,
+} from "./view.js";
 
 export const agentsRouter = t.router({
   list: readAgentProcedure.query(async ({ ctx }) => {
@@ -150,53 +155,33 @@ export const agentsRouter = t.router({
       }
     }),
 
+  planRuntimeMigration: readAgentProcedure
+    .input(agentPlanRuntimeMigrationInputSchema)
+    .query(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
+      const res = await ctx.agents.planRuntimeMigration(input.id);
+      if (!res.ok) throw new TRPCError({ code: "NOT_FOUND" });
+      return toRuntimeMigrationPlanView(res.value);
+    }),
+
   migrateRuntime: manageAgentsProcedure
     .input(agentMigrateRuntimeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.migrateRuntime(input.id);
       if (res.ok) return toAgentView(res.value);
+      if (res.error.type === "AgentNotFound")
+        throw new TRPCError({ code: "NOT_FOUND" });
+      const message = runtimeMigrationRefusalReasons(res.error).join("; ");
       switch (res.error.type) {
-        case "AgentNotFound":
-          throw new TRPCError({ code: "NOT_FOUND" });
         case "AlreadyOnVm":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "This agent already runs on the new runtime",
-          });
-        case "VirtualizationDisabled":
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message:
-              "The new runtime is not enabled on this install (virtualization.enabled)",
-          });
         case "RuntimeMigrationInProgress":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "This agent is already moving to the new runtime",
-          });
         case "StorageMigrationInProgress":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent's storage is being migrated — try again once it finishes",
-          });
-        case "PersistsUnmovablePaths":
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `The new runtime keeps an agent's data in its home directory and cannot move ${res.error.paths.map((p) => `${p.path} (${p.reason})`).join("; ")}`,
-          });
-        case "HomeNotPersisted":
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message:
-              "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
-          });
         case "ConcurrentUpdate":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent changed while the move was being requested — try again",
-          });
+          throw new TRPCError({ code: "CONFLICT", message });
+        case "VirtualizationDisabled":
+        case "PersistsUnmovablePaths":
+        case "HomeNotPersisted":
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message });
       }
     }),
 

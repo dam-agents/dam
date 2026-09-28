@@ -327,6 +327,11 @@ async function unreachableSandboxCopy(
         title: "This sandbox isn't running",
         detail: "Start the sandbox, then re-scan to list this source's skills.",
       };
+    case "migrating":
+      return {
+        title: "This sandbox is moving to the new runtime",
+        detail: "Re-scan once the move finishes to list this source's skills.",
+      };
     case "error":
     case "over_budget":
       return {

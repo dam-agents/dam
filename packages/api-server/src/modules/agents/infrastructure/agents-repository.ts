@@ -101,6 +101,22 @@ function assertBackendUntouched(patch: Record<string, unknown>): void {
     );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a wake for an Agent a runtime migration holds down could only wait out the timeout, so it is refused at once, with a cause that says whether the move is under way or failed after it stopped the container.
+function refuseWhileMigrating(
+  id: string,
+  infra: InfraAgent,
+  durationMs: number,
+): void {
+  const hold = infra.runtimeMigrationHold ?? "none";
+  if (hold === "none") return;
+  throw new AgentWakeTimeoutError({
+    agentId: id,
+    timeoutMs: WAKE_TIMEOUT_MS,
+    durationMs,
+    failure: { kind: hold === "failed" ? "migration-failed" : "migrating" },
+  });
+}
+
 export function createAgentsRepository(
   k8s: K8sClient,
   cache: AgentStateCache,
@@ -380,6 +396,7 @@ export function createAgentsRepository(
         if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
           throw new AgentStoppedError(id);
         }
+        refuseWhileMigrating(id, parseInfraAgent(current), 0);
         if (await repo.isReady(id)) {
           await bumpLastActivity(id);
           return;
@@ -409,6 +426,7 @@ export function createAgentsRepository(
               throw new AgentStoppedError(id);
             }
             const infra = parseInfraAgent(obj);
+            refuseWhileMigrating(id, infra, Date.now() - startedAt);
             if (infra.overBudget) {
               const graceOver =
                 Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;

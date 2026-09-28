@@ -28,6 +28,8 @@ export const RUNTIME_MIGRATION_SNAPSHOT_KEY =
   "agent-platform.ai/runtime-migration-snapshot";
 export const RUNTIME_MIGRATION_RETRY_KEY =
   "agent-platform.ai/runtime-migration-retry";
+export const RUNTIME_MIGRATION_SOURCE_KEY =
+  "agent-platform.ai/runtime-migration-source";
 export const RUNTIME_MIGRATING_CONDITION = "RuntimeMigrating";
 export const STORAGE_MIGRATION_KEY = "agent-platform.ai/storage-migration";
 

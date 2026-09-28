@@ -354,6 +354,8 @@ virtualization:
   # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
   # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
   # the controller deletes it when the window passes or the agent is deleted.
+  # The api-server reads the same value to name the window in the Migrate
+  # dialog.
   # `concurrency` caps the copy Jobs running at once in the install and
   # `ownerConcurrency` those of one owner, whose copies all land on the same
   # runner claim; a migration past either cap waits, and says so on the Agent.

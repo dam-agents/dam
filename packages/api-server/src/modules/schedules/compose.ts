@@ -42,6 +42,7 @@ export interface ComposeSchedulesAtBootOpts {
   ) => Promise<void>;
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
+  runtimeMigrating?: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
@@ -63,6 +64,9 @@ export function composeSchedulesAtBoot(
     ),
     ...(opts.onboardingPending
       ? { onboardingPending: opts.onboardingPending }
+      : {}),
+    ...(opts.runtimeMigrating
+      ? { runtimeMigrating: opts.runtimeMigrating }
       : {}),
     log,
   });

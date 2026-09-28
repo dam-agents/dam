@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadConfig } from "../../config.js";
+import { agentsInstallSettings, loadConfig } from "../../config.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   PLATFORM_RELEASE_NAME: "platform",
@@ -103,6 +103,62 @@ describe("loadConfig — object storage", () => {
     process.env.OBJECT_STORAGE_ENDPOINT = "http://seaweedfs:8333";
     process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "platform";
     expect(() => loadConfig()).toThrow(/must be set together/);
+  });
+});
+
+describe("agentsInstallSettings — what every agents module is built with", () => {
+  const managed = [
+    ...Object.keys(REQUIRED_ENV),
+    "RUNTIME_MIGRATION_RETENTION",
+    "AGENT_DEFAULT_STORAGE_SIZE",
+    "VIRTUALIZATION_ENABLED",
+    "AGENT_DEFAULT_MOUNTS",
+  ];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window, disk default and default mounts rather than none.
+  it("carries the chart's retention window, disk default and default mounts", () => {
+    process.env.RUNTIME_MIGRATION_RETENTION = "72h";
+    process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
+    process.env.VIRTUALIZATION_ENABLED = "true";
+    expect(agentsInstallSettings(loadConfig())).toEqual({
+      virtualizationEnabled: true,
+      agentDefaultStorageSize: "20Gi",
+      agentDefaultMounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/tmp", persist: false },
+      ],
+      runtimeMigrationRetentionMs: 72 * 3600_000,
+    });
+  });
+
+  it("defaults the retention window to a week", () => {
+    expect(
+      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
+    ).toBe(7 * 24 * 3600_000);
+  });
+
+  // TEST_SCENARIO: the controller keeps a volume whose window it cannot read, so the api-server must not invent one either.
+  it("reads a retention window it cannot parse as unknown", () => {
+    process.env.RUNTIME_MIGRATION_RETENTION = "7d";
+    expect(
+      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
+    ).toBeNull();
   });
 });
 

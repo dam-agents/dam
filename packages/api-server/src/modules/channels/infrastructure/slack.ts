@@ -1554,6 +1554,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agent.state === "hibernated" ||
         agent.state === "hibernating" ||
         agent.state === "over_budget" ||
+        agent.state === "migrating" ||
         agent.state === "error"
       );
     },

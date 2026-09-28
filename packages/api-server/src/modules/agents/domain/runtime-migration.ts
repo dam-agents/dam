@@ -1,12 +1,13 @@
 import type {
   AbortRuntimeMigrationError,
   AgentSpec,
-  MigrateRuntimeError,
   RetryRuntimeMigrationError,
   RuntimeMigration,
   RuntimeMigrationPhase,
+  RuntimeMigrationRefusal,
   UnmovablePath,
 } from "api-server-api";
+import { match } from "ts-pattern";
 
 export const AGENT_HOME = "/home/agent";
 
@@ -164,7 +165,7 @@ export function runtimeMigrationRefusal(
     storageMigrating?: boolean;
   },
   ctx: RuntimeMigrationContext,
-): MigrateRuntimeError | null {
+): RuntimeMigrationRefusal | null {
   if (agent.runtimeMigration) return { type: "RuntimeMigrationInProgress" };
   if (isVmBackend(agent.spec)) return { type: "AlreadyOnVm" };
   if (!ctx.virtualizationEnabled) return { type: "VirtualizationDisabled" };
@@ -325,6 +326,23 @@ export function runtimeMigrationRestoreSpec(
     runtimeClassName: snapshot.runtimeClassName,
     nodeSelector: snapshot.nodeSelector,
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a migration keeps the Agent from answering, which is what makes it read as migrating, refuses a wake at once and holds a schedule fire. The container keeps running through the preflight, so a requested migration holds nothing yet. From the stop until the machine has booted from the copy, nothing answers. A verified machine answers, and an abort brings the container back, so both are waited for like any start. A failure holds the Agent only when it came after the stop, which the controller marks by recording the old volumes; a preflight failure never stopped the container.
+export type RuntimeMigrationHold = "none" | "migrating" | "failed";
+
+export function runtimeMigrationHold(
+  migration: RuntimeMigration | undefined,
+  containerStopped: boolean,
+): RuntimeMigrationHold {
+  if (!migration) return "none";
+  return match(migration.phase)
+    .with("requested", "verified", "aborting", () => "none" as const)
+    .with("stopping", "copying", "booting", () => "migrating" as const)
+    .with("failed", (): RuntimeMigrationHold =>
+      containerStopped ? "failed" : "none",
+    )
+    .exhaustive();
 }
 
 export function abortRuntimeMigrationRefusal(agent: {

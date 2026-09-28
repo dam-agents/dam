@@ -135,7 +135,7 @@ import { composeAuditModule } from "./modules/audit/index.js";
 import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
-import { loadConfig } from "./config.js";
+import { agentsInstallSettings, loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
@@ -763,13 +763,13 @@ export async function bootstrap() {
 
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
+    install: agentsInstallSettings(config),
     api,
     resolveSlackWorkspace: (slackChannelId) =>
       resolveSlackWorkspace(slackChannelId),
     agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
-    agentDefaultMounts: config.agentDefaultMounts,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
       memory: config.agentDefaultMemoryLimit,
@@ -1050,6 +1050,9 @@ export async function bootstrap() {
         agent.starterKitOnboarded === undefined
       );
     },
+    runtimeMigrating: async (agentId) =>
+      ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
+      "none",
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1289,9 +1292,7 @@ export async function bootstrap() {
       agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
-      virtualizationEnabled: config.virtualizationEnabled,
-      agentDefaultStorageSize: config.agentDefaultStorageSize,
-      agentDefaultMounts: config.agentDefaultMounts,
+      install: agentsInstallSettings(config),
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,

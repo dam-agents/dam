@@ -39,6 +39,7 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
+  | "migrating"
   | "error";
 
 export type AgentSpec = AgentSpecCR & { name: string };
@@ -149,6 +150,30 @@ export interface UnmovablePath {
   reason: string;
 }
 
+export type RuntimeMigrationRefusal = Exclude<
+  MigrateRuntimeError,
+  { type: "AgentNotFound" }
+>;
+
+export interface PersistedMove {
+  from: string;
+  to: string;
+}
+
+export interface RuntimeMigrationPlan {
+  moves: PersistedMove[];
+  unmovable: UnmovablePath[];
+  storageSize: string;
+  storageResized: boolean;
+  bootsSleepingAgent: boolean;
+  retentionMs: number | null;
+  refusal: RuntimeMigrationRefusal | null;
+}
+
+export type PlanRuntimeMigrationResult =
+  | { ok: true; value: RuntimeMigrationPlan }
+  | { ok: false; error: { type: "AgentNotFound" } };
+
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
@@ -237,6 +262,7 @@ export interface AgentsService {
     expectedToImage?: string,
   ) => Promise<UpgradeAgentResult>;
   migrateRuntime: (id: string) => Promise<MigrateRuntimeResult>;
+  planRuntimeMigration: (id: string) => Promise<PlanRuntimeMigrationResult>;
   abortRuntimeMigration: (id: string) => Promise<AbortRuntimeMigrationResult>;
   retryRuntimeMigration: (id: string) => Promise<RetryRuntimeMigrationResult>;
   ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;

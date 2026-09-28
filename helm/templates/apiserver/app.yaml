@@ -247,6 +247,8 @@ spec:
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
+            - name: RUNTIME_MIGRATION_RETENTION
+              value: {{ (.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString | quote }}
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED

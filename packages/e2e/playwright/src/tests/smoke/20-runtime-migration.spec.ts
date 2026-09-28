@@ -134,7 +134,7 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
   ).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
+// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
 test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
   test.setTimeout(1_200_000);
   await setVmSandboxes(api, true);
@@ -144,6 +144,9 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
     timeout: 30_000,
   });
   await row.getByRole("button", { name: "Migrate", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText(
+    "The old volumes are kept for",
+  );
   await page
     .getByRole("alertdialog")
     .getByRole("button", { name: "Migrate", exact: true })

@@ -128,6 +128,7 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
+  | "migrating"
   | "error";
 
 export interface AgentView {
@@ -189,6 +190,17 @@ export interface RuntimeMigrationView {
   attempts?: number;
   abortable: boolean;
   retryable: boolean;
+}
+
+export interface RuntimeMigrationPlanView {
+  moves: { from: string; to: string }[];
+  unmovable: { path: string; reason: string }[];
+  storageSize: string;
+  storageResized: boolean;
+  bootsSleepingAgent: boolean;
+  retentionMs: number | null;
+  allowed: boolean;
+  refusal: { type: string; reasons: string[] } | null;
 }
 
 interface QuietWindowView {
