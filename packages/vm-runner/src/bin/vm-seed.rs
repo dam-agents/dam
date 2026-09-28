@@ -7,7 +7,7 @@ use clap::Parser;
 use vm_runner::api::SeedResult;
 use vm_runner::seed::{write_layout, Graft, Limits, Link, Options, OwnerMap, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner. `--map-owner` defaults to the container's agent uid going to the machine's root, which is what every migration needs, so the Job need not pass it; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the moved paths to link back at boot, the runner's seed URL for the agent's machine, and the runner's token and CA, mounted from the Secrets the controller already keeps for that runner. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -35,19 +35,25 @@ struct Args {
 // UNIT_BOUNDARY_DESCRIPTION: the container ran the agent as uid and gid 65532, and a machine's harness runs as root.
 const CONTAINER_TO_MACHINE: &str = "65532:0";
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner map is `FROM:TO`, two numeric ids; each entry owned by FROM, as a uid or as a gid, is stored as owned by TO.
+// UNIT_BOUNDARY_DESCRIPTION: an owner map is `UID:GID:TO`, or `FROM:TO` when the uid and gid are the same, all numeric ids; each entry owned by that uid, or by that gid, is stored as owned by TO.
 fn parse_owner_map(value: &str) -> Result<OwnerMap, String> {
-    let (from, to) = value
-        .split_once(':')
-        .ok_or_else(|| format!("{value:?} is not FROM:TO"))?;
     let id = |part: &str| {
         part.parse::<u32>()
             .map_err(|e| format!("{part:?} in {value:?} is not a numeric id: {e}"))
     };
-    Ok(OwnerMap {
-        from: id(from)?,
-        to: id(to)?,
-    })
+    match value.split(':').collect::<Vec<_>>()[..] {
+        [from, to] => Ok(OwnerMap {
+            uid: id(from)?,
+            gid: id(from)?,
+            to: id(to)?,
+        }),
+        [uid, gid, to] => Ok(OwnerMap {
+            uid: id(uid)?,
+            gid: id(gid)?,
+            to: id(to)?,
+        }),
+        _ => Err(format!("{value:?} is not UID:GID:TO or FROM:TO")),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a graft is `AT=DIR`: where the volume goes, relative to the home, and where the Job mounted it. The split is at the last `=`, because the Job names the mount and never puts one in it, while the place comes from a path the agent's spec declared.
@@ -330,11 +336,18 @@ mod tests {
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
         assert!(args.grafts.is_empty());
         assert!(args.links.0.is_empty());
-        assert_eq!(args.map_owner, OwnerMap { from: 65532, to: 0 });
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 65532,
+                gid: 65532,
+                to: 0
+            }
+        );
         assert_eq!(args.max_bytes, None);
     }
 
-    // TEST_SCENARIO: without `--map-owner` every migration maps the container's agent to the machine's root, so the controller's Job needs no new flag. One that names another pair is read as that pair, and one that is not two numeric ids is refused at the start rather than seeding a home with the wrong owner.
+    // TEST_SCENARIO: without `--map-owner` every migration maps the container's agent to the machine's root, so the controller's Job needs no new flag. One that names another uid and gid is read as those, and one that is not two or three numeric ids is refused at the start rather than seeding a home with the wrong owner.
     #[test]
     fn the_owner_map_defaults_to_the_containers_agent_becoming_root() {
         let base = [
@@ -350,14 +363,21 @@ mod tests {
         ];
         let args = Args::try_parse_from(base.iter().copied().chain([
             "--map-owner",
-            "1000:0",
+            "1000:2000:0",
             "--max-bytes",
             "4096",
         ]))
         .unwrap();
-        assert_eq!(args.map_owner, OwnerMap { from: 1000, to: 0 });
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 1000,
+                gid: 2000,
+                to: 0
+            }
+        );
         assert_eq!(args.max_bytes, Some(4096));
-        for bad in ["65532", "a:0", "0:-1", ""] {
+        for bad in ["65532", "a:0", "0:-1", "1:2:3:4", ""] {
             assert!(
                 Args::try_parse_from(base.iter().copied().chain(["--map-owner", bad])).is_err(),
                 "{bad:?}"

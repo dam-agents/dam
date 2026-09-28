@@ -22,19 +22,20 @@ pub struct Options {
     pub limits: Limits,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one numeric id rewritten on every entry, as a uid and as a gid. The container ran the agent as 65532 for both, and a machine's harness runs as root, so a home carried with its owners unchanged is one root does not own: git refuses every repository in it as of dubious ownership, and ssh refuses a config another user owns. Every other owner is kept as it was.
+// UNIT_BOUNDARY_DESCRIPTION: the container's agent uid and gid, each rewritten to one machine id on every entry. The container ran the agent as the install's agent uid and gid, 65532 for both by default, and a machine's harness runs as root, so a home carried with its owners unchanged is one root does not own: git refuses every repository in it as of dubious ownership, and ssh refuses a config another user owns. Every other owner is kept as it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OwnerMap {
-    pub from: u32,
+    pub uid: u32,
+    pub gid: u32,
     pub to: u32,
 }
 
 impl OwnerMap {
     fn apply(&self, header: &mut tar::Header) -> io::Result<()> {
-        if header.uid()? == u64::from(self.from) {
+        if header.uid()? == u64::from(self.uid) {
             header.set_uid(u64::from(self.to));
         }
-        if header.gid()? == u64::from(self.from) {
+        if header.gid()? == u64::from(self.gid) {
             header.set_gid(u64::from(self.to));
         }
         Ok(())
@@ -1049,7 +1050,8 @@ mod tests {
                 .is_ok();
         let options = Options {
             owner: Some(OwnerMap {
-                from: mine.uid(),
+                uid: mine.uid(),
+                gid: mine.gid(),
                 to: 4242,
             }),
             ..Options::default()
