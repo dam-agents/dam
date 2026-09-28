@@ -123,7 +123,7 @@ export async function gotoAgentChat(
   agentName: string,
   agentId: string,
 ): Promise<void> {
-  await page.getByRole("heading", { name: agentName }).click();
+  await page.getByRole("heading", { name: agentName, exact: true }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
