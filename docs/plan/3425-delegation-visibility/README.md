@@ -36,9 +36,11 @@ platform remembers the delegation:
   attribution), and shown with the same `TurnTelemetry` line every assistant reply already
   carries when the `agent-telemetry` feature is on. It ages out with the telemetry store's
   30-day retention. Page: [metrics](../../architecture/metrics.md).
-- **The child's conversation is captured at teardown into object storage** through the
-  existing artifact store, and the record keeps the key. A finished child opens read-only
-  from the stored frames.
+- **The child's conversation is copied at teardown onto the root driver's volume**, under
+  `.platform/delegations/`, next to the root's own sessions, and the record notes that it
+  was captured. A finished child opens read-only from the stored frames, read back through
+  the root's runtime. Object storage stays the fallback if the root turns out too often
+  unreachable at capture.
 
 Out of scope, as the issue and the ADR state: reviving a finished child for follow-up
 questions (a later decision, seeded from the stored frames), and showing background
@@ -60,9 +62,11 @@ own session, telemetry or image, so nothing in this plan applies to it. This pla
   reports, through one reap path the liveness sweep backstops, so its last telemetry batch
   lands before the pod goes; deadline, pod restart and driver cascade still reap at once. The
   row deletion ten minutes after terminal is removed.
-- **Capture happens before the delete, best effort, bounded.** A child whose pod does not
-  answer within the capture budget yields a record without a conversation, never a failed
-  reap and never a blocked `report_result`.
+- **Capture happens before the delete, best effort, bounded, and never wakes the root.**
+  While a driver awaits its children its turn is active, so the root is up at report time.
+  A root that is stopped, paused, crashed, or whose turn ended without awaiting, is skipped.
+  A child whose pod does not answer within the capture budget yields a record without a
+  conversation, never a failed reap and never a blocked `report_result`.
 - **The stored conversation is ACP frames, not a rendered document.** One `session/update`
   JSON-RPC frame per line, the exact shape the runtime's history providers already produce
   and the UI's `applyUpdate` reducer already folds. No new format.
@@ -257,7 +261,7 @@ the environment, and what a reader that understands both shapes costs.
 | 06 | ✅ Delegation block in chat | Recogniser, block in place of the chip, nested nodes, live refresh | 01, 03, 04, 05 |
 | 07 | ✅ Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
 | 10 | ✅ A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
-| 08 | Capture the child conversation at teardown | Capture inside the reap path, store via the artifact store, key on the record, cleanup, docs | 07, 10 |
+| 08 | ✅ Capture the child conversation at teardown | Capture inside the reap path, store on the root driver's volume, flag on the record, docs | 07, 10 |
 | 09 | Read-only child view | `invocations.transcript`; docked panel rendering stored frames | 01, 06, 08 |
 
 ```mermaid
@@ -310,8 +314,8 @@ On the dev cluster with a `claude-code` Agent that holds a model connection:
 5. Wait fifteen minutes: the block is unchanged (no ten-minute drop).
 6. Click a finished row: the right panel opens the child's conversation read-only, ending
    with its `report_result` call.
-7. Delete the driver: the rows are gone from `invocations` and the stored frames are gone
-   from the bucket.
+7. Delete the driver: the rows are gone from `invocations`, and the stored frames go with
+   the driver's volume.
 
 ## Delivery
 

@@ -15,6 +15,7 @@ export interface DelegationRecord {
   result: unknown;
   createdAt: Date;
   completedAt: Date | null;
+  transcriptCaptured: boolean;
 }
 
 function toNode(
@@ -36,7 +37,7 @@ function toNode(
     memory: row.memory,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
-    transcriptAvailable: false,
+    transcriptAvailable: row.transcriptCaptured,
     children,
   };
 }

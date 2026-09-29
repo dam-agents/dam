@@ -38,6 +38,21 @@ export const sessionHistorySchema = z.object({
   truncated: z.boolean(),
 });
 
+export const delegationIdSchema = z.string().regex(/^agent-[a-z0-9]+$/);
+
+export const delegationFramesInputSchema = z.object({
+  invocationId: delegationIdSchema,
+});
+
+export const storeDelegationFramesInputSchema = z.object({
+  invocationId: delegationIdSchema,
+  frames: z.array(z.string()),
+});
+
+export const delegationFramesSchema = z.object({
+  frames: z.array(z.string()),
+});
+
 export const podSessionNoticeSchema = z.object({
   topic: z.literal("sessions"),
 });

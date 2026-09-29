@@ -38,6 +38,8 @@ export interface InvocationRow extends InvocationSpec {
   completedAt: Date | null;
   reapedAt: Date | null;
   experimentSpanId: string | null;
+  transcriptCaptured: boolean;
+  transcriptTruncated: boolean;
 }
 
 export interface InvocationsRepository {
@@ -62,6 +64,7 @@ export interface InvocationsRepository {
   listRootDriverIds(): Promise<string[]>;
   listTerminalUnreaped(before: Date, limit: number): Promise<InvocationRow[]>;
   markReaped(id: string): Promise<void>;
+  markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
   listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
   listByExperiment(
     driverAgentId: string,
@@ -104,6 +107,8 @@ function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     completedAt: r.completedAt,
     reapedAt: r.reapedAt,
     experimentSpanId: r.experimentSpanId,
+    transcriptCaptured: r.transcriptCaptured,
+    transcriptTruncated: r.transcriptTruncated,
   };
 }
 
@@ -241,6 +246,13 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       await db
         .update(invocationsTable)
         .set({ reapedAt: new Date() })
+        .where(eq(invocationsTable.id, id));
+    },
+
+    async markTranscriptCaptured(id, truncated) {
+      await db
+        .update(invocationsTable)
+        .set({ transcriptCaptured: true, transcriptTruncated: truncated })
         .where(eq(invocationsTable.id, id));
     },
 

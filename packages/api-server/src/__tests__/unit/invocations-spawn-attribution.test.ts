@@ -38,6 +38,7 @@ function makeService(opts: {
     delete: async (id) => {
       rec.deleted.push(id);
     },
+    markTranscriptCaptured: async () => {},
     deleteByRoot: async () => 0,
   };
   const service = createInvocationsService({

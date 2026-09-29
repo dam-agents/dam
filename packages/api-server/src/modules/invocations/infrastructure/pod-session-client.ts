@@ -1,13 +1,27 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import type { AppRouter } from "agent-runtime-api";
+import {
+  delegationFramesSchema,
+  sessionHistorySchema,
+  type AppRouter,
+} from "agent-runtime-api";
+import { z } from "zod";
 
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
-import type {
-  TargetFrames,
-  TargetFramesReader,
-} from "../services/target-frames-reader.js";
+import type { DelegationFramesPort } from "../services/delegation-frames.js";
 
-const READ_TIMEOUT_MS = 15_000;
+const CALL_TIMEOUT_MS = 15_000;
+
+const sessionListSchema = z.object({
+  sessions: z.array(
+    z.object({
+      sessionId: z.string(),
+      scheduleId: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+});
+
+const storedSchema = z.object({ truncated: z.boolean() });
 
 export function invocationScheduleId(agentId: string): string {
   return `invocation:${agentId}`;
@@ -34,30 +48,76 @@ function pickInvocationSession(
   return mine.at(-1)?.sessionId ?? null;
 }
 
-export function createPodSessionClient(namespace: string): TargetFramesReader {
+function clientFor(agentId: string, namespace: string) {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+      }),
+    ],
+  });
+}
+
+async function logged<T>(
+  what: string,
+  agentId: string,
+  fallback: T,
+  call: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  try {
+    return await call(AbortSignal.timeout(CALL_TIMEOUT_MS));
+  } catch (err) {
+    process.stderr.write(
+      `[invocations] ${what} ${agentId} failed: ${err instanceof Error ? err.message : err}\n`,
+    );
+    return fallback;
+  }
+}
+
+export function createPodSessionClient(opts: {
+  namespace: string;
+  isReady: (agentId: string) => Promise<boolean>;
+}): DelegationFramesPort {
   return {
-    async read(agentId): Promise<TargetFrames | null> {
-      const signal = AbortSignal.timeout(READ_TIMEOUT_MS);
-      const client = createTRPCClient<AppRouter>({
-        links: [
-          httpBatchLink({
-            url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-          }),
-        ],
-      });
-      try {
-        const { sessions } = await client.sessions.list.query(undefined, {
-          signal,
-        });
-        const sessionId = pickInvocationSession(sessions, agentId);
-        if (sessionId === null) return null;
-        return await client.sessions.history.query({ sessionId }, { signal });
-      } catch (err) {
-        process.stderr.write(
-          `[invocations] frames read ${agentId} failed: ${err instanceof Error ? err.message : err}\n`,
+    readFromTarget: (targetId) =>
+      logged("frames read", targetId, null, async (signal) => {
+        const client = clientFor(targetId, opts.namespace);
+        const { sessions } = sessionListSchema.parse(
+          await client.sessions.list.query(undefined, { signal }),
         );
-        return null;
-      }
+        const sessionId = pickInvocationSession(sessions, targetId);
+        if (sessionId === null) return null;
+        return sessionHistorySchema.parse(
+          await client.sessions.history.query({ sessionId }, { signal }),
+        );
+      }),
+
+    async storeOnRoot(rootId, invocationId, frames) {
+      if (!(await opts.isReady(rootId))) return null;
+      return logged("frames store on", rootId, null, async (signal) =>
+        storedSchema.parse(
+          await clientFor(
+            rootId,
+            opts.namespace,
+          ).sessions.storeDelegationFrames.mutate(
+            { invocationId, frames },
+            { signal },
+          ),
+        ),
+      );
     },
+
+    readFromRoot: (rootId, invocationId) =>
+      logged("frames read from", rootId, null, async (signal) => {
+        const stored = delegationFramesSchema
+          .nullable()
+          .parse(
+            await clientFor(
+              rootId,
+              opts.namespace,
+            ).sessions.delegationFrames.query({ invocationId }, { signal }),
+          );
+        return stored?.frames ?? null;
+      }),
   };
 }

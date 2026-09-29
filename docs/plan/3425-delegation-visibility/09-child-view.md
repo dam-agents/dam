@@ -20,12 +20,14 @@ Follow the README `## Design` section.
 1. **Procedure** — `packages/api-server-api/src/modules/invocations/router.ts`:
    `transcript: readAgentProcedure.input({ driverAgentId, id }).query(...)` with
    `checkAgentBinding(ctx, input.driverAgentId)`. The query service resolves the row, checks
-   it belongs to the driver's root and owner, reads the object through
-   `Pick<ArtifactService, "get">`, splits lines, returns `{ frames, truncated }`. A row
-   without a key returns `NOT_FOUND`.
+   it belongs to the driver's root and owner, and reads the frames from the root's runtime
+   through slice 08's `DelegationFramesPort.readFromRoot`, which returns
+   the frames; `truncated` comes from the row. A row not captured, a copy the root's cap
+   has since evicted, or a root that does not answer, returns `NOT_FOUND`. Viewing the
+   driver's chat has already woken the root.
 2. **Query** — `packages/ui/src/modules/invocations/api/queries.ts`:
-   `useDelegationTranscript(driverAgentId, id, enabled)`; stale forever, the object is
-   immutable.
+   `useDelegationTranscript(driverAgentId, id, enabled)`; stale forever, the copy is
+   written once.
 3. **Fold frames to messages** — `packages/ui/src/modules/invocations/lib/frames-to-messages.ts`:
    parse each frame, take `params`, and reduce with
    `applyUpdate(messages, update, frame._meta.platform.at, telemetryPromptId)` from
@@ -46,7 +48,8 @@ Follow the README `## Design` section.
    dock wiring.
 5. **Wire the open control** from slice 06: a finished node with `transcriptAvailable`
    opens the panel on the stored frames; a finished node without it shows a disabled control
-   with a tooltip "conversation was not captured". A running node opens the same panel in
+   with a tooltip "conversation was not captured". A captured row whose copy is gone opens
+   the panel on "This conversation is no longer kept." A running node opens the same panel in
    its live state: attach to the child agent over ACP with `passive: true`
    (`modules/acp/acp.ts`, as `acp-session-ops.ts` does to list sessions), `session/load`
    its one session, fold the replayed and streamed updates with the same `applyUpdate`

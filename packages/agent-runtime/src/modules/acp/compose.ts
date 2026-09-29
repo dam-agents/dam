@@ -41,10 +41,12 @@ import {
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
 
 export interface ComposeAcpOptions {
   command: string[];
   workingDir: string;
+  agentHome: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   sessionHistory?: {
@@ -139,6 +141,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
+    delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
   });
 

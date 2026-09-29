@@ -12,12 +12,16 @@ export type {
   SessionDirectoryEntry,
   SessionHistory,
   SessionsService,
+  StoreDelegationFramesInput,
+  DelegationFrames,
 } from "./modules/sessions/types.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,
   podSessionTypeSchema,
   sessionDirectoryReportSchema,
+  sessionHistorySchema,
+  delegationFramesSchema,
 } from "./modules/sessions/schemas.js";
 
 export { ok, err } from "./result.js";

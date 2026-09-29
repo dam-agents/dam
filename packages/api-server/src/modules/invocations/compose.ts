@@ -17,9 +17,27 @@ import {
   type DriverResolution,
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
-import { createTargetReaper } from "./services/target-reaper.js";
+import { createTargetCapture } from "./services/target-capture.js";
+import type { DelegationFramesPort } from "./services/delegation-frames.js";
+import {
+  createTargetReaper,
+  type TargetReaper,
+} from "./services/target-reaper.js";
+import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+
+function composeReaper(
+  repo: InvocationsRepository,
+  agentsFor: (owner: string) => AgentsService,
+  frames: DelegationFramesPort,
+): TargetReaper {
+  return createTargetReaper({
+    repo,
+    agentsFor,
+    capture: createTargetCapture({ repo, frames }),
+  });
+}
 
 export function composeInvocationsForOwner(opts: {
   db: Db;
@@ -27,6 +45,7 @@ export function composeInvocationsForOwner(opts: {
   agents: AgentsService;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  frames: DelegationFramesPort;
   targetAdmission?: TargetAdmission;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
@@ -36,7 +55,7 @@ export function composeInvocationsForOwner(opts: {
     repo,
     agents: opts.agents,
     driverResolution: createDriverResolution({ repo }),
-    reaper: createTargetReaper({ repo, agentsFor: () => opts.agents }),
+    reaper: composeReaper(repo, () => opts.agents, opts.frames),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
@@ -88,11 +107,12 @@ export function composeInvocationLivenessSweep(opts: {
   agentsFor: (owner: string) => AgentsService;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   batchSize: number;
+  frames: DelegationFramesPort;
 }): InvocationLivenessSweep {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationLivenessSweep({
     repo,
-    reaper: createTargetReaper({ repo, agentsFor: opts.agentsFor }),
+    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
     readTargetRestart: opts.readTargetRestart,
     batchSize: opts.batchSize,
   });
@@ -105,11 +125,12 @@ export function createDriverResolutionAdapter(db: Db): DriverResolution {
 export function createInvocationsCleanupHook(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
+  frames: DelegationFramesPort;
 }): (agentId: string) => Promise<void> {
   const repo = createInvocationsRepository(opts.db);
   return createDriverCascade({
     repo,
-    reaper: createTargetReaper({ repo, agentsFor: opts.agentsFor }),
+    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
   });
 }
 

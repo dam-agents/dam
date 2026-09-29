@@ -23,7 +23,7 @@ export function createDriverCascade(deps: {
         result: "success",
         detail: { driverAgentId: agentId },
       });
-      await deps.reaper.reap(row);
+      await deps.reaper.reap(row, { capture: own !== null });
     }
     if (own === null) await deps.repo.deleteByRoot(agentId);
   };

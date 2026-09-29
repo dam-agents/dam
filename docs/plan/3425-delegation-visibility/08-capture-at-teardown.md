@@ -6,61 +6,63 @@
 ## Context
 
 The child's conversation lives on the child's volume and is reclaimed with it. ADR-094
-keeps a copy: before every reap, read the frames out of the pod and store them through the
-artifact store, key on the record. Capture is best effort and bounded; it never blocks
-`report_result`, never fails a reap, and a child that does not answer yields a record with
-no conversation. This is the first place the platform stores a session transcript outside
-the harness's own store, so the persistence page changes too.
+keeps a copy on the **root driver's** volume, where the root's own sessions live: before
+every reap, read the frames out of the child's pod and hand them to the root's runtime,
+which writes them under `.platform/delegations/`. The record notes that it was captured.
+Capture is best effort and bounded; it never blocks `report_result`, never fails a reap,
+never wakes the root, and a child or root that does not answer yields a record with no
+conversation. Retention comes with the root's volume, so there is no purge.
 
 Apply `/typescript-engineering`.
 
 ## Implementation plan
 
-1. **Schema** — `packages/db/src/schema.ts` `invocations`: add `transcript_key text` and
+1. **Schema** — `packages/db/src/schema.ts` `invocations`: add
+   `transcript_captured boolean not null default false` and
    `transcript_truncated boolean not null default false`. `mise run //packages/db:generate`.
-   Repository: `setTranscript(id, key, truncated)`, and `deleteByRoot` now also returns the
-   keys it removed so the caller can purge blobs.
-2. **Store port** — in the invocations module declare
-   `TranscriptStore = Pick<ArtifactService, "put" | "delete" | "maxBytes">`, the same
-   structural narrowing kb-shares uses (`kb-shares/compose.ts:54-57`). Inject the `artifacts`
-   singleton from `bootstrap.ts` where the invocations services are composed (harness app
-   and cleanup hook). Key shape: `invocations/<owner>/<id>/frames.jsonl`, content type
-   `application/x-ndjson`, one frame per line. If the joined frames exceed `maxBytes`, keep
-   the newest lines that fit and set `truncated`.
-3. **Capture service** — `services/target-capture.ts`: `capture(invocationId, owner)` reads
-   via the slice 07 port, stores, stamps the record. Every step in its own try/catch;
-   failures go to stderr with the invocation id and the capture returns normally. Wall
+   Repository: `markTranscriptCaptured(id, truncated)`.
+2. **Runtime store** — `packages/agent-runtime-api` sessions module gains
+   `storeDelegationFrames({ invocationId, frames, truncated })` and
+   `delegationFrames({ invocationId }) -> { frames } | null`, the id validated as an agent
+   id; the store answers `{ truncated }`. `packages/agent-runtime` writes one file per
+   child, `.platform/delegations/<id>.jsonl`, one frame per line, atomically. Each file
+   keeps the newest frames within 4 MiB; the directory is capped at 64 MiB, evicting the
+   oldest files, never the one written. No age limit: the copies go with the volume.
+3. **Port** — `services/delegation-frames.ts` `DelegationFramesPort`: `readFromTarget`
+   (slice 07's read), `storeOnRoot`, `readFromRoot`. The pod client implements it; every
+   call answers `null`/`false` on failure. `storeOnRoot` checks `agentsRepo.isReady(root)`
+   first and skips a root that is not up, so capture never wakes it.
+4. **Capture service** — `services/target-capture.ts`: `capture(row)` resolves the row's
+   `rootDriverId`, reads the child's frames, stores them on the root, stamps the record.
+   Failures go to stderr with the invocation id and the capture returns normally. Wall
    clock budget 20 s end to end.
-4. **Call it inside the reap path** — slice 10's `services/target-reaper.ts` `reap()`: capture
-   first, then delete, then mark reaped. That covers the report path, the liveness sweep and
-   its backstop, and the driver cascade with one insertion. In the cascade the pod may already
-   be going, so the 15 s client timeout from slice 07 bounds it.
-5. **Cleanup** — the cleanup hook from slice 02 deletes the rows by root; extend it to
-   delete each returned `transcript_key` through the store, logging and continuing on
-   failure, the way kb-shares purges share objects.
-6. **Read path** — slice 04's mapper sets `transcriptAvailable = transcriptKey !== null`.
-7. **Docs** — `docs/architecture/persistence.md`: object store row of the lifetime table
-   gains "captured invocation conversations, purged with the root driver"; the paragraph
-   stating sessions are never read from anywhere but the pod gets the one exception and why
-   (the read-only copy of a deleted child). `docs/architecture/agent-lifecycle.md` Invocation
-   reaping: one sentence, capture before reap, best effort. Update `Last verified`; check
-   the size cap and raise the level rather than trim if it trips.
+5. **Call it inside the reap path** — slice 10's `services/target-reaper.ts` `reap()`:
+   capture first, then delete, then mark reaped. That covers the report path, the liveness
+   sweep and its backstop, and the driver cascade with one insertion. When the cascade
+   deletes the root itself it reaps without capture, since the root's volume goes too.
+6. **Read path** — slice 04's mapper sets `transcriptAvailable = transcriptCaptured`.
+7. **Docs** — `docs/architecture/persistence.md`: the `.platform/` directory gains the
+   delegations folder. `docs/architecture/agent-lifecycle.md` Delete: one sentence,
+   capture before reap, best effort, only while the root is up. Update `Last verified`;
+   raise the level rather than trim if a size cap trips.
 
 ## Acceptance criteria
 
-- [ ] After the README fan-out, both rows carry a `transcript_key` and the bucket holds an
-      object per key whose last frame is the `report_result` tool call.
-- [ ] A child that hits its liveness deadline without ever starting a session yields a row
-      with `transcript_key` null and status `failed`; the reap still happens.
-- [ ] With the object store unconfigured (`createUnconfiguredArtifactStore`) spawns and
-      reaps behave exactly as before and no error reaches the driver.
-- [ ] Deleting the root driver removes the objects along with the rows.
-- [ ] `mise run check`, `mise run test` and `mise run //docs:check` pass.
+- [x] After the README fan-out, both rows carry `transcript_captured` and the root's
+      `.platform/delegations/` holds a `.jsonl` file per child that holds its prompt,
+      its `report_result` tool call and its closing message.
+- [x] A child that hits its liveness deadline without ever starting a session yields a row
+      with `transcript_captured` false and status `failed`; one whose session started but
+      never answered is captured with its prompt alone. The reap happens either way.
+- [ ] A root that is not up at capture is not woken; the row stays uncaptured and the reap
+      still happens.
+- [x] Deleting the root driver removes the rows; the copies go with its volume.
+- [x] `mise run check`, `mise run test` and `mise run //docs:check` pass.
 
 ## Smoke test
 
 `mise run test` and `mise run check`. On the dev cluster run the README prompt, then list
-the bucket prefix `invocations/<owner>/` (cluster-ops skill for the object store access)
-and confirm two objects. Spawn one child with a ttl of one minute on an image without a
-model connection so it never reports; confirm it is failed and reaped with no object. Delete
-the driver and confirm the prefix is empty.
+`~/.platform/delegations/` in the root's pod and confirm two files, and the rows' flags.
+Spawn one child with a ttl of one minute and no model connection so it never reports;
+confirm it is failed and reaped with no file. Stop the root while a child runs; confirm the
+child is reaped uncaptured and the root stays down.

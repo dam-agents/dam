@@ -32,6 +32,7 @@ function makeService(row: InvocationRow) {
     markReaped: async () => {},
     listByRoot: async () => [],
     delete: async () => {},
+    markTranscriptCaptured: async () => {},
     deleteByRoot: async () => 0,
   };
   const service = createInvocationsService({
@@ -71,6 +72,8 @@ function runningRow(resultSchema: unknown): InvocationRow {
     completedAt: null,
     reapedAt: null,
     experimentSpanId: null,
+    transcriptCaptured: false,
+    transcriptTruncated: false,
   };
 }
 

@@ -9,6 +9,7 @@ import {
   composeSessionList,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
+import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
 import type { InProcessCaller } from "../infrastructure/in-process-request.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
@@ -22,6 +23,7 @@ export function createSessionsService(deps: {
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
   sessionFrames: (sessionId: string) => SessionHistory;
+  delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
 }): SessionsService {
   return {
@@ -64,6 +66,14 @@ export function createSessionsService(deps: {
       if (live.frames.length > 0) return live;
       const stored = await deps.historyProvider?.fetch(sessionId);
       return stored ? { frames: stored, truncated: false } : EMPTY_HISTORY;
+    },
+
+    async storeDelegationFrames(input) {
+      return deps.delegations.store(input);
+    },
+
+    async delegationFrames(invocationId) {
+      return deps.delegations.read(invocationId);
     },
 
     watch: (signal) =>

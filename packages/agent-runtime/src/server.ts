@@ -174,6 +174,7 @@ const {
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
+  agentHome: homeDir,
   stateBackend,
   envReader: envStore,
   sessionHistory: runtimeManifest.sessionHistory,

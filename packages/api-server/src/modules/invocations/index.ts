@@ -21,7 +21,4 @@ export {
   createPodSessionClient,
   invocationScheduleId,
 } from "./infrastructure/pod-session-client.js";
-export type {
-  TargetFrames,
-  TargetFramesReader,
-} from "./services/target-frames-reader.js";
+export type { DelegationFramesPort } from "./services/delegation-frames.js";

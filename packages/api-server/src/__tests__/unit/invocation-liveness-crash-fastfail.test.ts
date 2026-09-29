@@ -39,6 +39,8 @@ function runningRow(id: string): InvocationRow {
     completedAt: null,
     reapedAt: null,
     experimentSpanId: null,
+    transcriptCaptured: false,
+    transcriptTruncated: false,
   };
 }
 

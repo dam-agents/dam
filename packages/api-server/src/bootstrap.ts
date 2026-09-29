@@ -187,6 +187,7 @@ import {
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
+  createPodSessionClient,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -325,6 +326,10 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[agents] ${m}`),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const delegationFrames = createPodSessionClient({
+    namespace: config.namespace,
+    isReady: (agentId) => agentsRepo.isReady(agentId),
+  });
   const liveAgentsRepo = createAgentsRepository(
     k8sClient,
     createLiveAgentStateCache(k8sClient),
@@ -1142,6 +1147,7 @@ export async function bootstrap() {
       cleanup: createInvocationsCleanupHook({
         db,
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
+        frames: delegationFrames,
       }),
     },
     {
@@ -1323,6 +1329,7 @@ export async function bootstrap() {
         : null;
     },
     batchSize: 200,
+    frames: delegationFrames,
   });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
@@ -1452,6 +1459,7 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     runtimeProgress: contributionsProgressPort,
     artifacts,
+    delegationFrames,
     k8sClient,
     agentsRepo,
     templatesRepo,

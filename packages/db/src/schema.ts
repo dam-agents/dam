@@ -866,6 +866,10 @@ export const invocations = pgTable(
     reapedAt: timestamp("reaped_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     experimentSpanId: text("experiment_span_id"),
+    transcriptCaptured: boolean("transcript_captured").notNull().default(false),
+    transcriptTruncated: boolean("transcript_truncated")
+      .notNull()
+      .default(false),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),

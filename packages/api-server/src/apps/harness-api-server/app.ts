@@ -30,6 +30,7 @@ import {
 import {
   composeInvocationsForOwner,
   createTargetAdmission,
+  type DelegationFramesPort,
 } from "../../modules/invocations/index.js";
 import {
   composeBudgetsModule,
@@ -73,6 +74,7 @@ export interface HarnessApiServerAppDeps {
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
+  delegationFrames: DelegationFramesPort;
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
@@ -143,6 +145,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       agents: agentsServiceFor(owner),
       runtimeMutator,
       wakeAgent,
+      frames: deps.delegationFrames,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
