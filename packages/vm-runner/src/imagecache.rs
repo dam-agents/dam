@@ -749,7 +749,7 @@ fn written(e: io::Error, what: &str) -> anyhow::Error {
     anyhow::anyhow!("writing {what} into the image cache: {e}")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: flushes the whole filesystem holding `path`: every file of an unpacked tree at once, which is one call where a sync of each file would be one per file. It reports a write the disk failed.
+// UNIT_BOUNDARY_DESCRIPTION: flushes the whole filesystem holding `path`: every file of an unpacked tree at once, which is one call where a sync of each file would be one per file. On Linux it reports a write the disk failed. Elsewhere there is no syncfs, and sync(2) flushes every filesystem and reports nothing, so a failed write is not caught there; only a runner on a developer's Mac builds that arm.
 #[cfg(not(target_os = "linux"))]
 fn sync_filesystem(path: &Path) -> io::Result<()> {
     fs::File::open(path)?;
