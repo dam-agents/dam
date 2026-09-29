@@ -14,7 +14,10 @@ import {
 } from "../../modules/connections/infrastructure/oauth-engine.js";
 import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-sds.js";
-import { parseGitHubUserTokenScope } from "../../modules/connections/domain/github-user-token-scope.js";
+import {
+  gitHubUserTokenApiBase,
+  parseGitHubUserTokenScope,
+} from "../../modules/connections/domain/github-user-token-scope.js";
 import { refreshOAuthAccessToken } from "../../modules/connections/services/oauth-token.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
@@ -505,6 +508,16 @@ describe("GitHub user token scoping — editing", () => {
     await expect(
       other.svc.updateGitHubUserTokenScope({ id: "conn-1", targetId: 42 }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+describe("GitHub user token scoping — API base", () => {
+  it("uses the same api.<host> form as the other Enterprise templates", () => {
+    expect(gitHubUserTokenApiBase(undefined)).toBe("https://api.github.com");
+    expect(gitHubUserTokenApiBase("github.com")).toBe("https://api.github.com");
+    expect(gitHubUserTokenApiBase("acme.ghe.com")).toBe(
+      "https://api.acme.ghe.com",
+    );
   });
 });
 

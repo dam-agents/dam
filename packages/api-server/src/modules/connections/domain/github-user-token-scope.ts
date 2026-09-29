@@ -9,7 +9,7 @@ export function supportsGitHubUserTokenScope(templateId: string): boolean {
 
 export function gitHubUserTokenApiBase(host: string | undefined): string {
   return host && host !== "github.com"
-    ? `https://${host}/api/v3`
+    ? `https://api.${host}`
     : "https://api.github.com";
 }
 
