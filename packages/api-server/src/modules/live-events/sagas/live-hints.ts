@@ -77,6 +77,7 @@ export function hintFor(
     case EventType.SlackConnected:
     case EventType.SlackDisconnected:
     case EventType.ChannelTurnRelayed:
+    case EventType.ChannelMessageSent:
     case EventType.ConnectionCreated:
     case EventType.ConnectionRemoved:
     case EventType.FilesImported:
@@ -92,6 +93,7 @@ export function hintFor(
     case EventType.SkillPublished:
     case EventType.SkillSetSaved:
     case EventType.SkillSetDeleted:
+    case EventType.SkillSourceChanged:
     case EventType.StarterKitApplied:
     case EventType.InvocationSpawned:
     case EventType.FeatureFlagChanged:

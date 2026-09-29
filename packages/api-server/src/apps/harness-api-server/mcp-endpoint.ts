@@ -27,6 +27,7 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
+import { emit, EventType } from "../../events.js";
 import {
   errorResult,
   json,
@@ -106,6 +107,7 @@ function renderChecklist(steps: OnboardingStep[]): string {
 }
 
 export interface McpSessionDeps {
+  owner: string;
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
@@ -293,6 +295,15 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel,
+        agentId,
+        ownerSub: deps.owner,
+        action: "post",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: resolved !== undefined,
+      });
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         ...channelAudit(channel),
         result: failed ? "failure" : "success",
@@ -511,6 +522,15 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel: ChannelType.Slack,
+        agentId,
+        ownerSub: deps.owner,
+        action: "reply",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: loaded !== undefined,
+      });
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
@@ -1006,6 +1026,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ),
     ]);
     const session = createMcpSession(agentId, {
+      owner: verified.owner,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

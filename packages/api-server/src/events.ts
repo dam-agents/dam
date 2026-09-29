@@ -1,4 +1,4 @@
-import type { EntryPointChoice } from "api-server-api";
+import type { ChannelType, EntryPointChoice } from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -15,6 +15,7 @@ export enum EventType {
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
   ChannelTurnRelayed = "ChannelTurnRelayed",
+  ChannelMessageSent = "ChannelMessageSent",
   SessionTurnRelayed = "SessionTurnRelayed",
   AgentRelayAttached = "AgentRelayAttached",
   ScheduleFired = "ScheduleFired",
@@ -46,6 +47,7 @@ export enum EventType {
   SkillPublished = "SkillPublished",
   SkillSetSaved = "SkillSetSaved",
   SkillSetDeleted = "SkillSetDeleted",
+  SkillSourceChanged = "SkillSourceChanged",
   StarterKitApplied = "StarterKitApplied",
   InvocationSpawned = "InvocationSpawned",
   FeatureFlagChanged = "FeatureFlagChanged",
@@ -110,6 +112,16 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+};
+
+export type ChannelMessageSent = {
+  type: EventType.ChannelMessageSent;
+  channel: ChannelType;
+  agentId: string;
+  ownerSub: string;
+  action: "post" | "reply";
+  outcome: TurnOutcome;
+  hasAttachment: boolean;
 };
 
 export type ScheduleFired = {
@@ -346,6 +358,15 @@ export type SkillSetDeleted = {
   surface: string;
 };
 
+export type SkillSourceChanged = {
+  type: EventType.SkillSourceChanged;
+  action: "added" | "removed";
+  actorSub: string;
+  surface: string;
+  source: string;
+  hasPath: boolean;
+};
+
 export type StarterKitApplied = {
   type: EventType.StarterKitApplied;
   agentId: string;
@@ -407,6 +428,7 @@ export type DomainEvent =
   | SlackConnected
   | SlackDisconnected
   | ChannelTurnRelayed
+  | ChannelMessageSent
   | ScheduleFired
   | SchedulePrecheckReported
   | ConnectionCreated
@@ -438,6 +460,7 @@ export type DomainEvent =
   | SkillPublished
   | SkillSetSaved
   | SkillSetDeleted
+  | SkillSourceChanged
   | StarterKitApplied
   | InvocationSpawned
   | FeatureFlagChanged

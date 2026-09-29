@@ -7,6 +7,7 @@ import {
   type DomainEvent,
   type UserAuthenticated,
   type ChannelTurnRelayed,
+  type ChannelMessageSent,
   type SessionTurnRelayed,
   type AgentRelayAttached,
   type ScheduleFired,
@@ -24,6 +25,7 @@ import {
   type SkillPublished,
   type SkillSetSaved,
   type SkillSetDeleted,
+  type SkillSourceChanged,
   type StarterKitApplied,
   type InvocationSpawned,
   type FeatureFlagChanged,
@@ -95,6 +97,15 @@ export function startPersistActivitySaga(
     }),
     "channel",
   );
+
+  persist<ChannelMessageSent>(EventType.ChannelMessageSent, (event) => ({
+    type: "channel_message_sent",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: event.channel,
+    outcome: event.outcome,
+    payload: { action: event.action, hasAttachment: event.hasAttachment },
+  }));
 
   persist<SessionTurnRelayed>(EventType.SessionTurnRelayed, (event) => ({
     type: "session_turn",
@@ -278,6 +289,15 @@ export function startPersistActivitySaga(
     surface: event.surface,
     outcome: "success",
     payload: {},
+  }));
+
+  persist<SkillSourceChanged>(EventType.SkillSourceChanged, (event) => ({
+    type: `skill_source_${event.action}`,
+    actorSub: event.actorSub,
+    agentId: null,
+    surface: event.surface,
+    outcome: "success",
+    payload: { source: event.source, hasPath: event.hasPath },
   }));
 
   persist<StarterKitApplied>(EventType.StarterKitApplied, (event) => ({

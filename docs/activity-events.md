@@ -21,6 +21,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SlackConnected` | _elsewhere_ | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
+| `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
 | `SessionTurnRelayed` | `session_turn` | agent-proxies/acp-relay |
 | `AgentRelayAttached` | `relay_attached` | agent-proxies/upgrade |
 | `ScheduleFired` | `schedule_fire` | schedules |
@@ -52,6 +53,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SkillPublished` | `skill_published` | skills |
 | `SkillSetSaved` | `skill_set_saved` | skills |
 | `SkillSetDeleted` | `skill_set_deleted` | skills |
+| `SkillSourceChanged` | `skill_source_<action>` | skills |
 | `StarterKitApplied` | `starter_kit_applied` | starter-kits |
 | `InvocationSpawned` | `invocation_spawned` | invocations |
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
