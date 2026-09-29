@@ -19,6 +19,7 @@ import {
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -412,7 +413,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               <Gift size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-6 text-foreground">
+              <p className="text-[15px] font-semibold leading-6 text-kit">
                 {kit.name}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -422,7 +423,16 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                   templateById,
                 ).map((b) => (
                   <Badge key={b.key} variant="kit" size="sm">
-                    {b.label}
+                    <span className="flex items-center gap-1.5">
+                      {b.iconSlug && (
+                        <ConnectionIcon
+                          iconSlug={b.iconSlug}
+                          alt=""
+                          size={14}
+                        />
+                      )}
+                      {b.label}
+                    </span>
                   </Badge>
                 ))}
                 {resourcesLine && (
