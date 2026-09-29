@@ -141,6 +141,11 @@ export function AgentUnavailableOverlay({
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       )}
+      {state === "starting" && (
+        <p role="status" className="sr-only">
+          The agent is starting up.
+        </p>
+      )}
       {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
