@@ -790,8 +790,7 @@ export interface SlackWorker {
 }
 
 export type DeleteAgentPostResult =
-  | { ok: true; agentWillBeTold: boolean }
-  | { error: string };
+  { ok: true; agentWillBeTold: boolean } | { error: string };
 
 const POST_LOOKUP_BEFORE_S = 120;
 
@@ -3860,13 +3859,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         };
       }
       if (parts.length === 0)
-        return { ok: true as const, agentWillBeTold: false };
+        return {
+          error: "the post was not found in Slack; it may already be deleted",
+        };
       if (parts.some((m) => parseAgentFooter(m)?.agentId !== instanceName))
         return { error: "this agent did not post that message" };
 
       const post = parts.find((m) => !m.fileIds?.length) ?? parts[0]!;
       const ordered = [post, ...parts.filter((m) => m !== post)];
       let postDeleted = false;
+      let filesDeleted = false;
       let failure: string | null = null;
       for (const part of ordered) {
         try {
@@ -3874,6 +3876,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             await gw.deleteFile(fileId, ref.teamId);
           await gw.deleteMessage(ref.channel, part.ts, ref.teamId);
           if (part === post) postDeleted = true;
+          else filesDeleted = true;
         } catch (err) {
           failure ??= formatError(err);
         }
@@ -3886,7 +3889,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           instanceName,
           ref,
           post,
-          withFiles: parts.some((m) => !!m.fileIds?.length),
+          withFiles: filesDeleted && failure === null,
           reason,
         }));
       if (failure === null) return { ok: true as const, agentWillBeTold };

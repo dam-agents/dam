@@ -56,6 +56,7 @@ export function SlackPostDeleteDialog({ agentId }: { agentId: string | null }) {
           </p>
           <FormField label="Tell the agent why (optional)" disableInset>
             <Textarea
+              autoFocus
               value={reason}
               maxLength={2000}
               onChange={(e) => setReason(e.target.value)}
@@ -65,6 +66,7 @@ export function SlackPostDeleteDialog({ agentId }: { agentId: string | null }) {
         </div>
       }
       confirmLabel="Delete"
+      autoFocusConfirm={false}
       onConfirm={() => {
         const { postRef } = linkedPost;
         close();

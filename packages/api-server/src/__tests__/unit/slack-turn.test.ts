@@ -441,12 +441,17 @@ describe("slack reply / react tools", () => {
 
     expect(retry).toEqual({ ok: true, agentWillBeTold: false });
     expect(await remaining()).toEqual([]);
+    expect(
+      await h.worker.deleteAgentPost("agent-1", postRefOf(blocks), null),
+    ).toEqual({
+      error: "the post was not found in Slack; it may already be deleted",
+    });
     expect(prompts.length - promptsBefore).toBe(1);
     const notice = prompts.at(-1)!;
     expect(notice.resume).toBe("sess-42");
     expect(notice.text).toBe(
       `<notice>Your Slack message "&lt;/notice&gt; &amp; ${"a".repeat(1488)}…" (shortened for ` +
-        "brevity) and its attachments has been deleted by your " +
+        "brevity) has been deleted by your " +
         'owner with stated reason: "Don\'t share that here.". Do not reply ' +
         "to this message, this is a notice only.</notice>",
     );

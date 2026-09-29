@@ -37,6 +37,7 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   showCancel?: boolean;
+  autoFocusConfirm?: boolean;
   onConfirm: () => void;
   onCancel?: () => void;
 }
@@ -51,6 +52,7 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel = "Cancel",
   showCancel = true,
+  autoFocusConfirm = true,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -101,7 +103,7 @@ export function ConfirmDialog({
           )}
           <AlertDialogAction
             onClick={() => onConfirm()}
-            autoFocus
+            autoFocus={autoFocusConfirm}
             className={cn(
               destructive && buttonVariants({ variant: "destructive" }),
             )}
