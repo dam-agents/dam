@@ -248,7 +248,6 @@ const APPLY = {
   connectionIds: ["c-gh"],
   skipSchedules: [] as string[],
   scheduleOverrides: [],
-  skipSeed: false,
 };
 
 function onboardingEvents(calls: { bumped: { events: BumpedEvent[] }[] }) {
@@ -428,27 +427,6 @@ describe("starter kits: apply", () => {
     });
     expect(prompt).toContain("on branch main at " + sha);
     expect(prompt).toContain("into your home directory ($HOME)");
-  });
-
-  it("removes the kit's repository when asked: no seed, and a briefing that ships none", async () => {
-    const h = makeHarness(LOADED);
-    await h.service.apply({ ...APPLY, skipSeed: true });
-    expect(h.calls.created[0]).not.toHaveProperty("gitRepo");
-    const [event] = onboardingEvents(h.calls);
-    const prompt = (event?.payload as { task: string }).task;
-    expect(prompt).toContain("This kit ships no definition repository.");
-    expect(prompt).not.toContain("ONBOARDING.md");
-  });
-
-  it("refuses to remove the repository of a kit whose install runs from it", async () => {
-    const { service, calls } = makeHarness({
-      ...LOADED,
-      kit: kit({ install: { command: "bash bootstrap.sh" } }),
-    });
-    await expect(
-      service.apply({ ...APPLY, skipSeed: true }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(calls.created).toEqual([]);
   });
 
   it("leaves out the schedules the user chose to skip", async () => {

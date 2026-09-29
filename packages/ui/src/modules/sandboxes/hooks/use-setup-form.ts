@@ -14,7 +14,6 @@ const setupFormSchema = z.object({
   satelliteNames: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
   customImage: z.string().default(""),
-  skipSeed: z.boolean().default(false),
   hibernationTimeoutMin: z
     .number()
     .int()

@@ -24,13 +24,6 @@ export interface StarterKitSetupDraft {
   slackChannelId: string;
   skippedSchedules: string[];
   scheduleOverrides: StarterKitScheduleOverride[];
-  skipSeed: boolean;
-}
-
-export function kitSeedRemovable(
-  kit: Pick<StarterKitView, "seed" | "install">,
-): boolean {
-  return kit.seed !== undefined && kit.install === undefined;
 }
 
 interface GrantedConnection {
@@ -96,10 +89,7 @@ export function isStarterKitSetupComplete(
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<
-    StarterKitView,
-    "id" | "catalog" | "image" | "connections" | "seed" | "install"
-  >,
+  kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -117,7 +107,6 @@ export function buildStarterKitApplyInput(
     connectionIds: draftConnectionIds(draft),
     ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
-    skipSeed: draft.skipSeed && kitSeedRemovable(kit),
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(
       (o) => !draft.skippedSchedules.includes(o.name),
