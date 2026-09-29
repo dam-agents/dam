@@ -11,7 +11,10 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tooltip } from "@/components/ui/tooltip";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import {
+  AlwaysOnTag,
+  StatusBadge,
+} from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
@@ -93,11 +96,10 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
       }
       title={agent.name}
       adornment={
-        <StatusBadge
-          state={display.state}
-          working={working}
-          alwaysOn={agent.hibernationTimeoutMin === 0}
-        />
+        <>
+          <StatusBadge state={display.state} working={working} />
+          {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
+        </>
       }
       actions={
         <>

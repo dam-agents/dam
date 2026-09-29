@@ -17,7 +17,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { clickableProps } from "@/lib/clickable";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import {
+  AlwaysOnTag,
+  StatusBadge,
+} from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
@@ -191,6 +194,7 @@ export function AgentRow({
           onAbort={onAbortMigration}
           onRetry={onRetryMigration}
         />
+        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -201,11 +205,7 @@ export function AgentRow({
               }
             : {})}
         >
-          <StatusBadge
-            state={display.state}
-            working={working}
-            alwaysOn={agent.hibernationTimeoutMin === 0}
-          />
+          <StatusBadge state={display.state} working={working} />
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
