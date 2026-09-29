@@ -29,10 +29,3 @@ export function useBindSlackChannel() {
     },
   });
 }
-
-export function useDeleteSlackPost() {
-  return useMutation({
-    ...trpc.agents.deleteSlackPost.mutationOptions(),
-    meta: { errorToast: "Couldn't delete the Slack post" },
-  });
-}

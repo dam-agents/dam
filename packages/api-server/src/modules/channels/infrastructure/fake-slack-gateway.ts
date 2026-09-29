@@ -2,9 +2,10 @@ import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
+  SlackBlockAction,
+  SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
-  SlackConversationKind,
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
@@ -21,7 +22,6 @@ export interface FakeSlackChannel {
   id: string;
   name: string;
   botIsMember: boolean;
-  kind?: SlackConversationKind;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
@@ -40,6 +40,8 @@ export interface FakeSlackGateway extends SlackGateway {
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
+  fireBlockAction(event: SlackBlockAction): Promise<void>;
+  fireViewSubmission(event: SlackViewSubmission): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
@@ -144,6 +146,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
   let nextStreamTs = 1;
+  let nextPostTs = 100000;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
@@ -187,27 +190,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { iconUrl: args.iconUrl } : {}),
       });
+      return { ts: `${Math.floor(Date.now() / 1000)}.${nextPostTs++}` };
     },
 
-    async readMessageWindow(args) {
-      return history.filter((m) => {
-        const at = Number(m.ts);
-        const inThread = args.threadTs
-          ? m.ts === args.threadTs || m.threadTs === args.threadTs
-          : !hiddenInThread(m);
-        return (
-          inThread && at >= Number(args.oldest) && at <= Number(args.latest)
-        );
-      });
-    },
+    async updateMessage() {},
 
-    async deleteMessage(_channel, ts) {
-      history = history.filter((m) => m.ts !== ts);
-    },
+    async deleteMessage() {},
 
-    async deleteFile(fileId) {
-      history = history.filter((m) => !m.fileIds?.includes(fileId));
-    },
+    async deleteFile() {},
+
+    async openModal() {},
 
     async postEphemeral(args) {
       outbound.push({
@@ -333,6 +325,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         filename: args.filename,
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
       });
+      return [`F-${args.filename}`];
     },
 
     async downloadFile(urlPrivate, maxBytes) {
@@ -362,11 +355,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         (c) => c.id === channelId,
       );
       return channel
-        ? {
-            isMember: channel.botIsMember,
-            name: channel.name,
-            kind: channel.kind ?? "public",
-          }
+        ? { isMember: channel.botIsMember, name: channel.name }
         : null;
     },
 
@@ -401,6 +390,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMessage(event);
+    },
+
+    async fireBlockAction(event) {
+      await requireHandlers().onBlockAction(event);
+    },
+
+    async fireViewSubmission(event) {
+      await requireHandlers().onViewSubmission(event);
     },
 
     async fireBotJoinedChannel(input) {

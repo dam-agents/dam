@@ -13,39 +13,6 @@ export interface AgentFooter {
   agentId: string;
   label: string;
   sessionId?: string;
-  postRef?: SlackPostRef;
-}
-
-export interface SlackPostRef {
-  teamId: string;
-  channel: string;
-  threadTs?: string;
-  sentAt: number;
-  nonce: string;
-}
-
-const POST_REF_RE = /^(.*)-([A-Z0-9]+)-(\d+\.\d+)?-(\d+)-([0-9a-f]{16})$/;
-
-function formatSlackPostRef(ref: SlackPostRef): string {
-  return [
-    ref.teamId,
-    ref.channel,
-    ref.threadTs ?? "",
-    ref.sentAt,
-    ref.nonce,
-  ].join("-");
-}
-
-export function parseSlackPostRef(raw: string): SlackPostRef | null {
-  const match = raw.match(POST_REF_RE);
-  if (!match) return null;
-  return {
-    teamId: match[1]!,
-    channel: match[2]!,
-    ...(match[3] ? { threadTs: match[3] } : {}),
-    sentAt: Number(match[4]),
-    nonce: match[5]!,
-  };
 }
 
 function escapeLinkLabel(name: string): string {
@@ -75,22 +42,10 @@ export function agentFooterMrkdwn(footer: AgentFooter): string {
   return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
 }
 
-function deleteLinkMrkdwn(footer: AgentFooter, ref: SlackPostRef): string {
-  const session = footer.sessionId
-    ? `/${encodeURIComponent(footer.sessionId)}`
-    : "";
-  return `<${footer.uiBaseUrl}${CHAT_PATH}${footer.agentId}${session}?m=${encodeURIComponent(formatSlackPostRef(ref))}|Delete (owner only)>`;
-}
-
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
-  const deleteLink = footer.postRef
-    ? ` · ${deleteLinkMrkdwn(footer, footer.postRef)}`
-    : "";
   return {
     type: "context",
-    elements: [
-      { type: "mrkdwn", text: `${agentFooterMrkdwn(footer)}${deleteLink}` },
-    ],
+    elements: [{ type: "mrkdwn", text: agentFooterMrkdwn(footer) }],
   };
 }
 
@@ -129,13 +84,6 @@ export function footerSessionId(message: SlackMessage): string | null {
     if (match) return decodeURIComponent(match[1]!);
   }
   return null;
-}
-
-export function footerCarriesNonce(
-  message: SlackMessage,
-  nonce: string,
-): boolean {
-  return footerTexts(message).some((text) => text.includes(`-${nonce}|`));
 }
 
 const THREAD_MARKER_NOTE =

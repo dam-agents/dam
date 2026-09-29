@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
@@ -88,8 +88,9 @@ import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
+  SlackBlock,
+  SlackBlockAction,
   SlackBotJoinedChannelEvent,
-  SlackConversationKind,
   SlackConversationName,
   SlackConversationRef,
   SlackWorkspace,
@@ -104,6 +105,7 @@ import type {
   SlackSlashCommand,
   SlackThreadRead,
   SlackUserInfo,
+  SlackViewSubmission,
 } from "./slack-gateway.js";
 import {
   createTurnPresenter,
@@ -113,19 +115,25 @@ import {
 import {
   agentContextBlock,
   agentFooterLabel,
+  agentFooterMrkdwn,
   catchUpLegend,
   formatSlackTs,
   historyLegend,
   historyPreamble,
   labelHistoryMessage,
   marksThread,
-  footerCarriesNonce,
   footerSessionId,
   parseAgentFooter,
-  parseSlackPostRef,
   type AgentFooter,
-  type SlackPostRef,
 } from "./agent-footer.js";
+import {
+  DELETE_POST_ACTION,
+  DELETE_POST_CONFIRM,
+  deletePostActions,
+  deletePostFileIds,
+  deletePostModal,
+  parseDeletePostModal,
+} from "./slack-post-delete.js";
 import {
   aboveBoundary,
   formatThreadCursor,
@@ -782,19 +790,7 @@ export interface SlackWorker {
     instanceName: string,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
-  deleteAgentPost(
-    instanceName: string,
-    postRef: string,
-    reason: string | null,
-  ): Promise<DeleteAgentPostResult>;
 }
-
-export type DeleteAgentPostResult =
-  { ok: true; agentWillBeTold: boolean } | { error: string };
-
-const POST_LOOKUP_BEFORE_S = 120;
-
-const POST_LOOKUP_AFTER_S = 300;
 
 export interface SlackOAuthPending {
   slackUserId: string;
@@ -915,14 +911,7 @@ const USER_CACHE_TTL_MS = 10 * 60_000;
 
 const CONVERSATION_NAME_TTL_MS = 5 * 60_000;
 
-const CONVERSATION_KIND_TTL_MS = 10 * 60_000;
-
-const HISTORY_SCOPE: Record<SlackConversationKind, string> = {
-  public: "channels:history",
-  private: "groups:history",
-  im: "im:history",
-  mpim: "mpim:history",
-};
+const PENDING_POST_DELETE_TTL_MS = 15 * 60_000;
 
 const userLookupSemaphore = createSemaphore(5);
 
@@ -1520,59 +1509,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { username, ...(iconUrl ? { iconUrl } : {}) };
   }
 
-  const conversationKindCache = new Map<
-    string,
-    { kind: SlackConversationKind; expiresAt: number }
-  >();
-
-  async function conversationKind(
-    gw: SlackGateway,
-    target: { id: string; teamId: SlackWorkspace },
-  ): Promise<SlackConversationKind | null> {
-    const key = conversationKey({
-      channelId: target.id,
-      teamId: target.teamId,
-    });
-    const cached = conversationKindCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.kind;
-    try {
-      const info = await gw.getConversationInfo(target.id, target.teamId);
-      if (!info) return null;
-      conversationKindCache.set(key, {
-        kind: info.kind,
-        expiresAt: Date.now() + CONVERSATION_KIND_TTL_MS,
-      });
-      return info.kind;
-    } catch {
-      return null;
-    }
-  }
-
-  async function deletablePost(
-    gw: SlackGateway,
-    target: { id: string; teamId: SlackWorkspace },
-    threadTs?: string,
-  ): Promise<
-    { teamId: SlackWorkspace; channel: string; threadTs?: string } | undefined
-  > {
-    const post = {
-      teamId: target.teamId,
-      channel: target.id,
-      ...(threadTs ? { threadTs } : {}),
-    };
-    const scopes = await grantedScopes(gw, target.teamId);
-    if (!scopes) return post;
-    if (target.id.startsWith("D"))
-      return scopes.has(HISTORY_SCOPE.im) ? post : undefined;
-    if (Object.values(HISTORY_SCOPE).every((s) => scopes.has(s))) return post;
-    const kind = await conversationKind(gw, target);
-    return kind && scopes.has(HISTORY_SCOPE[kind]) ? post : undefined;
-  }
-
   async function agentFooter(
     instanceName: string,
     sessionId?: string,
-    post?: { teamId: SlackWorkspace; channel: string; threadTs?: string },
   ): Promise<AgentFooter> {
     const resolved = await resolveAgentName(instanceName);
     return {
@@ -1583,39 +1522,223 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         resolved === instanceName ? undefined : resolved,
       ),
       ...(sessionId ? { sessionId } : {}),
-      ...(post
-        ? {
-            postRef: {
-              ...post,
-              sentAt: Math.floor(Date.now() / 1000),
-              nonce: randomBytes(8).toString("hex"),
-            },
-          }
-        : {}),
     };
   }
 
+  async function linkAttachmentsToPost(
+    gw: SlackGateway,
+    target: { id: string; teamId: SlackWorkspace },
+    ts: string,
+    text: string,
+    update: { blocks: SlackBlock[] },
+  ): Promise<void> {
+    try {
+      await gw.updateMessage({
+        channel: target.id,
+        teamId: target.teamId,
+        ts,
+        text,
+        blocks: update.blocks,
+      });
+    } catch (err) {
+      getLogger().warn(
+        { channel: target.id, ts, err: formatError(err) },
+        "slack.post_delete.attachments_unlinked",
+      );
+    }
+  }
+
+  type PendingPostDelete = {
+    agentId: string;
+    userId: string;
+    channel: string;
+    teamId: SlackWorkspace;
+    post: SlackMessage & { ts: string };
+    fileIds: string[];
+    expiresAt: number;
+  };
+
+  const pendingPostDeletes = new Map<string, PendingPostDelete>();
+
+  async function authorizePostDelete(
+    userId: string,
+    agentId: string,
+    channel: string,
+  ): Promise<{ ok: true; invoker: string } | { ok: false; text: string }> {
+    const invoker = await identityLinks.resolve("slack", userId);
+    const owner = invoker ? await getInstanceOwner(agentId) : null;
+    if (invoker && invoker === owner) return { ok: true, invoker };
+    securityLog("warn", "channel.authz_deny", {
+      category: "channel",
+      actor: invoker,
+      actorKind: invoker ? "user" : "external",
+      surface: "slack",
+      agentId,
+      decision: "deny",
+      reason: invoker ? "not-owner" : "unlinked",
+      detail: {
+        slackUserId: userId,
+        channelId: channel,
+        action: "post-delete",
+      },
+    });
+    return {
+      ok: false,
+      text: invoker
+        ? "Only this agent's owner can delete its posts."
+        : `Link your account first: run \`/${brandShort} login\`, then press Delete again.`,
+    };
+  }
+
+  async function handleBlockAction(event: SlackBlockAction): Promise<void> {
+    const gw = gateway;
+    if (event.actionId !== DELETE_POST_ACTION || !gw) return;
+    const agentId = parseAgentFooter(event.message)?.agentId;
+    if (!agentId) return;
+    const { threadTs } = event.message;
+    const auth = await authorizePostDelete(
+      event.userId,
+      agentId,
+      event.channel,
+    );
+    if (!auth.ok) {
+      await gw
+        .postEphemeral({
+          channel: event.channel,
+          user: event.userId,
+          ...(threadTs && threadTs !== event.message.ts ? { threadTs } : {}),
+          text: auth.text,
+          teamId: event.teamId,
+        })
+        .catch(() => {});
+      return;
+    }
+    const now = Date.now();
+    for (const [id, pending] of pendingPostDeletes)
+      if (pending.expiresAt < now) pendingPostDeletes.delete(id);
+    const pendingId = randomUUID();
+    pendingPostDeletes.set(pendingId, {
+      agentId,
+      userId: event.userId,
+      channel: event.channel,
+      teamId: event.teamId,
+      post: event.message,
+      fileIds: deletePostFileIds(event.value),
+      expiresAt: now + PENDING_POST_DELETE_TTL_MS,
+    });
+    await gw.openModal({
+      triggerId: event.triggerId,
+      teamId: event.teamId,
+      view: deletePostModal({
+        pendingId,
+        channel: event.channel,
+        ...(threadTs && threadTs !== event.message.ts ? { threadTs } : {}),
+      }),
+    });
+  }
+
+  async function handleViewSubmission(
+    event: SlackViewSubmission,
+  ): Promise<void> {
+    const gw = gateway;
+    if (event.callbackId !== DELETE_POST_CONFIRM || !gw) return;
+    const parsed = parseDeletePostModal(event.privateMetadata, event.inputs);
+    if (!parsed) return;
+    const { metadata, reason } = parsed;
+    const reply = (text: string) =>
+      gw
+        .postEphemeral({
+          channel: metadata.channel,
+          user: event.userId,
+          ...(metadata.threadTs ? { threadTs: metadata.threadTs } : {}),
+          text,
+          teamId: event.teamId,
+        })
+        .catch(() => {});
+    const pending = pendingPostDeletes.get(metadata.pendingId);
+    pendingPostDeletes.delete(metadata.pendingId);
+    if (
+      !pending ||
+      pending.expiresAt < Date.now() ||
+      pending.userId !== event.userId
+    ) {
+      await reply("That confirmation expired. Press Delete on the post again.");
+      return;
+    }
+    const auth = await authorizePostDelete(
+      event.userId,
+      pending.agentId,
+      pending.channel,
+    );
+    if (!auth.ok) {
+      await reply(auth.text);
+      return;
+    }
+    await reply(await deleteAgentPost(gw, pending, auth.invoker, reason));
+  }
+
+  async function deleteAgentPost(
+    gw: SlackGateway,
+    pending: PendingPostDelete,
+    invoker: string,
+    reason: string | null,
+  ): Promise<string> {
+    const { agentId, channel, teamId, post, fileIds } = pending;
+    try {
+      await gw.deleteMessage(channel, post.ts, teamId);
+    } catch (err) {
+      return `Couldn't delete the post (${formatError(err)}). Press Delete on it again to retry.`;
+    }
+    let fileFailure: string | null = null;
+    for (const fileId of fileIds) {
+      try {
+        await gw.deleteFile(fileId, teamId);
+      } catch (err) {
+        fileFailure ??= formatError(err);
+      }
+    }
+    securityLog("info", "channel.post_deleted", {
+      category: "channel",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId,
+      result: fileFailure ? "failure" : "success",
+      detail: { channelId: channel, ts: post.ts, fileIds },
+    });
+    const told = await tellAgentPostDeleted({
+      agentId,
+      channel,
+      post,
+      withFiles: fileIds.length > 0 && fileFailure === null,
+      reason,
+    });
+    if (fileFailure)
+      return `The post was deleted, but an attachment could not be (${fileFailure}).`;
+    return told ? "Post deleted. The agent will be told." : "Post deleted.";
+  }
+
   async function tellAgentPostDeleted(args: {
-    instanceName: string;
-    ref: SlackPostRef;
-    post: SlackMessage;
+    agentId: string;
+    channel: string;
+    post: SlackMessage & { ts: string };
     withFiles: boolean;
     reason: string | null;
   }): Promise<boolean> {
-    const { instanceName, ref, post } = args;
+    const { agentId, channel, post } = args;
     const sessionId = footerSessionId(post);
-    const { threadTs } = ref;
+    const { threadTs } = post;
     if (!sessionId || !threadTs) return false;
     const agent = await agents()
-      .get(instanceName)
+      .get(agentId)
       .catch(() => null);
     if (!agent || agent.stopRequested) return false;
     void withSessionTurnLock(
-      instanceName,
-      slackThreadKey(ref.channel, threadTs),
+      agentId,
+      slackThreadKey(channel, threadTs),
       async () => {
-        await agents().ensureReady(instanceName);
-        await makeAcpClient(instanceName).sendPrompt(
+        await agents().ensureReady(agentId);
+        await makeAcpClient(agentId).sendPrompt(
           postDeletedNotice({
             text: post.text ?? null,
             withFiles: args.withFiles,
@@ -1626,7 +1749,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       },
     ).catch((err: unknown) => {
       getLogger().warn(
-        { agentId: instanceName, sessionId, err: formatError(err) },
+        { agentId, sessionId, err: formatError(err) },
         "slack.post_deleted.notice_failed",
       );
     });
@@ -2145,15 +2268,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
       await runWhileAgentStarts(runTurn, {
         ...wakeWait,
-        onStillStarting: () =>
-          gw.postMessage({
+        onStillStarting: async () => {
+          await gw.postMessage({
             channel: ctx.channel,
             teamId: ctx.teamId,
             threadTs: replyThreadTs,
             text:
               "The agent is still starting — this can take a few more " +
               "minutes. It'll answer as soon as it's up.",
-          }),
+          });
+        },
       });
       outcome = "success";
     } catch (err) {
@@ -3766,6 +3890,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onMessage: handleChannelMessage,
         onDirectMessage: handleDirectMessage,
         onBotJoinedChannel: handleBotJoinedChannel,
+        onBlockAction: handleBlockAction,
+        onViewSubmission: handleViewSubmission,
       });
       if (!connected) {
         gatewayFailed = true;
@@ -3833,71 +3959,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const info = await gw.getConversationInfo(slackChannelId, teamId);
       if (!info) return "unknown";
       return info.isMember ? "member" : "known";
-    },
-
-    async deleteAgentPost(instanceName, postRef, reason) {
-      const ref = parseSlackPostRef(postRef);
-      if (!ref) return { error: "that is not a link to a Slack post" };
-      const gw = await ensureGateway();
-      if (!gw) return { error: "slack bot not running" };
-      let parts: (SlackMessage & { ts: string })[];
-      try {
-        const window = await gw.readMessageWindow({
-          channel: ref.channel,
-          teamId: ref.teamId,
-          ...(ref.threadTs ? { threadTs: ref.threadTs } : {}),
-          oldest: String(ref.sentAt - POST_LOOKUP_BEFORE_S),
-          latest: String(ref.sentAt + POST_LOOKUP_AFTER_S),
-        });
-        parts = window.filter(
-          (m): m is SlackMessage & { ts: string } =>
-            !!m.ts && footerCarriesNonce(m, ref.nonce),
-        );
-      } catch (err) {
-        return {
-          error: `could not read the post from Slack: ${formatError(err)}`,
-        };
-      }
-      if (parts.length === 0)
-        return {
-          error: "the post was not found in Slack; it may already be deleted",
-        };
-      if (parts.some((m) => parseAgentFooter(m)?.agentId !== instanceName))
-        return { error: "this agent did not post that message" };
-
-      const post = parts.find((m) => !m.fileIds?.length) ?? parts[0]!;
-      const ordered = [post, ...parts.filter((m) => m !== post)];
-      let postDeleted = false;
-      let filesDeleted = false;
-      let failure: string | null = null;
-      for (const part of ordered) {
-        try {
-          for (const fileId of part.fileIds ?? [])
-            await gw.deleteFile(fileId, ref.teamId);
-          await gw.deleteMessage(ref.channel, part.ts, ref.teamId);
-          if (part === post) postDeleted = true;
-          else filesDeleted = true;
-        } catch (err) {
-          failure ??= formatError(err);
-        }
-      }
-
-      const agentWillBeTold =
-        postDeleted &&
-        !post.fileIds?.length &&
-        (await tellAgentPostDeleted({
-          instanceName,
-          ref,
-          post,
-          withFiles: filesDeleted && failure === null,
-          reason,
-        }));
-      if (failure === null) return { ok: true as const, agentWillBeTold };
-      return {
-        error: postDeleted
-          ? `the message was deleted, but an attachment was not (${failure}) — open the Delete link again to finish`
-          : `the message was not deleted (${failure}) — open the Delete link again to retry`,
-      };
     },
 
     async listConversations(instanceName: string) {
@@ -3969,35 +4030,42 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
 
       const [footer, persona] = await Promise.all([
-        deletablePost(gw, target).then((post) =>
-          agentFooter(instanceName, undefined, post),
-        ),
+        agentFooter(instanceName),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       const contextBlock = agentContextBlock(footer);
 
       try {
-        if (text) {
-          await gw.postMessage({
-            channel: target.id,
-            teamId: target.teamId,
-            text,
-            ...persona,
-            blocks: [{ type: "markdown", text }, contextBlock],
-            ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
-            ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-          });
-        }
+        const postBlocks = (fileIds: string[]): SlackBlock[] => [
+          { type: "markdown", text },
+          contextBlock,
+          deletePostActions(fileIds),
+        ];
+        const posted = text
+          ? await gw.postMessage({
+              channel: target.id,
+              teamId: target.teamId,
+              text,
+              ...persona,
+              blocks: postBlocks([]),
+              ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+              ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+            })
+          : null;
         if (attachment) {
           try {
-            await gw.uploadFile({
+            const fileIds = await gw.uploadFile({
               channelId: target.id,
               teamId: target.teamId,
               file: attachment.data,
               filename: attachment.filename,
               title: attachment.title,
-              blocks: [contextBlock],
+              initialComment: text ? undefined : agentFooterMrkdwn(footer),
             });
+            if (posted && text)
+              await linkAttachmentsToPost(gw, target, posted.ts, text, {
+                blocks: postBlocks(fileIds),
+              });
           } catch (err) {
             return {
               error: text
@@ -4218,19 +4286,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) return target;
 
       const [footer, persona] = await Promise.all([
-        deletablePost(gw, target, threadTs).then((post) =>
-          agentFooter(instanceName, turn?.sessionId, post),
-        ),
+        agentFooter(instanceName, turn?.sessionId),
         agentPersona(gw, instanceName, target.teamId),
       ]);
+      const replyBlocks = (fileIds: string[]): SlackBlock[] => [
+        ...renderAssistantBlocks(footer, args.text),
+        deletePostActions(fileIds),
+      ];
       try {
-        await gw.postMessage({
+        const posted = await gw.postMessage({
           channel: target.id,
           teamId: target.teamId,
           threadTs,
           text: args.text,
           ...persona,
-          blocks: renderAssistantBlocks(footer, args.text),
+          blocks: replyBlocks([]),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
           ...(args.unfurlLinks !== undefined
             ? { unfurlLinks: args.unfurlLinks }
@@ -4241,15 +4311,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
         if (args.attachment) {
           try {
-            await gw.uploadFile({
+            const fileIds = await gw.uploadFile({
               channelId: target.id,
               teamId: target.teamId,
               threadTs,
               file: args.attachment.data,
               filename: args.attachment.filename,
               title: args.attachment.title,
-              blocks: [agentContextBlock(footer)],
             });
+            if (posted)
+              await linkAttachmentsToPost(gw, target, posted.ts, args.text, {
+                blocks: replyBlocks(fileIds),
+              });
           } catch (err) {
             return {
               error: `reply posted, but the attachment upload failed: ${formatError(err)}`,

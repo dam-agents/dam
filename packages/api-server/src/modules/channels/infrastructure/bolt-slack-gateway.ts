@@ -15,12 +15,11 @@ import type {
 } from "./slack-gateway.js";
 
 type BoltApp = InstanceType<typeof App>;
-
-const MESSAGE_WINDOW_PAGE = 200;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
-type FilesUploadV2Args = Parameters<BoltApp["client"]["files"]["uploadV2"]>[0];
+type ChatUpdateArgs = Parameters<BoltApp["client"]["chat"]["update"]>[0];
+type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
 >[0];
@@ -69,7 +68,6 @@ function toSlackMessage(m: {
   reply_count?: number;
   latest_reply?: string;
   subtype?: string;
-  files?: { id?: string; mode?: string }[];
 }): SlackMessage {
   return {
     ts: m.ts,
@@ -81,13 +79,6 @@ function toSlackMessage(m: {
     ...(m.reply_count ? { replyCount: m.reply_count } : {}),
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
-    ...(m.files?.length
-      ? {
-          fileIds: m.files.flatMap((f) =>
-            f.id && f.mode !== "tombstone" ? [f.id] : [],
-          ),
-        }
-      : {}),
   };
 }
 
@@ -271,6 +262,40 @@ export function createBoltSlackGateway(
         );
       });
 
+      bolt.action(/.+/, async ({ ack, body, context }) => {
+        await ack();
+        if (body.type !== "block_actions") return;
+        const action = body.actions[0];
+        const message = body.message as
+          (Parameters<typeof toSlackMessage>[0] & { ts?: string }) | undefined;
+        const channel = body.channel?.id ?? body.container?.channel_id;
+        if (!action || !message?.ts || !channel) return;
+        await handlers.onBlockAction({
+          actionId: action.action_id,
+          value: "value" in action ? (action.value ?? "") : "",
+          userId: body.user.id,
+          teamId: body.team?.id ?? context.teamId ?? NO_WORKSPACE,
+          channel,
+          message: { ...toSlackMessage(message), ts: message.ts },
+          triggerId: body.trigger_id,
+        });
+      });
+
+      bolt.view(/.+/, async ({ ack, body, view, context }) => {
+        await ack();
+        const inputs: Record<string, string> = {};
+        for (const block of Object.values(view.state.values))
+          for (const [actionId, input] of Object.entries(block))
+            if (typeof input.value === "string") inputs[actionId] = input.value;
+        await handlers.onViewSubmission({
+          callbackId: view.callback_id,
+          privateMetadata: view.private_metadata,
+          userId: body.user.id,
+          teamId: body.team?.id ?? context.teamId ?? NO_WORKSPACE,
+          inputs,
+        });
+      });
+
       const forgetWorkspace = async (teamId: string | undefined) => {
         if (!teamId) return;
         workspaces.delete(teamId);
@@ -327,10 +352,10 @@ export function createBoltSlackGateway(
     },
 
     async postMessage(args) {
-      if (!app) return;
+      if (!app) return null;
       const token = await tokenFor(args.teamId);
-      if (!token) return;
-      await app.client.chat.postMessage({
+      if (!token) return null;
+      const res = await app.client.chat.postMessage({
         token,
         channel: args.channel,
         text: args.text,
@@ -346,45 +371,20 @@ export function createBoltSlackGateway(
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
       } as ChatPostMessageArgs);
+      return res.ts ? { ts: res.ts } : null;
     },
 
-    async postEphemeral(args) {
-      if (!app) return;
-      const token = await tokenFor(args.teamId);
-      if (!token) return;
-      await app.client.chat.postEphemeral({
-        token,
-        channel: args.channel,
-        user: args.user,
-        thread_ts: args.threadTs,
-        text: args.text,
-      });
-    },
-
-    async readMessageWindow(args) {
+    async updateMessage(args) {
       if (!app) throw new Error("slack app not started");
-      const client = app.client;
       const token = await tokenFor(args.teamId);
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      const messages: SlackMessage[] = [];
-      let cursor: string | undefined;
-      do {
-        const window = {
-          token,
-          channel: args.channel,
-          oldest: args.oldest,
-          latest: args.latest,
-          inclusive: true,
-          limit: MESSAGE_WINDOW_PAGE,
-          ...(cursor ? { cursor } : {}),
-        };
-        const res = args.threadTs
-          ? await client.conversations.replies({ ...window, ts: args.threadTs })
-          : await client.conversations.history(window);
-        messages.push(...(res.messages ?? []).map(toSlackMessage));
-        cursor = res.response_metadata?.next_cursor || undefined;
-      } while (cursor);
-      return messages;
+      await app.client.chat.update({
+        token,
+        channel: args.channel,
+        ts: args.ts,
+        text: args.text,
+        blocks: args.blocks,
+      } as ChatUpdateArgs);
     },
 
     async deleteMessage(channel, ts, teamId) {
@@ -405,9 +405,32 @@ export function createBoltSlackGateway(
       try {
         await app.client.files.delete({ token, file: fileId });
       } catch (err) {
-        const message = formatError(err);
-        if (!/file_not_found|file_deleted/.test(message)) throw err;
+        if (!/file_not_found|file_deleted/.test(formatError(err))) throw err;
       }
+    },
+
+    async openModal(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.views.open({
+        token,
+        trigger_id: args.triggerId,
+        view: args.view,
+      } as unknown as ViewsOpenArgs);
+    },
+
+    async postEphemeral(args) {
+      if (!app) return;
+      const token = await tokenFor(args.teamId);
+      if (!token) return;
+      await app.client.chat.postEphemeral({
+        token,
+        channel: args.channel,
+        user: args.user,
+        thread_ts: args.threadTs,
+        text: args.text,
+      });
     },
 
     async startStream(args): Promise<{ ts: string }> {
@@ -561,21 +584,24 @@ export function createBoltSlackGateway(
     },
 
     async uploadFile(args) {
-      if (!app) return;
+      if (!app) return [];
       const token = await tokenFor(args.teamId);
-      if (!token) return;
+      if (!token) return [];
       const upload = {
         token,
         channel_id: args.channelId,
         file: args.file,
         filename: args.filename,
         title: args.title,
-        ...(args.blocks ? { blocks: args.blocks } : {}),
+        initial_comment: args.initialComment,
       };
-      await app.client.files.uploadV2(
-        (args.threadTs
-          ? { ...upload, thread_ts: args.threadTs }
-          : upload) as FilesUploadV2Args,
+      const res = await app.client.files.uploadV2(
+        args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
+      );
+      const completed = (res as { files?: { files?: { id?: string }[] }[] })
+        .files;
+      return (completed ?? []).flatMap((r) =>
+        (r.files ?? []).flatMap((f) => (f.id ? [f.id] : [])),
       );
     },
 
@@ -660,17 +686,9 @@ export function createBoltSlackGateway(
           channel: channelId,
         });
         if (!info.channel) return null;
-        const c = info.channel;
         return {
-          isMember: !!c.is_member,
-          name: c.name ?? null,
-          kind: c.is_im
-            ? "im"
-            : c.is_mpim
-              ? "mpim"
-              : c.is_private
-                ? "private"
-                : "public",
+          isMember: !!info.channel.is_member,
+          name: info.channel.name ?? null,
         };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;

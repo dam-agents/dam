@@ -25,10 +25,6 @@ function fakeSlackWorker(): SlackWorker {
       messageTs: "1.1",
     })),
     resolveConversationNames: vi.fn(async () => []),
-    deleteAgentPost: vi.fn(async () => ({
-      ok: true as const,
-      agentWillBeTold: false,
-    })),
     readThread: vi.fn(async () => ({
       messages: [],
       conversationId: "C1",

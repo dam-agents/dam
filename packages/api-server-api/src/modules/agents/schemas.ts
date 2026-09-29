@@ -135,12 +135,6 @@ export const agentUnbindTelegramChatInputSchema = z.object({
   conversationId: z.string().min(1),
 });
 
-export const agentDeleteSlackPostInputSchema = z.object({
-  agentId: z.string().min(1),
-  postRef: z.string().min(1),
-  reason: z.string().trim().max(2000).optional(),
-});
-
 export const agentBindTelegramChatInputSchema = z.object({
   agentId: z.string().min(1),
   flowId: z.string().min(1),

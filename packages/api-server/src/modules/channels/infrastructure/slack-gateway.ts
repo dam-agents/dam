@@ -59,6 +59,26 @@ export interface SlackGatewayHandlers {
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
+  onBlockAction: (event: SlackBlockAction) => Promise<void>;
+  onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+}
+
+export interface SlackBlockAction {
+  actionId: string;
+  value: string;
+  userId: string;
+  teamId: SlackWorkspace;
+  channel: string;
+  message: SlackMessage & { ts: string };
+  triggerId: string;
+}
+
+export interface SlackViewSubmission {
+  callbackId: string;
+  privateMetadata: string;
+  userId: string;
+  teamId: SlackWorkspace;
+  inputs: Record<string, string>;
 }
 
 /**
@@ -115,12 +135,9 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
-  fileIds?: string[];
 }
 
 export type SlackBlock = Record<string, unknown>;
-
-export type SlackConversationKind = "public" | "private" | "im" | "mpim";
 
 export interface SlackPostMessage {
   channel: string;
@@ -148,7 +165,7 @@ export interface SlackUpload {
   file: Buffer;
   filename: string;
   title?: string;
-  blocks?: SlackBlock[];
+  initialComment?: string;
   threadTs?: string;
   teamId: SlackWorkspace;
 }
@@ -223,21 +240,26 @@ export interface SlackMessageReaction {
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
-  postMessage(args: SlackPostMessage): Promise<void>;
-  postEphemeral(args: SlackPostEphemeral): Promise<void>;
-  readMessageWindow(args: {
+  postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
+  updateMessage(args: {
     channel: string;
-    threadTs?: string;
-    oldest: string;
-    latest: string;
+    ts: string;
+    text: string;
+    blocks: SlackBlock[];
     teamId: SlackWorkspace;
-  }): Promise<SlackMessage[]>;
+  }): Promise<void>;
   deleteMessage(
     channel: string,
     ts: string,
     teamId: SlackWorkspace,
   ): Promise<void>;
   deleteFile(fileId: string, teamId: SlackWorkspace): Promise<void>;
+  openModal(args: {
+    triggerId: string;
+    view: SlackBlock;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
+  postEphemeral(args: SlackPostEphemeral): Promise<void>;
   startStream(args: SlackStartStream): Promise<{ ts: string }>;
   appendStream(args: SlackAppendStream): Promise<void>;
   stopStream(args: SlackStopStream): Promise<void>;
@@ -269,7 +291,7 @@ export interface SlackGateway {
     oldest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
-  uploadFile(args: SlackUpload): Promise<void>;
+  uploadFile(args: SlackUpload): Promise<string[]>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,
@@ -279,11 +301,7 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{
-    isMember: boolean;
-    name: string | null;
-    kind: SlackConversationKind;
-  } | null>;
+  ): Promise<{ isMember: boolean; name: string | null } | null>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,
