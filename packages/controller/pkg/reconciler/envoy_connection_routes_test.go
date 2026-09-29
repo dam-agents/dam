@@ -177,7 +177,7 @@ func TestRenderEnvoyBootstrap_TwoConnectionsOnOneHostRenderDistinctInjectors(t *
 	b := connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "mcp.slack.com")
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		connectionChain("mcp.slack.com", a, b),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.NotEqual(t, a.FilterName(), b.FilterName())

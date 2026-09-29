@@ -54,6 +54,18 @@ if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
 	fi
 fi
 
+# A machine reaches nothing but its gateway, which answers DNS itself: every
+# name resolves to the gateway, which routes the connection by SNI or Host
+# through the same egress checks as the proxy. So containers, builds and k3s
+# pods reach the network without proxy settings.
+if [ "$(id -u)" = 0 ] && [ "${PLATFORM_BACKEND:-container}" = vm ] && [ -n "${HTTPS_PROXY:-}" ]; then
+	gateway=${HTTPS_PROXY#*://}
+	gateway=${gateway%%/*}
+	gateway=${gateway%:*}
+	printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf ||
+		echo "agent-entrypoint: WARNING: could not point DNS at the gateway; only proxy-aware clients reach the network" >&2
+fi
+
 # A container trusts only the roots its own image ships, not this machine's. The
 # share carries platform-runc, which adds the platform CA to every container's
 # bundle before starting it. docker's builder runs the runc on PATH and ignores

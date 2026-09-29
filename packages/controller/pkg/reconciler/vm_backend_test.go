@@ -1198,9 +1198,12 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 				sawGateway = true
 				assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
 					"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
-				require.Len(t, rule.Ports, 1, "the gateway's proxy port alone: nothing else on a gateway is meant for a guest")
-				assert.Equal(t, int32(testConfig.EnvoyPort), rule.Ports[0].Port.IntVal)
-				assert.Equal(t, corev1.ProtocolTCP, *rule.Ports[0].Protocol)
+				var ports []string
+				for _, p := range rule.Ports {
+					ports = append(ports, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
+				}
+				assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "TCP/10443", "UDP/10053", "TCP/10053"}, ports,
+					"the proxy port, the transparent TLS port and the machine resolver: nothing else on a gateway is meant for a guest")
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}

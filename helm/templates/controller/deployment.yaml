@@ -172,6 +172,8 @@ spec:
               value: "svc.cluster.local"
             - name: ENVOY_IMAGE
               value: {{ .Values.controller.envoyImage | quote }}
+            - name: MACHINE_DNS_IMAGE
+              value: {{ .Values.controller.machineDNSImage | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             # ext-authz uses per-agent Services rendered by the

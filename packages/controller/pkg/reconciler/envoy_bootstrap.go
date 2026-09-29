@@ -42,10 +42,11 @@ type bootstrapParams struct {
 	InstanceID             string
 	AttributionID          string
 	AnyUpgrades            bool
+	Transparent            bool
 	OTel                   envoyOTelView
 }
 
-func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
+func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
 	objectStoreAuthority := ""
@@ -86,6 +87,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		InstanceID:             instanceID,
 		AttributionID:          attributionID,
 		AnyUpgrades:            anyUpgrades,
+		Transparent:            transparent,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}
 	doc := buildEnvoyBootstrap(p)
@@ -113,6 +115,10 @@ func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) 
 }
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
+	listeners := []any{buildOuterListener(p), buildInternalListener(p)}
+	if p.Transparent {
+		listeners = append(listeners, buildTransparentTLSListener(p))
+	}
 	doc := ev{
 		"node": ev{
 			"id":      "platform-credential-injector",
@@ -125,11 +131,8 @@ func buildEnvoyBootstrap(p bootstrapParams) ev {
 			},
 		},
 		"static_resources": ev{
-			"listeners": []any{
-				buildOuterListener(p),
-				buildInternalListener(p),
-			},
-			"clusters": buildClusters(p),
+			"listeners": listeners,
+			"clusters":  buildClusters(p),
 		},
 	}
 	if p.OTel.Metrics {

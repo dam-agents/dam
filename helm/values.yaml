@@ -1764,6 +1764,11 @@ controller:
   # pull-through cache, higher anonymous rate limits) — byte-identical to
   # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
   envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
+  # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
+  # pod: it answers every name with the gateway's address and resolves nothing
+  # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
+  # Envoy.
+  machineDNSImage: mirror.gcr.io/coredns/coredns:1.14.3
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
