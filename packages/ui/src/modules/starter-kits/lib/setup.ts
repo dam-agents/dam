@@ -15,6 +15,10 @@ import {
 
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import {
+  CRON_TIMEZONE,
+  cronToText,
+} from "../../schedules/lib/schedule-format.js";
 
 export interface StarterKitSetupDraft {
   name: string;
@@ -193,7 +197,7 @@ export function describeAccepts(
 export function kitScheduleCadence(schedule: StarterKitSchedule): string {
   if ("rrule" in schedule)
     return `${rruleToText(schedule.rrule)} (${schedule.timezone})`;
-  return schedule.cron;
+  return `${cronToText(schedule.cron)} (${CRON_TIMEZONE})`;
 }
 
 export function withOverride(

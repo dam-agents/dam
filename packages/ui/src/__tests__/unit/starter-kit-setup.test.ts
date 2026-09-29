@@ -326,15 +326,25 @@ describe("schedules", () => {
     expect(toggleSkipped([], "a")).toEqual(["a"]);
     expect(toggleSkipped(["a", "b"], "a")).toEqual(["b"]);
   });
-  test("renders a cron as-is and an rrule as text with its timezone", () => {
+  test("renders a cron and an rrule as text with the timezone each runs in", () => {
     expect(
       kitScheduleCadence({
         name: "x",
         task: "t",
         enabled: true,
-        cron: "*/5 * * * *",
+        cron: "*/5 8-21 * * 1-5",
       }),
-    ).toBe("*/5 * * * *");
+    ).toBe(
+      "Every 5 minutes, between 08:00 AM and 09:59 PM, Monday through Friday (UTC)",
+    );
+    expect(
+      kitScheduleCadence({
+        name: "z",
+        task: "t",
+        enabled: true,
+        cron: "@hourly-ish",
+      }),
+    ).toBe("@hourly-ish (UTC)");
     expect(
       kitScheduleCadence({
         name: "y",

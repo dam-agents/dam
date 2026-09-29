@@ -1,4 +1,5 @@
 import { rruleToText } from "api-server-api";
+import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
 
@@ -20,6 +21,16 @@ export function formatRunTime(iso: string, now: Date = new Date()): string {
     year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
   });
   return `${day} at ${time}`;
+}
+
+export const CRON_TIMEZONE = "UTC";
+
+export function cronToText(cron: string): string {
+  try {
+    return cronstrue.toString(cron, { verbose: false });
+  } catch {
+    return cron;
+  }
 }
 
 export function scheduleCadenceText(schedule: Schedule): string {

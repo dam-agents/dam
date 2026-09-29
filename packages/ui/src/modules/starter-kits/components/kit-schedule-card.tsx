@@ -32,6 +32,7 @@ import {
   kitScheduleModified,
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
+import { kitScheduleCadence } from "../lib/setup.js";
 
 interface Props {
   schedule: StarterKitSchedule;
@@ -125,17 +126,11 @@ export function KitScheduleCard({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {"cron" in schedule && keepsCron ? (
-              <>
-                Cron <code className="font-mono">{schedule.cron}</code>
-              </>
-            ) : "rrule" in schedule && keepsDeclared ? (
-              rruleToText(schedule.rrule)
-            ) : body ? (
-              rruleToText(body)
-            ) : (
-              "—"
-            )}
+            {keepsDeclared
+              ? kitScheduleCadence(schedule)
+              : body
+                ? `${rruleToText(body)} (${values.timezone})`
+                : "—"}
           </p>
         </div>
         <Switch

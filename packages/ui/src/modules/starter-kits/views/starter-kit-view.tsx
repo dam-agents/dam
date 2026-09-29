@@ -1,4 +1,10 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+  Time,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
@@ -369,6 +375,7 @@ function KitDetail({
               {kit.schedules.map((schedule) => (
                 <Row
                   key={schedule.name}
+                  icon={<Time size={16} className="text-kit" />}
                   title={schedule.name}
                   detail={kitScheduleCadence(schedule)}
                   trailing={
