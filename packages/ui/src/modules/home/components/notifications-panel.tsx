@@ -89,6 +89,10 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       else next.add(type);
       return { ...prev, channelTypes: next };
     });
+  const resetFilters = () => {
+    setNeedsYou(false);
+    setFilters(defaultActivityFilters());
+  };
   const changeState = (state: StateFilter) => {
     setNeedsYou(state === "attention");
     setFilters((prev) => ({
@@ -130,8 +134,8 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             filters={needsYou ? { ...filters, state: "attention" } : filters}
             onToggleChannelType={toggleChannelType}
             onChangeState={changeState}
-            onReset={() => setFilters(defaultActivityFilters())}
-            filtered={filtered}
+            onReset={resetFilters}
+            filtered={filtered || needsYou}
           />
           {!needsYou && dismissible.length > 0 && (
             <button
@@ -177,10 +181,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 resetLabel="Back to Activity"
               />
             ) : (
-              <ActivityEmpty
-                filtered={filtered}
-                onReset={() => setFilters(defaultActivityFilters())}
-              />
+              <ActivityEmpty filtered={filtered} onReset={resetFilters} />
             )
           ) : (
             <>
