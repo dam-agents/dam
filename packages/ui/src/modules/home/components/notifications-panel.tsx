@@ -89,8 +89,13 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       else next.add(type);
       return { ...prev, channelTypes: next };
     });
-  const changeState = (state: StateFilter) =>
-    setFilters((prev) => ({ ...prev, state }));
+  const changeState = (state: StateFilter) => {
+    setNeedsYou(state === "attention");
+    setFilters((prev) => ({
+      ...prev,
+      state: state === "attention" ? "any" : state,
+    }));
+  };
 
   return (
     <>
@@ -122,7 +127,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="flex items-center gap-1.5 border-b border-border px-5 py-3">
           <ActivityFilterBar
-            filters={filters}
+            filters={needsYou ? { ...filters, state: "attention" } : filters}
             onToggleChannelType={toggleChannelType}
             onChangeState={changeState}
             onReset={() => setFilters(defaultActivityFilters())}
