@@ -1,8 +1,5 @@
 import type { RuntimeMigrationPlanView } from "../../../types.js";
-import {
-  planMoveLines,
-  retentionSentence,
-} from "../utils/runtime-migration.js";
+import { retentionSentence } from "../utils/runtime-migration.js";
 
 export function MigrationPlanSummary({
   name,
@@ -11,7 +8,6 @@ export function MigrationPlanSummary({
   name: string;
   plan: RuntimeMigrationPlanView;
 }) {
-  const moves = planMoveLines(plan);
   return (
     <div className="flex flex-col gap-3" data-testid="migration-plan">
       <p>
@@ -19,31 +15,10 @@ export function MigrationPlanSummary({
         new sandbox runtime? The agent stops, its home directory — the workspace
         and settings — is copied over, and it restarts on the new runtime.
       </p>
-      {moves.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <p>Its other saved folders move into the home directory:</p>
-          <ul className="list-disc pl-5">
-            {moves.map((m) => (
-              <li key={m.from}>
-                {m.stays ? (
-                  <>
-                    <code>{m.from}</code> stays where it is
-                  </>
-                ) : (
-                  <>
-                    <code>{m.from}</code> will live in your home at{" "}
-                    <code>{m.to}</code>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <ul className="list-disc pl-5">
         <li>
           {plan.storageResized
-            ? `Its disk is resized to ${plan.storageSize} to hold all of its saved folders.`
+            ? `Its disk is resized to ${plan.storageSize} to hold its home directory.`
             : `Its disk is ${plan.storageSize}.`}
         </li>
         <li>{retentionSentence(plan.retentionMs)}</li>

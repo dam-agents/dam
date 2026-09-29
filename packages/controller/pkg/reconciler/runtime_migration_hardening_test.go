@@ -117,8 +117,8 @@ func TestTheCopyJobRunsConfined(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: a share may squash root, which then gets EACCES on the agent's own 0600 files, so a copy with any shared volume reads as the agent's uid with no capability. A block volume squashes nothing but holds a root-owned 0700 lost+found the agent's uid cannot open, so a copy of block volumes alone reads as root with DAC_READ_SEARCH and nothing else — it can read everything and write nothing.
-func TestTheCopyReadsAsTheIdentityItsVolumesCallFor(t *testing.T) {
+// TEST_SCENARIO: a share may squash root, which then gets EACCES on the agent's own 0600 files, so a shared home volume is read as the agent's uid with no capability. A block volume squashes nothing but holds a root-owned 0700 lost+found the agent's uid cannot open, so a block home volume is read as root with DAC_READ_SEARCH and nothing else — it can read everything and write nothing.
+func TestTheCopyReadsAsTheIdentityItsVolumeCallsFor(t *testing.T) {
 	shared := homePVC("home-agent-my-agent-0")
 	shared.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
 	_, _, job := startCopy(t, copyingAgentCR(), shared)
@@ -427,20 +427,17 @@ func TestAMigrationMessageIsSafeToShow(t *testing.T) {
 	assert.Equal(t, runtimeMigrationMessageMax+1, len([]rune(long)), "cut by characters, never inside one")
 }
 
-// TEST_SCENARIO: the seed waits on the owner's runner claim beside the disk it is restored into, so from the copy until the guest has booted from it, the claim counts the size of the volumes it was read from. Before the copy and once the boot is verified it counts nothing.
+// TEST_SCENARIO: the seed waits on the owner's runner claim beside the disk it is restored into, so from the copy until the guest has booted from it, the claim counts the size of the home volume it was read from. Before the copy and once the boot is verified it counts nothing.
 func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
 	ctx := context.Background()
 	agent := copyingAgentCR()
-	agent.Annotations[annRuntimeMigrationGrafts] = `[{"from":"/data","at":".persisted/data","pvc":"data-my-agent-0"}]`
 	r, _, _ := setupMigrationReconciler(t, agent)
-	for name, size := range map[string]string{"home-agent-my-agent-0": "10Gi", "data-my-agent-0": "5Gi"} {
-		pvc := homePVC(name)
-		pvc.Spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)}
-		createAll(t, r, pvc)
-	}
+	pvc := homePVC("home-agent-my-agent-0")
+	pvc.Spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}
+	createAll(t, r, pvc)
 	for phase, seed := range map[string]int64{
-		apiv1.ReasonRuntimeMigrationCopying:   15 << 30,
-		apiv1.ReasonRuntimeMigrationBooting:   15 << 30,
+		apiv1.ReasonRuntimeMigrationCopying:   10 << 30,
+		apiv1.ReasonRuntimeMigrationBooting:   10 << 30,
 		apiv1.ReasonRuntimeMigrationStopping:  0,
 		apiv1.ReasonRuntimeMigrationVerified:  0,
 		apiv1.ReasonRuntimeMigrationRequested: 0,
@@ -637,32 +634,6 @@ func TestAStorageMigrationGateOnAMigratingAgentIsReleased(t *testing.T) {
 	assert.NotContains(t, getAgentAnnotations(t, m, "my-agent"), annStorageMigration)
 	_, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err))
-}
-
-// TEST_SCENARIO: one process reads every volume, so a set of a shared and a block volume reads as root with DAC_READ_SEARCH, which reads the block volume's root-owned lost+found for certain. A share beside it that squashes root then refuses the copy, and that failure says so and what to do, rather than repeating a bare permission error.
-func TestAMixedSetOfVolumesReadsAsRootAndExplainsASquashedShare(t *testing.T) {
-	ctx := context.Background()
-	agent := copyingAgentCR()
-	agent.Annotations[annRuntimeMigrationGrafts] = `[{"from":"/data","at":".persisted/data","pvc":"data-my-agent-0"}]`
-	share := mountPVC("data-my-agent-0", "/data")
-	share.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
-	r, _, job := startCopy(t, agent, blockHome(), share)
-	pod := job.Spec.Template.Spec
-	assert.Equal(t, int64(0), *pod.SecurityContext.RunAsUser)
-	assert.Equal(t, []corev1.Capability{"DAC_READ_SEARCH"}, pod.Containers[0].SecurityContext.Capabilities.Add)
-
-	_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: job.Name + "-x", Namespace: "test-agents", Labels: map[string]string{batchv1.JobNameLabel: job.Name}},
-		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "seed", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
-			ExitCode: 1, FinishedAt: metav1.Now(), Message: "Error: archiving the seed: reading /mnt/extra/0/" + strings.Repeat("deep/", 80) + "notes.md: Permission denied (os error 13)",
-		}}}}},
-	}, metav1.CreateOptions{})
-	require.NoError(t, err)
-	completeJob(t, r, batchv1.JobFailed, time.Now())
-	require.NoError(t, r.Reconcile(ctx, agent))
-	msg := migrationMessage(t, r, agent)
-	assert.Contains(t, msg, runtimeMigrationMixedHint, "the advice survives the cut; vm-seed's long path is what is cut")
-	assert.True(t, strings.HasSuffix(msg, "…"), "the message was long enough to be cut")
 }
 
 // TEST_SCENARIO: a copy pod that admission refused — an SCC that does not permit what it asks for — never exists, so the Job's FailedCreate event is what the message carries, while the Job waits and once it has failed.

@@ -2,15 +2,20 @@
 // TEST_OVERVIEW: runtime, reversibly until its machine has booted from the
 // TEST_OVERVIEW: copy. The api-server refuses every agent the controller could
 // TEST_OVERVIEW: not move, and otherwise records a request without touching
-// TEST_OVERVIEW: the spec: the target shape, a snapshot of what the switch
-// TEST_OVERVIEW: changes, and where each persisted path goes. The controller
+// TEST_OVERVIEW: the spec: the target shape and a snapshot of what the switch
+// TEST_OVERVIEW: changes. The controller
 // TEST_OVERVIEW: reports progress in the RuntimeMigrating condition; the
 // TEST_OVERVIEW: api-server reads it back into the phase the browser shows,
 // TEST_OVERVIEW: aborts or retries on the user's word, and switches the
 // TEST_OVERVIEW: Backend itself once the controller reports the boot verified.
 // TEST_OVERVIEW: Every write names the version it was decided from.
 import { describe, it, expect, vi } from "vitest";
-import { toAgentView, type Agent, type AgentSpec } from "api-server-api";
+import {
+  runtimeMigrationRefusalReasons,
+  toAgentView,
+  type Agent,
+  type AgentSpec,
+} from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
 import {
   createRuntimeMigrationSwitch,
@@ -45,14 +50,12 @@ const CHART_MOUNTS = [
 const REQUEST = "agent-platform.ai/runtime-migration";
 const TARGET = "agent-platform.ai/runtime-migration-target";
 const SNAPSHOT = "agent-platform.ai/runtime-migration-snapshot";
-const MOUNTS = "agent-platform.ai/runtime-migration-mounts";
 const RETRY = "agent-platform.ai/runtime-migration-retry";
 
 const CLEARED = {
   [REQUEST]: null,
   [TARGET]: null,
   [SNAPSHOT]: null,
-  [MOUNTS]: null,
   [RETRY]: null,
 };
 
@@ -157,14 +160,13 @@ describe("runtime migration request", () => {
           nodeSelector: { pool: "agents" },
         }),
         [RETRY]: null,
-        [MOUNTS]: null,
       },
       resourceVersion: "41",
     });
   });
 
-  // TEST_SCENARIO: an agent that persisted other paths on the container backend moves with them. A path under HOME keeps its place and one outside moves below HOME's persisted directory; the target's mounts are rewritten to match, its disk is sized for every volume together since the runner refuses a seed larger than the disk, and the controller is told where each old path went so it can find that path's volume. A non-persisted mount is left as it is.
-  it("moves persisted paths below HOME and says where each went", async () => {
+  // TEST_SCENARIO: the machine's one disk holds what HOME's volume held, so a HOME mount that names a size larger than the Agent's storageSize sizes the target's disk, as the container backend sized that volume. The mounts are left as they are, and a non-persisted mount is carried by nothing and refuses nothing.
+  it("sizes the target's disk for HOME's own volume", async () => {
     const h = harness({
       agent: infraAgent({
         spec: {
@@ -172,9 +174,7 @@ describe("runtime migration request", () => {
           image: "img",
           storageSize: "10Gi",
           mounts: [
-            { path: "/home/agent", persist: true },
-            { path: "/home/agent/cache", persist: true, size: "5Gi" },
-            { path: "/data", persist: true, size: "20Gi" },
+            { path: "/home/agent", persist: true, size: "20Gi" },
             { path: "/scratch", persist: false },
           ],
         },
@@ -183,58 +183,35 @@ describe("runtime migration request", () => {
     expect((await h.run("agent-1")).ok).toBe(true);
     const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
     expect(JSON.parse(annotations[TARGET] ?? "")).toEqual({
-      mounts: [
-        { path: "/home/agent", persist: true },
-        { path: "/home/agent/cache", persist: true, size: "5Gi" },
-        {
-          path: "/home/agent/.persisted/data",
-          persist: true,
-          size: "20Gi",
-          movedFrom: "/data",
-        },
-        { path: "/scratch", persist: false },
-      ],
-      storageSize: "35Gi",
-    });
-    expect(JSON.parse(annotations[MOUNTS] ?? "")).toEqual({
-      "/home/agent/cache": "/home/agent/cache",
-      "/data": "/home/agent/.persisted/data",
+      storageSize: "20Gi",
     });
     expect(h.writeMigration.mock.calls[0]?.[1].spec).toBeUndefined();
   });
 
-  // TEST_SCENARIO: an Agent that names no mounts gets the install's template defaults from the controller. The migration plans from those same mounts, so a default that persists a path outside HOME moves with the Agent in the target shape, and the snapshot records the spec as it was — naming no mounts — beside the mounts the controller rendered.
+  // TEST_SCENARIO: an Agent that names no mounts gets the install's template defaults from the controller. The migration plans from those same mounts, so the snapshot records the spec as it was — naming no mounts — beside the mounts the controller rendered, and a default that persists a path besides HOME refuses the move.
   it("plans from the template defaults when the agent names no mounts", async () => {
     const h = harness({
+      agent: infraAgent({ spec: { name: "my-agent", image: "img" } }),
+    });
+    expect((await h.run("agent-1")).ok).toBe(true);
+    const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
+    expect(annotations[TARGET]).toBe("{}");
+    const snapshot = JSON.parse(annotations[SNAPSHOT] ?? "");
+    expect(snapshot.mounts).toBeNull();
+    expect(snapshot.effectiveMounts).toEqual(CHART_MOUNTS);
+
+    const refused = harness({
       agent: infraAgent({ spec: { name: "my-agent", image: "img" } }),
       defaultMounts: [
         { path: "/home/agent", persist: true },
         { path: "/data", persist: true, size: "5Gi" },
       ],
     });
-    expect((await h.run("agent-1")).ok).toBe(true);
-    const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
-    expect(JSON.parse(annotations[TARGET] ?? "")).toEqual({
-      mounts: [
-        { path: "/home/agent", persist: true },
-        {
-          path: "/home/agent/.persisted/data",
-          persist: true,
-          size: "5Gi",
-          movedFrom: "/data",
-        },
-      ],
-      storageSize: "15Gi",
-    });
-    const snapshot = JSON.parse(annotations[SNAPSHOT] ?? "");
-    expect(snapshot.mounts).toBeNull();
-    expect(snapshot.effectiveMounts).toEqual([
-      { path: "/home/agent", persist: true },
-      { path: "/data", persist: true, size: "5Gi" },
-    ]);
-    expect(annotations[MOUNTS]).toBe(
-      JSON.stringify({ "/data": "/home/agent/.persisted/data" }),
-    );
+    const res = await refused.run("agent-1");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.type).toBe("PersistsUnmovablePaths");
+    expect(refused.writeMigration).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: the refusal is checked on one read and the request is written later, against that read's resourceVersion. A write that keeps losing the race to another change — a storage migration, a second request — is reported as a concurrent update to retry rather than an error.
@@ -280,26 +257,6 @@ describe("runtime migration request", () => {
       ok: false,
       error: { type: "RuntimeMigrationInProgress" },
     });
-  });
-
-  // TEST_SCENARIO: the snapshot is what an abort writes back to a container Agent, and movedFrom belongs only to a switched Agent's mounts, so a stray one is never recorded to be restored — neither in the spec's own mounts nor in the rendered ones beside them.
-  it("records a snapshot without movedFrom", async () => {
-    const h = harness({
-      agent: infraAgent({
-        spec: {
-          name: "my-agent",
-          image: "img",
-          mounts: [{ path: "/home/agent", persist: true, movedFrom: "/stray" }],
-        },
-      }),
-    });
-    expect((await h.run("agent-1")).ok).toBe(true);
-    const annotations = h.writeMigration.mock.calls[0]?.[1].annotations ?? {};
-    const snapshot = JSON.parse(annotations[SNAPSHOT] ?? "");
-    expect(snapshot.mounts).toEqual([{ path: "/home/agent", persist: true }]);
-    expect(snapshot.effectiveMounts).toEqual([
-      { path: "/home/agent", persist: true },
-    ]);
   });
 
   it("rejects an unknown or unowned agent", async () => {
@@ -374,8 +331,8 @@ describe("runtime migration request", () => {
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: some paths cannot be linked back in a machine without breaking it: the root, one at, inside or above HOME or a path the platform lays out, one that is not a plain path, and one already inside HOME's persisted directory, where moved paths go. Each is refused with its reason, and nothing is written.
-  it("refuses paths the machine cannot keep, naming why", async () => {
+  // TEST_SCENARIO: the machine keeps only HOME and the copy carries only HOME's volume, so every other persisted path — outside HOME, or a volume of its own inside it — would be lost. Each is refused, in the order the mounts name it, with the one reason the browser shows; a mount that is not persisted is no reason to refuse, and nothing is written.
+  it("refuses every persisted path besides HOME, naming why", async () => {
     const h = harness({
       agent: infraAgent({
         spec: {
@@ -384,13 +341,8 @@ describe("runtime migration request", () => {
           mounts: [
             { path: "/home/agent", persist: true },
             { path: "/data", persist: true },
-            { path: "/etc", persist: true },
-            { path: "/proc/x", persist: true },
-            { path: "/home", persist: true },
-            { path: "/opt/../etc", persist: true },
-            { path: "/home/agent/../srv", persist: true },
-            { path: "/home/agent/./cache", persist: true },
-            { path: "/home/agent/.persisted/x", persist: false },
+            { path: "/home/agent/cache", persist: true },
+            { path: "/tmp", persist: false },
           ],
         },
       }),
@@ -398,19 +350,24 @@ describe("runtime migration request", () => {
     const res = await h.run("agent-1");
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.error.type).toBe("PersistsUnmovablePaths");
+    expect(res.error).toEqual({
+      type: "PersistsUnmovablePaths",
+      paths: [
+        {
+          path: "/data",
+          reason: "the new runtime keeps only the home directory",
+        },
+        {
+          path: "/home/agent/cache",
+          reason: "the new runtime keeps only the home directory",
+        },
+      ],
+    });
     if (res.error.type !== "PersistsUnmovablePaths") return;
-    expect(res.error.paths.map((p) => p.path)).toEqual([
-      "/etc",
-      "/proc/x",
-      "/home",
-      "/opt/../etc",
-      "/home/agent/../srv",
-      "/home/agent/./cache",
-      "/home/agent/.persisted/x",
+    expect(runtimeMigrationRefusalReasons(res.error)).toEqual([
+      "/data cannot be moved: the new runtime keeps only the home directory",
+      "/home/agent/cache cannot be moved: the new runtime keeps only the home directory",
     ]);
-    expect(res.error.paths[5]?.reason).toBe("it is not a plain absolute path");
-    expect(res.error.paths[0]?.reason).toContain("/etc/platform");
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
 });
@@ -531,16 +488,7 @@ describe("retrying a runtime migration", () => {
 });
 
 describe("the Backend switch", () => {
-  const target = JSON.stringify({
-    mounts: [
-      {
-        path: "/home/agent/.persisted/data",
-        persist: true,
-        movedFrom: "/data",
-      },
-    ],
-    storageSize: "30Gi",
-  });
+  const target = JSON.stringify({ storageSize: "30Gi" });
 
   function switcher(agents: InfraAgent[]) {
     const deps = writes(...agents);
@@ -552,8 +500,8 @@ describe("the Backend switch", () => {
     return { sweep, writeMigration: deps.writeMigration };
   }
 
-  // TEST_SCENARIO: the api-server is the only spec writer, so it is the one that makes a migration permanent. Once the controller reports the boot verified, the spec takes the target shape — each moved mount keeping the movedFrom that is the machine's links plan from then on — — clearing runtimeClassName and nodeSelector, which the CRD rejects on the vm backend — and the request is withdrawn in the same write.
-  it("switches a verified agent to its target shape, movedFrom included", async () => {
+  // TEST_SCENARIO: the api-server is the only spec writer, so it is the one that makes a migration permanent. Once the controller reports the boot verified, the spec takes the target shape — clearing runtimeClassName and nodeSelector, which the CRD rejects on the vm backend — and the request is withdrawn in the same write.
+  it("switches a verified agent to its target shape", async () => {
     const s = switcher([
       migrating("Verified", { runtimeMigrationTarget: target }),
     ]);
@@ -563,13 +511,6 @@ describe("the Backend switch", () => {
         backend: { type: "vm" },
         runtimeClassName: null,
         nodeSelector: null,
-        mounts: [
-          {
-            path: "/home/agent/.persisted/data",
-            persist: true,
-            movedFrom: "/data",
-          },
-        ],
         storageSize: "30Gi",
       },
       annotations: CLEARED,
@@ -597,29 +538,26 @@ describe("the moved agent's disk", () => {
     ...over,
   });
 
-  it("is left alone when only HOME moves", () => {
+  // TEST_SCENARIO: a HOME mount that names no size was sized from the Agent's storageSize, so the disk keeps the size the Agent asks for.
+  it("is left alone when HOME names no size", () => {
     expect(
       movedStorageSize(
         spec({}),
         [{ path: "/home/agent", persist: true }],
-        {},
         "10Gi",
       ),
     ).toBeUndefined();
   });
 
-  it("adds up every volume, each falling back as the container sized it", () => {
-    const s = spec({
-      mounts: [
-        { path: "/home/agent", persist: true },
-        { path: "/data", persist: true, size: "500Mi" },
-      ],
-    });
+  // TEST_SCENARIO: a HOME mount's own size won over the Agent's storageSize on the container backend, so the disk is sized for it, rounded up to whole GiB. Other mounts add nothing: the migration refuses any other persisted path.
+  it("is HOME's own size when it asks for more", () => {
     expect(
       movedStorageSize(
-        s,
-        s.mounts ?? [],
-        { "/data": "/home/agent/.persisted/data" },
+        spec({}),
+        [
+          { path: "/home/agent", persist: true, size: "10500Mi" },
+          { path: "/tmp", persist: false, size: "50Gi" },
+        ],
         "10Gi",
       ),
     ).toBe("11Gi");
@@ -627,23 +565,17 @@ describe("the moved agent's disk", () => {
 
   // TEST_SCENARIO: a disk never gets smaller than the Agent asks for, and a size that cannot be read leaves the disk as the Agent asks rather than guessing.
   it("never shrinks below what the agent asks, nor guesses", () => {
-    const moves = { "/data": "/home/agent/.persisted/data" };
     expect(
       movedStorageSize(
         spec({ storageSize: "50Gi" }),
-        [
-          { path: "/home/agent", persist: true, size: "1Gi" },
-          { path: "/data", persist: true, size: "1Gi" },
-        ],
-        moves,
+        [{ path: "/home/agent", persist: true, size: "1Gi" }],
         "10Gi",
       ),
-    ).toBe("50Gi");
+    ).toBeUndefined();
     expect(
       movedStorageSize(
         spec({}),
-        [{ path: "/data", persist: true, size: "1e3" }],
-        moves,
+        [{ path: "/home/agent", persist: true, size: "1e3" }],
         "10Gi",
       ),
     ).toBeUndefined();
@@ -775,7 +707,7 @@ describe("the agent view's runtime migration", () => {
     expect(viewOf({}, {}, condition("Copying")).runtimeMigratable).toBe(false);
   });
 
-  it("offers the migration only to a container agent whose paths can all move", () => {
+  it("offers the migration only to a container agent that persists nothing but HOME", () => {
     expect(viewOf({}).runtimeMigratable).toBe(true);
     expect(viewOf({}, { backend: { type: "vm" } }).runtimeMigratable).toBe(
       false,
@@ -786,14 +718,21 @@ describe("the agent view's runtime migration", () => {
         {
           mounts: [
             { path: "/home/agent", persist: true },
-            { path: "/data", persist: true },
+            { path: "/tmp", persist: false },
           ],
         },
       ).runtimeMigratable,
     ).toBe(true);
     expect(
-      viewOf({}, { mounts: [{ path: "/proc/x", persist: true }] })
-        .runtimeMigratable,
+      viewOf(
+        {},
+        {
+          mounts: [
+            { path: "/home/agent", persist: true },
+            { path: "/data", persist: true },
+          ],
+        },
+      ).runtimeMigratable,
     ).toBe(false);
   });
 });

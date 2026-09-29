@@ -340,7 +340,8 @@ spec:
             - name: AGENT_DEFAULT_MEMORY_LIMIT
               value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
             # The size a persisted mount without one of its own gets, which a
-            # runtime migration adds up to size the moved agent's disk.
+            # runtime migration falls back to when it sizes the moved agent's
+            # disk for its home.
             - name: AGENT_DEFAULT_STORAGE_SIZE
               value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
             # The mounts the controller renders for an Agent that names none,

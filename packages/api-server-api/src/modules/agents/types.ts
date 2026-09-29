@@ -155,13 +155,7 @@ export type RuntimeMigrationRefusal = Exclude<
   { type: "AgentNotFound" }
 >;
 
-export interface PersistedMove {
-  from: string;
-  to: string;
-}
-
 export interface RuntimeMigrationPlan {
-  moves: PersistedMove[];
   unmovable: UnmovablePath[];
   storageSize: string;
   storageResized: boolean;

@@ -193,7 +193,6 @@ export interface RuntimeMigrationView {
 }
 
 export interface RuntimeMigrationPlanView {
-  moves: { from: string; to: string }[];
   unmovable: { path: string; reason: string }[];
   storageSize: string;
   storageResized: boolean;

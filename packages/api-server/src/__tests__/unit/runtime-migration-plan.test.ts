@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: what the platform tells a user about a runtime migration. The plan
-// TEST_OVERVIEW: says, before anything is written, which persisted paths move where,
+// TEST_OVERVIEW: says, before anything is written, which persisted paths cannot move,
 // TEST_OVERVIEW: how big the disk becomes, whether a sleeping agent is started, how
 // TEST_OVERVIEW: long the old volumes are kept, and why a move is refused. While the
 // TEST_OVERVIEW: move runs, the agent reads as migrating, and a wake refused for it
@@ -53,23 +53,18 @@ function agent(
 }
 
 describe("the runtime migration plan", () => {
-  // TEST_SCENARIO: an agent that persists /data beside its home. The plan names /data's new place, sizes the disk for both volumes, and says the old volumes are kept for the install's window.
-  it("lists each move, the resized disk and the retention window", () => {
+  // TEST_SCENARIO: an agent whose HOME mount asks for more than its storageSize. The plan sizes the disk for HOME's volume, as the container backend sized it, and says the old volumes are kept for the install's window.
+  it("sizes the disk for HOME and names the retention window", () => {
     const plan = runtimeMigrationPlan(
       agent({
         mounts: [
-          { path: "/home/agent", persist: true, size: "10Gi" },
-          { path: "/data", persist: true, size: "5Gi" },
-          { path: "/home/agent/cache", persist: true, size: "1Gi" },
+          { path: "/home/agent", persist: true, size: "16Gi" },
+          { path: "/tmp", persist: false },
         ],
       }),
       INPUTS,
     );
     expect(plan).toEqual({
-      moves: [
-        { from: "/data", to: "/home/agent/.persisted/data" },
-        { from: "/home/agent/cache", to: "/home/agent/cache" },
-      ],
       unmovable: [],
       storageSize: "16Gi",
       storageResized: true,
@@ -79,7 +74,7 @@ describe("the runtime migration plan", () => {
     });
   });
 
-  it("keeps the disk the agent asks for when only the home moves", () => {
+  it("keeps the disk the agent asks for when HOME names no size", () => {
     const plan = runtimeMigrationPlan(
       agent({
         storageSize: "20Gi",
@@ -89,7 +84,6 @@ describe("the runtime migration plan", () => {
     );
     expect(plan.storageSize).toBe("20Gi");
     expect(plan.storageResized).toBe(false);
-    expect(plan.moves).toEqual([]);
   });
 
   // TEST_SCENARIO: the controller boots the machine once even for an agent that was asleep, because only a guest that answered proves the copy; the user has to know that the move spends budget.
@@ -107,15 +101,20 @@ describe("the runtime migration plan", () => {
   // TEST_SCENARIO: a path the new runtime cannot carry must be named with its reason before the user clicks, in the same words the migrate request refuses with.
   it("names each unmovable path and refuses with the same reasons", () => {
     const plan = runtimeMigrationPlan(
-      agent({ mounts: [{ path: "/etc/platform/x", persist: true }] }),
+      agent({
+        mounts: [
+          { path: "/home/agent", persist: true },
+          { path: "/data", persist: true },
+        ],
+      }),
       INPUTS,
     );
-    expect(plan.unmovable.map((u) => u.path)).toEqual(["/etc/platform/x"]);
+    expect(plan.unmovable.map((u) => u.path)).toEqual(["/data"]);
     expect(plan.refusal?.type).toBe("PersistsUnmovablePaths");
     const view = toRuntimeMigrationPlanView(plan);
     expect(view.allowed).toBe(false);
     expect(view.refusal?.reasons).toEqual([
-      "/etc/platform/x cannot be moved: it would hide or sit inside /etc/platform, which the new runtime lays out itself",
+      "/data cannot be moved: the new runtime keeps only the home directory",
     ]);
   });
 
@@ -169,25 +168,7 @@ describe("the runtime migration plan", () => {
     expect(view.refusal?.type).toBe("HomeNotPersisted");
   });
 
-  // TEST_SCENARIO: a mount path that is not plain cannot be placed by the copy even under HOME, so the plan names it with that reason.
-  it("names a path under HOME that is not plain", () => {
-    const view = toRuntimeMigrationPlanView(
-      runtimeMigrationPlan(
-        agent({
-          mounts: [
-            { path: "/home/agent", persist: true },
-            { path: "/home/agent/../etc", persist: true },
-          ],
-        }),
-        INPUTS,
-      ),
-    );
-    expect(view.refusal?.reasons).toEqual([
-      "/home/agent/../etc cannot be moved: it is not a plain absolute path",
-    ]);
-  });
-
-  // TEST_SCENARIO: an agent that names no mounts gets the install's template defaults from the controller, so the plan moves those same paths.
+  // TEST_SCENARIO: an agent that names no mounts gets the install's template defaults from the controller, so the plan refuses a default that persists a path besides HOME, as the request would.
   it("plans from the install's default mounts when the agent names none", () => {
     const plan = runtimeMigrationPlan(agent({}), {
       ...INPUTS,
@@ -196,10 +177,8 @@ describe("the runtime migration plan", () => {
         { path: "/data", persist: true, size: "5Gi" },
       ],
     });
-    expect(plan.moves).toEqual([
-      { from: "/data", to: "/home/agent/.persisted/data" },
-    ]);
-    expect(plan.refusal).toBeNull();
+    expect(plan.unmovable.map((u) => u.path)).toEqual(["/data"]);
+    expect(plan.refusal?.type).toBe("PersistsUnmovablePaths");
   });
 });
 

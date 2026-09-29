@@ -347,7 +347,7 @@ virtualization:
     # covering it.
     egressExceptCidrs: []
   # Moving a container agent onto a machine (the Migrate button). Once the
-  # machine has booted from the copy, the volumes the copy was read from are
+  # machine has booted from the copy, the home volume the copy was read from is
   # kept for `retention` (a Go duration) rather than deleted, so an operator can
   # still recover the agent's pre-migration work. A kept volume carries the
   # label `agent-platform.ai/retained-for=<agent>` and the annotations
@@ -1737,7 +1737,7 @@ controller:
     # gated agent waits.
     #
     # The runtime migration's copy Job (virtualization.runtimeMigration) runs
-    # under the same ServiceAccount. When any volume it copies is a block
+    # under the same ServiceAccount. When the home volume it copies is a block
     # (ReadWriteOnce) volume it runs as root holding DAC_READ_SEARCH alone,
     # which `anyuid` does not permit. With `openshift.scc.anyuidCapNet` on,
     # the chart renders a migration-only SCC for it — uid 0, DAC_READ_SEARCH,

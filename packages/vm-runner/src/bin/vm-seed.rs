@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use clap::Parser;
 use vm_runner::api::SeedResult;
-use vm_runner::seed::{write_layout, Graft, Limits, Options, OwnerMap, Tally};
+use vm_runner::seed::{write_seed, Limits, Options, OwnerMap, Tally};
 
-// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, one `--graft` for each of the agent's other volumes with where it goes below the home, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-seed",
@@ -16,8 +16,6 @@ use vm_runner::seed::{write_layout, Graft, Limits, Options, OwnerMap, Tally};
 struct Args {
     #[arg(long)]
     source: PathBuf,
-    #[arg(long = "graft", value_parser = parse_graft)]
-    grafts: Vec<Graft>,
     #[arg(long)]
     url: String,
     #[arg(long = "token-file")]
@@ -54,17 +52,6 @@ fn parse_owner_map(value: &str) -> Result<OwnerMap, String> {
         }),
         _ => Err(format!("{value:?} is not UID:GID:TO or FROM:TO")),
     }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a graft is `AT=DIR`: where the volume goes, relative to the home, and where the Job mounted it. The split is at the last `=`, because the Job names the mount and never puts one in it, while the place comes from a path the agent's spec declared.
-fn parse_graft(value: &str) -> Result<Graft, String> {
-    let (at, source) = value
-        .rsplit_once('=')
-        .ok_or_else(|| format!("{value:?} is not AT=DIR"))?;
-    Ok(Graft {
-        at: PathBuf::from(at),
-        source: PathBuf::from(source),
-    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how much of the tar is gathered before it is handed to the connection, and how many such chunks may wait for it. Together they bound what the upload holds in memory, whatever the size of the home.
@@ -114,9 +101,8 @@ fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
             ..Limits::default()
         },
     };
-    let tarred = write_layout(
+    let tarred = write_seed(
         &args.source,
-        &args.grafts,
         &options,
         Tally::new(Channel {
             chunks,
@@ -206,7 +192,7 @@ fn main() -> anyhow::Result<()> {
     let client = client(&args.ca_file)?;
     let result_file = args.result_file.clone();
     let started = Instant::now();
-    tracing::info!(source = %args.source.display(), grafts = args.grafts.len(), url = %args.url, "seed upload starting");
+    tracing::info!(source = %args.source.display(), url = %args.url, "seed upload starting");
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -316,7 +302,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the migration Job runs this binary with these four flags and no graft for an agent that persists only its home, and a flag it does not know is a Job that fails on every attempt without moving a byte.
+    // TEST_SCENARIO: the migration Job runs this binary with these four flags, and a flag it does not know is a Job that fails on every attempt without moving a byte.
     #[test]
     fn the_flags_the_migration_job_passes_are_accepted() {
         let args = Args::try_parse_from([
@@ -333,7 +319,6 @@ mod tests {
         .unwrap();
         assert_eq!(args.source, PathBuf::from("/old-home"));
         assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
-        assert!(args.grafts.is_empty());
         assert_eq!(args.result_file, None);
         assert_eq!(
             args.map_owner,
@@ -417,53 +402,5 @@ mod tests {
                 "{bad:?}"
             );
         }
-    }
-
-    // TEST_SCENARIO: the Job passes one `--graft` per other volume, in the order it mounted them. Each is read as the place below the home and the mount, split at the last `=` so a place the spec named with one in it still reaches the archive whole.
-    #[test]
-    fn the_grafts_the_migration_job_passes_are_read_in_order() {
-        let args = Args::try_parse_from([
-            "vm-seed",
-            "--source",
-            "/mnt/home",
-            "--graft",
-            ".persisted/data=/mnt/extra/0",
-            "--graft",
-            ".persisted/a=b=/mnt/extra/1",
-            "--url",
-            "https://runner:8443/machines/m1/seed",
-            "--token-file",
-            "/t",
-            "--ca-file",
-            "/c",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.grafts,
-            vec![
-                Graft {
-                    at: PathBuf::from(".persisted/data"),
-                    source: PathBuf::from("/mnt/extra/0")
-                },
-                Graft {
-                    at: PathBuf::from(".persisted/a=b"),
-                    source: PathBuf::from("/mnt/extra/1")
-                },
-            ]
-        );
-        assert!(Args::try_parse_from([
-            "vm-seed",
-            "--source",
-            "/h",
-            "--graft",
-            "no-equals",
-            "--url",
-            "u",
-            "--token-file",
-            "t",
-            "--ca-file",
-            "c",
-        ])
-        .is_err());
     }
 }

@@ -108,14 +108,6 @@ export interface AgentSpecCR {
    */
   mounts?: {
     /**
-     * MovedFrom is the path outside HOME a runtime migration moved this
-     * persisted mount from, when Path is the same path below HOME/.persisted.
-     * On the vm backend the machine puts MovedFrom back on every boot as a
-     * link to Path, so the agent's software still finds its data there. Set
-     * only by the runtime migration.
-     */
-    movedFrom?: string;
-    /**
      * Path is the absolute mount path inside the container.
      */
     path: string;

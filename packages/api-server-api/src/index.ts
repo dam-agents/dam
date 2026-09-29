@@ -58,7 +58,6 @@ export type {
   MigrateRuntimeError,
   UnmovablePath,
   MigrateRuntimeResult,
-  PersistedMove,
   PlanRuntimeMigrationResult,
   AbortRuntimeMigrationError,
   AbortRuntimeMigrationResult,

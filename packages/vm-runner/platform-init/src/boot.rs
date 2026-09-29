@@ -10,7 +10,6 @@ use std::path::{Component, Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::guest::{self, SeedDigest};
-use crate::links;
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
 const TRUST_CACHE_ENV: &str = "PLATFORM_TRUST_CACHE";
@@ -97,7 +96,6 @@ pub fn run(command: Vec<OsString>) -> ! {
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
-    place_persisted_paths();
     enter_workdir(&workdir);
 
     let binary = match look_path(&command[0], std::env::var_os("PATH")) {
@@ -682,48 +680,6 @@ fn persist_home(root: &Path, seeded_before: bool, expected: Option<&SeedDigest>)
         fatal!("mounting {} from the disk: {e}", path.display());
     }
     logf!("persisting {}", path.display());
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: puts back, on every boot, each persisted path a runtime migration moved below HOME, from the links plan in the share. A path that cannot be put back is named on the console and fails the boot, as a disk that cannot be mounted does: the agent would otherwise write to the fresh root there and lose it at the next stop, while looking healthy. Nothing from the home is run, here or anywhere else, so a `.platform/boot.d` an older home carries is never read.
-fn place_persisted_paths() {
-    let plan = match links::read_plan(Path::new(guest::SHARE_LINKS_FILE)) {
-        Ok(plan) => plan,
-        Err(e) => fatal!("reading the links plan {}: {e}", guest::SHARE_LINKS_FILE),
-    };
-    if plan.is_empty() {
-        return;
-    }
-    let mut failed = 0;
-    for (path, outcome) in links::apply(
-        Path::new("/"),
-        Path::new(guest::AGENT_HOME),
-        &plan,
-        &mut mount_over,
-    ) {
-        match outcome {
-            Ok(placed) => logf!("persisted path {}: {placed}", path.display()),
-            Err(why) => {
-                announce(&format!(
-                    "ERROR: persisted path {} was not put back: {why}",
-                    path.display()
-                ));
-                failed += 1;
-            }
-        }
-    }
-    if failed > 0 {
-        fatal!(
-            "{failed} persisted path(s) could not be put back, so the agent would write there to a root it loses at every stop; refusing to boot"
-        );
-    }
-}
-
-fn mount_over(data: &std::os::fd::OwnedFd, image: &std::os::fd::OwnedFd) -> io::Result<()> {
-    mount(
-        &links::fd_path(data.as_raw_fd()),
-        &links::fd_path(image.as_raw_fd()),
-        libc::MS_BIND,
-    )
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since. When the runner expects a seed, the image's home is never the fallback: a store is restored from exactly that seed or the boot fails, and a store that exists boots only if it was restored from that seed. A migration whose seed went missing then fails where it is seen, instead of booting the image's home and being taken for done.
