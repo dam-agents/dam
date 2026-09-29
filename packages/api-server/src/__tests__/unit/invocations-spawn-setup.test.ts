@@ -72,6 +72,7 @@ function makeService(opts: { failPin?: boolean } = {}) {
     } as never,
     wakeAgent: async () => {},
     reaper: { reap: async () => {} },
+    readHarnessConfigSupport: async () => null,
     skills: {
       applyEntries: async (input) => {
         skillsApplied.push(input);
@@ -215,6 +216,7 @@ function makeFailingSkillsService(
         deleted.push(row.id);
       },
     },
+    readHarnessConfigSupport: async () => null,
     skills: { applyEntries } as never,
   });
   return { service, failed, deleted };

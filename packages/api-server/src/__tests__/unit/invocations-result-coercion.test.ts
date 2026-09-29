@@ -43,6 +43,7 @@ function makeService(row: InvocationRow) {
     reaper: { reap: async () => {} },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
+    readHarnessConfigSupport: async () => null,
   });
   return { rows, service };
 }
@@ -71,6 +72,7 @@ function runningRow(resultSchema: unknown): InvocationRow {
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    harnessConfig: null,
   };
 }
 

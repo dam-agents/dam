@@ -4,7 +4,7 @@ import { isWorkspaceMutationEventKind } from "agent-runtime-api";
 import type { EventDispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 
-export type WorkspaceFailureReport = (
+export type EventFailureReport = (
   event: Event,
   message: string,
 ) => Promise<void>;
@@ -14,7 +14,7 @@ export async function processEvents(
   dispatcher: EventDispatcher,
   stateStore: StateStore,
   log: (msg: string) => void,
-  reportWorkspaceFailure?: WorkspaceFailureReport,
+  reportFailure?: EventFailureReport,
 ): Promise<string[]> {
   const now = Date.now();
   const settled: string[] = [];
@@ -49,12 +49,13 @@ export async function processEvents(
       const message = (err as Error).message;
       log(`[runtime] event ${e.id} (${e.kind}) failed: ${message}`);
       if (isWorkspaceMutationEventKind(e.kind)) {
-        await reportWorkspaceFailure?.(e, message);
+        await reportFailure?.(e, message);
         log(
           `[runtime] holding the events behind ${e.id} until the workspace mutation settles`,
         );
         break;
       }
+      if (e.kind === "harness-config") await reportFailure?.(e, message);
     }
   }
   return settled;

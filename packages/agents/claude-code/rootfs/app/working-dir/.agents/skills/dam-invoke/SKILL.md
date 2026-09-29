@@ -126,7 +126,7 @@ strong = d.spawn(prompt, schema, harness="claude-code", model="opus", config_opt
 
 | harness | `model` | `config_options` |
 |---|---|---|
-| `claude-code` | `fable`, `opus`, `sonnet`, `haiku` | `effort`: `low` … `xhigh` (Haiku takes none) |
+| `claude-code` | `fable`, `opus`, `sonnet`, `haiku`, or `claude/<provider model>` (see below) | `effort`: `low` … `xhigh` (Haiku takes none) |
 | `codex` | a name from the provider's model list | `effort`: `minimal` … `xhigh` |
 | `pi` | a name from the provider's model list | — (`mode` is its thinking level: `off` … `xhigh`) |
 | `bob` | a name from the provider's model list | `approvals`: keep `auto` |
@@ -134,21 +134,32 @@ strong = d.spawn(prompt, schema, harness="claude-code", model="opus", config_opt
 "The provider's model list" is what the Config panel shows for any agent on the
 same model connection.
 
-- **The platform does not check the values.** A wrong model name fails the
-  sub-agent's first turn, and it hangs until its deadline. Try a new name with a
-  short `ttl_ms`.
+- **The platform does not check the values, and a wrong one may not fail.**
+  Claude Code on Anthropic fails the first turn, and the sub-agent hangs until
+  its deadline. Pi instead runs the connection's model without an error.
+- **On a provider other than Anthropic, Claude Code's names are approximate.**
+  `haiku`, `sonnet` and `opus` run the closest model that provider serves, so
+  `haiku` becomes Sonnet on a provider with no Haiku. To be exact, name the
+  provider's model with a `claude/` prefix, for example
+  `model="claude/aws/claude-opus-4-8"`.
+- **Check the model the sub-agent reports** when the choice matters, for example
+  when you compare models or cost. Try a new name with a short `ttl_ms`.
 - **Leave `mode` unset** unless you know the harness. A mode that asks for
   approvals stalls an unattended sub-agent, because nobody answers.
 - **Claude Code on `haiku` needs `mode="bypassPermissions"`.** Haiku cannot use
   the default `auto` mode, so it falls back to one that asks before a tool call.
   Its `report_result` call then waits for an approval and the sub-agent hangs
   until its deadline.
+- **A setting the harness cannot apply fails fast.** If the image has no way to
+  set its model, or its harness has no such setting (`effort` on `pi`, `mode` on
+  `codex`), the spawn fails with that reason once the sub-agent boots, instead
+  of running on the default.
 
 ## Failures
 
 `spawn()` raises `InvocationFailed` when the sub-agent fails. Its `reason` says
-why — setup failed, deadline exceeded, the sub-agent restarted mid-turn, the
-provider does not fit. The sub-agent is already deleted by then, so **print or
+why — setup failed (a harness config it cannot apply included), deadline
+exceeded, the sub-agent restarted mid-turn, the provider does not fit. The sub-agent is already deleted by then, so **print or
 log the reason**; it is the only diagnosis there is. Let it raise to abort, or
 catch it to retry or skip that item.
 

@@ -118,6 +118,17 @@ export function harnessConfigSupported(capabilities: unknown): boolean {
   return (capabilities as { harnessConfig?: unknown }).harnessConfig === true;
 }
 
+export function harnessConfigSupportOf(
+  capabilities: unknown,
+): { supported: boolean; optionIds: string[] | null } | null {
+  if (capabilities == null) return null;
+  const catalog = harnessConfigCatalogOf(capabilities);
+  return {
+    supported: harnessConfigSupported(capabilities),
+    optionIds: catalog ? catalog.options.map((o) => o.id) : null,
+  };
+}
+
 function harnessConfigCatalogOf(
   capabilities: unknown,
 ): HarnessConfigCatalog | null {

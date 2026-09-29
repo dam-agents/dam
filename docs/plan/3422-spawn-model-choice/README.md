@@ -139,7 +139,7 @@ values from there, not from this table, when the two differ.
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | [A spawn sets its child's harness config](./01-spawn-sets-harness-config.md) | Contract field, the two-bump event queue in the service, `/images` harness family, both SDKs, both skills (all four harnesses), architecture docs incl. the pin-precedence rule | — |
-| 02 | [A child that cannot apply it fails fast](./02-unapplied-config-fails-fast.md) | Store the requested config on the invocation row (migration), fail it in the liveness sweep and in `recordResult`, JS SDK surfaces `errorReason`, docs | 01 |
+| 02 ✅ | [A child that cannot apply it fails fast](./02-unapplied-config-fails-fast.md) | Store the requested config on the invocation row (migration), fail it in the liveness sweep and in `recordResult`, JS SDK surfaces `errorReason`, docs | 01 |
 
 Both slices were re-applied onto main after #4025 reworked the spawn (a spawn names a `harness`
 and carries an Agent Setup; the catalogue already lists each harness; the JS SDK already carries

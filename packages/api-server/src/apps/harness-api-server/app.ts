@@ -27,6 +27,7 @@ import {
   composeInvocationsForOwner,
   createTargetAdmission,
   type DelegationFramesPort,
+  type ReadHarnessConfigSupport,
 } from "../../modules/invocations/index.js";
 import {
   composeBudgetsModule,
@@ -81,6 +82,7 @@ export interface HarnessApiServerAppDeps {
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   runtimeProgress: RuntimeProgressPort;
@@ -113,6 +115,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     carriesInspectorRole,
     agentTelemetry,
     wakeAgent,
+    readHarnessConfigSupport,
     runtimeProgress,
     secretStore,
   } = deps;
@@ -158,6 +161,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
+      readHarnessConfigSupport,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,

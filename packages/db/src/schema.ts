@@ -797,6 +797,7 @@ export const invocations = pgTable(
     transcriptTruncated: boolean("transcript_truncated")
       .notNull()
       .default(false),
+    harnessConfig: jsonb("harness_config"),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),

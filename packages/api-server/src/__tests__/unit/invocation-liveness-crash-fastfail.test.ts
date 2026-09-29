@@ -40,6 +40,7 @@ function runningRow(id: string): InvocationRow {
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    harnessConfig: null,
   };
 }
 
@@ -77,6 +78,7 @@ function makeSweep(
     },
     readTargetRestart,
     hasAgent: opts.hasAgent ?? (async () => true),
+    readHarnessConfigSupport: async () => null,
     batchSize: 10,
   });
   return { sweep, failed, deleted, droppedRoots };

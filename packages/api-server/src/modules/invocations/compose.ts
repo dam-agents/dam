@@ -36,6 +36,7 @@ import {
 } from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import type { ReadHarnessConfigSupport } from "./domain/harness-config-refusal.js";
 
 function composeReaper(
   repo: InvocationsRepository,
@@ -56,6 +57,7 @@ export function composeInvocationsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
@@ -69,6 +71,7 @@ export function composeInvocationsForOwner(opts: {
     reaper: composeReaper(repo, () => opts.agents, opts.frames),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    readHarnessConfigSupport: opts.readHarnessConfigSupport,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
@@ -106,6 +109,7 @@ export function composeInvocationLivenessSweep(opts: {
   agentsFor: (owner: string) => AgentsService;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   batchSize: number;
   frames: DelegationFramesPort;
 }): InvocationLivenessSweep {
@@ -115,6 +119,7 @@ export function composeInvocationLivenessSweep(opts: {
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
     readTargetRestart: opts.readTargetRestart,
     hasAgent: opts.hasAgent,
+    readHarnessConfigSupport: opts.readHarnessConfigSupport,
     batchSize: opts.batchSize,
   });
 }
@@ -139,7 +144,7 @@ export function createInvocationSetupFailure(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   frames: DelegationFramesPort;
-}): (agentId: string, step: string, reason: string) => Promise<void> {
+}): (agentId: string, step: string, reason: string) => Promise<string> {
   const repo = createInvocationsRepository(opts.db);
   return createSetupFailure({
     repo,

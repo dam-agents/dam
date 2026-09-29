@@ -1,5 +1,11 @@
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
+import {
+  HARNESS_CONFIG_STEP,
+  type ReadHarnessConfigSupport,
+} from "../domain/harness-config-refusal.js";
+import { harnessConfigRefusalFor } from "./harness-config-check.js";
+import { createSetupFailure } from "./setup-failure.js";
 
 export interface InvocationLivenessSweep {
   tick(): Promise<void>;
@@ -15,6 +21,7 @@ export interface CreateInvocationLivenessSweepDeps {
   reaper: TargetReaper;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   batchSize: number;
   now?: () => Date;
 }
@@ -23,6 +30,10 @@ export function createInvocationLivenessSweep(
   deps: CreateInvocationLivenessSweepDeps,
 ): InvocationLivenessSweep {
   const now = deps.now ?? (() => new Date());
+  const failSetup = createSetupFailure({
+    repo: deps.repo,
+    reaper: deps.reaper,
+  });
   let running = false;
 
   async function failAndReap(
@@ -51,6 +62,14 @@ export function createInvocationLivenessSweep(
       const stillRunning = await deps.repo.listRunning(deps.batchSize);
       for (const row of stillRunning) {
         try {
+          const refusal = await harnessConfigRefusalFor(
+            row,
+            deps.readHarnessConfigSupport,
+          );
+          if (refusal) {
+            await failSetup(row.id, HARNESS_CONFIG_STEP, refusal);
+            continue;
+          }
           const restart = await deps.readTargetRestart(row.id);
           if (restart && restart.podRestarts > 0) {
             await failAndReap(
@@ -60,7 +79,7 @@ export function createInvocationLivenessSweep(
           }
         } catch (err) {
           process.stderr.write(
-            `[invocation-liveness] restart-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
+            `[invocation-liveness] check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
           );
         }
       }

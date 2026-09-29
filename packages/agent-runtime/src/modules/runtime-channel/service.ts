@@ -26,7 +26,7 @@ export interface ApplyStateDeps {
 export function createRuntimeChannelService(
   deps: ApplyStateDeps,
 ): RuntimeChannelService {
-  const reportWorkspaceFailure = async (event: Event, message: string) => {
+  const reportFailure = async (event: Event, message: string) => {
     try {
       await deps.reporter.report({
         eventId: event.id,
@@ -69,7 +69,7 @@ export function createRuntimeChannelService(
         deps.eventDispatcher,
         deps.stateStore,
         deps.log,
-        reportWorkspaceFailure,
+        reportFailure,
       );
       return {
         status: "stale",
@@ -94,7 +94,7 @@ export function createRuntimeChannelService(
       deps.eventDispatcher,
       deps.stateStore,
       deps.log,
-      reportWorkspaceFailure,
+      reportFailure,
     );
 
     const harnessConfigCurrent = await deps.readHarnessConfig();

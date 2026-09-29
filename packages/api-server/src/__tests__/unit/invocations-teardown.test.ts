@@ -37,6 +37,7 @@ function row(
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    harnessConfig: null,
     ...overrides,
   };
 }

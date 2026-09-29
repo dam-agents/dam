@@ -10,6 +10,7 @@ import {
   type Db,
   invocations as invocationsTable,
 } from "db";
+import type { InvocationHarnessConfig } from "api-server-api";
 
 export type InvocationStatus = "running" | "done" | "failed";
 
@@ -39,6 +40,7 @@ export interface InvocationRow extends InvocationSpec {
   reapedAt: Date | null;
   transcriptCaptured: boolean;
   transcriptTruncated: boolean;
+  harnessConfig: InvocationHarnessConfig | null;
 }
 
 export interface InvocationsRepository {
@@ -50,6 +52,7 @@ export interface InvocationsRepository {
       owner: string;
       resultSchema: unknown;
       expiresAt: Date;
+      harnessConfig: InvocationHarnessConfig | null;
     },
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
@@ -96,6 +99,7 @@ function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     reapedAt: r.reapedAt,
     transcriptCaptured: r.transcriptCaptured,
     transcriptTruncated: r.transcriptTruncated,
+    harnessConfig: r.harnessConfig as InvocationHarnessConfig | null,
   };
 }
 
@@ -118,6 +122,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
+        harnessConfig: input.harnessConfig,
       });
     },
 

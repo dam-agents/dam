@@ -115,7 +115,10 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
-import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
+import {
+  createHarnessConfigSnapshotWriter,
+  harnessConfigSupportOf,
+} from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
@@ -203,6 +206,7 @@ import {
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
+  HARNESS_CONFIG_STEP,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
@@ -1308,9 +1312,17 @@ export async function bootstrap() {
       ),
     }).agents;
 
+  const readAgentCapabilities = (agentId: string) =>
+    runtimeDelivery.agentsRuntimeRepo
+      .get(agentId)
+      .then((r) => r?.runtimeCapabilities ?? null);
+  const readHarnessConfigSupport = async (agentId: string) =>
+    harnessConfigSupportOf(await readAgentCapabilities(agentId));
+
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
+    readHarnessConfigSupport,
     readTargetRestart: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
       return agent
@@ -1350,6 +1362,17 @@ export async function bootstrap() {
         input.detail ?? input.outcome,
       );
     });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "harness-config",
+    async (event, input) => {
+      if (input.outcome === "ok") return;
+      await invocationSetupFailure(
+        event.agentId,
+        HARNESS_CONFIG_STEP,
+        input.detail ?? input.outcome,
+      );
+    },
+  );
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );
@@ -1412,10 +1435,7 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
     onboardingChecklists,
-    getAgentCapabilities: (agentId) =>
-      runtimeDelivery.agentsRuntimeRepo
-        .get(agentId)
-        .then((r) => r?.runtimeCapabilities ?? null),
+    getAgentCapabilities: readAgentCapabilities,
     schedulesBoot,
     mountTelemetryRoutes: (app) =>
       app.route(
@@ -1492,6 +1512,7 @@ export async function bootstrap() {
       ? createAgentTelemetry({ reader: metricsReader })
       : createUnavailableAgentTelemetry(),
     wakeAgent: wakeAgentFor,
+    readHarnessConfigSupport,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({
         agents: harnessAgentsServiceFor(owner),

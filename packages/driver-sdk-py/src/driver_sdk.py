@@ -247,8 +247,10 @@ def spawn(
     config, the same values its Config panel offers (for claude-code:
     ``model="sonnet"``, ``config_options={"effort": "low"}``). They are
     written before its first turn. The platform does not check the values: a
-    wrong model name fails the first turn and burns the TTL, so try a new name
-    with a short ``ttl_ms``. Omit them to run the template's default."""
+    wrong model name can fail the first turn (burning the TTL) or silently run
+    another model, depending on the harness and provider, so try a new name
+    with a short ``ttl_ms`` and check the model the sub-agent reports. Omit
+    them to run the template's default."""
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
     if resources is not None and (memory is not None or cpu is not None):

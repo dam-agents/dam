@@ -30,6 +30,11 @@ import {
   invocationTargetName,
 } from "../domain/target-name.js";
 import { createSetupFailure } from "./setup-failure.js";
+import {
+  HARNESS_CONFIG_STEP,
+  type ReadHarnessConfigSupport,
+} from "../domain/harness-config-refusal.js";
+import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
@@ -118,6 +123,7 @@ export function createInvocationsService(deps: {
   driverResolution: DriverResolution;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
   reaper: TargetReaper;
   reportGraceMs?: number;
@@ -211,6 +217,7 @@ export function createInvocationsService(deps: {
         ttlMs,
         resultSchema: input.schema,
         expiresAt,
+        harnessConfig: input.harnessConfig ?? null,
       });
       let agent;
       try {
@@ -333,6 +340,16 @@ export function createInvocationsService(deps: {
       }
       if (row.status !== "running") {
         return { ok: false, errors: `invocation already ${row.status}` };
+      }
+      const refusal = await harnessConfigRefusalFor(
+        row,
+        deps.readHarnessConfigSupport,
+      );
+      if (refusal) {
+        return {
+          ok: false,
+          errors: await failSetup(invocationId, HARNESS_CONFIG_STEP, refusal),
+        };
       }
       const validate = compileSchema(row.resultSchema);
       const value = coerceResult(result, validate);

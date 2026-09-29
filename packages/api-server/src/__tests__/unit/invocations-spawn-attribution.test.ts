@@ -56,6 +56,7 @@ function makeService(opts: {
       enqueueAfterCommit: async () => {},
     } as never,
     wakeAgent: async () => {},
+    readHarnessConfigSupport: async () => null,
   });
   return { rec, service };
 }
