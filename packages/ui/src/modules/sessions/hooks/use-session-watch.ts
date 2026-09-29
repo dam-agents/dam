@@ -8,7 +8,7 @@ import {
   useAgentLacksLiveUpdates,
   useAgentRunState,
 } from "../../agents/api/queries.js";
-import { acpSessionsKeys } from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
 
 export function useSessionWatch(agentId: string | null) {
   const queryClient = useQueryClient();

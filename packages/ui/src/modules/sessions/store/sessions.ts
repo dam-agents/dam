@@ -16,7 +16,8 @@ import type { PlatformStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
-import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
 

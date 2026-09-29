@@ -22,23 +22,11 @@ import {
   listAgentSessionPage,
   type SessionViewPage,
 } from "./acp-session-ops.js";
+import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
-
-export const acpSessionsKeys = {
-  all: ["acp-sessions"] as const,
-  agent: (agentId: string | null) => [...acpSessionsKeys.all, agentId] as const,
-  pages: (agentId: string | null) =>
-    [...acpSessionsKeys.agent(agentId), "pages"] as const,
-  pagesOf: (agentId: string | null, categories: readonly SessionCategory[]) =>
-    [...acpSessionsKeys.pages(agentId), categories] as const,
-  query: (agentId: string | null, query: SessionListQuery) =>
-    [...acpSessionsKeys.agent(agentId), "query", query] as const,
-  session: (agentId: string | null, sessionId: string | null) =>
-    [...acpSessionsKeys.agent(agentId), "session", sessionId] as const,
-};
 
 function updateListedSessions(
   agentId: string,

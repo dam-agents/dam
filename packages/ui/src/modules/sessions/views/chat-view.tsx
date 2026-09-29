@@ -86,11 +86,8 @@ import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
-import {
-  acpSessionsKeys,
-  optimisticInsertSession,
-  setSessionRunning,
-} from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
