@@ -4,6 +4,7 @@ import { trpc } from "../../../trpc.js";
 import { hasRunning } from "../lib/delegation-state.js";
 
 const LIVE_POLL_MS = 5_000;
+const MISSING_ID_POLLS = 6;
 
 export function useDelegationTree(
   driverAgentId: string | null,
@@ -16,11 +17,14 @@ export function useDelegationTree(
         : skipToken,
     ),
     staleTime: 2_000,
-    refetchInterval: (query) =>
-      query.state.data && hasRunning(query.state.data.nodes)
-        ? LIVE_POLL_MS
-        : false,
-    retry: false,
+    refetchInterval: (query) => {
+      const nodes = query.state.data?.nodes;
+      if (nodes && hasRunning(nodes)) return LIVE_POLL_MS;
+      const unresolved = !nodes || nodes.length < ids.length;
+      const polls = query.state.dataUpdateCount + query.state.errorUpdateCount;
+      return unresolved && polls < MISSING_ID_POLLS ? LIVE_POLL_MS : false;
+    },
+    retry: 2,
   });
 }
 
