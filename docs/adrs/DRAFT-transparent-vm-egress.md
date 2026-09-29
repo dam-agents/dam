@@ -21,6 +21,7 @@ A machine's only route out is its paired gateway, and until now the only way in 
 A vm Agent's gateway also accepts egress that arrives without an explicit proxy — TLS routed by its SNI, plain HTTP by its Host — and answers the machine's DNS itself, giving its own address for every name and never resolving upstream. Everything in the machine then reaches the network only through the same egress-checked chains as the explicit proxy, with no proxy settings.
 
 - **Nothing passes before its egress check.** Transparent TLS enters the same internal listener a CONNECT tunnel is unwrapped into, where every chain — credential chains and the chain for a host with none — checks egress before it dials. Plain HTTP goes through the proxy listener's own check. A never-approved host is held for approval exactly as a CONNECT to it is. A connection with no name to check — no SNI, no Host, not TLS — is refused.
+- **Every DNS query reaches that resolver.** The machine's resolver setting names the gateway, which is what docker and k3s inherit, and a guest packet rule sends every DNS query bound for an address the machine does not treat as local to the gateway too, so software that picks its own server — a pod with its own nameservers, a hardcoded public resolver — gets the same answer. The rule makes such software work, it does not secure anything: without it those queries are dropped by the machine's allowlist.
 - **The resolver answers and does nothing else.** Every A query gets the gateway's address, AAAA an empty answer, and every other type is refused. It never forwards, recurses or logs. A query name therefore goes no further than the gateway, and a denied host is never resolved anywhere; the gateway resolves only a host it has approved, when it dials it.
 - **vm Agents only.** A container Agent's gateway is unchanged.
 - **The explicit proxy stays.** Both paths meet the same chains, so a client that honours proxy settings behaves as before.
@@ -32,7 +33,7 @@ A vm Agent's gateway also accepts egress that arrives without an explicit proxy 
 - **Real DNS answers from the cluster's resolver** — every lookup of a name carrying data reaches that name's authoritative server, which is the exfiltration channel this must close.
 - **Envoy's own DNS filter** — it answers only names it is configured with, exact or by suffix, so a host no one has approved yet gets no address and never reaches approval.
 - **A forwarder inside the guest translating to CONNECT** — a second daemon in every guest, while the gateway already routes by SNI after it unwraps a CONNECT.
-- **Redirecting the machine's traffic with guest packet rules** — still needs every name answered, and adds rules that must coexist with those k3s and docker manage; an answer naming the gateway needs none.
+- **Redirecting all of the machine's traffic with guest packet rules** — still needs every name answered, and a connection redirected away from its destination reaches the gateway without that destination, so carrying literal addresses needs a forwarder in the guest; only DNS, whose destination the answer ignores, is redirected by rule.
 
 ## Consequences
 
@@ -40,6 +41,7 @@ A vm Agent's gateway also accepts egress that arrives without an explicit proxy 
 - **Easier:** a tool that ignores proxy settings reaches the network from a machine, where before it failed with nowhere to go.
 - **Harder:** a vm Agent's gateway runs a second container, the resolver, whose image is one more the install pulls and keeps current, and which keeps one capability: its binary carries the bind capability as a file capability, which the kernel refuses to exec once the capability is dropped.
 - **Harder:** the gateway Service, its ingress policy and the runner's egress policy each open two more ports for vm Agents — the transparent TLS listener and the resolver over UDP and TCP.
-- **Harder:** a client that checks the address it resolved, or resolves over HTTPS itself, sees the gateway's address or nothing.
+- **Harder:** a client that checks the address it resolved, or resolves over HTTPS itself, sees the gateway's address or nothing; a connection to a literal address, or to a port other than 80 and 443, still reaches nothing.
+- **Harder:** the DNS rule acts only on flows it sees start: a resolver that opened its upstream flows before the rule existed keeps them, observed with a long-running k3s whose CoreDNS kept real answers until it restarted. The image sets the rule at boot, before anything it starts.
 - **Committed-to:** the resolver's answer carries no information — the same address for every name — and it never resolves upstream. Loosening either reopens DNS exfiltration.
 - **Committed-to:** every chain reachable from the transparent listener checks egress before dialing. A chain added later without that check is reachable from a machine without approval.
