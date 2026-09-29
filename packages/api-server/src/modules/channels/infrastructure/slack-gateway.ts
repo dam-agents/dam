@@ -245,7 +245,7 @@ export interface SlackGateway {
     channel: string,
     ts: string,
     teamId: SlackWorkspace,
-  ): Promise<void>;
+  ): Promise<boolean>;
   deleteFile(fileId: string, teamId: SlackWorkspace): Promise<void>;
   openModal(args: {
     triggerId: string;
@@ -292,7 +292,10 @@ export interface SlackGateway {
   }): Promise<string>;
   shareFile(args: {
     fileId: string;
+    filename: string;
     title?: string;
+    username?: string;
+    iconUrl?: string;
     channelId: string;
     threadTs?: string;
     teamId: SlackWorkspace;

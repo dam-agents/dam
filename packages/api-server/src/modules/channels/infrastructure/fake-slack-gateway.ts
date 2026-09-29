@@ -148,6 +148,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let nextStreamTs = 1;
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
+  let nextFileId = 1;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
@@ -194,7 +195,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return { ts: `${Math.floor(Date.now() / 1000)}.${nextPostTs++}` };
     },
 
-    async deleteMessage() {},
+    async deleteMessage() {
+      return true;
+    },
 
     async deleteFile() {},
 
@@ -327,7 +330,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async stageFile(args) {
-      const fileId = `F-${args.filename}`;
+      const fileId = `F${nextFileId++}-${args.filename}`;
       stagedFiles.set(fileId, args.filename);
       return fileId;
     },

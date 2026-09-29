@@ -1531,29 +1531,33 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     target: { id: string; teamId: SlackWorkspace },
     attachment: ChannelAttachment | undefined,
     threadTs: string | undefined,
+    persona: Pick<SlackPostMessage, "username" | "iconUrl">,
     post: (fileIds: string[]) => Promise<unknown>,
   ): Promise<string | null> {
-    let fileId: string | null = null;
+    let staged: { fileId: string; attachment: ChannelAttachment } | null = null;
     let uploadError: string | null = null;
     if (attachment) {
       try {
-        fileId = await gw.stageFile({
+        const fileId = await gw.stageFile({
           file: attachment.data,
           filename: attachment.filename,
           teamId: target.teamId,
         });
+        staged = { fileId, attachment };
       } catch (err) {
         uploadError = formatError(err);
       }
     }
-    await post(fileId ? [fileId] : []);
-    if (fileId) {
+    await post(staged ? [staged.fileId] : []);
+    if (staged) {
       try {
         await gw.shareFile({
-          fileId,
-          ...(attachment?.title !== undefined
-            ? { title: attachment.title }
+          fileId: staged.fileId,
+          filename: staged.attachment.filename,
+          ...(staged.attachment.title !== undefined
+            ? { title: staged.attachment.title }
             : {}),
+          ...persona,
           channelId: target.id,
           ...(threadTs ? { threadTs } : {}),
           teamId: target.teamId,
@@ -1570,10 +1574,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     userId: string;
     channel: string;
     teamId: SlackWorkspace;
+    replyThreadTs?: string;
     post: SlackMessage & { ts: string };
     fileIds: string[];
     expiresAt: number;
   };
+
+  function ephemeralThreadTs(message: SlackMessage & { ts: string }) {
+    const { threadTs } = message;
+    return threadTs &&
+      threadTs !== message.ts &&
+      message.subtype !== "thread_broadcast"
+      ? threadTs
+      : undefined;
+  }
 
   const pendingPostDeletes = new Map<string, PendingPostDelete>();
 
@@ -1612,22 +1626,24 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (event.actionId !== DELETE_POST_ACTION || !gw) return;
     const agentId = parseAgentFooter(event.message)?.agentId;
     if (!agentId) return;
-    const { threadTs } = event.message;
+    const replyThreadTs = ephemeralThreadTs(event.message);
+    const reply = (text: string) =>
+      gw
+        .postEphemeral({
+          channel: event.channel,
+          user: event.userId,
+          ...(replyThreadTs ? { threadTs: replyThreadTs } : {}),
+          text,
+          teamId: event.teamId,
+        })
+        .catch(() => {});
     const auth = await authorizePostDelete(
       event.userId,
       agentId,
       event.channel,
     );
     if (!auth.ok) {
-      await gw
-        .postEphemeral({
-          channel: event.channel,
-          user: event.userId,
-          ...(threadTs && threadTs !== event.message.ts ? { threadTs } : {}),
-          text: auth.text,
-          teamId: event.teamId,
-        })
-        .catch(() => {});
+      await reply(auth.text);
       return;
     }
     const now = Date.now();
@@ -1639,19 +1655,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       userId: event.userId,
       channel: event.channel,
       teamId: event.teamId,
+      ...(replyThreadTs ? { replyThreadTs } : {}),
       post: event.message,
       fileIds: deletePostFileIds(event.value),
       expiresAt: now + PENDING_POST_DELETE_TTL_MS,
     });
-    await gw.openModal({
-      triggerId: event.triggerId,
-      teamId: event.teamId,
-      view: deletePostModal({
-        pendingId,
-        channel: event.channel,
-        ...(threadTs && threadTs !== event.message.ts ? { threadTs } : {}),
-      }),
-    });
+    try {
+      await gw.openModal({
+        triggerId: event.triggerId,
+        teamId: event.teamId,
+        view: deletePostModal({
+          pendingId,
+          channel: event.channel,
+          ...(replyThreadTs ? { threadTs: replyThreadTs } : {}),
+        }),
+      });
+    } catch (err) {
+      pendingPostDeletes.delete(pendingId);
+      getLogger().warn(
+        { agentId, err: formatError(err) },
+        "slack.post_delete.modal_failed",
+      );
+      await reply("Couldn't open the confirmation. Press Delete again.");
+    }
   }
 
   async function handleViewSubmission(
@@ -1662,23 +1688,22 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const parsed = parseDeletePostModal(event.privateMetadata, event.inputs);
     if (!parsed) return;
     const { metadata, reason } = parsed;
+    const pending = pendingPostDeletes.get(metadata.pendingId);
+    if (pending && pending.userId !== event.userId) return;
+    pendingPostDeletes.delete(metadata.pendingId);
+    const channel = pending?.channel ?? metadata.channel;
+    const threadTs = pending ? pending.replyThreadTs : metadata.threadTs;
     const reply = (text: string) =>
       gw
         .postEphemeral({
-          channel: metadata.channel,
+          channel,
           user: event.userId,
-          ...(metadata.threadTs ? { threadTs: metadata.threadTs } : {}),
+          ...(threadTs ? { threadTs } : {}),
           text,
-          teamId: event.teamId,
+          teamId: pending?.teamId ?? event.teamId,
         })
         .catch(() => {});
-    const pending = pendingPostDeletes.get(metadata.pendingId);
-    pendingPostDeletes.delete(metadata.pendingId);
-    if (
-      !pending ||
-      pending.expiresAt < Date.now() ||
-      pending.userId !== event.userId
-    ) {
+    if (!pending || pending.expiresAt < Date.now()) {
       await reply("That confirmation expired. Press Delete on the post again.");
       return;
     }
@@ -1701,8 +1726,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     reason: string | null,
   ): Promise<string> {
     const { agentId, channel, teamId, post, fileIds } = pending;
+    let deleted: boolean;
     try {
-      await gw.deleteMessage(channel, post.ts, teamId);
+      deleted = await gw.deleteMessage(channel, post.ts, teamId);
     } catch (err) {
       return `Couldn't delete the post (${formatError(err)}). Press Delete on it again to retry.`;
     }
@@ -1714,6 +1740,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         fileFailure ??= formatError(err);
       }
     }
+    if (!deleted)
+      return fileFailure
+        ? `This post was already deleted, but an attachment could not be (${fileFailure}).`
+        : "This post was already deleted.";
     securityLog("info", "channel.post_deleted", {
       category: "channel",
       actor: invoker,
@@ -4059,6 +4089,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             target,
             attachment,
             undefined,
+            persona,
             (fileIds) =>
               gw.postMessage({
                 channel: target.id,
@@ -4313,6 +4344,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           target,
           args.attachment,
           threadTs,
+          persona,
           (fileIds) =>
             gw.postMessage({
               channel: target.id,

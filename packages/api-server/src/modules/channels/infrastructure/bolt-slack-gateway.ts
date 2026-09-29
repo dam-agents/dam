@@ -18,6 +18,9 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type FilesCompleteUploadExternalArgs = Parameters<
+  BoltApp["client"]["files"]["completeUploadExternal"]
+>[0];
 type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
@@ -79,6 +82,46 @@ function toSlackMessage(m: {
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
   };
+}
+
+const FILE_UPLOAD_ATTEMPTS = 3;
+
+const FILE_UPLOAD_TIMEOUT_MS = 120_000;
+
+async function postFileBytes(
+  uploadUrl: string,
+  token: string,
+  file: Buffer,
+  filename: string,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    const form = new FormData();
+    form.append("body", new Blob([new Uint8Array(file)]), filename);
+    let status: number;
+    let retryAfterS = attempt;
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        redirect: "error",
+        signal: AbortSignal.timeout(FILE_UPLOAD_TIMEOUT_MS),
+      });
+      await res.body?.cancel().catch(() => {});
+      status = res.status;
+      const header = Number(res.headers.get("retry-after"));
+      if (Number.isFinite(header) && header > 0) retryAfterS = header;
+    } catch (err) {
+      if (attempt >= FILE_UPLOAD_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+      continue;
+    }
+    if (status === 200) return;
+    const retryable = status === 429 || status >= 500;
+    if (!retryable || attempt >= FILE_UPLOAD_ATTEMPTS)
+      throw new Error(`file upload failed with HTTP ${status}`);
+    await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+  }
 }
 
 export function createBoltSlackGateway(
@@ -273,7 +316,7 @@ export function createBoltSlackGateway(
           actionId: action.action_id,
           value: "value" in action ? (action.value ?? "") : "",
           userId: body.user.id,
-          teamId: body.team?.id ?? context.teamId ?? NO_WORKSPACE,
+          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
           channel,
           message: { ...toSlackMessage(message), ts: message.ts },
           triggerId: body.trigger_id,
@@ -290,7 +333,7 @@ export function createBoltSlackGateway(
           callbackId: view.callback_id,
           privateMetadata: view.private_metadata,
           userId: body.user.id,
-          teamId: body.team?.id ?? context.teamId ?? NO_WORKSPACE,
+          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
           inputs,
         });
       });
@@ -379,8 +422,10 @@ export function createBoltSlackGateway(
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       try {
         await app.client.chat.delete({ token, channel, ts });
+        return true;
       } catch (err) {
         if (!formatError(err).includes("message_not_found")) throw err;
+        return false;
       }
     },
 
@@ -597,16 +642,7 @@ export function createBoltSlackGateway(
       });
       if (!reserved.upload_url || !reserved.file_id)
         throw new Error("files.getUploadURLExternal returned no upload URL");
-      const form = new FormData();
-      form.append("body", new Blob([new Uint8Array(args.file)]), args.filename);
-      const res = await fetch(reserved.upload_url, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      await res.body?.cancel().catch(() => {});
-      if (res.status !== 200)
-        throw new Error(`file upload failed with HTTP ${res.status}`);
+      await postFileBytes(reserved.upload_url, token, args.file, args.filename);
       return reserved.file_id;
     },
 
@@ -616,15 +652,12 @@ export function createBoltSlackGateway(
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       await app.client.files.completeUploadExternal({
         token,
-        files: [
-          {
-            id: args.fileId,
-            ...(args.title !== undefined ? { title: args.title } : {}),
-          },
-        ],
+        files: [{ id: args.fileId, title: args.title ?? args.filename }],
         channel_id: args.channelId,
         ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
-      });
+        ...(args.username !== undefined ? { username: args.username } : {}),
+        ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
+      } as FilesCompleteUploadExternalArgs);
     },
 
     async downloadFile(
