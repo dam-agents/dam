@@ -1,4 +1,4 @@
-import type { EntryPointChoice } from "api-server-api";
+import type { ChannelType, EntryPointChoice } from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -15,6 +15,7 @@ export enum EventType {
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
   ChannelTurnRelayed = "ChannelTurnRelayed",
+  ChannelMessageSent = "ChannelMessageSent",
   SessionTurnRelayed = "SessionTurnRelayed",
   AgentRelayAttached = "AgentRelayAttached",
   ScheduleFired = "ScheduleFired",
@@ -39,7 +40,6 @@ export enum EventType {
   ArtifactUpdated = "ArtifactUpdated",
   ArtifactDeleted = "ArtifactDeleted",
   ArtifactFolderChanged = "ArtifactFolderChanged",
-  ExperimentChanged = "ExperimentChanged",
   ArtifactPublished = "ArtifactPublished",
   ArtifactShared = "ArtifactShared",
   ArtifactViewed = "ArtifactViewed",
@@ -47,7 +47,7 @@ export enum EventType {
   SkillPublished = "SkillPublished",
   SkillSetSaved = "SkillSetSaved",
   SkillSetDeleted = "SkillSetDeleted",
-  KindedAgentCreated = "KindedAgentCreated",
+  SkillSourceChanged = "SkillSourceChanged",
   StarterKitApplied = "StarterKitApplied",
   InvocationSpawned = "InvocationSpawned",
   FeatureFlagChanged = "FeatureFlagChanged",
@@ -112,6 +112,16 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+};
+
+export type ChannelMessageSent = {
+  type: EventType.ChannelMessageSent;
+  channel: ChannelType;
+  agentId: string;
+  ownerSub: string;
+  action: "post" | "reply";
+  outcome: TurnOutcome;
+  hasAttachment: boolean;
 };
 
 export type ScheduleFired = {
@@ -267,16 +277,6 @@ export type ArtifactFolderChanged = {
   ownerSub: string;
 };
 
-export type ExperimentChanged = {
-  type: EventType.ExperimentChanged;
-  experimentId: string;
-  agentId: string;
-  ownerSub: string;
-  action?: "started" | "stopped" | "deleted";
-  actorSub?: string;
-  surface?: string;
-};
-
 export type AttentionChanged = {
   type: EventType.AttentionChanged;
   ownerSub: string;
@@ -358,12 +358,13 @@ export type SkillSetDeleted = {
   surface: string;
 };
 
-export type KindedAgentCreated = {
-  type: EventType.KindedAgentCreated;
-  agentId: string;
+export type SkillSourceChanged = {
+  type: EventType.SkillSourceChanged;
+  action: "added" | "removed";
   actorSub: string;
   surface: string;
-  kind: string;
+  source: string;
+  hasPath: boolean;
 };
 
 export type StarterKitApplied = {
@@ -427,6 +428,7 @@ export type DomainEvent =
   | SlackConnected
   | SlackDisconnected
   | ChannelTurnRelayed
+  | ChannelMessageSent
   | ScheduleFired
   | SchedulePrecheckReported
   | ConnectionCreated
@@ -448,7 +450,6 @@ export type DomainEvent =
   | ArtifactUpdated
   | ArtifactDeleted
   | ArtifactFolderChanged
-  | ExperimentChanged
   | AttentionChanged
   | SessionTurnRelayed
   | AgentRelayAttached
@@ -459,7 +460,7 @@ export type DomainEvent =
   | SkillPublished
   | SkillSetSaved
   | SkillSetDeleted
-  | KindedAgentCreated
+  | SkillSourceChanged
   | StarterKitApplied
   | InvocationSpawned
   | FeatureFlagChanged

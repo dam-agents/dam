@@ -1,6 +1,5 @@
 import type {
   EventHandler,
-  ExperimentExecuteEventPayload,
   Plugin,
   SatelliteOutcomeEventPayload,
 } from "agent-runtime-api";
@@ -40,21 +39,6 @@ export const createInitializationPlugin = sessionEventPlugin(
       initialization: true,
     },
   }),
-);
-
-export const createExperimentExecutePlugin = sessionEventPlugin(
-  "experiment-execute",
-  (payload) => {
-    const p = payload as ExperimentExecuteEventPayload;
-    return {
-      task: p.task,
-      platformMeta: {
-        type: SessionType.ExperimentExecute,
-        mode: SessionMode.Chat,
-        experimentId: p.experimentId,
-      },
-    };
-  },
 );
 
 /**

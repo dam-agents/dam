@@ -616,7 +616,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
     async createSource(input: SkillCreateSourceInput) {
       try {
-        return enrichSource(await deps.repo.create(input, deps.owner));
+        const created = await deps.repo.create(input, deps.owner);
+        emit({
+          type: EventType.SkillSourceChanged,
+          action: "added",
+          actorSub: deps.owner,
+          surface: deps.surface,
+          source: created.gitUrl,
+          hasPath: created.path !== undefined,
+        });
+        return enrichSource(created);
       } catch (err) {
         if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
           throw new TRPCError({
@@ -645,6 +654,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         throw err;
       }
       if (src) {
+        emit({
+          type: EventType.SkillSourceChanged,
+          action: "removed",
+          actorSub: deps.owner,
+          surface: deps.surface,
+          source: src.gitUrl,
+          hasPath: src.path !== undefined,
+        });
         const instances = await deps.agentsRepo.list(deps.owner);
         await deps.agentSkillsRepo.removeBySource(
           instances.map((i) => i.id),

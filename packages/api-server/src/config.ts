@@ -90,6 +90,7 @@ const configSchema = z.object({
   slackEnterpriseId: z.string().default(""),
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
+  slackTokenRotation: z.coerce.boolean().default(false),
   telegramBotToken: z.string().nullable().default(null),
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
@@ -182,7 +183,6 @@ const configSchema = z.object({
   kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
   kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
   kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
-  experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
   links: linksSchema,
   terms: z.object({
@@ -262,6 +262,7 @@ export function loadConfig(): Config {
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
+    slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     imgbbApiKey: process.env.IMGBB_API_KEY,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
@@ -343,7 +344,6 @@ export function loadConfig(): Config {
     kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
     kbShareMaxConnectionsPerOwner:
       process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
-    experimentInactivitySeconds: process.env.EXPERIMENT_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

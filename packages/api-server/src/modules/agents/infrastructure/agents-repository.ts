@@ -4,6 +4,7 @@ import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
+  INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
@@ -66,6 +67,9 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
+  setInvocationPin(id: string): Promise<boolean>;
+  readInvocationPin(id: string): Promise<string | null>;
+  releaseInvocationPin(id: string, resourceVersion: string): Promise<void>;
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
   wakeIfHibernated(id: string): Promise<AgentActivityStamp | null>;
@@ -245,6 +249,7 @@ export function createAgentsRepository(
           annotations: {
             [STOP_REQUESTED_KEY]: new Date().toISOString(),
             [ACTIVE_SESSION_KEY]: "",
+            [INVOCATIONS_ACTIVE_KEY]: "",
           },
         },
       });
@@ -261,6 +266,7 @@ export function createAgentsRepository(
           annotations: {
             [STOP_REQUESTED_KEY]: pauseStamp,
             [ACTIVE_SESSION_KEY]: "",
+            [INVOCATIONS_ACTIVE_KEY]: "",
             [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
           },
         },
@@ -321,6 +327,37 @@ export function createAgentsRepository(
       const owner = agentOwner(obj);
       if (!owner) return null;
       return { owner, agentId: id };
+    },
+
+    async setInvocationPin(id) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) return false;
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          resourceVersion: obj.metadata?.resourceVersion,
+          annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
+        },
+      });
+      return true;
+    },
+
+    async readInvocationPin(id) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (obj?.metadata?.annotations?.[INVOCATIONS_ACTIVE_KEY] !== "true")
+        return null;
+      return obj.metadata.resourceVersion ?? null;
+    },
+
+    async releaseInvocationPin(id, resourceVersion) {
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          resourceVersion,
+          annotations: {
+            [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+            [INVOCATIONS_ACTIVE_KEY]: "",
+          },
+        },
+      });
     },
 
     async patchAnnotation(id, key, value) {

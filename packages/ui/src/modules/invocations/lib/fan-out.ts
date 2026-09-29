@@ -5,8 +5,10 @@ export interface FanOutSpawn {
   label: string;
 }
 
-const SPAWN_LINE =
-  /^(?:\d+\t)?\[invoke\] spawned (?<label>.+?) -> (?<id>agent-[a-z0-9]+)$/;
+const SPAWN_LINES = [
+  /^(?:\d+\t)?\[invoke\] spawned (?<label>.+?) -> (?<id>agent-[a-z0-9]+)$/,
+  /^(?:\d+\t)?\[invoke\] spawned (?<label>.+?) \((?<id>agent-[a-z0-9]+)\)$/,
+];
 
 const parsed = new WeakMap<ToolChip, FanOutSpawn[] | null>();
 
@@ -22,7 +24,8 @@ function scanSpawns(chip: ToolChip): FanOutSpawn[] | null {
   const spawns = new Map<string, FanOutSpawn>();
   for (const block of chip.content ?? []) {
     for (const line of (block.text ?? "").split("\n")) {
-      const match = SPAWN_LINE.exec(line.trim());
+      const trimmed = line.trim();
+      const match = SPAWN_LINES.map((re) => re.exec(trimmed)).find(Boolean);
       const id = match?.groups?.id;
       const label = match?.groups?.label;
       if (id && label && !spawns.has(id)) spawns.set(id, { id, label });

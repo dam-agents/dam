@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-09-27
+Last verified: 2026-09-28
 
 ## Overview
 
@@ -78,7 +78,6 @@ What each measurement counts, and what it cannot answer:
 - **File imports** — one per import attempt, by **surface** and **outcome**, beside a **bytes** counter that advances only on success, so a failed transfer never inflates the volume.
 - **Skill changes** — one per skill installed on or uninstalled from an agent, by **action** and **origin**. The skill's name is deliberately not a dimension: it is user-authored and unbounded, so *which* skills people install stays a question for the activity log.
 - **Relay attachments** — one per interactive attachment to a running agent, by **relay** and surface: the measurement that tells whether a way of reaching an agent earns its keep. Background read-only sockets, which the browser opens to follow a session it is not driving, are not attachments anyone made and are not counted. This is the one signal whose two sinks count different units: the activity log keeps one row per person, agent and relay per day, while this counts every attachment, so the two are not comparable head to head.
-- **Experiment transitions** — one per transition an actor drove, whether a person or an agent acting for its owner. A transition the platform drove itself, such as a sweep reaping an idle experiment, is not someone using the feature and is not counted.
 - **Invocation spawns** — one per target an agent spawned, carrying no dimension: the driver and target would multiply series by the fleet size, and the owner is the identifier this whole section exists to keep out. Delegation volume is the question it answers.
 - **Entry-point choices** — one per way-in chosen on the empty home screen, by **choice**. It counts clicks rather than people: the activity log keeps one row per person and so answers *how many chose*, while this answers *how often it was chosen*.
 
@@ -105,6 +104,10 @@ What a runner measures is what judging the vm backend against the container one 
 The [usage counters](#usage-counters)' identity-free rule holds here with a sharper edge: a runner exists per owner, so a machine id, an image reference or the runner's owner label would each make a series a person. Every dimension comes from a closed set — operation, outcome, failure reason, cache result — and the scrape copies no pod label onto a series. Series are still partitioned by runner, because each runner is a process with its own cumulative counters, so a runner restart resets them and rates are the honest read.
 
 The runner's other duty here rides the machine status rather than a signal: **explaining a boot**. A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side. It carries the guest kernel and the runtime's guest agent, not the harness, whose output goes to the boot log ([persistence](persistence.md)); platform-init writes its own verdicts there too, as kernel log lines — a refusal to boot, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why. When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes, stripped to printable text, and redacted with every env value the machine has been given — longest first, and each line of a value that spans lines — because a guest that prints its environment puts an operator's Secret there; a value of three characters or fewer is left as it is. The guest agent's line for each connection it accepts is left out first, because the runner's health probes would otherwise fill those kilobytes within a minute and push out every line the guest itself wrote. Every start empties the console first, because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds. A console the runner cannot redact, holding no spec for the machine, is not shown. The runner's health prober writes the note for a quiet guest and refreshes it about once a minute, not on every probe, so a stuck machine does not rewrite its Agent's condition on each one.
+
+### Runtime migration
+
+A [runtime migration](vm-runner.md#runtime-migration) reports on the Agent rather than as a signal. Its condition's message says what holds the current phase up, written from what is true now and cleared once nothing does: a pod stuck terminating, named with its node; a copy pod's latest warning, an admission refusal included; a copy waiting for a slot; what the runner reports; a boot held by a stop or the owner's budget. vm-seed names the agent's own files in its errors, so the text is escaped, stripped of in-cluster addresses and cut to a status line, any advice ahead of the copied error. Each phase entered, copy failure, abort, retry and finish is also an Event on the Agent, as is each retained volume the sweep deletes, and the controller counts them by reason alone.
 
 ## Trusted attribution
 

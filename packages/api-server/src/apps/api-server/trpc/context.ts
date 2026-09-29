@@ -26,7 +26,6 @@ import {
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
-import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
@@ -86,7 +85,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     satellitesBoot,
     liveEvents,
     wakeAgent,
-    experimentPin,
     artifactLibraryFor,
   } = boot;
 
@@ -197,16 +195,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const artifactLibrary = artifactLibraryFor(user.sub, surface, {
       agentExists,
-    });
-    const { experiments } = composeExperimentsForOwner({
-      db,
-      owner: user.sub,
-      surface,
-      artifactLibrary,
-      agents,
-      pin: experimentPin,
-      runtimeMutator,
-      wakeAgent,
     });
     const { features } = composeFeaturesForOwner({
       db,
@@ -348,7 +336,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       approvals,
       attention,
       egressRules,
-      experiments,
       invocationsQuery,
       starterKits,
       kbShares,

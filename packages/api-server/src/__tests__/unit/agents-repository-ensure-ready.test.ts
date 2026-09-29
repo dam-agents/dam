@@ -356,6 +356,123 @@ describe("ensureReady", () => {
   });
 });
 
+const PIN_KEY = "agent-platform.ai/invocations-active";
+
+describe("requestStop", () => {
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestStop("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
+  });
+});
+
+describe("releaseInvocationPin", () => {
+  const ACTIVITY_KEY = "agent-platform.ai/last-activity";
+
+  function pinnedHarness(pin: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![PIN_KEY] = pin;
+    obj.metadata!.annotations![ACTIVITY_KEY] = "1970-01-01T00:00:00Z";
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: the reconcile reads a pinned Driver's version before it checks the Driver's Invocations, so the release can be conditional on that read.
+  it("reads the version of a pinned Driver", async () => {
+    const { repo } = pinnedHarness("true");
+
+    expect(await repo.readInvocationPin("a1")).toBe("7");
+  });
+
+  // TEST_SCENARIO: a pause cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
+  it("reads no version once the pin is gone", async () => {
+    const { repo, patches } = pinnedHarness("");
+
+    expect(await repo.readInvocationPin("a1")).toBeNull();
+    expect(patches).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the release bumps the Driver's activity and drops its pin in one write that is conditional on the version the reconcile read, so a pause or spawn landing in between makes the write fail.
+  it("clears the pin and bumps activity in one conditional write", async () => {
+    const { repo, store, patches } = pinnedHarness("true");
+
+    await repo.releaseInvocationPin("a1", "7");
+
+    const ann = store.get("a1")?.metadata?.annotations ?? {};
+    expect(ann[PIN_KEY]).toBe("");
+    expect(ann[ACTIVITY_KEY]).not.toBe("1970-01-01T00:00:00Z");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+});
+
+describe("setInvocationPin", () => {
+  const STOP_KEY = "agent-platform.ai/stop-requested";
+
+  function recordingHarness(stop: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![STOP_KEY] = stop;
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a pause landing in between makes the write fail rather than pin a paused Driver.
+  it("pins a running Driver in one conditional write", async () => {
+    const { repo, store, patches } = recordingHarness("");
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("true");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a Driver spawns inside the settle window of a pause; the pin would revive it once the pause settles, so the spawn leaves it unpinned.
+  it("writes nothing while a stop or pause stands", async () => {
+    const { repo, store, patches } = recordingHarness(
+      "2026-09-28T09:00:00.000Z",
+    );
+
+    expect(await repo.setInvocationPin("a1")).toBe(false);
+
+    expect(patches).toEqual([]);
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBeUndefined();
+  });
+});
+
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
@@ -370,6 +487,14 @@ describe("requestPause settle", () => {
     };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(ann()[STOP_KEY]).toBe("");
+  });
+
+  // TEST_SCENARIO: a pause must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the pause settles.
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestPause("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {

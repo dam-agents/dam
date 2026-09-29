@@ -16,7 +16,6 @@ import {
   isStarterKitSetupComplete,
   kitResourcesLine,
   kitScheduleCadence,
-  kitSeedRemovable,
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
@@ -69,7 +68,6 @@ const complete: StarterKitSetupDraft = {
   slackChannelId: " C123 ",
   skippedSchedules: [],
   scheduleOverrides: [],
-  skipSeed: false,
 };
 
 describe("requirementStatuses", () => {
@@ -161,7 +159,6 @@ describe("buildStarterKitApplyInput", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
-      skipSeed: false,
       skipSchedules: ["benchmark"],
       scheduleOverrides: [],
     });
@@ -187,33 +184,6 @@ describe("buildStarterKitApplyInput", () => {
         templates,
       ),
     ).toThrow();
-  });
-
-  // TEST_SCENARIO: a kit whose install runs from its checkout keeps its repository whatever the draft says.
-  test("removes the kit's repository only when nothing in the kit runs from it", () => {
-    const seeded = {
-      ...kit,
-      seed: {
-        url: "https://github.com/acme/code-guardian",
-        ref: "main",
-        into: "home" as const,
-      },
-    };
-    const removed = { ...complete, skipSeed: true };
-    expect(kitSeedRemovable(seeded)).toBe(true);
-    expect(
-      buildStarterKitApplyInput(seeded, removed, owned, templates),
-    ).toMatchObject({ skipSeed: true });
-
-    const withInstall = {
-      ...seeded,
-      install: { command: "bash bootstrap.sh" },
-    };
-    expect(kitSeedRemovable(withInstall)).toBe(false);
-    expect(
-      buildStarterKitApplyInput(withInstall, removed, owned, templates),
-    ).toMatchObject({ skipSeed: false });
-    expect(kitSeedRemovable(kit)).toBe(false);
   });
 });
 
@@ -356,15 +326,25 @@ describe("schedules", () => {
     expect(toggleSkipped([], "a")).toEqual(["a"]);
     expect(toggleSkipped(["a", "b"], "a")).toEqual(["b"]);
   });
-  test("renders a cron as-is and an rrule as text with its timezone", () => {
+  test("renders a cron and an rrule as text with the timezone each runs in", () => {
     expect(
       kitScheduleCadence({
         name: "x",
         task: "t",
         enabled: true,
-        cron: "*/5 * * * *",
+        cron: "*/5 8-21 * * 1-5",
       }),
-    ).toBe("*/5 * * * *");
+    ).toBe(
+      "Every 5 minutes, between 08:00 AM and 09:59 PM, Monday through Friday (UTC)",
+    );
+    expect(
+      kitScheduleCadence({
+        name: "z",
+        task: "t",
+        enabled: true,
+        cron: "@hourly-ish",
+      }),
+    ).toBe("@hourly-ish (UTC)");
     expect(
       kitScheduleCadence({
         name: "y",

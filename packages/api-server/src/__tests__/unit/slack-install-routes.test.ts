@@ -7,7 +7,10 @@ import {
   SLACK_INSTALL_BOT_SCOPES,
   type SlackInstallPending,
 } from "../../modules/channels/infrastructure/slack-install-routes.js";
-import type { SlackInstallService } from "../../modules/channels/services/slack-install-service.js";
+import type {
+  SlackInstallRecord,
+  SlackInstallService,
+} from "../../modules/channels/services/slack-install-service.js";
 import { configureLogger } from "../../core/logger.js";
 
 /**
@@ -34,12 +37,14 @@ function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
   const { store: pendingInstalls, map: pending } =
     createInspectableTtlStore<SlackInstallPending>();
   const recorded: { teamId: string; installedBy: string | null }[] = [];
+  const rotations: SlackInstallRecord["rotation"][] = [];
   const installs = {
-    record: async (install: { teamId: string; installedBy: string | null }) => {
+    record: async (install: SlackInstallRecord) => {
       recorded.push({
         teamId: install.teamId,
         installedBy: install.installedBy,
       });
+      rotations.push(install.rotation);
       return "platform-secret-slack-install-abc";
     },
   } as unknown as SlackInstallService;
@@ -72,7 +77,7 @@ function harness(opts?: { roles?: string[]; enterpriseId?: string }) {
       }),
     );
 
-  return { routes, pending, recorded };
+  return { routes, pending, recorded, rotations };
 }
 
 function slackReplies(body: unknown) {
@@ -197,6 +202,37 @@ describe("slack install routes", () => {
     expect(first.status).toBe(200);
     expect(replay.status).toBe(400);
     expect(h.recorded).toEqual([{ teamId: "T-NEW", installedBy: OPERATOR }]);
+  });
+
+  /**
+   * TEST_SCENARIO: With token rotation on, Slack mints an expiring token and a
+   * refresh token. The refresh token is recorded beside it — without it the
+   * workspace goes dark when the token expires twelve hours later.
+   */
+  it("records the refresh token of a rotating install", async () => {
+    const h = harness();
+    slackReplies({
+      ok: true,
+      access_token: "xoxe.xoxb-new",
+      refresh_token: "xoxe-1-refresh",
+      expires_in: 43200,
+      team: { id: "T-NEW", name: "New" },
+    });
+    const start = await h.routes.request("/api/slack/install/start");
+    const { url } = (await start.json()) as { url: string };
+    const state = new URL(url).searchParams.get("state")!;
+
+    const before = Date.now();
+    const res = await h.routes.request(
+      `/api/slack/install/callback?code=abc&state=${state}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(h.rotations).toHaveLength(1);
+    expect(h.rotations[0]?.refreshToken).toBe("xoxe-1-refresh");
+    expect(h.rotations[0]?.expiresAt).toBeGreaterThanOrEqual(
+      before + 43200 * 1000,
+    );
   });
 
   /**

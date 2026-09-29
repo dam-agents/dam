@@ -1,5 +1,4 @@
 {
   "agentHome": "/home/agent",
-  "caFile": "/etc/platform/ca/ca.crt",
-  "persistedDir": "/home/agent/.persisted"
+  "caFile": "/etc/platform/ca/ca.crt"
 }

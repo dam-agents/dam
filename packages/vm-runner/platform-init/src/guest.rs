@@ -1,4 +1,4 @@
-// UNIT_BOUNDARY_DESCRIPTION: the whole contract between the runner and the inside of its machines. The runner writes the share at these paths, and platform-init, which is the machine's entrypoint, reads it and lays out the disk by them. Both link this one file, so the contract exists once. The storage model itself is not configurable. The one thing that varies per agent is the links plan, which the runner writes into the share from the machine's spec: nothing in the agent's home is ever read as instructions, and nothing there is ever run.
+// UNIT_BOUNDARY_DESCRIPTION: the whole contract between the runner and the inside of its machines. The runner writes the share at these paths, and platform-init, which is the machine's entrypoint, reads it and lays out the disk by them. Both link this one file, so the contract exists once. Nothing here is configurable: nothing about a machine's storage varies per agent, so there is no plan to write and none to parse. Nothing in the agent's home is ever read as instructions, and nothing there is ever run.
 use std::path::{Path, PathBuf};
 
 pub const SHARE_PATH: &str = "/platform";
@@ -61,11 +61,9 @@ pub const SYSTEM_DIR: &str = "system";
 // UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the fresh root the image boots on. platform-init empties it on every boot, so nothing the image writes outside HOME outlives the boot that wrote it.
 pub const ROOTFS_DIR: &str = "rootfs";
 
-// UNIT_BOUNDARY_DESCRIPTION: the links plan: the persisted paths from outside HOME that a runtime migration moved below it, one absolute path per line. The runner writes it into the share on every ensure, from the machine's spec, so the agent cannot change it and it lasts for the machine's whole life. platform-init reads it on every boot, because the guest's root is fresh each time, and puts each path back in place, pointing at the same path below PERSISTED_DIR in the home.
-pub const SHARE_LINKS_FILE: &str = "/platform/links";
-
-// UNIT_BOUNDARY_DESCRIPTION: where, relative to HOME, a moved path keeps its data: /data lives at HOME/.persisted/data. The api-server rewrites the mount to that path and the controller checks each link against it, so it is also in the contract fixtures the controller's tests read.
-pub const PERSISTED_DIR: &str = ".persisted";
+// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
+pub const LAYOUT_FILE: &str = "layout";
+pub const LAYOUT_VERSION: u32 = 1;
 
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)
@@ -90,20 +88,6 @@ mod tests {
         assert_eq!(fixture["agentHome"], AGENT_HOME);
     }
 
-    // TEST_SCENARIO: the controller refuses a link whose mount does not sit at the same path below the persisted directory, and platform-init points each link there. The two are in different languages, so both read the persisted directory from the same fixture, and a rename on one side fails its own test rather than a machine whose moved paths point at nothing.
-    #[test]
-    fn the_persisted_directory_is_the_one_the_controller_checks_links_against() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../contract/guest.json");
-        let fixture: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
-        )
-        .expect("the guest fixture is JSON");
-        assert_eq!(
-            fixture["persistedDir"],
-            format!("{AGENT_HOME}/{PERSISTED_DIR}")
-        );
-    }
-
     // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory and the seed directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, or the image's home where the agent's own was meant to be.
     #[test]
     fn the_share_paths_are_inside_the_share() {
@@ -112,7 +96,6 @@ mod tests {
             SHARE_CA_DIR,
             SHARE_SEED_FILE,
             SEEDED_PATH,
-            SHARE_LINKS_FILE,
             SEED_EXPECTED_PATH,
         ] {
             let parent = Path::new(path).parent().expect("a share path has a parent");
@@ -155,6 +138,10 @@ mod tests {
         assert_eq!(
             system_store(root, ROOTFS_DIR),
             Path::new("/mnt/platform/system/rootfs")
+        );
+        assert_eq!(
+            system_store(root, LAYOUT_FILE),
+            Path::new("/mnt/platform/system/layout")
         );
     }
 }

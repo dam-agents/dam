@@ -6,27 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
-	"strconv"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/retry"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and a snapshot of what the switch changes, and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME and each other persisted path; `Copying` streams them, as one tree, to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
+// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and a snapshot of what the switch changes, and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME; `Copying` streams it to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
 const (
 	annRuntimeMigration         = "agent-platform.ai/runtime-migration"
 	annRuntimeMigrationTarget   = "agent-platform.ai/runtime-migration-target"
@@ -34,9 +40,8 @@ const (
 	annRuntimeMigrationRetry    = "agent-platform.ai/runtime-migration-retry"
 	annRuntimeMigrationMessage  = "agent-platform.ai/runtime-migration-message"
 	annRuntimeMigrationSource   = "agent-platform.ai/runtime-migration-source"
-	annRuntimeMigrationMounts   = "agent-platform.ai/runtime-migration-mounts"
-	annRuntimeMigrationGrafts   = "agent-platform.ai/runtime-migration-grafts"
 	annRuntimeMigrationSeed     = "agent-platform.ai/runtime-migration-seed"
+	annRuntimeMigrationEmpty    = "agent-platform.ai/runtime-migration-nothing-to-copy"
 
 	runtimeMigrationRequested = "requested"
 	runtimeMigrationCopying   = "copying"
@@ -52,7 +57,6 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: where the copy Job finds what it runs and reads. vm-seed ships in the runner image, so the Job carries exactly the tar writer the runner's reader was tested against.
 	runtimeMigrationSeedBinary = "/usr/local/bin/vm-seed"
 	runtimeMigrationSourcePath = "/mnt/home"
-	runtimeMigrationExtraPath  = "/mnt/extra"
 	runtimeMigrationCredsPath  = "/etc/vm-seed"
 
 	runtimeMigrationCapabilityKey = "capability"
@@ -68,16 +72,19 @@ type runtimeMigration struct {
 	attempts  int32
 	source    bool
 	seeded    bool
+	empty     bool
 	retry     time.Time
+	held      string
 }
 
 func runtimeMigrationOf(annotations map[string]string, status apiv1.AgentStatus) runtimeMigration {
 	m := runtimeMigration{
 		requested: annotations[annRuntimeMigration] != "",
 		source:    annotations[annRuntimeMigrationSource] != "",
+		empty:     annotations[annRuntimeMigrationEmpty] == "true",
 		attempts:  status.RuntimeMigrationAttempts,
 	}
-	if _, err := runtimeMigrationSeed(annotations); err == nil {
+	if _, err := runtimeMigrationSeed(annotations); err == nil || m.empty {
 		m.seeded = true
 	}
 	if t, err := time.Parse(time.RFC3339, annotations[annRuntimeMigrationRetry]); err == nil {
@@ -130,6 +137,11 @@ func (m runtimeMigration) vmSideRuns() bool {
 	return m.phase == apiv1.ReasonRuntimeMigrationBooting || m.phase == apiv1.ReasonRuntimeMigrationVerified
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the migration itself keeps the Agent up, whatever its activity says. A boot is proven only by a guest that answers, so from `Booting` with its seed recorded until that answer, neither the idle timeout nor a reclaim may stop it; a stop the user asks for still wins. A boot with nothing to copy is held to no seed and counts as recorded.
+func (m runtimeMigration) keepsUp() bool {
+	return m.phase == apiv1.ReasonRuntimeMigrationBooting && m.seeded
+}
+
 func (m runtimeMigration) containerDown() bool {
 	return m.holdsDown() || m.vmSideRuns()
 }
@@ -153,10 +165,9 @@ func (m runtimeMigration) machineMayRun() bool {
 	return !m.active() || m.vmSideRuns()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the mounts rewritten to where each persisted path lives below HOME, and the disk sized for all of them. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
 type runtimeMigrationTarget struct {
-	Mounts      []apiv1.Mount `json:"mounts,omitempty"`
-	StorageSize string        `json:"storageSize,omitempty"`
+	StorageSize string `json:"storageSize,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Agent as the vm Backend sees it while its spec is still the container's. An Agent already on the vm Backend is its own target.
@@ -176,9 +187,6 @@ func runtimeMigrationTargetAgent(agent *apiv1.Agent) (*apiv1.Agent, error) {
 	target.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	target.Spec.RuntimeClassName = ""
 	target.Spec.NodeSelector = nil
-	if shape.Mounts != nil {
-		target.Spec.Mounts = shape.Mounts
-	}
 	if shape.StorageSize != "" {
 		target.Spec.StorageSize = shape.StorageSize
 	}
@@ -246,6 +254,10 @@ func setRuntimeMigrating(s *apiv1.AgentStatus, phase, message string, generation
 
 // UNIT_BOUNDARY_DESCRIPTION: moves the migration to a phase, with the message that goes with it, and updates the view the rest of this reconcile acts on.
 func (r *AgentReconciler) runtimeMigrationPhase(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, phase, message string) error {
+	message = r.sanitizeFor(agent, message)
+	if m.recorded && phase == m.phase && message == m.message {
+		return nil
+	}
 	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
 		setRuntimeMigrating(s, phase, message, agent.Generation)
 	}); err != nil {
@@ -253,6 +265,11 @@ func (r *AgentReconciler) runtimeMigrationPhase(ctx context.Context, agent *apiv
 	}
 	if phase != m.phase {
 		slog.Info("runtime migration: phase", "agent", agent.Name, "from", m.phase, "to", phase)
+		kind := corev1.EventTypeNormal
+		if phase == apiv1.ReasonRuntimeMigrationFailed {
+			kind = corev1.EventTypeWarning
+		}
+		r.migrationEvent(ctx, agent, kind, "RuntimeMigration"+phase, message)
 	}
 	m.recorded, m.phase, m.message = true, phase, message
 	return nil
@@ -260,16 +277,23 @@ func (r *AgentReconciler) runtimeMigrationPhase(ctx context.Context, agent *apiv
 
 // UNIT_BOUNDARY_DESCRIPTION: what the user is shown while a step waits or is stuck. The phase stays where it is and the step is retried, so the message is advice about the present, replaced as soon as the step gets past it.
 func (r *AgentReconciler) noteRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, cause error) error {
-	msg := cause.Error()
-	if msg != m.message {
+	return r.setRuntimeMigrationNote(ctx, agent, m, cause.Error())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes what holds the current phase up, or clears it once nothing does, so the message always says what is true now. It is written only when it changed.
+func (r *AgentReconciler) setRuntimeMigrationNote(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, note string) error {
+	if msg := r.sanitizeFor(agent, note); msg != m.message && msg != "" {
 		slog.Warn("runtime migration: step not done", "agent", agent.Name, "phase", m.phase, "reason", msg)
 	}
-	return r.runtimeMigrationPhase(ctx, agent, m, m.phase, msg)
+	return r.runtimeMigrationPhase(ctx, agent, m, m.phase, note)
 }
 
 func (r *AgentReconciler) failRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, why string) error {
 	slog.Warn("runtime migration: failed", "agent", agent.Name, "phase", m.phase, "reason", why)
 	if err := r.deleteSeedCapability(ctx, agent.Name); err != nil {
+		return err
+	}
+	if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, agent.Name); err != nil {
 		return err
 	}
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationFailed, why)
@@ -356,11 +380,11 @@ func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *a
 		return r.stopForRuntimeMigration(ctx, agent, &m)
 	case apiv1.ReasonRuntimeMigrationCopying:
 		if !runnerReached || machine.State != vmrunner.StateStopped {
-			return nil
+			return r.setRuntimeMigrationNote(ctx, agent, &m, vmSideProblem(machine, runnerReached, vmErr))
 		}
 		return r.runRuntimeMigrationCopy(ctx, agent, &m)
 	case apiv1.ReasonRuntimeMigrationBooting:
-		return r.bootRuntimeMigration(ctx, agent, &m, machine, runnerReached)
+		return r.bootRuntimeMigration(ctx, agent, &m, machine, runnerReached, vmErr)
 	}
 	return nil
 }
@@ -404,44 +428,59 @@ func (r *AgentReconciler) stopContainerForRuntimeMigration(ctx context.Context, 
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the source volumes are recorded once, while the old StatefulSet still names them, and the phase moves on only once the old pod is gone. The container reconcile has already scaled the StatefulSet to zero.
+// UNIT_BOUNDARY_DESCRIPTION: the source volumes are recorded once, while the old StatefulSet still names them, and the phase moves on only once the old pod is gone. The container reconcile has already scaled the StatefulSet to zero. A pod that stays terminating is named with its node, since only someone who can reach that node can end it. An Agent that never had a volume at all has nothing to copy, and goes straight to `Booting` from the image, still through the verified boot and the switch.
 func (r *AgentReconciler) stopForRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
 	name := agent.Name
-	patch := map[string]*string{}
-	if agent.Annotations[annRuntimeMigrationSource] == "" {
-		source, err := r.runtimeMigrationSource(ctx, agent)
-		if err != nil {
-			return r.noteRuntimeMigration(ctx, agent, m, err)
-		}
-		grafts, err := r.runtimeMigrationGrafts(ctx, agent)
-		if err != nil {
-			return r.noteRuntimeMigration(ctx, agent, m, err)
-		}
-		patch[annRuntimeMigrationSource] = new(source)
-		if len(grafts) > 0 {
-			encoded, err := json.Marshal(grafts)
-			if err != nil {
-				return err
-			}
-			patch[annRuntimeMigrationGrafts] = new(string(encoded))
-		}
-	}
-	if len(patch) > 0 {
-		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, patch); err != nil {
-			return err
-		}
-	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name + "," + LabelRole + "=" + RoleAgent,
 	})
 	if err != nil {
 		return err
 	}
+	patch := map[string]*string{}
+	if agent.Annotations[annRuntimeMigrationSource] == "" {
+		source, err := r.runtimeMigrationVolume(ctx, agent, agentHomeDir)
+		if err != nil {
+			return r.noteRuntimeMigration(ctx, agent, m, err)
+		}
+		if source == "" {
+			if len(pods.Items) > 0 {
+				return r.setRuntimeMigrationNote(ctx, agent, m, stuckTerminating(pods.Items, time.Now()))
+			}
+			return r.runtimeMigrationWithNothingToCopy(ctx, agent, m)
+		}
+		patch[annRuntimeMigrationSource] = new(source)
+	}
+	if len(patch) > 0 {
+		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, patch); err != nil {
+			return err
+		}
+	}
 	if len(pods.Items) > 0 {
-		return nil
+		return r.setRuntimeMigrationNote(ctx, agent, m, stuckTerminating(pods.Items, time.Now()))
 	}
 	slog.Info("runtime migration: container pod gone, copying home", "agent", name)
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationCopying, "")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent with no volume at all goes straight to `Booting` with nothing to copy, once that is provable. Its machine is held to no seed and starts from the image; the boot is verified by the guest answering with a home the image made, and the switch follows as for any migration.
+func (r *AgentReconciler) runtimeMigrationWithNothingToCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
+	empty, why, err := r.runtimeMigrationHasNothingToCopy(ctx, agent)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return r.setRuntimeMigrationNote(ctx, agent, m, why)
+	}
+	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{
+		annRuntimeMigrationEmpty: new("true"),
+		annLastActivity:          new(time.Now().UTC().Format(time.RFC3339)),
+	}); err != nil {
+		return err
+	}
+	m.empty, m.seeded = true, true
+	slog.Info("runtime migration: nothing to copy, booting from the image", "agent", agent.Name)
+	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationBooting, runtimeMigrationNothingToCopy)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes what the vm side made — the copy Job, the machine with its disk and its seed, and the record of which volumes were copied — and then the condition, so a crash anywhere in between is finished by the next reconcile. The old volumes are not touched: they never lost their labels, so the container resumes on them. For an abort the condition goes; for a retry the migration starts over from the preflight with a fresh machine, because a machine whose boot failed may have seeded part of its disk.
@@ -451,6 +490,9 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("deleting the home copy job: %w", err)
 	}
+	if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
+		return err
+	}
 	if err := r.deleteSeedCapability(ctx, name); err != nil {
 		return err
 	}
@@ -459,19 +501,21 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	}
 	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
 		annRuntimeMigrationSource:  nil,
-		annRuntimeMigrationGrafts:  nil,
 		annRuntimeMigrationSeed:    nil,
+		annRuntimeMigrationEmpty:   nil,
 		annRuntimeMigrationMessage: nil,
 	}); err != nil {
 		return err
 	}
 	if retry {
+		r.migrationEvent(ctx, agent, corev1.EventTypeNormal, "RuntimeMigrationRetrying", "the migration starts over from the preflight with a fresh machine")
 		return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
 			setRuntimeMigrating(s, apiv1.ReasonRuntimeMigrationRequested, "retrying from the start", agent.Generation)
 			s.RuntimeMigrationAttempts = 0
 		})
 	}
 	slog.Info("runtime migration: aborted, the agent stays on the container backend", "agent", name)
+	r.migrationEvent(ctx, agent, corev1.EventTypeNormal, "RuntimeMigrationAborted", "the migration was withdrawn; the agent stays on the container backend")
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
 		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionRuntimeMigrating)
 		s.RuntimeMigrationAttempts = 0
@@ -483,26 +527,30 @@ func runtimeMigrationBootVerified(machine vmrunner.MachineStatus, expected vmrun
 	return machine.Ready && machine.HomeSeededFrom == expected.SHA256
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: `Verified` is written only while the request still stands, in the same compare-and-swap as the status update: an abort that lands between the read and the write makes the write conflict, and the retry sees the request gone. The api-server's abort checks for `Verified` the same way, so exactly one of the two wins.
-func (r *AgentReconciler) bootRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, machine vmrunner.MachineStatus, runnerReached bool) error {
+// UNIT_BOUNDARY_DESCRIPTION: `Verified` is written only while the request still stands, in the same compare-and-swap as the status update: an abort that lands between the read and the write makes the write conflict, and the retry sees the request gone. The api-server's abort checks for `Verified` the same way, so exactly one of the two wins. Until the guest answers, whatever keeps it from booting — a stop the user asked for, an owner budget with no room, or what the runner reports — is the phase's message.
+func (r *AgentReconciler) bootRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, machine vmrunner.MachineStatus, runnerReached bool, vmErr error) error {
 	if !runnerReached {
-		return nil
+		return r.setRuntimeMigrationNote(ctx, agent, m, firstNote(m.held, vmSideProblem(machine, runnerReached, vmErr)))
 	}
-	expected, err := runtimeMigrationSeed(agent.Annotations)
-	if err != nil {
-		return r.copyRuntimeMigrationAgain(ctx, agent, m, err.Error())
-	}
-	if machine.Reason == vmrunner.ReasonSeedMissing {
-		return r.copyRuntimeMigrationAgain(ctx, agent, m, "the runner does not hold the copied home: "+machine.Message)
-	}
-	if machine.Ready && !runtimeMigrationBootVerified(machine, expected) {
-		from := "the image"
-		if machine.HomeSeededFrom != "" {
-			from = "seed " + machine.HomeSeededFrom
+	verified := machine.Ready && machine.HomeSeededFrom == ""
+	if !m.empty {
+		expected, err := runtimeMigrationSeed(agent.Annotations)
+		if err != nil {
+			return r.copyRuntimeMigrationAgain(ctx, agent, m, err.Error())
 		}
-		return r.copyRuntimeMigrationAgain(ctx, agent, m, fmt.Sprintf("the new machine answered with a home from %s, not from the copy (seed %s)", from, expected.SHA256))
+		if machine.Reason == vmrunner.ReasonSeedMissing {
+			return r.copyRuntimeMigrationAgain(ctx, agent, m, "the runner does not hold the copied home: "+machine.Message)
+		}
+		if machine.Ready && !runtimeMigrationBootVerified(machine, expected) {
+			from := "the image"
+			if machine.HomeSeededFrom != "" {
+				from = "seed " + machine.HomeSeededFrom
+			}
+			return r.copyRuntimeMigrationAgain(ctx, agent, m, fmt.Sprintf("the new machine answered with a home from %s, not from the copy (seed %s)", from, expected.SHA256))
+		}
+		verified = runtimeMigrationBootVerified(machine, expected)
 	}
-	if runtimeMigrationBootVerified(machine, expected) {
+	if verified {
 		applied, err := updateAgentStatusWhile(ctx, r.dynamic, r.config.Namespace, agent.Name,
 			func(u *unstructured.Unstructured) bool { return u.GetAnnotations()[annRuntimeMigration] != "" },
 			func(s *apiv1.AgentStatus) {
@@ -510,26 +558,24 @@ func (r *AgentReconciler) bootRuntimeMigration(ctx context.Context, agent *apiv1
 			})
 		if err == nil && applied {
 			slog.Info("runtime migration: the machine booted from the copy", "agent", agent.Name)
+			r.migrationEvent(ctx, agent, corev1.EventTypeNormal, "RuntimeMigration"+apiv1.ReasonRuntimeMigrationVerified, "the new machine answered with the copied home; the backend switches next")
 		}
 		return err
 	}
-	if machine.Reason == vmrunner.ReasonBootFailed || machine.Reason == vmrunner.ReasonImageUnavailable || machine.Reason == vmrunner.ReasonOutOfCapacity {
-		msg := machine.Message
-		if msg == "" {
-			msg = machine.Reason
-		}
-		return r.noteRuntimeMigration(ctx, agent, m, fmt.Errorf("the new machine has not started: %s", msg))
+	note := firstNote(m.held, vmSideProblem(machine, runnerReached, vmErr))
+	if note == "" && m.empty {
+		note = runtimeMigrationNothingToCopy
 	}
-	return nil
+	return r.setRuntimeMigrationNote(ctx, agent, m, note)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the volume that holds HOME. Both a StatefulSet's own claim and a warm-pool claim carry the agent and mount labels, so they are found the same way; the StatefulSet, while it exists, says which one the pod mounted when a second one is somehow also labelled.
-func (r *AgentReconciler) runtimeMigrationSource(ctx context.Context, agent *apiv1.Agent) (string, error) {
-	source, err := r.runtimeMigrationVolume(ctx, agent, agentHomeDir)
-	if err == nil && source == "" {
-		return "", fmt.Errorf("no volume holds this agent's home (%s), so there is nothing to copy", agentHomeDir)
+func firstNote(notes ...string) string {
+	for _, n := range notes {
+		if n != "" {
+			return n
+		}
 	}
-	return source, err
+	return ""
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the volume the container backend mounted at `path`, or none when no volume was ever made for it.
@@ -559,60 +605,7 @@ func (r *AgentReconciler) runtimeMigrationVolume(ctx context.Context, agent *api
 	return "", fmt.Errorf("%d volumes are labelled as this agent's %s and its statefulset mounts none of them", len(list.Items), path)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one more of the agent's volumes carried into the seed: the path the container mounted it at, where it goes relative to HOME on the machine, and the claim. The api-server, which rewrote the spec, says in the mounts annotation where each persisted path went; the claim is found by the old path, which is what its mount label was made from.
-type runtimeMigrationGraft struct {
-	From string `json:"from"`
-	At   string `json:"at"`
-	PVC  string `json:"pvc"`
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the grafts for every persisted path besides HOME that the api-server moved. A path the container never made a volume for has nothing to carry and is left out, so it starts empty on the machine as it would have in a fresh pod. A request from an api-server that predates the annotation moves HOME alone, as it always did.
-func (r *AgentReconciler) runtimeMigrationGrafts(ctx context.Context, agent *apiv1.Agent) ([]runtimeMigrationGraft, error) {
-	raw := agent.Annotations[annRuntimeMigrationMounts]
-	if raw == "" {
-		return nil, nil
-	}
-	var moved map[string]string
-	if err := json.Unmarshal([]byte(raw), &moved); err != nil {
-		return nil, fmt.Errorf("the migration's mounts annotation is not a map of paths: %w", err)
-	}
-	from := make([]string, 0, len(moved))
-	for old := range moved {
-		from = append(from, old)
-	}
-	sort.Strings(from)
-	var grafts []runtimeMigrationGraft
-	for _, old := range from {
-		at, ok := strings.CutPrefix(moved[old], agentHomeDir+"/")
-		if !ok || at == "" {
-			return nil, fmt.Errorf("the migration moves %s to %s, which is not inside %s", old, moved[old], agentHomeDir)
-		}
-		pvc, err := r.runtimeMigrationVolume(ctx, agent, old)
-		if err != nil {
-			return nil, err
-		}
-		if pvc == "" {
-			slog.Info("runtime migration: no volume was ever made for a persisted path, nothing to carry", "agent", agent.Name, "path", old)
-			continue
-		}
-		grafts = append(grafts, runtimeMigrationGraft{From: old, At: at, PVC: pvc})
-	}
-	return grafts, nil
-}
-
-func recordedGrafts(agent *apiv1.Agent) ([]runtimeMigrationGraft, error) {
-	raw := agent.Annotations[annRuntimeMigrationGrafts]
-	if raw == "" {
-		return nil, nil
-	}
-	var grafts []runtimeMigrationGraft
-	if err := json.Unmarshal([]byte(raw), &grafts); err != nil {
-		return nil, fmt.Errorf("the recorded volumes to carry are not readable: %w", err)
-	}
-	return grafts, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted before it is created, so a controller that restarts mid-way counts one too many rather than one too few; once the attempts are spent the migration is Failed with the last attempt's error. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
+// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
 func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
@@ -621,40 +614,20 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationStopping, "")
 	}
 	jobs := r.client.BatchV1().Jobs(r.config.Namespace)
+	prop := metav1.DeletePropagationBackground
 	job, err := jobs.Get(ctx, runtimeMigrationJobName(name), metav1.GetOptions{})
+	if err == nil && !ownedBy(job, agent) {
+		slog.Warn("runtime migration: removing a copy job another agent of this name left", "agent", name, "job", job.Name)
+		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("deleting a stale home copy job: %w", err)
+		}
+		return r.setRuntimeMigrationNote(ctx, agent, m, "a copy job left by an earlier agent of the same name was removed; the copy starts again")
+	}
 	if k8serrors.IsNotFound(err) {
 		if m.attempts >= runtimeMigrationMaxAttempts {
 			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("copying the home directory failed %d times: %s", m.attempts, m.message))
 		}
-		if err := ensureMigrationServiceAccount(ctx, r.client, r.config.Namespace); err != nil {
-			return err
-		}
-		if _, err := runtimeMigrationTargetAgent(agent); err != nil {
-			return r.noteRuntimeMigration(ctx, agent, m, err)
-		}
-		grafts, err := recordedGrafts(agent)
-		if err != nil {
-			return r.noteRuntimeMigration(ctx, agent, m, err)
-		}
-		if err := r.applySeedCapability(ctx, agent, owner); err != nil {
-			return err
-		}
-		desired, err := r.buildRuntimeMigrationJob(agent, owner, source, grafts)
-		if err != nil {
-			return err
-		}
-		attempt := m.attempts + 1
-		if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
-			s.RuntimeMigrationAttempts = attempt
-		}); err != nil {
-			return err
-		}
-		m.attempts = attempt
-		if _, err := jobs.Create(ctx, desired, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
-			return fmt.Errorf("creating the home copy job: %w", err)
-		}
-		slog.Info("runtime migration: home copy started", "agent", name, "pvc", source, "attempt", attempt)
-		return nil
+		return r.startRuntimeMigrationCopy(ctx, agent, m, owner, source)
 	}
 	if err != nil {
 		return err
@@ -662,7 +635,6 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 	if job.DeletionTimestamp != nil {
 		return nil
 	}
-	prop := metav1.DeletePropagationBackground
 	switch {
 	case jobConditionTrue(job, batchv1.JobComplete):
 		seed, why, err := r.copyJobSeed(ctx, job)
@@ -672,11 +644,16 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("deleting the home copy job: %w", err)
 		}
+		if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
+			return err
+		}
 		if err := r.deleteSeedCapability(ctx, name); err != nil {
 			return err
 		}
 		if why != "" {
-			return r.noteRuntimeMigration(ctx, agent, m, fmt.Errorf("the home was copied, but %s; copying it again", why))
+			msg := fmt.Sprintf("the home was copied, but %s; copying it again", why)
+			r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyFailed", msg)
+			return r.setRuntimeMigrationNote(ctx, agent, m, msg)
 		}
 		encoded, err := json.Marshal(seed)
 		if err != nil {
@@ -698,7 +675,11 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if m.attempts >= runtimeMigrationMaxAttempts {
 			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("%s; gave up after %d attempts", why, m.attempts))
 		}
-		if err := r.noteRuntimeMigration(ctx, agent, m, fmt.Errorf("%s; retrying (attempt %d of %d)", why, m.attempts, runtimeMigrationMaxAttempts)); err != nil {
+		note := fmt.Sprintf("%s; retrying (attempt %d of %d)", why, m.attempts, runtimeMigrationMaxAttempts)
+		if r.sanitizeFor(agent, note) != m.message {
+			r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyFailed", note)
+		}
+		if err := r.setRuntimeMigrationNote(ctx, agent, m, note); err != nil {
 			return err
 		}
 		if time.Since(job.CreationTimestamp.Time) < migrationJobRetryAfter {
@@ -708,9 +689,12 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
+		if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
+			return err
+		}
 		return r.deleteSeedCapability(ctx, name)
 	}
-	return nil
+	return r.setRuntimeMigrationNote(ctx, agent, m, r.copyPodWaiting(ctx, job))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a seed capability outlives its Job's active deadline: the time its pod may wait to be scheduled and pull the runner image before the deadline's clock matters. Past it the runner refuses the capability, and a retry is a new Job with a new one.
@@ -768,7 +752,63 @@ func (r *AgentReconciler) deleteSeedCapability(ctx context.Context, name string)
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. Empty when no attempt left a message.
+// UNIT_BOUNDARY_DESCRIPTION: a copy Job is created only once there is a slot for it, its NetworkPolicy is in place and the runner pod has an address to pin in the Job's pod. The slot count, the attempt and the create run under one lock, so two reconciles cannot both take the last slot, and a copy that waits for one spends no attempt.
+func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, owner, source string) error {
+	name := agent.Name
+	if err := ensureMigrationServiceAccount(ctx, r.client, r.config.Namespace); err != nil {
+		return err
+	}
+	if _, err := runtimeMigrationTargetAgent(agent); err != nil {
+		return r.noteRuntimeMigration(ctx, agent, m, err)
+	}
+	runnerIP, err := r.runnerPodIP(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if runnerIP == "" {
+		return r.setRuntimeMigrationNote(ctx, agent, m, "waiting for the owner's VM runner pod to be ready")
+	}
+	reader, found, err := r.runtimeMigrationReader(ctx, source)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return r.setRuntimeMigrationNote(ctx, agent, m, fmt.Sprintf("the volume %s this migration copies from no longer exists", source))
+	}
+	if err := applyNetworkPolicy(ctx, r.client, buildRuntimeMigrationNetworkPolicy(agent, owner, r.config.Namespace)); err != nil {
+		return err
+	}
+	desired, err := r.buildRuntimeMigrationJob(agent, owner, source, runnerIP, reader)
+	if err != nil {
+		return err
+	}
+	r.migrationCopyMu.Lock()
+	defer r.migrationCopyMu.Unlock()
+	wait, err := r.runtimeMigrationCopySlot(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if wait != "" {
+		return r.setRuntimeMigrationNote(ctx, agent, m, wait)
+	}
+	if err := r.applySeedCapability(ctx, agent, owner); err != nil {
+		return err
+	}
+	attempt := m.attempts + 1
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+		s.RuntimeMigrationAttempts = attempt
+	}); err != nil {
+		return err
+	}
+	m.attempts = attempt
+	if _, err := r.client.BatchV1().Jobs(r.config.Namespace).Create(ctx, desired, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating the home copy job: %w", err)
+	}
+	slog.Info("runtime migration: home copy started", "agent", name, "pvc", source, "attempt", attempt)
+	return r.setRuntimeMigrationNote(ctx, agent, m, "")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. An attempt that never ran — a volume that would not attach, a pod that could not be placed — left no message, so the last warning its pod was given says why instead. Empty when neither is there.
 func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) string {
 	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
 	if err != nil {
@@ -784,7 +824,12 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 		}
 	}
 	if last == nil {
-		return ""
+		for i := range pods.Items {
+			if why := r.warningOn(ctx, pods.Items[i].Namespace, pods.Items[i].Name, pods.Items[i].UID); why != "" {
+				return why
+			}
+		}
+		return r.warningOn(ctx, job.Namespace, job.Name, job.UID)
 	}
 	lines := strings.Split(strings.TrimSpace(last.Message), "\n")
 	from := len(lines) - 1
@@ -800,14 +845,8 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 			parts = append(parts, l)
 		}
 	}
-	msg := strings.Join(parts, "; ")
-	if len(msg) > copyFailureMax {
-		msg = msg[:copyFailureMax] + "…"
-	}
-	return msg
+	return strings.Join(parts, "; ")
 }
-
-const copyFailureMax = 300
 
 // UNIT_BOUNDARY_DESCRIPTION: the seed a completed copy Job stored on the runner, as vm-seed wrote it to its termination message once the runner's answer matched what it sent. The pod that succeeded is the one to read. When none is left, or its message is not a seed, the reason says so and the home is copied again, because a boot that is not held to a known seed is exactly the hole the seed contract closes.
 func (r *AgentReconciler) copyJobSeed(ctx context.Context, job *batchv1.Job) (vmrunner.SeedResult, string, error) {
@@ -850,7 +889,7 @@ func (r *AgentReconciler) copyRuntimeMigrationAgain(ctx context.Context, agent *
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationCopying, msg)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs once the Backend has switched: the seed is removed, each volume the copy was read from is retained for its window, and the migration's records and condition go. Until the switch those volumes kept their labels, so an abort could still resume the container on them.
+// UNIT_BOUNDARY_DESCRIPTION: runs once the Backend has switched: the seed is removed, the home volume the copy was read from is retained for its window, and the migration's records and condition go. Until the switch that volume kept its labels, so an abort could still resume the container on it.
 func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
@@ -865,15 +904,8 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		return err
 	}
 	until := time.Now().Add(r.migrationRetention())
-	grafts, err := recordedGrafts(agent)
-	if err != nil {
-		return err
-	}
 	if source := agent.Annotations[annRuntimeMigrationSource]; source != "" {
-		grafts = append([]runtimeMigrationGraft{{From: agentHomeDir, PVC: source}}, grafts...)
-	}
-	for _, g := range grafts {
-		if err := r.retainMigratedVolume(ctx, agent, g.PVC, g.From, until); err != nil {
+		if err := r.retainMigratedVolume(ctx, agent, source, agentHomeDir, until); err != nil {
 			return err
 		}
 	}
@@ -884,21 +916,27 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		annRuntimeMigrationRetry:    nil,
 		annRuntimeMigrationMessage:  nil,
 		annRuntimeMigrationSource:   nil,
-		annRuntimeMigrationMounts:   nil,
-		annRuntimeMigrationGrafts:   nil,
 		annRuntimeMigrationSeed:     nil,
+		annRuntimeMigrationEmpty:    nil,
 	}); err != nil {
 		return err
 	}
+	if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
+		return err
+	}
 	slog.Info("runtime migration: agent moved to the vm backend", "agent", name)
-	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
 		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionRuntimeMigrating)
 		s.RuntimeMigrationAttempts = 0
-	})
+	}); err != nil {
+		return err
+	}
+	r.migrationEvent(ctx, agent, corev1.EventTypeNormal, "RuntimeMigrationFinished", "the backend switched; the agent now runs on the vm backend")
+	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only as root — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME — HOME holds files owned by the agent's user with private modes, and the tar has to carry them exactly — and reaches only the owner's runner, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
-func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source string, grafts []runtimeMigrationGraft) (*batchv1.Job, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
+func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
 	spec := cfg.VM.Runner
@@ -920,7 +958,9 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	backoff := int32(0)
 	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
-	rootUID := int64(0)
+	uid, gid := reader.uid, reader.gid
+	nonRoot := uid != 0
+	seccomp := &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}
 	url := fmt.Sprintf("https://%s:%d/machines/%s/seed", r.runnerHost(owner), vmRunnerPort, name)
 	command := []string{
 		runtimeMigrationSeedBinary,
@@ -934,23 +974,18 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	mounts := []corev1.VolumeMount{
 		{Name: "home", MountPath: runtimeMigrationSourcePath, ReadOnly: true},
 		{Name: "credentials", MountPath: runtimeMigrationCredsPath, ReadOnly: true},
+		{Name: "tmp", MountPath: "/tmp"},
 	}
 	volumes := []corev1.Volume{
 		{Name: "home", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: source, ReadOnly: true}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-			DefaultMode: new(int32(0o400)),
+			DefaultMode: new(int32(0o444)),
 			Sources: []corev1.VolumeProjection{
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: runtimeMigrationJobName(name)}, Items: []corev1.KeyToPath{{Key: runtimeMigrationCapabilityKey, Path: runtimeMigrationCapabilityKey}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			},
 		}}},
-	}
-	for i, g := range grafts {
-		volume := "extra-" + strconv.Itoa(i)
-		path := runtimeMigrationExtraPath + "/" + strconv.Itoa(i)
-		command = append(command, "--graft", g.At+"="+path)
-		mounts = append(mounts, corev1.VolumeMount{Name: volume, MountPath: path, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: volume, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: g.PVC, ReadOnly: true}}})
+		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: new(resource.MustParse("16Mi"))}}},
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -971,7 +1006,13 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 					AutomountServiceAccountToken: new(false),
 					EnableServiceLinks:           new(false),
 					ImagePullSecrets:             spec.ImagePullSecrets,
-					SecurityContext:              &corev1.PodSecurityContext{RunAsUser: &rootUID},
+					HostAliases:                  []corev1.HostAlias{{IP: runnerIP, Hostnames: []string{r.runnerHost(owner)}}},
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsUser:      &uid,
+						RunAsGroup:     &gid,
+						RunAsNonRoot:   &nonRoot,
+						SeccompProfile: seccomp,
+					},
 					Containers: []corev1.Container{{
 						Name:                     "seed",
 						Image:                    spec.Image,
@@ -979,14 +1020,25 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 						ImagePullPolicy:          corev1.PullPolicy(spec.ImagePullPolicy),
 						Command:                  command,
 						VolumeMounts:             mounts,
+						SecurityContext: &corev1.SecurityContext{
+							RunAsUser:                &uid,
+							RunAsGroup:               &gid,
+							RunAsNonRoot:             &nonRoot,
+							AllowPrivilegeEscalation: new(false),
+							ReadOnlyRootFilesystem:   new(true),
+							Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}, Add: reader.caps},
+							SeccompProfile:           seccomp,
+						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("100m"),
-								corev1.ResourceMemory: resource.MustParse("64Mi"),
+								corev1.ResourceCPU:              resource.MustParse("100m"),
+								corev1.ResourceMemory:           resource.MustParse("64Mi"),
+								corev1.ResourceEphemeralStorage: resource.MustParse("32Mi"),
 							},
 							Limits: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("1"),
-								corev1.ResourceMemory: resource.MustParse("256Mi"),
+								corev1.ResourceCPU:              resource.MustParse("1"),
+								corev1.ResourceMemory:           resource.MustParse("256Mi"),
+								corev1.ResourceEphemeralStorage: resource.MustParse("128Mi"),
 							},
 						},
 					}},
@@ -996,12 +1048,349 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		},
 	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
-	job.Spec.Template.Spec.RuntimeClassName = nil
+	if rc := agent.Spec.RuntimeClassName; rc != "" {
+		job.Spec.Template.Spec.RuntimeClassName = &rc
+	}
 	return job, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the container ran the agent as the install's agent uid and gid, and a machine's harness runs as root, so the seed maps that uid and gid to root. The ids come from the same security context the agent's pods and the storage migration read, with the same fallback.
 func runtimeMigrationOwnerMap(cfg *config.Config) string {
+	uid, gid := migrationAgentIdentity(cfg)
+	return fmt.Sprintf("%d:%d:0", uid, gid)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the old pod may take to terminate before the user is told which pod and node it is stuck on. A pod whose node stopped answering is never confirmed gone by its kubelet, and the migration cannot copy a volume that may still be written to.
+const runtimeMigrationTerminatingGrace = 3 * time.Minute
+
+func stuckTerminating(pods []corev1.Pod, now time.Time) string {
+	for _, p := range pods {
+		if p.DeletionTimestamp == nil || now.Sub(p.DeletionTimestamp.Time) < runtimeMigrationTerminatingGrace {
+			continue
+		}
+		node := p.Spec.NodeName
+		if node == "" {
+			node = "(none)"
+		}
+		return fmt.Sprintf("waiting for the old pod %s on node %s, terminating for %s; the copy starts once it is gone, and a node that no longer answers has to be recovered, or the pod force-deleted, by an operator",
+			p.Name, node, now.Sub(p.DeletionTimestamp.Time).Round(time.Minute))
+	}
+	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the Agent provably has nothing to copy: its StatefulSet is gone or held at zero, so nothing will make a volume for it any more, and no volume is labelled for it, not even one mid-way through a storage migration.
+func (r *AgentReconciler) runtimeMigrationHasNothingToCopy(ctx context.Context, agent *apiv1.Agent) (bool, string, error) {
+	name := agent.Name
+	ns := r.config.Namespace
+	if ss, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{}); err == nil && (ss.Spec.Replicas == nil || *ss.Spec.Replicas > 0) {
+		return false, "waiting for the old container statefulset to be scaled to zero", nil
+	} else if err != nil && !k8serrors.IsNotFound(err) {
+		return false, "", err
+	}
+	for _, selector := range []string{LabelAgent + "=" + name, LabelMigrationFor + "=" + name} {
+		list, err := r.client.CoreV1().PersistentVolumeClaims(ns).List(ctx, metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return false, "", err
+		}
+		if len(list.Items) > 0 {
+			return false, fmt.Sprintf("no volume holds this agent's home (%s), but %s is labelled for it, so there is no telling what to copy", agentHomeDir, list.Items[0].Name), nil
+		}
+	}
+	return true, runtimeMigrationNothingToCopy, nil
+}
+
+const runtimeMigrationNothingToCopy = "this agent never had a volume, so there was nothing to copy; its new machine starts from the image"
+
+// UNIT_BOUNDARY_DESCRIPTION: what the vm side says is keeping the machine from the migration's next step: a runner that is not ready, with the reason the controller found for it, or a machine it failed to create, start or admit. A vm side that could not be ensured says why. A machine that is merely on its way says nothing.
+func vmSideProblem(machine vmrunner.MachineStatus, runnerReached bool, vmErr error) string {
+	if vmErr != nil {
+		return vmErr.Error()
+	}
+	if !runnerReached {
+		msg := machine.Message
+		if msg == "" {
+			msg = machine.Reason
+		}
+		return msg
+	}
+	if machine.Reason == "" || machine.Reason == vmrunner.ReasonNotReady {
+		return ""
+	}
+	msg := machine.Message
+	if msg == "" {
+		msg = machine.Reason
+	}
+	return fmt.Sprintf("the new machine is %s: %s", machine.State, msg)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what makes a booting migration's machine stay down before its first answer, said on the Agent: a stop the user asked for, which is honoured and resumed from on the next start, or an owner budget with no room for the machine.
+func runtimeMigrationBootHeld(m runtimeMigration, hardStop bool, overBudget string) string {
+	if m.phase != apiv1.ReasonRuntimeMigrationBooting {
+		return ""
+	}
+	switch {
+	case hardStop:
+		return "the agent was stopped before its new machine first answered; the move goes on when it next starts"
+	case overBudget != "":
+		return "the new machine is waiting for room in the owner's budget to boot: " + overBudget
+	}
+	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the address the copy Job reaches the runner at. The runner's Service is headless, so its name resolves to this very pod address; writing it into the Job's hosts file under the Service's name keeps the name the runner's certificate is issued for while the Job needs no resolver. A runner pod replaced mid-copy fails the upload either way, and the retry pins the new pod.
+func (r *AgentReconciler) runnerPodIP(ctx context.Context, owner string) (string, error) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set(vmRunnerSelector(owner)).String()})
+	if err != nil {
+		return "", fmt.Errorf("finding the owner's VM runner pod: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp == nil && pod.Status.PodIP != "" && isPodReady(*pod) {
+			return pod.Status.PodIP, nil
+		}
+	}
+	return "", nil
+}
+
+const (
+	defaultRuntimeMigrationConcurrency      = 10
+	defaultRuntimeMigrationOwnerConcurrency = 1
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: how many copy Jobs may run at once, in the install and for one owner. Each copy reads whole volumes and writes one owner's runner claim, so the install cap bounds the load on storage and the owner cap the load on a runner whose claim also holds that owner's running machines. A Job that has finished, either way, holds no slot.
+func (r *AgentReconciler) runtimeMigrationCopySlot(ctx context.Context, owner string) (string, error) {
+	fleetCap := r.config.VM.RuntimeMigration.Concurrency
+	if fleetCap <= 0 {
+		fleetCap = defaultRuntimeMigrationConcurrency
+	}
+	ownerCap := r.config.VM.RuntimeMigration.OwnerConcurrency
+	if ownerCap <= 0 {
+		ownerCap = defaultRuntimeMigrationOwnerConcurrency
+	}
+	list, err := r.client.BatchV1().Jobs(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelRole + "=" + RoleRuntimeMigration})
+	if err != nil {
+		return "", fmt.Errorf("counting running home copies: %w", err)
+	}
+	fleet, mine := 0, 0
+	for i := range list.Items {
+		job := &list.Items[i]
+		if jobConditionTrue(job, batchv1.JobComplete) || jobConditionTrue(job, batchv1.JobFailed) {
+			continue
+		}
+		fleet++
+		if job.Labels[envoyOwnerLabel] == owner {
+			mine++
+		}
+	}
+	switch {
+	case mine >= ownerCap:
+		return fmt.Sprintf("waiting to copy: %d of this owner's migrations are copying, the most allowed at once", mine), nil
+	case fleet >= fleetCap:
+		return fmt.Sprintf("waiting to copy: %d migrations are copying in this install, the most allowed at once", fleet), nil
+	}
+	return "", nil
+}
+
+func ownedBy(obj metav1.Object, agent *apiv1.Agent) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.UID == agent.UID && ref.Kind == agentGVK.Kind {
+			return true
+		}
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a copy pod that has not started says why only in its Events: a volume still attached to the old pod's node (Multi-Attach), a mount that fails, a pod the scheduler cannot place. The Job itself reports nothing until its deadline, so the pod's latest warning is shown while it waits.
+func (r *AgentReconciler) copyPodWaiting(ctx context.Context, job *batchv1.Job) string {
+	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
+	if err != nil {
+		return ""
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+		if why := r.warningOn(ctx, pod.Namespace, pod.Name, pod.UID); why != "" {
+			return fmt.Sprintf("the copy pod %s is not starting: %s", pod.Name, why)
+		}
+	}
+	if len(pods.Items) == 0 {
+		if why := r.warningOn(ctx, job.Namespace, job.Name, job.UID); why != "" {
+			return "the copy pod could not be created: " + why
+		}
+	}
+	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the latest warning Event on one object. A copy pod that cannot start says why only on itself, and one that admission refused — an SCC that does not permit what it asks for — never exists, so the Job's FailedCreate is where that is said.
+func (r *AgentReconciler) warningOn(ctx context.Context, namespace, name string, uid k8stypes.UID) string {
+	events, err := r.client.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{FieldSelector: "involvedObject.name=" + name})
+	if err != nil {
+		return ""
+	}
+	var latest *corev1.Event
+	for i := range events.Items {
+		e := &events.Items[i]
+		if e.InvolvedObject.Name != name || e.InvolvedObject.UID != uid || e.Type != corev1.EventTypeWarning {
+			continue
+		}
+		if latest == nil || eventTime(e).After(eventTime(latest)) {
+			latest = e
+		}
+	}
+	if latest == nil {
+		return ""
+	}
+	return latest.Reason + ": " + latest.Message
+}
+
+func eventTime(e *corev1.Event) time.Time {
+	if !e.LastTimestamp.IsZero() {
+		return e.LastTimestamp.Time
+	}
+	return e.EventTime.Time
+}
+
+func (r *AgentReconciler) sanitizeFor(agent *apiv1.Agent, msg string) string {
+	host := ""
+	if owner := agent.Labels[envoyOwnerLabel]; owner != "" {
+		host = r.runnerHost(owner)
+	}
+	return sanitizeMigrationMessage(msg, host)
+}
+
+const runtimeMigrationMessageMax = 300
+
+var (
+	migrationURLPattern  = regexp.MustCompile(`https?://[^\s()"';,]+`)
+	migrationAddrPattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b`)
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: a migration message is shown to the user and partly written by what the copy read: vm-seed's error names the files it failed on, and those names are the agent's own, so a crafted one could carry terminal escapes or text-direction overrides. Every control and formatting character is escaped rather than rendered, invalid UTF-8 is replaced, the runner's in-cluster address — its URL, host or any IP — becomes a fixed phrase, and the whole is cut to a length a status line can hold.
+func sanitizeMigrationMessage(msg, runnerHost string) string {
+	const runnerPhrase = "the owner's VM runner"
+	msg = strings.ToValidUTF8(msg, "\uFFFD")
+	if runnerHost != "" {
+		msg = migrationURLPattern.ReplaceAllStringFunc(msg, func(u string) string {
+			if strings.Contains(u, runnerHost) {
+				return runnerPhrase
+			}
+			return u
+		})
+		msg = regexp.MustCompile(regexp.QuoteMeta(runnerHost)+`(?::\d+)?`).ReplaceAllString(msg, runnerPhrase)
+	}
+	msg = migrationAddrPattern.ReplaceAllString(msg, "an in-cluster address")
+	var b strings.Builder
+	for _, c := range msg {
+		switch {
+		case c == '\n' || c == '\t':
+			b.WriteByte(' ')
+		case unicode.IsControl(c) || unicode.Is(unicode.Cf, c):
+			fmt.Fprintf(&b, "\\u%04x", c)
+		default:
+			b.WriteRune(c)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if runes := []rune(out); len(runes) > runtimeMigrationMessageMax {
+		out = string(runes[:runtimeMigrationMessageMax]) + "…"
+	}
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: each migration step the controller takes is also an Event on the Agent, and counted, so an operator can follow a migration in `kubectl get events` and across the fleet without reading annotations. An Event that cannot be written is logged and never fails the step.
+func (r *AgentReconciler) migrationEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
+	telemetry.RuntimeMigrationEvent(ctx, reason)
+	now := metav1.Now()
+	event := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", agent.Name, now.UnixNano()), Namespace: r.config.Namespace},
+		InvolvedObject: corev1.ObjectReference{
+			APIVersion: agentGVK.GroupVersion().String(),
+			Kind:       agentGVK.Kind,
+			Name:       agent.Name,
+			Namespace:  r.config.Namespace,
+			UID:        agent.UID,
+		},
+		Reason:         reason,
+		Message:        r.sanitizeFor(agent, message),
+		Type:           eventType,
+		Source:         corev1.EventSource{Component: "platform-controller"},
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+		Count:          1,
+	}
+	if _, err := r.client.CoreV1().Events(r.config.Namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
+		slog.Warn("runtime migration: writing an event on the agent failed", "agent", agent.Name, "reason", reason, "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the copy Job's own NetworkPolicy. The pod admits nothing in and reaches one place: the machine API port of its owner's runner pods. It needs no DNS — the Job's pod carries the runner pod's address in its hosts file — and nothing else, since the chart's deny-all egress baseline selects agent pods only. It is owned by the Agent and removed once the copy has landed.
+func buildRuntimeMigrationNetworkPolicy(agent *apiv1.Agent, owner, ns string) *networkingv1.NetworkPolicy {
+	tcp := corev1.ProtocolTCP
+	api := intstr.FromInt(vmRunnerPort)
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            runtimeMigrationJobName(agent.Name),
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{agentOwnerRef(agent)},
+			Labels: map[string]string{
+				LabelMigrationFor:              agent.Name,
+				"agent-platform.ai/managed-by": "platform-controller",
+			},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: runtimeMigrationPodSelector(agent.Name, owner)},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
+			Egress: []networkingv1.NetworkPolicyEgressRule{{
+				To:    []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &api}},
+			}},
+		},
+	}
+}
+
+func runtimeMigrationPodSelector(agentName, owner string) map[string]string {
+	return map[string]string{
+		LabelMigrationFor: agentName,
+		LabelRole:         RoleRuntimeMigration,
+		envoyOwnerLabel:   owner,
+	}
+}
+
+func (r *AgentReconciler) deleteRuntimeMigrationNetworkPolicy(ctx context.Context, agentName string) error {
+	err := r.client.NetworkingV1().NetworkPolicies(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(agentName), metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting the home copy network policy: %w", err)
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which identity the copy reads the home volume as. A shared volume — one that admits more than one node — may be a share that squashes root, where uid 0 is the weakest identity on the mount and gets EACCES on the agent's own 0600 files, so it is read as the agent's uid, with no capability at all. A volume only one node mounts is a block device that squashes nothing, and its filesystem root holds a root-owned 0700 lost+found the archive walks, which the agent's uid cannot open; it is read as root holding DAC_READ_SEARCH alone, which reads every file and directory and writes nothing.
+type runtimeMigrationIdentity struct {
+	uid, gid int64
+	caps     []corev1.Capability
+}
+
+func (r *AgentReconciler) runtimeMigrationReader(ctx context.Context, claim string) (runtimeMigrationIdentity, bool, error) {
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, claim, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return runtimeMigrationIdentity{}, false, nil
+	}
+	if err != nil {
+		return runtimeMigrationIdentity{}, false, fmt.Errorf("reading the volume %s to copy: %w", claim, err)
+	}
+	if slices.ContainsFunc(pvc.Spec.AccessModes, func(m corev1.PersistentVolumeAccessMode) bool {
+		return m == corev1.ReadWriteMany || m == corev1.ReadOnlyMany
+	}) {
+		uid, gid := migrationAgentIdentity(r.config)
+		return runtimeMigrationIdentity{uid: uid, gid: gid}, true, nil
+	}
+	return runtimeMigrationIdentity{uid: 0, gid: 0, caps: []corev1.Capability{"DAC_READ_SEARCH"}}, true, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the uid and gid that own an agent's files on the container backend, which every copy reads its source as. On a root-squashing share uid 0 is the weakest identity on the mount, while the agent's uid reads everything the agent wrote.
+func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 	uid, gid := migrationFallbackUID, migrationFallbackGID
 	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
 		if sc.RunAsUser != nil {
@@ -1011,5 +1400,24 @@ func runtimeMigrationOwnerMap(cfg *config.Config) string {
 			gid = *sc.RunAsGroup
 		}
 	}
-	return fmt.Sprintf("%d:%d:0", uid, gid)
+	return uid, gid
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's requested size bounds it.
+func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
+	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
+	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
+	default:
+		return 0
+	}
+	source := agent.Annotations[annRuntimeMigrationSource]
+	if source == "" {
+		return 0
+	}
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
+	if err != nil {
+		return 0
+	}
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	return size.Value()
 }

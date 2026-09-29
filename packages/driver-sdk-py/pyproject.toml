@@ -1,0 +1,18 @@
+# The Python driver SDK ships as ONE stdlib-only module (src/driver_sdk.py)
+# baked into platform-base on PYTHONPATH — this project file exists solely for
+# the dev tooling (pytest, ruff); nothing here is a runtime dependency.
+[project]
+name = "driver-sdk-py"
+version = "0.0.0"
+description = "Platform driver SDK — spawn sub-agents and await their results"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]

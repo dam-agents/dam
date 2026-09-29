@@ -84,6 +84,21 @@ func RunnerRollStalled(ctx context.Context) {
 	}
 }
 
+var runtimeMigrationEvents = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.runtime_migration.events",
+		metric.WithDescription("Runtime migration steps the controller reported on an Agent, by the reason of the Kubernetes Event it wrote"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RuntimeMigrationEvent(ctx context.Context, reason string) {
+	if c := runtimeMigrationEvents(); c != nil {
+		c.Add(ctx, 1, metric.WithAttributes(attribute.String("platform.runtime_migration.reason", reason)))
+	}
+}
+
 func SetRequeues(ctx context.Context, n int) {
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("platform.reconcile.requeues", n))
 }

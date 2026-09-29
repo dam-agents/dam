@@ -11,6 +11,7 @@ export { templateSpecSchema } from "./modules/templates/schemas.js";
 export type {
   HarnessFamily,
   Template,
+  TemplateHarness,
   TemplateSpec,
   TemplatesService,
   Resources,
@@ -59,7 +60,6 @@ export type {
   MigrateRuntimeError,
   UnmovablePath,
   MigrateRuntimeResult,
-  PersistedMove,
   PlanRuntimeMigrationResult,
   AbortRuntimeMigrationError,
   AbortRuntimeMigrationResult,
@@ -82,6 +82,11 @@ export {
   agentCreateInputSchema,
   agentKindSchema,
 } from "./modules/agents/schemas.js";
+export type {
+  AgentSetup,
+  AgentSetupResources,
+  AgentSetupSeed,
+} from "./modules/agents/setup.js";
 export { isProtectedAgentEnvName } from "./modules/agents/types.js";
 export {
   runtimeMigrationRefusalReasons,
@@ -116,33 +121,6 @@ export type {
   SchedulesService,
   PrecheckVerdict,
 } from "./modules/schedules/types.js";
-export type {
-  ExperimentStatus,
-  SpanStatus,
-  Skeleton,
-  TraceEvent,
-  PlanRegisterInput,
-  FinishInput,
-  Experiment,
-  ExperimentDriverSummary,
-  ExperimentSandboxCreateInput,
-  ExperimentSpan,
-  TraceFeed,
-  TraceFeedStage,
-  TraceFeedInvocation,
-  ScoreSeriesPoint,
-  ExperimentsService,
-} from "./modules/experiments/types.js";
-export {
-  planRegisterRequestSchema,
-  appendEventsRequestSchema,
-  finishRequestSchema,
-  EXPERIMENT_SKILL_NAME,
-  CUSTOM_DATA_MAX_BYTES,
-  EXPERIMENT_FEED_MESSAGE_TYPE,
-  EXPERIMENT_FOLDER_PREFIX,
-  experimentFolderName,
-} from "./modules/experiments/schemas.js";
 export type {
   StarterKit,
   StarterKitApplyInput,

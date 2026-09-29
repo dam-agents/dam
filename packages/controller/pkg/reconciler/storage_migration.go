@@ -128,6 +128,10 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 	}
 
 	for _, agent := range gated {
+		if leftToRuntimeMigration(agent) {
+			m.releaseVMAgent(ctx, agent)
+			continue
+		}
 		if rwx[agent.Name] {
 			prop := metav1.DeletePropagationBackground
 			if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, migrationJobName(agent.Name),
@@ -265,10 +269,10 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		if agent.Spec.IsVM() {
-			continue
-		}
-		if !inFlight[name] && runtimeMigrationOf(agent.Annotations, agent.Status).active() {
+		if leftToRuntimeMigration(agent) {
+			if inFlight[name] {
+				m.releaseVMAgent(ctx, agent)
+			}
 			continue
 		}
 		if !inFlight[name] {
@@ -402,6 +406,9 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 	name := agent.Name
 
 	if agent.Annotations[annStorageMigration] == "" {
+		if moved, err := m.movedToVM(ctx, name); err != nil || moved {
+			return err
+		}
 		wasRunning, err := m.agentPodPresent(ctx, name)
 		if err != nil {
 			return err
@@ -449,6 +456,9 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 
 		switch {
 		case jobConditionTrue(job, batchv1.JobComplete):
+			if moved, err := m.movedToVM(ctx, name); err != nil || moved {
+				return err
+			}
 			return m.flip(ctx, agent, pairs, job.Name)
 		case jobConditionTrue(job, batchv1.JobFailed):
 			if m.now().Sub(job.CreationTimestamp.Time) < migrationJobRetryAfter {
@@ -465,6 +475,60 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 	}
 
 	return m.finishFlip(ctx, agent)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pass works from one List of the Agents, and an Agent can be asked to move to the vm backend while it runs. Gating or flipping such an Agent would hold its machine down, or relabel the volumes a runtime migration is copying from, so both re-read the Agent first and leave one that moved, or began to, to the release below.
+func (m *StorageMigrationManager) movedToVM(ctx context.Context, name string) (bool, error) {
+	u, err := m.dynamic.Resource(AgentsGVR).Namespace(m.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	agent, err := FromCacheObject[apiv1.Agent](u)
+	if err != nil {
+		return false, err
+	}
+	if leftToRuntimeMigration(agent) {
+		slog.Info("storage migration: agent moved to, or began moving to, the vm backend mid-pass, not migrating it", "agent", name)
+		return true, nil
+	}
+	return false, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent on the vm backend, or one whose runtime migration is under way — its spec still the container's while the copy reads its volumes — is the runtime migration's to move, never the storage migration's.
+func leftToRuntimeMigration(agent *apiv1.Agent) bool {
+	return agent.Spec.IsVM() || runtimeMigrationOf(agent.Annotations, agent.Status).active()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent the runtime migration moves keeps no volume the storage migration moves — the copy reads its old ones as they are — so a gate left on one, set before the migration was requested, is released rather than held forever. The copy that gate started is abandoned: its Job and every target not yet flipped in are removed. A target already flipped in holds the verified copy and stays, and so does a superseded source, since a runtime migration may be reading it; the Agent owns both, so they go with it.
+func (m *StorageMigrationManager) releaseVMAgent(ctx context.Context, agent *apiv1.Agent) {
+	name := agent.Name
+	prop := metav1.DeletePropagationBackground
+	if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, migrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !errors.IsNotFound(err) {
+		slog.Warn("storage migration: deleting a vm agent's copy job failed", "agent", name, "error", err)
+		return
+	}
+	targets, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelMigrationFor + "=" + name + ",!" + LabelAgent})
+	if err != nil {
+		slog.Warn("storage migration: listing a vm agent's copy targets failed", "agent", name, "error", err)
+		return
+	}
+	for _, t := range targets.Items {
+		if err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Delete(ctx, t.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			slog.Warn("storage migration: deleting a vm agent's copy target failed", "agent", name, "pvc", t.Name, "error", err)
+			return
+		}
+	}
+	if err := m.patchAgentAnnotations(ctx, name, map[string]*string{
+		annStorageMigration:           nil,
+		annStorageMigrationWasRunning: nil,
+	}); err != nil {
+		slog.Warn("storage migration: releasing a vm agent's gate failed", "agent", name, "error", err)
+		return
+	}
+	slog.Info("storage migration: released the gate of an agent that moved to the vm backend", "agent", name)
 }
 
 type migrationPair struct {
@@ -681,15 +745,7 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
 	var script strings.Builder
-	uid, gid := migrationFallbackUID, migrationFallbackGID
-	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
-		if sc.RunAsUser != nil {
-			uid = *sc.RunAsUser
-		}
-		if sc.RunAsGroup != nil {
-			gid = *sc.RunAsGroup
-		}
-	}
+	uid, gid := migrationAgentIdentity(cfg)
 	fmt.Fprintf(&script, "set -euo pipefail\nAGENT_UID=%d\nAGENT_GID=%d\nPAR=%d\n",
 		uid, gid, migrationChecksumParallelism)
 	script.WriteString(`

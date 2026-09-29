@@ -638,11 +638,11 @@ differ:
   provisioned volume root, restoring exact file ownership); every read of
   the agent's data drops to the agent's own uid, so a root-squashing
   source share never sees uid 0. The
-  [runtime-migration](vm-runner.md#runtime-migration) Job reads the old
-  volumes read-only as root, sending them with a one-use seed capability. The SA has no role bindings and no mounted token, so it
-  cannot act against the API; it exists only to scope the
-  OpenShift SCC grant of uid 0 to these Jobs, an out-of-band
-  ops binding. Neither pod joins the mesh.
+  [runtime-migration](vm-runner.md#runtime-migration) Job reads the
+  home read-only, as root on block storage, sending it with a one-use seed capability. The SA has no API roles and no mounted token, so it
+  cannot act against the API; it exists only to scope
+  OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH)
+  for it. Neither pod joins the mesh.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the
   default pull secrets it preloads with
   ([persistence](vm-image-cache.md)).

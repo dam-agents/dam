@@ -42,6 +42,15 @@ describe("parseFanOut recognises the SDK's progress lines in a tool chip", () =>
     expect(spawns).toEqual([{ id: "agent-cccc3333", label: "slow" }]);
   });
 
+  test("reads the Python SDK's spawned lines", () => {
+    const spawns = parseFanOut(
+      chip(
+        "[invoke] spawned six (agent-dddd4444)\n[invoke] six (agent-dddd4444) done",
+      ),
+    );
+    expect(spawns).toEqual([{ id: "agent-dddd4444", label: "six" }]);
+  });
+
   test("dedupes a child whose line was printed twice", () => {
     const spawns = parseFanOut(
       chip(

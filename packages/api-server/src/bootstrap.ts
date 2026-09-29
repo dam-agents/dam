@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
-import type { TriggerEventPayload } from "agent-runtime-api";
+import {
+  type TriggerEventPayload,
+  workspaceMutationEventKinds,
+} from "agent-runtime-api";
 import {
   createAgentInformer,
   createApi,
@@ -11,7 +14,7 @@ import {
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
-  EXPERIMENT_ACTIVE_KEY,
+  INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -27,6 +30,7 @@ import {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
+  claimUnscopedSlackBindings,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
@@ -61,7 +65,11 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
-import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import {
+  createFakeSlackGateway,
+  FAKE_WORKSPACE,
+} from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import { createFakeSlackTokenRotation } from "./modules/channels/infrastructure/fake-slack-token-rotation.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
@@ -97,6 +105,11 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import {
+  createSlackTokenRotation,
+  noSlackTokenRotation,
+  type SlackTokenRotation,
+} from "./modules/channels/infrastructure/slack-token-rotation.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -188,6 +201,8 @@ import {
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
+  createInvocationSetupFailure,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -214,12 +229,6 @@ import {
   createAgentArtifactsSweeper,
   type AgentCleanupSource,
 } from "./sagas/agent-artifacts-sweeper.js";
-import {
-  composeExperimentInactivitySweep,
-  createExperimentsCleanupHook,
-  listOpenExperimentDriverIds,
-  reconcileExperimentPins,
-} from "./modules/experiments/index.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createXactLock } from "./core/xact-lock.js";
@@ -648,17 +657,26 @@ export async function bootstrap() {
     });
 
   const fakeSlackGateway =
-    config.e2eEnabled && !(config.slackBotToken && config.slackAppToken)
+    config.e2eEnabled && !config.slackAppToken
       ? createFakeSlackGateway()
       : undefined;
+  const fakeSlackRotation = fakeSlackGateway
+    ? createFakeSlackTokenRotation()
+    : undefined;
 
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
-    ...(fakeSlackGateway
+    ...(fakeSlackGateway && fakeSlackRotation
       ? {
           slackInstalls: {
             record: (install) => slackInstalls.record(install),
+            importHelmToken: (teamId, token) =>
+              slackInstalls.importHelmToken(teamId, token),
+            renewAll: () => slackInstalls.renewAll(),
+            resolveBotToken: (teamId) => slackInstalls.resolveBotToken(teamId),
+            forgetBotToken: (teamId) => slackInstalls.forgetBotToken(teamId),
+            rotation: fakeSlackRotation,
           },
         }
       : {}),
@@ -828,13 +846,29 @@ export async function bootstrap() {
     "install:slack",
     SLACK_INSTALL_HANDOFF_TTL_MS,
   );
+  const slackTokenRotation: SlackTokenRotation =
+    fakeSlackRotation ??
+    (config.slackClientId && config.slackClientSecret
+      ? createSlackTokenRotation({
+          clientId: config.slackClientId,
+          clientSecret: config.slackClientSecret,
+        })
+      : noSlackTokenRotation);
+  const listActiveSlackWorkspaces = async () =>
+    (await listSlackInstalls(db)())
+      .filter((i) => i.credentialState === "active")
+      .map((i) => i.teamId);
   const slackInstalls = createSlackInstallService({
     find: findSlackInstall(db),
+    list: listSlackInstalls(db),
+    claimUnscopedBindings: claimUnscopedSlackBindings(db),
     upsert: upsertSlackInstall(db),
     setState: setSlackCredentialState(db),
     secrets: secretStore,
     installLock: createXactLock(db),
-    envBotToken: config.slackBotToken,
+    rotation: slackTokenRotation,
+    exchangeLongLivedTokens:
+      config.slackTokenRotation || fakeSlackRotation !== undefined,
   });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
@@ -858,18 +892,17 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackTokens =
-    config.slackBotToken && config.slackAppToken
-      ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
-      : null;
+  const slackAppToken = config.slackAppToken;
 
-  const slackGatewayFactory = slackTokens
+  const slackGatewayFactory = slackAppToken
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
-          setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
-          envBotToken: slackTokens.botToken,
-          appToken: slackTokens.appToken,
+          importHelmToken: slackInstalls.importHelmToken,
+          renewTokens: slackInstalls.renewAll,
+          forgetBotToken: slackInstalls.forgetBotToken,
+          helmBotToken: config.slackBotToken,
+          appToken: slackAppToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
         })
@@ -911,7 +944,7 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
-        canonicalWorkspace: slackInstalls.canonicalWorkspaceName,
+        listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
         agentIcon: config.imgbbApiKey
           ? createImgbbAgentIcons(config.imgbbApiKey)
@@ -920,10 +953,10 @@ export async function bootstrap() {
     : undefined;
 
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
-    listInstalledWorkspaces: async () =>
-      (await listSlackInstalls(db)())
-        .filter((i) => i.credentialState === "active")
-        .map((i) => i.teamId),
+    listInstalledWorkspaces: async () => [
+      ...(fakeSlackGateway ? [FAKE_WORKSPACE] : []),
+      ...(await listActiveSlackWorkspaces()),
+    ],
     conversationStanding: async (slackChannelId, teamId) =>
       channelManager.slackConversationStanding(slackChannelId, teamId),
   });
@@ -1034,6 +1067,11 @@ export async function bootstrap() {
       ? [new URL(config.objectStorageAgentEndpoint).hostname]
       : [],
   });
+  if (config.slackAppToken) {
+    await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
+      slackInstalls.renewAll(),
+    );
+  }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
     deliverySweeper.tick(),
   );
@@ -1133,15 +1171,6 @@ export async function bootstrap() {
         runtimeDelivery.outboxRepo.deleteForAgent(agentId),
     },
     {
-      name: "experiments",
-      listAgentIds: () => listOpenExperimentDriverIds(db),
-      cleanup: createExperimentsCleanupHook({
-        db,
-        artifactLibraryFor: artifactLibraryForSystem,
-        agentsFor: (owner) => harnessAgentsServiceFor(owner),
-      }),
-    },
-    {
       name: "invocations",
       listAgentIds: () => listInvocationAgentIds(db),
       cleanup: createInvocationsCleanupHook({
@@ -1210,45 +1239,6 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
-
-  const experimentPin = {
-    set: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-    clear: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-  };
-  const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
-  const experimentInactivitySweep = composeExperimentInactivitySweep({
-    db,
-    inactivityMs: experimentInactivityMs,
-    batchSize: 200,
-    pin: experimentPin,
-    artifactLibraryFor: artifactLibraryForSystem,
-    agentsFor: (owner) => harnessAgentsServiceFor(owner),
-  });
-  await periodicJobs.register(
-    "experiment-inactivity-sweep",
-    Math.min(experimentInactivityMs, 5 * 60_000),
-    () => experimentInactivitySweep.tick(),
-  );
-
-  void reconcileExperimentPins({
-    db,
-    listPinnedAgentIds: () =>
-      agentsRepo.listAgentIdsWithAnnotation(EXPERIMENT_ACTIVE_KEY, "true"),
-    pin: experimentPin,
-  }).then(
-    ({ set, cleared }) => {
-      if (set > 0 || cleared > 0) {
-        process.stderr.write(
-          `[experiments] pin reconciliation: set ${set}, cleared ${cleared}\n`,
-        );
-      }
-    },
-    (err) => {
-      process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
-    },
-  );
 
   await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
     agentArtifactsSweeper.tick(),
@@ -1331,6 +1321,32 @@ export async function bootstrap() {
     batchSize: 200,
     frames: delegationFrames,
   });
+  const invocationPinReconciler = composeInvocationPinReconciler({
+    db,
+    listPinnedAgentIds: () =>
+      agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
+    readPin: (agentId) => agentsRepo.readInvocationPin(agentId),
+    release: (agentId, version) =>
+      agentsRepo.releaseInvocationPin(agentId, version),
+  });
+  await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
+    invocationPinReconciler.tick(),
+  );
+
+  const invocationSetupFailure = createInvocationSetupFailure({
+    db,
+    agentsFor: harnessAgentsServiceFor,
+    frames: delegationFrames,
+  });
+  for (const kind of workspaceMutationEventKinds)
+    runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
+      if (input.outcome === "ok") return;
+      await invocationSetupFailure(
+        event.agentId,
+        kind === "workspace-seed" ? "seed" : "install",
+        input.detail ?? input.outcome,
+      );
+    });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );
@@ -1436,7 +1452,6 @@ export async function bootstrap() {
     publicAgentPageService,
     sessionPresence,
     wakeAgent: wakeAgentFor,
-    experimentPin,
     artifactLibraryFor,
   };
   const onboardingChecklistFor = (owner: string) =>
@@ -1465,7 +1480,6 @@ export async function bootstrap() {
     agentsRepo,
     templatesRepo,
     artifactLibraryFor,
-    experimentPin,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,

@@ -10,7 +10,6 @@ import type {
 import type { InfraAgent } from "../infrastructure/agent-mappers.js";
 import {
   RUNTIME_MIGRATION_KEY,
-  RUNTIME_MIGRATION_MOUNTS_KEY,
   RUNTIME_MIGRATION_RETRY_KEY,
   RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
@@ -69,7 +68,7 @@ async function decideAndWrite<E>(
   return err({ type: "ConcurrentUpdate" as const });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: requests the move of one container Agent to the vm Backend. No spec is written: the request records the target shape, a snapshot of the fields the switch will change, and where each persisted path goes, and the controller builds the machine beside the container from them.
+// UNIT_BOUNDARY_DESCRIPTION: requests the move of one container Agent to the vm Backend. No spec is written: the request records the target shape and a snapshot of the fields the switch will change, and the controller builds the machine beside the container from them.
 export function executeRuntimeMigration(
   deps: WriteDeps & {
     migration: RuntimeMigrationContext;
@@ -83,7 +82,7 @@ export function executeRuntimeMigration(
       (agent) => {
         const refusal = runtimeMigrationRefusal(agent, deps.migration);
         if (refusal) return { error: refusal };
-        const { target, snapshot, moves } = runtimeMigrationRequest(
+        const { target, snapshot } = runtimeMigrationRequest(
           agent.spec,
           deps.defaultStorageSize,
           deps.migration.defaultMounts,
@@ -93,8 +92,6 @@ export function executeRuntimeMigration(
           [RUNTIME_MIGRATION_TARGET_KEY]: JSON.stringify(target),
           [RUNTIME_MIGRATION_SNAPSHOT_KEY]: JSON.stringify(snapshot),
           [RUNTIME_MIGRATION_RETRY_KEY]: null,
-          [RUNTIME_MIGRATION_MOUNTS_KEY]:
-            Object.keys(moves).length > 0 ? JSON.stringify(moves) : null,
         };
         return {
           write: { annotations, resourceVersion: agent.resourceVersion },
@@ -118,7 +115,6 @@ const REQUEST_KEYS_CLEARED: Record<string, null> = {
   [RUNTIME_MIGRATION_KEY]: null,
   [RUNTIME_MIGRATION_TARGET_KEY]: null,
   [RUNTIME_MIGRATION_SNAPSHOT_KEY]: null,
-  [RUNTIME_MIGRATION_MOUNTS_KEY]: null,
   [RUNTIME_MIGRATION_RETRY_KEY]: null,
 };
 

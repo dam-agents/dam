@@ -61,6 +61,7 @@ type AgentReconciler struct {
 	preflightMu     sync.Mutex
 	preflight       vmPreflightResult
 	preflightDone   bool
+	migrationCopyMu sync.Mutex
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -159,11 +160,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	timer.mark("gatewayIngressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
-	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC()) && !migration.holdsDown()
+	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]
 	alwaysOn := idleTimeout <= 0
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true"
+	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migration.keepsUp()
 	overBudget := ""
 	parked := false
 	if running {
@@ -175,7 +176,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err != nil {
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
 			}
-			if refusal != "" {
+			if refusal != "" && !migration.keepsUp() {
 				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
 				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
@@ -266,6 +267,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		timer.mark("vmMachine")
 		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 			}
@@ -309,6 +311,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			timer.mark("migrationMachine")
 		}
 		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, migrationVMErr); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 			}

@@ -11,22 +11,6 @@ import { match } from "ts-pattern";
 
 export const AGENT_HOME = "/home/agent";
 
-// UNIT_BOUNDARY_DESCRIPTION: where the migration puts a persisted path from outside HOME, below HOME, so the machine's one disk keeps it; the machine puts the old path back on every boot, pointing at it. The guest runtime's contract names the same directory.
-const PERSISTED_DIR = ".persisted";
-
-// UNIT_BOUNDARY_DESCRIPTION: guest paths the platform lays out or the kernel owns. A persisted path at one of them, inside one, or above one would replace it with a link into the home at boot, so the migration refuses it.
-const UNMOVABLE_PATHS: readonly string[] = [
-  "/proc",
-  "/sys",
-  "/dev",
-  "/platform",
-  "/mnt/platform",
-  "/workspace",
-  "/storage",
-  "/etc/platform",
-  "/var/cache/platform",
-];
-
 export function isVmBackend(spec: AgentSpec): boolean {
   return spec.backend?.type === "vm";
 }
@@ -83,29 +67,6 @@ export function runtimeMigrationOf(
   };
 }
 
-function within(path: string, dir: string): boolean {
-  return path === dir || path.startsWith(`${dir}/`);
-}
-
-function plainPathReason(path: string): string | null {
-  const parts = path.split("/");
-  if (
-    !path.startsWith("/") ||
-    parts.slice(1).some((p) => p === "" || p === "." || p === "..")
-  )
-    return "it is not a plain absolute path";
-  return null;
-}
-
-function unmovableReason(path: string): string | null {
-  if (path === "/") return "it is the whole machine";
-  for (const kept of [AGENT_HOME, ...UNMOVABLE_PATHS]) {
-    if (within(path, kept) || within(kept, path))
-      return `it would hide or sit inside ${kept}, which the new runtime lays out itself`;
-  }
-  return null;
-}
-
 export type AgentMount = NonNullable<AgentSpec["mounts"]>[number];
 
 // UNIT_BOUNDARY_DESCRIPTION: the mounts the controller renders for an Agent: its own when it names any, else the install's template defaults. The migration plans from these same mounts, so it never flips an Agent the controller would then refuse, or leaves out a path the controller persists.
@@ -116,41 +77,14 @@ export function effectiveMounts(
   return spec.mounts && spec.mounts.length > 0 ? spec.mounts : defaultMounts;
 }
 
-export interface PersistedMoves {
-  moves: Record<string, string>;
-  unmovable: UnmovablePath[];
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: where each persisted path of a container Agent goes on the machine. On the container backend every persisted mount is a volume of its own; the machine has one disk holding HOME, so the controller copies each volume into it. A path under HOME stays where it is. A path outside HOME moves to the same path below HOME's persisted directory — /data to /home/agent/.persisted/data — and the machine puts /data back at every boot, pointing there. What cannot be moved is named with the reason: any mount path that is not plain, since the copy cannot place it; a path whose link would replace one the platform lays out, or HOME or anything above it; and one already inside the persisted directory, whose place a moved path would take.
-export function planPersistedMoves(
-  mounts: readonly AgentMount[],
-): PersistedMoves {
-  const persistedDir = `${AGENT_HOME}/${PERSISTED_DIR}`;
-  const moves: Record<string, string> = {};
-  const unmovable: UnmovablePath[] = [];
-  for (const m of mounts) {
-    const notPlain = plainPathReason(m.path);
-    if (notPlain) {
-      unmovable.push({ path: m.path, reason: notPlain });
-      continue;
-    }
-    if (within(m.path, persistedDir)) {
-      unmovable.push({
-        path: m.path,
-        reason: `${persistedDir} is where the new runtime puts paths it moves into the home`,
-      });
-      continue;
-    }
-    if (!m.persist || m.path === AGENT_HOME) continue;
-    if (within(m.path, AGENT_HOME)) {
-      moves[m.path] = m.path;
-      continue;
-    }
-    const reason = unmovableReason(m.path);
-    if (reason) unmovable.push({ path: m.path, reason });
-    else moves[m.path] = `${persistedDir}${m.path}`;
-  }
-  return { moves, unmovable };
+// UNIT_BOUNDARY_DESCRIPTION: the persisted paths a migration cannot carry, each with the reason. The machine keeps only HOME, and the migration copies only HOME's volume, so every other persisted mount — outside HOME, or a volume of its own inside it — would be lost, and the Agent is refused rather than moved without it. A mount that is not persisted keeps nothing on either backend, so it is no reason to refuse.
+export function unmovablePaths(mounts: readonly AgentMount[]): UnmovablePath[] {
+  return mounts
+    .filter((m) => m.persist && m.path !== AGENT_HOME)
+    .map((m) => ({
+      path: m.path,
+      reason: "the new runtime keeps only the home directory",
+    }));
 }
 
 function persistsHome(mounts: readonly AgentMount[]): boolean {
@@ -171,7 +105,7 @@ export function runtimeMigrationRefusal(
   if (!ctx.virtualizationEnabled) return { type: "VirtualizationDisabled" };
   if (agent.storageMigrating) return { type: "StorageMigrationInProgress" };
   const mounts = effectiveMounts(agent.spec, ctx.defaultMounts);
-  const { unmovable } = planPersistedMoves(mounts);
+  const unmovable = unmovablePaths(mounts);
   if (unmovable.length > 0)
     return { type: "PersistsUnmovablePaths", paths: unmovable };
   if (!persistsHome(mounts)) return { type: "HomeNotPersisted" };
@@ -201,37 +135,28 @@ function quantityBytes(q: string): number | null {
   return m && factor !== undefined ? Number(m[1]) * factor : null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine's disk holds what each of the container's volumes held, so a moved Agent is sized for all of them together: the sum of every persisted mount's size, over the mounts the controller renders, each falling back to the Agent's storageSize and then the install default as the container backend sizes them, rounded up to whole GiB, and never less than the Agent already asks for. The runner refuses a seed larger than the disk, so a disk sized for the largest volume alone could not take the copy. Undefined when nothing but HOME moves, or when a size cannot be read, and the disk keeps the size the Agent asks for.
+// UNIT_BOUNDARY_DESCRIPTION: the machine's disk holds what HOME's volume held, so it is sized for that volume as the container backend sized it: its own size when the mount names one, rounded up to whole GiB. Undefined when HOME names no size or no more than the Agent already asks for, or when a size cannot be read, and the disk keeps the size the Agent asks for, with the install default behind it.
 export function movedStorageSize(
   spec: AgentSpec,
   mounts: readonly AgentMount[],
-  moves: Record<string, string>,
   defaultStorageSize: string,
 ): string | undefined {
-  if (Object.keys(moves).length === 0) return undefined;
+  const home = mounts.find((m) => m.persist && m.path === AGENT_HOME);
+  if (!home?.size) return undefined;
   const asked = quantityBytes(spec.storageSize ?? defaultStorageSize);
-  if (asked === null) return undefined;
-  let bytes = 0;
-  for (const m of mounts) {
-    if (!m.persist) continue;
-    const size = quantityBytes(
-      m.size ?? spec.storageSize ?? defaultStorageSize,
-    );
-    if (size === null) return undefined;
-    bytes += size;
-  }
-  return `${Math.ceil(Math.max(bytes, asked) / 1024 ** 3)}Gi`;
+  const size = quantityBytes(home.size);
+  if (asked === null || size === null || size <= asked) return undefined;
+  return `${Math.ceil(size / 1024 ** 3)}Gi`;
 }
 
 type Mounts = AgentMount[];
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the Agent takes on the vm backend, which the controller builds its machine to while the container spec stays the Agent's spec. When persisted paths move, the mounts are rewritten to where they now live, so the moved Agent is one the vm backend accepts, and its disk is sized for all of them. A mount moved from outside HOME keeps its old path as movedFrom, which is the links plan the controller sends the machine on every ensure — beside the container while the migration runs, and for as long as the Agent lives once the switch writes these mounts into its spec; a path under HOME keeps its place and needs none.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the Agent takes on the vm backend, which the controller builds its machine to while the container spec stays the Agent's spec: the disk sized for HOME's volume when that is more than the Agent asks for. The mounts stay as they are, since HOME is already where the machine keeps it.
 export interface RuntimeMigrationTarget {
-  mounts?: Mounts;
   storageSize?: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the fields the Backend switch changes, as they were when the migration was requested, with no movedFrom on any mount since only a switched Agent has links to put back. An abort writes them back as the spec had them, so an Agent that named no mounts goes on inheriting the install's; the mounts the controller rendered from them are recorded beside, for an operator recovering an Agent by hand rather than reconstructing them.
+// UNIT_BOUNDARY_DESCRIPTION: the fields the Backend switch changes, as they were when the migration was requested. An abort writes them back as the spec had them, so an Agent that named no mounts goes on inheriting the install's; the mounts the controller rendered from them are recorded beside, for an operator recovering an Agent by hand rather than reconstructing them.
 export interface RuntimeMigrationSnapshot {
   backend: AgentSpec["backend"] | null;
   mounts: Mounts | null;
@@ -241,7 +166,7 @@ export interface RuntimeMigrationSnapshot {
   nodeSelector: Record<string, string> | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a migration request records. No spec is written: the Backend switches only once the controller reports the machine booted from the copy. The moves are recorded too, for the controller, which finds each old volume by the path it was made for.
+// UNIT_BOUNDARY_DESCRIPTION: what a migration request records. No spec is written: the Backend switches only once the controller reports the machine booted from the copy.
 export function runtimeMigrationRequest(
   spec: AgentSpec,
   defaultStorageSize: string,
@@ -249,36 +174,20 @@ export function runtimeMigrationRequest(
 ): {
   target: RuntimeMigrationTarget;
   snapshot: RuntimeMigrationSnapshot;
-  moves: Record<string, string>;
 } {
   const mounts = effectiveMounts(spec, defaultMounts);
-  const { moves } = planPersistedMoves(mounts);
   const target: RuntimeMigrationTarget = {};
-  if (Object.keys(moves).length > 0) {
-    target.mounts = mounts.map((m) => {
-      const to = m.persist ? moves[m.path] : undefined;
-      if (!to) return m;
-      return to === m.path
-        ? { ...m, path: to }
-        : { ...m, path: to, movedFrom: m.path };
-    });
-    const size = movedStorageSize(spec, mounts, moves, defaultStorageSize);
-    if (size) target.storageSize = size;
-  }
+  const size = movedStorageSize(spec, mounts, defaultStorageSize);
+  if (size) target.storageSize = size;
   const snapshot: RuntimeMigrationSnapshot = {
     backend: spec.backend ?? null,
-    mounts: spec.mounts ? spec.mounts.map(withoutMovedFrom) : null,
-    effectiveMounts: mounts.map(withoutMovedFrom),
+    mounts: spec.mounts ? [...spec.mounts] : null,
+    effectiveMounts: [...mounts],
     storageSize: spec.storageSize ?? null,
     runtimeClassName: spec.runtimeClassName ?? null,
     nodeSelector: spec.nodeSelector ?? null,
   };
-  return { target, snapshot, moves };
-}
-
-function withoutMovedFrom(mount: AgentMount): AgentMount {
-  const { movedFrom: _movedFrom, ...rest } = mount;
-  return rest;
+  return { target, snapshot };
 }
 
 function parseRecord<T>(raw: string | undefined): T | null {
@@ -311,7 +220,6 @@ export function runtimeMigrationSwitchSpec(
     backend: { type: "vm" },
     runtimeClassName: null,
     nodeSelector: null,
-    ...(target.mounts ? { mounts: target.mounts } : {}),
     ...(target.storageSize ? { storageSize: target.storageSize } : {}),
   };
 }

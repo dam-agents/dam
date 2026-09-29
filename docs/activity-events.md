@@ -6,7 +6,7 @@ What the platform records when someone uses it. Each row is one domain event: th
 
 The table is generated from the source, so it cannot drift from what the code actually emits. The prose around it is not — treat a sentence as a claim to check, and the table as the fact. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).
 
-A row type shown as `prefix_<action>` is stored with the action substituted, so `experiment_<action>` is written as `experiment_started`, `experiment_stopped` or `experiment_deleted`.
+A row type shown as `prefix_<action>` is stored with the action substituted, so `api_key_<action>` is written as `api_key_created` or `api_key_revoked`.
 
 Events marked *elsewhere* are consumed, but not by the activity log — they drive live UI updates, the `agents` mirror, channel management, or cleanup when an agent goes away. They will not appear in `activity_events`, so they answer nothing about usage.
 
@@ -21,6 +21,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SlackConnected` | _elsewhere_ | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
+| `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
 | `SessionTurnRelayed` | `session_turn` | agent-proxies/acp-relay |
 | `AgentRelayAttached` | `relay_attached` | agent-proxies/upgrade |
 | `ScheduleFired` | `schedule_fire` | schedules |
@@ -45,7 +46,6 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |
 | `ArtifactFolderChanged` | _elsewhere_ | artifact-library |
-| `ExperimentChanged` | `experiment_<action>` | experiments |
 | `ArtifactPublished` | `artifact_published` | artifact-library |
 | `ArtifactShared` | `artifact_shared` | artifact-library |
 | `ArtifactViewed` | `artifact_viewed` | artifact-library |
@@ -53,7 +53,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `SkillPublished` | `skill_published` | skills |
 | `SkillSetSaved` | `skill_set_saved` | skills |
 | `SkillSetDeleted` | `skill_set_deleted` | skills |
-| `KindedAgentCreated` | `kinded_agent_created` | agents |
+| `SkillSourceChanged` | `skill_source_<action>` | skills |
 | `StarterKitApplied` | `starter_kit_applied` | starter-kits |
 | `InvocationSpawned` | `invocation_spawned` | invocations |
 | `FeatureFlagChanged` | `feature_flag_changed` | features |

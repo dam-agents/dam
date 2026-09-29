@@ -25,11 +25,12 @@ const (
 	resizeUnsupported
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner, as the controller intends it rather than as the runner last saw it. Memory counts only the machines that should be running, because that is what the runner admits against its memory limit; disk counts every machine, because a stopped machine keeps its disk on the claim.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner, as the controller intends it rather than as the runner last saw it. Memory counts only the machines that should be running, because that is what the runner admits against its memory limit; disk counts every machine, because a stopped machine keeps its disk on the claim, and every runtime migration's seed until its guest has booted from it.
 type runnerDemand struct {
 	memoryMiB int
 	diskGiB   int
 	machines  int
+	seedBytes int64
 }
 
 func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
@@ -62,6 +63,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		}
 		d.diskGiB += disk
 		d.machines++
+		d.seedBytes += r.runtimeMigrationSeedBytes(ctx, a)
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil {
 			return runnerDemand{}, err
@@ -102,13 +104,13 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
+// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
 func (r *AgentReconciler) runnerClaimSize(owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
 	ceiling, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
 	}
-	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB) << 30
+	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB)<<30 + demand.seedBytes
 	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {
 		budget, err := imageBudgetBytes(spec)
 		if err != nil {

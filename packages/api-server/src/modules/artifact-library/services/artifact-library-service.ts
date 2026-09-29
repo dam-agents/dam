@@ -77,7 +77,6 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     attribution?: {
       author: ArtifactVersionAuthor;
       agentId?: string;
-      internal?: boolean;
     },
   ): Promise<LibraryArtifact>;
   resolveContentRef(id: string, version?: number): Promise<ContentRef | null>;
@@ -457,17 +456,15 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
       });
-      if (!attribution?.internal) {
-        emit({
-          type: EventType.ArtifactPublished,
-          actorSub: owner,
-          artifactId: row.id,
-          agentId: attribution?.agentId ?? null,
-          kind: row.kind,
-          visibility: row.visibility,
-          surface,
-        });
-      }
+      emit({
+        type: EventType.ArtifactPublished,
+        actorSub: owner,
+        artifactId: row.id,
+        agentId: attribution?.agentId ?? null,
+        kind: row.kind,
+        visibility: row.visibility,
+        surface,
+      });
       return toLibraryArtifact(row, shareBaseUrl, []);
     },
 

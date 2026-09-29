@@ -72,18 +72,10 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
-import {
-  isExperimentSandbox,
-  sharesKnowledgeBase,
-} from "../../agents/utils/agent-kind.js";
+import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
-import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
-import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
-import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
-import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
-import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -200,24 +192,6 @@ export function ChatView() {
       ? s.openDelegation
       : null,
   );
-  const openArtifact = useOpenArtifact();
-  const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
-  const {
-    experiment: dockedExperiment,
-    options: experimentOptions,
-    select: selectExperiment,
-  } = useDockedExperiment(selectedAgent);
-  const agentExperiments = useAgentExperimentsLive(selectedAgent);
-  const dashboardExperiment = openArtifactId
-    ? (agentExperiments.find(
-        (e) =>
-          e.dashboardArtifactId === openArtifactId &&
-          (e.status === "draft" || e.status === "running"),
-      ) ??
-      agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
-      null)
-    : null;
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
@@ -278,13 +252,6 @@ export function ChatView() {
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
-
-  const launchPaneActive = Boolean(
-    pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
-  );
-  useEffect(() => {
-    if (launchPaneActive && sessionId) resetSession();
-  }, [launchPaneActive, sessionId, resetSession]);
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -452,7 +419,6 @@ export function ChatView() {
 
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
-      unfocusPendingLaunch();
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
@@ -474,13 +440,11 @@ export function ChatView() {
       setSessionId,
       resumeSession,
       scrollToBottom,
-      unfocusPendingLaunch,
       pushSessionUrl,
     ],
   );
 
   const handleNewSession = useCallback(() => {
-    unfocusPendingLaunch();
     if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
@@ -497,7 +461,6 @@ export function ChatView() {
     resetSession,
     setMobileScreen,
     setSessionMode,
-    unfocusPendingLaunch,
     pushSessionUrl,
   ]);
 
@@ -740,20 +703,7 @@ export function ChatView() {
                     )}
                     {!loadingSession &&
                       !sessionError &&
-                      messages.length === 0 &&
-                      (launchPaneActive ? (
-                        <div className="py-24 text-center anim-in">
-                          <Spinner size={22} className="mb-3" />
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Starting the run…
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Waking the agent and opening the launch session —
-                            this can take up to a minute. The conversation
-                            appears here as soon as it&apos;s up.
-                          </p>
-                        </div>
-                      ) : (
+                      messages.length === 0 && (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
                             Start a new session
@@ -769,7 +719,7 @@ export function ChatView() {
                             />
                           )}
                         </div>
-                      ))}
+                      )}
                     <DelegationOwnersProvider value={delegationOwners}>
                       {items.map((item) => {
                         if (item.kind === "divider") {
@@ -852,13 +802,6 @@ export function ChatView() {
               </div>
 
               <div className="pb-4">
-                {agentView && isExperimentSandbox(agentView) && (
-                  <div className="px-4 md:px-8">
-                    <ChatColumn>
-                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
-                    </ChatColumn>
-                  </div>
-                )}
                 <OnboardingBar
                   key={selectedAgent ?? "none"}
                   agentId={selectedAgent}
@@ -894,10 +837,7 @@ export function ChatView() {
         </div>
 
         {}
-        {(openDelegation ||
-          openFilePath ||
-          openArtifactId ||
-          dockedExperiment) && (
+        {(openDelegation || openFilePath || openArtifactId) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -936,22 +876,11 @@ export function ChatView() {
                 />
               ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
-              ) : dashboardExperiment ? (
-                <ExperimentDockPanel
-                  experiment={dashboardExperiment}
-                  onClose={() => void openArtifact(null)}
-                />
               ) : openArtifactId ? (
                 <DockedArtifactPanel
                   key={openArtifactId}
                   agentId={selectedAgent}
                   onSendPrompt={sendArtifactPrompt}
-                />
-              ) : dockedExperiment ? (
-                <ExperimentDockPanel
-                  experiment={dockedExperiment}
-                  options={experimentOptions}
-                  onSelect={selectExperiment}
                 />
               ) : null}
             </div>

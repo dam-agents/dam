@@ -388,6 +388,8 @@ export function executeSlackBind(deps: {
           return err({ type: "WorkspaceUnresolved" as const });
         case "WorkspaceUnreachable":
           return err({ type: "WorkspaceUnreachable" as const });
+        case "NoSlackWorkspace":
+          return err({ type: "NoSlackWorkspace" as const });
         case "AgentNotFound":
           return err({ type: "AgentNotFound" as const });
         case "ChannelAlreadyBound":
@@ -562,6 +564,7 @@ export function createAgentsService(deps: {
     | { kind: "resolved"; teamId: string }
     | { kind: "unknown" }
     | { kind: "unreachable" }
+    | { kind: "none" }
   >;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
@@ -749,6 +752,9 @@ export function createAgentsService(deps: {
         : ({ kind: "resolved", teamId: knownWorkspace } as const);
     if (workspace.kind === "unreachable") {
       return err({ type: "WorkspaceUnreachable" as const });
+    }
+    if (workspace.kind === "none") {
+      return err({ type: "NoSlackWorkspace" as const });
     }
     if (workspace.kind !== "resolved") {
       return err({ type: "WorkspaceUnresolved" as const });

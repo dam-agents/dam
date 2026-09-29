@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::api::MachineSpec;
 use crate::files;
 
@@ -9,6 +11,21 @@ use crate::files;
 
 // UNIT_BOUNDARY_DESCRIPTION: the spec a machine was created with, kept beside it so a runner that restarts can tell a machine that already matches from one that has to be reshaped.
 pub const SPEC_FILE: &str = "spec.json";
+
+// UNIT_BOUNDARY_DESCRIPTION: the version of the spec file's own shape, written into it beside the spec. The wire type drops fields it does not know, so a spec a newer runner wrote would otherwise read back here as a different machine that happens to parse. A spec of another version reads as none, like one that cannot be parsed, and the runner reshapes the machine from what the controller sends next. A spec from before the version was written is this one.
+pub const SPEC_SCHEMA: u32 = 1;
+
+#[derive(Serialize, Deserialize)]
+struct StoredSpec {
+    #[serde(default = "first_spec_schema")]
+    schema: u32,
+    #[serde(flatten)]
+    spec: MachineSpec,
+}
+
+fn first_spec_schema() -> u32 {
+    1
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the published port, kept as a file rather than in memory because the allocator reads every machine's to find a free one, and a runner that forgot them would hand out a port another machine is already published on.
 pub const PORT_FILE: &str = "port";
@@ -62,7 +79,10 @@ pub fn machine_ids(state_dir: &Path) -> std::io::Result<BTreeSet<String>> {
 // UNIT_BOUNDARY_DESCRIPTION: the spec a machine was created with, or nothing — unreadable, unparseable and untrustworthy are one answer here, because every caller does the same thing with them. The image is checked on the way out rather than only on the way in: this file is read back by a later process, and a reference that could name a path outside the cache is refused however it got there.
 pub fn read_spec(state_dir: &Path, id: &str) -> Option<MachineSpec> {
     let body = fs::read(machine_dir(state_dir, id)?.join(SPEC_FILE)).ok()?;
-    let spec: MachineSpec = serde_json::from_slice(&body).ok()?;
+    let StoredSpec { schema, spec } = serde_json::from_slice(&body).ok()?;
+    if schema != SPEC_SCHEMA {
+        return None;
+    }
     if !spec.image.is_empty() && !is_image_ref(&spec.image) {
         return None;
     }
@@ -93,7 +113,10 @@ pub fn write_spec(state_dir: &Path, id: &str, spec: &MachineSpec) -> anyhow::Res
     stored.pull_auths.clear();
     files::write(
         &dir.join(SPEC_FILE),
-        &serde_json::to_vec(&stored)?,
+        &serde_json::to_vec(&StoredSpec {
+            schema: SPEC_SCHEMA,
+            spec: stored,
+        })?,
         SPEC_MODE,
     )?;
     Ok(())
@@ -183,6 +206,34 @@ mod tests {
             machine_dir(Path::new("/state"), "agent-a"),
             Some(PathBuf::from("/state/agent-a"))
         );
+    }
+
+    // TEST_SCENARIO: a spec is written with its shape's version and read back by it. A spec from before the version was written is in the one shape there has been and still reads. A spec of another version reads as none, because a newer runner's fields would be dropped on the way in and the rest taken for the whole machine; the runner then reshapes the machine from what the controller sends.
+    #[test]
+    fn a_spec_reads_back_only_in_the_shape_it_was_written_in() {
+        let dir = TempDir::new("state");
+        let state = dir.path();
+        fs::create_dir_all(state.join("agent-a")).unwrap();
+        let spec = MachineSpec {
+            image: "quay.io/x/vm:1".into(),
+            ..Default::default()
+        };
+        let path = state.join("agent-a").join(SPEC_FILE);
+
+        write_spec(state, "agent-a", &spec).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(written["schema"], SPEC_SCHEMA);
+        assert_eq!(read_spec(state, "agent-a").unwrap().image, spec.image);
+
+        let mut other = written.clone();
+        other["schema"] = serde_json::json!(SPEC_SCHEMA + 1);
+        fs::write(&path, serde_json::to_vec(&other).unwrap()).unwrap();
+        assert!(read_spec(state, "agent-a").is_none());
+
+        let mut before = written;
+        before.as_object_mut().unwrap().remove("schema");
+        fs::write(&path, serde_json::to_vec(&before).unwrap()).unwrap();
+        assert_eq!(read_spec(state, "agent-a").unwrap().image, spec.image);
     }
 
     // TEST_SCENARIO: a spec is read back by a later process, so it is checked on the way out and not only on the way in. A reference that could name something outside the cache is refused however it came to be on disk — the file is as untrusted as the request that made it.

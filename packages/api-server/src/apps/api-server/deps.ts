@@ -24,7 +24,6 @@ import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import type { DelegationFramesPort } from "../../modules/invocations/index.js";
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
-import type { ExperimentPinPort } from "../../modules/experiments/index.js";
 import type {
   ApprovalsRelayService,
   WrapperFrameSender,
@@ -74,6 +73,7 @@ export interface ApiServerDeps {
     | { kind: "resolved"; teamId: string }
     | { kind: "unknown" }
     | { kind: "unreachable" }
+    | { kind: "none" }
   >;
   slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;
@@ -122,6 +122,5 @@ export interface ApiServerDeps {
   publicAgentPageService: PublicAgentPageService;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
-  experimentPin: ExperimentPinPort;
   artifactLibraryFor: ArtifactLibraryFor;
 }

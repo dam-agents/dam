@@ -2,6 +2,8 @@
 
 You are running in a cloud VM managed by DAM. The VM may be stopped and restarted during periods of inactivity. Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
 
+Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube). In a container, `~/.cache` and npm's cache live on local disk and reset on restart.
+
 Available:
 - usual Linux tools
 - `node` (26) with `npm`/`npx`, and `aube` for pnpm-style projects (also as `pnpm`; `aubx` runs one-off tools, and `aube add -g` installs into the home, so they last across restarts)

@@ -35,15 +35,9 @@ const suite: NamedProject[] = [
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
-    name: "experiments",
-    testMatch: /12-.*\.spec\.ts$/,
-    dependencies: ["messages", "user-env"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
     name: "injection",
     testMatch: /05-.*\.spec\.ts$/,
-    dependencies: ["experiments"],
+    dependencies: ["messages", "user-env"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
@@ -133,7 +127,13 @@ const suite: NamedProject[] = [
         },
         {
           name: "slack-full",
-          testMatch: /full\/slack-.*\.spec\.ts$/,
+          testMatch: /full\/slack-(?!token-rotation).*\.spec\.ts$/,
+          use: { ...devices["Desktop Chrome"] },
+        },
+        {
+          name: "slack-rotation-full",
+          testMatch: /full\/slack-token-rotation\.spec\.ts$/,
+          dependencies: ["slack-ambient", "slack-full"],
           use: { ...devices["Desktop Chrome"] },
         },
         {

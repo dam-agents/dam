@@ -24,10 +24,6 @@ import {
 } from "../../modules/schedules/index.js";
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import {
-  composeExperimentsForOwner,
-  type ExperimentPinPort,
-} from "../../modules/experiments/index.js";
-import {
   composeInvocationsForOwner,
   createTargetAdmission,
   type DelegationFramesPort,
@@ -51,7 +47,6 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
-import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import { createAgentImageReader } from "./agent-image.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -79,7 +74,6 @@ export interface HarnessApiServerAppDeps {
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
   artifactLibraryFor: ArtifactLibraryFor;
-  experimentPin: ExperimentPinPort;
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -110,7 +104,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsRepo,
     templatesRepo,
     artifactLibraryFor,
-    experimentPin,
     agentsServiceFor,
     connectionsServiceFor,
     markOnboardingComplete,
@@ -138,11 +131,30 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     maxFiles: config.kbShareMaxFiles,
   };
 
+  const composeSkills = (owner: string) =>
+    composeSkillsModule({
+      agentStateCache: deps.agentStateCache,
+      surface: "mcp",
+      api,
+      namespace: config.namespace,
+      owner,
+      db,
+      seedSources,
+      brandName: config.brand.name,
+      runtimeMutator,
+      templatesRepo,
+      runtimeProgress,
+    });
+
   const invocationsServiceFor = (owner: string) =>
     composeInvocationsForOwner({
       db,
       owner,
       agents: agentsServiceFor(owner),
+      skills: composeSkills(owner),
+      pinDriver: async (driverAgentId) => {
+        await agentsRepo.setInvocationPin(driverAgentId);
+      },
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
@@ -190,30 +202,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     publishLimits,
   });
 
-  const composeSkills = (owner: string) =>
-    composeSkillsModule({
-      agentStateCache: deps.agentStateCache,
-      surface: "mcp",
-      api,
-      namespace: config.namespace,
-      owner,
-      db,
-      seedSources,
-      brandName: config.brand.name,
-      runtimeMutator,
-      templatesRepo,
-      runtimeProgress,
-    });
-  const experimentsServiceFor = (owner: string) =>
-    composeExperimentsForOwner({
-      db,
-      owner,
-      surface: "mcp",
-      artifactLibrary: mcpArtifactLibraryFor(owner),
-      pin: experimentPin,
-      agents: agentsServiceFor(owner),
-    }).experiments;
-
   const app = new Hono();
   mountMcpRoutes(app, {
     channelManager,
@@ -229,7 +217,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     onboardingChecklist,
     artifactLibraryFor: mcpArtifactLibraryFor,
     invocationsServiceFor,
-    experimentsServiceFor,
     kbShareOpsFor,
     agentHome: config.agentHome,
     caseStudySubmissions,
@@ -261,7 +248,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).budgets,
     defaultLimits,
   });
-  mountExperimentRoutes(app, { k8s: k8sClient, experimentsServiceFor });
   mountRuntimeTrpc(app, {
     k8s: k8sClient,
     hello: runtimeHello,

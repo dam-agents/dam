@@ -1,6 +1,9 @@
 import type { Db } from "db";
-import type { AgentsService, InvocationsQueryService } from "api-server-api";
-import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
+import type {
+  AgentsService,
+  InvocationsQueryService,
+  SkillsService,
+} from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
@@ -24,6 +27,11 @@ import {
   type TargetReaper,
 } from "./services/target-reaper.js";
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
+import { createSetupFailure } from "./services/setup-failure.js";
+import {
+  createInvocationPinReconciler,
+  type InvocationPinReconciler,
+} from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -47,8 +55,9 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
   targetAdmission?: TargetAdmission;
+  skills?: Pick<SkillsService, "applyEntries">;
+  pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
-  const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
     owner: opts.owner,
@@ -59,10 +68,8 @@ export function composeInvocationsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
-    isExperimentRunning: async (experimentId, driverAgentId) => {
-      const row = await experimentsRepo.get(experimentId, opts.owner);
-      return row?.status === "running" && row.driverAgentId === driverAgentId;
-    },
+    ...(opts.skills ? { skills: opts.skills } : {}),
+    ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
   });
 }
 
@@ -107,6 +114,34 @@ export function createInvocationsCleanupHook(opts: {
   return createDriverCascade({
     repo,
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+  });
+}
+
+export function createInvocationSetupFailure(opts: {
+  db: Db;
+  agentsFor: (owner: string) => AgentsService;
+  frames: DelegationFramesPort;
+}): (agentId: string, step: string, reason: string) => Promise<void> {
+  const repo = createInvocationsRepository(opts.db);
+  return createSetupFailure({
+    repo,
+    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+  });
+}
+
+export function composeInvocationPinReconciler(opts: {
+  db: Db;
+  listPinnedAgentIds: () => Promise<string[]>;
+  readPin: (driverAgentId: string) => Promise<string | null>;
+  release: (driverAgentId: string, version: string) => Promise<void>;
+}): InvocationPinReconciler {
+  const repo = createInvocationsRepository(opts.db);
+  return createInvocationPinReconciler({
+    listPinnedAgentIds: opts.listPinnedAgentIds,
+    readPin: opts.readPin,
+    hasRunningInvocation: async (driverAgentId) =>
+      (await repo.listRunningByDriver(driverAgentId)).length > 0,
+    release: opts.release,
   });
 }
 

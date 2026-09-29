@@ -1,14 +1,12 @@
-import {
-  ORIGINAL_WORKSPACE,
-  type SlackWorkspace,
-} from "../infrastructure/slack-gateway.js";
+import type { SlackWorkspace } from "../infrastructure/slack-gateway.js";
 
 export type SlackConversationStanding = "member" | "known" | "unknown";
 
 export type SlackWorkspaceResolution =
   | { kind: "resolved"; teamId: SlackWorkspace }
   | { kind: "unknown" }
-  | { kind: "unreachable" };
+  | { kind: "unreachable" }
+  | { kind: "none" };
 
 export interface SlackWorkspaceProbeDeps {
   listInstalledWorkspaces: () => Promise<SlackWorkspace[]>;
@@ -29,7 +27,7 @@ export interface SlackWorkspaceProbeDeps {
  * each is looking at the same conversation, so either token posts to the same
  * place. Membership is what separates them — a workspace the bot was invited
  * to can post, one that merely sees the channel cannot — and among equals the
- * original workspace wins so the answer is stable across binds. Only a
+ * workspace connected first wins so the answer is stable across binds. Only a
  * conversation no connected workspace can see is refused — and that refusal is
  * reported apart from the case where nothing could be asked at all, because a
  * workspace withheld the scope the question needs or Slack did not answer.
@@ -46,16 +44,19 @@ export interface SlackWorkspaceProbeDeps {
  * had already given up, which reads as a definite no from workspaces nobody
  * heard from.
  *
- * The install that predates multi-workspace support is the empty workspace,
- * and while it is the only one no call is made at all: a single-workspace
- * install answers without ever asking Slack.
+ * Workspaces arrive in the order they were connected. While only one is
+ * connected no call is made at all: a single-workspace install answers without
+ * ever asking Slack. With none connected there is nobody to ask, which is its
+ * own answer — neither a conversation nobody can see nor a Slack that did not
+ * reply, since telling the operator to check the id or to retry would both
+ * point away from the fix, which is connecting a workspace.
  */
 export function createSlackWorkspaceProbe(deps: SlackWorkspaceProbeDeps) {
   return async (slackChannelId: string): Promise<SlackWorkspaceResolution> => {
-    const installed = await deps.listInstalledWorkspaces();
-    const candidates = [ORIGINAL_WORKSPACE, ...installed];
+    const candidates = [...new Set(await deps.listInstalledWorkspaces())];
+    if (candidates.length === 0) return { kind: "none" };
     if (candidates.length === 1) {
-      return { kind: "resolved", teamId: ORIGINAL_WORKSPACE };
+      return { kind: "resolved", teamId: candidates[0] };
     }
 
     const asked = await Promise.allSettled(

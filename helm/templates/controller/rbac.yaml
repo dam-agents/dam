@@ -95,6 +95,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # A runtime migration reports its steps as Events on the Agent, and reads
+  # the Events of its copy Job's pod to say why that pod is not starting
+  # (a volume that will not attach, a pod the scheduler cannot place).
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "create"]
   # The runner pod's memory request follows the machines it holds, changed
   # in place so the Deployment never recreates the pod (and every machine
   # with it). Only the resize subresource: it cannot touch anything but a

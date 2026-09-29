@@ -74,9 +74,11 @@ type VMConfig struct {
 	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy. Zero means the controller's default window.
+// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each.
 type VMRuntimeMigration struct {
-	Retention Duration `json:"retention,omitempty"`
+	Retention        Duration `json:"retention,omitempty"`
+	Concurrency      int      `json:"concurrency,omitempty"`
+	OwnerConcurrency int      `json:"ownerConcurrency,omitempty"`
 }
 
 type VMRunnerSpec struct {

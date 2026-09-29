@@ -5,10 +5,6 @@ import {
   type ArtifactsSlice,
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
-import {
-  createExperimentsSlice,
-  type ExperimentsSlice,
-} from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import {
   createInvocationsSlice,
@@ -51,7 +47,6 @@ export type PlatformStore = DialogSlice &
   SidebarSlice &
   AgentsSlice &
   SessionsSlice &
-  ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
   InvocationsSlice &
@@ -64,7 +59,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSidebarSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
-  ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createInvocationsSlice(...a),

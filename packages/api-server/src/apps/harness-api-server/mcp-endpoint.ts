@@ -8,7 +8,7 @@ import {
   AGENT_WORK_DIR,
   type AppRouter,
 } from "agent-runtime-api";
-import type { ExperimentsService, SatelliteView } from "api-server-api";
+import type { SatelliteView } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -27,6 +27,7 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
+import { emit, EventType } from "../../events.js";
 import {
   errorResult,
   json,
@@ -106,6 +107,7 @@ function renderChecklist(steps: OnboardingStep[]): string {
 }
 
 export interface McpSessionDeps {
+  owner: string;
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
@@ -120,7 +122,6 @@ export interface McpSessionDeps {
   } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
-  experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -294,6 +295,15 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel,
+        agentId,
+        ownerSub: deps.owner,
+        action: "post",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: resolved !== undefined,
+      });
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         ...channelAudit(channel),
         result: failed ? "failure" : "success",
@@ -512,6 +522,15 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel: ChannelType.Slack,
+        agentId,
+        ownerSub: deps.owner,
+        action: "reply",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: loaded !== undefined,
+      });
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
@@ -894,8 +913,6 @@ export function createMcpSession(
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
-    attachToExperiment: (artifactId, experimentId) =>
-      deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
 
   if (deps.kbShares) {
@@ -964,7 +981,6 @@ export interface MountMcpDeps {
   onboardingChecklist: OnboardingChecklistOps;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
-  experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -997,7 +1013,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const experiments = deps.experimentsServiceFor(verified.owner);
     const [ownerIsInspector, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
@@ -1011,6 +1026,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ),
     ]);
     const session = createMcpSession(agentId, {
+      owner: verified.owner,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
@@ -1028,7 +1044,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         : null,
       artifactLibrary,
       invocations,
-      experiments,
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

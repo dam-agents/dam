@@ -209,10 +209,10 @@ checksum = "sha256:cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5
 url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
-version = "0.79.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.79.0", digest = "sha256:65515b48527bb401663e8e9c3a668d2b8814a46e099836822671657ea5d64eef" }
+version = "0.84.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.84.0", digest = "sha256:adca43692a0871897c6e86e86752aff88f34bd3ea29b617a74b2613a774c3ef4" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
-specifiers = ["0.79.0"]
+specifiers = ["0.84.0"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
 version = "1.5.0"

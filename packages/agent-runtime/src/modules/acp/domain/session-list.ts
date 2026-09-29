@@ -20,7 +20,6 @@ export interface SessionMetaLike {
     mode?: string;
     type?: string;
     scheduleId?: string;
-    experimentId?: string;
     initialization?: boolean;
     threadTs?: string;
   };
@@ -61,7 +60,6 @@ function fromEntry(
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
     title: listed?.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
-    experimentId: entry.meta.experimentId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,
@@ -84,7 +82,6 @@ function fromHarnessOnly(
     updatedAt: listed.updatedAt ?? null,
     title: listed.title ?? null,
     scheduleId: null,
-    experimentId: null,
     initialization: false,
     threadTs: null,
     seenAt: null,

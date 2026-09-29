@@ -1,6 +1,5 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
-import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackBotJoinedChannelEvent,
@@ -12,7 +11,10 @@ import type {
   SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
+  SlackWorkspace,
 } from "./slack-gateway.js";
+
+export const FAKE_WORKSPACE: SlackWorkspace = "";
 
 export interface FakeSlackChannel {
   id: string;
@@ -362,7 +364,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireMention(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMention(event);
     },
@@ -370,7 +372,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireMessage(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMessage(event);
     },
@@ -378,14 +380,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireBotJoinedChannel(input) {
       await requireHandlers().onBotJoinedChannel({
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       });
     },
 
     async fireDirectMessage(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onDirectMessage(event);
     },
@@ -393,7 +395,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireCommand(input) {
       const command: SlackSlashCommand = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       let ackText = "";
       await requireHandlers().onCommand(command, async ({ text }) => {

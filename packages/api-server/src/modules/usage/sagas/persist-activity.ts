@@ -7,6 +7,7 @@ import {
   type DomainEvent,
   type UserAuthenticated,
   type ChannelTurnRelayed,
+  type ChannelMessageSent,
   type SessionTurnRelayed,
   type AgentRelayAttached,
   type ScheduleFired,
@@ -24,9 +25,8 @@ import {
   type SkillPublished,
   type SkillSetSaved,
   type SkillSetDeleted,
-  type KindedAgentCreated,
+  type SkillSourceChanged,
   type StarterKitApplied,
-  type ExperimentChanged,
   type InvocationSpawned,
   type FeatureFlagChanged,
   type HarnessConfigChanged,
@@ -97,6 +97,15 @@ export function startPersistActivitySaga(
     }),
     "channel",
   );
+
+  persist<ChannelMessageSent>(EventType.ChannelMessageSent, (event) => ({
+    type: "channel_message_sent",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: event.channel,
+    outcome: event.outcome,
+    payload: { action: event.action, hasAttachment: event.hasAttachment },
+  }));
 
   persist<SessionTurnRelayed>(EventType.SessionTurnRelayed, (event) => ({
     type: "session_turn",
@@ -282,13 +291,13 @@ export function startPersistActivitySaga(
     payload: {},
   }));
 
-  persist<KindedAgentCreated>(EventType.KindedAgentCreated, (event) => ({
-    type: "kinded_agent_created",
+  persist<SkillSourceChanged>(EventType.SkillSourceChanged, (event) => ({
+    type: `skill_source_${event.action}`,
     actorSub: event.actorSub,
-    agentId: event.agentId,
+    agentId: null,
     surface: event.surface,
     outcome: "success",
-    payload: { kind: event.kind },
+    payload: { source: event.source, hasPath: event.hasPath },
   }));
 
   persist<StarterKitApplied>(EventType.StarterKitApplied, (event) => ({
@@ -303,18 +312,6 @@ export function startPersistActivitySaga(
       version: event.version,
     },
   }));
-
-  persist<ExperimentChanged>(EventType.ExperimentChanged, (event) => {
-    if (!event.action || !event.actorSub) return null;
-    return {
-      type: `experiment_${event.action}`,
-      actorSub: event.actorSub,
-      agentId: null,
-      surface: event.surface ?? null,
-      outcome: "success",
-      payload: { experimentId: event.experimentId },
-    };
-  });
 
   persist<InvocationSpawned>(EventType.InvocationSpawned, (event) => ({
     type: "invocation_spawned",

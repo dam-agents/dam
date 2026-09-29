@@ -1,4 +1,10 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+  Time,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
@@ -57,6 +63,28 @@ function acceptedTemplates(
   return templates.filter((t) =>
     requirementAccepts({ accepts }, t.id, t.family?.id),
   );
+}
+
+interface FamilyTag {
+  id: string;
+  title: string;
+  iconSlug?: string;
+}
+
+function connectionFamilyTags(
+  requirements: StarterKitView["connections"],
+  templates: readonly ConnectionTemplateView[],
+): FamilyTag[] {
+  const tags = new Map<string, FamilyTag>();
+  for (const req of requirements) {
+    for (const t of acceptedTemplates(req.accepts, templates)) {
+      if (!t.family) continue;
+      const tag = tags.get(t.family.id) ?? { ...t.family };
+      tag.iconSlug ??= t.iconSlug;
+      tags.set(t.family.id, tag);
+    }
+  }
+  return [...tags.values()];
 }
 
 function Row({
@@ -272,17 +300,21 @@ function KitDetail({
           onClose={onClose}
         >
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {kit.connections.flatMap((req) =>
-              acceptedTemplates(req.accepts, templates.data ?? [])
-                .flatMap((t) => (t.family ? [t.family] : []))
-                .filter(
-                  (f, i, all) => all.findIndex((x) => x.id === f.id) === i,
-                )
-                .map((family) => (
-                  <Badge key={family.id} variant="muted" size="sm">
+            {connectionFamilyTags(kit.connections, templates.data ?? []).map(
+              (family) => (
+                <Badge key={family.id} variant="muted" size="sm">
+                  <span className="flex items-center gap-1.5">
+                    {family.iconSlug && (
+                      <ConnectionIcon
+                        iconSlug={family.iconSlug}
+                        alt=""
+                        size={14}
+                      />
+                    )}
                     {family.title}
-                  </Badge>
-                )),
+                  </span>
+                </Badge>
+              ),
             )}
             {skillCount > 0 && (
               <Badge variant="muted" size="sm">
@@ -369,6 +401,7 @@ function KitDetail({
               {kit.schedules.map((schedule) => (
                 <Row
                   key={schedule.name}
+                  icon={<Time size={16} className="text-kit" />}
                   title={schedule.name}
                   detail={kitScheduleCadence(schedule)}
                   trailing={

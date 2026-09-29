@@ -423,3 +423,23 @@ func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 7*24*time.Hour, cfg.VM.RuntimeMigration.Retention.AsDuration())
 }
+
+// TEST_SCENARIO: the copy Job caps come from the chart as counts. A negative one is a values typo, refused at start; set ones are read as given.
+func TestLoadFromEnv_ReadsTheRuntimeMigrationCopyCaps(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"ownerConcurrency":-1}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	assert.Error(t, err)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"concurrency":4,"ownerConcurrency":2}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 4, cfg.VM.RuntimeMigration.Concurrency)
+	assert.Equal(t, 2, cfg.VM.RuntimeMigration.OwnerConcurrency)
+}

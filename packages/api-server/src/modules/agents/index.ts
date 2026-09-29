@@ -32,6 +32,7 @@ export {
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
 export type { AgentsInstallSettings } from "./compose.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export { createInputFromSetup } from "./domain/agent-setup.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
 export { createPublicAgentRoutes } from "./infrastructure/public-agent-routes.js";
@@ -45,6 +46,7 @@ export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
+  claimUnscopedSlackBindings,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,

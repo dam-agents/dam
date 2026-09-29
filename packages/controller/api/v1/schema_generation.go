@@ -36,7 +36,9 @@ const (
 	// puts back on every boot; an older CRD would prune it.
 	// Agent gen 13: runtimeMigrationAttempts added to AgentStatus — the copy
 	// attempts of a runtime migration, which fails once they run out.
-	AgentSchemaGeneration = 13
+	// Agent gen 14: movedFrom removed from Mount — a runtime migration now
+	// carries only HOME, so no mount is ever moved.
+	AgentSchemaGeneration = 14
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

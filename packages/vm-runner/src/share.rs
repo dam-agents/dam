@@ -17,8 +17,6 @@ pub const SHARE_DIR: &str = "share";
 
 pub const CA_DIR: &str = "ca";
 
-// UNIT_BOUNDARY_DESCRIPTION: the links plan, read by the guest at guest::SHARE_LINKS_FILE: one path per line, as the spec names them. It is written on every ensure, empty when nothing was moved, so a machine never boots on a plan its spec no longer holds.
-pub const LINKS_FILE: &str = "links";
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
 
@@ -60,7 +58,6 @@ pub fn write_share(
     files::create_dir(&ca, CA_DIR_MODE)?;
     remove_staged_seed(&share)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
-    files::write(&share.join(LINKS_FILE), &links_plan(&spec.links), CA_MODE)?;
     let expected = share.join(SEED_EXPECTED_FILE);
     match &spec.expect_seed {
         Some(seed) => files::write(&expected, digest_of(seed).line().as_bytes(), CA_MODE)?,
@@ -74,15 +71,6 @@ fn digest_of(seed: &SeedResult) -> SeedDigest {
         sha256: seed.sha256.clone(),
         bytes: seed.bytes,
     }
-}
-
-fn links_plan(links: &[String]) -> Vec<u8> {
-    links
-        .iter()
-        .flat_map(|l| [l.as_bytes(), b"\n"])
-        .flatten()
-        .copied()
-        .collect()
 }
 
 pub fn seeded(share: &Path) -> bool {
@@ -269,11 +257,6 @@ mod tests {
             "the guest looks for the seeded record where this module does not write it"
         );
         assert_eq!(
-            guest::SHARE_LINKS_FILE,
-            format!("{}/{LINKS_FILE}", guest::SHARE_PATH),
-            "the guest reads a links plan this module does not write"
-        );
-        assert_eq!(
             guest::SEED_EXPECTED_PATH,
             format!("{}/{SEED_EXPECTED_FILE}", guest::SHARE_PATH),
             "the guest looks for the expected seed where this module does not write it"
@@ -322,33 +305,6 @@ mod tests {
         assert_eq!(seeded_from(dir.path()), sha);
         fs::write(dir.path().join(SEEDED_FILE), b"not a digest").unwrap();
         assert_eq!(seeded_from(dir.path()), "");
-    }
-
-    // TEST_SCENARIO: the links plan is in the share, which the guest cannot write, rather than in the home, which the agent can. It is written from the spec on every ensure, one path per line, and a spec that no longer holds a link leaves an empty plan, not the old one.
-    #[test]
-    fn the_links_plan_is_written_from_the_spec_on_every_ensure() {
-        let dir = TempDir::new("links");
-        let init = dir.path().join("platform-init");
-        fs::write(&init, b"init").unwrap();
-        let share = dir.path().join("agent-a").join(SHARE_DIR);
-        let spec = MachineSpec {
-            links: vec!["/data".into(), "/var/lib/app".into()],
-            ..Default::default()
-        };
-
-        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
-        assert_eq!(
-            fs::read(share.join(LINKS_FILE)).unwrap(),
-            b"/data\n/var/lib/app\n"
-        );
-        assert_eq!(
-            mode_of(&share.join(LINKS_FILE)),
-            CA_MODE,
-            "the guest reads it"
-        );
-
-        write_share(dir.path(), "agent-a", &MachineSpec::default(), Some(&init)).unwrap();
-        assert_eq!(fs::read(share.join(LINKS_FILE)).unwrap(), b"");
     }
 
     // TEST_SCENARIO: the seeded record is what lets platform-init refuse a disk smolvm has reformatted, so it must survive everything the share goes through while the machine exists: every ensure rewrites the share, and a rewrite that dropped the record would let the next boot seed a fresh home over the lost one without a word.

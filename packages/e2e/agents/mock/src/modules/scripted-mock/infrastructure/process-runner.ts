@@ -1,5 +1,4 @@
-import { execFile, spawn } from "node:child_process";
-import { openSync } from "node:fs";
+import { execFile } from "node:child_process";
 import type { ProcessRunner } from "../services/ports.js";
 
 export function createProcessRunner(cwd: string): ProcessRunner {
@@ -26,17 +25,6 @@ export function createProcessRunner(cwd: string): ProcessRunner {
           },
         );
       });
-    },
-
-    spawnDetached({ command, args, env, logPath }) {
-      const log = openSync(logPath, "a");
-      const child = spawn(command, args, {
-        cwd,
-        env: { ...process.env, ...env },
-        detached: true,
-        stdio: ["ignore", log, log],
-      });
-      child.unref();
     },
   };
 }

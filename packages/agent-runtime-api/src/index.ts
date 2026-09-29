@@ -120,7 +120,6 @@ export type {
   TriggerEventPayload,
   EventOutcome,
   EventReportInput,
-  ExperimentExecuteEventPayload,
   SatelliteOutcomeEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,

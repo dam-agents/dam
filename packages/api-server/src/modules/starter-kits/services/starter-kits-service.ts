@@ -3,9 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type {
-  ResolvedStarterKit,
   StarterKit,
-  HarnessFamily,
+  TemplateHarness,
   Agent,
   AgentCreateInput,
   AgentsService,
@@ -15,7 +14,6 @@ import type {
   StarterKitApplyInput,
   StarterKitApplyResult,
   StarterKitEgressRule,
-  StarterKitResources,
   StarterKitScheduleOverride,
   StarterKitsService,
   StarterKitView,
@@ -32,6 +30,7 @@ import {
 } from "../domain/requirements.js";
 import type { ResolvedKitRow } from "../infrastructure/resolved-catalog-repository.js";
 import { emit, EventType } from "../../../events.js";
+import { createInputFromSetup } from "../../agents/index.js";
 import {
   initializationEvent,
   type RuntimeMutator,
@@ -73,40 +72,6 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
-}
-
-const COMMIT_SHA = /^[0-9a-f]{40}$/i;
-
-function withoutSeed(kit: ResolvedStarterKit): ResolvedStarterKit {
-  const { seed: _seed, ...rest } = kit;
-  return rest;
-}
-
-function seedGitRepo(
-  seed: NonNullable<ResolvedStarterKit["seed"]>,
-): NonNullable<AgentCreateInput["gitRepo"]> {
-  const declaredCommit =
-    seed.ref && COMMIT_SHA.test(seed.ref) ? seed.ref : undefined;
-  const commit = seed.commit ?? declaredCommit;
-  return {
-    url: seed.url,
-    into: seed.into,
-    ...(commit ? { commit } : {}),
-    ...(seed.ref && !declaredCommit ? { branch: seed.ref } : {}),
-  };
-}
-
-function agentShape(
-  resources: StarterKitResources | undefined,
-): Pick<AgentCreateInput, "size" | "storage"> {
-  if (!resources) return {};
-  const { cpu, memory, storage } = resources;
-  return {
-    ...(cpu !== undefined || memory !== undefined
-      ? { size: { cpu, memory } }
-      : {}),
-    ...(storage !== undefined ? { storage } : {}),
-  };
 }
 
 function toView(loaded: LoadedKit): StarterKitView {
@@ -221,7 +186,7 @@ export function createStarterKitsService(
     created: Agent,
     loaded: LoadedKit,
     version: string,
-    harness: HarnessFamily | undefined,
+    harness: TemplateHarness | undefined,
   ): Promise<void> {
     if (loaded.kit.onboarding === false) return;
     const agentId = created.id;
@@ -270,16 +235,7 @@ export function createStarterKitsService(
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const requested = await requireKit(input.catalog, input.kitId);
-      if (input.skipSeed && requested.kit.install)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "this kit's install runs from its repository, so the repository cannot be removed",
-        });
-      const loaded: LoadedKit = input.skipSeed
-        ? { ...requested, kit: withoutSeed(requested.kit) }
-        : requested;
+      const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
 
       if (!kit.image && !input.templateId)
@@ -315,12 +271,9 @@ export function createStarterKitsService(
         ...(kit.knowledgeBase
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
-        ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
-        ...(kit.backend === "vm" ? { vm: true } : {}),
+        ...createInputFromSetup(kit),
         ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
-        ...agentShape(kit.resources),
         connectionIds: input.connectionIds,
-        ...(kit.env.length > 0 ? { env: kit.env } : {}),
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
           : {}),

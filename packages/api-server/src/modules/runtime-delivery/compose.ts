@@ -46,6 +46,7 @@ import {
   type ContributionsProgress,
 } from "./domain/outbox-progress.js";
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
+import { createEventOutcomeRegistry } from "./services/event-outcome-registry.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/outbox-events.js";
 
@@ -151,9 +152,9 @@ export function composeRuntimeDelivery(
     log,
   });
 
-  const eventOutcomeHandlers = new Map<string, EventOutcomeHandler>();
+  const eventOutcomes = createEventOutcomeRegistry({ log });
   for (const kind of workspaceMutationEventKinds)
-    eventOutcomeHandlers.set(kind, async (event) => {
+    eventOutcomes.add(kind, async (event) => {
       const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
         log(
           `${event.agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
@@ -174,7 +175,7 @@ export function composeRuntimeDelivery(
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
-    eventOutcomeHandler: (kind) => eventOutcomeHandlers.get(kind),
+    eventOutcomeHandler: eventOutcomes.dispatch,
     log,
   });
 
@@ -185,9 +186,7 @@ export function composeRuntimeDelivery(
   });
 
   return {
-    registerEventOutcomeHandler: (kind, handler) => {
-      eventOutcomeHandlers.set(kind, handler);
-    },
+    registerEventOutcomeHandler: eventOutcomes.add,
     outboxRepo,
     agentsRuntimeRepo,
     queue,

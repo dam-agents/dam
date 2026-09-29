@@ -24,9 +24,6 @@ function makeService(row: InvocationRow) {
     listRunningByDriver: async () => [],
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
-    listByExperiment: async () => [],
-    countRunningByDriver: async () => new Map(),
-    failAllRunningByExperiment: async () => [],
     listRootDriverIds: async () => [],
     listTerminalUnreaped: async () => [],
     markReaped: async () => {},
@@ -71,7 +68,6 @@ function runningRow(resultSchema: unknown): InvocationRow {
     expiresAt: new Date(Date.now() + 60_000),
     completedAt: null,
     reapedAt: null,
-    experimentSpanId: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
   };
