@@ -753,7 +753,10 @@ export interface SlackWorker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
-  declineTurn(instanceName: string): Promise<{ ok: true } | { error: string }>;
+  declineTurn(
+    instanceName: string,
+    threadTs?: string,
+  ): Promise<{ ok: true } | { error: string }>;
   handOffTurn(
     instanceName: string,
     targetName: string,
@@ -1074,6 +1077,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text: string;
     eventTs: string;
     slackUserId: string;
+    inThread: boolean;
   };
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
@@ -1149,6 +1153,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return [];
     }
     return [...lingering.keys()];
+  }
+
+  function separateReplyTargets(refs: TurnRef[]): boolean {
+    return new Set(refs.map((ref) => ref.threadTs)).size > 1;
   }
 
   function resolveTurn(
@@ -1758,7 +1766,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channel: string;
     threadTs: string;
     messages: AddressedMessage[];
-    hasThread: boolean;
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
@@ -1805,14 +1812,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
       teamId: ctx.teamId,
-      threadTs: ctx.hasThread ? ctx.threadTs : m.eventTs,
+      threadTs: m.inThread ? ctx.threadTs : m.eventTs,
       eventTs: m.eventTs,
       forwarded: ctx.forwardedFrom !== undefined,
       text: m.text,
       slackUserId: m.slackUserId,
-      hasThread: ctx.hasThread,
+      hasThread: m.inThread,
       hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
     }));
+    const replyThreadTs = turnRefs.at(-1)!.threadTs;
+    const hasThread = ctx.messages[0]!.inThread;
 
     const verdictRefs = () => [...turnRefs, ...(ctx.siblingRefs?.() ?? [])];
     const turnSessionId = () =>
@@ -1827,7 +1836,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         instanceName,
         sessionId,
         threadKey,
-        threadTs: ctx.threadTs,
+        threadTs: replyThreadTs,
         refs,
         anchorRef: turnRefs.at(-1)!,
         sawFailure,
@@ -1839,7 +1848,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
-      threadTs: ctx.threadTs,
+      threadTs: replyThreadTs,
       teamId: ctx.teamId,
       instanceName,
     });
@@ -1852,9 +1861,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
-      replyThreadTs: ctx.threadTs,
+      replyThreadTs,
       eventTs,
-      batch: { count: ctx.messages.length, inThread: ctx.hasThread },
+      batch: {
+        count: ctx.messages.length,
+        inThread: hasThread,
+        separateTargets: separateReplyTargets(turnRefs),
+      },
       identity: { brand, botUserId, agentName },
       reach: { isDirectMessage, ambient: ctx.ambient },
       roster: rosterCopy(ctx.roster, instanceName),
@@ -1873,7 +1886,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ephemeral(
         ctx.channel,
         ctx.slackUserId,
-        ctx.hasThread ? ctx.threadTs : undefined,
+        hasThread ? ctx.threadTs : undefined,
         "This agent can't process images yet — answering text only.",
         ctx.teamId,
       );
@@ -1886,7 +1899,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ephemeral(
         ctx.channel,
         ctx.slackUserId,
-        ctx.hasThread ? ctx.threadTs : undefined,
+        hasThread ? ctx.threadTs : undefined,
         "Waking the agent — this can take a minute or two.",
         ctx.teamId,
       );
@@ -1902,7 +1915,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ephemeral(
             ctx.channel,
             ctx.slackUserId,
-            ctx.hasThread ? ctx.threadTs : undefined,
+            hasThread ? ctx.threadTs : undefined,
             `Couldn't use attached file '${f.name}': ${f.reason}`,
             ctx.teamId,
           ),
@@ -1918,6 +1931,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           const delivered = await deliverFiles();
           const caught = await buildCatchUp(gw, {
             ...ctx,
+            hasThread,
             eventTs,
             threadKey,
             deliveredUpTo,
@@ -1941,6 +1955,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             gw,
             {
               ...ctx,
+              hasThread,
               eventTs,
               text,
               threadKey,
@@ -1997,7 +2012,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await gw.postMessage({
         channel: ctx.channel,
         teamId: ctx.teamId,
-        threadTs: ctx.threadTs,
+        threadTs: replyThreadTs,
         text,
       });
       failurePosted = true;
@@ -2011,7 +2026,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           gw.postMessage({
             channel: ctx.channel,
             teamId: ctx.teamId,
-            threadTs: ctx.threadTs,
+            threadTs: replyThreadTs,
             text:
               "The agent is still starting — this can take a few more " +
               "minutes. It'll answer as soon as it's up.",
@@ -2045,7 +2060,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           {
             agentId: instanceName,
             channelId: ctx.channel,
-            threadTs: ctx.threadTs,
+            threadTs: replyThreadTs,
             eventTs,
           },
           "slack.turn.unanswered: the agent finished an addressed turn without " +
@@ -2933,12 +2948,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
 
+    const inThread = !!event.threadTs;
+
     await enqueueAddressed(
       {
         channelId: event.channel,
         teamId: binding.teamId,
         threadTs,
-        hasThread: !!event.threadTs,
+        oneThread: inThread || !opts.directMessage,
         instanceName: binding.instanceName,
         speakerLabel: !opts.directMessage,
       },
@@ -2947,6 +2964,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text: event.text + fetched.withheldNote,
         eventTs: event.ts,
         slackUserId,
+        inThread,
         images: fetched.images,
         files: fetched.files,
         release: fetched.release,
@@ -2965,7 +2983,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelId: string;
     teamId: SlackWorkspace;
     threadTs: string;
-    hasThread: boolean;
+    oneThread: boolean;
     instanceName: string;
     speakerLabel: boolean;
   };
@@ -2978,7 +2996,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ambiguousName?: string | null;
   };
 
-  type AddressedPending = PendingMessage & { turn: AddressedTurnContext };
+  type AddressedPending = PendingMessage & {
+    inThread: boolean;
+    turn: AddressedTurnContext;
+  };
 
   const addressedQueues = new Map<
     string,
@@ -2989,9 +3010,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     conversation: AddressedConversation,
     slackUserId: string,
   ): string {
-    const where = conversation.hasThread
+    const where = conversation.oneThread
       ? `thread:${conversation.threadTs}`
-      : `top:${slackUserId}`;
+      : `dm:${slackUserId}`;
     return `${conversation.instanceName}|${conversation.channelId}|${where}`;
   }
 
@@ -3007,7 +3028,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return [
       "<new-messages>",
       `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
-      ...(conversation.hasThread
+      ...(conversation.oneThread
         ? []
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
@@ -3032,12 +3053,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           channel: conversation.channelId,
           teamId: conversation.teamId,
           threadTs: conversation.threadTs,
-          messages: batch.map(({ text, eventTs, slackUserId }) => ({
+          messages: batch.map(({ text, eventTs, slackUserId, inThread }) => ({
             text,
             eventTs,
             slackUserId,
+            inThread,
           })),
-          hasThread: conversation.hasThread,
           slackUserId: latest.slackUserId,
           instanceName: conversation.instanceName,
           owner: latest.turn.owner,
@@ -3074,13 +3095,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           const ref: TurnRef = {
             channel: conversation.channelId,
             teamId: conversation.teamId,
-            threadTs: conversation.hasThread
-              ? conversation.threadTs
-              : msg.eventTs,
+            threadTs: msg.inThread ? conversation.threadTs : msg.eventTs,
             eventTs: msg.eventTs,
             text: msg.text,
             slackUserId: msg.slackUserId,
-            hasThread: conversation.hasThread,
+            hasThread: msg.inThread,
             hadAttachments: false,
           };
           beginTurn(conversation.instanceName, ref);
@@ -3150,7 +3169,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channel: string;
     threadTs: string;
     messages: AddressedMessage[];
-    hasThread: boolean;
     slackUserId: string;
     instanceName: string;
     owner: string;
@@ -3208,7 +3226,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ? message.text
             : `<@${message.slackUserId}>: ${message.text}`,
       })),
-      hasThread: args.hasThread,
       actorSub: null,
       externalActorId: args.slackUserId,
       slackUserId: args.slackUserId,
@@ -3290,7 +3307,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
-      batch: { count: args.messages.length, inThread: args.hasThread },
+      batch: {
+        count: args.messages.length,
+        inThread: args.hasThread,
+        separateTargets: separateReplyTargets(turnRefs),
+      },
       identity: { brand, botUserId, agentName },
       reach: {
         isDirectMessage: isDirectMessageId(args.channel),
@@ -3893,9 +3914,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             text: handedText,
             eventTs: ref.eventTs,
             slackUserId: ref.slackUserId ?? "",
+            inThread: ref.hasThread === true,
           },
         ],
-        hasThread: ref.hasThread === true,
         slackUserId: ref.slackUserId ?? "",
         instanceName: target.instanceName,
         owner: target.owner,
@@ -3939,15 +3960,26 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return { ok: true as const, agent: target.name };
     },
 
-    async declineTurn(instanceName: string) {
-      const turn = resolveTurn(instanceName, "reply");
-      if (!("ref" in turn)) return { ok: true as const };
-      turn.ref.declined = true;
+    async declineTurn(instanceName: string, threadTs?: string) {
+      let ref: TurnRef | undefined;
+      if (threadTs) {
+        const id = threadTs;
+        ref = findTurnRef(
+          instanceName,
+          (candidate) => candidate.threadTs === id,
+        );
+      } else {
+        const resolved = resolveTurn(instanceName, "reply");
+        if ("ambiguous" in resolved) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("ref" in resolved) ref = resolved.ref;
+      }
+      if (!ref) return { ok: true as const };
+      ref.declined = true;
       getLogger().info(
         {
           agentId: instanceName,
-          channelId: turn.ref.channel,
-          threadTs: turn.ref.threadTs,
+          channelId: ref.channel,
+          threadTs: ref.threadTs,
         },
         "slack.turn.declined: the agent chose not to answer",
       );
