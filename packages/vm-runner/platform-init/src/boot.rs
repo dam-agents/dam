@@ -82,6 +82,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     open_boot_log(&root);
 
     logf!("storage disk claimed at {}", root.display());
+    claim_layout(&root);
     fresh_root(&root);
     bind_ca();
     let expected = match expected_seed(Path::new(guest::SEED_EXPECTED_PATH)) {
@@ -153,6 +154,39 @@ fn claim_disk() -> PathBuf {
     }
     let _ = fs::remove_dir(device_path).or_else(|_| fs::remove_file(device_path));
     disk_path.to_path_buf()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout there has been, and gets the mark now.
+fn claim_layout(root: &Path) {
+    match mark_layout(root) {
+        Ok(Some(version)) => logf!("marked the disk as layout {version}"),
+        Ok(None) => {}
+        Err(e) => fatal!("reading the disk's layout: {e}"),
+    }
+}
+
+fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
+    let path = guest::system_store(root, guest::LAYOUT_FILE);
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            write_record(&path, format!("{}\n", guest::LAYOUT_VERSION).as_bytes())?;
+            return Ok(Some(guest::LAYOUT_VERSION));
+        }
+        Err(e) => return Err(e),
+    };
+    match text.trim().parse::<u32>() {
+        Ok(version) if version == guest::LAYOUT_VERSION => Ok(None),
+        Ok(version) if version > guest::LAYOUT_VERSION => Err(io::Error::other(format!(
+            "the disk is in layout {version}, and this platform-init knows layouts up to {}. Refusing to boot a disk a newer platform-init wrote",
+            guest::LAYOUT_VERSION
+        ))),
+        _ => Err(io::Error::other(format!(
+            "{} holds {:?}, which is not a layout this platform-init knows",
+            path.display(),
+            text.trim()
+        ))),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Without this, anything the image writes outside HOME persists, and an old image's changes lie over a new one. This mounts a new overlay over that root, with empty upper and work layers on the disk, and pivots into it. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on the old root would look healthy while it keeps what the platform promises to discard.
@@ -2298,6 +2332,44 @@ mod tests {
         fs::create_dir_all(&store).unwrap();
         assert!(!must_seed(&store, true).unwrap());
         assert!(!must_seed(&store, false).unwrap());
+    }
+
+    // TEST_SCENARIO: every disk leaves its first boot marked with the layout it is in, and a disk from before the mark existed is marked on its next boot, since it can only be in the one layout there has been. A disk already marked with this layout boots without being written.
+    #[test]
+    fn a_disk_is_marked_with_its_layout_once() {
+        let disk = TempDir::new("disk");
+        let mark = guest::system_store(disk.path(), guest::LAYOUT_FILE);
+
+        assert_eq!(
+            mark_layout(disk.path()).unwrap(),
+            Some(guest::LAYOUT_VERSION)
+        );
+        assert_eq!(
+            fs::read_to_string(&mark).unwrap(),
+            format!("{}\n", guest::LAYOUT_VERSION)
+        );
+        assert_eq!(mark_layout(disk.path()).unwrap(), None);
+    }
+
+    // TEST_SCENARIO: a runner rolled back past a layout change boots disks that a newer platform-init already moved on, and this one would seed or mount them by names they no longer use. A newer layout fails the boot and says why; so does a mark this platform-init cannot read, rather than being taken for any layout and overwritten.
+    #[test]
+    fn a_layout_this_platform_init_does_not_know_fails_the_boot() {
+        let disk = TempDir::new("disk");
+        let mark = guest::system_store(disk.path(), guest::LAYOUT_FILE);
+        fs::create_dir_all(mark.parent().unwrap()).unwrap();
+
+        fs::write(&mark, format!("{}\n", guest::LAYOUT_VERSION + 1)).unwrap();
+        let newer = mark_layout(disk.path()).unwrap_err().to_string();
+        assert!(newer.contains("a newer platform-init wrote"), "{newer}");
+
+        for unreadable in ["", "0", "one", "-1"] {
+            fs::write(&mark, unreadable).unwrap();
+            assert!(
+                mark_layout(disk.path()).is_err(),
+                "{unreadable:?} was taken for a layout"
+            );
+            assert_eq!(fs::read_to_string(&mark).unwrap(), unreadable);
+        }
     }
 
     // TEST_SCENARIO: the boot log of the running boot is bounded. A write that would take it past the cap moves it aside first, so the boot keeps at most two files of the cap each, the newest output is always in the log itself, and the output just before it is in the rotated file.

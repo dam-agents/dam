@@ -61,6 +61,10 @@ pub const SYSTEM_DIR: &str = "system";
 // UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the fresh root the image boots on. platform-init empties it on every boot, so nothing the image writes outside HOME outlives the boot that wrote it.
 pub const ROOTFS_DIR: &str = "rootfs";
 
+// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
+pub const LAYOUT_FILE: &str = "layout";
+pub const LAYOUT_VERSION: u32 = 1;
+
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)
 }
@@ -134,6 +138,10 @@ mod tests {
         assert_eq!(
             system_store(root, ROOTFS_DIR),
             Path::new("/mnt/platform/system/rootfs")
+        );
+        assert_eq!(
+            system_store(root, LAYOUT_FILE),
+            Path::new("/mnt/platform/system/layout")
         );
     }
 }
