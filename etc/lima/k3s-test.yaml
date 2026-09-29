@@ -53,7 +53,7 @@ provision:
         installer=$(mktemp /tmp/k3s-install.XXXXXX)
         attempt=1
         while :; do
-          if curl -sfL --retry 3 --retry-delay 2 --retry-all-errors https://get.k3s.io -o "$installer" && sh "$installer"; then
+          if curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors https://get.k3s.io -o "$installer" && sh "$installer"; then
             break
           fi
           if [ "$attempt" -ge 4 ]; then
