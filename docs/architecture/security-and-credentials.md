@@ -230,7 +230,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   api-server's `/api/oauth/callback` writes the access + refresh token
   pair plus a structured **host list** describing every wire position
   the token should be injected on. The refresh-token loop re-mints
-  access tokens before expiry; the agent never sees the refresh token.
+  access tokens before expiry; the agent never sees the refresh token. A
+  narrowed GitHub sign-in keeps this pair at rest and injects a scoped token
+  made from it ([connections](connections.md)).
   Re-running login and consent against an existing connection replaces its
   tokens in place, keeping the connection's identity and grants. When the
   connection stores the OAuth app's *client* secret itself (rather than
@@ -307,8 +309,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   Connection's own stored key and re-mints at once, so the narrower token
   replaces the live one; a subset the installation cannot cover fails the edit
   rather than parking the Connection at its next renewal. Nothing else moves,
-  and because the token is read gateway-side the change needs no pod roll. A
-  GitHub App sign-in narrows its user token alike ([connections](connections.md)).
+  and because the token is read gateway-side the change needs no pod roll.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per

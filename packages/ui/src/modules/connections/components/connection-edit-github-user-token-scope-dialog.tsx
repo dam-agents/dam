@@ -56,6 +56,10 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   const chosen = installations.find((i) => i.targetId === targetId);
   const chosenMissing =
     probe.data !== undefined && targetId !== null && !chosen;
+  const unlistedRepoCount = chosen
+    ? [...repoIds].filter((id) => !chosen.repositories.some((r) => r.id === id))
+        .length
+    : 0;
 
   const chooseAccount = (value: string) => {
     const next = value === EVERY_ACCOUNT ? null : Number(value);
@@ -170,14 +174,32 @@ export function ConnectionEditGithubUserTokenScopeDialog({
                 {chosen.repositoriesUnavailable ? (
                   <Callout tone="muted" size="sm">
                     Couldn&rsquo;t list this account&rsquo;s repositories, so
-                    saving narrows to the account and permissions only.
+                    they can&rsquo;t be changed here
+                    {unlistedRepoCount > 0
+                      ? ` — saving keeps the ${unlistedRepoCount} this connection already uses.`
+                      : " — saving narrows to the account and permissions only."}
                   </Callout>
                 ) : (
-                  <RepositorySection
-                    installation={chosen}
-                    selected={repoIds}
-                    onToggle={toggleRepo}
-                  />
+                  <>
+                    <RepositorySection
+                      installation={chosen}
+                      selected={repoIds}
+                      onToggle={toggleRepo}
+                    />
+                    {unlistedRepoCount > 0 && (
+                      <Callout tone="muted" size="sm">
+                        {unlistedRepoCount} selected{" "}
+                        {unlistedRepoCount === 1
+                          ? "repository is"
+                          : "repositories are"}{" "}
+                        not in the list above
+                        {chosen.repositoriesTruncated
+                          ? " (it shows only the first pages of a large account)"
+                          : ""}
+                        . They stay selected when you save.
+                      </Callout>
+                    )}
+                  </>
                 )}
                 <PermissionSection
                   installation={chosen}
