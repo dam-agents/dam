@@ -517,67 +517,72 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
-        <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+        <div
+          style={{ width: leftW }}
+          className="flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
-          <ArrowLeft size={14} />
-        </Button>
-        <div className="flex items-center gap-3 min-w-0">
-          {avatarsEnabled && agentView ? (
-            <AgentAvatar
-              name={agentView.name}
-              size={40}
-              sleeping={isAsleep(agentDisplay?.state)}
-              stopped={agentView.stopRequested}
-            />
-          ) : (
-            <span
-              aria-hidden
-              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-            />
-          )}
-          <h1 className="text-sm font-bold text-foreground truncate">
-            {selectedAgentName}
-          </h1>
-          {agentView && <VmRuntimeBadge agent={agentView} />}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={surfaceCopy.actionsAria}
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                {surfaceCopy.configure}
-              </DropdownMenuItem>
-              {canShareKnowledge && (
-                <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
-                  Share knowledge base
+          <Button
+            variant="ghost"
+            size="inline"
+            aria-label="Back"
+            onClick={handleBack}
+            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          >
+            <ArrowLeft size={14} />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            {avatarsEnabled && agentView ? (
+              <AgentAvatar
+                name={agentView.name}
+                size={40}
+                sleeping={isAsleep(agentDisplay?.state)}
+                stopped={agentView.stopRequested}
+              />
+            ) : (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1 className="text-sm font-bold text-foreground truncate">
+              {selectedAgentName}
+            </h1>
+            {agentView && <VmRuntimeBadge agent={agentView} />}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={surfaceCopy.actionsAria}
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                  {surfaceCopy.configure}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={handleRestartSandbox}>
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={handleDeleteSandbox}
-              >
-                {surfaceCopy.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {canShareKnowledge && (
+                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
+                    Share knowledge base
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={handleRestartSandbox}>
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={handleDeleteSandbox}
+                >
+                  {surfaceCopy.delete}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 px-6">
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
