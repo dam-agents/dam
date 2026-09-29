@@ -61,3 +61,17 @@ export function useRunningDelegations(
     retry: false,
   });
 }
+
+export function useDelegationTranscript(
+  driverAgentId: string,
+  id: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    ...trpc.invocations.transcript.queryOptions(
+      enabled ? { driverAgentId, id } : skipToken,
+    ),
+    staleTime: Infinity,
+    retry: false,
+  });
+}

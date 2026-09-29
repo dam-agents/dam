@@ -8,6 +8,8 @@ import { DisclosureChevron } from "@/components/ui/disclosure";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
+import { useStore } from "../../../store.js";
 import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
@@ -93,18 +95,7 @@ export function DelegationCard({
               <ToolContentBlock text={JSON.stringify(node.result, null, 2)} />
             </Field>
           )}
-          <div>
-            <Tooltip
-              content="Opens with the child view (coming next)"
-              side="top"
-            >
-              <span className="inline-flex">
-                <Button variant="outline" size="xs" disabled>
-                  <Chat size={14} /> Open conversation
-                </Button>
-              </span>
-            </Tooltip>
-          </div>
+          <OpenConversation node={node} driverAgentId={driverAgentId} />
           {node.children.map((child) => (
             <DelegationCard
               key={child.id}
@@ -115,6 +106,47 @@ export function DelegationCard({
             />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function OpenConversation({
+  node,
+  driverAgentId,
+}: {
+  node: DelegationNode;
+  driverAgentId: string;
+}) {
+  const setOpenDelegation = useStore((s) => s.setOpenDelegation);
+  const confirmDiscard = useDockDraftGuard();
+  const blocked =
+    node.status === "running"
+      ? "The conversation opens once the agent reports"
+      : node.transcriptAvailable
+        ? null
+        : "Conversation was not captured";
+  const button = (
+    <Button
+      variant="outline"
+      size="xs"
+      disabled={blocked !== null}
+      onClick={async () => {
+        if (!(await confirmDiscard())) return;
+        setOpenDelegation({ driverAgentId, id: node.id });
+      }}
+    >
+      <Chat size={14} /> Open conversation
+    </Button>
+  );
+  return (
+    <div>
+      {blocked ? (
+        <Tooltip content={blocked} side="top">
+          <span className="inline-flex">{button}</span>
+        </Tooltip>
+      ) : (
+        button
       )}
     </div>
   );

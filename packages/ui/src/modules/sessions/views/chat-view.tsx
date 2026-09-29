@@ -93,6 +93,7 @@ import {
   DelegationOwnersProvider,
   useDelegationOwners,
 } from "../../invocations/components/delegation-owners.js";
+import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -194,6 +195,11 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const openDelegation = useStore((s) =>
+    s.openDelegation?.driverAgentId === s.selectedAgent
+      ? s.openDelegation
+      : null,
+  );
   const openArtifact = useOpenArtifact();
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
@@ -888,7 +894,10 @@ export function ChatView() {
         </div>
 
         {}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
+        {(openDelegation ||
+          openFilePath ||
+          openArtifactId ||
+          dockedExperiment) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -919,7 +928,13 @@ export function ChatView() {
                 "md:border-l md:border-border",
               )}
             >
-              {openFilePath ? (
+              {openDelegation ? (
+                <DockedDelegationPanel
+                  key={openDelegation.id}
+                  driverAgentId={openDelegation.driverAgentId}
+                  id={openDelegation.id}
+                />
+              ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel

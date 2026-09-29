@@ -262,7 +262,7 @@ the environment, and what a reader that understands both shapes costs.
 | 07 | ✅ Session frames out of the pod | Runtime `sessions.history` procedure; api-server pod client | — |
 | 10 | ✅ A grace before reaping a reported target | One reap path; a few seconds between report and delete so the last telemetry batch lands; sweep backstop | 02 |
 | 08 | ✅ Capture the child conversation at teardown | Capture inside the reap path, store on the root driver's volume, flag on the record, docs | 07, 10 |
-| 09 | Read-only child view | `invocations.transcript`; docked panel rendering stored frames | 01, 06, 08 |
+| 09 | ✅ Read-only child view (live state deferred) | `invocations.transcript`; docked panel rendering stored frames | 01, 06, 08 |
 
 ```mermaid
 graph LR

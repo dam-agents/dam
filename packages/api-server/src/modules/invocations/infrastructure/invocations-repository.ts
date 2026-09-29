@@ -1,5 +1,6 @@
 import {
   and,
+  desc,
   eq,
   inArray,
   isNotNull,
@@ -268,9 +269,9 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .select()
         .from(invocationsTable)
         .where(eq(invocationsTable.rootDriverId, rootDriverId))
-        .orderBy(invocationsTable.createdAt)
+        .orderBy(desc(invocationsTable.createdAt))
         .limit(limit);
-      return rows.map(toRow);
+      return rows.reverse().map(toRow);
     },
 
     async listByExperiment(driverAgentId, experimentId, limit) {

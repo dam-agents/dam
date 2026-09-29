@@ -20,6 +20,7 @@ type Props = BaseProps & MessageTime;
 interface BaseProps {
   message: Message;
   avatarAgentName?: string;
+  userLabel?: string;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -83,6 +84,7 @@ function LoadOlderMarker({
 export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgentName,
+  userLabel = "You",
   isLast,
   timeLabel,
   timeTitle,
@@ -134,7 +136,7 @@ export const ChatMessage = memo(function ChatMessage({
           <LazyRobotHead name={avatarAgentName} size={20} />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
-          {isAssistant ? (avatarAgentName ?? "Agent") : "You"}
+          {isAssistant ? (avatarAgentName ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>

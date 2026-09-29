@@ -1418,6 +1418,7 @@ export async function bootstrap() {
     isTermsAccepted,
     e2e: e2eService,
     artifacts,
+    delegationFrames,
     liveEvents: liveEventsModule.liveEvents,
     k8sClient,
     agentsRepo,

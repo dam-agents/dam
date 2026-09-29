@@ -65,16 +65,19 @@ Follow the README `## Design` section.
 
 ## Acceptance criteria
 
-- [ ] Clicking a finished child opens the panel with its conversation, ending with the
-      `report_result` call, and a read-only marker.
+- [x] Clicking a finished child opens the panel with its conversation, its
+      `report_result` call and closing message, and a read-only marker.
 - [ ] Clicking a running child opens the panel live: its messages stream in and the working
       dots show while it thinks; the panel never sends a prompt to the child.
-- [ ] The panel is resizable and closable like the file and artifact panels, and closing it
+      **Deferred to a follow-up.** A passive attach still engages the session it loads,
+      which routes the child's permission requests to that channel; a view that never
+      engages needs a runtime change. The control is disabled while a child works.
+- [x] The panel is resizable and closable like the file and artifact panels, and closing it
       returns to the driver's chat unchanged.
-- [ ] A child without a stored conversation shows the disabled control with the tooltip.
-- [ ] A user whose key is not bound to the driver gets `FORBIDDEN` from
+- [x] A child without a stored conversation shows the disabled control with the tooltip.
+- [x] A user whose key is not bound to the driver gets `FORBIDDEN` from
       `invocations.transcript`.
-- [ ] `mise run check` and `mise run test` pass.
+- [x] `mise run check` and `mise run test` pass.
 
 ## Smoke test
 

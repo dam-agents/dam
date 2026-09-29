@@ -22,6 +22,7 @@ import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import type { DelegationFramesPort } from "../../modules/invocations/index.js";
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import type { ExperimentPinPort } from "../../modules/experiments/index.js";
 import type {
@@ -101,6 +102,7 @@ export interface ApiServerDeps {
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
+  delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
 
   k8sClient: K8sClient;

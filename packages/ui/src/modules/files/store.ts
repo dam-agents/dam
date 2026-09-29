@@ -66,7 +66,11 @@ export const createFilesSlice: StateCreator<
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
       ...(path !== null
-        ? { openArtifactId: null, openArtifactDirty: false }
+        ? {
+            openArtifactId: null,
+            openArtifactDirty: false,
+            openDelegation: null,
+          }
         : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),

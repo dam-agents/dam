@@ -75,6 +75,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     terms,
     e2e,
     artifacts,
+    delegationFrames,
     k8sClient,
     agentsRepo,
     templatesRepo,
@@ -174,6 +175,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const invocationsQuery = composeInvocationsQueryForOwner({
       db,
       owner: user.sub,
+      frames: delegationFrames,
     });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,

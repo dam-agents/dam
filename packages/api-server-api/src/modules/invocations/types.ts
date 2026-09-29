@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
   invocationsTreeInputSchema,
   invocationViewSchema,
@@ -16,6 +17,14 @@ export type SpawnInvocationResponse = z.infer<
 export type InvocationView = z.infer<typeof invocationViewSchema>;
 export type InvocationStatus = InvocationView["status"];
 export type InvocationsTreeInput = z.infer<typeof invocationsTreeInputSchema>;
+export type InvocationTranscriptInput = z.infer<
+  typeof invocationTranscriptInputSchema
+>;
+
+export interface InvocationTranscript {
+  frames: string[];
+  truncated: boolean;
+}
 export type InvocationsRunningInput = z.infer<
   typeof invocationsRunningInputSchema
 >;
@@ -48,4 +57,5 @@ export interface InvocationsQueryService {
   listTargets(): Promise<InvocationTarget[]>;
   tree(input: InvocationsTreeInput): Promise<{ nodes: DelegationNode[] }>;
   running(input: InvocationsRunningInput): Promise<{ nodes: DelegationNode[] }>;
+  transcript(input: InvocationTranscriptInput): Promise<InvocationTranscript>;
 }
