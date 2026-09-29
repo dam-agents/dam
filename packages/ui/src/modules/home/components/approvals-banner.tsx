@@ -4,14 +4,14 @@ import { useStore } from "../../../store.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 
 export function ApprovalsBanner() {
-  const setActivityOpen = useStore((s) => s.setActivityOpen);
+  const setActivityView = useStore((s) => s.setActivityView);
   const count = useWaitingApprovals().length;
   if (count === 0) return null;
 
   return (
     <button
       type="button"
-      onClick={() => setActivityOpen(true)}
+      onClick={() => setActivityView("feed")}
       data-testid="approvals-banner"
       className="mb-6 flex w-full items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
     >

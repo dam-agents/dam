@@ -68,6 +68,7 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       .catch(() => {});
     await page.goto("/");
     await page.getByTestId("open-activity").click();
+    await page.getByTestId("needs-you-summary").click({ timeout: 30_000 });
     const card = page
       .getByTestId("feed-approval-card")
       .filter({ hasText: `GET ${host}/get` });
