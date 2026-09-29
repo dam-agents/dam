@@ -262,6 +262,16 @@ virtualization:
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
+    # Evicting a runner pod reboots every machine of its owner, and a node
+    # drain evicts every runner on the node at once. So while an owner has a
+    # machine that should run, the controller gives its runner a
+    # PodDisruptionBudget allowing no eviction, and a drain waits. Once the
+    # runner's node has been unschedulable for `drainGrace`, the controller
+    # removes that budget and the drain proceeds: drains are delayed, never
+    # blocked for good. The budget comes back once the runner is on a
+    # schedulable node again, and goes when no machine of the owner runs.
+    disruption:
+      drainGrace: 15m
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one) or `docker save`
     # archives, named after the image reference and mounted read-only into
@@ -642,6 +652,41 @@ seaweedfs:
     limits:
       cpu: 500m
       memory: 1Gi
+
+# -- Prometheus Operator integration for the vm backend. Off by default; needs
+# the monitoring.coreos.com CRDs (kube-prometheus-stack or the operator alone).
+# It renders a PrometheusRule of VM runner alerts. Those on runner restarts,
+# OOM kills, readiness and a nearly full runner claim read kube-state-metrics
+# and the kubelet's volume stats, which such a stack already scrapes. Those on
+# machines, rolls, resizes and drains read the platform's own metrics, which
+# exist only with `clickstack.enabled`: the collector then re-exposes the
+# platform's metrics (the controller's and every runner's, never an agent's)
+# on a Prometheus port, and a ServiceMonitor scrapes that one port. Runners
+# are not scraped directly: their scrape port admits the collector alone, and
+# a runner's pod labels name its owner. See docs/architecture/observability.md.
+monitoring:
+  enabled: false
+  # Added to the ServiceMonitor and PrometheusRule, for a Prometheus that
+  # selects them by label (kube-prometheus-stack: `release: <its release>`).
+  labels: {}
+  serviceMonitor:
+    interval: 30s
+    # Namespaces whose mesh identities may reach the collector's Prometheus
+    # port. Empty admits any source to that port alone, which a Prometheus
+    # outside the mesh needs; the port serves identity-free platform metrics.
+    scrapeFromNamespaces: []
+  alerts:
+    # A runner whose pod is not ready serves none of its owner's machines.
+    runnerUnreadyFor: 10m
+    # Used share of a runner claim. The claim holds every machine disk of the
+    # owner and grows only up to `virtualization.runner.storage`.
+    claimFullRatio: 0.85
+    # An owner with fewer machines up than its agents want, for this long.
+    machinesShortFor: 15m
+    # How long a changed runner pod may wait for its turn in the roll.
+    rollWaitSeconds: 7200
+    # How long a node may defer or refuse a runner pod's memory resize.
+    resizePendingFor: 30m
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
 # chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.

@@ -224,6 +224,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
 	}
+	if cfg.VM.Runner.Disruption.DrainGrace < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runner.disruption.drainGrace is %s, it must not be negative", cfg.VM.Runner.Disruption.DrainGrace.AsDuration())
+	}
 	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
 		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
 	}

@@ -28,6 +28,7 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -52,6 +53,10 @@ type AgentReconciler struct {
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
+	machineSeen     sync.Map
+	rollWaiting     sync.Map
+	disruptionSeen  sync.Map
+	runnerHealth    atomic.Pointer[telemetry.RunnerHealth]
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
@@ -496,6 +501,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 		return err
 	}
 	r.vmRunning.Delete(name)
+	r.machineSeen.Delete(name)
 	r.notReadyPolls.Delete(name)
 
 	r.clearDeniedWake(name)

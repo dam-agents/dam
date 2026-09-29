@@ -112,6 +112,12 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "update", "delete"]
+  # Each runner with machines to run gets a PodDisruptionBudget, so a node
+  # drain waits for the drain grace instead of rebooting the owner's machines
+  # at once; the controller removes it when the grace has passed.
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "create", "update", "delete"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -223,7 +229,9 @@ subjects:
 # Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under
 # otherwise namespace-scoped RBAC. Read-only, and only to check that some node
 # advertises the device resources a VM runner asks for; without it the
-# controller logs that it cannot tell, rather than refusing the install.
+# controller logs that it cannot tell, rather than refusing the install. And
+# to read whether a runner's node is unschedulable, which starts the drain
+# grace of that runner's disruption budget.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -234,7 +242,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["list"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

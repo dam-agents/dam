@@ -148,7 +148,7 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3}, d)
+	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3, running: 2}, d)
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
 	require.NoError(t, err)

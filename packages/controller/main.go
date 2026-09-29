@@ -146,6 +146,14 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
 		agentReconciler.CheckVMInstall(ctx)
 		go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
+		if err := telemetry.ObserveRunnerHealth(agentReconciler.RunnerHealth); err != nil {
+			slog.Warn("vm runner health gauges unavailable", "error", err)
+		}
+		go every(ctx, reconciler.RunnerHealthInterval, func() {
+			hctx, finish := telemetry.StartPass(ctx, "vm runner health")
+			agentReconciler.ReconcileRunnerHealth(hctx)
+			finish(nil)
+		})
 	}
 	go idleChecker.RunLoop(ctx)
 

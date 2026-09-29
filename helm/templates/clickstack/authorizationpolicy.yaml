@@ -24,4 +24,20 @@ spec:
             namespaces:
               - {{ .Release.Namespace | quote }}
               - {{ .Values.agentNamespace | quote }}
+    {{- if .Values.monitoring.enabled }}
+    # The Prometheus port serves identity-free platform metrics and nothing
+    # else. A Prometheus outside the mesh has no identity to name, so without
+    # scrapeFromNamespaces any source reaches this one port.
+    - to:
+        - operation:
+            ports: ["9464"]
+      {{- with .Values.monitoring.serviceMonitor.scrapeFromNamespaces }}
+      from:
+        - source:
+            namespaces:
+              {{- range . }}
+              - {{ . | quote }}
+              {{- end }}
+      {{- end }}
+    {{- end }}
 {{- end }}

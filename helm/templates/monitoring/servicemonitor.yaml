@@ -1,0 +1,32 @@
+{{- if and .Values.monitoring.enabled .Values.clickstack.enabled }}
+{{- /*
+Prometheus scrapes the platform's metrics from the collector, which already
+pulls every VM runner and receives the controller's export. Runners are not
+scraped directly: their scrape port admits the collector alone, and a runner's
+pod labels name its owner. honorLabels keeps job and instance as the collector
+exposes them, so a runner's series stay apart from its neighbours'.
+See docs/architecture/observability.md.
+*/ -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "platform.clickstack.collector.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: clickstack-collector
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace | quote }}]
+  endpoints:
+    - port: prom-metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      honorLabels: true
+{{- end }}

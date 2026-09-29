@@ -102,6 +102,12 @@ type VMRunnerSpec struct {
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
+	Disruption           VMRunnerDisruption            `json:"disruption,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner with running machines holds a drain of its node off. Zero means the controller's default.
+type VMRunnerDisruption struct {
+	DrainGrace Duration `json:"drainGrace,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {

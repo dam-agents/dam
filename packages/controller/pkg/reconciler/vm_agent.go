@@ -42,8 +42,16 @@ const (
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container.
+// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container. Whether the machine should run and whether its guest answered are kept for the runner health gauges, which read them rather than asking every runner again.
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
+	st, reached, err := r.ensureVMMachine(ctx, agent, ownerRef, gatewayIP, running, publish)
+	if owner := agent.Labels[envoyOwnerLabel]; owner != "" {
+		r.machineSeen.Store(agent.Name, machineSeen{owner: owner, desired: running, up: running && reached && err == nil && st.Ready})
+	}
+	return st, reached, err
+}
+
+func (r *AgentReconciler) ensureVMMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {

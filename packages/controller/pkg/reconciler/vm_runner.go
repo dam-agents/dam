@@ -133,6 +133,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerDeployment(ctx, owner, refs, true); err != nil {
 		return nil, false, err
 	}
+	r.guardRunnerDisruption(ctx, owner, demand.running > 0, refs)
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
 		return nil, false, err
@@ -756,6 +757,7 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 		func() error {
 			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)
 		},
+		func() error { return r.client.PolicyV1().PodDisruptionBudgets(ns).Delete(ctx, name, opts) },
 		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
 	} {
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
@@ -766,6 +768,8 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 	delete(r.runners, owner)
 	r.runnerMu.Unlock()
 	r.ownerless.Delete(owner)
+	r.rollWaiting.Delete(name)
+	r.disruptionSeen.Delete(owner)
 	slog.Info("removed the VM runner of an owner with no vm agents left", "owner", owner)
 	return true
 }

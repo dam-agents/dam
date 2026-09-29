@@ -30,6 +30,7 @@ type runnerDemand struct {
 	memoryMiB int
 	diskGiB   int
 	machines  int
+	running   int
 	seedBytes int64
 }
 
@@ -69,6 +70,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 			return runnerDemand{}, err
 		}
 		if running {
+			d.running++
 			d.memoryMiB += r.machineMemoryMiB(&a.Spec)
 		}
 	}

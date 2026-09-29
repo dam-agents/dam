@@ -93,7 +93,22 @@ data:
             from_context: "metadata.x-platform-invocation-id"
             action: upsert
       batch: {}
+      {{- if .Values.monitoring.enabled }}
+      # The Prometheus port below serves platform metrics only. An agent's
+      # own export carries the gateway-stamped platform.agent.id, and a series
+      # tied to an agent is a person in disguise, so it is dropped here.
+      filter/platform-only:
+        error_mode: ignore
+        metrics:
+          metric:
+            - 'resource.attributes["platform.agent.id"] != nil'
+      {{- end }}
     exporters:
+      {{- if .Values.monitoring.enabled }}
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        metric_expiration: 5m
+      {{- end }}
       clickhouse:
         endpoint: ${env:CLICKHOUSE_ENDPOINT}
         username: ${env:CLICKHOUSE_USER}
@@ -120,6 +135,12 @@ data:
           receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
+        {{- if .Values.monitoring.enabled }}
+        metrics/prometheus:
+          receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
+          processors: [memory_limiter, resource/agent-identity, filter/platform-only, batch]
+          exporters: [prometheus]
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -141,6 +162,12 @@ spec:
       targetPort: otlp-http
       protocol: TCP
       name: otlp-http
+    {{- if .Values.monitoring.enabled }}
+    - port: 9464
+      targetPort: prom-metrics
+      protocol: TCP
+      name: prom-metrics
+    {{- end }}
   selector:
     app.kubernetes.io/component: clickstack-collector
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -208,6 +235,10 @@ spec:
               name: otlp-http
             - containerPort: 13133
               name: health
+            {{- if .Values.monitoring.enabled }}
+            - containerPort: 9464
+              name: prom-metrics
+            {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:

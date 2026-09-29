@@ -80,6 +80,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 		return errRunnerTerminating
 	}
 	if existing.Annotations[annRunnerTemplate] == hash {
+		r.rollWaiting.Delete(dep.Name)
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
 	}
 
@@ -92,6 +93,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	}
 	others := slices.DeleteFunc(slices.Clone(rolling), func(name string) bool { return name == dep.Name })
 	if len(others) >= limit {
+		r.rollWaiting.LoadOrStore(dep.Name, time.Now())
 		slog.Info("vm runner: the pod changed, waiting for other runners to finish rolling", "owner", owner, "rolling", others)
 		return nil
 	}
@@ -110,6 +112,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	if _, err := cli.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
+	r.rollWaiting.Delete(dep.Name)
 	if !slices.Contains(rolling, dep.Name) {
 		r.runnerRoll.rolling = append(rolling, dep.Name)
 		sort.Strings(r.runnerRoll.rolling)

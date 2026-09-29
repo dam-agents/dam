@@ -1,0 +1,107 @@
+{{- if and .Values.monitoring.enabled .Values.virtualization.enabled }}
+{{- /*
+Alerts on the VM runners. The first group reads kube-state-metrics and the
+kubelet's volume stats, which any Prometheus Operator stack scrapes already;
+the second reads the platform's own metrics, which exist only with the
+telemetry backend (see servicemonitor.yaml). No expression groups by owner:
+the platform's series name none, and the kube-state-metrics ones name a
+runner only by its hashed name. See docs/architecture/observability.md.
+*/ -}}
+{{- $ns := .Values.agentNamespace | quote }}
+{{- $runner := printf "%s-vm-runner-[0-9a-f]{16}" (include "platform.fullname" .) }}
+{{- $a := .Values.monitoring.alerts }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "platform.fullname" . }}-vm-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: vm-runner.pods
+      rules:
+        - alert: VMRunnerContainerRestarted
+          expr: increase(kube_pod_container_status_restarts_total{namespace={{ $ns }}, container="vm-runner", pod=~"{{ $runner }}-.+"}[15m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner container restarted
+            description: Runner pod {{ "{{ $labels.pod }}" }} restarted its container. Every machine of that owner was rebooted with it.
+        - alert: VMRunnerOOMKilled
+          expr: |
+            (kube_pod_container_status_last_terminated_reason{namespace={{ $ns }}, container="vm-runner", pod=~"{{ $runner }}-.+", reason="OOMKilled"} == 1)
+              and on (namespace, pod, container)
+            (increase(kube_pod_container_status_restarts_total{namespace={{ $ns }}, container="vm-runner"}[15m]) > 0)
+          labels:
+            severity: critical
+          annotations:
+            summary: A VM runner was OOM-killed
+            description: Runner pod {{ "{{ $labels.pod }}" }} was killed for memory, rebooting every machine of its owner. The runner admits machines against its memory limit less `reserveMiB`, so a kill means that reserve is too small for the runner itself.
+        - alert: VMRunnerNotReady
+          expr: kube_deployment_status_replicas_available{namespace={{ $ns }}, deployment=~"{{ $runner }}"} < 1
+          for: {{ $a.runnerUnreadyFor }}
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner has not been ready for {{ $a.runnerUnreadyFor }}
+            description: Runner {{ "{{ $labels.deployment }}" }} has no ready pod, so none of its owner's machines can be reached. Its vm Agents' status says why.
+        - alert: VMRunnerClaimNearlyFull
+          expr: |
+            kubelet_volume_stats_used_bytes{namespace={{ $ns }}, persistentvolumeclaim=~"{{ $runner }}"}
+              / kubelet_volume_stats_capacity_bytes{namespace={{ $ns }}, persistentvolumeclaim=~"{{ $runner }}"}
+              > {{ $a.claimFullRatio }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner's claim is nearly full
+            description: Claim {{ "{{ $labels.persistentvolumeclaim }}" }} is {{ "{{ $value | humanizePercentage }}" }} used. It holds every machine disk of its owner and grows only up to `virtualization.runner.storage`.
+    {{- if .Values.clickstack.enabled }}
+    - name: vm-runner.platform
+      rules:
+        - alert: VMRunnerMachinesDown
+          expr: max(platform_vm_runner_short) > 0
+          for: {{ $a.machinesShortFor }}
+          labels:
+            severity: warning
+          annotations:
+            summary: VM runners have fewer machines up than their agents want
+            description: '{{ "{{ $value }}" }} runners have had a machine that should run and does not answer for {{ $a.machinesShortFor }}. The not-ready vm Agents say why.'
+        - alert: VMRunnerRollStalled
+          expr: max(platform_vm_runner_rolls_stalled) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner roll is stalled
+            description: A rolled runner pod was not ready by the settle timeout, so the roll holds and no other runner rolls. The controller log names the runner.
+        - alert: VMRunnerRollBacklog
+          expr: max(platform_vm_runner_roll_wait_oldest_seconds) > {{ $a.rollWaitSeconds }}
+          labels:
+            severity: warning
+          annotations:
+            summary: A changed VM runner pod has waited long for its roll
+            description: 'A runner whose pod changed has waited {{ "{{ $value | humanizeDuration }}" }} for a place in the roll, which admits `virtualization.runner.rollout.maxConcurrent` runners at a time. `platform_vm_runner_rolls_waiting` counts how many wait.'
+        - alert: VMRunnerResizeDeferred
+          expr: sum(platform_vm_runner_resize_pending) > 0
+          for: {{ $a.resizePendingFor }}
+          labels:
+            severity: warning
+          annotations:
+            summary: A node has not applied a VM runner's memory resize
+            description: '{{ "{{ $value }}" }} runner pods have a memory request the node deferred or refused, so the scheduler does not see memory their machines hold.'
+        - alert: VMRunnerHoldingDrain
+          expr: max(platform_vm_runner_drains_held) > 0
+          for: 5m
+          labels:
+            severity: info
+          annotations:
+            summary: A VM runner is holding a node drain off
+            description: '{{ "{{ $value }}" }} runners with running machines are on an unschedulable node. Their disruption budget lifts after `virtualization.runner.disruption.drainGrace`, and the drain then reboots their machines.'
+    {{- end }}
+{{- end }}

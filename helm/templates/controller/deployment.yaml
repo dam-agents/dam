@@ -89,7 +89,8 @@ spec:
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources
-                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
+                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m"))
+                  "disruption" (dict "drainGrace" (($r.disruption | default dict).drainGrace | default "15m" | toString)) }}
             - name: AGENT_VM
               value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int)) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}

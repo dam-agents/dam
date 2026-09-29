@@ -405,6 +405,25 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
 }
 
+// TEST_SCENARIO: the drain grace is how long a runner holds a node's drain off, so a negative one is a values typo and is refused at start rather than read as no protection; a set one is read as given.
+func TestLoadFromEnv_ReadsTheRunnerDrainGrace(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"disruption":{"drainGrace":"-1m"}}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	assert.Error(t, err)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"disruption":{"drainGrace":"20m"}}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 20*time.Minute, cfg.VM.Runner.Disruption.DrainGrace.AsDuration())
+}
+
 // TEST_SCENARIO: the runtime migration's retention window comes from the chart as a duration. A negative one is a values typo, refused at start rather than read as "delete at once"; a set one is read as given.
 func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
 	base := map[string]string{
