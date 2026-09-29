@@ -49,14 +49,6 @@ export function SandboxSetupSection({ f }: Props) {
         </FormField>
       </section>
 
-      <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-      />
-
       <section className="mb-8">
         <FormField
           label="Image"
@@ -93,6 +85,14 @@ export function SandboxSetupSection({ f }: Props) {
       </section>
 
       <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+
+      <SandboxSizeSection
+        sizeCpuMilli={f.sizeCpuMilli}
+        sizeMemoryMi={f.sizeMemoryMi}
+        onChange={f.setSize}
+        disabled={f.saving}
+        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+      />
 
       <KnowledgeSection agent={agent} />
 
