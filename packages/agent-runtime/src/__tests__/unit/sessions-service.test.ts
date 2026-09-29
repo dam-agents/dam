@@ -63,6 +63,7 @@ describe("createSessionsService", () => {
       sessionMetadata: fakeStore(),
       isRunning: () => false,
       changes,
+      log: () => {},
     });
 
     const first = await service.list();

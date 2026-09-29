@@ -24,6 +24,7 @@ interface HarnessListPage {
 
 async function readHarnessListing(
   caller: InProcessCaller,
+  log: (msg: string) => void,
 ): Promise<ListedHarnessSession[]> {
   await caller.request("initialize", {
     protocolVersion: 1,
@@ -32,13 +33,24 @@ async function readHarnessListing(
   });
   const byId = new Map<string, ListedHarnessSession>();
   let cursor: string | undefined;
-  for (let page = 0; page < MAX_HARNESS_PAGES; page++) {
+  for (let page = 0; ; page++) {
+    if (page === MAX_HARNESS_PAGES) {
+      log(
+        `session list: stopped after ${MAX_HARNESS_PAGES} harness pages with ${byId.size} sessions; older ones are not listed`,
+      );
+      break;
+    }
     const result = await caller.request<HarnessListPage>("session/list", {
       cwd: ".",
       ...(cursor !== undefined && { cursor }),
     });
-    for (const session of result.sessions ?? []) {
-      if (!byId.has(session.sessionId)) byId.set(session.sessionId, session);
+    for (const { sessionId, title, updatedAt } of result.sessions ?? []) {
+      if (!byId.has(sessionId))
+        byId.set(sessionId, {
+          sessionId,
+          title: title ?? null,
+          updatedAt: updatedAt ?? null,
+        });
     }
     cursor = result.nextCursor ?? undefined;
     if (cursor === undefined) break;
@@ -51,6 +63,7 @@ export function createSessionsService(deps: {
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
+  log: (msg: string) => void;
   now?: () => number;
 }): SessionsService {
   const now = deps.now ?? Date.now;
@@ -66,7 +79,9 @@ export function createSessionsService(deps: {
     const caller = deps.openCaller();
     const entry = {
       readAt: now(),
-      sessions: readHarnessListing(caller).finally(() => caller.close()),
+      sessions: readHarnessListing(caller, deps.log).finally(() =>
+        caller.close(),
+      ),
     };
     entry.sessions.catch(() => {
       if (listing === entry) listing = undefined;

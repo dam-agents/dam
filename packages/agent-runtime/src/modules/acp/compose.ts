@@ -137,6 +137,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
+    log: opts.log,
   });
 
   return {
