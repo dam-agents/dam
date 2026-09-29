@@ -132,7 +132,6 @@ function makeSecretStoreFake(initial: Record<string, string>) {
     put: async (ref, fields) => {
       stored.set(ref.path, { ...fields });
     },
-    putField: async () => {},
     putFields: async (ref, fields) => {
       stored.set(ref.path, { ...(stored.get(ref.path) ?? {}), ...fields });
     },
@@ -141,7 +140,6 @@ function makeSecretStoreFake(initial: Record<string, string>) {
     delete: async (ref) => {
       stored.delete(ref.path);
     },
-    list: async () => [],
   };
   return { store, secret: () => stored.get(SECRET_PATH) ?? {} };
 }
