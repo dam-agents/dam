@@ -19,6 +19,14 @@ for attempt in 1 2 3; do
   rm -rf "${l:?}"/* "${l:?}"/.[!.]* 2>/dev/null || true
   sleep $((attempt * 5))
 done
+# --platform picks from a multi-arch index, but a single-arch image comes back
+# as whatever it was built for: the e2e mock is published for amd64 alone, and
+# an arm64 Mac imported and staged a tree none of its machines could exec. The
+# caller builds instead when this fails.
+manifest="$(jq -r '.manifests[0].digest' "$l/index.json")"
+config="$(jq -r '.config.digest' "$l/blobs/${manifest/://}")"
+arch="$(jq -r '.architecture' "$l/blobs/${config/://}")"
+[ "linux/$arch" = "$platform" ] || { echo "$usage_ref is built for linux/$arch, not this host's $platform" >&2; exit 1; }
 "$(dirname "$0")/name-layout" "$l" "$usage_name"
 mkdir -p "$(dirname "$usage_tar")"
 tar -C "$l" -cf "$usage_tar" $(ls -A "$l")
