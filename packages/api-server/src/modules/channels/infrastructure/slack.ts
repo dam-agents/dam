@@ -40,6 +40,7 @@ import {
 } from "../attachment-budget.js";
 import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
+  ChannelAttachment,
   ChannelReaction,
   ChannelReply,
   ChannelUser,
@@ -1525,27 +1526,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
   }
 
-  async function linkAttachmentsToPost(
+  async function postWithAttachment(
     gw: SlackGateway,
     target: { id: string; teamId: SlackWorkspace },
-    ts: string,
-    text: string,
-    update: { blocks: SlackBlock[] },
-  ): Promise<void> {
-    try {
-      await gw.updateMessage({
-        channel: target.id,
-        teamId: target.teamId,
-        ts,
-        text,
-        blocks: update.blocks,
-      });
-    } catch (err) {
-      getLogger().warn(
-        { channel: target.id, ts, err: formatError(err) },
-        "slack.post_delete.attachments_unlinked",
-      );
+    attachment: ChannelAttachment | undefined,
+    threadTs: string | undefined,
+    post: (fileIds: string[]) => Promise<unknown>,
+  ): Promise<string | null> {
+    let fileId: string | null = null;
+    let uploadError: string | null = null;
+    if (attachment) {
+      try {
+        fileId = await gw.stageFile({
+          file: attachment.data,
+          filename: attachment.filename,
+          teamId: target.teamId,
+        });
+      } catch (err) {
+        uploadError = formatError(err);
+      }
     }
+    await post(fileId ? [fileId] : []);
+    if (fileId) {
+      try {
+        await gw.shareFile({
+          fileId,
+          ...(attachment?.title !== undefined
+            ? { title: attachment.title }
+            : {}),
+          channelId: target.id,
+          ...(threadTs ? { threadTs } : {}),
+          teamId: target.teamId,
+        });
+      } catch (err) {
+        uploadError = formatError(err);
+      }
+    }
+    return uploadError;
   }
 
   type PendingPostDelete = {
@@ -4036,42 +4053,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const contextBlock = agentContextBlock(footer);
 
       try {
-        const postBlocks = (fileIds: string[]): SlackBlock[] => [
-          { type: "markdown", text },
-          contextBlock,
-          deletePostActions(fileIds),
-        ];
-        const posted = text
-          ? await gw.postMessage({
-              channel: target.id,
-              teamId: target.teamId,
-              text,
-              ...persona,
-              blocks: postBlocks([]),
-              ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
-              ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-            })
-          : null;
-        if (attachment) {
+        if (text) {
+          const uploadError = await postWithAttachment(
+            gw,
+            target,
+            attachment,
+            undefined,
+            (fileIds) =>
+              gw.postMessage({
+                channel: target.id,
+                teamId: target.teamId,
+                text,
+                ...persona,
+                blocks: [
+                  { type: "markdown", text },
+                  contextBlock,
+                  deletePostActions(fileIds),
+                ],
+                ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+                ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+              }),
+          );
+          if (uploadError)
+            return {
+              error: `message posted, but the attachment upload failed: ${uploadError}`,
+            };
+        } else if (attachment) {
           try {
-            const fileIds = await gw.uploadFile({
+            await gw.uploadFile({
               channelId: target.id,
               teamId: target.teamId,
               file: attachment.data,
               filename: attachment.filename,
               title: attachment.title,
-              initialComment: text ? undefined : agentFooterMrkdwn(footer),
+              initialComment: agentFooterMrkdwn(footer),
             });
-            if (posted && text)
-              await linkAttachmentsToPost(gw, target, posted.ts, text, {
-                blocks: postBlocks(fileIds),
-              });
           } catch (err) {
-            return {
-              error: text
-                ? `message posted, but the attachment upload failed: ${formatError(err)}`
-                : formatError(err),
-            };
+            return { error: formatError(err) };
           }
         }
         noteEngagedTurn(instanceName, (ref) => ref.channel === target.id, {
@@ -4289,46 +4307,36 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agentFooter(instanceName, turn?.sessionId),
         agentPersona(gw, instanceName, target.teamId),
       ]);
-      const replyBlocks = (fileIds: string[]): SlackBlock[] => [
-        ...renderAssistantBlocks(footer, args.text),
-        deletePostActions(fileIds),
-      ];
       try {
-        const posted = await gw.postMessage({
-          channel: target.id,
-          teamId: target.teamId,
+        const uploadError = await postWithAttachment(
+          gw,
+          target,
+          args.attachment,
           threadTs,
-          text: args.text,
-          ...persona,
-          blocks: replyBlocks([]),
-          ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
-          ...(args.unfurlLinks !== undefined
-            ? { unfurlLinks: args.unfurlLinks }
-            : {}),
-          ...(args.unfurlMedia !== undefined
-            ? { unfurlMedia: args.unfurlMedia }
-            : {}),
-        });
-        if (args.attachment) {
-          try {
-            const fileIds = await gw.uploadFile({
-              channelId: target.id,
+          (fileIds) =>
+            gw.postMessage({
+              channel: target.id,
               teamId: target.teamId,
               threadTs,
-              file: args.attachment.data,
-              filename: args.attachment.filename,
-              title: args.attachment.title,
-            });
-            if (posted)
-              await linkAttachmentsToPost(gw, target, posted.ts, args.text, {
-                blocks: replyBlocks(fileIds),
-              });
-          } catch (err) {
-            return {
-              error: `reply posted, but the attachment upload failed: ${formatError(err)}`,
-            };
-          }
-        }
+              text: args.text,
+              ...persona,
+              blocks: [
+                ...renderAssistantBlocks(footer, args.text),
+                deletePostActions(fileIds),
+              ],
+              ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
+              ...(args.unfurlLinks !== undefined
+                ? { unfurlLinks: args.unfurlLinks }
+                : {}),
+              ...(args.unfurlMedia !== undefined
+                ? { unfurlMedia: args.unfurlMedia }
+                : {}),
+            }),
+        );
+        if (uploadError)
+          return {
+            error: `reply posted, but the attachment upload failed: ${uploadError}`,
+          };
         noteEngagedTurn(
           instanceName,
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,

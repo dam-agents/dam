@@ -241,13 +241,6 @@ export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
-  updateMessage(args: {
-    channel: string;
-    ts: string;
-    text: string;
-    blocks: SlackBlock[];
-    teamId: SlackWorkspace;
-  }): Promise<void>;
   deleteMessage(
     channel: string,
     ts: string,
@@ -291,7 +284,19 @@ export interface SlackGateway {
     oldest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
-  uploadFile(args: SlackUpload): Promise<string[]>;
+  uploadFile(args: SlackUpload): Promise<void>;
+  stageFile(args: {
+    file: Buffer;
+    filename: string;
+    teamId: SlackWorkspace;
+  }): Promise<string>;
+  shareFile(args: {
+    fileId: string;
+    title?: string;
+    channelId: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,

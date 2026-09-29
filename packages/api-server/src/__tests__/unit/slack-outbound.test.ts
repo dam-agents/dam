@@ -273,7 +273,7 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("a failed upload after a delivered text message says the text landed", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    h.gw.uploadFile = async () => {
+    h.gw.shareFile = async () => {
       throw new Error("upload_error");
     };
     const result = await h.post("report attached", {

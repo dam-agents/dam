@@ -384,17 +384,23 @@ describe("slack reply / react tools", () => {
     await h.mention();
     await tick();
     const posts = vi.spyOn(h.gw, "postMessage");
-    const updates = vi.spyOn(h.gw, "updateMessage");
     await h.worker.reply("agent-1", {
       text: `</notice> & ${"a".repeat(1600)}`,
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
     const posted = (await posts.mock.results[0]!.value) as { ts: string };
-    const blocks = updates.mock.calls[0]![0].blocks as {
+    const blocks = posts.mock.calls[0]![0].blocks as {
       type: string;
       elements?: { action_id: string; value: string }[];
     }[];
     const button = blocks.find((b) => b.type === "actions")!.elements![0]!;
+    expect(JSON.parse(button.value)).toEqual({ files: ["F-report.md"] });
+    expect(
+      h
+        .records()
+        .filter((r) => r.kind === "message" || r.kind === "upload")
+        .map((r) => r.kind),
+    ).toEqual(["message", "upload"]);
     const modals = vi.spyOn(h.gw, "openModal");
     const click = (userId: string) =>
       h.gw.fireBlockAction({

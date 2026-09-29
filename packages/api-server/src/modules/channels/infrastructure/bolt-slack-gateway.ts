@@ -18,7 +18,6 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
-type ChatUpdateArgs = Parameters<BoltApp["client"]["chat"]["update"]>[0];
 type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
@@ -374,19 +373,6 @@ export function createBoltSlackGateway(
       return res.ts ? { ts: res.ts } : null;
     },
 
-    async updateMessage(args) {
-      if (!app) throw new Error("slack app not started");
-      const token = await tokenFor(args.teamId);
-      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      await app.client.chat.update({
-        token,
-        channel: args.channel,
-        ts: args.ts,
-        text: args.text,
-        blocks: args.blocks,
-      } as ChatUpdateArgs);
-    },
-
     async deleteMessage(channel, ts, teamId) {
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(teamId);
@@ -584,9 +570,9 @@ export function createBoltSlackGateway(
     },
 
     async uploadFile(args) {
-      if (!app) return [];
+      if (!app) return;
       const token = await tokenFor(args.teamId);
-      if (!token) return [];
+      if (!token) return;
       const upload = {
         token,
         channel_id: args.channelId,
@@ -595,14 +581,50 @@ export function createBoltSlackGateway(
         title: args.title,
         initial_comment: args.initialComment,
       };
-      const res = await app.client.files.uploadV2(
+      await app.client.files.uploadV2(
         args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
       );
-      const completed = (res as { files?: { files?: { id?: string }[] }[] })
-        .files;
-      return (completed ?? []).flatMap((r) =>
-        (r.files ?? []).flatMap((f) => (f.id ? [f.id] : [])),
-      );
+    },
+
+    async stageFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      const reserved = await app.client.files.getUploadURLExternal({
+        token,
+        filename: args.filename,
+        length: args.file.length,
+      });
+      if (!reserved.upload_url || !reserved.file_id)
+        throw new Error("files.getUploadURLExternal returned no upload URL");
+      const form = new FormData();
+      form.append("body", new Blob([new Uint8Array(args.file)]), args.filename);
+      const res = await fetch(reserved.upload_url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      await res.body?.cancel().catch(() => {});
+      if (res.status !== 200)
+        throw new Error(`file upload failed with HTTP ${res.status}`);
+      return reserved.file_id;
+    },
+
+    async shareFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.files.completeUploadExternal({
+        token,
+        files: [
+          {
+            id: args.fileId,
+            ...(args.title !== undefined ? { title: args.title } : {}),
+          },
+        ],
+        channel_id: args.channelId,
+        ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+      });
     },
 
     async downloadFile(
