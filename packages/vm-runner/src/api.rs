@@ -17,6 +17,9 @@ pub struct MachineSpec {
     pub ca_cert: String,
     #[serde(rename = "allowCidrs", skip_serializing_if = "Vec::is_empty")]
     pub allow_cidrs: Vec<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: for a runner outside the cluster, the port on this host's loopback where the machine's paired gateway is forwarded. The guest reaches it at its own gateway address on the same port, and at nothing else: this port replaces allowCidrs, because allowing the gateway address would open every loopback port of the host, the other machines' published ports among them.
+    #[serde(rename = "gatewayHostPort", skip_serializing_if = "is_zero")]
+    pub gateway_host_port: u16,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub revision: String,
     pub running: bool,
@@ -179,6 +182,7 @@ mod tests {
                 env: [("A".to_string(), "b".to_string())].into_iter().collect(),
                 ca_cert: "-----BEGIN CERTIFICATE-----".into(),
                 allow_cidrs: vec!["10.0.0.1/32".into()],
+                gateway_host_port: 30100,
                 revision: "r1".into(),
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],

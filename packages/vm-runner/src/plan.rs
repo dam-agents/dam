@@ -122,6 +122,7 @@ pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.env != desired.env
         || applied.image != desired.image
         || applied.allow_cidrs != desired.allow_cidrs
+        || applied.gateway_host_port != desired.gateway_host_port
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
@@ -136,11 +137,18 @@ fn shaped(spec: &MachineSpec) -> bool {
 // UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the controller always sends the paired gateway's address alone.
 pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them /0";
 
+// UNIT_BOUNDARY_DESCRIPTION: a gateway on the host's loopback is the machine's whole egress, so an allowlist beside it would widen what the guest reaches rather than narrow it.
+pub const MIXED_EGRESS: &str = "gatewayHostPort replaces allowCidrs; send one of them";
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
     if spec.running && !shaped(spec) {
         return Err(REQUIRED);
     }
+    if spec.gateway_host_port != 0 && !spec.allow_cidrs.is_empty() {
+        return Err(MIXED_EGRESS);
+    }
     if spec.running
+        && spec.gateway_host_port == 0
         && (spec.allow_cidrs.is_empty() || spec.allow_cidrs.iter().any(|c| opens_everything(c)))
     {
         return Err(OPEN_EGRESS);
@@ -530,6 +538,19 @@ mod tests {
             };
             assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
         }
+        let loopback_gateway = MachineSpec {
+            allow_cidrs: vec![],
+            gateway_host_port: 30100,
+            ..running_spec()
+        };
+        assert_eq!(admissible(&loopback_gateway), Ok(()));
+        assert_eq!(
+            admissible(&MachineSpec {
+                gateway_host_port: 30100,
+                ..running_spec()
+            }),
+            Err(MIXED_EGRESS)
+        );
         let stop = MachineSpec {
             running: false,
             ..Default::default()
@@ -589,6 +610,7 @@ mod tests {
             env: [("A".to_string(), "1".to_string())].into_iter().collect(),
             ca_cert: "ca".into(),
             allow_cidrs: vec!["10.0.0.7/32".into()],
+            gateway_host_port: 0,
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),

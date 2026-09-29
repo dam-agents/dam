@@ -353,6 +353,7 @@ fn spec(running: bool) -> MachineSpec {
         .into(),
         ca_cert: "PEM".into(),
         allow_cidrs: vec!["10.0.0.1/32".into()],
+        gateway_host_port: 0,
         revision: "r1".into(),
         running,
         pull_auths: Vec::new(),

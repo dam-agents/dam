@@ -97,6 +97,7 @@ impl Runtime for Smolvm {
             if let Some(gib) = storage_gib {
                 raw_storage_disk(id, gib)?;
             }
+            record_gateway_host_port(id, machine.spec)?;
             self.db.update_vm(id, |r| r.dns = Some(GUEST_DNS_SINK))?;
             Ok(())
         })
@@ -146,6 +147,7 @@ impl Runtime for Smolvm {
                 }
             }
             let allowed_cidrs = allowed_cidrs(desired)?;
+            record_gateway_host_port(id, desired)?;
             let image_env = record
                 .image
                 .as_deref()
@@ -296,7 +298,7 @@ fn embedded_spec(
         network: true,
         network_backend: Some(NetworkBackend::VirtioNet),
         storage_gib: Some(u64::try_from(spec.storage_gib).context("storageGiB")?),
-        allowed_cidrs: (!spec.allow_cidrs.is_empty()).then(|| spec.allow_cidrs.clone()),
+        allowed_cidrs: allowed_cidrs(spec)?,
         ..VmResources::default()
     };
     resources.validate()?;
@@ -323,8 +325,11 @@ fn embedded_spec(
     Ok((smolvm_spec, workload))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the allowlist as a create records it: none for a spec that names none, and each range in smolvm's own normal form otherwise, so an update writes what a create of the same spec would.
+// UNIT_BOUNDARY_DESCRIPTION: the allowlist as a create records it: none for a spec that names none, and each range in smolvm's own normal form otherwise, so an update writes what a create of the same spec would. A gateway on the host's loopback denies every range, which smolvm records as an empty list; the one port the guest keeps is the host service its VMM maps.
 fn allowed_cidrs(spec: &MachineSpec) -> anyhow::Result<Option<Vec<String>>> {
+    if spec.gateway_host_port != 0 {
+        return Ok(Some(Vec::new()));
+    }
     if spec.allow_cidrs.is_empty() {
         return Ok(None);
     }
@@ -335,6 +340,19 @@ fn allowed_cidrs(spec: &MachineSpec) -> anyhow::Result<Option<Vec<String>>> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|reason| anyhow::anyhow!("allowCidrs: {reason}"))?;
     Ok(Some(parsed))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: smolvm maps one gateway port to the host's loopback per VMM process, so the port a machine may reach is written beside its boot config, where its own VMM reads it before it boots (see GATEWAY_HOST_PORT_FILE). A machine without one has the file removed, so an update that drops the port also drops the mapping.
+fn record_gateway_host_port(id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
+    let file = vm_data_dir(id).join(crate::runtime::GATEWAY_HOST_PORT_FILE);
+    if spec.gateway_host_port == 0 {
+        return match std::fs::remove_file(&file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        };
+    }
+    crate::files::write(&file, spec.gateway_host_port.to_string().as_bytes(), 0o644)
+        .with_context(|| format!("recording the gateway host port in {}", file.display()))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. An archive is staged into smolvm's own cache and named `local:`. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
@@ -476,6 +494,59 @@ mod tests {
             record.dns,
             Some(GUEST_DNS_SINK),
             "the gateway relays guest DNS past the allowlist, so it must relay it nowhere"
+        );
+    }
+
+    // TEST_SCENARIO: a runner outside the cluster reaches the machine's gateway on its own loopback. Allowing the gateway address would open every loopback port, so the record denies every range and the VMM is told the one port it maps; an update that drops the port drops the mapping too, and the machine is back on its allowlist.
+    #[test]
+    fn a_gateway_on_the_hosts_loopback_is_the_machines_only_egress() {
+        let home = Home::new("loopback");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let looped = MachineSpec {
+            allow_cidrs: Vec::new(),
+            gateway_host_port: 30100,
+            ..spec()
+        };
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &looped,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+        let port_file = vm_data_dir("m1").join(crate::runtime::GATEWAY_HOST_PORT_FILE);
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().allowed_cidrs,
+            Some(Vec::new())
+        );
+        assert_eq!(fs::read_to_string(&port_file).unwrap(), "30100");
+
+        let back = MachineSpec {
+            gateway_host_port: 0,
+            ..spec()
+        };
+        smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &back,
+                    applied: Some(&looped),
+                    image: None,
+                },
+            )
+            .unwrap();
+        assert!(!port_file.exists());
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().allowed_cidrs,
+            Some(vec!["10.96.0.7/32".to_string()])
         );
     }
 

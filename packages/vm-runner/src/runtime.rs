@@ -43,6 +43,9 @@ pub struct Update<'a> {
 // UNIT_BOUNDARY_DESCRIPTION: the port the guest's agent listens on. The runner publishes it on a loopback port of its own and forwards the machine's published port there.
 pub const GUEST_AGENT_PORT: u16 = 8080;
 
+// UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the host loopback port its guest may reach at its gateway address. The runner writes it; the machine's VMM, which is this binary started with `_boot-vm`, reads it beside its boot config.
+pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
+
 // UNIT_BOUNDARY_DESCRIPTION: the largest image archive a machine may boot from. smolvm refuses archives over 8 GiB by default, and agent images with their toolchains are bigger than that.
 pub const MAX_IMAGE_BYTES: u64 = 16 << 30;
 
