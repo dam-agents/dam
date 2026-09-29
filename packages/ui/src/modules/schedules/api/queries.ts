@@ -2,7 +2,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
+import { listAgentSessionPage } from "../../sessions/api/acp-session-ops.js";
 
 export function fetchSchedulesForAgent(agentId: string) {
   return queryClient
@@ -36,10 +36,8 @@ export function useScheduleSessions(
     queryKey: ["schedule-sessions", agentId, scheduleId] as const,
     queryFn:
       agentId && scheduleId
-        ? async () => {
-            const sessions = await listAgentSessions(agentId);
-            return sessions.filter((s) => s.scheduleId === scheduleId);
-          }
+        ? async () =>
+            (await listAgentSessionPage(agentId, { scheduleId })).sessions
         : skipToken,
     retry: 0,
     staleTime: 30_000,

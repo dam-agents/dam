@@ -1,9 +1,16 @@
-import { SessionType } from "api-server-api";
+import { type SessionCategory, SessionType } from "api-server-api";
 import { useEffect, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { useAcpSessions } from "../api/queries.js";
+import { useAgentSessionQuery } from "../api/queries.js";
+
+const OPENABLE_CATEGORIES: SessionCategory[] = [
+  "chats",
+  "experiments",
+  "runs",
+  "terminal",
+];
 
 export function useOpenInitializationSession(opts: {
   agentId: string | null;
@@ -23,9 +30,9 @@ export function useOpenInitializationSession(opts: {
     operable &&
     openedForAgentRef.current !== agentId;
 
-  const { data: sessions } = useAcpSessions(
+  const { data: sessions } = useAgentSessionQuery(
     agentId,
-    { channels: false, scheduled: false },
+    { categories: OPENABLE_CATEGORIES, limit: 1 },
     { enabled: armed },
   );
 

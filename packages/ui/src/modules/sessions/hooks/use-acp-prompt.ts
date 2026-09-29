@@ -333,7 +333,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         delivery.endSend(promptId);
         if (startedRef.current === started) startedRef.current = null;
         started?.finish();
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
         if (viewerStillHere(selectedAgent, aId)) textareaRef.current?.focus();
       }
     },

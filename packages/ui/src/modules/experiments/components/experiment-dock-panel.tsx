@@ -19,7 +19,7 @@ import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
-import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
+import { listAgentSessionPage } from "../../sessions/api/acp-session-ops.js";
 import { useStartRun, useStopExperiment } from "../api/mutations.js";
 import { useExperimentFeed } from "../api/queries.js";
 import { DashboardCanvas } from "./dashboard-canvas.js";
@@ -34,8 +34,9 @@ async function openLaunchSession(
   try {
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
-        const sessions = await listAgentSessions(agentId);
-        const launch = sessions.find((s) => s.experimentId === experimentId);
+        const {
+          sessions: [launch],
+        } = await listAgentSessionPage(agentId, { experimentId, limit: 1 });
         if (launch) {
           useStore.getState().clearPendingLaunch(experimentId);
           useStore.getState().openAgentSession(agentId, launch.sessionId);

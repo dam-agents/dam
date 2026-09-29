@@ -698,7 +698,7 @@ export function ChatView() {
                   true,
                 );
                 queryClient.invalidateQueries({
-                  queryKey: acpSessionsKeys.all,
+                  queryKey: acpSessionsKeys.agent(selectedAgent),
                 });
               }}
               onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}

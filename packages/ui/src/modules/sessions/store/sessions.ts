@@ -245,12 +245,12 @@ export const createSessionsSlice: StateCreator<
       if (ok === ACTION_FAILED) return false;
       if (get().sessionId === sessionId) get().resetChatContext();
       await queryClient.cancelQueries({
-        queryKey: acpSessionsKeys.agentLists(agentId),
+        queryKey: acpSessionsKeys.agent(agentId),
       });
       removeSessionFromCache(agentId, sessionId);
       get().clearDraft(draftKey(agentId, sessionId));
       queryClient.invalidateQueries({
-        queryKey: acpSessionsKeys.agentLists(agentId),
+        queryKey: acpSessionsKeys.agent(agentId),
       });
       emitToast({ kind: "success", message: "Session deleted" });
       return true;

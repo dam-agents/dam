@@ -28,7 +28,7 @@ import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { setSessionSeen, useAcpSessions } from "../api/queries.js";
+import { setSessionSeen, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
@@ -61,13 +61,6 @@ export function SessionsSidebar({
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
   const toggleSessionFilter = useStore((s) => s.toggleSessionFilter);
-  const listInclude = useMemo(
-    () => ({
-      channels: sessionFilter.includes("channels"),
-      scheduled: sessionFilter.includes("scheduled"),
-    }),
-    [sessionFilter],
-  );
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
@@ -76,12 +69,19 @@ export function SessionsSidebar({
 
   const agentOperable = useIsAgentOperable(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
-  const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
+  const {
+    sessions: listed,
+    isFetching,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useSessionPages(selectedAgent, sessionFilter, {
     enabled: agentOperable,
     activeSessionId: sessionId,
   });
-  const sessions: SessionView[] = data ?? EMPTY;
-  const loading = data === undefined && isFetching;
+  const sessions: SessionView[] = listed ?? EMPTY;
+  const loading = listed === undefined && isFetching;
+  const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),
@@ -247,14 +247,9 @@ export function SessionsSidebar({
     >
       <div className="flex-1 overflow-y-auto">
         {loading && <SessionListSkeleton />}
-        {!loading && sessions.length === 0 && (
+        {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            No sessions yet
-          </p>
-        )}
-        {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-xs text-muted-foreground">
-            No sessions match the filter
+            {filtered ? "No sessions match the filter" : "No sessions yet"}
           </p>
         )}
         {conversationSessions.map(renderRow)}
@@ -278,6 +273,20 @@ export function SessionsSidebar({
           </Tooltip>
         )}
         {runSessions.map(renderRow)}
+        {hasNextPage && (
+          <div className="px-4 py-3">
+            <Button
+              variant="ghost"
+              size="xs"
+              className="w-full text-sm font-normal text-muted-foreground"
+              disabled={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
+            >
+              {isFetchingNextPage ? <Spinner /> : null}
+              Show older sessions
+            </Button>
+          </div>
+        )}
       </div>
     </SidebarSection>
   );

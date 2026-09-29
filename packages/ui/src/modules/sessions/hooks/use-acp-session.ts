@@ -24,7 +24,7 @@ import {
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
+import { findAgentSession } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
@@ -43,8 +43,7 @@ async function classifyResumeFailure(
   if (kind === "connection") return kind;
   let listing: SessionListing = "unknown";
   try {
-    const sessions = await listAgentSessions(agentId);
-    listing = sessions.some((s) => s.sessionId === sid) ? "listed" : "absent";
+    listing = (await findAgentSession(agentId, sid)) ? "listed" : "absent";
   } catch {}
   return resumeFailureKind(kind, listing);
 }
@@ -153,11 +152,7 @@ export function useAcpSession(
         setMessages(fresh);
 
         try {
-          const conn = connectionRef.current?.connection;
-          const sessions = conn
-            ? await listSessionsOn(selectedAgent, conn)
-            : await listAgentSessions(selectedAgent);
-          const match = sessions.find((s) => s.sessionId === sid);
+          const match = await findAgentSession(selectedAgent, sid);
           if (match?.mode && match.mode !== useStore.getState().sessionMode) {
             useStore.getState().setSessionMode(match.mode);
           }
@@ -174,7 +169,6 @@ export function useAcpSession(
     [
       selectedAgent,
       loadSessionHistory,
-      connectionRef,
       resetConnection,
       setMessages,
       setSessionId,

@@ -1,9 +1,9 @@
 import type { Experiment } from "api-server-api";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { useAcpSessions } from "../../sessions/api/queries.js";
+import { useAgentSession } from "../../sessions/api/queries.js";
 import { useAgentExperimentsLive } from "../api/queries.js";
 
 function isLive(status: Experiment["status"]): boolean {
@@ -25,21 +25,11 @@ export function useDockedExperiment(agentId: string | null): {
 
   const sessionId = useStore((s) => s.sessionId);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const sessionFilter = useStore((s) => s.sessionFilter);
-  const listInclude = useMemo(
-    () => ({
-      channels: sessionFilter.includes("channels"),
-      scheduled: sessionFilter.includes("scheduled"),
-    }),
-    [sessionFilter],
-  );
   const operable = useIsAgentOperable(agentId);
-  const { data: sessions } = useAcpSessions(agentId, listInclude, {
+  const { data: session } = useAgentSession(agentId, sessionId, {
     enabled: operable,
-    activeSessionId: sessionId,
   });
-  const sessionExperimentId =
-    sessions?.find((s) => s.sessionId === sessionId)?.experimentId ?? null;
+  const sessionExperimentId = session?.experimentId ?? null;
 
   for (const experiment of experiments) {
     if (isLive(experiment.status)) seenLive.current.add(experiment.id);

@@ -9,15 +9,25 @@ export type {
   PodSession,
   PodSessionMode,
   PodSessionType,
+  SessionCategory,
   SessionDirectoryEntry,
+  SessionListCursor,
+  SessionListQuery,
+  SessionPage,
   SessionsService,
 } from "./modules/sessions/types.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,
   podSessionTypeSchema,
+  SESSION_CATEGORIES,
+  SESSION_LIST_MAX_LIMIT,
   sessionDirectoryReportSchema,
 } from "./modules/sessions/schemas.js";
+export {
+  sessionCategoryOf,
+  sessionMatchesQuery,
+} from "./modules/sessions/session-query.js";
 
 export { ok, err } from "./result.js";
 export type {

@@ -1,5 +1,10 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
-import type { PodSession } from "agent-runtime-api";
+import {
+  type PodSession,
+  type SessionListCursor,
+  type SessionListQuery,
+  sessionMatchesQuery,
+} from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
   SessionMode,
@@ -79,14 +84,18 @@ async function withConnection<T>(
   }
 }
 
-function byRecencyThenId(a: SessionView, b: SessionView): number {
-  const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
-    a.updatedAt ?? a.createdAt,
-  );
-  return byActivity !== 0 ? byActivity : a.sessionId.localeCompare(b.sessionId);
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export async function listSessionsOn(
+function byRecencyThenId(a: SessionView, b: SessionView): number {
+  return (
+    compareCodeUnits(b.updatedAt ?? b.createdAt, a.updatedAt ?? a.createdAt) ||
+    compareCodeUnits(a.sessionId, b.sessionId)
+  );
+}
+
+async function listSessionsOn(
   agentId: string,
   conn: ClientConnection,
 ): Promise<SessionView[]> {
@@ -131,24 +140,45 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
   };
 }
 
-export async function listAgentSessions(
-  agentId: string,
-): Promise<SessionView[]> {
-  if (agentLacksLiveUpdates(agentId)) {
-    return listAgentSessionsOverAcp(agentId);
-  }
-  const { sessions } = await agentTrpc(agentId).sessions.list.query();
-  return sessions
-    .map((s) => toSessionViewFromPod(agentId, s))
-    .sort(byRecencyThenId);
+export interface SessionViewPage {
+  sessions: SessionView[];
+  nextCursor: SessionListCursor | null;
 }
 
-async function listAgentSessionsOverAcp(
+export async function listAgentSessionPage(
   agentId: string,
-): Promise<SessionView[]> {
-  return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {
-    passive: true,
+  query: SessionListQuery = {},
+): Promise<SessionViewPage> {
+  if (agentLacksLiveUpdates(agentId)) {
+    const sessions = await withConnection(
+      agentId,
+      (conn) => listSessionsOn(agentId, conn),
+      { passive: true },
+    );
+    return {
+      sessions: sessions.filter((s) => sessionMatchesQuery(s, query)),
+      nextCursor: null,
+    };
+  }
+  const page = await agentTrpc(agentId).sessions.list.query(query);
+  return {
+    sessions: page.sessions
+      .map((s) => toSessionViewFromPod(agentId, s))
+      .filter((s) => sessionMatchesQuery(s, query))
+      .sort(byRecencyThenId),
+    nextCursor: page.nextCursor ?? null,
+  };
+}
+
+export async function findAgentSession(
+  agentId: string,
+  sessionId: string,
+): Promise<SessionView | null> {
+  const { sessions } = await listAgentSessionPage(agentId, {
+    sessionId,
+    limit: 1,
   });
+  return sessions[0] ?? null;
 }
 
 export async function deleteAgentSession(

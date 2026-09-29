@@ -23,7 +23,7 @@ export function useSessionWatch(agentId: string | null) {
         onData: (notice) => {
           if (!podSessionNoticeSchema.safeParse(notice).success) return;
           void queryClient.invalidateQueries({
-            queryKey: acpSessionsKeys.agentLists(agentId),
+            queryKey: acpSessionsKeys.agent(agentId),
           });
         },
         onError,
