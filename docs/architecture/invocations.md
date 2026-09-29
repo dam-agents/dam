@@ -4,7 +4,7 @@ Last verified: 2026-09-29
 
 ## Overview
 
-An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied. The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is deleted as soon as the Invocation goes terminal.
+An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied. The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
 
 The Driver is almost always a script: a loop an agent wrote that fans work out and gathers the results. It speaks to the platform over the per-agent HTTP surface on the harness port, where the caller is the waypoint-authenticated agent in the path; no request body ever names the Driver.
 
@@ -18,7 +18,7 @@ sequenceDiagram
   API->>T: create Agent, queue seed → install → task
   T->>T: seed, install, open one fresh session
   T->>API: report_result
-  API->>API: validate against the schema, delete the target
+  API->>API: validate against the schema, reap the target
   D->>API: poll until done or failed
 ```
 
