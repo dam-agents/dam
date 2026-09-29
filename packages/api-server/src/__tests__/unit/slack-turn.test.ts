@@ -452,6 +452,37 @@ describe("slack reply / react tools", () => {
     );
   });
 
+  /**
+   * TEST_SCENARIO: A workspace may withhold the history scope for a kind of
+   * conversation, as some forbid mpim:history. The Delete link can only find
+   * a post by reading that history, so there it would always fail and must
+   * not be shown. Where the scope is granted, the link stays.
+   */
+  it("shows the Delete link only where the post's history can be read", async () => {
+    const h = harness({});
+    h.gw.setGrantedScopes(["chat:write", "channels:history", "groups:history"]);
+    await h.mention();
+    await tick();
+    const posts = vi.spyOn(h.gw, "postMessage");
+
+    h.gw.setChannels([
+      { id: "C1", name: "group-dm", botIsMember: true, kind: "mpim" },
+      { id: "C2", name: "general", botIsMember: true, kind: "public" },
+    ]);
+    await h.worker.reply("agent-1", { text: "in a group DM" });
+    await h.worker.reply("agent-1", {
+      text: "in a channel",
+      conversationId: "C2",
+    });
+
+    expect(footerText(posts.mock.calls[0]![0].blocks)).not.toContain(
+      "Delete (owner only)",
+    );
+    expect(footerText(posts.mock.calls[1]![0].blocks)).toContain(
+      "Delete (owner only)",
+    );
+  });
+
   it("reply errors when there is no active thread and none is given", async () => {
     const h = harness({});
     await h.start();

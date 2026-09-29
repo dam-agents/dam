@@ -660,9 +660,17 @@ export function createBoltSlackGateway(
           channel: channelId,
         });
         if (!info.channel) return null;
+        const c = info.channel;
         return {
-          isMember: !!info.channel.is_member,
-          name: info.channel.name ?? null,
+          isMember: !!c.is_member,
+          name: c.name ?? null,
+          kind: c.is_im
+            ? "im"
+            : c.is_mpim
+              ? "mpim"
+              : c.is_private
+                ? "private"
+                : "public",
         };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;

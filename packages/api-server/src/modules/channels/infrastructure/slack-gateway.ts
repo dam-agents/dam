@@ -120,6 +120,8 @@ export interface SlackMessage {
 
 export type SlackBlock = Record<string, unknown>;
 
+export type SlackConversationKind = "public" | "private" | "im" | "mpim";
+
 export interface SlackPostMessage {
   channel: string;
   text: string;
@@ -277,7 +279,11 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{ isMember: boolean; name: string | null } | null>;
+  ): Promise<{
+    isMember: boolean;
+    name: string | null;
+    kind: SlackConversationKind;
+  } | null>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,

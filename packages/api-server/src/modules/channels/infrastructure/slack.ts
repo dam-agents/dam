@@ -89,6 +89,7 @@ import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
   SlackBotJoinedChannelEvent,
+  SlackConversationKind,
   SlackConversationName,
   SlackConversationRef,
   SlackWorkspace,
@@ -915,6 +916,15 @@ const USER_CACHE_TTL_MS = 10 * 60_000;
 
 const CONVERSATION_NAME_TTL_MS = 5 * 60_000;
 
+const CONVERSATION_KIND_TTL_MS = 10 * 60_000;
+
+const HISTORY_SCOPE: Record<SlackConversationKind, string> = {
+  public: "channels:history",
+  private: "groups:history",
+  im: "im:history",
+  mpim: "mpim:history",
+};
+
 const userLookupSemaphore = createSemaphore(5);
 
 const conversationInfoSemaphore = createSemaphore(5);
@@ -1509,6 +1519,55 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const iconUrl =
       agentIcon && owner ? await agentIcon(owner, username) : null;
     return { username, ...(iconUrl ? { iconUrl } : {}) };
+  }
+
+  const conversationKindCache = new Map<
+    string,
+    { kind: SlackConversationKind; expiresAt: number }
+  >();
+
+  async function conversationKind(
+    gw: SlackGateway,
+    target: { id: string; teamId: SlackWorkspace },
+  ): Promise<SlackConversationKind | null> {
+    const key = conversationKey({
+      channelId: target.id,
+      teamId: target.teamId,
+    });
+    const cached = conversationKindCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.kind;
+    try {
+      const info = await gw.getConversationInfo(target.id, target.teamId);
+      if (!info) return null;
+      conversationKindCache.set(key, {
+        kind: info.kind,
+        expiresAt: Date.now() + CONVERSATION_KIND_TTL_MS,
+      });
+      return info.kind;
+    } catch {
+      return null;
+    }
+  }
+
+  async function deletablePost(
+    gw: SlackGateway,
+    target: { id: string; teamId: SlackWorkspace },
+    threadTs?: string,
+  ): Promise<
+    { teamId: SlackWorkspace; channel: string; threadTs?: string } | undefined
+  > {
+    const post = {
+      teamId: target.teamId,
+      channel: target.id,
+      ...(threadTs ? { threadTs } : {}),
+    };
+    const scopes = await grantedScopes(gw, target.teamId);
+    if (!scopes) return post;
+    if (target.id.startsWith("D"))
+      return scopes.has(HISTORY_SCOPE.im) ? post : undefined;
+    if (Object.values(HISTORY_SCOPE).every((s) => scopes.has(s))) return post;
+    const kind = await conversationKind(gw, target);
+    return kind && scopes.has(HISTORY_SCOPE[kind]) ? post : undefined;
   }
 
   async function agentFooter(
@@ -3907,10 +3966,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
 
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName, undefined, {
-          teamId: target.teamId,
-          channel: target.id,
-        }),
+        deletablePost(gw, target).then((post) =>
+          agentFooter(instanceName, undefined, post),
+        ),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       const contextBlock = agentContextBlock(footer);
@@ -4157,11 +4215,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) return target;
 
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName, turn?.sessionId, {
-          teamId: target.teamId,
-          channel: target.id,
-          threadTs,
-        }),
+        deletablePost(gw, target, threadTs).then((post) =>
+          agentFooter(instanceName, turn?.sessionId, post),
+        ),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       try {

@@ -4,6 +4,7 @@ import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
+  SlackConversationKind,
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
@@ -20,6 +21,7 @@ export interface FakeSlackChannel {
   id: string;
   name: string;
   botIsMember: boolean;
+  kind?: SlackConversationKind;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
@@ -360,7 +362,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         (c) => c.id === channelId,
       );
       return channel
-        ? { isMember: channel.botIsMember, name: channel.name }
+        ? {
+            isMember: channel.botIsMember,
+            name: channel.name,
+            kind: channel.kind ?? "public",
+          }
         : null;
     },
 
