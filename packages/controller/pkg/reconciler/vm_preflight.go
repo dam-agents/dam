@@ -84,9 +84,11 @@ func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {
 	}
 
 	res.problems = append(res.problems, r.preflightServiceAccount(ctx)...)
-	devProblems, devWarnings := r.preflightDevices(ctx)
-	res.problems = append(res.problems, devProblems...)
-	res.warnings = append(res.warnings, devWarnings...)
+	if spec.HostAddress == "" {
+		devProblems, devWarnings := r.preflightDevices(ctx)
+		res.problems = append(res.problems, devProblems...)
+		res.warnings = append(res.warnings, devWarnings...)
+	}
 	res.warnings = append(res.warnings, r.preflightEgressReach(ctx)...)
 	dnsProblems, dnsWarnings := preflightRunnerDNS(spec)
 	res.problems = append(res.problems, dnsProblems...)

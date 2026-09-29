@@ -102,6 +102,8 @@ type VMRunnerSpec struct {
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
+	HostAddress string `json:"hostAddress,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {

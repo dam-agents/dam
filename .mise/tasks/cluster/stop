@@ -24,5 +24,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     sudo rm -rf /var/lib/cni
   fi
 else
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  [ "$(cat "$HOST_RUNNER_DIR/instance" 2>/dev/null)" != "$LIMA_INSTANCE" ] || host_runner_stop
   limactl stop "$LIMA_INSTANCE"
 fi

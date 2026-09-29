@@ -21,10 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
@@ -416,6 +418,45 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
 	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
 	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+}
+
+// TEST_SCENARIO: on a laptop the runner runs on the host, outside the cluster, and serves every owner. The guest reaches its gateway through a NodePort the cluster's VM forwards to the host's loopback, at the address smolvm gives the host, and at nothing else — so the machine carries that port instead of an allowlist, since allowing the host address would open every loopback port. The agent's Service has no runner pod to select and names the host and the machine's published port in its own EndpointSlice, and a delete reaches the host runner with no runner Deployment to look for.
+func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	ctx := context.Background()
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	r.client.(*fake.Clientset).PrependReactor("update", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.UpdateAction).GetObject().(*corev1.Service)
+		if svc.Spec.Type == corev1.ServiceTypeNodePort && svc.Spec.Ports[0].NodePort == 0 {
+			svc.Spec.Ports[0].NodePort = 30123
+		}
+		return false, svc, nil
+	})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	spec := node.spec("my-agent")
+	assert.Empty(t, spec.AllowCIDRs)
+	assert.Equal(t, 30123, spec.GatewayHostPort)
+	assert.Equal(t, "http://100.96.0.1:30123", spec.Env["HTTPS_PROXY"])
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, svc.Spec.Selector, "no runner pod to select")
+	slice, err := r.client.DiscoveryV1().EndpointSlices("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", slice.Labels[discoveryv1.LabelServiceName])
+	assert.Equal(t, []string{"192.168.5.2"}, slice.Endpoints[0].Addresses)
+	assert.Equal(t, int32(31000), *slice.Ports[0].Port)
+	assert.Equal(t, intstr.FromInt(31000), svc.Spec.Ports[0].TargetPort)
+
+	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels))
+	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
 // TEST_SCENARIO: a machine on its way up is watched with a long poll on its runner, not by running the whole reconcile twice a second. However often the Agent reconciles, it has one watch; while the status holds still nothing is requeued; and the moment the status changes — the guest answering — the Agent is requeued at once, and the watch ends so the reconcile that follows can publish the change.

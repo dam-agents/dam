@@ -346,6 +346,22 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: a runner outside the cluster has the guest reach its gateway at the guest's own gateway address, which smolvm relays to the host's loopback. The controller writes that address into the agent's proxy settings and cannot read smolvm's default, so both are held to the fixture: a proxy on any other address is one the guest can never reach.
+    #[test]
+    fn the_gateway_address_is_the_one_smolvm_gives_its_guests() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/guest.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the guest fixture is JSON");
+        assert_eq!(
+            fixture["gatewayAddress"],
+            smolvm_network::GuestNetworkConfig::default()
+                .gateway_ip
+                .to_string()
+        );
+    }
+
     // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse.
     #[test]
     fn the_share_is_written_with_stated_modes_rather_than_the_umask() {

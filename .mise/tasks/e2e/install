@@ -41,7 +41,12 @@ INSTALL_ARGS=(
 # agents' gateways and the other pods can be scheduled into. The mock replays
 # scripts, and its guest needs a fraction of 1Gi. The container lane keeps the
 # default, so its agents are sized as before.
+#
+# On a Mac the lane keeps the runner pods on nested virtualization rather than
+# the host runner cluster:install would pick: the suite restarts the runner by
+# deleting its pod, and the one host runner belongs to the dev cluster.
 if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
+  export PLATFORM_NESTED_VIRT=1
   INSTALL_ARGS+=(
     --set=virtualization.enabled=true
     --set=harnessTemplates.mock.resources.limits.cpu=1000m

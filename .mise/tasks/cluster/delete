@@ -28,5 +28,12 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   echo "k3s stopped and its cluster data removed."
 else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
+  # The host runner's machines belonged to this cluster's agents. Its smolvm
+  # release, disk templates and image volume are only caches, and stay.
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  if [ "$(cat "$HOST_RUNNER_DIR/instance" 2>/dev/null)" = "$LIMA_INSTANCE" ]; then
+    host_runner_stop
+    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/Library" "$HOST_RUNNER_DIR/instance"
+  fi
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi

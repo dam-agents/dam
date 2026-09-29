@@ -3066,6 +3066,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "smolvm",
+ "smolvm-network",
  "tar",
  "tokio",
  "tokio-util",

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Build the VM runner for this Mac to dist/host/vm-runner, signed with the hypervisor entitlement its VMMs need. cluster:host-runner installs and starts it."
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+[ "$(uname -s)" = Darwin ] || { echo "the host runner is for macOS; elsewhere the runner is a pod" >&2; exit 1; }
+cargo build --release --locked -p vm-runner
+install -d dist/host
+install -m 755 target/release/vm-runner dist/host/vm-runner
+# Every VMM is this binary started again with _boot-vm, and Hypervisor.framework
+# refuses a process without the entitlement, so it is signed the way smolvm's
+# own release signs its binary.
+codesign --force --sign - --entitlements .smolvm/smolvm.entitlements dist/host/vm-runner

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#MISE description="Build and (re)start the VM runner on this Mac's own hypervisor: cluster:install runs vm agents on it here, instead of on a runner pod nested inside the k3s VM. It serves every owner from ~/.local/state/platform-vm-runner, listening on loopback, where the k3s VM's pods reach it. Honors LIMA_INSTANCE."
+set -euo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+. "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+R="$HOST_RUNNER_DIR"
+pkg="$MISE_CONFIG_ROOT/packages/vm-runner"
+mkdir -p "$R"
+
+mise run //packages/vm-runner:host
+install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
+
+# The smolvm release the binary was built against, for what the VMM loads at
+# run time: libkrun, the guest agent's root filesystem and the disk templates.
+tag="$(sed -n 's/^tag=//p' "$pkg/smolvm.pin")"
+sha="$(sed -n 's/^sha256-darwin-arm64=//p' "$pkg/smolvm.pin")"
+release="$R/smolvm-$tag"
+if [ ! -x "$release/smolvm-bin" ]; then
+  tarball="$R/smolvm-$tag.tar.gz"
+  curl -fsSL -o "$tarball" "https://github.com/smol-machines/smolvm/releases/download/$tag/smolvm-${tag#v}-darwin-arm64.tar.gz"
+  echo "$sha  $tarball" | shasum -a 256 -c --quiet -
+  rm -rf "$release" "$release.new" && mkdir "$release.new"
+  tar -xzf "$tarball" -C "$release.new" --strip-components=1
+  rm "$tarball"
+  mv "$release.new" "$release"
+fi
+# The runner expands its disk templates with zstd and gives the storage one a
+# journal with tune2fs, and smolvm formats a disk it has no template for with
+# mkfs.ext4; a Mac has none of them. The k3s VM does, so they are expanded
+# there and carried back as a sparse tar, which keeps their holes: each is a
+# few MiB on disk for tens of GiB of size. An expanded template beside its
+# packed one is what the runner links as it is.
+if [ ! -f "$release/storage-template.ext4" ]; then
+  echo "Expanding the disk templates in $LIMA_INSTANCE..."
+  limactl copy "$release/storage-template.ext4.zst" "$release/overlay-template.ext4.zst" "$LIMA_INSTANCE:/tmp/"
+  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done && tune2fs -O has_journal storage-template.ext4 >/dev/null'
+  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
+fi
+
+# platform-init runs inside the guest, so it is the static Linux binary from
+# the runner image, not anything built for this Mac.
+image="$pkg/dist/oci/vm-runner.tar"
+[ -f "$image" ] || mise run //packages/vm-runner:oci
+for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
+  tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - usr/local/libexec/platform-init > "$R/platform-init.new" 2>/dev/null || true
+  [ ! -s "$R/platform-init.new" ] || break
+done
+[ -s "$R/platform-init.new" ] || { echo "FATAL: no platform-init in $image" >&2; exit 1; }
+chmod 755 "$R/platform-init.new"
+
+# The chart renders the runner's token and asks cert-manager for its serving
+# certificate (virtualization.runner.hostAddress); the runner holds copies.
+secret=platform-vm-runner-host
+for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/dev/null 2>&1 && break; sleep 2; done
+(
+  umask 077
+  kubectl -n platform-agents get secret "$secret" -o jsonpath='{.data.token}' | base64 -d > "$R/token"
+  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
+  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
+)
+images="$(host_runner_images)"
+
+host_runner_stop
+mv "$R/vm-runner.new" "$R/vm-runner"
+mv "$R/platform-init.new" "$R/platform-init"
+mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
+(
+  cd "$R"
+  HOME="$R" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
+    --listen=127.0.0.1:4600 --publish-address=127.0.0.1 \
+    --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
+    --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
+    --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) \
+    --memory-mib="$mem_mib" --reserve-mib=256 \
+    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --crane="$(command -v crane)" \
+    >> "$R/runner.log" 2>&1 &
+  echo $! > "$R/runner.pid"
+)
+# One runner per Mac, serving the cluster that started it last: cluster:stop
+# and cluster:delete of that cluster are the ones that stop it.
+echo "$LIMA_INSTANCE" > "$R/instance"
+for _ in $(seq 1 30); do
+  curl -sfk -o /dev/null https://127.0.0.1:4600/healthz && { echo "host VM runner serving (log: $R/runner.log)"; exit 0; }
+  sleep 1
+done
+echo "FATAL: the host VM runner did not come up; see $R/runner.log" >&2
+tail -n 20 "$R/runner.log" >&2
+exit 1

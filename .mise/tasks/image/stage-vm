@@ -54,7 +54,14 @@ chmod a+rx "$dest.new"
 mv "$dest.new" "$dest"
 rm -rf "$dest.old" "$dest.tar"'
 
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ -n "${VM_HOST_RUNNER:-}" ]; then
+  # The runner on this Mac reads its own image volume, as the user it runs
+  # as, so the tree is placed there unprivileged. tar cannot restore the
+  # image's owners without root; the guest sees every file as the runner's.
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  IMAGE_DIR="$(host_runner_images)"
+  sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
+elif [ -n "${IS_SANDBOX:-}" ]; then
   sudo sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
 else
   limactl copy "$work/rootfs.tar" "$LIMA_INSTANCE:/tmp/$name.rootfs.tar"

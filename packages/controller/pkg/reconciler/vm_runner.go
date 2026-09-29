@@ -84,11 +84,18 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 	}}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner, so every owner's name for it is the one the chart gives its token Secret and certificate.
 func (r *AgentReconciler) runnerName(owner string) string {
+	if r.config.VM.Runner.HostAddress != "" {
+		return r.config.ReleaseName + "-vm-runner-host"
+	}
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
 
 func (r *AgentReconciler) runnerHost(owner string) string {
+	if r.config.VM.Runner.HostAddress != "" {
+		return r.config.VM.Runner.HostAddress
+	}
 	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.Namespace)
 }
 
@@ -108,7 +115,12 @@ func vmRunnerLabels(owner, release string) map[string]string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their tokens, asks cert-manager for their serving certificates, renders their objects, and hands the caller a client once the pod reports ready. The caller holds the owner's lock, which the sweep also takes before it removes a runner, so a runner is never rebuilt from objects the sweep is deleting. An object still terminating from such a removal stops the build with errRunnerTerminating rather than being adopted: a claim that is going away would take every new machine disk with it.
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster has no objects here to build: the chart renders its credentials and the install starts it, so it counts as ready once it can be dialled, and a runner that is down fails the machine's ensure as unreachable.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand runnerDemand) (*vmrunner.Client, bool, error) {
+	if r.config.VM.Runner.HostAddress != "" {
+		client, err := r.runnerFor(ctx, owner)
+		return client, err == nil, err
+	}
 	name := r.runnerName(owner)
 	ns := r.config.Namespace
 	refs := r.runnerOwnerRef(ctx)
