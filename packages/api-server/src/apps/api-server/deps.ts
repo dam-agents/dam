@@ -23,7 +23,6 @@ import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
-import type { ExperimentPinPort } from "../../modules/experiments/index.js";
 import type {
   ApprovalsRelayService,
   WrapperFrameSender,
@@ -121,6 +120,5 @@ export interface ApiServerDeps {
   publicAgentPageService: PublicAgentPageService;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
-  experimentPin: ExperimentPinPort;
   artifactLibraryFor: ArtifactLibraryFor;
 }

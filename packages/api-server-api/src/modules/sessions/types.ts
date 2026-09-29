@@ -5,7 +5,6 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
-  ExperimentExecute: "experiment_execute",
   CliRun: "cli_run",
 } as const;
 
@@ -52,7 +51,6 @@ export interface SessionView {
   mode: SessionMode;
   createdAt: string;
   scheduleId?: string | null;
-  experimentId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
   updatedAt?: string | null;

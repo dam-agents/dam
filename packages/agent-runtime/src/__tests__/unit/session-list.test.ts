@@ -85,7 +85,6 @@ function session(
     updatedAt,
     title: null,
     scheduleId: null,
-    experimentId: null,
     threadTs: null,
     seenAt: null,
     runStartedAt: null,

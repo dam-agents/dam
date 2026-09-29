@@ -3,7 +3,6 @@ import { TRPCError } from "@trpc/server";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type {
-  ResolvedStarterKit,
   StarterKit,
   TemplateHarness,
   Agent,
@@ -73,11 +72,6 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
-}
-
-function withoutSeed(kit: ResolvedStarterKit): ResolvedStarterKit {
-  const { seed: _seed, ...rest } = kit;
-  return rest;
 }
 
 function toView(loaded: LoadedKit): StarterKitView {
@@ -241,16 +235,7 @@ export function createStarterKitsService(
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const requested = await requireKit(input.catalog, input.kitId);
-      if (input.skipSeed && requested.kit.install)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "this kit's install runs from its repository, so the repository cannot be removed",
-        });
-      const loaded: LoadedKit = input.skipSeed
-        ? { ...requested, kit: withoutSeed(requested.kit) }
-        : requested;
+      const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
 
       if (!kit.image && !input.templateId)

@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -34,7 +32,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and a snapshot of what the switch changes, and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME and each other persisted path; `Copying` streams them, as one tree, to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
+// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and a snapshot of what the switch changes, and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME; `Copying` streams it to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
 const (
 	annRuntimeMigration         = "agent-platform.ai/runtime-migration"
 	annRuntimeMigrationTarget   = "agent-platform.ai/runtime-migration-target"
@@ -42,8 +40,6 @@ const (
 	annRuntimeMigrationRetry    = "agent-platform.ai/runtime-migration-retry"
 	annRuntimeMigrationMessage  = "agent-platform.ai/runtime-migration-message"
 	annRuntimeMigrationSource   = "agent-platform.ai/runtime-migration-source"
-	annRuntimeMigrationMounts   = "agent-platform.ai/runtime-migration-mounts"
-	annRuntimeMigrationGrafts   = "agent-platform.ai/runtime-migration-grafts"
 	annRuntimeMigrationSeed     = "agent-platform.ai/runtime-migration-seed"
 	annRuntimeMigrationEmpty    = "agent-platform.ai/runtime-migration-nothing-to-copy"
 
@@ -61,7 +57,6 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: where the copy Job finds what it runs and reads. vm-seed ships in the runner image, so the Job carries exactly the tar writer the runner's reader was tested against.
 	runtimeMigrationSeedBinary = "/usr/local/bin/vm-seed"
 	runtimeMigrationSourcePath = "/mnt/home"
-	runtimeMigrationExtraPath  = "/mnt/extra"
 	runtimeMigrationCredsPath  = "/etc/vm-seed"
 
 	runtimeMigrationCapabilityKey = "capability"
@@ -170,10 +165,9 @@ func (m runtimeMigration) machineMayRun() bool {
 	return !m.active() || m.vmSideRuns()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the mounts rewritten to where each persisted path lives below HOME, and the disk sized for all of them. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
 type runtimeMigrationTarget struct {
-	Mounts      []apiv1.Mount `json:"mounts,omitempty"`
-	StorageSize string        `json:"storageSize,omitempty"`
+	StorageSize string `json:"storageSize,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Agent as the vm Backend sees it while its spec is still the container's. An Agent already on the vm Backend is its own target.
@@ -193,9 +187,6 @@ func runtimeMigrationTargetAgent(agent *apiv1.Agent) (*apiv1.Agent, error) {
 	target.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	target.Spec.RuntimeClassName = ""
 	target.Spec.NodeSelector = nil
-	if shape.Mounts != nil {
-		target.Spec.Mounts = shape.Mounts
-	}
 	if shape.StorageSize != "" {
 		target.Spec.StorageSize = shape.StorageSize
 	}
@@ -458,18 +449,7 @@ func (r *AgentReconciler) stopForRuntimeMigration(ctx context.Context, agent *ap
 			}
 			return r.runtimeMigrationWithNothingToCopy(ctx, agent, m)
 		}
-		grafts, err := r.runtimeMigrationGrafts(ctx, agent)
-		if err != nil {
-			return r.noteRuntimeMigration(ctx, agent, m, err)
-		}
 		patch[annRuntimeMigrationSource] = new(source)
-		if len(grafts) > 0 {
-			encoded, err := json.Marshal(grafts)
-			if err != nil {
-				return err
-			}
-			patch[annRuntimeMigrationGrafts] = new(string(encoded))
-		}
 	}
 	if len(patch) > 0 {
 		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, patch); err != nil {
@@ -521,7 +501,6 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	}
 	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
 		annRuntimeMigrationSource:  nil,
-		annRuntimeMigrationGrafts:  nil,
 		annRuntimeMigrationSeed:    nil,
 		annRuntimeMigrationEmpty:   nil,
 		annRuntimeMigrationMessage: nil,
@@ -626,59 +605,6 @@ func (r *AgentReconciler) runtimeMigrationVolume(ctx context.Context, agent *api
 	return "", fmt.Errorf("%d volumes are labelled as this agent's %s and its statefulset mounts none of them", len(list.Items), path)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one more of the agent's volumes carried into the seed: the path the container mounted it at, where it goes relative to HOME on the machine, and the claim. The api-server, which rewrote the spec, says in the mounts annotation where each persisted path went; the claim is found by the old path, which is what its mount label was made from.
-type runtimeMigrationGraft struct {
-	From string `json:"from"`
-	At   string `json:"at"`
-	PVC  string `json:"pvc"`
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the grafts for every persisted path besides HOME that the api-server moved. A path the container never made a volume for has nothing to carry and is left out, so it starts empty on the machine as it would have in a fresh pod. A request from an api-server that predates the annotation moves HOME alone, as it always did.
-func (r *AgentReconciler) runtimeMigrationGrafts(ctx context.Context, agent *apiv1.Agent) ([]runtimeMigrationGraft, error) {
-	raw := agent.Annotations[annRuntimeMigrationMounts]
-	if raw == "" {
-		return nil, nil
-	}
-	var moved map[string]string
-	if err := json.Unmarshal([]byte(raw), &moved); err != nil {
-		return nil, fmt.Errorf("the migration's mounts annotation is not a map of paths: %w", err)
-	}
-	from := make([]string, 0, len(moved))
-	for old := range moved {
-		from = append(from, old)
-	}
-	sort.Strings(from)
-	var grafts []runtimeMigrationGraft
-	for _, old := range from {
-		at, ok := strings.CutPrefix(moved[old], agentHomeDir+"/")
-		if !ok || at == "" {
-			return nil, fmt.Errorf("the migration moves %s to %s, which is not inside %s", old, moved[old], agentHomeDir)
-		}
-		pvc, err := r.runtimeMigrationVolume(ctx, agent, old)
-		if err != nil {
-			return nil, err
-		}
-		if pvc == "" {
-			slog.Info("runtime migration: no volume was ever made for a persisted path, nothing to carry", "agent", agent.Name, "path", old)
-			continue
-		}
-		grafts = append(grafts, runtimeMigrationGraft{From: old, At: at, PVC: pvc})
-	}
-	return grafts, nil
-}
-
-func recordedGrafts(agent *apiv1.Agent) ([]runtimeMigrationGraft, error) {
-	raw := agent.Annotations[annRuntimeMigrationGrafts]
-	if raw == "" {
-		return nil, nil
-	}
-	var grafts []runtimeMigrationGraft
-	if err := json.Unmarshal([]byte(raw), &grafts); err != nil {
-		return nil, fmt.Errorf("the recorded volumes to carry are not readable: %w", err)
-	}
-	return grafts, nil
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
 func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
 	name := agent.Name
@@ -745,9 +671,6 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		why := "copying the home directory failed"
 		if detail := r.copyJobFailure(ctx, job); detail != "" {
 			why = fmt.Sprintf("copying the home directory failed (%s)", detail)
-			if job.Annotations[annRuntimeMigrationMixedReader] == "true" && permissionDenied(detail) {
-				why = fmt.Sprintf("copying the home directory failed: %s (%s)", runtimeMigrationMixedHint, detail)
-			}
 		}
 		if m.attempts >= runtimeMigrationMaxAttempts {
 			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("%s; gave up after %d attempts", why, m.attempts))
@@ -838,10 +761,6 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	if _, err := runtimeMigrationTargetAgent(agent); err != nil {
 		return r.noteRuntimeMigration(ctx, agent, m, err)
 	}
-	grafts, err := recordedGrafts(agent)
-	if err != nil {
-		return r.noteRuntimeMigration(ctx, agent, m, err)
-	}
 	runnerIP, err := r.runnerPodIP(ctx, owner)
 	if err != nil {
 		return err
@@ -849,21 +768,17 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	if runnerIP == "" {
 		return r.setRuntimeMigrationNote(ctx, agent, m, "waiting for the owner's VM runner pod to be ready")
 	}
-	claims := []string{source}
-	for _, g := range grafts {
-		claims = append(claims, g.PVC)
-	}
-	reader, missing, err := r.runtimeMigrationReader(ctx, claims)
+	reader, found, err := r.runtimeMigrationReader(ctx, source)
 	if err != nil {
 		return err
 	}
-	if missing != "" {
-		return r.setRuntimeMigrationNote(ctx, agent, m, fmt.Sprintf("the volume %s this migration copies from no longer exists", missing))
+	if !found {
+		return r.setRuntimeMigrationNote(ctx, agent, m, fmt.Sprintf("the volume %s this migration copies from no longer exists", source))
 	}
 	if err := applyNetworkPolicy(ctx, r.client, buildRuntimeMigrationNetworkPolicy(agent, owner, r.config.Namespace)); err != nil {
 		return err
 	}
-	desired, err := r.buildRuntimeMigrationJob(agent, owner, source, runnerIP, reader, grafts)
+	desired, err := r.buildRuntimeMigrationJob(agent, owner, source, runnerIP, reader)
 	if err != nil {
 		return err
 	}
@@ -974,7 +889,7 @@ func (r *AgentReconciler) copyRuntimeMigrationAgain(ctx context.Context, agent *
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationCopying, msg)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs once the Backend has switched: the seed is removed, each volume the copy was read from is retained for its window, and the migration's records and condition go. Until the switch those volumes kept their labels, so an abort could still resume the container on them.
+// UNIT_BOUNDARY_DESCRIPTION: runs once the Backend has switched: the seed is removed, the home volume the copy was read from is retained for its window, and the migration's records and condition go. Until the switch that volume kept its labels, so an abort could still resume the container on it.
 func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
@@ -989,15 +904,8 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		return err
 	}
 	until := time.Now().Add(r.migrationRetention())
-	grafts, err := recordedGrafts(agent)
-	if err != nil {
-		return err
-	}
 	if source := agent.Annotations[annRuntimeMigrationSource]; source != "" {
-		grafts = append([]runtimeMigrationGraft{{From: agentHomeDir, PVC: source}}, grafts...)
-	}
-	for _, g := range grafts {
-		if err := r.retainMigratedVolume(ctx, agent, g.PVC, g.From, until); err != nil {
+		if err := r.retainMigratedVolume(ctx, agent, source, agentHomeDir, until); err != nil {
 			return err
 		}
 	}
@@ -1008,8 +916,6 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		annRuntimeMigrationRetry:    nil,
 		annRuntimeMigrationMessage:  nil,
 		annRuntimeMigrationSource:   nil,
-		annRuntimeMigrationMounts:   nil,
-		annRuntimeMigrationGrafts:   nil,
 		annRuntimeMigrationSeed:     nil,
 		annRuntimeMigrationEmpty:    nil,
 	}); err != nil {
@@ -1029,8 +935,8 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old volumes read-only — the home and every other persisted volume the migration carries, each grafted into the seed where the rewritten spec put it below HOME — as the identity the volumes call for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volumes attach.
-func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity, grafts []runtimeMigrationGraft) (*batchv1.Job, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
+func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
 	spec := cfg.VM.Runner
@@ -1080,13 +986,6 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 			},
 		}}},
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: new(resource.MustParse("16Mi"))}}},
-	}
-	for i, g := range grafts {
-		volume := "extra-" + strconv.Itoa(i)
-		path := runtimeMigrationExtraPath + "/" + strconv.Itoa(i)
-		command = append(command, "--graft", g.At+"="+path)
-		mounts = append(mounts, corev1.VolumeMount{Name: volume, MountPath: path, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: volume, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: g.PVC, ReadOnly: true}}})
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1148,9 +1047,6 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 			},
 		},
 	}
-	if reader.mixed {
-		job.Annotations = map[string]string{annRuntimeMigrationMixedReader: "true"}
-	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
 	if rc := agent.Spec.RuntimeClassName; rc != "" {
 		job.Spec.Template.Spec.RuntimeClassName = &rc
@@ -1182,7 +1078,7 @@ func stuckTerminating(pods []corev1.Pod, now time.Time) string {
 	return ""
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the Agent provably has nothing to copy: its StatefulSet is gone or held at zero, so nothing will make a volume for it any more, and no volume is labelled for it, not even one mid-way through a storage migration. A path moved from outside HOME needs no seed either: its link is in the machine's links plan, from the Agent's spec, and platform-init makes it on every boot.
+// UNIT_BOUNDARY_DESCRIPTION: whether the Agent provably has nothing to copy: its StatefulSet is gone or held at zero, so nothing will make a volume for it any more, and no volume is labelled for it, not even one mid-way through a storage migration.
 func (r *AgentReconciler) runtimeMigrationHasNothingToCopy(ctx context.Context, agent *apiv1.Agent) (bool, string, error) {
 	name := agent.Name
 	ns := r.config.Namespace
@@ -1293,13 +1189,6 @@ func (r *AgentReconciler) runtimeMigrationCopySlot(ctx context.Context, owner st
 		return fmt.Sprintf("waiting to copy: %d migrations are copying in this install, the most allowed at once", fleet), nil
 	}
 	return "", nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the advice for a mixed set whose share refused root. It comes before vm-seed's own error in the message, because the message is cut to a status line's length and a path in that error can be as long as the agent made it.
-const runtimeMigrationMixedHint = "this agent has both shared and block volumes, which one copy reads as root, and a share that squashes root refuses it; moving the shared volume to block storage first lets the copy finish"
-
-func permissionDenied(why string) bool {
-	return strings.Contains(why, "Permission denied") || strings.Contains(why, "os error 13")
 }
 
 func ownedBy(obj metav1.Object, agent *apiv1.Agent) bool {
@@ -1477,39 +1366,27 @@ func (r *AgentReconciler) deleteRuntimeMigrationNetworkPolicy(ctx context.Contex
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which identity the copy reads its volumes as. A shared volume — one that admits more than one node — may be a share that squashes root, where uid 0 is the weakest identity on the mount and gets EACCES on the agent's own 0600 files, so a copy of shared volumes alone reads as the agent's uid, with no capability at all. A volume only one node mounts is a block device that squashes nothing, and its filesystem root holds a root-owned 0700 lost+found the archive walks, which the agent's uid cannot open; a copy with any such volume reads as root holding DAC_READ_SEARCH alone, which reads every file and directory and writes nothing. One process reads every volume, so a mixed set takes root, which reads the block volume for certain; a shared volume beside it that squashes root then fails with EACCES, and `mixed` lets that failure be explained.
+// UNIT_BOUNDARY_DESCRIPTION: which identity the copy reads the home volume as. A shared volume — one that admits more than one node — may be a share that squashes root, where uid 0 is the weakest identity on the mount and gets EACCES on the agent's own 0600 files, so it is read as the agent's uid, with no capability at all. A volume only one node mounts is a block device that squashes nothing, and its filesystem root holds a root-owned 0700 lost+found the archive walks, which the agent's uid cannot open; it is read as root holding DAC_READ_SEARCH alone, which reads every file and directory and writes nothing.
 type runtimeMigrationIdentity struct {
 	uid, gid int64
 	caps     []corev1.Capability
-	mixed    bool
 }
 
-const annRuntimeMigrationMixedReader = "agent-platform.ai/runtime-migration-mixed-reader"
-
-func (r *AgentReconciler) runtimeMigrationReader(ctx context.Context, claims []string) (runtimeMigrationIdentity, string, error) {
-	uid, gid := migrationAgentIdentity(r.config)
-	agent := runtimeMigrationIdentity{uid: uid, gid: gid}
-	shared, block := false, false
-	for _, name := range claims {
-		pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if k8serrors.IsNotFound(err) {
-			return runtimeMigrationIdentity{}, name, nil
-		}
-		if err != nil {
-			return runtimeMigrationIdentity{}, "", fmt.Errorf("reading the volume %s to copy: %w", name, err)
-		}
-		if slices.ContainsFunc(pvc.Spec.AccessModes, func(m corev1.PersistentVolumeAccessMode) bool {
-			return m == corev1.ReadWriteMany || m == corev1.ReadOnlyMany
-		}) {
-			shared = true
-		} else {
-			block = true
-		}
+func (r *AgentReconciler) runtimeMigrationReader(ctx context.Context, claim string) (runtimeMigrationIdentity, bool, error) {
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, claim, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return runtimeMigrationIdentity{}, false, nil
 	}
-	if !block {
-		return agent, "", nil
+	if err != nil {
+		return runtimeMigrationIdentity{}, false, fmt.Errorf("reading the volume %s to copy: %w", claim, err)
 	}
-	return runtimeMigrationIdentity{uid: 0, gid: 0, caps: []corev1.Capability{"DAC_READ_SEARCH"}, mixed: shared}, "", nil
+	if slices.ContainsFunc(pvc.Spec.AccessModes, func(m corev1.PersistentVolumeAccessMode) bool {
+		return m == corev1.ReadWriteMany || m == corev1.ReadOnlyMany
+	}) {
+		uid, gid := migrationAgentIdentity(r.config)
+		return runtimeMigrationIdentity{uid: uid, gid: gid}, true, nil
+	}
+	return runtimeMigrationIdentity{uid: 0, gid: 0, caps: []corev1.Capability{"DAC_READ_SEARCH"}}, true, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the uid and gid that own an agent's files on the container backend, which every copy reads its source as. On a root-squashing share uid 0 is the weakest identity on the mount, while the agent's uid reads everything the agent wrote.
@@ -1526,7 +1403,7 @@ func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 	return uid, gid
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the volumes it was read from, so their requested size bounds it.
+// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's requested size bounds it.
 func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
 	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
 	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
@@ -1537,20 +1414,10 @@ func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *
 	if source == "" {
 		return 0
 	}
-	claims := []string{source}
-	if grafts, err := recordedGrafts(agent); err == nil {
-		for _, g := range grafts {
-			claims = append(claims, g.PVC)
-		}
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
+	if err != nil {
+		return 0
 	}
-	var total int64
-	for _, name := range claims {
-		pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			continue
-		}
-		size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-		total += size.Value()
-	}
-	return total
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	return size.Value()
 }

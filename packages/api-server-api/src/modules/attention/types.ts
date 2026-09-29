@@ -9,7 +9,6 @@ export interface AttentionItem {
   type: SessionType;
   title: string | null;
   scheduleId: string | null;
-  experimentId: string | null;
   createdAt: string;
   activityAt: string | null;
   seenAt: string | null;

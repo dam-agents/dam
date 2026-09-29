@@ -11,7 +11,6 @@ import { describe, expect, test } from "vitest";
 import {
   type InFlightIds,
   migrateAction,
-  planMoveLines,
   retentionSentence,
   runtimeBadge,
   whileInFlight,
@@ -241,21 +240,6 @@ describe("whileInFlight", () => {
 });
 
 describe("the confirm dialog's plan", () => {
-  // TEST_SCENARIO: a path outside the home moves below it; the dialog names where it will live, in the ~ form the agent's shell shows, and a path already under the home is said to stay.
-  test("names where each moved path will live", () => {
-    expect(
-      planMoveLines({
-        moves: [
-          { from: "/data", to: "/home/agent/.persisted/data" },
-          { from: "/home/agent/cache", to: "/home/agent/cache" },
-        ],
-      }),
-    ).toEqual([
-      { from: "/data", to: "~/.persisted/data", stays: false },
-      { from: "/home/agent/cache", to: "~/cache", stays: true },
-    ]);
-  });
-
   test("says a whole number of days in days", () => {
     expect(retentionSentence(7 * 24 * 3600_000)).toMatch(/kept for 7 days /);
     expect(retentionSentence(24 * 3600_000)).toMatch(/kept for 1 day /);

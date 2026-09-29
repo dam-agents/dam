@@ -7,19 +7,17 @@ export const podSessionTypeSchema = z.enum([
   "channel_slack",
   "channel_telegram",
   "schedule_cron",
-  "experiment_execute",
   "cli_run",
 ]);
 
 export const podSessionSchema = z.object({
   sessionId: z.string().min(1),
   mode: podSessionModeSchema,
-  type: podSessionTypeSchema,
+  type: podSessionTypeSchema.catch("regular"),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
   title: z.string().nullable(),
   scheduleId: z.string().nullable(),
-  experimentId: z.string().nullable(),
   initialization: z.boolean().optional(),
   threadTs: z.string().nullable(),
   seenAt: z.string().nullable(),
@@ -31,7 +29,6 @@ export const podSessionSchema = z.object({
 
 export const SESSION_CATEGORIES = [
   "chats",
-  "experiments",
   "scheduled",
   "channels",
   "runs",
@@ -52,7 +49,6 @@ export const sessionListInputSchema = z
     categories: z.array(sessionCategorySchema).optional(),
     sessionId: z.string().min(1).optional(),
     scheduleId: z.string().min(1).optional(),
-    experimentId: z.string().min(1).optional(),
     after: sessionListCursorSchema.optional(),
     limit: z.number().int().min(1).max(SESSION_LIST_MAX_LIMIT).optional(),
   })
@@ -65,7 +61,7 @@ export const podSessionNoticeSchema = z.object({
 export const sessionDirectoryEntrySchema = z.object({
   sessionId: z.string().min(1),
   mode: podSessionModeSchema,
-  type: podSessionTypeSchema,
+  type: podSessionTypeSchema.catch("regular"),
   createdAt: z.string(),
 });
 

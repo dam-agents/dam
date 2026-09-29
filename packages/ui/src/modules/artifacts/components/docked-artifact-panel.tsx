@@ -13,7 +13,6 @@ import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
@@ -100,10 +99,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     showFrame && artifact ? artifact.id : null,
     shownVersion,
   );
-  const experimentFeedPost = useDashboardFeedPost(openArtifactId);
   const startSession = useStartArtifactSession(artifact);
-  const feedPostForShown =
-    shownVersion === latest ? experimentFeedPost : undefined;
 
   const bridgeOpen = canUseArtifactBridge(
     artifact,
@@ -119,7 +115,6 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         title={artifact.title}
         className="h-full w-full bg-white"
         deferMs={0}
-        postData={feedPostForShown}
         onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
         agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
       />

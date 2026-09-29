@@ -3,7 +3,6 @@ import { match } from "ts-pattern";
 import type {
   AgentView,
   RuntimeMigrationPhase,
-  RuntimeMigrationPlanView,
   RuntimeMigrationView,
 } from "../../../types.js";
 
@@ -175,7 +174,6 @@ export async function whileInFlight(
   }
 }
 
-const AGENT_HOME = "/home/agent";
 const WINDOW_UNITS: readonly { unit: string; ms: number }[] = [
   { unit: "day", ms: 24 * 3600_000 },
   { unit: "hour", ms: 3600_000 },
@@ -197,27 +195,4 @@ export function retentionSentence(ms: number | null): string {
   if (ms <= 0)
     return "The old volumes are not kept: they are deleted once the move has finished.";
   return `The old volumes are kept for ${windowText(ms)} after the move, so an admin can recover anything missing.`;
-}
-
-export interface PlanMoveLine {
-  from: string;
-  to: string;
-  stays: boolean;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the persisted paths the confirm dialog lists. A path already under the home keeps its place and is said to stay; a path outside it is said to live at its new place, with the home written as ~ the way the agent's own shell shows it. How the old path keeps working is the platform's business, so the dialog names only where the data will live.
-export function planMoveLines(
-  plan: Pick<RuntimeMigrationPlanView, "moves">,
-): PlanMoveLine[] {
-  const tilde = (path: string) =>
-    path === AGENT_HOME
-      ? "~"
-      : path.startsWith(`${AGENT_HOME}/`)
-        ? `~${path.slice(AGENT_HOME.length)}`
-        : path;
-  return plan.moves.map((m) => ({
-    from: m.from,
-    to: tilde(m.to),
-    stays: m.from === m.to,
-  }));
 }

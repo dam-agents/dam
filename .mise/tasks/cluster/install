@@ -553,7 +553,7 @@ istio_install_if_missing istio-cni istio/cni \
   --set useAppArmorAnnotation=false \
   ${ISTIO_CNI_IPV4_ONLY[@]+"${ISTIO_CNI_IPV4_ONLY[@]}"} > >(sed -u 's/^/[istio-cni] /') 2>&1 &
 ISTIO_CNI_PID=$!
-# ztunnel proxies every mesh hop, including the experiment SDK's status polls
+# ztunnel proxies every mesh hop, including the driver SDK's status polls
 # from a driver to the api-server harness. Its chart default requests only
 # 200m, so a bursting agent pod (a nous worker boots with a large upstream
 # fetch and many concurrent dials) can outbid it on this single-node VM;

@@ -3,5 +3,3 @@ pub mod guest;
 
 #[cfg(target_os = "linux")]
 pub mod boot;
-#[cfg(target_os = "linux")]
-pub mod links;

@@ -2,8 +2,8 @@
 {{/*
 SCC for the runtime migration's copy Job on OpenShift, bound to the
 `platform-migration` ServiceAccount alone. The Job reads an agent's old
-volumes read-only and streams them to its owner's VM runner. When any of
-them is a block volume it runs as uid 0 holding DAC_READ_SEARCH and no
+home volume read-only and streams it to its owner's VM runner. When it is
+a block volume it runs as uid 0 holding DAC_READ_SEARCH and no
 other capability: the volume's root holds a root-owned 0700 lost+found the
 agent's uid cannot open, and DAC_READ_SEARCH reads every file and directory
 while writing nothing. Everything else is as tight as restricted-v2: drop

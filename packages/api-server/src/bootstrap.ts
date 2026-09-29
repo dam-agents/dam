@@ -14,7 +14,7 @@ import {
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
-  EXPERIMENT_ACTIVE_KEY,
+  INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -201,6 +201,7 @@ import {
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -227,12 +228,6 @@ import {
   createAgentArtifactsSweeper,
   type AgentCleanupSource,
 } from "./sagas/agent-artifacts-sweeper.js";
-import {
-  composeExperimentInactivitySweep,
-  createExperimentsCleanupHook,
-  listOpenExperimentDriverIds,
-  reconcileExperimentPins,
-} from "./modules/experiments/index.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createXactLock } from "./core/xact-lock.js";
@@ -1171,15 +1166,6 @@ export async function bootstrap() {
         runtimeDelivery.outboxRepo.deleteForAgent(agentId),
     },
     {
-      name: "experiments",
-      listAgentIds: () => listOpenExperimentDriverIds(db),
-      cleanup: createExperimentsCleanupHook({
-        db,
-        artifactLibraryFor: artifactLibraryForSystem,
-        agentsFor: (owner) => harnessAgentsServiceFor(owner),
-      }),
-    },
-    {
       name: "invocations",
       listAgentIds: () => listInvocationAgentIds(db),
       cleanup: createInvocationsCleanupHook({
@@ -1247,45 +1233,6 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
-
-  const experimentPin = {
-    set: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-    clear: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-  };
-  const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
-  const experimentInactivitySweep = composeExperimentInactivitySweep({
-    db,
-    inactivityMs: experimentInactivityMs,
-    batchSize: 200,
-    pin: experimentPin,
-    artifactLibraryFor: artifactLibraryForSystem,
-    agentsFor: (owner) => harnessAgentsServiceFor(owner),
-  });
-  await periodicJobs.register(
-    "experiment-inactivity-sweep",
-    Math.min(experimentInactivityMs, 5 * 60_000),
-    () => experimentInactivitySweep.tick(),
-  );
-
-  void reconcileExperimentPins({
-    db,
-    listPinnedAgentIds: () =>
-      agentsRepo.listAgentIdsWithAnnotation(EXPERIMENT_ACTIVE_KEY, "true"),
-    pin: experimentPin,
-  }).then(
-    ({ set, cleared }) => {
-      if (set > 0 || cleared > 0) {
-        process.stderr.write(
-          `[experiments] pin reconciliation: set ${set}, cleared ${cleared}\n`,
-        );
-      }
-    },
-    (err) => {
-      process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
-    },
-  );
 
   await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
     agentArtifactsSweeper.tick(),
@@ -1367,6 +1314,18 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
+  const invocationPinReconciler = composeInvocationPinReconciler({
+    db,
+    listPinnedAgentIds: () =>
+      agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
+    readPin: (agentId) => agentsRepo.readInvocationPin(agentId),
+    release: (agentId, version) =>
+      agentsRepo.releaseInvocationPin(agentId, version),
+  });
+  await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
+    invocationPinReconciler.tick(),
+  );
+
   const invocationSetupFailure = createInvocationSetupFailure({
     db,
     agentsFor: harnessAgentsServiceFor,
@@ -1484,7 +1443,6 @@ export async function bootstrap() {
     publicAgentPageService,
     sessionPresence,
     wakeAgent: wakeAgentFor,
-    experimentPin,
     artifactLibraryFor,
   };
   const onboardingChecklistFor = (owner: string) =>
@@ -1512,7 +1470,6 @@ export async function bootstrap() {
     agentsRepo,
     templatesRepo,
     artifactLibraryFor,
-    experimentPin,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,

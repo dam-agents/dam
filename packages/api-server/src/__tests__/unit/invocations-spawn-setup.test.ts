@@ -29,23 +29,26 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
-    listByExperiment: async () => [],
-    countRunningByDriver: async () => new Map(),
-    failAllRunningByExperiment: async () => [],
     delete: async () => {},
     ...overrides,
   };
   return { repo, failed };
 }
 
-function makeService() {
+function makeService(opts: { failPin?: boolean } = {}) {
   const created: Array<Record<string, unknown>> = [];
+  const deletedRows: string[] = [];
   const bumped: Array<Array<{ id: string; kind: string; payload: unknown }>> =
     [];
   const skillsApplied: unknown[] = [];
+  const pinned: string[] = [];
   const service = createInvocationsService({
     owner: "owner-1",
-    repo: repoStub().repo,
+    repo: repoStub({
+      delete: async (id) => {
+        deletedRows.push(id);
+      },
+    }).repo,
     agents: {
       create: async (input: Record<string, unknown>) => {
         created.push(input);
@@ -68,8 +71,12 @@ function makeService() {
         return { installed: [], skipped: [], added: 0 } as never;
       },
     },
+    pinDriver: async (id) => {
+      if (opts.failPin) throw new Error("conflict");
+      pinned.push(id);
+    },
   });
-  return { service, created, bumped, skillsApplied };
+  return { service, created, bumped, skillsApplied, pinned, deletedRows };
 }
 
 const baseInput: SpawnInput = {
@@ -259,6 +266,39 @@ describe("a skills apply that does not land fails the Invocation", () => {
 
     expect(failed).toEqual([]);
     expect(deleted).toEqual([]);
+  });
+});
+
+describe("spawn pins its driver", () => {
+  // TEST_SCENARIO: the driver must not hibernate between its spawn call and the next pin reconcile, so the spawn itself pins it before the target is created.
+  test("the driver is pinned before the target is created", async () => {
+    const { service, pinned, created } = makeService();
+
+    await service.spawn(baseInput);
+
+    expect(pinned).toEqual(["driver-1"]);
+    expect(created).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the pin write joins the spawn's rollback, so a failed write leaves no running Invocation row behind and creates no target.
+  test("a failed pin write fails the spawn and removes its row", async () => {
+    const { service, created, deletedRows } = makeService({ failPin: true });
+
+    await expect(service.spawn(baseInput)).rejects.toThrow("conflict");
+    expect(created).toEqual([]);
+    expect(deletedRows).toHaveLength(1);
+  });
+
+  test("a refused spawn does not pin", async () => {
+    const { service, pinned } = makeService();
+
+    await expect(
+      service.spawn({
+        ...baseInput,
+        target: { templateId: "codex", runsOn: ["openai"] },
+      }),
+    ).rejects.toBeInstanceOf(ProviderMismatchError);
+    expect(pinned).toEqual([]);
   });
 });
 

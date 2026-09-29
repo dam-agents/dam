@@ -122,7 +122,6 @@ pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.env != desired.env
         || applied.image != desired.image
         || applied.allow_cidrs != desired.allow_cidrs
-        || applied.links != desired.links
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
@@ -137,22 +136,7 @@ fn shaped(spec: &MachineSpec) -> bool {
 // UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the controller always sends the paired gateway's address alone.
 pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them /0";
 
-// UNIT_BOUNDARY_DESCRIPTION: the share holds the links plan one path per line, so a link is refused unless it is a plain absolute path: no newline or NUL to split one link into two, no `.` or `..`, and not the root. Which paths the guest may put back is platform-init's to decide; this only keeps the plan's lines what the controller sent.
-pub const BAD_LINK: &str = "every link must be a plain absolute path";
-
-fn plain_absolute(path: &str) -> bool {
-    path.len() > 1
-        && path.starts_with('/')
-        && !path.contains(['\n', '\0'])
-        && path[1..]
-            .split('/')
-            .all(|part| !part.is_empty() && part != "." && part != "..")
-}
-
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
-    if !spec.links.iter().all(|link| plain_absolute(link)) {
-        return Err(BAD_LINK);
-    }
     if spec.running && !shaped(spec) {
         return Err(REQUIRED);
     }
@@ -190,7 +174,6 @@ mod tests {
             OPEN_EGRESS,
             "a running machine needs allowCidrs, none of them /0"
         );
-        assert_eq!(BAD_LINK, "every link must be a plain absolute path");
     }
 
     // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
@@ -324,13 +307,6 @@ mod tests {
                 "allowCidrs",
                 MachineSpec {
                     allow_cidrs: vec!["10.0.0.9/32".into()],
-                    ..running_spec()
-                },
-            ),
-            (
-                "links",
-                MachineSpec {
-                    links: vec!["/data".into()],
                     ..running_spec()
                 },
             ),
@@ -554,28 +530,6 @@ mod tests {
             };
             assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
         }
-        for link in [
-            "data",
-            "/",
-            "/a\n/etc",
-            "/a/../etc",
-            "/a//b",
-            "/a/",
-            "/a\0b",
-        ] {
-            let spec = MachineSpec {
-                links: vec!["/data".into(), link.into()],
-                ..running_spec()
-            };
-            assert_eq!(admissible(&spec), Err(BAD_LINK), "{link:?} was admitted");
-        }
-        assert_eq!(
-            admissible(&MachineSpec {
-                links: vec!["/data".into(), "/var/lib/app".into()],
-                ..running_spec()
-            }),
-            Ok(())
-        );
         let stop = MachineSpec {
             running: false,
             ..Default::default()
@@ -639,7 +593,6 @@ mod tests {
             running: true,
             pull_auths: Vec::new(),
             migration: None,
-            links: Vec::new(),
             expect_seed: None,
         }
     }

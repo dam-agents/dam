@@ -35,15 +35,9 @@ const suite: NamedProject[] = [
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
-    name: "experiments",
-    testMatch: /12-.*\.spec\.ts$/,
-    dependencies: ["messages", "user-env"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
     name: "injection",
     testMatch: /05-.*\.spec\.ts$/,
-    dependencies: ["experiments"],
+    dependencies: ["messages", "user-env"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {

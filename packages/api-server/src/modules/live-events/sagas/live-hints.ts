@@ -65,15 +65,6 @@ export function hintFor(
       };
     case EventType.ArtifactFolderChanged:
       return { ownerSub: event.ownerSub, hint: { topic: "artifacts" } };
-    case EventType.ExperimentChanged:
-      return {
-        ownerSub: event.ownerSub,
-        hint: {
-          topic: "experiments",
-          experimentId: event.experimentId,
-          agentId: event.agentId,
-        },
-      };
     case EventType.KbSharePublished:
     case EventType.KbSharePublishFailed:
       return {
@@ -101,7 +92,6 @@ export function hintFor(
     case EventType.SkillPublished:
     case EventType.SkillSetSaved:
     case EventType.SkillSetDeleted:
-    case EventType.KindedAgentCreated:
     case EventType.StarterKitApplied:
     case EventType.InvocationSpawned:
     case EventType.FeatureFlagChanged:

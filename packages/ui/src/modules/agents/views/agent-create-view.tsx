@@ -224,7 +224,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     slackChannelId: form.slackChannelId,
     skippedSchedules: form.skippedSchedules,
     scheduleOverrides: form.scheduleOverrides,
-    skipSeed: form.skipSeed,
   };
   const owned = connections.data ?? [];
   const kitOwnedConnectionIds = useMemo(
@@ -534,11 +533,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <SectionLabel spaced>Repository</SectionLabel>
           <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
-            <KitRepositoryCard
-              kit={kit}
-              skipped={form.skipSeed}
-              onToggleSkipped={() => update({ skipSeed: !form.skipSeed })}
-            />
+            <KitRepositoryCard kit={kit} />
           </ul>
         </section>
       )}

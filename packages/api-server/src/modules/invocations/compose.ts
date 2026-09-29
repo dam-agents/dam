@@ -4,7 +4,6 @@ import type {
   InvocationsQueryService,
   SkillsService,
 } from "api-server-api";
-import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
@@ -21,6 +20,10 @@ import {
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
 import { createSetupFailure } from "./services/setup-failure.js";
+import {
+  createInvocationPinReconciler,
+  type InvocationPinReconciler,
+} from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -32,8 +35,8 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
   targetAdmission?: TargetAdmission;
   skills?: Pick<SkillsService, "applyEntries">;
+  pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
-  const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
     owner: opts.owner,
@@ -44,10 +47,7 @@ export function composeInvocationsForOwner(opts: {
     wakeAgent: opts.wakeAgent,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
-    isExperimentRunning: async (experimentId, driverAgentId) => {
-      const row = await experimentsRepo.get(experimentId, opts.owner);
-      return row?.status === "running" && row.driverAgentId === driverAgentId;
-    },
+    ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
   });
 }
 
@@ -96,6 +96,22 @@ export function createInvocationSetupFailure(opts: {
   return createSetupFailure({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
+  });
+}
+
+export function composeInvocationPinReconciler(opts: {
+  db: Db;
+  listPinnedAgentIds: () => Promise<string[]>;
+  readPin: (driverAgentId: string) => Promise<string | null>;
+  release: (driverAgentId: string, version: string) => Promise<void>;
+}): InvocationPinReconciler {
+  const repo = createInvocationsRepository(opts.db);
+  return createInvocationPinReconciler({
+    listPinnedAgentIds: opts.listPinnedAgentIds,
+    readPin: opts.readPin,
+    hasRunningInvocation: async (driverAgentId) =>
+      (await repo.listRunningByDriver(driverAgentId)).length > 0,
+    release: opts.release,
   });
 }
 

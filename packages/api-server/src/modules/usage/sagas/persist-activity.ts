@@ -24,9 +24,7 @@ import {
   type SkillPublished,
   type SkillSetSaved,
   type SkillSetDeleted,
-  type KindedAgentCreated,
   type StarterKitApplied,
-  type ExperimentChanged,
   type InvocationSpawned,
   type FeatureFlagChanged,
   type HarnessConfigChanged,
@@ -282,15 +280,6 @@ export function startPersistActivitySaga(
     payload: {},
   }));
 
-  persist<KindedAgentCreated>(EventType.KindedAgentCreated, (event) => ({
-    type: "kinded_agent_created",
-    actorSub: event.actorSub,
-    agentId: event.agentId,
-    surface: event.surface,
-    outcome: "success",
-    payload: { kind: event.kind },
-  }));
-
   persist<StarterKitApplied>(EventType.StarterKitApplied, (event) => ({
     type: "starter_kit_applied",
     actorSub: event.actorSub,
@@ -303,18 +292,6 @@ export function startPersistActivitySaga(
       version: event.version,
     },
   }));
-
-  persist<ExperimentChanged>(EventType.ExperimentChanged, (event) => {
-    if (!event.action || !event.actorSub) return null;
-    return {
-      type: `experiment_${event.action}`,
-      actorSub: event.actorSub,
-      agentId: null,
-      surface: event.surface ?? null,
-      outcome: "success",
-      payload: { experimentId: event.experimentId },
-    };
-  });
 
   persist<InvocationSpawned>(EventType.InvocationSpawned, (event) => ({
     type: "invocation_spawned",

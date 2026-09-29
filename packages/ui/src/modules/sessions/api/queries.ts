@@ -70,7 +70,6 @@ export function optimisticInsertSession(
     mode,
     createdAt: new Date().toISOString(),
     scheduleId: null,
-    experimentId: null,
     title: null,
     updatedAt: null,
     running,

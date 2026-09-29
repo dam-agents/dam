@@ -81,7 +81,6 @@ export function runtimeMigrationRefusalReasons(
 
 export function toRuntimeMigrationPlanView(plan: RuntimeMigrationPlan) {
   return {
-    moves: plan.moves,
     unmovable: plan.unmovable,
     storageSize: plan.storageSize,
     storageResized: plan.storageResized,

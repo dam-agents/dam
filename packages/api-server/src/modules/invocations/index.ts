@@ -6,11 +6,11 @@ export {
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./compose.js";
 export {
   AttenuationError,
-  ExperimentNotRunningError,
   InvalidSchemaError,
   ProviderMismatchError,
   UnresolvableDriverError,

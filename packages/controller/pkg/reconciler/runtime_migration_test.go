@@ -668,84 +668,6 @@ func TestEachPhaseSaysWhichSideRuns(t *testing.T) {
 	assert.False(t, runtimeMigrationOf(nil, apiv1.AgentStatus{}).active())
 }
 
-// TEST_SCENARIO: an Agent that persisted paths besides HOME on the container backend brings them along. The api-server said where each path went and gave the machine the rewritten mounts; the controller finds each path's volume while the pod is going, mounts it read-only beside the home in the copy Job and names where it goes below HOME, and after the switch retains it with the home, each marked with the path it held. A path no volume was ever made for has nothing to carry, but it is still in the machine's links plan, which the target shape carries as each moved mount's movedFrom, since the agent's software still looks there. The plan comes from the spec, not the seed, so the copy Job carries none.
-func TestAMigrationCarriesTheAgentsOtherPersistedVolumes(t *testing.T) {
-	ctx := context.Background()
-	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationStopping, time.Now())
-	agent.Spec.Mounts = []apiv1.Mount{
-		{Path: "/home/agent", Persist: true},
-		{Path: "/data", Persist: true},
-		{Path: "/home/agent/cache", Persist: true},
-		{Path: "/never", Persist: true},
-	}
-	agent.Annotations[annRuntimeMigrationTarget] = `{"mounts":[{"path":"/home/agent","persist":true},{"path":"/home/agent/.persisted/data","persist":true,"movedFrom":"/data"},{"path":"/home/agent/cache","persist":true},{"path":"/home/agent/.persisted/never","persist":true,"movedFrom":"/never"}],"storageSize":"40Gi"}`
-	agent.Annotations[annRuntimeMigrationMounts] = `{"/data":"/home/agent/.persisted/data","/home/agent/cache":"/home/agent/cache","/never":"/home/agent/.persisted/never"}`
-	r, node, _ := setupVMReconciler(t, agent)
-	createAll(t, r,
-		homePVC("home-agent-my-agent-0"),
-		mountPVC("data-my-agent-0", "/data"),
-		mountPVC("home-agent-cache-my-agent-0", "/home/agent/cache"),
-	)
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
-	grafts, err := recordedGrafts(agent)
-	require.NoError(t, err)
-	assert.Equal(t, []runtimeMigrationGraft{
-		{From: "/data", At: ".persisted/data", PVC: "data-my-agent-0"},
-		{From: "/home/agent/cache", At: "cache", PVC: "home-agent-cache-my-agent-0"},
-	}, grafts)
-	assert.Equal(t, 40, node.spec("my-agent").StorageGiB, "the machine's disk is the size the request gave it")
-
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
-	require.NoError(t, r.Reconcile(ctx, agent))
-	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
-	require.NoError(t, err)
-	pod := job.Spec.Template.Spec
-	command := pod.Containers[0].Command
-	assert.Contains(t, strings.Join(command, " "), "--graft .persisted/data=/mnt/extra/0 --graft cache=/mnt/extra/1")
-	assert.NotContains(t, strings.Join(command, " "), "--links", "the seed carries no plan and nothing to run")
-	assert.Equal(t, []string{"/data", "/never"}, node.spec("my-agent").Links,
-		"the machine built beside the container takes its links plan from the target shape: every path moved from outside HOME, even one no volume was made for; one under HOME keeps its place and needs no link")
-	claims := map[string]string{}
-	for _, v := range pod.Volumes {
-		if v.PersistentVolumeClaim != nil {
-			assert.True(t, v.PersistentVolumeClaim.ReadOnly, "the copy never writes to a volume it copies")
-			claims[v.Name] = v.PersistentVolumeClaim.ClaimName
-		}
-	}
-	assert.Equal(t, map[string]string{"home": "home-agent-my-agent-0", "extra-0": "data-my-agent-0", "extra-1": "home-agent-cache-my-agent-0"}, claims)
-
-	completeCopy(t, r, testSeedAnnotation(t))
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
-	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
-		require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
-		require.NoError(t, unstructured.SetNestedSlice(u.Object, []any{
-			map[string]any{"path": "/home/agent", "persist": true},
-			map[string]any{"path": "/home/agent/.persisted/data", "persist": true, "movedFrom": "/data"},
-			map[string]any{"path": "/home/agent/cache", "persist": true},
-			map[string]any{"path": "/home/agent/.persisted/never", "persist": true, "movedFrom": "/never"},
-		}, "spec", "mounts"))
-		withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget, annRuntimeMigrationMounts)(u)
-	})
-	require.NoError(t, r.Reconcile(ctx, agent))
-	agent = reloaded(t, r, agent)
-	for _, key := range []string{annRuntimeMigration, annRuntimeMigrationMounts, annRuntimeMigrationGrafts} {
-		assert.NotContains(t, agent.Annotations, key)
-	}
-	for name, mount := range map[string]string{"home-agent-my-agent-0": "/home/agent", "data-my-agent-0": "/data", "home-agent-cache-my-agent-0": "/home/agent/cache"} {
-		pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
-		require.NoError(t, err, name)
-		assertRetained(t, pvc, mount, time.Now().Add(defaultMigrationRetention))
-	}
-}
-
 // TEST_SCENARIO: a boot is held to the seed the copy stored, so a booting migration with no readable record of that seed — one that entered booting before the seed was recorded, or a record edited into something else — is not let run: a machine booted without the expectation could seed its home from the image.
 func TestABootWithNoRecordedSeedIsHeldDown(t *testing.T) {
 	for _, recorded := range []string{"", "not json", `{"bytes":0,"sha256":""}`, `{"bytes":4,"sha256":"ABC"}`} {
@@ -901,7 +823,7 @@ func TestTheCopyJobCarriesASeedCapabilityAndNeverTheRunnersToken(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 
 	require.NoError(t, r.applySeedCapability(ctx, agent, testOwner))
-	job, err := r.buildRuntimeMigrationJob(agent, testOwner, "home-agent-my-agent-0", testRunnerPodIP, runtimeMigrationIdentity{uid: 65532, gid: 65532}, nil)
+	job, err := r.buildRuntimeMigrationJob(agent, testOwner, "home-agent-my-agent-0", testRunnerPodIP, runtimeMigrationIdentity{uid: 65532, gid: 65532})
 	require.NoError(t, err)
 	pod := job.Spec.Template.Spec
 	var mounted []string
@@ -949,17 +871,17 @@ func TestTheCopyJobCarriesASeedCapabilityAndNeverTheRunnersToken(t *testing.T) {
 	assert.NotEqual(t, capability, string(again.Data[runtimeMigrationCapabilityKey]))
 }
 
-func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
-	return &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-		Name: name, Namespace: "test-agents",
-		Labels: map[string]string{LabelAgent: "my-agent", LabelMount: sanitizeMountName(path)},
-	}}
-}
-
 // TEST_SCENARIO: the seed maps the agent's container ids to the machine's root, so they are read from the install's agent security context: an install that runs its agents as another uid and gid gets those mapped, and one that sets neither falls back to the chart's 65532 as the storage migration does.
 func TestRuntimeMigrationOwnerMapFollowsTheAgentSecurityContext(t *testing.T) {
 	uid, gid := int64(1000), int64(2000)
 	custom := &config.Config{AgentBase: config.AgentBase{ContainerSecurityContext: &corev1.SecurityContext{RunAsUser: &uid, RunAsGroup: &gid}}}
 	assert.Equal(t, "1000:2000:0", runtimeMigrationOwnerMap(custom))
 	assert.Equal(t, "65532:65532:0", runtimeMigrationOwnerMap(&config.Config{}))
+}
+
+func mountPVC(name, path string) *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name: name, Namespace: "test-agents",
+		Labels: map[string]string{LabelAgent: "my-agent", LabelMount: sanitizeMountName(path)},
+	}}
 }

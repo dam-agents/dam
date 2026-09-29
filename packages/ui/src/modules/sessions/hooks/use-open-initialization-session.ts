@@ -5,12 +5,7 @@ import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useAgentSessionQuery } from "../api/queries.js";
 
-const OPENABLE_CATEGORIES: SessionCategory[] = [
-  "chats",
-  "experiments",
-  "runs",
-  "terminal",
-];
+const OPENABLE_CATEGORIES: SessionCategory[] = ["chats", "runs", "terminal"];
 
 export function useOpenInitializationSession(opts: {
   agentId: string | null;

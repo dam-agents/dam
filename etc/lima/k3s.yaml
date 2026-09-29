@@ -12,7 +12,7 @@ images:
 # Pending forever with FailedScheduling: Insufficient cpu.
 #
 # 10 is the host's full logical-CPU count (vz time-shares vCPUs, so the host
-# stays responsive). At 8, an experiment fanning out workers within the old
+# stays responsive). At 8, a driver fanning out sub-agents within the old
 # 8-CPU budget ceiling drove the VM's load average past 20: kubelet probes
 # timed out, the node flapped NotReady, and Keycloak crash-looped on liveness
 # kills until the UI lost auth entirely. The per-user budget ceiling in
@@ -23,7 +23,7 @@ images:
 # every host core, a sustained CPU hog on the host (a forgotten dev server,
 # a runaway build) stalls the guest's vCPUs long enough to blow 3-second
 # liveness probes — postgres/redis get SIGTERMed while "Completed", the
-# api-server 500s, and a running experiment dies with it, all while the VM's
+# api-server 500s, and a running fan-out dies with it, all while the VM's
 # own load average looks innocent. When probes time out cluster-wide but
 # `free`/`df` inside the VM look fine, check `uptime` and top CPU consumers
 # on the host first, not the cluster.
@@ -81,10 +81,13 @@ provision:
         # died 120s later on a missing kubeconfig. Fetch to a file so the failure
         # is visible, and retry the pair: the installer is re-runnable, and a
         # transient GitHub error is not worth losing a cluster provision over.
+        # The script comes from the pinned release tag on GitHub, not get.k3s.io:
+        # it then matches the version it installs, and the provision depends on
+        # GitHub alone.
         installer=$(mktemp /tmp/k3s-install.XXXXXX)
         attempt=1
         while :; do
-          if curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors https://get.k3s.io -o "$installer" && sh "$installer"; then
+          if curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh" -o "$installer" && sh "$installer"; then
             break
           fi
           if [ "$attempt" -ge 4 ]; then

@@ -20,7 +20,6 @@ interface PlatformMeta {
   mode?: string;
   type?: string;
   scheduleId?: string;
-  experimentId?: string;
   initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
@@ -38,18 +37,25 @@ interface ListedSession {
   _meta?: { platform?: PlatformMeta };
 }
 
+const SESSION_TYPES: readonly string[] = Object.values(SessionType);
+
+function asSessionType(value: string | undefined): SessionType {
+  return value !== undefined && SESSION_TYPES.includes(value)
+    ? (value as SessionType)
+    : SessionType.Regular;
+}
+
 function toSessionView(agentId: string, s: ListedSession): SessionView {
   const p = s._meta?.platform;
   return {
     sessionId: s.sessionId,
     agentId,
-    type: (p?.type as SessionType) ?? SessionType.Regular,
+    type: asSessionType(p?.type),
     mode: p
       ? ((p.mode as SessionMode) ?? SessionMode.Chat)
       : SessionMode.Terminal,
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
-    experimentId: p?.experimentId ?? null,
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
@@ -110,7 +116,6 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   channel_slack: SessionType.ChannelSlack,
   channel_telegram: SessionType.ChannelTelegram,
   schedule_cron: SessionType.ScheduleCron,
-  experiment_execute: SessionType.ExperimentExecute,
   cli_run: SessionType.CliRun,
 };
 
@@ -127,7 +132,6 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     mode: POD_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
-    experimentId: s.experimentId,
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,

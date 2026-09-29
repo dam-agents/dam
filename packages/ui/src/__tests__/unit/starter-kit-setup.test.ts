@@ -16,7 +16,6 @@ import {
   isStarterKitSetupComplete,
   kitResourcesLine,
   kitScheduleCadence,
-  kitSeedRemovable,
   ownedMatches,
   preselectedGrants,
   providerPolicyForKit,
@@ -69,7 +68,6 @@ const complete: StarterKitSetupDraft = {
   slackChannelId: " C123 ",
   skippedSchedules: [],
   scheduleOverrides: [],
-  skipSeed: false,
 };
 
 describe("requirementStatuses", () => {
@@ -161,7 +159,6 @@ describe("buildStarterKitApplyInput", () => {
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
-      skipSeed: false,
       skipSchedules: ["benchmark"],
       scheduleOverrides: [],
     });
@@ -187,33 +184,6 @@ describe("buildStarterKitApplyInput", () => {
         templates,
       ),
     ).toThrow();
-  });
-
-  // TEST_SCENARIO: a kit whose install runs from its checkout keeps its repository whatever the draft says.
-  test("removes the kit's repository only when nothing in the kit runs from it", () => {
-    const seeded = {
-      ...kit,
-      seed: {
-        url: "https://github.com/acme/code-guardian",
-        ref: "main",
-        into: "home" as const,
-      },
-    };
-    const removed = { ...complete, skipSeed: true };
-    expect(kitSeedRemovable(seeded)).toBe(true);
-    expect(
-      buildStarterKitApplyInput(seeded, removed, owned, templates),
-    ).toMatchObject({ skipSeed: true });
-
-    const withInstall = {
-      ...seeded,
-      install: { command: "bash bootstrap.sh" },
-    };
-    expect(kitSeedRemovable(withInstall)).toBe(false);
-    expect(
-      buildStarterKitApplyInput(withInstall, removed, owned, templates),
-    ).toMatchObject({ skipSeed: false });
-    expect(kitSeedRemovable(kit)).toBe(false);
   });
 });
 

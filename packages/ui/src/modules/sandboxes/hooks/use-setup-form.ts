@@ -5,7 +5,7 @@ import { z } from "zod";
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
 
-export type SetupFlow = "coding-agent" | "experiment" | "starter-kit";
+export type SetupFlow = "coding-agent" | "starter-kit";
 
 const setupFormSchema = z.object({
   name: z.string(),
@@ -14,7 +14,6 @@ const setupFormSchema = z.object({
   satelliteNames: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
   customImage: z.string().default(""),
-  skipSeed: z.boolean().default(false),
   hibernationTimeoutMin: z
     .number()
     .int()

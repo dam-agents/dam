@@ -24,9 +24,6 @@ const AgentContainerName = "agent"
 // UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. On the vm backend platform-init, which is Rust and runs inside the guest, bind-mounts the disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
 const agentHomeDir = "/home/agent"
 
-// UNIT_BOUNDARY_DESCRIPTION: where on the vm backend a persisted path from outside HOME keeps its data once a runtime migration moved it: /data lives at HOME/.persisted/data. platform-init points each link here, so the path is held to the vm runner's contract fixtures too.
-const agentPersistedDir = agentHomeDir + "/.persisted"
-
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
 		panic(fmt.Sprintf("port out of range: %d (must be 0..65535)", p))

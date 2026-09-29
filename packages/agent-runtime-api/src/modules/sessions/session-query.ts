@@ -5,7 +5,6 @@ interface QueriedSession {
   mode: string;
   type: string;
   scheduleId?: string | null;
-  experimentId?: string | null;
 }
 
 export function sessionCategoryOf(session: {
@@ -16,7 +15,6 @@ export function sessionCategoryOf(session: {
   if (session.type === "channel_slack" || session.type === "channel_telegram")
     return "channels";
   if (session.type === "schedule_cron") return "scheduled";
-  if (session.type === "experiment_execute") return "experiments";
   if (session.type === "cli_run") return "runs";
   return "chats";
 }
@@ -29,9 +27,6 @@ export function sessionMatchesQuery(
     (query.categories === undefined ||
       query.categories.includes(sessionCategoryOf(session))) &&
     (query.sessionId === undefined || session.sessionId === query.sessionId) &&
-    (query.scheduleId === undefined ||
-      session.scheduleId === query.scheduleId) &&
-    (query.experimentId === undefined ||
-      session.experimentId === query.experimentId)
+    (query.scheduleId === undefined || session.scheduleId === query.scheduleId)
   );
 }
