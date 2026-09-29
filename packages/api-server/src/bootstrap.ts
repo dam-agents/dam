@@ -101,7 +101,11 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
-import { createSlackTokenRotation } from "./modules/channels/infrastructure/slack-token-rotation.js";
+import {
+  createSlackTokenRotation,
+  noSlackTokenRotation,
+  type SlackTokenRotation,
+} from "./modules/channels/infrastructure/slack-token-rotation.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -658,7 +662,7 @@ export async function bootstrap() {
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
-    ...(fakeSlackGateway
+    ...(fakeSlackGateway && fakeSlackRotation
       ? {
           slackInstalls: {
             record: (install) => slackInstalls.record(install),
@@ -667,7 +671,7 @@ export async function bootstrap() {
             renewAll: () => slackInstalls.renewAll(),
             resolveBotToken: (teamId) => slackInstalls.resolveBotToken(teamId),
             forgetBotToken: (teamId) => slackInstalls.forgetBotToken(teamId),
-            rotation: fakeSlackRotation!,
+            rotation: fakeSlackRotation,
           },
         }
       : {}),
@@ -836,13 +840,14 @@ export async function bootstrap() {
     "install:slack",
     SLACK_INSTALL_HANDOFF_TTL_MS,
   );
-  const slackTokenRotation =
-    config.slackClientId && config.slackClientSecret
+  const slackTokenRotation: SlackTokenRotation =
+    fakeSlackRotation ??
+    (config.slackClientId && config.slackClientSecret
       ? createSlackTokenRotation({
           clientId: config.slackClientId,
           clientSecret: config.slackClientSecret,
         })
-      : null;
+      : noSlackTokenRotation);
   const listActiveSlackWorkspaces = async () =>
     (await listSlackInstalls(db)())
       .filter((i) => i.credentialState === "active")
@@ -855,14 +860,9 @@ export async function bootstrap() {
     setState: setSlackCredentialState(db),
     secrets: secretStore,
     installLock: createXactLock(db),
-    refreshToken:
-      fakeSlackRotation?.refresh ?? slackTokenRotation?.refresh ?? null,
-    exchangeToken:
-      fakeSlackRotation?.exchange ??
-      (config.slackTokenRotation
-        ? (slackTokenRotation?.exchange ?? null)
-        : null),
-    ...(fakeSlackRotation ? { now: fakeSlackRotation.now } : {}),
+    rotation: slackTokenRotation,
+    exchangeLongLivedTokens:
+      config.slackTokenRotation || fakeSlackRotation !== undefined,
   });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath

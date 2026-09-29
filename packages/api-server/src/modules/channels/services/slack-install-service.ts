@@ -11,7 +11,7 @@ import type {
 } from "../infrastructure/slack-installs-repository.js";
 import type {
   SlackRotatingToken,
-  SlackTokenGrant,
+  SlackTokenRotation,
 } from "../infrastructure/slack-token-rotation.js";
 import { securityLog } from "../../../core/security-log.js";
 import { formatError } from "../../../core/format-error.js";
@@ -29,7 +29,7 @@ export interface SlackInstallRecord {
   teamId: string;
   teamName: string | null;
   botToken: string;
-  rotation?: Omit<SlackRotatingToken, "accessToken"> | null;
+  rotation: Omit<SlackRotatingToken, "accessToken"> | null;
   installedBy: string | null;
 }
 
@@ -47,9 +47,8 @@ export interface SlackInstallServiceDeps {
   setState: (teamId: string, state: SlackCredentialState) => Promise<void>;
   secrets: SecretStore;
   installLock: XactLock;
-  refreshToken: SlackTokenGrant | null;
-  exchangeToken: SlackTokenGrant | null;
-  now?: () => number;
+  rotation: SlackTokenRotation;
+  exchangeLongLivedTokens: boolean;
 }
 
 export interface SlackInstallService {
@@ -100,7 +99,7 @@ export interface SlackInstallService {
 export function createSlackInstallService(
   deps: SlackInstallServiceDeps,
 ): SlackInstallService {
-  const now = deps.now ?? (() => Date.now());
+  const now = () => deps.rotation.now();
   const tokens = new Map<string, { token: string | null; at: number }>();
   const inFlight = new Map<string, Promise<string | null>>();
   const exchangeRetryAt = new Map<string, number>();
@@ -127,7 +126,8 @@ export function createSlackInstallService(
 
   function exchangeDue(teamId: string): boolean {
     return (
-      deps.exchangeToken !== null && (exchangeRetryAt.get(teamId) ?? 0) <= now()
+      deps.exchangeLongLivedTokens &&
+      (exchangeRetryAt.get(teamId) ?? 0) <= now()
     );
   }
 
@@ -178,7 +178,7 @@ export function createSlackInstallService(
   ): Promise<string> {
     const teamId = install.teamId;
     if (!exchangeDue(teamId)) return token;
-    const result = await deps.exchangeToken!(token);
+    const result = await deps.rotation.exchange(token);
     if (!result.ok) {
       exchangeRetryAt.set(teamId, now() + EXCHANGE_RETRY_MS);
       securityLog("warn", "slack.token.exchange.failed", {
@@ -232,8 +232,7 @@ export function createSlackInstallService(
     rotation: NonNullable<Stored["rotation"]>,
   ): Promise<string | null> {
     const expired = rotation.expiresAt <= now();
-    if (!deps.refreshToken) return expired ? null : token;
-    const result = await deps.refreshToken(rotation.refreshToken);
+    const result = await deps.rotation.refresh(rotation.refreshToken);
     if (result.ok) {
       await deps.secrets.putFields(
         {
@@ -349,6 +348,7 @@ export function createSlackInstallService(
             teamId,
             teamName: null,
             botToken: token,
+            rotation: null,
             installedBy: null,
           });
         }

@@ -1,16 +1,13 @@
 import type {
-  SlackTokenGrant,
   SlackTokenGrantResult,
+  SlackTokenRotation,
 } from "./slack-token-rotation.js";
 
 const ACCESS_TOKEN_TTL_S = 43_200;
 const REFRESH_GRACE_MS = 60_000;
 const ACTIVE_TOKEN_LIMIT = 2;
 
-export interface FakeSlackTokenRotation {
-  refresh: SlackTokenGrant;
-  exchange: SlackTokenGrant;
-  now(): number;
+export interface FakeSlackTokenRotation extends SlackTokenRotation {
   advance(ms: number): void;
   enableRotation(): void;
   registerLongLived(token: string, teamId: string): void;

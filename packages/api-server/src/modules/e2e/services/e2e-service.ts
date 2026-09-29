@@ -17,6 +17,7 @@ export interface SlackInstallE2eControl {
     teamId: string;
     teamName: string | null;
     botToken: string;
+    rotation: null;
     installedBy: string | null;
   }): Promise<string>;
   importHelmToken(teamId: string, token: string): Promise<void>;
@@ -123,6 +124,7 @@ export function createE2eService(deps: {
         teamId: input.teamId,
         teamName: input.teamName ?? null,
         botToken: input.botToken,
+        rotation: null,
         installedBy: null,
       });
       slack.setChannels(input.channels, input.teamId);

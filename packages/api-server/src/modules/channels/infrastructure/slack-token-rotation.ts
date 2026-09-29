@@ -22,6 +22,24 @@ export type SlackTokenGrantResult =
 
 export type SlackTokenGrant = (token: string) => Promise<SlackTokenGrantResult>;
 
+export interface SlackTokenRotation {
+  refresh: SlackTokenGrant;
+  exchange: SlackTokenGrant;
+  now(): number;
+}
+
+const unavailable: SlackTokenGrant = async () => ({
+  ok: false,
+  credentialDead: false,
+  error: "slack-client-credentials-missing",
+});
+
+export const noSlackTokenRotation: SlackTokenRotation = {
+  refresh: unavailable,
+  exchange: unavailable,
+  now: () => Date.now(),
+};
+
 interface SlackGrantResponse {
   ok?: boolean;
   error?: string;
@@ -53,7 +71,7 @@ export function createSlackTokenRotation(creds: {
   clientId: string;
   clientSecret: string;
   now?: () => number;
-}): { refresh: SlackTokenGrant; exchange: SlackTokenGrant } {
+}): SlackTokenRotation {
   const now = creds.now ?? (() => Date.now());
 
   async function grant(
@@ -103,5 +121,6 @@ export function createSlackTokenRotation(creds: {
       }),
     exchange: (longLivedToken) =>
       grant("oauth.v2.exchange", { token: longLivedToken }),
+    now,
   };
 }

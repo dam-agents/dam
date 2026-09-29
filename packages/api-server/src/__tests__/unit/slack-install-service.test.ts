@@ -5,7 +5,10 @@ import {
 } from "../../modules/channels/services/slack-install-service.js";
 import type { SlackInstall } from "../../modules/channels/infrastructure/slack-installs-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
-import type { SlackTokenGrant } from "../../modules/channels/infrastructure/slack-token-rotation.js";
+import {
+  noSlackTokenRotation,
+  type SlackTokenGrant,
+} from "../../modules/channels/infrastructure/slack-token-rotation.js";
 
 /**
  * TEST_OVERVIEW: Which credential answers for a Slack workspace.
@@ -57,9 +60,12 @@ function service(opts?: {
       states[teamId] = state;
     },
     installLock: async (_key, run) => run(),
-    refreshToken: opts?.refreshToken ?? null,
-    exchangeToken: opts?.exchangeToken ?? null,
-    ...(opts?.now ? { now: opts.now } : {}),
+    rotation: {
+      refresh: opts?.refreshToken ?? noSlackTokenRotation.refresh,
+      exchange: opts?.exchangeToken ?? noSlackTokenRotation.exchange,
+      now: opts?.now ?? noSlackTokenRotation.now,
+    },
+    exchangeLongLivedTokens: opts?.exchangeToken !== undefined,
     secrets: {
       storeId: "k8s",
       get: async ({ path }: { path: string }) =>
