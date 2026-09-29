@@ -249,12 +249,12 @@ export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ALL_DAYS,
   buildRRule,
-  canOccur,
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
   isInQuietHours,
   occurrenceRule,
+  rruleProblem,
   rruleToText,
 } from "./modules/schedules/rrule.js";
 export type { FrequencyPreset } from "./modules/schedules/rrule.js";

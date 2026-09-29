@@ -157,35 +157,42 @@ export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
 type RRuleOptions = ReturnType<typeof RRule.parseString>;
 
 const DAY_MINUTES = 24 * 60;
+const DAY_MS = DAY_MINUTES * 60_000;
 
 export function occurrenceRule(
   options: RRuleOptions,
   dtstart: Date,
 ): InstanceType<typeof RRule> | null {
-  if (!canOccur(options)) return null;
+  if (rruleProblem(options)) return null;
   if (!pinsTimeOfDay(options)) return new RRule({ dtstart, ...options });
+  const cycle = cycleDays(stepMinutes(options));
+  const today = Math.floor(dtstart.getTime() / DAY_MS);
   const set = new RRuleSet();
-  for (const [minutes, hours] of hoursByMinutes(options)) {
+  for (const slot of pinnedSlots(options)) {
+    const day = today + mod(slot.cycleDay - today, cycle);
     set.rrule(
       new RRule({
-        dtstart,
         ...options,
+        dtstart: new Date(day * DAY_MS),
         freq: Frequency.DAILY,
-        interval: 1,
-        byhour: hours,
-        byminute: minutes,
+        interval: cycle,
+        byhour: slot.hours,
+        byminute: slot.minutes,
       }),
     );
   }
   return set;
 }
 
-export function canOccur(options: RRuleOptions): boolean {
-  if (!dayFiltersMatchSomeDate(options)) return false;
-  if (!pinsTimeOfDay(options)) return true;
-  if (toNumArray(options.bysetpos).length > 0) return false;
-  if (DAY_MINUTES % stepMinutes(options) !== 0) return false;
-  return hoursByMinutes(options).size > 0;
+export function rruleProblem(options: RRuleOptions): string | null {
+  if (!dayFiltersMatchSomeDate(options))
+    return "its BYMONTH/BYMONTHDAY/BYYEARDAY/BYWEEKNO filters match no date";
+  if (!pinsTimeOfDay(options)) return null;
+  if (toNumArray(options.bysetpos).length > 0)
+    return "BYSETPOS is not supported on an HOURLY or MINUTELY rule that sets BYHOUR or BYMINUTE";
+  if (pinnedSlots(options).length === 0)
+    return "its INTERVAL never lands on its BYHOUR/BYMINUTE";
+  return null;
 }
 
 function pinsTimeOfDay(options: RRuleOptions): boolean {
@@ -205,30 +212,66 @@ function stepMinutes(options: RRuleOptions): number {
   return options.freq === Frequency.HOURLY ? interval * 60 : interval;
 }
 
-function hoursByMinutes(options: RRuleOptions): Map<number[], number[]> {
+type PinnedSlot = { cycleDay: number; hours: number[]; minutes: number[] };
+
+function pinnedSlots(options: RRuleOptions): PinnedSlot[] {
   const step = stepMinutes(options);
   const hourly = options.freq === Frequency.HOURLY;
   const byminute = toNumArray(options.byminute);
-  const minutes = byminute.length > 0 || !hourly ? orAll(byminute, 60) : [0];
-  const groups = new Map<string, { minutes: number[]; hours: number[] }>();
+  const minutes = hourly && byminute.length === 0 ? [0] : orAll(byminute, 60);
+  const slots = new Map<string, PinnedSlot>();
   for (const h of orAll(toNumArray(options.byhour), 24)) {
-    const onStep = hourly
-      ? minutes.filter(() => (h * 60) % step === 0)
-      : minutes.filter((m) => (h * 60 + m) % step === 0);
-    if (onStep.length === 0) continue;
-    const key = onStep.join(",");
-    const group = groups.get(key) ?? { minutes: onStep, hours: [] };
-    group.hours.push(h);
-    groups.set(key, group);
+    const minutesByDay = new Map<number, number[]>();
+    for (const m of minutes) {
+      const cycleDay = stepLandingDay(h * 60 + (hourly ? 0 : m), step);
+      if (cycleDay === null) continue;
+      minutesByDay.set(cycleDay, [...(minutesByDay.get(cycleDay) ?? []), m]);
+    }
+    for (const [cycleDay, dayMinutes] of minutesByDay) {
+      const key = `${cycleDay}:${dayMinutes.join(",")}`;
+      const slot = slots.get(key) ?? {
+        cycleDay,
+        hours: [],
+        minutes: dayMinutes,
+      };
+      slot.hours.push(h);
+      slots.set(key, slot);
+    }
   }
-  return new Map([...groups.values()].map((g) => [g.minutes, g.hours]));
+  return [...slots.values()];
+}
+
+function cycleDays(step: number): number {
+  return step / gcd(step, DAY_MINUTES);
+}
+
+function stepLandingDay(minuteOfDay: number, step: number): number | null {
+  const g = gcd(step, DAY_MINUTES);
+  if (minuteOfDay % g !== 0) return null;
+  const cycle = step / g;
+  return mod(-(minuteOfDay / g) * modInverse(DAY_MINUTES / g, cycle), cycle);
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+function mod(a: number, n: number): number {
+  return ((a % n) + n) % n;
+}
+
+function modInverse(a: number, n: number): number {
+  let [r0, r1, t0, t1] = [n, mod(a, n), 0, 1];
+  while (r1 !== 0) {
+    const q = Math.floor(r0 / r1);
+    [r0, r1, t0, t1] = [r1, r0 - q * r1, t1, t0 - q * t1];
+  }
+  return mod(t0, n);
 }
 
 const PROBE_START = new Date(Date.UTC(2000, 0, 1));
 
 function dayFiltersMatchSomeDate(options: RRuleOptions): boolean {
-  if (options.freq === undefined || options.freq < Frequency.WEEKLY)
-    return true;
   const { bymonth, bymonthday, byyearday, byweekno, byeaster } = options;
   const filtered =
     toNumArray(bymonth).length > 0 ||

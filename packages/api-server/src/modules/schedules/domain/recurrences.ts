@@ -1,10 +1,10 @@
 import { CronExpressionParser } from "cron-parser";
 import rrulePkg from "rrule";
 import {
-  canOccur,
   hasVisibleOccurrence,
   isInQuietHours,
   occurrenceRule,
+  rruleProblem,
 } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
 
@@ -17,11 +17,8 @@ export function validateCron(expr: string): void {
 export function validateRRule(expr: string): void {
   const rule = RRule.fromString(expr);
   if (!rule) throw new Error(`invalid rrule: ${expr}`);
-  if (!canOccur(RRule.parseString(expr))) {
-    throw new Error(
-      `rrule never fires — with BYHOUR/BYMINUTE its INTERVAL must divide the day and land on them without BYSETPOS, and its BYMONTH/BYMONTHDAY/BYYEARDAY/BYWEEKNO must match a real date: ${expr}`,
-    );
-  }
+  const problem = rruleProblem(RRule.parseString(expr));
+  if (problem) throw new Error(`rrule is rejected, ${problem}: ${expr}`);
 }
 
 export function validateTimezone(tz: string): void {

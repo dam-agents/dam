@@ -107,6 +107,35 @@ describe("nextFireAt (rrule)", () => {
   });
 });
 
+function stepFromEpoch(rrule: string, from: Date): Date | null {
+  const fields = Object.fromEntries(
+    rrule.split(";").map((part) => part.split("=")),
+  );
+  const list = (key: string) => fields[key]?.split(",").map(Number);
+  const interval = Number(fields.INTERVAL ?? 1);
+  const hourly = fields.FREQ === "HOURLY";
+  const hours = list("BYHOUR");
+  const minutes = list("BYMINUTE") ?? (hourly ? [0] : undefined);
+  const days = fields.BYDAY?.split(",").map((d: string) =>
+    ["SU", "MO", "TU", "WE", "TH", "FR", "SA"].indexOf(d),
+  );
+  const start = Math.floor(from.getTime() / 60_000) + 1;
+  for (let minute = start; minute < start + 60 * 24 * 60; minute++) {
+    const at = new Date(minute * 60_000);
+    const onStep = hourly
+      ? Math.floor(minute / 60) % interval === 0
+      : minute % interval === 0;
+    if (
+      onStep &&
+      (!hours || hours.includes(at.getUTCHours())) &&
+      (!minutes || minutes.includes(at.getUTCMinutes())) &&
+      (!days || days.includes(at.getUTCDay()))
+    )
+      return at;
+  }
+  return null;
+}
+
 describe("nextFireAt (sub-daily rrule pinned to hours or minutes)", () => {
   const QUARTER_HOURS_WORKDAY =
     "FREQ=MINUTELY;INTERVAL=15;BYDAY=MO,TU,WE,TH,FR;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18;BYMINUTE=0,15,30,45";
@@ -141,9 +170,37 @@ describe("nextFireAt (sub-daily rrule pinned to hours or minutes)", () => {
   it.each([
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=7",
     "FREQ=HOURLY;INTERVAL=2;BYHOUR=9",
-    "FREQ=HOURLY;INTERVAL=5;BYHOUR=10",
   ])("returns null for %s, whose steps never reach its pins", (rrule) => {
     expect(nextFireAt(rruleSpec(rrule, "UTC"), new Date())).toBeNull();
+  });
+
+  it.each([
+    ["FREQ=MINUTELY;INTERVAL=7;BYMINUTE=0", "2026-09-25T11:47:00Z"],
+    ["FREQ=MINUTELY;INTERVAL=7;BYMINUTE=0", "2026-09-26T00:00:00Z"],
+    ["FREQ=HOURLY;INTERVAL=5;BYHOUR=10", "2026-09-25T11:00:00Z"],
+    ["FREQ=HOURLY;INTERVAL=5;BYHOUR=10;BYMINUTE=15,45", "2026-09-26T09:00:00Z"],
+    [
+      "FREQ=MINUTELY;INTERVAL=25;BYHOUR=9,10;BYDAY=MO,WE",
+      "2026-09-26T10:00:00Z",
+    ],
+    ["FREQ=HOURLY;INTERVAL=7;BYMINUTE=30", "2026-09-25T11:47:00Z"],
+  ])(
+    "gives %s the same occurrences as stepping minute by minute from the epoch, from %s",
+    (rrule, from) => {
+      const expected = stepFromEpoch(rrule, new Date(from));
+      expect(expected).not.toBeNull();
+      expect(nextFireAt(rruleSpec(rrule, "UTC"), new Date(from))).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it("fires a pinned interval that does not divide the day at the same instants from any evaluation time", () => {
+    const spec = rruleSpec("FREQ=HOURLY;INTERVAL=5;BYHOUR=10", "UTC");
+    const first = nextFireAt(spec, new Date("2026-09-25T11:00:00Z"));
+    expect(nextFireAt(spec, new Date("2026-09-27T23:59:00Z"))).toEqual(first);
+    const second = nextFireAt(spec, first!);
+    expect(second!.getTime() - first!.getTime()).toBe(5 * 24 * 3600_000);
   });
 
   it("returns null quickly for day filters that match no date", () => {
@@ -172,19 +229,30 @@ describe("nextFireAt (sub-daily rrule pinned to hours or minutes)", () => {
 describe("validateRRule", () => {
   it("rejects a sub-daily interval that never reaches its pins", () => {
     expect(() => validateRRule("FREQ=MINUTELY;INTERVAL=15;BYMINUTE=7")).toThrow(
-      /never fires/,
+      /INTERVAL never lands on its BYHOUR\/BYMINUTE/,
     );
   });
 
-  it("rejects a pinned interval that does not divide the day", () => {
-    expect(() => validateRRule("FREQ=HOURLY;INTERVAL=5;BYHOUR=10")).toThrow(
-      /never fires/,
-    );
+  it("accepts a pinned interval that does not divide the day", () => {
+    expect(() =>
+      validateRRule("FREQ=HOURLY;INTERVAL=5;BYHOUR=10"),
+    ).not.toThrow();
+    expect(() =>
+      validateRRule("FREQ=MINUTELY;INTERVAL=7;BYMINUTE=0"),
+    ).not.toThrow();
   });
 
-  it("rejects day filters that match no date", () => {
-    expect(() => validateRRule("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30")).toThrow(
-      /never fires/,
+  it.each([
+    "FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30",
+    "FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=30",
+    "FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=31",
+  ])("rejects %s, whose day filters match no date", (rrule) => {
+    expect(() => validateRRule(rrule)).toThrow(/filters match no date/);
+  });
+
+  it("rejects BYSETPOS on a pinned sub-daily rule", () => {
+    expect(() => validateRRule("FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=1")).toThrow(
+      /BYSETPOS is not supported/,
     );
   });
 
