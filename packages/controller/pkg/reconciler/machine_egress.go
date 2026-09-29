@@ -55,9 +55,9 @@ func machineDNSContainer(cfg *config.Config, gatewayIP string) corev1.Container 
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_BIND_SERVICE"},
 			},
-			AllowPrivilegeEscalation: ptrBool(false),
-			ReadOnlyRootFilesystem:   ptrBool(true),
-			RunAsNonRoot:             ptrBool(true),
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
+			RunAsNonRoot:             new(true),
 		},
 	}
 }
