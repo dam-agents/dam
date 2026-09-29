@@ -4,13 +4,26 @@ import { useState } from "react";
 import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
-import type { MessagePart, Role } from "../../../types.js";
+import type {
+  MessagePart,
+  Role,
+  ToolChip as ToolChipPart,
+} from "../../../types.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
-import { parseFanOut } from "../../invocations/lib/fan-out.js";
+import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import { ActivityBlock } from "./activity-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
+
+function ToolPart({ chip }: { chip: ToolChipPart }) {
+  const spawns = useOwnedSpawns(chip);
+  return spawns ? (
+    <DelegationBlock chip={chip} spawns={spawns} />
+  ) : (
+    <ToolChip chip={chip} />
+  );
+}
 
 function HistoryBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -78,13 +91,7 @@ export function ChatMessagePart({
           )}
         </div>
       );
-    default: {
-      const spawns = parseFanOut(part);
-      return spawns ? (
-        <DelegationBlock chip={part} spawns={spawns} />
-      ) : (
-        <ToolChip chip={part} />
-      );
-    }
+    default:
+      return <ToolPart chip={part} />;
   }
 }

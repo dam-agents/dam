@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { parseFanOut } from "../../modules/invocations/lib/fan-out.js";
-import type { ToolChip } from "../../types.js";
+import {
+  fanOutOwners,
+  parseFanOut,
+} from "../../modules/invocations/lib/fan-out.js";
+import type { Message, ToolChip } from "../../types.js";
 
 function chip(text: string): ToolChip {
   return {
@@ -30,6 +33,15 @@ describe("parseFanOut recognises the SDK's progress lines in a tool chip", () =>
     ]);
   });
 
+  test("reads the lines a file read numbers", () => {
+    const spawns = parseFanOut(
+      chip(
+        "     1\t[invoke] spawned slow -> agent-cccc3333\n     2\t[invoke] done slow (agent-cccc3333)",
+      ),
+    );
+    expect(spawns).toEqual([{ id: "agent-cccc3333", label: "slow" }]);
+  });
+
   test("dedupes a child whose line was printed twice", () => {
     const spawns = parseFanOut(
       chip(
@@ -54,5 +66,24 @@ describe("parseFanOut recognises the SDK's progress lines in a tool chip", () =>
     expect(
       parseFanOut({ kind: "tool", title: "ls", status: "completed" }),
     ).toBeNull();
+  });
+});
+
+describe("fanOutOwners gives each child to the first chip that names it", () => {
+  function message(id: string, parts: ToolChip[]): Message {
+    return { id, role: "assistant", parts } as Message;
+  }
+
+  test("a later chip naming the same child does not own it", () => {
+    const first = chip("[invoke] spawned six -> agent-aaaa1111");
+    const again = chip(
+      "1\t[invoke] spawned six -> agent-aaaa1111\n2\t[invoke] spawned eight -> agent-bbbb2222",
+    );
+    const owners = fanOutOwners([
+      message("m1", [first]),
+      message("m2", [again]),
+    ]);
+    expect(owners.get("agent-aaaa1111")).toBe(first);
+    expect(owners.get("agent-bbbb2222")).toBe(again);
   });
 });

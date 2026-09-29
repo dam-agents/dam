@@ -6,9 +6,19 @@ export interface FanOutSpawn {
 }
 
 const SPAWN_LINE =
-  /^\[invoke\] spawned (?<label>.+?) -> (?<id>agent-[a-z0-9]+)$/;
+  /^(?:\d+\t)?\[invoke\] spawned (?<label>.+?) -> (?<id>agent-[a-z0-9]+)$/;
+
+const parsed = new WeakMap<ToolChip, FanOutSpawn[] | null>();
 
 export function parseFanOut(chip: ToolChip): FanOutSpawn[] | null {
+  const cached = parsed.get(chip);
+  if (cached !== undefined) return cached;
+  const spawns = scanSpawns(chip);
+  parsed.set(chip, spawns);
+  return spawns;
+}
+
+function scanSpawns(chip: ToolChip): FanOutSpawn[] | null {
   const spawns = new Map<string, FanOutSpawn>();
   for (const block of chip.content ?? []) {
     for (const line of (block.text ?? "").split("\n")) {
@@ -21,19 +31,30 @@ export function parseFanOut(chip: ToolChip): FanOutSpawn[] | null {
   return spawns.size > 0 ? [...spawns.values()] : null;
 }
 
+export type ChipKey = string | ToolChip;
+
+export function chipKeyOf(chip: ToolChip): ChipKey {
+  return chip.toolCallId ?? chip;
+}
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: every child the transcript already accounts for.
- * A fan-out's chip arrives only once the driver's script exits, so until then
- * the live block speaks for those children; this set is what hands them over,
+ * UNIT_BOUNDARY_DESCRIPTION: for every child the transcript accounts for, the
+ * key of the first chip that names it. A driver can print or read back the same progress
+ * lines more than once, so only that chip shows the child. Until any chip
+ * names a child the live block speaks for it; this map is what hands it over,
  * in the render the chip lands rather than whenever a poll next runs.
  */
-export function fanOutIdsIn(messages: readonly Message[]): ReadonlySet<string> {
-  const ids = new Set<string>();
+export function fanOutOwners(
+  messages: readonly Message[],
+): ReadonlyMap<string, ChipKey> {
+  const owners = new Map<string, ChipKey>();
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.kind !== "tool") continue;
-      for (const spawn of parseFanOut(part) ?? []) ids.add(spawn.id);
+      for (const spawn of parseFanOut(part) ?? []) {
+        if (!owners.has(spawn.id)) owners.set(spawn.id, chipKeyOf(part));
+      }
     }
   }
-  return ids;
+  return owners;
 }

@@ -1,9 +1,10 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
-import { hasRunning } from "../lib/delegation-state.js";
+import { awaitsCapture, hasRunning } from "../lib/delegation-state.js";
 
 const LIVE_POLL_MS = 5_000;
+const IDLE_POLL_MS = 15_000;
 const MISSING_ID_POLLS = 6;
 
 export function useDelegationTree(
@@ -19,7 +20,8 @@ export function useDelegationTree(
     staleTime: 2_000,
     refetchInterval: (query) => {
       const nodes = query.state.data?.nodes;
-      if (nodes && hasRunning(nodes)) return LIVE_POLL_MS;
+      if (nodes && (hasRunning(nodes) || awaitsCapture(nodes, Date.now())))
+        return LIVE_POLL_MS;
       const unresolved = !nodes || nodes.length < ids.length;
       const polls = query.state.dataUpdateCount + query.state.errorUpdateCount;
       return unresolved && polls < MISSING_ID_POLLS ? LIVE_POLL_MS : false;
@@ -48,14 +50,14 @@ export function useInvocationTurns(
 
 export function useRunningDelegations(
   driverAgentId: string | null,
-  active: boolean,
+  busy: boolean,
 ) {
   return useQuery({
     ...trpc.invocations.running.queryOptions(
-      active && driverAgentId ? { driverAgentId } : skipToken,
+      driverAgentId ? { driverAgentId } : skipToken,
     ),
     staleTime: 1_000,
-    refetchInterval: active ? LIVE_POLL_MS : false,
+    refetchInterval: busy ? LIVE_POLL_MS : IDLE_POLL_MS,
     retry: false,
   });
 }

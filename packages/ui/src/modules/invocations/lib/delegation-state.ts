@@ -32,6 +32,22 @@ export function hasRunning(nodes: readonly DelegationNode[]): boolean {
   );
 }
 
+const CAPTURE_WINDOW_MS = 60_000;
+
+export function awaitsCapture(
+  nodes: readonly DelegationNode[],
+  now: number,
+): boolean {
+  return nodes.some(
+    (node) =>
+      (node.status !== "running" &&
+        !node.transcriptAvailable &&
+        node.completedAt !== null &&
+        now - Date.parse(node.completedAt) < CAPTURE_WINDOW_MS) ||
+      awaitsCapture(node.children, now),
+  );
+}
+
 export function countByStatus(
   nodes: readonly DelegationNode[],
 ): Record<DelegationNode["status"], number> {
