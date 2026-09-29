@@ -134,7 +134,7 @@ fn shaped(spec: &MachineSpec) -> bool {
     !spec.image.is_empty() && spec.cpus >= 1 && spec.memory_mib >= 1 && spec.storage_gib >= 1
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the controller always sends the paired gateway's address alone.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the paired gateway's address alone — or it has a gateway host port instead, which smolvm records as a list that denies everything.
 pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them /0";
 
 // UNIT_BOUNDARY_DESCRIPTION: a gateway on the host's loopback is the machine's whole egress, so an allowlist beside it would widen what the guest reaches rather than narrow it.
@@ -155,6 +155,27 @@ pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
         return Err(BAD_IMAGE);
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the guest reaches its gateway host port on the runner's own loopback, where the runner also publishes every machine and each guest agent sits at its published port plus LOOPBACK_OFFSET. A gateway port in either range would hand the guest another machine instead of its gateway.
+pub const GATEWAY_ON_A_MACHINE: &str =
+    "gatewayHostPort lies in the range this runner publishes machines on";
+
+pub fn gateway_port_admissible(
+    spec: &MachineSpec,
+    published: &std::ops::RangeInclusive<u16>,
+) -> Result<(), &'static str> {
+    let port = spec.gateway_host_port;
+    let guests = published
+        .start()
+        .saturating_add(crate::forward::LOOPBACK_OFFSET)
+        ..=published
+            .end()
+            .saturating_add(crate::forward::LOOPBACK_OFFSET);
+    if port != 0 && (published.contains(&port) || guests.contains(&port)) {
+        return Err(GATEWAY_ON_A_MACHINE);
     }
     Ok(())
 }
@@ -544,6 +565,23 @@ mod tests {
             ..running_spec()
         };
         assert_eq!(admissible(&loopback_gateway), Ok(()));
+        for (port, admitted) in [
+            (30100, true),
+            (31000, false),
+            (31099, false),
+            (32050, false),
+            (32100, true),
+        ] {
+            let spec = MachineSpec {
+                gateway_host_port: port,
+                ..loopback_gateway.clone()
+            };
+            assert_eq!(
+                gateway_port_admissible(&spec, &(31000..=31099)).is_ok(),
+                admitted,
+                "gateway host port {port}"
+            );
+        }
         assert_eq!(
             admissible(&MachineSpec {
                 gateway_host_port: 30100,
