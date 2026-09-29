@@ -3968,6 +3968,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           instanceName,
           (candidate) => candidate.threadTs === id,
         );
+        if (!ref)
+          return {
+            error:
+              `No turn of yours is answering thread "${id}", so there is ` +
+              "nothing there to end. Pass the threadTs shown in this turn's " +
+              "instructions, so the turn recorded as silent is the one you " +
+              "are ending.",
+          };
       } else {
         const resolved = resolveTurn(instanceName, "reply");
         if ("ambiguous" in resolved) return { error: AMBIGUOUS_THREAD_ERROR };

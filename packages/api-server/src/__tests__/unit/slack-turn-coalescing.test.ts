@@ -319,6 +319,34 @@ describe("slack addressed turns — coalescing", () => {
   });
 
   /**
+   * TEST_SCENARIO: A decline naming a turn the agent is not running is a
+   * mistake, not a silence. Answering ok would record nothing and leave the
+   * turn looking unanswered, so the delivery nudge would push the agent into
+   * posting the reply it withheld — the same failure an unnamed decline had.
+   */
+  it("refuses a decline that names no turn the agent is running", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+
+    expect(await h.worker.declineTurn("agent-1", "999.9")).toMatchObject({
+      error: expect.stringContaining("999.9"),
+    });
+
+    h.hold();
+    void h.fire("100.1", "run the long thing");
+    await h.waitFor(() => h.prompts.length === 1);
+
+    expect(await h.worker.declineTurn("agent-1", "999.9")).toMatchObject({
+      error: expect.stringContaining("999.9"),
+    });
+
+    h.releaseAll();
+    await h.waitFor(() => h.nudges.length === 1);
+
+    expect(h.nudges).toHaveLength(1);
+  });
+
+  /**
    * TEST_SCENARIO: Two people addressing the agent about different things are
    * two conversations, not one thought — merging them would answer one person
    * under the other's message. Each top-level mention roots its own thread, so
