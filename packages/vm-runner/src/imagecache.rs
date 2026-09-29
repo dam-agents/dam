@@ -750,6 +750,15 @@ fn written(e: io::Error, what: &str) -> anyhow::Error {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: flushes the whole filesystem holding `path`: every file of an unpacked tree at once, which is one call where a sync of each file would be one per file. It reports a write the disk failed.
+#[cfg(not(target_os = "linux"))]
+fn sync_filesystem(path: &Path) -> io::Result<()> {
+    fs::File::open(path)?;
+    // SAFETY: sync takes no arguments and cannot fail.
+    unsafe { libc::sync() };
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn sync_filesystem(path: &Path) -> io::Result<()> {
     use std::os::fd::AsRawFd;
     let dir = fs::File::open(path)?;

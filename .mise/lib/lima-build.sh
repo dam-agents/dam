@@ -37,7 +37,7 @@ lima_build() {
     export PATH="$HOME/.local/bin:$PATH"
     cd ~/platform-src
     mise trust -q
-    mise exec $tools -- "$@"' _ "$(mise config get -f "$LIMA_BUILD_REPO/.mise/config.toml" min_version)" "$apt" "$tools" "$@"
+    mise exec --no-deps $tools -- "$@"' _ "$(mise config get -f "$LIMA_BUILD_REPO/.mise/config.toml" min_version)" "$apt" "$tools" "$@"
 }
 
 # lima_cat <path>: a file lima_build wrote, by its path in ~/platform-src.
