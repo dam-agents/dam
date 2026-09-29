@@ -70,6 +70,9 @@ export interface SpawnOptions extends Setup {
   label?: string;
   memory?: string;
   cpu?: string;
+  model?: string;
+  mode?: string;
+  configOptions?: Record<string, string>;
   ttlMs?: number;
   pollMs?: number;
   timeoutMs?: number;
@@ -85,6 +88,9 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     label,
     memory,
     cpu,
+    model,
+    mode,
+    configOptions,
     ttlMs,
     pollMs = 5000,
     timeoutMs = (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000,
@@ -125,6 +131,17 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   if (resources) body.resources = resources;
   if (backend) body.backend = backend;
   if (skills) body.skills = skills;
+  const options =
+    configOptions && Object.keys(configOptions).length > 0
+      ? configOptions
+      : undefined;
+  if (model !== undefined || mode !== undefined || options !== undefined) {
+    body.harnessConfig = {
+      ...(model !== undefined ? { model } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(options !== undefined ? { configOptions: options } : {}),
+    };
+  }
 
   const { id } = await req<SpawnInvocationResponse>(
     "POST",

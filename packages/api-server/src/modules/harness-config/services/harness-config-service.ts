@@ -11,6 +11,7 @@ import type {
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
+import { harnessConfigEvent } from "../domain/harness-config-event.js";
 import { getLogger } from "../../../core/logger.js";
 
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -61,12 +62,7 @@ export function createHarnessConfigService(deps: {
       await requireOwned(agentId);
       const ts = now();
       await deps.runtimeMutator.bump(agentId, [
-        {
-          id: `harness-config:${agentId}:${ts}`,
-          kind: "harness-config",
-          payload: change,
-          expiresAt: new Date(ts + EVENT_TTL_MS),
-        },
+        harnessConfigEvent(agentId, change, ts, new Date(ts + EVENT_TTL_MS)),
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
       emit({

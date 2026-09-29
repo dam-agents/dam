@@ -5,6 +5,7 @@ import {
   type AgentSetup,
   type AgentsService,
   DEFAULT_INVOCATION_TTL_MS,
+  type InvocationHarnessConfig,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
   type ProviderPresetType,
@@ -15,6 +16,7 @@ import {
   type RuntimeMutator,
   workspaceCommandEvent,
 } from "../../runtime-delivery/index.js";
+import { harnessConfigEvent } from "../../harness-config/index.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import { createInputFromSetup } from "../../agents/index.js";
 import { getLogger } from "../../../core/logger.js";
@@ -85,6 +87,7 @@ export interface SpawnInput {
   schema: unknown;
   label?: string;
   ttlMs?: number;
+  harnessConfig?: InvocationHarnessConfig;
 }
 
 export interface RecordResult {
@@ -249,28 +252,44 @@ export function createInvocationsService(deps: {
         resultSchema: input.schema,
       });
       const at = now();
-      await deps.runtimeMutator.bump(agent.id, [
-        ...(input.setup.install
-          ? [
-              workspaceCommandEvent(
-                "invocation-install",
-                agent.id,
-                input.setup.install.command,
-                at,
-              ),
-            ]
-          : []),
-        {
-          id: `${invocationScheduleId(agent.id)}:${at.getTime()}`,
-          kind: "trigger",
-          payload: {
-            scheduleId: invocationScheduleId(agent.id),
-            task,
-            sessionMode: "fresh",
+      try {
+        if (input.harnessConfig) {
+          await deps.runtimeMutator.bump(agent.id, [
+            harnessConfigEvent(
+              agent.id,
+              input.harnessConfig,
+              at.getTime(),
+              expiresAt,
+            ),
+          ]);
+        }
+        await deps.runtimeMutator.bump(agent.id, [
+          ...(input.setup.install
+            ? [
+                workspaceCommandEvent(
+                  "invocation-install",
+                  agent.id,
+                  input.setup.install.command,
+                  at,
+                ),
+              ]
+            : []),
+          {
+            id: `${invocationScheduleId(agent.id)}:${at.getTime()}`,
+            kind: "trigger",
+            payload: {
+              scheduleId: invocationScheduleId(agent.id),
+              task,
+              sessionMode: "fresh",
+            },
+            expiresAt,
           },
-          expiresAt,
-        },
-      ]);
+        ]);
+      } catch (err) {
+        await deps.agents.delete(agent.id).catch(() => {});
+        await deps.repo.delete(targetId).catch(() => {});
+        throw err;
+      }
       await deps.runtimeMutator.enqueueAfterCommit(agent.id);
       await deps.wakeAgent(agent.id);
 

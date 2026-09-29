@@ -114,6 +114,7 @@ export function mountInvocationRoutes(
         schema: body.schema,
         ...(body.label !== undefined ? { label: body.label } : {}),
         ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
+        ...(body.harnessConfig ? { harnessConfig: body.harnessConfig } : {}),
       });
       return c.json({ id }, 201);
     } catch (err) {

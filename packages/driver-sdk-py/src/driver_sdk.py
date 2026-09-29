@@ -213,6 +213,9 @@ def spawn(
     ttl_ms: int | None = None,
     memory: str | None = None,
     cpu: str | None = None,
+    model: str | None = None,
+    mode: str | None = None,
+    config_options: dict[str, str] | None = None,
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
@@ -238,7 +241,14 @@ def spawn(
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
     sub-agent the moment it lapses, mid-work or not. ``label`` names the
-    sub-agent, in this script's log lines and on the platform."""
+    sub-agent, in this script's log lines and on the platform.
+
+    ``model``, ``mode`` and ``config_options`` choose the sub-agent's harness
+    config, the same values its Config panel offers (for claude-code:
+    ``model="sonnet"``, ``config_options={"effort": "low"}``). They are
+    written before its first turn. The platform does not check the values: a
+    wrong model name fails the first turn and burns the TTL, so try a new name
+    with a short ``ttl_ms``. Omit them to run the template's default."""
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
     if resources is not None and (memory is not None or cpu is not None):
@@ -271,6 +281,15 @@ def spawn(
         body["memory"] = memory
     if cpu is not None:
         body["cpu"] = cpu
+    harness_config: dict[str, Any] = {}
+    if model is not None:
+        harness_config["model"] = model
+    if mode is not None:
+        harness_config["mode"] = mode
+    if config_options:
+        harness_config["configOptions"] = config_options
+    if harness_config:
+        body["harnessConfig"] = harness_config
 
     invocation_id = _request("POST", "/invocations", body)["id"]
     _log(f"spawned {name} ({invocation_id})")

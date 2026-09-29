@@ -15,7 +15,7 @@ sequenceDiagram
   participant T as target agent-runtime
   D->>API: spawn (prompt, result schema, setup, connections)
   API->>API: resolve target, provider, admission
-  API->>T: create Agent, queue seed → install → task
+  API->>T: create Agent, queue seed → config → install → task
   T->>T: seed, install, open one fresh session
   T->>API: report_result
   API->>API: validate against the schema, reap the target
@@ -27,6 +27,8 @@ sequenceDiagram
 **A target is set up like a kit-created Agent.** The spawn carries an **Agent Setup** — the part of a [starter kit](starter-kits.md) that decides what an Agent is and has: a repository to seed, an install command, env, CPU, memory and disk, the vm backend, external skills. Kits and spawns share the one definition, so a setup option added for kits reaches spawns in the same change, or is deliberately kit-only. What a kit carries about discovery or about outliving one task — catalog display, schedules, channels, knowledge-base shares, a hibernation override — has no meaning for a target and is not accepted. The spawn's prompt plays the role a kit's onboarding plays: it is the target's first and only turn.
 
 **A spawn names a harness.** The target runs on that harness's Template — its image, size, env and mounts — exactly as an Agent created on it would. A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size. A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it. Either way the harness's Template states the providers it can run on, which is what Provider Inheritance checks.
+
+**A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's Config panel offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step. The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)). The platform does not check the values; a name the provider does not serve fails the target's first turn.
 
 **A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed. The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
 

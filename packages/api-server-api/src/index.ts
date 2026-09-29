@@ -32,6 +32,7 @@ export type {
   InvocationView,
   InvocationStatus,
   InvocationsControlService,
+  InvocationHarnessConfig,
   InvocationsQueryService,
   DelegationNode,
 } from "./modules/invocations/types.js";

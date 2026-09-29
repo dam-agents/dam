@@ -1,10 +1,29 @@
 import { z } from "zod";
 import { agentSetupSeedSchema, agentSetupShape } from "../agents/setup.js";
 import { templateHarnessSchema } from "../templates/schemas.js";
+import { agentConfigOptionsSchema } from "../harness-config/schemas.js";
 
 export const DEFAULT_INVOCATION_TTL_MS = 60 * 60 * 1000;
 export const MIN_INVOCATION_TTL_MS = 60 * 1000;
 export const MAX_INVOCATION_TTL_MS = 6 * 60 * 60 * 1000;
+
+export const invocationHarnessConfigSchema = z
+  .object({
+    model: z.string().min(1).optional(),
+    mode: z.string().min(1).optional(),
+    configOptions: agentConfigOptionsSchema
+      .refine((o) => Object.keys(o).length > 0, {
+        message: "configOptions must name at least one option",
+      })
+      .optional(),
+  })
+  .refine(
+    (c) =>
+      c.model !== undefined ||
+      c.mode !== undefined ||
+      c.configOptions !== undefined,
+    { message: "harnessConfig needs a model, a mode or configOptions" },
+  );
 
 export const spawnInvocationRequestSchema = z
   .object({
@@ -30,6 +49,7 @@ export const spawnInvocationRequestSchema = z
       .string()
       .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
       .optional(),
+    harnessConfig: invocationHarnessConfigSchema.optional(),
   })
   .refine((d) => d.harness !== undefined || d.image !== undefined, {
     message: "pass a harness, or an image",

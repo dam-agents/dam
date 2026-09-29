@@ -35,8 +35,9 @@ camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
    harness's template. `image="<full ref>"` runs a custom image instead, with
    `harness` saying which harness is inside it; prefer `seed` and `install`
    below over building an image.
-3. **Model** — nothing to pass. The sub-agent runs on *your* model provider.
-   A harness that cannot run on it is refused at spawn.
+3. **Model** — the sub-agent runs on *your* model provider; a harness that
+   cannot run on it is refused at spawn. It runs the harness's default model
+   unless you pick one (see "Choose the model per spawn").
 4. **Connections** — pass what the task needs beyond the model (a repository, an
    API). Everything you pass must be one of your own grants. Its network access
    follows your egress rules, so what you can reach, it can reach.
@@ -108,6 +109,40 @@ large change gets a long one. Time spent queued for compute counts too.
 
 **Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills
 a clone plus install or build. An OOM-killed sub-agent fails fast with its reason.
+
+## Choose the model per spawn
+
+One harness runs any model its provider offers, so pick the model per spawn: run
+one task on two models to compare the results and the cost, or put mechanical
+steps on a cheap model and hard ones on a strong one. `model=`, `mode=` and
+`config_options=` (JS: `model`, `mode`, `configOptions`) take the values the
+agent's Config panel offers. They are written into the sub-agent's harness
+config before its first turn.
+
+```python
+cheap = d.spawn(prompt, schema, harness="claude-code", model="haiku", mode="bypassPermissions")
+strong = d.spawn(prompt, schema, harness="claude-code", model="opus", config_options={"effort": "high"})
+```
+
+| harness | `model` | `config_options` |
+|---|---|---|
+| `claude-code` | `fable`, `opus`, `sonnet`, `haiku` | `effort`: `low` … `xhigh` (Haiku takes none) |
+| `codex` | a name from the provider's model list | `effort`: `minimal` … `xhigh` |
+| `pi` | a name from the provider's model list | — (`mode` is its thinking level: `off` … `xhigh`) |
+| `bob` | a name from the provider's model list | `approvals`: keep `auto` |
+
+"The provider's model list" is what the Config panel shows for any agent on the
+same model connection.
+
+- **The platform does not check the values.** A wrong model name fails the
+  sub-agent's first turn, and it hangs until its deadline. Try a new name with a
+  short `ttl_ms`.
+- **Leave `mode` unset** unless you know the harness. A mode that asks for
+  approvals stalls an unattended sub-agent, because nobody answers.
+- **Claude Code on `haiku` needs `mode="bypassPermissions"`.** Haiku cannot use
+  the default `auto` mode, so it falls back to one that asks before a tool call.
+  Its `report_result` call then waits for an approval and the sub-agent hangs
+  until its deadline.
 
 ## Failures
 

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  invocationHarnessConfigSchema,
   invocationStopInputSchema,
   invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
@@ -30,6 +31,9 @@ export interface InvocationTranscript {
 }
 export type InvocationsRunningInput = z.infer<
   typeof invocationsRunningInputSchema
+>;
+export type InvocationHarnessConfig = z.infer<
+  typeof invocationHarnessConfigSchema
 >;
 
 export interface InvocationTarget {
