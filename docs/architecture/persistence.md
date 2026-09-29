@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-09-28
+Last verified: 2026-09-29
 
 ## Overview
 
@@ -121,7 +121,9 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional). The volumes a [runtime migration](vm-runner.md#runtime-migration) copied from are the one kind kept past their use: they lose the agent and mount labels, so nothing that lists an agent's volumes counts or mounts them, and are deleted when their retention window passes or the Agent is deleted.
 
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. The redirect is best-effort — a swap that fails is a performance regression rather than a boot failure, leaving that agent's cache on the workspace volume where it does survive. Tools and dependencies the agent relies on must be baked into the image at build time.
+What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume, npm's cache with it. The redirect is best-effort: a failed swap costs speed, not the boot.
+
+**Caches outlive their tools.** A cache of a tool the image dropped stays on the volume until the home is full and the agent stops starting. The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, pnpm store layouts the shipped pnpm does not name (aube names its own), npm's once redirected — moved aside and deleted in the background. Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 
 **The `vm` Backend has no PVCs, and one disk holding one path.** A pod attaches a volume per path, so a mount there is a size and a placement at once. A machine has a single disk, so its size is the Agent's own `storageSize`, stated once and rounded once, and the path it holds is `HOME`. That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists. The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete. It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it. An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work. A path a [runtime migration](vm-runner.md#runtime-migration) moved keeps its data below `HOME/.persisted`; its old path is put back on every boot from a plan the home cannot change ([vm-runner](vm-runner.md#runtime-migration)).
 

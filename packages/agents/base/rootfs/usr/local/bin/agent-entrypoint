@@ -65,6 +65,62 @@ if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
 	fi
 fi
 
+# npm keeps its tarball cache, npx installs and debug logs under ~/.npm, not
+# ~/.cache, so they miss the swap above; in a container they go to the same
+# local disk. An image that sets its own location wins.
+if [ "${PLATFORM_BACKEND:-container}" != vm ]; then
+	export npm_config_cache="${npm_config_cache:-/tmp/agent-cache/npm}"
+fi
+
+# The home outlives the image, so a cache a tool wrote there survives the image
+# that dropped or replaced the tool, and nothing in the agent's own work shrinks
+# it: on a default-sized home that is how an agent stops starting. Caches no
+# shipped tool reads are discarded here. A discard is a rename on the same
+# volume — instant and atomic however many files a content-addressed store
+# holds — and the delete runs in the background; one cut short by a restart
+# resumes on the next boot, since discarded copies are found by name.
+# Toolchains the agent installed into its home for itself are its own and stay.
+discard() { # $1 path, $2 why
+	if [ -e "$1" ] && mv "$1" "$1.discarded.$(date +%s)" 2>/dev/null; then
+		echo "agent-entrypoint: discarding $1: $2"
+	fi
+}
+purge_discarded() { # $1 dir: delete its discarded entries, this boot's and earlier boots'
+	set -- "$1"/*.discarded.*
+	[ -e "$1" ] || return 0
+	# Go's module cache is read-only on disk; the chmod pass runs only when a
+	# plain rm left something behind.
+	( (for p; do rm -rf "$p" 2>/dev/null || { chmod -R u+w "$p" && rm -rf "$p"; }; done) >/dev/null 2>&1 &)
+}
+
+gomodcache=${GOMODCACHE:-${GOPATH:-$home/go}/pkg/mod}
+if ! command -v go >/dev/null 2>&1; then
+	discard "$gomodcache" "no go in this image"
+fi
+purge_discarded "$(dirname "$gomodcache")"
+
+# pnpm reads one store layout, the one `store path` names, and changes it
+# across majors; aube, which answers as pnpm here, names a store of its own
+# elsewhere. Asked only when a store exists, since asking creates one.
+pnpm_stores="$home/.local/share/pnpm/store"
+if [ -d "$pnpm_stores" ]; then
+	live_store=$(cd "$home" && npm_config_update_notifier=false pnpm store path 2>/dev/null) || live_store=
+	for store in "$pnpm_stores"/*; do
+		case $store in *.discarded.*) continue ;; esac
+		if [ -d "$store" ] && [ "$store" != "$live_store" ]; then
+			discard "$store" "no pnpm in this image reads this store layout"
+		fi
+	done
+	purge_discarded "$pnpm_stores"
+fi
+
+if [ "${npm_config_cache:-$home/.npm}" != "$home/.npm" ]; then
+	for d in _cacache _npx _logs; do
+		discard "$home/.npm/$d" "npm caches on local disk now"
+	done
+fi
+purge_discarded "$home/.npm"
+
 # Maven reads proxies only from settings.xml.
 if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
 	_hp=${HTTPS_PROXY#http://}
