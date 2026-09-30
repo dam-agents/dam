@@ -91,11 +91,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
   if (!budget) return null;
 
   const unit = slotUnitOf(budget);
-  const view = computeView(
-    agents.filter((a) => a.state === "running"),
-    workingAgentIds,
-    budget,
-  );
+  const view = computeView(agents, workingAgentIds, budget);
 
   return (
     <>
