@@ -12,8 +12,10 @@ export function MigrationPlanSummary({
     <div className="flex flex-col gap-3" data-testid="migration-plan">
       <p>
         Move agent <strong className="text-foreground">"{name}"</strong> to the
-        new sandbox runtime? The agent stops, its home directory — the workspace
-        and settings — is copied over, and it restarts on the new runtime.
+        new sandbox runtime?{" "}
+        {plan.bootsSleepingAgent
+          ? "Its home directory — the workspace and settings — is copied over, and it starts on the new runtime."
+          : "The agent stops, its home directory — the workspace and settings — is copied over, and it restarts on the new runtime."}
       </p>
       <ul className="list-disc pl-5">
         <li>
@@ -28,10 +30,12 @@ export function MigrationPlanSummary({
             counts against your compute budget while it runs.
           </li>
         )}
-        <li>
-          It is unavailable while the copy runs, and in-flight work is
-          interrupted.
-        </li>
+        {!plan.bootsSleepingAgent && (
+          <li>
+            It is unavailable while the copy runs, and in-flight work is
+            interrupted.
+          </li>
+        )}
       </ul>
       <p>
         Until the agent has started on the new runtime, you can abort the move,

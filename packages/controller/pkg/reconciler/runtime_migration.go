@@ -142,6 +142,16 @@ func (m runtimeMigration) keepsUp() bool {
 	return m.phase == apiv1.ReasonRuntimeMigrationBooting && m.seeded
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the user's stop holds the Agent down while its migration runs. The plan promised a stopped Agent one start to finish the move, so a stop stamped before the migration began lets its boot through; a stop asked for since holds it, and once the guest has answered the old stop holds again, so the Agent goes back to stopped. A stamp that does not parse as a time holds.
+func (m runtimeMigration) stopHolds(annotations map[string]string) bool {
+	stamp := annotations[annStopRequested]
+	if stamp == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, stamp)
+	return !m.keepsUp() || err != nil || !t.Before(m.since)
+}
+
 func (m runtimeMigration) containerDown() bool {
 	return m.holdsDown() || m.vmSideRuns()
 }

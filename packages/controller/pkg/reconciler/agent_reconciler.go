@@ -238,7 +238,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
+	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
 	var migrationVMErr error
