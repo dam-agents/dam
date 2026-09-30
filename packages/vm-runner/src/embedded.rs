@@ -31,7 +31,7 @@ pub struct Smolvm {
 
 const USER: &str = "root";
 
-// UNIT_BOUNDARY_DESCRIPTION: where smolvm's gateway forwards a guest's DNS. The gateway answers every guest query on port 53, whatever address it was sent to, by relaying it from the runner's own network to this resolver, and its egress allowlist never gates that relay — so with smolvm's default, the runner's resolver, a guest that holds nothing but its gateway's address could still tunnel data out through DNS. A guest needs no resolver: its proxy and its allowlist are addresses, and every name it asks for travels through that proxy and is resolved by the paired gateway pod. The runner's own loopback has nothing listening on port 53 and never leaves the pod, so every relayed query is refused where it starts.
+// UNIT_BOUNDARY_DESCRIPTION: where smolvm's gateway forwards a guest's DNS when the spec names no resolver. The gateway answers every guest query on port 53, whatever address it was sent to, by relaying it from the runner's own network, and its egress allowlist never gates that relay — so with smolvm's default, the runner's resolver, a guest that holds nothing but its gateway's address could still tunnel data out through DNS. The relay therefore goes only to the paired gateway's own resolver, which answers every name with the gateway's address and forwards nothing, or, with none named, here: the runner's own loopback has nothing listening on port 53 and never leaves the pod, so every relayed query is refused where it starts.
 const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 
 // UNIT_BOUNDARY_DESCRIPTION: the label smolvm stores on every machine this runner creates. smolvm never reads it; it is how an operator listing smolvm's machines tells the runner's own from anything else in the same database.
@@ -98,7 +98,8 @@ impl Runtime for Smolvm {
                 raw_storage_disk(id, gib)?;
             }
             record_gateway_host_port(id, machine.spec)?;
-            self.db.update_vm(id, |r| r.dns = Some(GUEST_DNS_SINK))?;
+            let resolver = guest_resolver(machine.spec)?;
+            self.db.update_vm(id, |r| r.dns = Some(resolver))?;
             Ok(())
         })
     }
@@ -148,6 +149,7 @@ impl Runtime for Smolvm {
             }
             let allowed_cidrs = allowed_cidrs(desired)?;
             record_gateway_host_port(id, desired)?;
+            let resolver = guest_resolver(desired)?;
             let image_env = record
                 .image
                 .as_deref()
@@ -165,6 +167,7 @@ impl Runtime for Smolvm {
                     r.storage_gb = Some(gib);
                 }
                 r.allowed_cidrs = allowed_cidrs;
+                r.dns = Some(resolver);
                 match relaunch {
                     Some((image, workload)) => {
                         r.image = Some(image);
@@ -180,7 +183,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. The record's resolver is pinned to the sink on every start, so a machine created by an earlier runner boots with it too.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver gets the sink on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -188,7 +191,11 @@ impl Runtime for Smolvm {
             clear_for_start(id, &self.proc_root, &dir, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
-        self.db.update_vm(id, |r| r.dns = Some(GUEST_DNS_SINK))?;
+        self.db.update_vm(id, |r| {
+            if r.dns.is_none() {
+                r.dns = Some(GUEST_DNS_SINK);
+            }
+        })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
             kill_orphans(&self.proc_root, &dir);
@@ -343,6 +350,19 @@ fn allowed_cidrs(spec: &MachineSpec) -> anyhow::Result<Option<Vec<String>>> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm maps one gateway port to the host's loopback per VMM process, so the port a machine may reach is written beside its boot config, where its own VMM reads it before it boots (see GATEWAY_HOST_PORT_FILE). A machine without one has the file removed, so an update that drops the port also drops the mapping.
+// UNIT_BOUNDARY_DESCRIPTION: the resolver the spec names for guest DNS, or the sink when it names none. A name that is not an IPv4 address is refused rather than read as none, since relaying nowhere would leave the machine unable to resolve with no word of why.
+fn guest_resolver(spec: &MachineSpec) -> anyhow::Result<std::net::Ipv4Addr> {
+    if spec.guest_resolver.is_empty() {
+        return Ok(GUEST_DNS_SINK);
+    }
+    spec.guest_resolver.parse().with_context(|| {
+        format!(
+            "guestResolver {:?} is not an IPv4 address",
+            spec.guest_resolver
+        )
+    })
+}
+
 fn record_gateway_host_port(id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
     let file = vm_data_dir(id).join(crate::runtime::GATEWAY_HOST_PORT_FILE);
     if spec.gateway_host_port == 0 {
@@ -493,7 +513,7 @@ mod tests {
         assert_eq!(
             record.dns,
             Some(GUEST_DNS_SINK),
-            "the gateway relays guest DNS past the allowlist, so it must relay it nowhere"
+            "with no resolver named, the gateway relays guest DNS past the allowlist, so it must relay it nowhere"
         );
     }
 
@@ -579,6 +599,68 @@ mod tests {
             smolvm.record("m1").unwrap().unwrap().dns,
             Some(GUEST_DNS_SINK)
         );
+    }
+
+    // TEST_SCENARIO: a machine in the cluster relays guest DNS to its paired gateway's resolver, which answers every name with the gateway's address and forwards nothing. The record names that resolver from create, a start keeps it rather than pinning the sink over it, an update that stops naming one puts the sink back, and a resolver that is not an address is refused instead of silently relaying nowhere.
+    #[test]
+    fn guest_dns_goes_to_the_resolver_the_spec_names() {
+        let home = Home::new("resolver");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open().unwrap();
+        let named = MachineSpec {
+            guest_resolver: "10.96.0.7".into(),
+            ..spec()
+        };
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &named,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+        let gateway = Some(std::net::Ipv4Addr::new(10, 96, 0, 7));
+        assert_eq!(smolvm.record("m1").unwrap().unwrap().dns, gateway);
+
+        let _ = smolvm.start("m1");
+        assert_eq!(smolvm.record("m1").unwrap().unwrap().dns, gateway);
+
+        let unnamed = spec();
+        smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &unnamed,
+                    applied: Some(&named),
+                    image: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().dns,
+            Some(GUEST_DNS_SINK)
+        );
+
+        let garbled = MachineSpec {
+            guest_resolver: "gateway.example".into(),
+            ..spec()
+        };
+        assert!(smolvm
+            .update(
+                "m1",
+                &Update {
+                    desired: &garbled,
+                    applied: Some(&unnamed),
+                    image: None,
+                },
+            )
+            .is_err());
     }
 
     // TEST_SCENARIO: a storage disk of smolvm's default size would otherwise be a qcow2 overlay over the template in the runner image, named by its path there — a runner upgrade that ships another template would change the bytes under that agent's home. The create leaves a raw disk behind instead, which smolvm then boots as it is.

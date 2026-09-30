@@ -28,9 +28,12 @@ func bootstrapListeners(t *testing.T, doc map[string]any) map[string]map[string]
 	return out
 }
 
-// TEST_SCENARIO: raw TLS on the transparent port must land in the internal listener a CONNECT is unwrapped into, where every chain — credential chains and the SNI-miss chain that holds a never-approved host — runs its egress check before dialing. A listener that dialed anything itself would be a way around approval.
+// TEST_SCENARIO: raw TLS on the transparent port must land in the internal listener a CONNECT is unwrapped into, where every chain that dials a host of the agent's choosing — credential chains and the SNI-miss chain that holds a never-approved host — runs its egress check before dialing. The telemetry collector's chain is the one without a check, and it reaches only the platform's own collector. A listener that dialed anything itself would be a way around approval.
 func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) {
-	vm, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{credentialedChain("platform-conn-github", "github.com")}, true)
+	cfg := *bootstrapTestCfg
+	cfg.TelemetryCollectorHost = "platform-clickstack-collector.platform.svc.cluster.local"
+	cfg.TelemetryCollectorPort = 4318
+	vm, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{credentialedChain("platform-conn-github", "github.com")}, true)
 	require.NoError(t, err)
 	listeners := bootstrapListeners(t, mustParseBootstrap(t, vm))
 	transparent, ok := listeners["transparent_tls"]
@@ -46,9 +49,16 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 	assert.Equal(t, "tls_inspect_internal", proxy["cluster"])
 
 	internal := listeners["tls_inspect_internal"]
+	unchecked := 0
 	for _, c := range internal["filter_chains"].([]any) {
 		chain := c.(map[string]any)
 		first := chain["filters"].([]any)[0].(map[string]any)
+		if chain["name"] == "terminate_otel_collector" {
+			unchecked++
+			match := chain["filter_chain_match"].(map[string]any)["server_names"].([]any)
+			assert.Equal(t, []any{cfg.TelemetryCollectorHost}, match, "the unchecked chain reaches the platform's collector and nothing else")
+			continue
+		}
 		if first["name"] == "envoy.filters.network.http_connection_manager" {
 			httpFilters := first["typed_config"].(map[string]any)["http_filters"].([]any)
 			assert.Equal(t, "envoy.filters.http.ext_authz", httpFilters[0].(map[string]any)["name"],
@@ -58,6 +68,7 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 		assert.Equal(t, "envoy.filters.network.ext_authz", first["name"],
 			"the SNI-miss chain checks egress before it passes anything through")
 	}
+	assert.Equal(t, 1, unchecked, "the collector chain is the only one without an egress check")
 
 	container, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)

@@ -65,6 +65,7 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		CACert:          "-----BEGIN CERTIFICATE-----",
 		AllowCIDRs:      []string{"10.0.0.1/32"},
 		GatewayHostPort: 30100,
+		GuestResolver:   "10.0.0.1",
 		Revision:        "r1",
 		Running:         true,
 		PullAuths:       []string{`{"auths":{}}`},

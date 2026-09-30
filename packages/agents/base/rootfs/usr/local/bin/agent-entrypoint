@@ -54,37 +54,6 @@ if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
 	fi
 fi
 
-# A machine reaches nothing but its gateway, which answers DNS itself: every
-# name resolves to the gateway, which routes the connection by SNI or Host
-# through the same egress checks as the proxy. So containers, builds and k3s
-# pods reach the network without proxy settings.
-if [ "$(id -u)" = 0 ] && [ "${PLATFORM_BACKEND:-container}" = vm ] && [ -n "${HTTPS_PROXY:-}" ]; then
-	gateway=${HTTPS_PROXY#*://}
-	gateway=${gateway%%/*}
-	gateway=${gateway%:*}
-	printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf ||
-		echo "agent-entrypoint: WARNING: could not point DNS at the gateway; only proxy-aware clients reach the network" >&2
-	# Software that picks its own resolver, a pod with dnsPolicy None or a
-	# hardcoded 8.8.8.8, still gets the gateway's answer: every DNS query leaving
-	# for anywhere the machine does not treat as local goes to the gateway. The
-	# local ranges are NO_PROXY's, which covers the gateway and k3s's cluster
-	# DNS, so cluster.local keeps resolving there.
-	if ! {
-		iptables -t nat -N PLATFORM_DNS 2>/dev/null || iptables -t nat -F PLATFORM_DNS
-		iptables -t nat -A PLATFORM_DNS -d 127.0.0.0/8 -j RETURN
-		for cidr in $(printf '%s' "${NO_PROXY:-}" | tr ',' '\n' | grep /); do
-			iptables -t nat -A PLATFORM_DNS -d "$cidr" -j RETURN
-		done
-		iptables -t nat -A PLATFORM_DNS -p udp --dport 53 -j DNAT --to-destination "$gateway:53" &&
-			iptables -t nat -A PLATFORM_DNS -p tcp --dport 53 -j DNAT --to-destination "$gateway:53" &&
-			for chain in OUTPUT PREROUTING; do
-				iptables -t nat -C "$chain" -j PLATFORM_DNS 2>/dev/null || iptables -t nat -I "$chain" -j PLATFORM_DNS
-			done
-	} 2>/dev/null; then
-		echo "agent-entrypoint: WARNING: could not steer DNS to the gateway; software with its own resolver cannot resolve" >&2
-	fi
-fi
-
 # A container trusts only the roots its own image ships, not this machine's. The
 # share carries platform-runc, which adds the platform CA to every container's
 # bundle before starting it. docker's builder runs the runc on PATH and ignores

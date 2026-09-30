@@ -7,6 +7,7 @@
   "caCert": "-----BEGIN CERTIFICATE-----",
   "allowCidrs": ["10.0.0.1/32"],
   "gatewayHostPort": 30100,
+  "guestResolver": "10.0.0.1",
   "revision": "r1",
   "running": true,
   "pullAuths": ["{\"auths\":{}}"],
