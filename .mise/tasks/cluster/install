@@ -326,7 +326,10 @@ else
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
   # Like the agents', off Linux its build runs in the VM, so it waits for one.
-  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ] && mise run //packages/vm-runner:oci
+  if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ]; then
+    mise run //packages/vm-runner:oci
+    RUNNER_IMAGE_BUILT=1
+  fi
 
   COMPONENTS=(controller api-server ui keycloak)
   [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
@@ -819,7 +822,7 @@ else
   stage_vm_images
 fi
 [ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
-[ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD=1 mise run cluster:host-runner
+[ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD="${RUNNER_IMAGE_BUILT:-}" mise run cluster:host-runner
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not
