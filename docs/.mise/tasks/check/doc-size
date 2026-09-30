@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. The PreToolUse hook (.claude/hooks/doc-size.mjs) shares this measurement front-line; this gate is the authoritative, unbypassable layer."
-//MISE sources=["architecture.md", "architecture/*.md", ".mise/tasks/check/doc-size"]
-//MISE outputs=[]
-//MISE cache.enabled=true
+//MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. Only a page this working tree changed against main can fail it: two branches can each add prose to a different part of one page, each measure green against the base it branched from, and merge over the cap, and an over-cap page is wordy, not broken — reding main and every branch rebased on it costs more than it is worth. On main nothing differs from main, so the check passes and reports what is over. The PreToolUse hook (.claude/hooks/doc-size.mjs) shares this measurement front-line."
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,14 +50,59 @@ function checkFile(absPath) {
   return { path: relative(REPO_ROOT, absPath), size, cap: info.cap, kind: info.kind };
 }
 
-export function check() {
-  const violations = [INDEX_PATH, ...listPages()].map(checkFile).filter(Boolean);
-  if (violations.length) {
-    process.stderr.write("❌ check:doc-size: architecture docs over budget.\n\n");
-    for (const v of violations) process.stderr.write(overageReport(v) + "\n\n");
-    process.exit(1);
+function git(...args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
   }
-  process.stdout.write("✅ check:doc-size: all architecture docs within budget.\n");
+}
+
+function resolves(ref) {
+  return git("rev-parse", "--verify", "--quiet", ref) !== null;
+}
+
+export function mainRef() {
+  if (resolves("HEAD^2")) return "HEAD^1";
+  return ["origin/main", "main"].find(resolves) ?? null;
+}
+
+export function pagesChangedFromMain() {
+  const ref = mainRef();
+  if (!ref) return null;
+  const out = git("diff", "--name-only", ref, "--", "docs/architecture.md", "docs/architecture/*.md");
+  return out === null ? null : new Set(out.split("\n").filter(Boolean));
+}
+
+export function check() {
+  const overBudget = [INDEX_PATH, ...listPages()].map(checkFile).filter(Boolean);
+  if (!overBudget.length) {
+    process.stdout.write("✅ check:doc-size: all architecture docs within budget.\n");
+    return;
+  }
+
+  const changed = pagesChangedFromMain();
+  const yours = changed ? overBudget.filter((v) => changed.has(v.path)) : [];
+  const inherited = overBudget.filter((v) => !yours.includes(v));
+
+  for (const v of inherited) {
+    process.stdout.write(
+      `⚠️  check:doc-size: ${v.path} is ${v.size} chars, ${v.size - v.cap} over its ` +
+        `${v.cap}-char cap — unchanged here, so not this branch's to fix.\n`
+    );
+  }
+  if (!yours.length) {
+    process.stdout.write("✅ check:doc-size: no architecture doc this branch changes is over budget.\n");
+    return;
+  }
+
+  process.stderr.write("❌ check:doc-size: architecture docs this branch changes are over budget.\n\n");
+  for (const v of yours) process.stderr.write(overageReport(v) + "\n\n");
+  process.exit(1);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) check();
