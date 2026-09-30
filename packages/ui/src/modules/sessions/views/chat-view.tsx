@@ -505,6 +505,8 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
+  const leftPanelWidth = { width: leftW };
+
   const dotColor = agentDisplay
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
@@ -520,7 +522,7 @@ export function ChatView() {
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
         <div
-          style={{ width: leftW }}
+          style={leftPanelWidth}
           className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
           <Button
@@ -534,13 +536,22 @@ export function ChatView() {
           </Button>
           <div className="flex items-center gap-3 min-w-0">
             {avatarsEnabled && agentView ? (
-              <AgentAvatar
-                name={agentView.name}
-                size={40}
-                sleeping={isAsleep(agentDisplay?.state)}
-                stopped={agentView.stopRequested}
-                className="@max-[149px]:hidden"
-              />
+              <>
+                <AgentAvatar
+                  name={agentView.name}
+                  size={40}
+                  sleeping={isAsleep(agentDisplay?.state)}
+                  stopped={agentView.stopRequested}
+                  className="@max-[149px]:hidden"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
+                    dotColor,
+                  )}
+                />
+              </>
             ) : (
               <span
                 aria-hidden
@@ -606,7 +617,7 @@ export function ChatView() {
       <div className="flex flex-1 min-h-0">
         {}
         <div
-          style={{ width: leftW }}
+          style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
