@@ -40,6 +40,11 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)),
 });
 
+export const connectionSetPreferredConnectionInputSchema = z.object({
+  agentId: z.string().min(1),
+  connectionId: z.string().min(1),
+});
+
 export const connectionNameSchema = resourceNameSchema("my-mcp-server").refine(
   (name) => !RESERVED_MCP_SERVER_NAMES.includes(name),
   {

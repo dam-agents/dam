@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-29
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -489,21 +489,16 @@ carry three more chain-level attributes, motivating case being external
 Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/issues/2314)):
 
 - **Upstream port** — the pinned cluster dials the declared port (default
-  443) and the upstream sees a `host:port` authority. Only L7 chains honor
-  ports: the SNI-miss L4 catch-all always dials 443, because a CONNECT's
-  authority port is not recoverable after the tunnel handoff (SNI carries
-  no port). Allow-only (uncredentialed) chains need no pinned port — they
-  forward via the dynamic forward proxy, which honors the inner request's
-  own `Host:port`.
+  443). Only L7 chains honor ports: the SNI-miss L4 catch-all always dials
+  443, since SNI carries no port, and allow-only chains forward via the
+  dynamic forward proxy, which honors the inner request's own `Host:port`.
 - **Upgrade tunneling** — chains that opt in tunnel HTTP Upgrade flows
-  (WebSocket, and SPDY/3.1 for older Kubernetes clients) instead of
-  rejecting them, so `kubectl exec` / `port-forward` / `logs -f` work
-  through the credential-injecting path. The credential rides the upgrade
-  request itself and ext_authz gates it once; after the 101 the gateway
-  splices bytes. Such chains also get a long tunnel idle timeout (matching
-  the kubelet's own streaming default) instead of the 5-minute stream
-  default. Upgrade chains stay HTTP/1.1 — upgrades don't survive an
-  HTTP/2 upstream leg.
+  (WebSocket, and SPDY/3.1 for older Kubernetes clients), so `kubectl exec`
+  / `port-forward` / `logs -f` work through the credential-injecting path.
+  The credential rides the upgrade request and ext_authz gates it once;
+  after the 101 the gateway splices bytes under a long tunnel idle timeout.
+  Upgrade chains stay HTTP/1.1 — upgrades don't survive an HTTP/2 upstream
+  leg.
 - **Private upstream CA** — a connection can carry the upstream's CA
   bundle in its K8s Secret; the chain validates the upstream handshake
   against it instead of the system trust store (self-signed cluster CAs),
@@ -512,8 +507,7 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
 
 **Path rewriting.** An injection descriptor can declare path prefix
 rewrites for its host: the chain matches those prefixes ahead of its
-catch-all route and swaps the prefix on the way upstream, leaving every
-other path untouched. Rewriting is a routing-leg concern, after the
+catch-all route and swaps the prefix on the way upstream, after the
 ext_authz Check, so egress rules describe the paths the agent requests.
 Both ends of a rewrite are whole path segments and the gateway drops any
 that are not, so a rewrite cannot reach past what the host's chain
@@ -536,11 +530,16 @@ host: a route per scope carries only the injectors whose own scope covers
 it, so one Connection per Google service composes untouched. Where a
 scope is claimed twice, the
 [per-Connection address](connections.md#addressing-a-connection) picks
-one — that Connection's prefix gets a route disabling its rivals on the
-headers it claims, and the prefix is stripped on the way upstream. A
-request naming no Connection is refused there, not served from whichever
-credential sorted first. The gate reads the path with the prefix removed,
-so egress rules and approvals keep naming real paths.
+one, by either carrier. A Lua step ahead of every other filter on a
+Connection chain reads the token placeholder out of the claimed headers —
+bare, behind a scheme, or as a Basic password — and the claimed query
+parameters, and marks the request with the Connection it names before the
+route is chosen. That Connection's prefix route and its marked route both
+disable its rivals on the headers it claims; the prefix is stripped and
+the marker dropped on the way upstream. A request naming no Connection is
+refused there, not served from whichever credential sorted first. The
+gate reads the path with the prefix removed, so egress rules and
+approvals keep naming real paths.
 
 ## HITL ext_authz
 

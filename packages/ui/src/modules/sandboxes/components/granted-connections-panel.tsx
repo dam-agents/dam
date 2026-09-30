@@ -8,6 +8,10 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import {
+  GitHubAccountsCallout,
+  type GrantDetails,
+} from "../../connections/components/github-accounts-callout.js";
 import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
@@ -18,6 +22,8 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
+  grants?: ReadonlyMap<string, GrantDetails>;
+  onPreferConnection?: (connectionId: string) => void;
   title?: string;
   leading?: React.ReactNode;
 }
@@ -28,6 +34,8 @@ export function GrantedConnectionsPanel({
   templateById,
   onToggleGrant,
   onOpenCatalog,
+  grants,
+  onPreferConnection,
   title = "My connections",
   leading,
 }: Props) {
@@ -48,7 +56,17 @@ export function GrantedConnectionsPanel({
     </div>
   );
   const rivalryCallout = (
-    <GrantRivalryCallout granted={granted} className="mb-3" />
+    <>
+      <GrantRivalryCallout granted={granted} className="mb-3" />
+      {grants && onPreferConnection && (
+        <GitHubAccountsCallout
+          granted={granted}
+          grants={grants}
+          onPrefer={onPreferConnection}
+          className="mb-3"
+        />
+      )}
+    </>
   );
 
   if (groups.length === 0)

@@ -4,7 +4,7 @@ import {
 } from "../../core/runtime-env.js";
 import { describeFailure, runOnce } from "../../core/run-once.js";
 
-const GH_TOKEN_ENV = "GH_TOKEN";
+const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 const SETUP_TIMEOUT_MS = 10_000;
 const SETUP_COMMAND = ["gh", "auth", "setup-git"];
 
@@ -13,7 +13,7 @@ export function configureGitCredentialHelper(
   log: (msg: string) => void,
 ): void {
   const env = mergedSpawnEnv(envReader);
-  if (!env[GH_TOKEN_ENV]) return;
+  if (env[GH_AVAILABLE_ENV] !== "true") return;
 
   void runOnce({
     command: SETUP_COMMAND,

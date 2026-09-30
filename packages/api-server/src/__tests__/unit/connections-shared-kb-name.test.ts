@@ -82,6 +82,7 @@ function makeRepoFake() {
     },
     grant: async () => {},
     revoke: async () => {},
+    setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
     listAgentsForConnection: async () => [],

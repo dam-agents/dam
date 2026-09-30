@@ -44,7 +44,12 @@ export interface ConnectionsRepository {
   revoke(connectionId: string, agentId: string): Promise<void>;
   listAgentGrants(
     agentId: string,
-  ): Promise<{ connectionId: string; grantedAt: Date }[]>;
+  ): Promise<{ connectionId: string; grantedAt: Date; preferred: boolean }[]>;
+  setPreferred(
+    agentId: string,
+    connectionId: string,
+    clearConnectionIds: readonly string[],
+  ): Promise<void>;
   listConnectionsForAgent(agentId: string): Promise<Connection[]>;
   listAgentsForConnection(connectionId: string): Promise<string[]>;
   revokeAllForAgent(agentId: string): Promise<void>;
@@ -167,7 +172,9 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
 
     async listAgentGrants(
       agentId,
-    ): Promise<{ connectionId: string; grantedAt: Date }[]> {
+    ): Promise<
+      { connectionId: string; grantedAt: Date; preferred: boolean }[]
+    > {
       const rows = (await db
         .select()
         .from(connectionGrantsTable)
@@ -175,8 +182,38 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .orderBy(desc(connectionGrantsTable.grantedAt))) as {
         connectionId: string;
         grantedAt: Date;
+        preferred: boolean;
       }[];
       return rows;
+    },
+
+    async setPreferred(
+      agentId,
+      connectionId,
+      clearConnectionIds,
+    ): Promise<void> {
+      if (clearConnectionIds.length > 0) {
+        await db
+          .update(connectionGrantsTable)
+          .set({ preferred: false })
+          .where(
+            and(
+              eq(connectionGrantsTable.agentId, agentId),
+              inArray(connectionGrantsTable.connectionId, [
+                ...clearConnectionIds,
+              ]),
+            ),
+          );
+      }
+      await db
+        .update(connectionGrantsTable)
+        .set({ preferred: true })
+        .where(
+          and(
+            eq(connectionGrantsTable.connectionId, connectionId),
+            eq(connectionGrantsTable.agentId, agentId),
+          ),
+        );
     },
 
     async listConnectionsForAgent(agentId): Promise<Connection[]> {

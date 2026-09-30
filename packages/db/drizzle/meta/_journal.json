@@ -393,6 +393,13 @@
       "when": 1790319636520,
       "tag": "0055_drop_experiments",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1790749255800,
+      "tag": "0056_preferred_connection_grant",
+      "breakpoints": true
     }
   ]
 }

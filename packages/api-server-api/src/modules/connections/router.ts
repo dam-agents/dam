@@ -18,6 +18,7 @@ import {
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
+  connectionSetPreferredConnectionInputSchema,
   connectionStartOAuthInputSchema,
   connectionTestAnthropicInputSchema,
   connectionUpdateInputSchema,
@@ -144,5 +145,11 @@ export const connectionsRouter = t.router({
     .input(connectionSetAgentConnectionsInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.setAgentConnections(input.agentId, input.connectionIds),
+    ),
+
+  setPreferredConnection: manageAgentsProcedure
+    .input(connectionSetPreferredConnectionInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.setPreferredConnection(input.agentId, input.connectionId),
     ),
 });

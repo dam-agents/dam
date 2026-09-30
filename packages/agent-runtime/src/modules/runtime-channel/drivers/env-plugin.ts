@@ -39,9 +39,10 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
             env[c.name] = c.placeholder;
           }
         }
-        env[GH_AVAILABLE_ENV] = Object.hasOwn(env, GH_TOKEN_ENV)
-          ? "true"
-          : "false";
+        env[GH_AVAILABLE_ENV] =
+          Object.hasOwn(env, GH_TOKEN_ENV) || env[GH_AVAILABLE_ENV] === "true"
+            ? "true"
+            : "false";
 
         const current = deps.store.current();
         if (envEquals(current, env)) {

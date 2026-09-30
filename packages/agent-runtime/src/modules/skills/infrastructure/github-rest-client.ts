@@ -51,7 +51,10 @@ export interface PullRequestState {
 
 export interface GithubFetchOpts {
   withAuth?: boolean;
+  token?: () => string;
 }
+
+const defaultToken = (): string => process.env.GH_TOKEN ?? "dummy-placeholder";
 
 function repoPath(host: DetectedOwnerRepo): string {
   return `/repos/${encodeURIComponent(host.owner)}/${encodeURIComponent(host.repo)}`;
@@ -114,15 +117,26 @@ export interface GitHubRestClient {
   ) => Promise<Result<PullRequest, SkillsDomainError>>;
 }
 
-export function createGitHubRestClient(): GitHubRestClient {
+export function createGitHubRestClient(
+  clientOpts: { token?: () => string } = {},
+): GitHubRestClient {
+  const token = clientOpts.token ?? defaultToken;
+  const json = <T>(
+    method: "GET" | "POST",
+    endpoint: string,
+    body?: unknown,
+    opts: GithubFetchOpts = {},
+  ) => ghJson<T>(method, endpoint, body, { ...opts, token });
+  const bytes = (method: "GET", endpoint: string, opts: GithubFetchOpts = {}) =>
+    ghBytes(method, endpoint, { ...opts, token });
   return {
     async getRepo(host) {
-      const r = await ghJson<{ default_branch: string }>("GET", repoPath(host));
+      const r = await json<{ default_branch: string }>("GET", repoPath(host));
       if (!r.ok) return r;
       return ok({ defaultBranch: r.value.default_branch });
     },
     async getRef(host, ref) {
-      const r = await ghJson<{ object: { sha: string } }>(
+      const r = await json<{ object: { sha: string } }>(
         "GET",
         `${repoPath(host)}/git/refs/heads/${encodeURIComponent(ref)}`,
       );
@@ -130,7 +144,7 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.object.sha });
     },
     async getCommitHead(host, opts) {
-      const r = await ghJson<{ sha: string }>(
+      const r = await json<{ sha: string }>(
         "GET",
         `${repoPath(host)}/commits/HEAD`,
         undefined,
@@ -140,7 +154,7 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async getPullRequest(host, number) {
-      const r = await ghJson<{
+      const r = await json<{
         state: string;
         draft?: boolean;
         merged_at?: string | null;
@@ -154,7 +168,7 @@ export function createGitHubRestClient(): GitHubRestClient {
       });
     },
     async getFileContent(host, ref, filePath) {
-      const r = await ghJson<{ content?: string; encoding?: string }>(
+      const r = await json<{ content?: string; encoding?: string }>(
         "GET",
         `${repoPath(host)}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`,
       );
@@ -180,14 +194,14 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok(buf.toString("utf8"));
     },
     async fetchTarball(host, sha, opts) {
-      return await ghBytes(
+      return await bytes(
         "GET",
         `${repoPath(host)}/tarball/${encodeURIComponent(sha)}`,
         opts,
       );
     },
     async createBlob(host, body) {
-      const r = await ghJson<{ sha: string }>(
+      const r = await json<{ sha: string }>(
         "POST",
         `${repoPath(host)}/git/blobs`,
         body,
@@ -196,7 +210,7 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async createTree(host, body) {
-      const r = await ghJson<{ sha: string }>(
+      const r = await json<{ sha: string }>(
         "POST",
         `${repoPath(host)}/git/trees`,
         body,
@@ -205,7 +219,7 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async createCommit(host, body) {
-      const r = await ghJson<{ sha: string }>(
+      const r = await json<{ sha: string }>(
         "POST",
         `${repoPath(host)}/git/commits`,
         body,
@@ -214,10 +228,10 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async createRef(host, body) {
-      return await ghJson<unknown>("POST", `${repoPath(host)}/git/refs`, body);
+      return await json<unknown>("POST", `${repoPath(host)}/git/refs`, body);
     },
     async createPullRequest(host, body) {
-      const r = await ghJson<{ html_url: string }>(
+      const r = await json<{ html_url: string }>(
         "POST",
         `${repoPath(host)}/pulls`,
         body,
@@ -231,12 +245,12 @@ export function createGitHubRestClient(): GitHubRestClient {
 function ghHeaders(
   withAuth: boolean,
   hasBody: boolean,
+  token: () => string,
 ): Record<string, string> {
-  const token = process.env.GH_TOKEN ?? "dummy-placeholder";
   return {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    ...(withAuth ? { Authorization: `Bearer ${token}` } : {}),
+    ...(withAuth ? { Authorization: `Bearer ${token()}` } : {}),
     ...(hasBody ? { "Content-Type": "application/json" } : {}),
   };
 }
@@ -251,7 +265,11 @@ async function ghJson<T>(
   try {
     const res = await fetch(`${GITHUB_API}${endpoint}`, {
       method,
-      headers: ghHeaders(withAuth, body !== undefined),
+      headers: ghHeaders(
+        withAuth,
+        body !== undefined,
+        opts.token ?? defaultToken,
+      ),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const text = await res.text();
@@ -279,7 +297,7 @@ async function ghBytes(
   try {
     const res = await fetch(`${GITHUB_API}${endpoint}`, {
       method,
-      headers: ghHeaders(withAuth, false),
+      headers: ghHeaders(withAuth, false, opts.token ?? defaultToken),
     });
     if (!res.ok) {
       let parsed: unknown = null;

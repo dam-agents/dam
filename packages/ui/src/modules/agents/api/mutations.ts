@@ -272,6 +272,7 @@ export function useSetAgentConnections() {
               byId.get(id) ?? {
                 connectionId: id,
                 grantedAt: new Date().toISOString(),
+                preferred: false,
               },
           ),
         });

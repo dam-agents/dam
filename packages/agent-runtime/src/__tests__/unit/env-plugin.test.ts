@@ -97,3 +97,30 @@ describe("env driver change classification (#3143)", () => {
     expect(h.changes).toEqual([{ namesChanged: true }]);
   });
 });
+
+describe("env driver gh availability flag", () => {
+  /** TEST_SCENARIO: One GitHub account hands the agent GH_TOKEN, and that alone
+   * says gh credentials are available. */
+  it("derives the flag from GH_TOKEN", async () => {
+    const h = harness();
+    await h.apply([env("GH_TOKEN", "platform:conn:aaa")]);
+    expect(h.env().PLATFORM_GH_TOKEN_AVAILABLE).toBe("true");
+  });
+
+  /** TEST_SCENARIO: Several GitHub accounts replace GH_TOKEN with gh's hosts
+   * file, which the env driver cannot see, so the platform states availability
+   * itself and the driver keeps that statement. */
+  it("keeps a delivered flag when no GH_TOKEN is present", async () => {
+    const h = harness();
+    await h.apply([env("PLATFORM_GH_TOKEN_AVAILABLE", "true")]);
+    expect(h.env().PLATFORM_GH_TOKEN_AVAILABLE).toBe("true");
+  });
+
+  /** TEST_SCENARIO: Nothing GitHub-shaped in the snapshot reads as unavailable,
+   * whatever a stale value said before. */
+  it("reads false when neither GH_TOKEN nor a statement arrives", async () => {
+    const h = harness({ PLATFORM_GH_TOKEN_AVAILABLE: "true" });
+    await h.apply([env("OTHER", "z")]);
+    expect(h.env().PLATFORM_GH_TOKEN_AVAILABLE).toBe("false");
+  });
+});

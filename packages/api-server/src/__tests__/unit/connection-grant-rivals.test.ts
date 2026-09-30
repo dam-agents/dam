@@ -1,8 +1,12 @@
 /**
  * TEST_OVERVIEW: Two Connections granted to one agent are rivals when both inject
  * the same header on the same host over overlapping paths, and the platform gives
- * at least one of them no address the agent can use there. The gateway refuses
- * unaddressed requests on such a host, so the pair can never work together:
+ * at least one of them no address the agent can use there. An address is the
+ * per-Connection path the platform writes into an MCP entry, or the token
+ * placeholder a Connection hands the agent, which only counts when both
+ * placeholders can reach the agent: distinct env names, or GitHub accounts, which
+ * the platform composes into gh's own hosts file. The gateway refuses
+ * unaddressed requests on such a host, so a rival pair can never work together:
  * this is the check that decides which grants an agent is refused. The cases
  * use the real catalog templates, so they describe the Connections users hold.
  */
@@ -61,6 +65,18 @@ function gheOn(host: string): Promise<Contribution[]> {
   });
 }
 
+function headerKeyOn(host: string): Promise<Contribution[]> {
+  return built({
+    templateId: "custom-header",
+    authKind: "header",
+    name: host,
+    host,
+    headerName: "X-API-Key",
+    valueFormat: "{value}",
+    value: "secret",
+  });
+}
+
 function customMcpAt(url: string): Promise<Contribution[]> {
   return built({
     templateId: "custom-mcp-none",
@@ -78,26 +94,37 @@ const as = (id: string, contributions: Contribution[]) => ({
 });
 
 describe("unaddressableRivalHost", () => {
-  /** TEST_SCENARIO: The reported case. GitHub OAuth and a GitHub personal access
-   * token both inject Authorization on the GitHub hosts, and gh cannot name one,
-   * so they are rivals. */
-  it("finds GitHub OAuth and a GitHub token rivals on the GitHub API host", () => {
+  /** TEST_SCENARIO: Two header credentials on one host hand the agent nothing it
+   * could send to name either, so they are rivals. */
+  it("finds two header credentials on one host rivals", async () => {
     const host = unaddressableRivalHost(
-      as("conn-oauth", templateContributions("github")),
-      as("conn-pat", templateContributions("github-pat")),
+      as("conn-a", await headerKeyOn("billing.acme.internal")),
+      as("conn-b", await headerKeyOn("billing.acme.internal")),
     );
-    expect(host).toBe("api.github.com");
+    expect(host).toBe("billing.acme.internal");
   });
 
-  /** TEST_SCENARIO: Every GitHub sign-in method injects on the same hosts, so any
-   * two of them collide, not just OAuth and a token. */
-  it("finds a GitHub token and a GitHub App rivals", () => {
+  /** TEST_SCENARIO: The originally reported case. GitHub OAuth and a GitHub
+   * personal access token both hand the agent GH_TOKEN, and the platform composes
+   * two GitHub accounts into gh's hosts file, so each request names its account. */
+  it("does not find GitHub OAuth and a GitHub token rivals", () => {
+    expect(
+      unaddressableRivalHost(
+        as("conn-oauth", templateContributions("github")),
+        as("conn-pat", templateContributions("github-pat")),
+      ),
+    ).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: Every GitHub sign-in method hands the agent the same token
+   * placeholder, so any two of them compose, not just OAuth and a token. */
+  it("does not find a GitHub token and a GitHub App rivals", () => {
     expect(
       unaddressableRivalHost(
         as("conn-pat", templateContributions("github-pat")),
         as("conn-app", templateContributions("github-app")),
       ),
-    ).toBeDefined();
+    ).toBeUndefined();
   });
 
   /** TEST_SCENARIO: Two Slack workspaces reach Slack through MCP entries, which
@@ -133,8 +160,9 @@ describe("unaddressableRivalHost", () => {
     ).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: Two accounts of the same Google service claim the same path,
-   * and a path-scoped injection is never addressed, so they are rivals. */
+  /** TEST_SCENARIO: Two accounts of the same Google service claim the same path
+   * and would both write their placeholder into one env, which can hold only
+   * one of them, so they are rivals. */
   it("finds two accounts of one Google service rivals", () => {
     const calendar = googleServiceOn("/calendar/*");
     expect(
@@ -160,15 +188,15 @@ describe("unaddressableRivalHost", () => {
     ).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: Two accounts on one GitHub Enterprise server collide the way
-   * two github.com accounts do. */
-  it("finds two accounts on one GitHub Enterprise server rivals", async () => {
+  /** TEST_SCENARIO: Two accounts on one GitHub Enterprise server compose into
+   * gh's hosts file the way two github.com accounts do. */
+  it("does not find two accounts on one GitHub Enterprise server rivals", async () => {
     expect(
       unaddressableRivalHost(
         as("conn-a", await gheOn("ghe.acme.com")),
         as("conn-b", await gheOn("ghe.acme.com")),
       ),
-    ).toBe("api.ghe.acme.com");
+    ).toBeUndefined();
   });
 
   /** TEST_SCENARIO: A Connection is never its own rival, so checking a grant set

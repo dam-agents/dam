@@ -43,6 +43,11 @@ const (
 	connectionEgressPathSegment = "__platform_conn"
 )
 
+const (
+	connectionEgressPlaceholderPrefix = "platform:conn:"
+	connectionAddressHeader           = "x-platform-conn"
+)
+
 func EnvoyBootstrapName(instanceName string) string {
 	return instanceName + "-envoy-bootstrap"
 }

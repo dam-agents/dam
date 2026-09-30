@@ -2,6 +2,16 @@ import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
+export function useSetPreferredConnection() {
+  return useMutation({
+    ...trpc.connections.setPreferredConnection.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
+      errorToast: "Couldn't change the default account",
+    },
+  });
+}
+
 export function useCreateConnection() {
   return useMutation({
     ...trpc.connections.create.mutationOptions(),

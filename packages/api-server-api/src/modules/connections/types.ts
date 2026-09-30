@@ -195,6 +195,7 @@ export const agentConnections = z.object({
     z.object({
       connectionId: z.string(),
       grantedAt: z.string(),
+      preferred: z.boolean(),
     }),
   ),
 });
@@ -288,4 +289,5 @@ export interface ConnectionsService {
 
   getAgentConnections(agentId: string): Promise<AgentConnections>;
   setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
+  setPreferredConnection(agentId: string, connectionId: string): Promise<void>;
 }
