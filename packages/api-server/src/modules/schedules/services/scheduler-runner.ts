@@ -1,7 +1,15 @@
-import type { EventOutcome, PrecheckVerdict } from "api-server-api";
+import type {
+  EventOutcome,
+  PrecheckVerdict,
+  ScheduleSpec,
+} from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
-import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
+import {
+  nextFireAt,
+  rruleRejection,
+  triggerExpiry,
+} from "../domain/recurrences.js";
 import { statusForVerdict } from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
@@ -50,6 +58,11 @@ const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   failed: "precheck-failed",
 };
 
+function stopReason(spec: ScheduleSpec, next: Date | null): string | undefined {
+  if (next || spec.type !== "rrule") return undefined;
+  return rruleRejection(spec.rrule) ?? undefined;
+}
+
 export function createSchedulerRunner(
   deps: SchedulerRunnerDeps,
 ): SchedulerRunner {
@@ -72,7 +85,9 @@ export function createSchedulerRunner(
     }
     const hold = async (result: string) => {
       const after = nextFireAt(sched.spec, now());
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      await deps.repo
+        .recordFire(scheduleId, stopReason(sched.spec, after) ?? result, after)
+        .catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
@@ -140,7 +155,9 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       const after = lastAttempt ? nextFireAt(sched.spec, now()) : fireAt;
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      await deps.repo
+        .recordFire(scheduleId, stopReason(sched.spec, after) ?? result, after)
+        .catch(() => {});
       if (lastAttempt) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired("failure");
@@ -149,8 +166,10 @@ export function createSchedulerRunner(
     }
 
     const next = nextFireAt(sched.spec, now());
-    if (sched.spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else await deps.repo.recordFire(scheduleId, "success", next);
+    const stopped = stopReason(sched.spec, next);
+    if (sched.spec.precheck)
+      await deps.repo.setNextRun(scheduleId, next, stopped);
+    else await deps.repo.recordFire(scheduleId, stopped ?? "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     await emitFired("success");
   }
@@ -166,7 +185,11 @@ export function createSchedulerRunner(
         return;
       }
       const next = nextFireAt(sched.spec, now());
-      await deps.repo.setNextRun(scheduleId, next);
+      await deps.repo.setNextRun(
+        scheduleId,
+        next,
+        stopReason(sched.spec, next),
+      );
       if (next) await deps.queue.enqueue(scheduleId, next, now());
       else await deps.queue.cancel(scheduleId);
     },
@@ -235,7 +258,8 @@ export function createSchedulerRunner(
       for (const s of enabled) {
         const stored = s.status?.nextRun ? new Date(s.status.nextRun) : null;
         const next = stored ?? nextFireAt(s.spec, now());
-        if (!stored) await deps.repo.setNextRun(s.id, next);
+        if (!stored)
+          await deps.repo.setNextRun(s.id, next, stopReason(s.spec, next));
         if (next) await deps.queue.ensure(s.id, next, now());
       }
       log(`restored ${enabled.length} schedules`);

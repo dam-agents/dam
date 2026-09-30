@@ -53,6 +53,7 @@ function makeDeps(opts?: {
   lastRun?: string;
   onboardingPending?: boolean;
   runtimeMigrating?: boolean;
+  rrule?: string;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -67,14 +68,24 @@ function makeDeps(opts?: {
 
   const repo = {
     async getById(id: string) {
-      return id === SCHEDULE_ID
-        ? makeSchedule(
-            opts?.storedNextRun,
-            opts?.cron,
-            opts?.precheck,
-            opts?.lastRun,
-          )
-        : null;
+      if (id !== SCHEDULE_ID) return null;
+      const schedule = makeSchedule(
+        opts?.storedNextRun,
+        opts?.cron,
+        opts?.precheck,
+        opts?.lastRun,
+      );
+      if (!opts?.rrule) return schedule;
+      const spec: Schedule["spec"] = {
+        version: "1",
+        type: "rrule",
+        rrule: opts.rrule,
+        timezone: "UTC",
+        task: "do the thing",
+        enabled: true,
+        createdBy: "user",
+      };
+      return { ...schedule, spec };
     },
     async getOwnerById() {
       return "owner-sub";
@@ -343,6 +354,27 @@ describe("scheduler-runner fire", () => {
     expect(fires[0]!.result).toBe("success");
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]!.toISOString()).toBe("2026-06-12T11:00:00.000Z");
+  });
+
+  // TEST_SCENARIO: a rule saved before its kind was rejected still fires its armed occurrence, but then has no next one. The owner reads why on the schedule instead of a bare success with no next run.
+  it("records why a stored rrule that is now rejected stops", async () => {
+    const { runner, fires, enqueued } = makeDeps({
+      rrule: "FREQ=HOURLY;INTERVAL=2;BYHOUR=9",
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(fires).toEqual([
+      {
+        result:
+          "rrule is rejected, its INTERVAL never lands on its BYHOUR/BYMINUTE",
+        nextRun: null,
+      },
+    ]);
+    expect(enqueued).toEqual([]);
   });
 
   // TEST_SCENARIO: concurrent replica boots must converge on the stored nextRun — clock-derived fire times give each replica its own jobId and a duplicate trigger.

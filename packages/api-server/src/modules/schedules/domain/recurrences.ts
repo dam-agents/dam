@@ -17,8 +17,13 @@ export function validateCron(expr: string): void {
 export function validateRRule(expr: string): void {
   const rule = RRule.fromString(expr);
   if (!rule) throw new Error(`invalid rrule: ${expr}`);
+  const rejection = rruleRejection(expr);
+  if (rejection) throw new Error(`${rejection}: ${expr}`);
+}
+
+export function rruleRejection(expr: string): string | null {
   const problem = rruleProblem(RRule.parseString(expr));
-  if (problem) throw new Error(`rrule is rejected, ${problem}: ${expr}`);
+  return problem ? `rrule is rejected, ${problem}` : null;
 }
 
 export function validateTimezone(tz: string): void {

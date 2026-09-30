@@ -178,6 +178,9 @@ export function occurrenceRule(
         interval: cycle,
         byhour: slot.hours,
         byminute: slot.minutes,
+        bysecond: slot.seconds,
+        bysetpos: null,
+        count: null,
       }),
     );
   }
@@ -188,8 +191,7 @@ export function rruleProblem(options: RRuleOptions): string | null {
   if (!dayFiltersMatchSomeDate(options))
     return "its BYMONTH/BYMONTHDAY/BYYEARDAY/BYWEEKNO filters match no date";
   if (!pinsTimeOfDay(options)) return null;
-  if (toNumArray(options.bysetpos).length > 0)
-    return "BYSETPOS is not supported on an HOURLY or MINUTELY rule that sets BYHOUR or BYMINUTE";
+  if (periodTimes(options).length === 0) return "its BYSETPOS selects no time";
   if (pinnedSlots(options).length === 0)
     return "its INTERVAL never lands on its BYHOUR/BYMINUTE";
   return null;
@@ -212,33 +214,78 @@ function stepMinutes(options: RRuleOptions): number {
   return options.freq === Frequency.HOURLY ? interval * 60 : interval;
 }
 
-type PinnedSlot = { cycleDay: number; hours: number[]; minutes: number[] };
+type PinnedSlot = {
+  cycleDay: number;
+  hours: number[];
+  minutes: number[];
+  seconds: number[];
+};
 
 function pinnedSlots(options: RRuleOptions): PinnedSlot[] {
   const step = stepMinutes(options);
   const hourly = options.freq === Frequency.HOURLY;
-  const byminute = toNumArray(options.byminute);
-  const minutes = hourly && byminute.length === 0 ? [0] : orAll(byminute, 60);
+  const times = periodTimes(options);
   const slots = new Map<string, PinnedSlot>();
   for (const h of orAll(toNumArray(options.byhour), 24)) {
-    const minutesByDay = new Map<number, number[]>();
-    for (const m of minutes) {
-      const cycleDay = stepLandingDay(h * 60 + (hourly ? 0 : m), step);
+    const hourSlots = new Map<string, Omit<PinnedSlot, "hours">>();
+    for (const { minute, seconds } of times) {
+      const cycleDay = stepLandingDay(h * 60 + (hourly ? 0 : minute), step);
       if (cycleDay === null) continue;
-      minutesByDay.set(cycleDay, [...(minutesByDay.get(cycleDay) ?? []), m]);
+      const key = `${cycleDay}:${seconds.join(",")}`;
+      const slot = hourSlots.get(key) ?? { cycleDay, minutes: [], seconds };
+      slot.minutes.push(minute);
+      hourSlots.set(key, slot);
     }
-    for (const [cycleDay, dayMinutes] of minutesByDay) {
-      const key = `${cycleDay}:${dayMinutes.join(",")}`;
-      const slot = slots.get(key) ?? {
-        cycleDay,
-        hours: [],
-        minutes: dayMinutes,
-      };
+    for (const hourSlot of hourSlots.values()) {
+      const key = `${hourSlot.cycleDay}:${hourSlot.minutes.join(",")}:${hourSlot.seconds.join(",")}`;
+      const slot = slots.get(key) ?? { ...hourSlot, hours: [] };
       slot.hours.push(h);
       slots.set(key, slot);
     }
   }
   return [...slots.values()];
+}
+
+function periodTimes(
+  options: RRuleOptions,
+): { minute: number; seconds: number[] }[] {
+  const hourly = options.freq === Frequency.HOURLY;
+  const byminute = toNumArray(options.byminute);
+  const minutes = sorted(
+    hourly && byminute.length === 0 ? [0] : orAll(byminute, 60),
+  );
+  const bysecond = toNumArray(options.bysecond);
+  const seconds = sorted(bysecond.length > 0 ? bysecond : [0]);
+  const positions = toNumArray(options.bysetpos);
+  if (positions.length === 0)
+    return minutes.map((minute) => ({ minute, seconds }));
+  if (!hourly)
+    return minutes
+      .map((minute) => ({ minute, seconds: atPositions(seconds, positions) }))
+      .filter((t) => t.seconds.length > 0);
+  const picked = atPositions(
+    minutes.flatMap((m) => seconds.map((s) => m * 60 + s)),
+    positions,
+  );
+  return minutes
+    .map((minute) => ({
+      minute,
+      seconds: picked
+        .filter((t) => Math.floor(t / 60) === minute)
+        .map((t) => t % 60),
+    }))
+    .filter((t) => t.seconds.length > 0);
+}
+
+function atPositions(values: number[], positions: number[]): number[] {
+  const picked = positions
+    .map((p) => values[p > 0 ? p - 1 : values.length + p])
+    .filter((v): v is number => v !== undefined);
+  return sorted([...new Set(picked)]);
+}
+
+function sorted(values: number[]): number[] {
+  return [...values].sort((a, b) => a - b);
 }
 
 function cycleDays(step: number): number {
@@ -325,16 +372,19 @@ export function hasVisibleOccurrence(
     dtstart.setUTCSeconds(0, 0);
     const rule = occurrenceRule(RRule.parseString(rruleBody), dtstart);
     if (!rule) return true;
-    let visible = false;
-    rule.all((date, i) => {
-      if (visible || i >= 1440) return false;
-      if (!isInQuietHours(date, enabled)) {
-        visible = true;
-        return false;
-      }
-      return true;
+    const rules = rule instanceof RRuleSet ? rule.rrules() : [rule];
+    return rules.some((r) => {
+      let visible = false;
+      r.all((date, i) => {
+        if (visible || i >= 1440) return false;
+        if (!isInQuietHours(date, enabled)) {
+          visible = true;
+          return false;
+        }
+        return true;
+      });
+      return visible;
     });
-    return visible;
   } catch {
     return true;
   }

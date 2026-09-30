@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-09-29
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -10,7 +10,7 @@ The subsystem straddles two components. The api-server owns the schedule rows, t
 
 ## Fire
 
-Schedules are Postgres rows owned by the api-server, each armed as a delayed job on a Redis-backed queue — one pending job per schedule, re-armed after every fire. Fires are idempotent per occurrence, so at-least-once delivery cannot run one twice and a boot cannot swallow one that is due; a periodic reconcile re-arms any schedule whose queue job vanished. The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window. Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time. An hourly or minutely RRULE that pins hours or minutes counts its interval from a fixed epoch, not from the moment it is evaluated, so its occurrences stay put across restarts and re-arms. A rule that can never fire is rejected at save time and never armed: one whose steps never land on its pinned hours or minutes, or one whose month, month-day, year-day or week-number filters match no real date. A pinned hourly or minutely rule that also sets a position filter is rejected too.
+Schedules are Postgres rows owned by the api-server, each armed as a delayed job on a Redis-backed queue — one pending job per schedule, re-armed after every fire. Fires are idempotent per occurrence, so at-least-once delivery cannot run one twice and a boot cannot swallow one that is due; a periodic reconcile re-arms any schedule whose queue job vanished. The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window. Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time. An hourly or minutely RRULE that pins hours or minutes counts its interval from a fixed epoch, not from the moment it is evaluated, so its occurrences stay put across restarts and re-arms. A rule that can never fire is rejected at save time and never armed: one whose steps never land on its pinned hours or minutes, one whose position filter picks nothing inside an hour or minute, or one whose month, month-day, year-day or week-number filters match no real date. A rule saved before its kind was rejected stops once it has no next occurrence, and its last result names the reason.
 
 When a fire is due:
 

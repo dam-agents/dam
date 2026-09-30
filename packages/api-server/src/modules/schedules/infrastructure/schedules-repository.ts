@@ -58,7 +58,11 @@ export interface SchedulesRepository {
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
-  setNextRun(id: string, nextRun: Date | null): Promise<void>;
+  setNextRun(
+    id: string,
+    nextRun: Date | null,
+    lastResult?: string,
+  ): Promise<void>;
 }
 
 interface InternalRow {
@@ -305,10 +309,14 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(eq(schedulesTable.id, id));
     },
 
-    async setNextRun(id, nextRun): Promise<void> {
+    async setNextRun(id, nextRun, lastResult): Promise<void> {
       await db
         .update(schedulesTable)
-        .set({ nextRun, updatedAt: new Date() })
+        .set({
+          nextRun,
+          ...(lastResult ? { lastFiredResult: lastResult } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schedulesTable.id, id));
     },
   };

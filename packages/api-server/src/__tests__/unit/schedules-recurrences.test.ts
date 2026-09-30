@@ -203,6 +203,30 @@ describe("nextFireAt (sub-daily rrule pinned to hours or minutes)", () => {
     expect(second!.getTime() - first!.getTime()).toBe(5 * 24 * 3600_000);
   });
 
+  it.each([
+    ["FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=-1", "2026-09-25T10:30:00.000Z"],
+    [
+      "FREQ=HOURLY;BYHOUR=9,10;BYMINUTE=0,15,30,45;BYSETPOS=1,-1",
+      "2026-09-25T10:00:00.000Z",
+    ],
+    [
+      "FREQ=MINUTELY;INTERVAL=15;BYHOUR=10;BYSECOND=0,30;BYSETPOS=2",
+      "2026-09-25T10:00:30.000Z",
+    ],
+  ])("picks %s's BYSETPOS within each period", (rrule, expected) => {
+    const next = nextFireAt(
+      rruleSpec(rrule, "UTC"),
+      new Date("2026-09-25T09:47:00Z"),
+    );
+    expect(next?.toISOString()).toBe(expected);
+  });
+
+  it("keeps a pinned COUNT rule firing after today's occurrences pass, like an unpinned one", () => {
+    const spec = rruleSpec("FREQ=HOURLY;BYHOUR=10;COUNT=1", "UTC");
+    const next = nextFireAt(spec, new Date("2026-09-25T11:00:00Z"));
+    expect(next?.toISOString()).toBe("2026-09-26T10:00:00.000Z");
+  });
+
   it("returns null quickly for day filters that match no date", () => {
     const started = Date.now();
     const next = nextFireAt(
@@ -250,9 +274,15 @@ describe("validateRRule", () => {
     expect(() => validateRRule(rrule)).toThrow(/filters match no date/);
   });
 
-  it("rejects BYSETPOS on a pinned sub-daily rule", () => {
-    expect(() => validateRRule("FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=1")).toThrow(
-      /BYSETPOS is not supported/,
+  it("accepts BYSETPOS on a pinned sub-daily rule", () => {
+    expect(() =>
+      validateRRule("FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=1"),
+    ).not.toThrow();
+  });
+
+  it("rejects a BYSETPOS that selects no time", () => {
+    expect(() => validateRRule("FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=3")).toThrow(
+      /BYSETPOS selects no time/,
     );
   });
 
@@ -263,6 +293,14 @@ describe("validateRRule", () => {
   it("accepts a quarter-hour rule pinned to quarter-hour minutes", () => {
     expect(() =>
       validateRRule("FREQ=MINUTELY;INTERVAL=15;BYHOUR=9;BYMINUTE=0,15,30,45"),
+    ).not.toThrow();
+  });
+
+  it("finds a visible occurrence in a later slot when an earlier one is all quiet", () => {
+    expect(() =>
+      validateHasVisibleOccurrence("FREQ=HOURLY;INTERVAL=5;BYHOUR=10,11", [
+        { startTime: "10:00", endTime: "11:00", enabled: true },
+      ]),
     ).not.toThrow();
   });
 
