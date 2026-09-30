@@ -163,7 +163,8 @@ func TestBuildChainForwardRoutes_ContestedHostRefusesTheUnaddressedPath(t *testi
 	require.Contains(t, catchAll, "direct_response")
 	assert.Equal(t, 403, catchAll["direct_response"].(ev)["status"])
 	assert.NotContains(t, catchAll, "route")
-	assert.Contains(t, catchAll, "typed_per_filter_config")
+	assert.NotContains(t, catchAll, "typed_per_filter_config",
+		"per-route disabling is decided before the address step runs, so the refusal must not switch the gate off")
 
 	body := catchAll["direct_response"].(ev)["body"].(ev)["inline_string"].(string)
 	assert.Contains(t, body, "mcp.slack.com")
@@ -291,6 +292,111 @@ func httpFilterNamesForHost(t *testing.T, doc map[string]any, host string) []str
 	}
 	require.FailNow(t, "no terminating chain for "+host)
 	return nil
+}
+
+func httpFiltersForHost(t *testing.T, doc map[string]any, host string) []map[string]any {
+	t.Helper()
+	for _, fc := range internalFilterChains(t, doc) {
+		match, _ := fc["filter_chain_match"].(map[string]any)
+		serverNames, _ := match["server_names"].([]any)
+		if len(serverNames) != 1 || serverNames[0] != host {
+			continue
+		}
+		filters, _ := fc["filters"].([]any)
+		require.NotEmpty(t, filters)
+		hcm, _ := filters[0].(map[string]any)["typed_config"].(map[string]any)
+		httpFilters, _ := hcm["http_filters"].([]any)
+		out := make([]map[string]any, 0, len(httpFilters))
+		for _, f := range httpFilters {
+			out = append(out, f.(map[string]any))
+		}
+		return out
+	}
+	require.FailNow(t, "no terminating chain for "+host)
+	return nil
+}
+
+func injectorFilters(filters []map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, f := range filters {
+		if name, _ := f["name"].(string); len(name) > len("credential_injector_") && name[:len("credential_injector_")] == "credential_injector_" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func skippedMarkerValues(t *testing.T, filter map[string]any) []string {
+	t.Helper()
+	cfg := filter["typed_config"].(map[string]any)
+	require.Equal(t, extensionWithMatcherType, cfg["@type"],
+		"a contested injector is wrapped so it can skip itself at request time")
+	tree := cfg["xds_matcher"].(map[string]any)["matcher_tree"].(map[string]any)
+	input := tree["input"].(map[string]any)["typed_config"].(map[string]any)
+	assert.Equal(t, connectionAddressHeader, input["header_name"])
+	skips := tree["exact_match_map"].(map[string]any)["map"].(map[string]any)
+	out := make([]string, 0, len(skips))
+	for k := range skips {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestRenderEnvoyBootstrap_ContestedInjectorsSkipWhenTheMarkerNamesTheRival(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
+		connectionChain("api.github.com",
+			connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "api.github.com"),
+			connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "api.github.com"),
+		),
+	})
+	require.NoError(t, err)
+
+	injectors := injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.github.com"))
+	require.Len(t, injectors, 2)
+	assert.Equal(t, []string{"conn-bbb"}, skippedMarkerValues(t, injectors[0]))
+	assert.Equal(t, []string{"conn-aaa"}, skippedMarkerValues(t, injectors[1]))
+	inner := injectors[0]["typed_config"].(map[string]any)["extension_config"].(map[string]any)
+	assert.Equal(t, "envoy.filters.http.credential_injector", inner["name"])
+	assert.Equal(t, true, inner["typed_config"].(map[string]any)["overwrite"])
+}
+
+func TestRenderEnvoyBootstrap_UncontestedInjectorsStayPlain(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
+		connectionChain("share.example.com",
+			connectionCredential("conn-kba", "platform-conn-kba", "x-kb-token-aaa", "share.example.com"),
+			connectionCredential("conn-kbb", "platform-conn-kbb", "x-kb-token-bbb", "share.example.com"),
+		),
+		connectionChain("api.example.com",
+			connectionCredential("conn-one", "platform-conn-one", "Authorization", "api.example.com"),
+		),
+	})
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	for _, host := range []string{"share.example.com", "api.example.com"} {
+		for _, f := range injectorFilters(httpFiltersForHost(t, doc, host)) {
+			assert.Equal(t,
+				"type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
+				f["typed_config"].(map[string]any)["@type"],
+				"no rival claims this header on %s, so nothing is skipped", host)
+		}
+	}
+}
+
+func TestLuaConnectionAddressScript_RefusesUnaddressedContestedScopesItself(t *testing.T) {
+	c := connectionChain("www.googleapis.com",
+		scopedCredential("conn-a", "platform-conn-a", "Authorization", "www.googleapis.com", "/gmail/*"),
+		scopedCredential("conn-b", "platform-conn-b", "Authorization", "www.googleapis.com", "/gmail/*"),
+		scopedCredential("conn-cal", "platform-conn-cal", "Authorization", "www.googleapis.com", "/calendar/*"),
+	)
+
+	script := luaConnectionAddressScript(c)
+	assert.Contains(t, script, `{scope = "/gmail/", body = "More than one connection`)
+	assert.NotContains(t, script, `scope = "/calendar/"`,
+		"a scope nobody contests is never refused")
+	assert.Contains(t, script, `rh:respond({[":status"] = "403"`)
+	assert.Contains(t, script, `local PATH_SEGMENT = "__platform_conn"`)
 }
 
 func TestRenderEnvoyBootstrap_UnlabelledChainReadsNoAddress(t *testing.T) {

@@ -6,12 +6,64 @@ import (
 	"strings"
 )
 
+const (
+	extensionWithMatcherType = "type.googleapis.com/envoy.extensions.common.matching.v3.ExtensionWithMatcher"
+	requestHeaderInputType   = "type.googleapis.com/envoy.type.matcher.v3.HttpRequestHeaderMatchInput"
+	skipFilterActionType     = "type.googleapis.com/envoy.extensions.filters.common.matcher.action.v3.SkipFilter"
+)
+
 func connectionAddressHTTPFilter(c envoyHostChain) ev {
 	return ev{
 		"name": "connection_address",
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
 			"default_source_code": ev{"inline_string": luaConnectionAddressScript(c)},
+		},
+	}
+}
+
+func (c envoyHostChain) RivalsOf(cred envoyCredential) []string {
+	if cred.ConnectionID == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, other := range c.Credentials {
+		if other.ConnectionID == "" || other.ConnectionID == cred.ConnectionID || seen[other.ConnectionID] {
+			continue
+		}
+		if !strings.EqualFold(other.HeaderName, cred.HeaderName) {
+			continue
+		}
+		seen[other.ConnectionID] = true
+		out = append(out, other.ConnectionID)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func skippedForRivals(filter ev, innerName string, rivals []string) ev {
+	if len(rivals) == 0 {
+		return filter
+	}
+	skips := ev{}
+	for _, rival := range rivals {
+		skips[rival] = ev{"action": ev{"name": "skip", "typed_config": ev{"@type": skipFilterActionType}}}
+	}
+	return ev{
+		"name": filter["name"],
+		"typed_config": ev{
+			"@type":            extensionWithMatcherType,
+			"extension_config": ev{"name": innerName, "typed_config": filter["typed_config"]},
+			"xds_matcher": ev{
+				"matcher_tree": ev{
+					"input": ev{
+						"name":         "request-headers",
+						"typed_config": ev{"@type": requestHeaderInputType, "header_name": connectionAddressHeader},
+					},
+					"exact_match_map": ev{"map": skips},
+				},
+			},
 		},
 	}
 }
@@ -78,6 +130,16 @@ func claimedQueryParams(c envoyHostChain) []string {
 	return out
 }
 
+func contestedScopes(c envoyHostChain) []string {
+	var out []string
+	for _, scope := range c.PathScopes() {
+		if c.ContestedAt(scope) {
+			out = append(out, scope)
+		}
+	}
+	return out
+}
+
 func luaStringList(items []string) string {
 	quoted := make([]string, 0, len(items))
 	for _, item := range items {
@@ -86,11 +148,21 @@ func luaStringList(items []string) string {
 	return "{" + strings.Join(quoted, ", ") + "}"
 }
 
+func luaContestedList(c envoyHostChain) string {
+	entries := make([]string, 0)
+	for _, scope := range contestedScopes(c) {
+		entries = append(entries, "{scope = "+strconv.Quote(scope)+", body = "+strconv.Quote(refusedBody(c, scope))+"}")
+	}
+	return "{" + strings.Join(entries, ", ") + "}"
+}
+
 func luaConnectionAddressScript(c envoyHostChain) string {
 	return "local HEADERS = " + luaStringList(claimedHeaderNames(c)) + "\n" +
 		"local PARAMS = " + luaStringList(claimedQueryParams(c)) + "\n" +
+		"local CONTESTED = " + luaContestedList(c) + "\n" +
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
 		"local PREFIX = " + strconv.Quote(connectionEgressPlaceholderPrefix) + "\n" +
+		"local PATH_SEGMENT = " + strconv.Quote(connectionEgressPathSegment) + "\n" +
 		luaConnectionAddressBody
 }
 
@@ -140,6 +212,17 @@ local function address_in(value)
   if string.match(id, "^[%w%._~%-]+$") == nil then return nil end
   return id
 end
+local function address_in_path(path)
+  if path == nil then return nil end
+  local marker = "/" .. PATH_SEGMENT .. "/"
+  if string.sub(path, 1, #marker) ~= marker then return nil end
+  local rest = string.sub(path, #marker + 1)
+  local slash = string.find(rest, "/", 1, true)
+  if slash == nil then return nil end
+  local id = string.sub(rest, 1, slash - 1)
+  if string.match(id, "^[%w%._~%-]+$") == nil then return nil end
+  return id
+end
 local function address_in_query(path)
   if path == nil then return nil end
   local qi = string.find(path, "?", 1, true)
@@ -158,18 +241,34 @@ local function address_in_query(path)
   end
   return nil
 end
+local function refusal_for(path)
+  for _, contested in ipairs(CONTESTED) do
+    if string.sub(path, 1, #contested.scope) == contested.scope then
+      return contested.body
+    end
+  end
+  return nil
+end
 function envoy_on_request(rh)
   local h = rh:headers()
   h:remove(ADDRESS_HEADER)
-  local id = nil
-  for _, name in ipairs(HEADERS) do
-    id = address_in(h:get(name))
-    if id ~= nil then break end
+  local path = h:get(":path") or "/"
+  local id = address_in_path(path)
+  if id == nil then
+    for _, name in ipairs(HEADERS) do
+      id = address_in(h:get(name))
+      if id ~= nil then break end
+    end
   end
-  if id == nil then id = address_in_query(h:get(":path")) end
+  if id == nil then id = address_in_query(path) end
   if id ~= nil then
     h:add(ADDRESS_HEADER, id)
     rh:clearRouteCache()
+    return
+  end
+  local body = refusal_for(path)
+  if body ~= nil then
+    rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, body)
   end
 end
 `

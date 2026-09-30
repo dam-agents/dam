@@ -344,7 +344,8 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	}
 	filters = append(filters, extAuthzHTTPFilter(p))
 	for _, cred := range c.Credentials {
-		filters = append(filters, ev{
+		rivals := c.RivalsOf(cred)
+		filters = append(filters, skippedForRivals(ev{
 			"name": cred.FilterName(),
 			"typed_config": ev{
 				"@type":     "type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
@@ -366,15 +367,15 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 					},
 				},
 			},
-		})
+		}, "envoy.filters.http.credential_injector", rivals))
 		if cred.QueryParamName != "" {
-			filters = append(filters, ev{
+			filters = append(filters, skippedForRivals(ev{
 				"name": cred.QueryParamFilterName(),
 				"typed_config": ev{
 					"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
 					"default_source_code": ev{"inline_string": luaQueryParamScript(cred.HeaderName, cred.QueryParamName)},
 				},
-			})
+			}, "envoy.filters.http.lua", rivals))
 		}
 	}
 	filters = append(filters, dynamicForwardProxyHTTPFilter(), routerHTTPFilter())
@@ -480,7 +481,6 @@ func buildRefusedRoute(c envoyHostChain, scope string) ev {
 			"status": 403,
 			"body":   ev{"inline_string": refusedBody(c, scope)},
 		},
-		"typed_per_filter_config": extAuthzDisabledPerRoute(),
 	}
 }
 

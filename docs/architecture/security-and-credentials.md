@@ -531,15 +531,16 @@ it, so one Connection per Google service composes untouched. Where a
 scope is claimed twice, the
 [per-Connection address](connections.md#addressing-a-connection) picks
 one, by either carrier. A Lua step ahead of every other filter on a
-Connection chain reads the token placeholder out of the claimed headers —
-bare, behind a scheme, or as a Basic password — and the claimed query
-parameters, and marks the request with the Connection it names before the
-route is chosen. That Connection's prefix route and its marked route both
-disable its rivals on the headers it claims; the prefix is stripped and
-the marker dropped on the way upstream. A request naming no Connection is
-refused there, not served from whichever credential sorted first. The
-gate reads the path with the prefix removed, so egress rules and
-approvals keep naming real paths.
+Connection chain reads the address — the path prefix, or the token
+placeholder out of the claimed headers (bare, behind a scheme, or as a
+Basic password) and query parameters — and marks the request with the
+Connection it names before the route is chosen. Each injector skips
+itself when the marker names a rival on its header; the prefix is
+stripped and the marker dropped on the way upstream. A request naming no
+Connection on a contested scope is refused by that same step, ahead of
+the gate, not served from whichever credential sorted first. The gate
+reads the path with the prefix removed, so egress rules and approvals
+keep naming real paths.
 
 ## HITL ext_authz
 
