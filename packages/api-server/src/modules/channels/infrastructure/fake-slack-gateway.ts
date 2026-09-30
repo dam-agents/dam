@@ -22,6 +22,7 @@ export interface FakeSlackChannel {
   id: string;
   name: string;
   botIsMember: boolean;
+  members?: string[];
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
@@ -374,8 +375,18 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         (c) => c.id === channelId,
       );
       return channel
-        ? { isMember: channel.botIsMember, name: channel.name }
+        ? {
+            isMember: channel.botIsMember,
+            isDirectMessage: false,
+            name: channel.name,
+          }
         : null;
+    },
+
+    async listSharedChannels(userId, teamId) {
+      return (channelsByWorkspace.get(teamId) ?? [])
+        .filter((c) => c.botIsMember && (c.members ?? []).includes(userId))
+        .map((c) => c.id);
     },
 
     async getUserInfo(userId) {

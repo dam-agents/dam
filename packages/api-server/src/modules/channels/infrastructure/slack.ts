@@ -807,6 +807,10 @@ async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
+  refuseOutsideOwnerReach: (
+    conversationId: string,
+    teamId: SlackWorkspace,
+  ) => Promise<{ error: string } | null>,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -848,7 +852,7 @@ async function resolveOutboundTarget(
   if (conversationId.startsWith("D")) {
     return { id: conversationId, teamId };
   }
-  let info: { isMember: boolean } | null;
+  let info: { isMember: boolean; isDirectMessage: boolean } | null;
   try {
     info = await gateway.getConversationInfo(conversationId, teamId);
   } catch (err) {
@@ -865,6 +869,10 @@ async function resolveOutboundTarget(
     return {
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
+  }
+  if (!info.isDirectMessage) {
+    const refused = await refuseOutsideOwnerReach(conversationId, teamId);
+    if (refused) return refused;
   }
   return { id: conversationId, teamId };
 }
@@ -1070,6 +1078,57 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
+
+  async function ownerReach(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<Set<string> | "unlinked"> {
+    const owner = await getInstanceOwner(instanceName);
+    const slackUsers = owner
+      ? await identityLinks.externalUsersOf("slack", owner)
+      : [];
+    if (slackUsers.length === 0) return "unlinked";
+    const reach = new Set<string>();
+    for (const userId of slackUsers) {
+      for (const id of await gw.listSharedChannels(userId, teamId)) {
+        reach.add(id);
+      }
+    }
+    return reach;
+  }
+
+  async function refuseOutsideOwnerReach(
+    gw: SlackGateway,
+    instanceName: string,
+    conversationId: string,
+    teamId: SlackWorkspace,
+  ): Promise<{ error: string } | null> {
+    let reach: Set<string> | "unlinked";
+    try {
+      reach = await ownerReach(gw, instanceName, teamId);
+    } catch (err) {
+      return {
+        error: `could not check whether your owner is a member of ${conversationId}: ${formatError(err)}`,
+      };
+    }
+    if (reach === "unlinked") {
+      return {
+        error:
+          `You may reach only channels your owner is a member of, and your ` +
+          `owner has not linked their Slack account: ask them to run ` +
+          `\`/${brandShort} login\` in Slack`,
+      };
+    }
+    if (!reach.has(conversationId)) {
+      return {
+        error:
+          `your owner is not a member of ${conversationId}. You may reach ` +
+          `only channels your owner is in`,
+      };
+    }
+    return null;
+  }
 
   type TurnRef = {
     channel: string;
@@ -4056,8 +4115,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               : id,
         };
       });
+      const reachable = new Set<string>();
+      if (gw) {
+        for (const teamId of new Set(bound.map((c) => c.teamId))) {
+          try {
+            const reach = await ownerReach(gw, instanceName, teamId);
+            if (reach !== "unlinked") reach.forEach((id) => reachable.add(id));
+          } catch (err) {
+            process.stderr.write(
+              `[slack] owner channel lookup failed: ${formatError(err)}\n`,
+            );
+          }
+        }
+      }
       const others = botChannels
-        .filter((c) => !boundIds.includes(c.id))
+        .filter((c) => !boundIds.includes(c.id) && reachable.has(c.id))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((c) => ({ id: c.id, title: `#${c.name}` }));
       return [...boundConversations, ...others];
@@ -4088,6 +4160,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         conversationId,
+        (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) {
         return target;
@@ -4348,6 +4421,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         args.conversationId ?? turn?.channel,
+        async (id, teamId) =>
+          id === turn?.channel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 
@@ -4428,6 +4505,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         args.conversationId ?? turnChannel,
+        async (id, teamId) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 
@@ -4579,6 +4660,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         query.conversationId ?? turnChannel,
+        async (id, teamId) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 

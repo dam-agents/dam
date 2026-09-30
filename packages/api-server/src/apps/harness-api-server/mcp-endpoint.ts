@@ -241,7 +241,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other workspace channel the bot is a member of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other channel both the bot and the agent's owner are members of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(

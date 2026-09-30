@@ -13,6 +13,7 @@ import { configureLogger } from "../../core/logger.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
+const OWNER_SLACK = "U-OWNER";
 configureLogger({ level: "error", write: () => {} });
 
 function harness(opts: {
@@ -21,6 +22,7 @@ function harness(opts: {
   channels?: FakeSlackChannel[];
   gatewayDown?: boolean;
   workspace?: string;
+  ownerSlackUsers?: string[];
 }) {
   const gw = createFakeSlackGateway();
   gw.setChannels(opts.channels ?? [], opts.workspace ?? "");
@@ -41,7 +43,11 @@ function harness(opts: {
     makeAcpClient: () => acp,
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => null } as never,
+    identityLinks: {
+      resolve: async () => null,
+      externalUsersOf: async (_provider: string, sub: string) =>
+        sub === OWNER ? (opts.ownerSlackUsers ?? [OWNER_SLACK]) : [],
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
@@ -87,8 +93,13 @@ function harness(opts: {
 
 const workspace: FakeSlackChannel[] = [
   { id: BOUND, name: "agent-home", botIsMember: true },
-  { id: "C-GENERAL", name: "general", botIsMember: true },
-  { id: "C-ALERTS", name: "alerts", botIsMember: true },
+  {
+    id: "C-GENERAL",
+    name: "general",
+    botIsMember: true,
+    members: [OWNER_SLACK],
+  },
+  { id: "C-ALERTS", name: "alerts", botIsMember: true, members: [OWNER_SLACK] },
   { id: "C-STAFF", name: "staff", botIsMember: false },
 ];
 
@@ -418,5 +429,37 @@ describe("slack outbound — which workspace a post goes out under", () => {
     const listed = (await h.list()).map((c) => c.id);
     expect(listed).toContain(BOUND);
     expect(listed).not.toContain("C-ELSEWHERE");
+  });
+});
+
+describe("slack outbound — reach follows the owner (#4165)", () => {
+  const channels: FakeSlackChannel[] = [
+    ...workspace,
+    {
+      id: "C-THEIRS",
+      name: "their-team",
+      botIsMember: true,
+      members: ["U-SOMEONE"],
+    },
+  ];
+
+  /**
+   * TEST_SCENARIO: The shared bot sits in channels of many teams. An agent
+   * may list and post into only the channels its owner is a member of,
+   * whoever supplied the chatId.
+   */
+  it("lists and posts into a channel only when the owner is in it", async () => {
+    const h = harness({ boundChannelId: BOUND, channels });
+    const listed = (await h.list()).map((c) => c.id);
+    expect(listed).toContain("C-GENERAL");
+    expect(listed).not.toContain("C-THEIRS");
+
+    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toEqual({
+      ok: true,
+    });
+    expect(await h.post("leak", { conversationId: "C-THEIRS" })).toMatchObject({
+      error: expect.stringContaining("owner is not a member"),
+    });
+    expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
   });
 });

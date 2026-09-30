@@ -753,12 +753,42 @@ export function createBoltSlackGateway(
         if (!info.channel) return null;
         return {
           isMember: !!info.channel.is_member,
+          isDirectMessage: !!info.channel.is_im || !!info.channel.is_mpim,
           name: info.channel.name ?? null,
         };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;
         throw err;
       }
+    },
+
+    async listSharedChannels(userId: string, teamId: SlackWorkspace) {
+      if (!app) return [];
+      const token = await tokenFor(teamId);
+      if (!token) return [];
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      do {
+        let page;
+        try {
+          page = await app.client.users.conversations({
+            token,
+            user: userId,
+            types: "public_channel,private_channel",
+            exclude_archived: true,
+            limit: 200,
+            cursor,
+          });
+        } catch (err) {
+          if (formatError(err).includes("user_not_found")) return [];
+          throw err;
+        }
+        for (const c of page.channels ?? []) {
+          if (c.id) ids.push(c.id);
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return ids;
     },
 
     async getUserInfo(

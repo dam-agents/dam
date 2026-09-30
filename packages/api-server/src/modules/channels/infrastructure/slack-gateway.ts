@@ -320,7 +320,12 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{ isMember: boolean; name: string | null } | null>;
+  ): Promise<{
+    isMember: boolean;
+    isDirectMessage: boolean;
+    name: string | null;
+  } | null>;
+  listSharedChannels(userId: string, teamId: SlackWorkspace): Promise<string[]>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,
