@@ -12,7 +12,7 @@ import {
 } from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import {
-  NotificationsBell,
+  ActivityButton,
   NotificationsPanel,
 } from "./modules/home/components/notifications-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
@@ -98,7 +98,7 @@ function MainApp() {
           <div className="relative z-content flex-1 min-w-0">
             <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
-                <NotificationsBell onOpen={() => setActivityView("feed")} />
+                <ActivityButton onOpen={() => setActivityView("feed")} />
               </div>
             </div>
             <ChatView />
@@ -120,7 +120,7 @@ function MainApp() {
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
             <div className="pointer-events-auto">
-              <NotificationsBell onOpen={() => setActivityView("feed")} />
+              <ActivityButton onOpen={() => setActivityView("feed")} />
             </div>
           </div>
           {view === "sandbox-home" ? (

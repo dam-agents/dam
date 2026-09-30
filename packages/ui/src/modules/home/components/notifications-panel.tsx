@@ -1,4 +1,4 @@
-import { ArrowLeft, Close, Notification, Warning } from "@carbon/icons-react";
+import { Activity, ArrowLeft, Close, Warning } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -284,7 +284,7 @@ function Drawer({
   );
 }
 
-export function NotificationsBell({ onOpen }: { onOpen: () => void }) {
+export function ActivityButton({ onOpen }: { onOpen: () => void }) {
   const waiting = useWaitingApprovals().length;
 
   return (
@@ -297,7 +297,7 @@ export function NotificationsBell({ onOpen }: { onOpen: () => void }) {
       }
       className="relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <Notification size={16} />
+      <Activity size={16} />
       {waiting > 0 && (
         <Badge
           data-testid="activity-badge"
