@@ -785,9 +785,12 @@ else
   kubectl rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
   # Runners are created per owner with a hashed name, so restart them by label.
   # The node image cache DaemonSet runs the same image. Both live in the agent
-  # namespace, and either may not exist yet.
+  # namespace, and either may not exist yet. With the host runner, runner pods
+  # left from an earlier nested install are not the install's: restarting them
+  # only piles up ReplicaSets of a pod that cannot schedule.
   if [ -n "$VIRT_ENABLED" ]; then
     for workload in deployment/vm-runner daemonset/vm-image-cache; do
+      [ -n "$HOST_RUNNER" ] && [ "$workload" = deployment/vm-runner ] && continue
       selector="app.kubernetes.io/component=${workload#*/}"
       if [ -n "$(kubectl -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
         kubectl -n platform-agents rollout restart "${workload%/*}" -l "$selector"
