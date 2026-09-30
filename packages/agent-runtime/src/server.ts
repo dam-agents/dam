@@ -36,7 +36,7 @@ import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
-import { configureGitCredentialHelper } from "./modules/git/credential-helper.js";
+import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
@@ -116,6 +116,10 @@ const seedRoots = skillRefPaths(
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 const envStore = createEnvStateStore(homeDir);
+const setupGitCredentialHelper = createGitCredentialHelperSetup(
+  envStore,
+  (msg) => process.stderr.write(`[git] ${msg}\n`),
+);
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -242,9 +246,7 @@ const runtimeChannel = await composeRuntimeChannel({
   ],
   onSnapshotProcessed: (contributions) => {
     reconcileOnState?.(contributions);
-    configureGitCredentialHelper(envStore, (msg) =>
-      process.stderr.write(`[git] ${msg}\n`),
-    );
+    setupGitCredentialHelper(contributions);
   },
 });
 
