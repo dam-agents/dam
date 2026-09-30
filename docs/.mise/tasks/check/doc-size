@@ -66,16 +66,20 @@ function resolves(ref) {
   return git("rev-parse", "--verify", "--quiet", ref) !== null;
 }
 
+const PAGESPEC = ["docs/architecture.md", "docs/architecture/*.md"];
+
 export function mainRef() {
-  if (resolves("HEAD^2")) return "HEAD^1";
+  if (process.env.GITHUB_BASE_REF && resolves("HEAD^2")) return "HEAD^1";
   return ["origin/main", "main"].find(resolves) ?? null;
 }
 
 export function pagesChangedFromMain() {
   const ref = mainRef();
   if (!ref) return null;
-  const out = git("diff", "--name-only", ref, "--", "docs/architecture.md", "docs/architecture/*.md");
-  return out === null ? null : new Set(out.split("\n").filter(Boolean));
+  const tracked = git("diff", "--name-only", ref, "--", ...PAGESPEC);
+  const untracked = git("ls-files", "--others", "--exclude-standard", "--", ...PAGESPEC);
+  if (tracked === null || untracked === null) return null;
+  return new Set(`${tracked}\n${untracked}`.split("\n").filter(Boolean));
 }
 
 export function check() {
