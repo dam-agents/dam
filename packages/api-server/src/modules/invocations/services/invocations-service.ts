@@ -23,7 +23,10 @@ import {
   inheritProvider,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
-import { invocationTargetName } from "../domain/target-name.js";
+import {
+  invocationScheduleId,
+  invocationTargetName,
+} from "../domain/target-name.js";
 import { createSetupFailure } from "./setup-failure.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
@@ -258,10 +261,10 @@ export function createInvocationsService(deps: {
             ]
           : []),
         {
-          id: `invocation:${agent.id}:${at.getTime()}`,
+          id: `${invocationScheduleId(agent.id)}:${at.getTime()}`,
           kind: "trigger",
           payload: {
-            scheduleId: `invocation:${agent.id}`,
+            scheduleId: invocationScheduleId(agent.id),
             task,
             sessionMode: "fresh",
           },

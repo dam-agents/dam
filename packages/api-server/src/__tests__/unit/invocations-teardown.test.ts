@@ -63,7 +63,7 @@ function fakeRepo(rows: InvocationRow[]) {
     listRootDriverIds: async () => [],
     listTerminalUnreaped: async () => [],
     markReaped: calls.markReaped,
-    listByRoot: async () => [],
+    listByRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     delete: async () => {},
     markTranscriptCaptured: calls.markTranscriptCaptured,
     deleteByRoot: calls.deleteByRoot,
@@ -193,17 +193,34 @@ describe("the target capture", () => {
 
 describe("the driver cascade", () => {
   function reaperSpy() {
-    return { reap: vi.fn(async () => {}) };
+    return {
+      reap: vi.fn(
+        async (
+          _row: { id: string; owner: string },
+          _opts?: { capture?: boolean },
+        ) => {},
+      ),
+    };
   }
 
-  test("a deleted root reaps its running children without capture and drops its records", async () => {
-    const { repo, calls } = fakeRepo([row("agent-a"), row("agent-b")]);
+  test("a deleted root reaps every target of its tree that may still exist, then drops its records", async () => {
+    const { repo, calls } = fakeRepo([
+      row("agent-a"),
+      row("agent-b", { driverAgentId: "agent-a" }),
+      row("agent-c", { status: "done", completedAt: new Date() }),
+      row("agent-d", { status: "done", reapedAt: new Date() }),
+    ]);
     const reaper = reaperSpy();
     await createDriverCascade({ repo, reaper })("root-1");
-    expect(reaper.reap).toHaveBeenCalledTimes(2);
+    const reaped = reaper.reap.mock.calls.map(([r]) => r.id).sort();
+    expect(reaped).toEqual(["agent-a", "agent-b", "agent-c"]);
     for (const call of reaper.reap.mock.calls) {
       expect(call).toContainEqual({ capture: false });
     }
+    expect(calls.fail.mock.calls.map(([id]) => id).sort()).toEqual([
+      "agent-a",
+      "agent-b",
+    ]);
     expect(calls.deleteByRoot).toHaveBeenCalledWith("root-1");
   });
 

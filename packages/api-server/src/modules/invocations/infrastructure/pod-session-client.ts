@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { invocationScheduleId } from "../domain/target-name.js";
 import type { DelegationFramesPort } from "../services/delegation-frames.js";
 
 const CALL_TIMEOUT_MS = 15_000;
@@ -22,10 +23,6 @@ const sessionListSchema = z.object({
 });
 
 const storedSchema = z.object({ truncated: z.boolean() });
-
-export function invocationScheduleId(agentId: string): string {
-  return `invocation:${agentId}`;
-}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a target runs exactly one session, the trigger

@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-09-29
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -58,7 +58,7 @@ sequenceDiagram
 
 **The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured. Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest. Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (stopped, paused, crashed, or whose script did not await its spawn) keeps no copy. A cascade that deletes the root itself skips capture, since the root's volume goes too. The copy is read-only history, opened beside the Driver's chat and never loaded back as a live session.
 
-**The Driver's chat is the anchor.** The SDK's progress lines on stderr (`[invoke] spawned <label> -> <id>` from JS, `… (<id>)` from Python) are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract. While children run and no line names them yet, the chat shows the Driver's running Invocations from the record.
+**The Driver's chat is the anchor.** The progress lines both SDKs print to stderr, naming each spawned target, are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract the SDKs and the chat share. While children run and no line names them yet, the chat shows the Driver's running Invocations from the record.
 
 ## The Invocation Pin
 

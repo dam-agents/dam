@@ -9,6 +9,9 @@ const labelSlug = (label: string): string =>
     .slice(0, MAX_LABEL_SLUG_CHARS)
     .replace(/^-+|-+$/g, "");
 
+export const invocationScheduleId = (agentId: string): string =>
+  `invocation:${agentId}`;
+
 export const invocationTargetName = (hex: string, label?: string): string => {
   const slug = label === undefined ? "" : labelSlug(label);
   const name = slug === "" ? `invocation-${hex}` : `invocation-${slug}-${hex}`;
