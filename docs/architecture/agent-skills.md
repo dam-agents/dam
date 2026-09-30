@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-24
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -60,7 +60,7 @@ Six responsibilities:
 - **Write Local** — validates and materializes user-uploaded Markdown as standalone Local Skills (one skill per file). Each file lands as `<slug>/SKILL.md` in every configured Skill Path, with frontmatter `name:` forced to the confirmed display name (synthesized when absent). Enforces the same size caps as the read side and rejects the whole batch (before writing anything) on any collision — a slug/directory clash or a display-name clash with an existing Local Skill — so an upload never clobbers an installed or in-place-edited skill.
 - **Delete Local** — removes a Local Skill's directory from **every** configured Skill Path. Imperative, unlike uninstall: install/uninstall flow declaratively off an `agent_skills` row that a standalone skill by definition **lacks**, so the driver would have nothing to reconcile. A name that resolves to no directory is a no-op, not an error.
 
-When env credentials arrive over the runtime channel, the agent-runtime reacts by running `gh auth setup-git`, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
+When gh credentials arrive over the runtime channel — a `GH_TOKEN` env, or gh's own multi-account hosts file when the agent holds several GitHub accounts ([connections](connections.md#addressing-a-connection)) — the agent-runtime reacts by running `gh auth setup-git` once the whole snapshot that carries them is applied, and again only when they change, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
 
 ## Credential injection on the wire
 
@@ -71,11 +71,11 @@ Agent-runtime never holds a real GitHub token. The paired gateway pod performs t
    - `api.github.com` — `Authorization: Bearer <token>` (REST/GraphQL API).
    - `github.com` — `Authorization: Basic base64("x-access-token:<token>")` (the HTTP Basic shape `git` over HTTPS expects, so private `git clone` / `git fetch` / `git push` work with no credential helper).
    - `raw.githubusercontent.com` — `Authorization: Bearer <token>` (private raw-file fetches).
-3. agent-runtime makes its API calls without authenticating — Envoy supplies the credential.
+3. agent-runtime sends the token placeholder the agent holds — `GH_TOKEN`, or the active account in gh's hosts file when several GitHub accounts are granted — and Envoy swaps in the credential of the Connection it names.
 
 If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
 
-Since credential env moved to the runtime channel, the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
+Since credential env moved to the runtime channel, the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller: `GH_TOKEN` present, or the platform's own statement of availability, which it delivers when several GitHub accounts replace the env with gh's hosts file. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
 
 The same path lets `git clone` of a private repo work without any credential being mounted into the agent pod.
 

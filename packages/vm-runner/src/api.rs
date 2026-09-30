@@ -20,6 +20,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: for a runner outside the cluster, the port on this host's loopback where the machine's paired gateway is forwarded. The guest reaches it at its own gateway address on the same port, and at nothing else: this port replaces allowCidrs, because allowing the gateway address would open every loopback port of the host, the other machines' published ports among them.
     #[serde(rename = "gatewayHostPort", skip_serializing_if = "is_zero")]
     pub gateway_host_port: u16,
+    // UNIT_BOUNDARY_DESCRIPTION: the resolver smolvm relays every guest DNS query to, whatever address the guest sent it to: the paired gateway's own, which answers every name with the gateway's address and forwards nothing. Empty relays guest DNS nowhere, as for a runner outside the cluster, which cannot reach the gateway's resolver.
+    #[serde(rename = "guestResolver", skip_serializing_if = "String::is_empty")]
+    pub guest_resolver: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub revision: String,
     pub running: bool,
@@ -183,6 +186,7 @@ mod tests {
                 ca_cert: "-----BEGIN CERTIFICATE-----".into(),
                 allow_cidrs: vec!["10.0.0.1/32".into()],
                 gateway_host_port: 30100,
+                guest_resolver: "10.0.0.1".into(),
                 revision: "r1".into(),
                 running: true,
                 pull_auths: vec!["{\"auths\":{}}".into()],

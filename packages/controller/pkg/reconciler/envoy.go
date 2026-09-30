@@ -43,6 +43,11 @@ const (
 	connectionEgressPathSegment = "__platform_conn"
 )
 
+const (
+	connectionEgressPlaceholderPrefix = "platform:conn:"
+	connectionAddressHeader           = "x-platform-conn"
+)
+
 func EnvoyBootstrapName(instanceName string) string {
 	return instanceName + "-envoy-bootstrap"
 }
@@ -661,11 +666,15 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 	return v
 }
 
-func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
+func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets, l7Hosts)
-	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains)
+	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, vm)
 	if err != nil {
 		return nil, err
+	}
+	data := map[string]string{"envoy.yaml": yaml}
+	if vm {
+		data[machineDNSCorefileKey] = machineDNSCorefile
 	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -674,7 +683,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 			Labels:          map[string]string{LabelAgent: instanceName},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
-		Data: map[string]string{"envoy.yaml": yaml},
+		Data: data,
 	}, nil
 }
 

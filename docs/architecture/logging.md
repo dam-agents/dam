@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-09-28
+Last verified: 2026-09-29
 
 ## Overview
 
@@ -41,7 +41,7 @@ Two disjoint mechanisms feed the one logger:
 | Approvals | `approval.verdict` (approve/deny once/permanent/host), `approval.verdict_conflict` (permanent verdict refused because an equivalent rule with the opposite verdict exists — the approval stays unresolved, so no `approval.verdict` line follows), `approval.unattended_deny` (a harness permission prompt raised on a channel turn, refused because no one is there to answer it — carries the tool asked about and the session, never the tool's input), `approval.platform_tool_allow` (the same prompt, asked about the platform's own MCP surface and answered yes for that one call — same fields) |
 | Authorization lists | `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
 | Credentials | `secret.create|update|delete`, `oauth.token_mint`, `connection.create|delete`, `secret.orphan_cleanup_failed` |
-| Channels | `channel.authz` / `channel.authz_deny` (in-chat command authorization; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; messenger-native driver id in detail), `channel.file.delivered` (an inbound attachment written into the workspace, by name and byte count — the trail's answer to who put a file there), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
+| Channels | `channel.authz` / `channel.authz_deny` (in-chat command authorization; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; messenger-native driver id in detail), `channel.file.delivered` (an inbound attachment written into the workspace, by name and byte count — the trail's answer to who put a file there), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered), `channel.post_deleted` (an owner deleted an agent's Slack post from its Delete button) |
 | Privileged | `skill.install` / `skill.uninstall` / `skill.publish`, `skill.set.create` / `skill.set.delete` (a set is a reusable instruction to fetch code from named repositories), `schedule.create|toggle|delete` (incl. agent-driven), `usage.inspect` / `usage.inspect.deny`, `agent.create|update|delete|restart|wake` |
 
 ## Invariants

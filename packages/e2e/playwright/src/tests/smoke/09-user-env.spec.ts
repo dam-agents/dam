@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { connectionEgressPlaceholder } from "api-server-api";
 
 import { expectAgentEnv, wakeAgent } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName, envName, placeholder } from "../../lib/fixtures.js";
+import { getConnectionId } from "../../lib/connections.js";
+import { agentName, connectionName, envName } from "../../lib/fixtures.js";
 
 const userEnvName = "E2E_USER_ENV";
 const userEnvValue = "user-value-9d2f";
@@ -74,14 +76,15 @@ test("user env rides the contribution rail", async () => {
     );
   });
 
-  await test.step("clearing user env reverts to the connection env", async () => {
+  await test.step("clearing user env reverts to the connection's own placeholder", async () => {
+    const connectionId = await getConnectionId(api, connectionName);
     await api.agents.update.mutate({ id: agentId, env: baselineEnv });
     await expectAgentEnv(
       api,
       agentId,
       envName,
-      placeholder,
-      `connection env did not revert to its placeholder after clearing user env`,
+      connectionEgressPlaceholder(connectionId),
+      `connection env did not revert to the connection's placeholder after clearing user env`,
     );
   });
 });

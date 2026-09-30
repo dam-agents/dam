@@ -6,6 +6,5 @@ export const headerName = "x-api-key";
 export const valueFormat = "{value}";
 export const envName = "E2E_INJECTED_KEY";
 export const sentinel = "e2e-injected-secret-7f3a9c1";
-export const placeholder = "dummy-placeholder";
 export const echoUrl = "https://httpbingo.org/headers";
 export const mockDefaultReply = "Hello from the mock agent.";

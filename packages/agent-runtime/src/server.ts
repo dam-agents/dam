@@ -35,8 +35,8 @@ import { createFilesService } from "./modules/files.js";
 import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
-import { composeSkills } from "./modules/skills/index.js";
-import { configureGitCredentialHelper } from "./modules/git/credential-helper.js";
+import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
+import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
@@ -115,11 +115,17 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
+const envStore = createEnvStateStore(homeDir);
+const setupGitCredentialHelper = createGitCredentialHelperSetup(
+  envStore,
+  (msg) => process.stderr.write(`[git] ${msg}\n`),
+);
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
     skillPaths: readSidePaths,
     pristineSkillPaths,
+    githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
     ...(config.PLATFORM_IMAGE_SKILL_RECONCILE
       ? {
           reconcile: {
@@ -141,8 +147,6 @@ const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
-
-const envStore = createEnvStateStore(homeDir);
 
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
@@ -234,9 +238,6 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: ({ namesChanged }) => {
         acpRuntime.refreshEnv({ force: namesChanged });
         podService?.refreshEnv();
-        configureGitCredentialHelper(envStore, (msg) =>
-          process.stderr.write(`[git] ${msg}\n`),
-        );
         scheduleRecovery();
       },
     }),
@@ -244,7 +245,10 @@ const runtimeChannel = await composeRuntimeChannel({
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  ...(reconcileOnState ? { onSnapshotProcessed: reconcileOnState } : {}),
+  onSnapshotProcessed: (contributions) => {
+    reconcileOnState?.(contributions);
+    setupGitCredentialHelper(contributions);
+  },
 });
 
 seedHarnessModel = async () => {

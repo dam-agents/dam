@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build the VM runner image to dist/oci/vm-runner.tar with mise oci: the runner, the image cache service, the seed uploader and platform-init, compiled from this crate, on Debian with the smolvm release smolvm.pin names. Off Linux it builds in the dev cluster's Lima VM."
+#MISE description="Build the VM runner image to dist/oci/vm-runner.tar with mise oci: the runner, the image cache service, the seed uploader, platform-init and platform-runc, compiled from this crate, on Debian with the smolvm release smolvm.pin names. Off Linux it builds in the dev cluster's Lima VM."
 # By path too: the Lima VM runs it with only the tools it names.
 set -euo pipefail
 pkg="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -35,13 +35,12 @@ cargo build --release --locked -p vm-runner
 # vm-seed is run from this image by the controller's migration Job, which
 # uploads an agent's old volume to its runner as the seed of its home.
 install -m 755 "$target/release/vm-runner" "$target/release/vm-image-cache" "$target/release/vm-seed" "$b/usr/local/bin/"
-# platform-init runs inside the agent's image, which shares no libc with this
-# one, so it is linked statically, against glibc's static archive. The static
+# platform-init and platform-runc run inside the agent's image, which shares no
+# libc with this one, so they are linked statically, against glibc's static archive. The static
 # flag is scoped to platform-init's own target triple, so it reaches neither
 # the runner nor the build scripts cargo runs on the host.
 host="$(rustc -vV | sed -n 's/^host: //p')"
 RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p platform-init --target "$host"
-init="$target/$host/release/platform-init"
 # A binary that names a program interpreter (PT_INTERP) is linked dynamically.
 # Read from its program headers, for a 64-bit little-endian ELF: ldd's verdict
 # on a static-pie binary differs between architectures.
@@ -53,8 +52,11 @@ interp() {
   done
   return 1
 }
-! interp "$init" || { echo "platform-init names a program interpreter, and would fail inside a guest" >&2; exit 1; }
-install -m 755 "$init" "$b/usr/local/libexec/platform-init"
+for bin in platform-init platform-runc; do
+  built="$target/$host/release/$bin"
+  ! interp "$built" || { echo "$bin names a program interpreter, and would fail inside a guest" >&2; exit 1; }
+  install -m 755 "$built" "$b/usr/local/libexec/$bin"
+done
 
 case "$(uname -m)" in
   x86_64) arch=x86_64 crane_sha=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 ;;

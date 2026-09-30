@@ -1,3 +1,5 @@
+import { PageHeader } from "@/components/ui/page-header";
+
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
 import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
@@ -9,7 +11,6 @@ import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.
 import { ComputeUsage } from "../../budgets/components/compute-usage.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
-import { HomeGreeting } from "../components/home-greeting.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
 import { SpendWidget } from "../components/spend-widget.js";
 
@@ -29,7 +30,7 @@ export function HomeView() {
   if (!initialLoaded) {
     return (
       <div>
-        <HomeGreeting title="Agents" />
+        <PageHeader title="Home" />
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
           <WidgetSkeleton rows={2} />
           <WidgetSkeleton rows={2} />
@@ -42,7 +43,7 @@ export function HomeView() {
   if (visible.length === 0) {
     return (
       <div>
-        <HomeGreeting title="Welcome" />
+        <PageHeader title="Home" />
         <WelcomeEntryPoints />
       </div>
     );
@@ -50,8 +51,8 @@ export function HomeView() {
 
   return (
     <div>
-      <HomeGreeting
-        title="Agents"
+      <PageHeader
+        title="Home"
         actions={<EntryPointButtons surface="home" primary="agent" />}
       />
       <OutdatedTemplatesBanner agents={visible} />

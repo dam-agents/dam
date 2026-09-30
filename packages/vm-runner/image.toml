@@ -27,14 +27,15 @@
 # spawned itself. The entrypoint names every path that is this image's layout
 # and not the controller's to choose — the smolvm release's launcher, beside
 # which the runner finds the libraries its VMMs load, the guest agent and the
-# disk templates; crane; platform-init — so the runner relies on no default for
+# disk templates; crane; platform-init and platform-runc — so the runner relies
+# on no default for
 # any of them, nor for where machines are published: every interface of the
 # pod's own network. The controller passes the rest. The runner's tests read the
 # entrypoint from this line, so it stays one line of JSON-compatible TOML.
 [oci]
 workdir = "/"
 cmd = []
-entrypoint = ["/usr/bin/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init", "--publish-address", ""]
+entrypoint = ["/usr/bin/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init", "--platform-runc", "/usr/local/libexec/platform-runc", "--publish-address", ""]
 
 [oci.env]
 HOME = "/var/lib/platform/disks"

@@ -94,7 +94,11 @@ function connection(id: string, templateId: string): ConnectionView {
 function makeHarness(
   loaded: LoadedKit | null,
   agent: Agent | null = null,
-  agentGrants: { connectionId: string; grantedAt: string }[] = [],
+  agentGrants: {
+    connectionId: string;
+    grantedAt: string;
+    preferred: boolean;
+  }[] = [],
   virtualizationEnabled = true,
 ) {
   const calls = {
@@ -866,7 +870,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gh",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain(
@@ -888,7 +898,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gh",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain("Connection (suggested, NOT connected): slack");
@@ -899,7 +915,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gone", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gone",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain(

@@ -112,7 +112,7 @@ pub fn step(
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one.
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it.
 pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
     applied.revision != desired.revision
         || applied.ca_cert != desired.ca_cert
@@ -123,6 +123,7 @@ pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.image != desired.image
         || applied.allow_cidrs != desired.allow_cidrs
         || applied.gateway_host_port != desired.gateway_host_port
+        || applied.guest_resolver != desired.guest_resolver
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
@@ -649,11 +650,24 @@ mod tests {
             ca_cert: "ca".into(),
             allow_cidrs: vec!["10.0.0.7/32".into()],
             gateway_host_port: 0,
+            guest_resolver: String::new(),
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),
             migration: None,
             expect_seed: None,
         }
+    }
+
+    // TEST_SCENARIO: the guest resolver is read out of smolvm's record at each boot, so a machine that should relay guest DNS somewhere new must restart to take it — including every machine an earlier controller sent no resolver for.
+    #[test]
+    fn a_new_guest_resolver_restarts_the_machine() {
+        let before = running_spec();
+        let after = MachineSpec {
+            guest_resolver: "10.96.0.7".into(),
+            ..running_spec()
+        };
+        assert!(changed(&before, &after));
+        assert!(!changed(&after, &after.clone()));
     }
 }

@@ -1,6 +1,64 @@
 import { useMutation } from "@tanstack/react-query";
+import type { AgentConnections, ConnectionView } from "api-server-api";
+import { githubHostOf } from "api-server-api";
 
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+
+function sameGitHubHost(connectionId: string): Set<string> {
+  const connections =
+    queryClient.getQueryData<ConnectionView[]>(
+      trpc.connections.list.queryKey(),
+    ) ?? [];
+  const target = connections.find((c) => c.id === connectionId);
+  const host = target ? githubHostOf(target.contributions) : undefined;
+  if (host === undefined) return new Set();
+  return new Set(
+    connections
+      .filter((c) => c.id !== connectionId)
+      .filter((c) => githubHostOf(c.contributions) === host)
+      .map((c) => c.id),
+  );
+}
+
+export function useSetPreferredConnection() {
+  return useMutation({
+    mutationFn: (vars: { agentId: string; connectionId: string }) =>
+      api.connections.setPreferredConnection.mutate(vars),
+    onMutate: async (vars) => {
+      const key = trpc.connections.getAgentConnections.queryKey({
+        agentId: vars.agentId,
+      });
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AgentConnections>(key);
+      if (previous) {
+        const siblings = sameGitHubHost(vars.connectionId);
+        queryClient.setQueryData<AgentConnections>(key, {
+          ...previous,
+          connections: previous.connections.map((c) => ({
+            ...c,
+            preferred:
+              c.connectionId === vars.connectionId
+                ? true
+                : siblings.has(c.connectionId)
+                  ? false
+                  : c.preferred,
+          })),
+        });
+      }
+      return { previous, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous)
+        queryClient.setQueryData(context.key, context.previous);
+    },
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
+      errorToast: "Couldn't change the default account",
+    },
+  });
+}
 
 export function useCreateConnection() {
   return useMutation({

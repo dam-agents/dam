@@ -261,11 +261,27 @@ export {
 } from "./modules/connections/providers.js";
 
 export {
+  CONNECTION_EGRESS_PLACEHOLDER_PREFIX,
   connectionEgressPathPrefix,
+  connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
   applyConnectionEgressAddressing,
+  carriesCredentialPlaceholder,
   unaddressableRivalHost,
 } from "./modules/connections/egress-addressing.js";
+export {
+  GH_HOSTS_FILE_PATH,
+  GH_TOKEN_AVAILABLE_ENV,
+  GH_TOKEN_ENV,
+  composeGitHubAccounts,
+  githubAccountGroups,
+  githubHostOf,
+} from "./modules/connections/github-accounts.js";
+export type {
+  GitHubAccount,
+  GitHubAccountGroup,
+  GitHubAccountSource,
+} from "./modules/connections/github-accounts.js";
 
 export type {
   CaseStudyStatus,

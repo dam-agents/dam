@@ -111,7 +111,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, agentSpec.IsVM(), r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -226,7 +226,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySvc := BuildGatewayService(name, r.config, ownerRef)
+	gatewaySvc := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
 	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
@@ -318,7 +318,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 	}
 
-	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	machineGatewayIP := ""
+	if agentSpec.IsVM() {
+		machineGatewayIP = gatewayIP
+	}
+	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	stampRollRev(gatewaySS, rollRev)
 	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))

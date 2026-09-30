@@ -2,6 +2,8 @@ import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
+  SlackBlockAction,
+  SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
   SlackGateway,
@@ -38,6 +40,8 @@ export interface FakeSlackGateway extends SlackGateway {
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
+  fireBlockAction(event: SlackBlockAction): Promise<void>;
+  fireViewSubmission(event: SlackViewSubmission): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
@@ -142,6 +146,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
   let nextStreamTs = 1;
+  let nextPostTs = 100000;
+  const stagedFiles = new Map<string, string>();
+  let nextFileId = 1;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
@@ -185,7 +192,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { iconUrl: args.iconUrl } : {}),
       });
+      return { ts: `${Math.floor(Date.now() / 1000)}.${nextPostTs++}` };
     },
+
+    async deleteMessage() {
+      return true;
+    },
+
+    async deleteFile() {},
+
+    async openModal() {},
 
     async postEphemeral(args) {
       outbound.push({
@@ -313,6 +329,24 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
+    async reserveFile(args) {
+      const fileId = `F${nextFileId++}-${args.filename}`;
+      stagedFiles.set(fileId, args.filename);
+      return { fileId, uploadUrl: `https://files.fake/${fileId}` };
+    },
+
+    async sendFileBytes() {},
+
+    async shareFile(args) {
+      outbound.push({
+        kind: "upload",
+        teamId: args.teamId,
+        channelId: args.channelId,
+        filename: stagedFiles.get(args.fileId) ?? args.fileId,
+        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
+      });
+    },
+
     async downloadFile(urlPrivate, maxBytes) {
       const bytes = fileBytes.get(urlPrivate);
       if (!bytes) throw new Error(`HTTP 404`);
@@ -375,6 +409,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMessage(event);
+    },
+
+    async fireBlockAction(event) {
+      await requireHandlers().onBlockAction(event);
+    },
+
+    async fireViewSubmission(event) {
+      await requireHandlers().onViewSubmission(event);
     },
 
     async fireBotJoinedChannel(input) {

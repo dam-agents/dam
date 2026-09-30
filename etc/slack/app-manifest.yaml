@@ -49,8 +49,9 @@ oauth_config:
   scopes:
     bot:
       - commands
-      # Posting replies (chat.postMessage) and the one-person notices a turn
-      # can need (chat.postEphemeral).
+      # Posting replies (chat.postMessage), the one-person notices a turn
+      # can need (chat.postEphemeral), and deleting an agent's post from its
+      # Delete button (chat.delete).
       - chat:write
       # The working status on a turn (assistant.threads.setStatus). Listed here
       # as well as implied by the assistant_view feature above — Slack's own
@@ -77,7 +78,10 @@ oauth_config:
       - users:read
       - users:read.email
       - app_mentions:read
-      # Attachments: url_private downloads inbound, files.uploadV2 outbound.
+      # Attachments: url_private downloads inbound; outbound uploads
+      # (files.getUploadURLExternal, then the bytes, then
+      # files.completeUploadExternal; or files.uploadV2), and deleting them
+      # with their post (files.delete).
       - files:read
       - files:write
       # Channel history backs context injection on new sessions, and the

@@ -418,7 +418,7 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port alone, the same pinning each gateway's ingress policy makes from its side. DNS is admitted only to the resolver the runner uses, and only when it resolves anything at all, because port 53 open to every address is a two-way channel to any host that listens there. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. DNS is admitted only to the resolver the runner uses, and only when it resolves anything at all, because port 53 open to every address is a two-way channel to any host that listens there. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
 func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, dns *networkingv1.NetworkPolicyEgressRule) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
@@ -434,7 +434,7 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, 
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
-		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}},
+		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
 	})
 	for _, cidr := range cidrs {
 		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except))

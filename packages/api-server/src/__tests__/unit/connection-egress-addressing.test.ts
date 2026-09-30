@@ -2,14 +2,17 @@
  * TEST_OVERVIEW: An agent may hold several Connections to one service, each with
  * its own credential. The gateway tells them apart by the path the agent asks
  * for, so every MCP server entry a Connection contributes is delivered under a
- * per-Connection path on the real host. The gateway strips that path again
- * before the request leaves, so the upstream sees the address it published.
+ * per-Connection path on the real host, and by the token value a client sends,
+ * so every credential placeholder a Connection hands the agent is its own. The
+ * gateway strips the path again before the request leaves, so the upstream sees
+ * the address it published.
  */
 import { describe, it, expect } from "vitest";
 import type { Contribution } from "api-server-api";
 import {
   applyConnectionEgressAddressing,
   connectionEgressPathPrefix,
+  connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
 } from "api-server-api";
 
@@ -122,19 +125,77 @@ describe("applyConnectionEgressAddressing", () => {
     );
   });
 
-  /** TEST_SCENARIO: Only the agent-facing address moves. Every other contribution
-   * reaches its own rail unchanged. */
-  it("leaves contributions of every other kind untouched", () => {
-    const env: Contribution = {
+  /** TEST_SCENARIO: A client that takes a token rather than a URL, gh through
+   * GH_TOKEN, sends whatever the env holds where the real token goes. That value
+   * is the Connection's other address, so the inert placeholder becomes the
+   * per-Connection one, in env and in the config files that carry it alike. */
+  it("carries the connection's token placeholder into credential env and files", () => {
+    const out = applyConnectionEgressAddressing("conn-aaa", [
+      inject("api.github.com"),
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+      {
+        kind: "file",
+        path: "$HOME/.config/gh/hosts.yml",
+        format: "yaml",
+        mergeMode: "key-targeted",
+        content: {
+          "ghe.acme.com": {
+            oauth_token: "dummy-placeholder",
+            git_protocol: "https",
+          },
+        },
+      },
+    ]);
+    expect(out).toContainEqual({
       kind: "env",
       name: "GH_TOKEN",
-      placeholder: "dummy-placeholder",
+      placeholder: connectionEgressPlaceholder("conn-aaa"),
+    });
+    expect(out).toContainEqual(
+      expect.objectContaining({
+        kind: "file",
+        content: {
+          "ghe.acme.com": {
+            oauth_token: "platform:conn:conn-aaa",
+            git_protocol: "https",
+          },
+        },
+      }),
+    );
+  });
+
+  /** TEST_SCENARIO: Only the credential placeholder is an address. A literal
+   * env value and the gateway-side injection reach their rails unchanged. */
+  it("leaves non-credential env and the injections untouched", () => {
+    const host: Contribution = {
+      kind: "env",
+      name: "GH_HOST",
+      placeholder: "ghe.acme.com",
     };
+    const injection = inject("ghe.acme.com");
+    const out = applyConnectionEgressAddressing("conn-aaa", [injection, host]);
+    expect(out).toContainEqual(host);
+    expect(out).toContainEqual(injection);
+  });
+
+  /** TEST_SCENARIO: An MCP entry may carry the placeholder inside a header the
+   * MCP client sends verbatim. That header is then the second carrier of the
+   * address, so a path-scoped entry the platform cannot prefix still names its
+   * Connection. */
+  it("carries the placeholder into an MCP entry's headers", () => {
     const out = applyConnectionEgressAddressing("conn-aaa", [
       inject("mcp.slack.com"),
-      env,
+      {
+        kind: "mcp-entry",
+        name: "slack",
+        url: "https://mcp.slack.com/mcp",
+        headers: { Authorization: "Bearer dummy-placeholder" },
+      },
     ]);
-    expect(out).toContainEqual(env);
+    const entry = out.find((c) => c.kind === "mcp-entry");
+    expect(entry?.kind === "mcp-entry" && entry.headers).toEqual({
+      Authorization: "Bearer platform:conn:conn-aaa",
+    });
   });
 });
 

@@ -386,6 +386,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, 10, spec.StorageGiB)
 	assert.Equal(t, "MITM-CA", spec.CACert)
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)
+	assert.Equal(t, "10.96.42.42", spec.GuestResolver, "guest DNS is relayed to the paired gateway's resolver")
 	assert.Equal(t, "http://10.96.42.42:10000", spec.Env["HTTPS_PROXY"])
 	assert.Equal(t, "1", spec.Env["IS_SANDBOX"])
 	assert.Equal(t, "localhost,127.0.0.1,::1,"+vmGuestLocalCIDRs, spec.Env["NO_PROXY"], "a guest reaches its own network directly; only the gateway is worth proxying")
@@ -444,6 +445,7 @@ func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	spec := node.spec("my-agent")
 	assert.Empty(t, spec.AllowCIDRs)
 	assert.Equal(t, 30123, spec.GatewayHostPort)
+	assert.Empty(t, spec.GuestResolver, "a runner outside the cluster cannot reach the gateway's resolver, so guest DNS stays relayed nowhere")
 	assert.Equal(t, "http://100.96.0.1:30123", spec.Env["HTTPS_PROXY"])
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -1198,9 +1200,12 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 				sawGateway = true
 				assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
 					"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
-				require.Len(t, rule.Ports, 1, "the gateway's proxy port alone: nothing else on a gateway is meant for a guest")
-				assert.Equal(t, int32(testConfig.EnvoyPort), rule.Ports[0].Port.IntVal)
-				assert.Equal(t, corev1.ProtocolTCP, *rule.Ports[0].Protocol)
+				var ports []string
+				for _, p := range rule.Ports {
+					ports = append(ports, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
+				}
+				assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "UDP/10053", "TCP/10053"}, ports,
+					"the proxy port and the machine resolver: nothing else on a gateway is meant for a guest")
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}

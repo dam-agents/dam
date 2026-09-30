@@ -59,16 +59,23 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a gateway injects its owner's credentials into whatever reaches its proxy port, so the only callers it may admit are the ones it serves — its paired agent pod, and for a vm agent the owner's VM runner, which dials it on each machine's behalf. Without this, each caller's own egress policy is the only gate, so any pod whose egress reaches the gateway — a runner a guest has escaped into, or any other pod in the namespace — gets another owner's credentials injected. HBONE 15008 is not admitted: nothing dials a gateway over the mesh.
+// UNIT_BOUNDARY_DESCRIPTION: a gateway injects its owner's credentials into whatever reaches its proxy port, so the only callers it may admit are the ones it serves — its paired agent pod, and for a vm agent the owner's VM runner, which dials it on each machine's behalf, on the proxy port and on the resolver the machine reaches without proxy settings. Without this, each caller's own egress policy is the only gate, so any pod whose egress reaches the gateway — a runner a guest has escaped into, or any other pod in the namespace — gets another owner's credentials injected. HBONE 15008 is not admitted: nothing dials a gateway over the mesh.
 func BuildGatewayIngressNetworkPolicy(pairKey, owner string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
 	from := []networkingv1.NetworkPolicyPeer{{
 		PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent}},
 	}}
+	ingress := []networkingv1.NetworkPolicyIngressRule{{
+		From:  from,
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
+	}}
 	if vm && owner != "" {
-		from = append(from, networkingv1.NetworkPolicyPeer{
-			PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
+		runner := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)}}
+		ingress[0].From = append(ingress[0].From, runner)
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
+			From:  []networkingv1.NetworkPolicyPeer{runner},
+			Ports: machineGatewayPolicyPorts(),
 		})
 	}
 	return &networkingv1.NetworkPolicy{
@@ -86,10 +93,7 @@ func BuildGatewayIngressNetworkPolicy(pairKey, owner string, vm bool, cfg *confi
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleGateway}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From:  from,
-				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
-			}},
+			Ingress:     ingress,
 		},
 	}
 }

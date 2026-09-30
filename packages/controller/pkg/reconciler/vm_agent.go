@@ -78,12 +78,12 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
 
-	proxy, allow, gatewayHostPort := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0
+	proxy, allow, gatewayHostPort, resolver := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0, gatewayIP
 	if r.config.VM.Runner.HostAddress != "" {
 		if gatewayHostPort, err = r.exposeGatewayOnHost(ctx, name); err != nil {
 			return vmrunner.MachineStatus{}, false, fmt.Errorf("exposing the gateway to the host runner: %w", err)
 		}
-		proxy, allow = fmt.Sprintf("http://%s:%d", vmHostGatewayAddress, gatewayHostPort), nil
+		proxy, allow, resolver = fmt.Sprintf("http://%s:%d", vmHostGatewayAddress, gatewayHostPort), nil, ""
 	}
 	env := map[string]string{}
 	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, proxy) {
@@ -139,6 +139,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		CACert:          string(leaf.Data["ca.crt"]),
 		AllowCIDRs:      allow,
 		GatewayHostPort: gatewayHostPort,
+		GuestResolver:   resolver,
 		Revision:        agent.Annotations[annRollRev],
 		Running:         running,
 		PullAuths:       pullAuths,

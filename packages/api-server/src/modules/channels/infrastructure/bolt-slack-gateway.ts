@@ -18,6 +18,10 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type FilesCompleteUploadExternalArgs = Parameters<
+  BoltApp["client"]["files"]["completeUploadExternal"]
+>[0];
+type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
 >[0];
@@ -78,6 +82,46 @@ function toSlackMessage(m: {
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
   };
+}
+
+const FILE_UPLOAD_ATTEMPTS = 3;
+
+const FILE_UPLOAD_TIMEOUT_MS = 120_000;
+
+async function postFileBytes(
+  uploadUrl: string,
+  token: string,
+  file: Buffer,
+  filename: string,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    const form = new FormData();
+    form.append("body", new Blob([new Uint8Array(file)]), filename);
+    let status: number;
+    let retryAfterS = attempt;
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        redirect: "error",
+        signal: AbortSignal.timeout(FILE_UPLOAD_TIMEOUT_MS),
+      });
+      await res.body?.cancel().catch(() => {});
+      status = res.status;
+      const header = Number(res.headers.get("retry-after"));
+      if (Number.isFinite(header) && header > 0) retryAfterS = header;
+    } catch (err) {
+      if (attempt >= FILE_UPLOAD_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+      continue;
+    }
+    if (status === 200) return;
+    const retryable = status === 429 || status >= 500;
+    if (!retryable || attempt >= FILE_UPLOAD_ATTEMPTS)
+      throw new Error(`file upload failed with HTTP ${status}`);
+    await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+  }
 }
 
 export function createBoltSlackGateway(
@@ -260,6 +304,40 @@ export function createBoltSlackGateway(
         );
       });
 
+      bolt.action(/.+/, async ({ ack, body, context }) => {
+        await ack();
+        if (body.type !== "block_actions") return;
+        const action = body.actions[0];
+        const message = body.message as
+          (Parameters<typeof toSlackMessage>[0] & { ts?: string }) | undefined;
+        const channel = body.channel?.id ?? body.container?.channel_id;
+        if (!action || !message?.ts || !channel) return;
+        await handlers.onBlockAction({
+          actionId: action.action_id,
+          value: "value" in action ? (action.value ?? "") : "",
+          userId: body.user.id,
+          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
+          channel,
+          message: { ...toSlackMessage(message), ts: message.ts },
+          triggerId: body.trigger_id,
+        });
+      });
+
+      bolt.view(/.+/, async ({ ack, body, view, context }) => {
+        await ack();
+        const inputs: Record<string, string> = {};
+        for (const block of Object.values(view.state.values))
+          for (const [actionId, input] of Object.entries(block))
+            if (typeof input.value === "string") inputs[actionId] = input.value;
+        await handlers.onViewSubmission({
+          callbackId: view.callback_id,
+          privateMetadata: view.private_metadata,
+          userId: body.user.id,
+          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
+          inputs,
+        });
+      });
+
       const forgetWorkspace = async (teamId: string | undefined) => {
         if (!teamId) return;
         workspaces.delete(teamId);
@@ -316,10 +394,10 @@ export function createBoltSlackGateway(
     },
 
     async postMessage(args) {
-      if (!app) return;
+      if (!app) return null;
       const token = await tokenFor(args.teamId);
-      if (!token) return;
-      await app.client.chat.postMessage({
+      if (!token) return null;
+      const res = await app.client.chat.postMessage({
         token,
         channel: args.channel,
         text: args.text,
@@ -335,6 +413,42 @@ export function createBoltSlackGateway(
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
       } as ChatPostMessageArgs);
+      return res.ts ? { ts: res.ts } : null;
+    },
+
+    async deleteMessage(channel, ts, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.chat.delete({ token, channel, ts });
+        return true;
+      } catch (err) {
+        if (!formatError(err).includes("message_not_found")) throw err;
+        return false;
+      }
+    },
+
+    async deleteFile(fileId, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.files.delete({ token, file: fileId });
+      } catch (err) {
+        if (!/file_not_found|file_deleted/.test(formatError(err))) throw err;
+      }
+    },
+
+    async openModal(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.views.open({
+        token,
+        trigger_id: args.triggerId,
+        view: args.view,
+      } as unknown as ViewsOpenArgs);
     },
 
     async postEphemeral(args) {
@@ -515,6 +629,45 @@ export function createBoltSlackGateway(
       await app.client.files.uploadV2(
         args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
       );
+    },
+
+    async reserveFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      const reserved = await app.client.files.getUploadURLExternal({
+        token,
+        filename: args.filename,
+        length: args.length,
+      });
+      if (!reserved.upload_url || !reserved.file_id)
+        throw new Error("files.getUploadURLExternal returned no upload URL");
+      return { fileId: reserved.file_id, uploadUrl: reserved.upload_url };
+    },
+
+    async sendFileBytes(args) {
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await postFileBytes(
+        args.reserved.uploadUrl,
+        token,
+        args.file,
+        args.filename,
+      );
+    },
+
+    async shareFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.files.completeUploadExternal({
+        token,
+        files: [{ id: args.fileId, title: args.title ?? args.filename }],
+        channel_id: args.channelId,
+        ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+        ...(args.username !== undefined ? { username: args.username } : {}),
+        ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
+      } as FilesCompleteUploadExternalArgs);
     },
 
     async downloadFile(

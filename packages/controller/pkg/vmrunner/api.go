@@ -14,9 +14,16 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: paired gateway is forwarded. It replaces
 	// UNIT_BOUNDARY_DESCRIPTION: AllowCIDRs: the guest reaches that one port at
 	// UNIT_BOUNDARY_DESCRIPTION: its own gateway address and nothing else.
-	GatewayHostPort int    `json:"gatewayHostPort,omitempty"`
-	Revision        string `json:"revision,omitempty"`
-	Running         bool   `json:"running"`
+	GatewayHostPort int `json:"gatewayHostPort,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the resolver the VMM relays every guest DNS
+	// UNIT_BOUNDARY_DESCRIPTION: query to, whatever address the guest sent it
+	// UNIT_BOUNDARY_DESCRIPTION: to: the paired gateway's own, which answers
+	// UNIT_BOUNDARY_DESCRIPTION: every name with the gateway's address and
+	// UNIT_BOUNDARY_DESCRIPTION: forwards nothing. Empty relays guest DNS
+	// UNIT_BOUNDARY_DESCRIPTION: nowhere, as for a runner outside the cluster.
+	GuestResolver string `json:"guestResolver,omitempty"`
+	Revision      string `json:"revision,omitempty"`
+	Running       bool   `json:"running"`
 	// UNIT_BOUNDARY_DESCRIPTION: the docker configs the runner fetches this
 	// UNIT_BOUNDARY_DESCRIPTION: machine's image with, one per pull Secret a
 	// UNIT_BOUNDARY_DESCRIPTION: pod would list and in that order. The runner

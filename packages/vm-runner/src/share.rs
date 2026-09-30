@@ -10,7 +10,7 @@ use crate::files;
 use crate::guest::{is_sha256, SeedDigest};
 use crate::state::machine_dir;
 
-// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, and the CA the guest must trust. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, the CA the guest must trust, and platform-runc, the runtime wrapper that gives the containers the guest starts that same CA. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
 
 // UNIT_BOUNDARY_DESCRIPTION: the share's name inside a machine's state directory. The guest sees it mounted at guest::SHARE_PATH, so this name is private to the host side, while everything below it is the contract platform-init reads.
 pub const SHARE_DIR: &str = "share";
@@ -19,6 +19,7 @@ pub const CA_DIR: &str = "ca";
 
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
+pub const RUNC_FILE: &str = "runc";
 
 // UNIT_BOUNDARY_DESCRIPTION: the seed a migrated agent's home is restored from, read by the guest at guest::SHARE_SEED_FILE. write_share never touches it, because the share is rewritten on every ensure and a seed uploaded before the first boot must still be there when that boot reads it.
 pub const SEED_FILE: &str = "seed.tar";
@@ -50,6 +51,7 @@ pub fn write_share(
     id: &str,
     spec: &MachineSpec,
     init: Option<&Path>,
+    runc: Option<&Path>,
 ) -> anyhow::Result<()> {
     let base =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
@@ -63,7 +65,11 @@ pub fn write_share(
         Some(seed) => files::write(&expected, digest_of(seed).line().as_bytes(), CA_MODE)?,
         None => remove_if_present(&expected)?,
     }
-    copy_init(init, &share.join(INIT_FILE))
+    copy_init(init, &share.join(INIT_FILE))?;
+    match runc {
+        Some(runc) => copy_executable(runc, &share.join(RUNC_FILE), "platform-runc"),
+        None => Ok(()),
+    }
 }
 
 fn digest_of(seed: &SeedResult) -> SeedDigest {
@@ -121,8 +127,11 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
             "no platform-init binary configured, so a machine would boot with its disk unmounted"
         )
     })?;
-    let mut source =
-        fs::File::open(init).map_err(|e| anyhow::anyhow!("reading platform-init: {e}"))?;
+    copy_executable(init, to, "platform-init")
+}
+
+fn copy_executable(from: &Path, to: &Path, what: &str) -> anyhow::Result<()> {
+    let mut source = fs::File::open(from).map_err(|e| anyhow::anyhow!("reading {what}: {e}"))?;
     let staged = staged_path(to);
     let mut destination = fs::OpenOptions::new()
         .write(true)
@@ -252,6 +261,11 @@ mod tests {
             "the guest binds a CA directory this module does not write"
         );
         assert_eq!(
+            guest::RUNC_PATH,
+            format!("{}/{RUNC_FILE}", guest::SHARE_PATH),
+            "the image points its container runtimes at a wrapper this module does not write"
+        );
+        assert_eq!(
             guest::SEEDED_PATH,
             format!("{}/{SEEDED_FILE}", guest::SHARE_PATH),
             "the guest looks for the seeded record where this module does not write it"
@@ -277,7 +291,7 @@ mod tests {
             expect_seed: Some(seed.clone()),
             ..Default::default()
         };
-        write_share(dir.path(), "agent-a", &expecting, Some(&init)).unwrap();
+        write_share(dir.path(), "agent-a", &expecting, Some(&init), None).unwrap();
         let expected = dir
             .path()
             .join("agent-a")
@@ -289,7 +303,14 @@ mod tests {
         );
         assert_eq!(mode_of(&expected), CA_MODE, "the guest reads it");
 
-        write_share(dir.path(), "agent-a", &MachineSpec::default(), Some(&init)).unwrap();
+        write_share(
+            dir.path(),
+            "agent-a",
+            &MachineSpec::default(),
+            Some(&init),
+            None,
+        )
+        .unwrap();
         assert!(!expected.exists());
     }
 
@@ -317,12 +338,12 @@ mod tests {
             ca_cert: "ca".into(),
             ..Default::default()
         };
-        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
         let share = dir.path().join("agent-a").join(SHARE_DIR);
         assert!(!seeded(&share));
 
         record_seeded(&share, None).unwrap();
-        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
         assert!(seeded(&share));
         assert_eq!(
             mode_of(&share.join(SEEDED_FILE)),
@@ -376,6 +397,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -399,6 +421,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -435,6 +458,7 @@ mod tests {
                     ..Default::default()
                 },
                 Some(&init),
+                None,
             )
             .unwrap();
         };
@@ -502,10 +526,17 @@ mod tests {
         fs::write(&init, b"init").unwrap();
 
         assert!(
-            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init)).is_err(),
+            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init), None).is_err(),
             "a share was written outside the machine directory"
         );
-        assert!(write_share(dir.path(), "Agent", &MachineSpec::default(), Some(&init)).is_err());
+        assert!(write_share(
+            dir.path(),
+            "Agent",
+            &MachineSpec::default(),
+            Some(&init),
+            None
+        )
+        .is_err());
         assert!(!dir.path().join(SHARE_DIR).exists());
     }
 
@@ -529,13 +560,13 @@ mod tests {
             ca_cert: "ca".into(),
             ..Default::default()
         };
-        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
         let share = dir.path().join("agent-a").join(SHARE_DIR);
         let mut seed = SeedFile::create(&share).unwrap();
         seed.write(b"a tar").unwrap();
         seed.commit().unwrap();
 
-        write_share(dir.path(), "agent-a", &spec, Some(&init)).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
 
         assert_eq!(fs::read(share.join(SEED_FILE)).unwrap(), b"a tar");
     }
@@ -604,6 +635,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -613,6 +645,31 @@ mod tests {
         remove_staged_seed(&share).unwrap();
         remove_staged_seed(&share).unwrap();
         assert!(!staged.exists());
+    }
+
+    // TEST_SCENARIO: platform-runc is what every container runtime in the guest execs to start a container, so it arrives executable and is replaced with the runner that ships it, like init. A share without it still boots the machine: its containers only miss the CA.
+    #[test]
+    fn a_share_carries_a_runc_that_can_run_when_one_is_configured() {
+        let dir = TempDir::new("runc");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let runc = dir.path().join("platform-runc");
+        fs::write(&runc, b"first runc").unwrap();
+        let spec = MachineSpec::default();
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert!(!share.join(RUNC_FILE).exists());
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        fs::write(&runc, b"second runc").unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        assert_eq!(fs::read(share.join(RUNC_FILE)).unwrap(), b"second runc");
+        assert_eq!(
+            mode_of(&share.join(RUNC_FILE)),
+            INIT_MODE,
+            "the guest execs this file"
+        );
     }
 
     fn mode_of(path: &Path) -> u32 {

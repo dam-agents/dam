@@ -53,21 +53,35 @@ const FOOTER_RE = new RegExp(
   `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
 );
 
+const FOOTER_SESSION_RE = new RegExp(
+  `${PUBLIC_AGENT_PATH}agent-[A-Za-z0-9]+\\?s=([^&|>]+)`,
+);
+
+function footerTexts(message: SlackMessage): string[] {
+  return (message.blocks ?? []).flatMap((block) => {
+    if ((block as { type?: unknown }).type !== "context") return [];
+    const elements = (block as { elements?: Array<{ text?: unknown }> })
+      .elements;
+    return (elements ?? []).flatMap((element) =>
+      typeof element?.text === "string" ? [element.text] : [],
+    );
+  });
+}
+
 export function parseAgentFooter(
   message: SlackMessage,
 ): { agentId: string } | null {
-  for (const block of message.blocks ?? []) {
-    if ((block as { type?: unknown }).type !== "context") continue;
-    const elements = (block as { elements?: Array<{ text?: unknown }> })
-      .elements;
-    for (const element of elements ?? []) {
-      const text = element?.text;
-      if (typeof text !== "string") continue;
-      const match = text.match(FOOTER_RE);
-      if (match) {
-        return { agentId: match[1] };
-      }
-    }
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_RE);
+    if (match) return { agentId: match[1] };
+  }
+  return null;
+}
+
+export function footerSessionId(message: SlackMessage): string | null {
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_SESSION_RE);
+    if (match) return decodeURIComponent(match[1]!);
   }
   return null;
 }

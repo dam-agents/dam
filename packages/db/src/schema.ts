@@ -417,6 +417,7 @@ export const connectionGrants = pgTable(
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    preferred: boolean("preferred").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),

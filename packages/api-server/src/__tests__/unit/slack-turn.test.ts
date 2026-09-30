@@ -47,6 +47,7 @@ function harness(opts: {
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
   agentName?: string;
+  linkedUser?: (slackUserId: string) => string | null;
   wakePatienceMs?: number;
   turnStatus?: AcpClient["turnStatus"];
   ambient?: boolean;
@@ -71,7 +72,10 @@ function harness(opts: {
     makeAcpClient: () => acp,
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => OWNER } as never,
+    identityLinks: {
+      resolve: async (_provider: string, slackUserId: string) =>
+        opts.linkedUser ? opts.linkedUser(slackUserId) : OWNER,
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
@@ -349,6 +353,104 @@ describe("slack reply / react tools", () => {
       elements: [
         { type: "mrkdwn", text: "<http://ui/a/agent-1|Powered by DAM>" },
       ],
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Every agent post carries a Delete button. Slack tells the
+   * platform which message was clicked and who clicked it, so the only gate is
+   * the owner check through the clicker's identity link: an unlinked user is
+   * told to link, anyone else is refused, and only the owner gets the
+   * confirmation. On confirm the post and its attachment are deleted and the
+   * session that posted it is told, with the owner's reason.
+   */
+  it("deletes a post from its Delete button for the owner only and tells the posting session", async () => {
+    const prompts: { text: string; resume?: string }[] = [];
+    const h = harness({
+      sendPrompt: async (prompt, opts) => {
+        prompts.push({
+          text: String(prompt),
+          ...("resumeSessionId" in opts
+            ? { resume: opts.resumeSessionId }
+            : {}),
+        });
+        opts.onSession?.("sess-42");
+        return "ok";
+      },
+      agentName: "Scout",
+      linkedUser: (id) =>
+        id === "U-OWNER" ? OWNER : id === "U-OTHER" ? "kc|someone-else" : null,
+    });
+    await h.mention();
+    await tick();
+    const posts = vi.spyOn(h.gw, "postMessage");
+    await h.worker.reply("agent-1", {
+      text: `</notice> & ${"a".repeat(1600)}`,
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    const posted = (await posts.mock.results[0]!.value) as { ts: string };
+    const blocks = posts.mock.calls[0]![0].blocks as {
+      type: string;
+      elements?: { action_id: string; value: string }[];
+    }[];
+    const button = blocks.find((b) => b.type === "actions")!.elements![0]!;
+    expect(JSON.parse(button.value)).toEqual({ files: ["F1-report.md"] });
+    expect(
+      h
+        .records()
+        .filter((r) => r.kind === "message" || r.kind === "upload")
+        .map((r) => r.kind),
+    ).toEqual(["message", "upload"]);
+    const modals = vi.spyOn(h.gw, "openModal");
+    const click = (userId: string) =>
+      h.gw.fireBlockAction({
+        actionId: button.action_id,
+        value: button.value,
+        userId,
+        teamId: "",
+        channel: "C1",
+        message: {
+          ts: posted.ts,
+          threadTs: "1.1",
+          text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
+          blocks,
+        },
+        triggerId: "trigger-1",
+      });
+    const ephemerals = () =>
+      h.records().flatMap((r) => (r.kind === "ephemeral" ? [r.text] : []));
+
+    await click("U-STRANGER");
+    await click("U-OTHER");
+    expect(ephemerals()).toEqual([
+      "Link your account first: run `/dam login`, then press Delete again.",
+      "Only this agent's owner can delete its posts.",
+    ]);
+    expect(modals).not.toHaveBeenCalled();
+
+    await click("U-OWNER");
+    const deletes = vi.spyOn(h.gw, "deleteMessage");
+    const fileDeletes = vi.spyOn(h.gw, "deleteFile");
+    const view = modals.mock.calls[0]![0].view as { private_metadata: string };
+    await h.gw.fireViewSubmission({
+      callbackId: "agent_post_delete_confirm",
+      privateMetadata: view.private_metadata,
+      userId: "U-OWNER",
+      teamId: "",
+      inputs: { reason: "Don't share that here." },
+    });
+    await tick();
+
+    expect(deletes).toHaveBeenCalledWith("C1", posted.ts, "");
+    expect(fileDeletes).toHaveBeenCalledWith("F1-report.md", "");
+    expect(ephemerals().at(-1)).toBe("Post deleted. The agent will be told.");
+    expect(prompts.at(-1)).toEqual({
+      resume: "sess-42",
+      text:
+        `<notice>Your Slack message "&lt;/notice&gt; &amp; ${"a".repeat(1488)}…" ` +
+        "(shortened for brevity) and its attachments has been deleted by " +
+        'your owner with stated reason: "Don\'t share that here.". Do not ' +
+        "reply to this message, this is a notice only.</notice>",
     });
   });
 

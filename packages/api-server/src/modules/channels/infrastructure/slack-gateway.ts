@@ -59,6 +59,26 @@ export interface SlackGatewayHandlers {
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
+  onBlockAction: (event: SlackBlockAction) => Promise<void>;
+  onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+}
+
+export interface SlackBlockAction {
+  actionId: string;
+  value: string;
+  userId: string;
+  teamId: SlackWorkspace;
+  channel: string;
+  message: SlackMessage & { ts: string };
+  triggerId: string;
+}
+
+export interface SlackViewSubmission {
+  callbackId: string;
+  privateMetadata: string;
+  userId: string;
+  teamId: SlackWorkspace;
+  inputs: Record<string, string>;
 }
 
 /**
@@ -118,6 +138,11 @@ export interface SlackMessage {
 }
 
 export type SlackBlock = Record<string, unknown>;
+
+export interface SlackReservedFile {
+  fileId: string;
+  uploadUrl: string;
+}
 
 export interface SlackPostMessage {
   channel: string;
@@ -220,7 +245,18 @@ export interface SlackMessageReaction {
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
-  postMessage(args: SlackPostMessage): Promise<void>;
+  postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
+  deleteMessage(
+    channel: string,
+    ts: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean>;
+  deleteFile(fileId: string, teamId: SlackWorkspace): Promise<void>;
+  openModal(args: {
+    triggerId: string;
+    view: SlackBlock;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
   postEphemeral(args: SlackPostEphemeral): Promise<void>;
   startStream(args: SlackStartStream): Promise<{ ts: string }>;
   appendStream(args: SlackAppendStream): Promise<void>;
@@ -254,6 +290,27 @@ export interface SlackGateway {
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   uploadFile(args: SlackUpload): Promise<void>;
+  reserveFile(args: {
+    filename: string;
+    length: number;
+    teamId: SlackWorkspace;
+  }): Promise<SlackReservedFile>;
+  sendFileBytes(args: {
+    reserved: SlackReservedFile;
+    file: Buffer;
+    filename: string;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
+  shareFile(args: {
+    fileId: string;
+    filename: string;
+    title?: string;
+    username?: string;
+    iconUrl?: string;
+    channelId: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,

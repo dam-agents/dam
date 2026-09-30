@@ -1,5 +1,5 @@
 {
-  "id": "aae5dabf-ce9f-4f28-af17-c7849b7bd7ea",
+  "id": "a38c4eaa-f8dc-4dab-838e-2c4ea516d1bb",
   "prevId": "5e5e0f54-e4ed-43a2-9407-7dd3f1bcf276",
   "version": "7",
   "dialect": "postgresql",
@@ -1404,6 +1404,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "preferred": {
+          "name": "preferred",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -1753,67 +1760,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "root_driver_id": {
-          "name": "root_driver_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "owner": {
           "name": "owner",
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "template_id": {
-          "name": "template_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "image": {
-          "name": "image",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connections": {
-          "name": "connections",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "cpu": {
-          "name": "cpu",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "memory": {
-          "name": "memory",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ttl_ms": {
-          "name": "ttl_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "result_schema": {
           "name": "result_schema",
@@ -1853,31 +1804,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "reaped_at": {
-          "name": "reaped_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "transcript_captured": {
-          "name": "transcript_captured",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "transcript_truncated": {
-          "name": "transcript_truncated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -1892,37 +1823,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "invocations_root_driver_idx": {
-          "name": "invocations_root_driver_idx",
-          "columns": [
-            {
-              "expression": "root_driver_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "invocations_unreaped_idx": {
-          "name": "invocations_unreaped_idx",
-          "columns": [
-            {
-              "expression": "completed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"invocations\".\"reaped_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

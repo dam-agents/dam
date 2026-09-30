@@ -13,6 +13,7 @@ import {
   type ConnectionView,
   type Contribution,
   type SecretRef,
+  githubHostOf,
   unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -712,6 +713,7 @@ export function createConnectionsService(deps: {
         connections: grants.map((g) => ({
           connectionId: g.connectionId,
           grantedAt: g.grantedAt.toISOString(),
+          preferred: g.preferred,
         })),
       };
     },
@@ -779,6 +781,54 @@ export function createConnectionsService(deps: {
           agentId,
           ownerId: deps.ownerId,
           grantedConnections,
+          allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
+        });
+      });
+    },
+
+    async setPreferredConnection(
+      agentId: string,
+      connectionId: string,
+    ): Promise<void> {
+      const conn = await deps.repo.get(connectionId, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+        const granted = await deps.repo.listConnectionsForAgent(agentId);
+        if (!granted.some((c) => c.id === connectionId)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "connection is not granted to this agent",
+          });
+        }
+        const host = githubHostOf(conn.contributions);
+        const siblings = granted
+          .filter(
+            (c) =>
+              c.id !== connectionId &&
+              host !== undefined &&
+              githubHostOf(c.contributions) === host,
+          )
+          .map((c) => c.id);
+        await deps.repo.setPreferred(agentId, connectionId, siblings);
+        securityLog("info", "connection.preferred_set", {
+          category: "authz-list",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          target: connectionId,
+          result: "success",
+          detail: { host, cleared: siblings },
+        });
+        const owned = await deps.repo.listByOwner(deps.ownerId);
+        await deps.fanOut.apply({
+          agentId,
+          ownerId: deps.ownerId,
+          grantedConnections: granted,
           allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
         });
       });

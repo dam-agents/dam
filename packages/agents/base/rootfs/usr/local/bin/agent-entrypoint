@@ -54,6 +54,31 @@ if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
 	fi
 fi
 
+# A container trusts only the roots its own image ships, not this machine's. The
+# share carries platform-runc, which adds the platform CA to every container's
+# bundle before starting it. docker's builder runs the runc on PATH and ignores
+# daemon.json, so the wrapper takes that runc's place; k3s runs its own
+# containerd, which reads a drop-in under the data dir. A share without the
+# wrapper removes the drop-in, or every pod would name a runtime that is gone.
+runc_wrapper=/platform/runc
+if [ "$(id -u)" = 0 ]; then
+	k3s_data=$(sed -n 's/^data-dir: *//p' /etc/rancher/k3s/config.yaml 2>/dev/null || true)
+	dropin="${k3s_data:-/var/lib/rancher/k3s}/agent/etc/containerd/config-v3.toml.d/platform-runc.toml"
+	if [ -x "$runc_wrapper" ]; then
+		if runc=$(command -v runc) && [ "$(readlink -f "$runc")" != "$runc_wrapper" ]; then
+			mv "$runc" "$runc.real" && ln -s "$runc_wrapper" "$runc" ||
+				echo "agent-entrypoint: WARNING: docker containers and builds do not get the platform CA" >&2
+		fi
+		if ! { mkdir -p "$(dirname "$dropin")" &&
+			printf '[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc.options]\n  BinaryName = "%s"\n' \
+				"$runc_wrapper" >"$dropin"; } 2>/dev/null; then
+			echo "agent-entrypoint: WARNING: k3s pods do not get the platform CA" >&2
+		fi
+	else
+		rm -f "$dropin"
+	fi
+fi
+
 # In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
 mkdir -p /tmp/agent-cache
 if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
