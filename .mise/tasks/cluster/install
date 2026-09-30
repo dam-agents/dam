@@ -819,7 +819,7 @@ else
   stage_vm_images
 fi
 [ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
-[ -z "$HOST_RUNNER" ] || mise run cluster:host-runner
+[ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD=1 mise run cluster:host-runner
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not
