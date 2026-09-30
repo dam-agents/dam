@@ -21,13 +21,13 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
       inset
       className={cn("text-sm text-foreground", className)}
     >
-      Experimental new sandbox runtime is{" "}
+      This agent runs as a microVM on the new sandbox runtime, enabled in{" "}
       <button
         type="button"
         className="font-medium underline"
         onClick={() => navigateToSettings("features")}
       >
-        enabled
+        Experimental features
       </button>
       .
     </Callout>
