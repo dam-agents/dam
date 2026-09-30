@@ -6,6 +6,7 @@ import {
   type AgentsService,
   DEFAULT_INVOCATION_TTL_MS,
   type InvocationHarnessConfig,
+  type InvocationView,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
   type ProviderPresetType,
@@ -38,10 +39,7 @@ import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
-import type {
-  InvocationsRepository,
-  InvocationStatus,
-} from "../infrastructure/invocations-repository.js";
+import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 
 export class AttenuationError extends Error {
   constructor(public readonly offending: string[]) {
@@ -105,7 +103,7 @@ export interface InvocationsService {
   get(
     invocationId: string,
     driverAgentId: string,
-  ): Promise<{ status: InvocationStatus; result: unknown } | null>;
+  ): Promise<InvocationView | null>;
   recordResult(invocationId: string, result: unknown): Promise<RecordResult>;
 }
 

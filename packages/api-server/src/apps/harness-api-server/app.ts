@@ -49,6 +49,7 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
+import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
 import { createAgentImageReader } from "./agent-image.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -209,6 +210,21 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     publishLimits,
   });
 
+  const driverOpsDeps: DriverOpsDeps = {
+    invocationsServiceFor,
+    connectionsServiceFor,
+    templates: templatesRepo,
+    budgetsFor: (owner) =>
+      composeBudgetsModule({
+        k8s: k8sClient,
+        owner,
+        listAgents: () => agentsRepo.list(owner),
+        defaultCeiling,
+        slotSize: defaultLimits,
+      }).budgets,
+    defaultLimits,
+  };
+
   const app = new Hono();
   mountMcpRoutes(app, {
     channelManager,
@@ -225,6 +241,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     kitUpdateReporter,
     artifactLibraryFor: mcpArtifactLibraryFor,
     invocationsServiceFor,
+    driverOpsFor: createDriverOps(driverOpsDeps),
     kbShareOpsFor,
     agentHome: config.agentHome,
     caseStudySubmissions,
@@ -241,21 +258,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connections: connectionsRepo,
     secretStore,
   });
-  mountInvocationRoutes(app, {
-    k8s: k8sClient,
-    invocationsServiceFor,
-    connectionsServiceFor,
-    templates: templatesRepo,
-    budgetsFor: (owner) =>
-      composeBudgetsModule({
-        k8s: k8sClient,
-        owner,
-        listAgents: () => agentsRepo.list(owner),
-        defaultCeiling,
-        slotSize: defaultLimits,
-      }).budgets,
-    defaultLimits,
-  });
+  mountInvocationRoutes(app, { k8s: k8sClient, ...driverOpsDeps });
   mountRuntimeTrpc(app, {
     k8s: k8sClient,
     hello: runtimeHello,
