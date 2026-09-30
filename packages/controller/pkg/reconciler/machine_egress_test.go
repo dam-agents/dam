@@ -28,7 +28,7 @@ func bootstrapListeners(t *testing.T, doc map[string]any) map[string]map[string]
 	return out
 }
 
-// TEST_SCENARIO: raw TLS on the transparent port must land in the internal listener a CONNECT is unwrapped into, where every chain that dials a host of the agent's choosing — credential chains and the SNI-miss chain that holds a never-approved host — runs its egress check before dialing. The telemetry collector's chain is the one without a check, and it reaches only the platform's own collector. A listener that dialed anything itself would be a way around approval.
+// TEST_SCENARIO: raw TLS arriving at the proxy port must land in the internal listener a CONNECT is unwrapped into, while a CONNECT or a plain HTTP request keeps the proxy's own chain; where every chain that dials a host of the agent's choosing — credential chains and the SNI-miss chain that holds a never-approved host — runs its egress check before dialing. The telemetry collector's chain is the one without a check, and it reaches only the platform's own collector. A listener that dialed anything itself would be a way around approval.
 func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) {
 	cfg := *bootstrapTestCfg
 	cfg.TelemetryCollectorHost = "platform-clickstack-collector.platform.svc.cluster.local"
@@ -36,17 +36,23 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 	vm, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{credentialedChain("platform-conn-github", "github.com")}, true)
 	require.NoError(t, err)
 	listeners := bootstrapListeners(t, mustParseBootstrap(t, vm))
-	transparent, ok := listeners["transparent_tls"]
-	require.True(t, ok, "a machine's gateway accepts TLS without CONNECT")
+	require.Len(t, listeners, 2, "TLS without CONNECT arrives on the proxy listener, not on a listener of its own")
+	outer := listeners["agent_egress"]
+	inspectors := outer["listener_filters"].([]any)
+	require.Len(t, inspectors, 1)
+	assert.Equal(t, "envoy.filters.listener.tls_inspector", inspectors[0].(map[string]any)["name"])
 
-	addr := transparent["address"].(map[string]any)["socket_address"].(map[string]any)
-	assert.EqualValues(t, gatewayTransparentTLSPort, addr["port_value"])
-	chains := transparent["filter_chains"].([]any)
-	require.Len(t, chains, 1)
-	filters := chains[0].(map[string]any)["filters"].([]any)
+	outerChains := outer["filter_chains"].([]any)
+	require.Len(t, outerChains, 2)
+	tlsChain := outerChains[0].(map[string]any)
+	assert.Equal(t, map[string]any{"transport_protocol": "tls"}, tlsChain["filter_chain_match"])
+	filters := tlsChain["filters"].([]any)
 	require.Len(t, filters, 1, "nothing may run before the internal listener's own egress checks")
 	proxy := filters[0].(map[string]any)["typed_config"].(map[string]any)
 	assert.Equal(t, "tls_inspect_internal", proxy["cluster"])
+	proxyChain := outerChains[1].(map[string]any)
+	assert.Nil(t, proxyChain["filter_chain_match"], "everything that is not TLS keeps the proxy's own chain")
+	assert.Equal(t, "envoy.filters.network.http_connection_manager", proxyChain["filters"].([]any)[0].(map[string]any)["name"])
 
 	internal := listeners["tls_inspect_internal"]
 	unchecked := 0
@@ -72,7 +78,9 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 
 	container, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)
-	assert.NotContains(t, bootstrapListeners(t, mustParseBootstrap(t, container)), "transparent_tls")
+	containerOuter := bootstrapListeners(t, mustParseBootstrap(t, container))["agent_egress"]
+	assert.Nil(t, containerOuter["listener_filters"], "a container agent's proxy listener is unchanged")
+	assert.Len(t, containerOuter["filter_chains"].([]any), 1)
 }
 
 // TEST_SCENARIO: the machine resolver is what closes DNS exfiltration. It must answer every A with the gateway's address from the controller, refuse every type that could carry an answer back, and hold no plugin that forwards, recurses or logs — so a name the agent looks up never leaves the gateway and is never written anywhere.
@@ -115,7 +123,7 @@ func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
 	assert.Len(t, container.Spec.Template.Spec.Containers, 1)
 }
 
-// TEST_SCENARIO: once every name resolves to the gateway, a machine connects to it on the ordinary ports. 443 reaches the transparent TLS listener, 80 the proxy listener that routes by Host, and 53 the resolver over UDP and TCP. A container agent's gateway exposes the proxy port alone.
+// TEST_SCENARIO: once every name resolves to the gateway, a machine connects to it on the ordinary ports. 443 and 80 both reach the proxy listener, which hands TLS to the internal listener and routes plain HTTP by Host, and 53 the resolver over UDP and TCP. A container agent's gateway exposes the proxy port alone.
 func TestAMachinesGatewayServiceCarriesTheOrdinaryPorts(t *testing.T) {
 	svc := BuildGatewayService("my-instance", true, testConfig, configMapOwnerRef(testOwnerCM))
 	got := map[string]string{}
@@ -125,7 +133,7 @@ func TestAMachinesGatewayServiceCarriesTheOrdinaryPorts(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"/" + itoa(int32(testConfig.EnvoyPort)): itoa(int32(testConfig.EnvoyPort)),
 		"TCP/80":                                itoa(int32(testConfig.EnvoyPort)),
-		"TCP/443":                               itoa(gatewayTransparentTLSPort),
+		"TCP/443":                               itoa(int32(testConfig.EnvoyPort)),
 		"UDP/53":                                itoa(gatewayMachineDNSPort),
 		"TCP/53":                                itoa(gatewayMachineDNSPort),
 	}, got)

@@ -1204,8 +1204,8 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 				for _, p := range rule.Ports {
 					ports = append(ports, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
 				}
-				assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "TCP/10443", "UDP/10053", "TCP/10053"}, ports,
-					"the proxy port, the transparent TLS port and the machine resolver: nothing else on a gateway is meant for a guest")
+				assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "UDP/10053", "TCP/10053"}, ports,
+					"the proxy port and the machine resolver: nothing else on a gateway is meant for a guest")
 				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
 					"gateways are reached in the agent namespace, not the release namespace")
 			}

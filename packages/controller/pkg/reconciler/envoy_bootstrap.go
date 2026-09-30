@@ -116,9 +116,6 @@ func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) 
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
 	listeners := []any{buildOuterListener(p), buildInternalListener(p)}
-	if p.Transparent {
-		listeners = append(listeners, buildTransparentTLSListener(p))
-	}
 	doc := ev{
 		"node": ev{
 			"id":      "platform-credential-injector",
@@ -181,13 +178,17 @@ func buildOuterListener(p bootstrapParams) ev {
 	if p.OTel.AccessLogs {
 		hcm["access_log"] = hcmAccessLog(p, "", "agent_egress", "egress")
 	}
-	return ev{
+	listener := ev{
 		"name":    "agent_egress",
 		"address": ev{"socket_address": ev{"address": p.ListenAddress, "port_value": p.Port}},
 		"filter_chains": []any{
 			ev{"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}}},
 		},
 	}
+	if p.Transparent {
+		acceptTransparentTLS(listener)
+	}
+	return listener
 }
 
 func buildOuterRouteConfig(p bootstrapParams) ev {
