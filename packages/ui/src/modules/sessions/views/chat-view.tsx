@@ -72,6 +72,7 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
+import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
@@ -148,6 +149,7 @@ export function ChatView() {
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
+  const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
@@ -158,7 +160,7 @@ export function ChatView() {
   );
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds)
+    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);

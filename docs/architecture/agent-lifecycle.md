@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-28
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -87,6 +87,8 @@ Three paths trigger a wake:
 - **Skills-management-driven** — install / uninstall / private-source scan / publish all route through the same primitive before reaching the agent (scan and publish reach agent-runtime directly over the harness port; install/uninstall keep the pod warm so the apply worker dispatches the bumped outbox). See [skills](skills.md).
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache. A read bypasses that cache when its result decides a write — spec read-modify-write, the pause flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one. On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error). The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line. A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance. The primitive also records wake begin/success/timeout with duration and the condition snapshot, so wake latency and failures are diagnosable from the log store. Callers can additionally register for a cold-start signal, fired when a call enters (or joins) a wake wait, to tell their user a wake is underway. The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
+
+The UI holds a starting Agent to the same two-minute budget. One it has watched starting for longer — a vm guest that stopped answering keeps its Agent starting indefinitely, since the runner only restarts it and nothing marks it failed — is shown as stuck: the UI offers Restart and shows the controller's account of why the agent is not ready, the agent condition's message, which for a machine includes the end of its console. A start that already has a failure cause offers Restart at once. The controller records no start time, so the budget is counted from when the UI first saw the Agent starting.
 
 ### Schedule fire
 

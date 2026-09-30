@@ -19,6 +19,7 @@ import {
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
 import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
+import { useSlowStartIds } from "./use-slow-start.js";
 import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
@@ -35,6 +36,7 @@ export function useAgentRows() {
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
   useSyncPausingAgents();
+  const slowStartIds = useSlowStartIds();
 
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
@@ -66,7 +68,12 @@ export function useAgentRows() {
 
   const rowProps = (agent: AgentView) => ({
     agent,
-    display: resolveAgentDisplay(agent, restartingIds, pausingIds),
+    display: resolveAgentDisplay(
+      agent,
+      restartingIds,
+      pausingIds,
+      slowStartIds,
+    ),
     subtitle: sandboxSubtitle(agent, subtitleLookup),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
