@@ -314,7 +314,7 @@ describe("share viewer resolution", () => {
   });
 });
 
-describe("share viewer — meta and content cap", () => {
+describe("share viewer — current version and content cap", () => {
   const row = artifactRow({ sizeBytes: 40 });
   const viewer = createShareViewerService({
     repo: fakeRepo([row]),
@@ -330,16 +330,9 @@ describe("share viewer — meta and content cap", () => {
     }),
   });
 
-  it("meta reads size and type without fetching the blob", async () => {
-    await expect(viewer.meta(row)).resolves.toEqual({
-      contentType: "text/html",
-      sizeBytes: 40,
-    });
-  });
-
   it("content refuses to buffer past maxBytes", async () => {
-    await expect(viewer.content(row, undefined, 10)).resolves.toBeNull();
-    await expect(viewer.content(row, undefined, 100)).resolves.toMatchObject({
+    await expect(viewer.content(row, 10)).resolves.toBeNull();
+    await expect(viewer.content(row, 100)).resolves.toMatchObject({
       sizeBytes: 40,
     });
   });

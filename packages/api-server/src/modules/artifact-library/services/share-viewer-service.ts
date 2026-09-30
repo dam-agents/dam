@@ -28,28 +28,19 @@ export interface ShareViewerService {
   resolveArtifact(slug: string): Promise<SharedResolution>;
   resolveFolder(slug: string): Promise<FolderResolution>;
   canView(artifact: ArtifactRow, session: ShareSession): Promise<ViewDecision>;
-  meta(
-    artifact: ArtifactRow,
-    version?: number,
-  ): Promise<{ contentType: string; sizeBytes: number } | null>;
   content(
     artifact: ArtifactRow,
-    version?: number,
     maxBytes?: number,
   ): Promise<{
     content: Buffer;
     contentType: string;
     sizeBytes: number;
   } | null>;
-  contentStream(
-    artifact: ArtifactRow,
-    version?: number,
-  ): Promise<{
+  contentStream(artifact: ArtifactRow): Promise<{
     stream: ReadableStream<Uint8Array>;
     contentType: string;
     sizeBytes: number;
   } | null>;
-  versionCount(artifactId: string): Promise<number>;
   recordView(artifact: ArtifactRow): void;
 }
 
@@ -67,24 +58,6 @@ export function createShareViewerService(deps: {
     const graceEnd =
       row.expiresAt.getTime() + ARTIFACT_RESTORE_WINDOW_DAYS * 86_400_000;
     return { expired: true, withinGrace: Date.now() < graceEnd };
-  }
-
-  async function resolveRef(
-    artifact: ArtifactRow,
-    version?: number,
-  ): Promise<{
-    storageRef: string;
-    contentType: string;
-    sizeBytes: number;
-  } | null> {
-    if (version === undefined || version === artifact.version) {
-      return {
-        storageRef: artifact.storageRef,
-        contentType: artifact.contentType,
-        sizeBytes: artifact.sizeBytes,
-      };
-    }
-    return repo.getVersion(artifact.id, version);
   }
 
   return {
@@ -118,37 +91,21 @@ export function createShareViewerService(deps: {
       return { state: "ok", folder, artifacts };
     },
 
-    async meta(artifact, version) {
-      const ref = await resolveRef(artifact, version);
-      return ref
-        ? { contentType: ref.contentType, sizeBytes: ref.sizeBytes }
-        : null;
-    },
-
-    async content(artifact, version, maxBytes) {
-      const ref = await resolveRef(artifact, version);
-      if (!ref) return null;
-      if (maxBytes !== undefined && ref.sizeBytes > maxBytes) return null;
-      const blob = await artifacts.get(ref.storageRef);
+    async content(artifact, maxBytes) {
+      if (maxBytes !== undefined && artifact.sizeBytes > maxBytes) return null;
+      const blob = await artifacts.get(artifact.storageRef);
       if (!blob) return null;
       return {
         content: blob.content,
-        contentType: ref.contentType,
+        contentType: artifact.contentType,
         sizeBytes: blob.sizeBytes,
       };
     },
 
-    async contentStream(artifact, version) {
-      const ref = await resolveRef(artifact, version);
-      if (!ref) return null;
-      const streamed = await artifacts.getStream(ref.storageRef);
+    async contentStream(artifact) {
+      const streamed = await artifacts.getStream(artifact.storageRef);
       if (!streamed) return null;
-      return { ...streamed, contentType: ref.contentType };
-    },
-
-    async versionCount(artifactId) {
-      const rows = await repo.listVersions(artifactId);
-      return rows.length;
+      return { ...streamed, contentType: artifact.contentType };
     },
 
     recordView(artifact) {
