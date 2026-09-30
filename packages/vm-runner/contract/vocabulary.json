@@ -6,5 +6,6 @@
     "MachineImageUnavailable",
     "MachineBootFailed",
     "MachineSeedMissing"
-  ]
+  ],
+  "seedExitPermanent": 3
 }

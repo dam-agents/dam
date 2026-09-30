@@ -94,8 +94,9 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
 func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 	vocabulary := decodeStrictly[struct {
-		States  []string `json:"states"`
-		Reasons []string `json:"reasons"`
+		States            []string `json:"states"`
+		Reasons           []string `json:"reasons"`
+		SeedExitPermanent int32    `json:"seedExitPermanent"`
 	}](t, "vocabulary.json", contractFixture(t, "vocabulary.json"))
 
 	assert.Equal(t, []string{
@@ -105,4 +106,5 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 	assert.Equal(t, []string{
 		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing,
 	}, vocabulary.Reasons)
+	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 }

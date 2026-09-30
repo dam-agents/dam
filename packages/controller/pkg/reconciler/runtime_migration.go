@@ -605,7 +605,7 @@ func (r *AgentReconciler) runtimeMigrationVolume(ctx context.Context, agent *api
 	return "", fmt.Errorf("%d volumes are labelled as this agent's %s and its statefulset mounts none of them", len(list.Items), path)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
+// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error, and an attempt that vm-seed says no fresh one can change fails it at once, with what the user can do. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
 func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
@@ -668,8 +668,12 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		}
 		return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationBooting, "")
 	case jobConditionTrue(job, batchv1.JobFailed):
+		detail, permanent := r.copyJobFailure(ctx, job)
+		if permanent {
+			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("the home cannot be copied as it is, so copying it again cannot help: make the agent's home smaller and retry, or abort and give the agent more storage before migrating again (%s)", detail))
+		}
 		why := "copying the home directory failed"
-		if detail := r.copyJobFailure(ctx, job); detail != "" {
+		if detail != "" {
 			why = fmt.Sprintf("copying the home directory failed (%s)", detail)
 		}
 		if m.attempts >= runtimeMigrationMaxAttempts {
@@ -812,11 +816,11 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	return r.setRuntimeMigrationNote(ctx, agent, m, "")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. An attempt that never ran — a volume that would not attach, a pod that could not be placed — left no message, so the last warning its pod was given says why instead. Empty when neither is there.
-func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) string {
+// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. An attempt that never ran — a volume that would not attach, a pod that could not be placed — left no message, so the last warning its pod was given says why instead. Empty when neither is there. The flag says the attempt exited as vm-seed does for a home a fresh attempt cannot copy either.
+func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) (string, bool) {
 	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
 	if err != nil {
-		return ""
+		return "", false
 	}
 	var last *corev1.ContainerStateTerminated
 	for i := range pods.Items {
@@ -830,10 +834,10 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 	if last == nil {
 		for i := range pods.Items {
 			if why := r.warningOn(ctx, pods.Items[i].Namespace, pods.Items[i].Name, pods.Items[i].UID); why != "" {
-				return why
+				return why, false
 			}
 		}
-		return r.warningOn(ctx, job.Namespace, job.Name, job.UID)
+		return r.warningOn(ctx, job.Namespace, job.Name, job.UID), false
 	}
 	lines := strings.Split(strings.TrimSpace(last.Message), "\n")
 	from := len(lines) - 1
@@ -849,7 +853,7 @@ func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) 
 			parts = append(parts, l)
 		}
 	}
-	return strings.Join(parts, "; ")
+	return strings.Join(parts, "; "), last.ExitCode == vmrunner.SeedExitPermanent
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the seed a completed copy Job stored on the runner, as vm-seed wrote it to its termination message once the runner's answer matched what it sent. The pod that succeeded is the one to read. When none is left, or its message is not a seed, the reason says so and the home is copied again, because a boot that is not held to a known seed is exactly the hole the seed contract closes.
