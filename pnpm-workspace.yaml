@@ -5,6 +5,11 @@ packages:
   - "packages/e2e/playwright"
   - "packages/agents/pi-agent/rootfs/app/working-dir/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
+minimumReleaseAgeExclude:
+  # rrule-temporal@2.2.7 (2026-09-25) fixes sub-daily rules with BYxxx parts
+  # ignoring the INTERVAL cadence, which 2.2.6 gets wrong for pinned schedules.
+  # Drop this entry once it is older than 7 days (2026-10-02).
+  - "rrule-temporal@2.2.7"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while

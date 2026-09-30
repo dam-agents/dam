@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type {
+  Schedule,
   SchedulesService,
   ScheduleCreateCronInput,
   ScheduleCreateRRuleInput,
@@ -10,13 +11,23 @@ import { SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { SchedulerRunner } from "./scheduler-runner.js";
 import {
+  nextFire,
   validateCron,
-  validateHasVisibleOccurrence,
   validateRRule,
   validateTimezone,
 } from "../domain/recurrences.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
+
+function withStopReason(schedule: Schedule): Schedule {
+  if (!schedule.spec.enabled || schedule.status?.nextRun) return schedule;
+  const next = nextFire(schedule.spec, new Date());
+  if (next.kind !== "stopped") return schedule;
+  return {
+    ...schedule,
+    status: { ...schedule.status, stopReason: next.reason },
+  };
+}
 
 function asBadRequest(fn: () => void): void {
   try {
@@ -45,13 +56,19 @@ export function createSchedulesService(deps: {
   }
 
   return {
-    list: (agentId) => deps.repo.list(agentId, deps.owner),
-    listForOwner: (limit) =>
-      deps.repo.listForOwner(deps.owner, {
-        ...(limit === undefined ? {} : { limit }),
-        ...(binding === "*" ? {} : { agentIds: binding }),
-      }),
-    get: (id) => deps.repo.get(id, deps.owner),
+    list: async (agentId) =>
+      (await deps.repo.list(agentId, deps.owner)).map(withStopReason),
+    listForOwner: async (limit) =>
+      (
+        await deps.repo.listForOwner(deps.owner, {
+          ...(limit === undefined ? {} : { limit }),
+          ...(binding === "*" ? {} : { agentIds: binding }),
+        })
+      ).map(withStopReason),
+    get: async (id) => {
+      const schedule = await deps.repo.get(id, deps.owner);
+      return schedule && withStopReason(schedule);
+    },
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
@@ -99,9 +116,8 @@ export function createSchedulesService(deps: {
 
     async createRRule(input: ScheduleCreateRRuleInput, createdBy = "user") {
       asBadRequest(() => validateTimezone(input.timezone));
-      asBadRequest(() => validateRRule(input.rrule));
       asBadRequest(() =>
-        validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []),
+        validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
       const spec: ScheduleSpec = {
@@ -150,9 +166,8 @@ export function createSchedulesService(deps: {
 
     async updateRRule(input: ScheduleUpdateRRuleInput) {
       asBadRequest(() => validateTimezone(input.timezone));
-      asBadRequest(() => validateRRule(input.rrule));
       asBadRequest(() =>
-        validateHasVisibleOccurrence(input.rrule, input.quietHours),
+        validateRRule(input.rrule, input.timezone, input.quietHours),
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;

@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-09-28
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -10,7 +10,7 @@ The subsystem straddles two components. The api-server owns the schedule rows, t
 
 ## Fire
 
-Schedules are Postgres rows owned by the api-server, each armed as a delayed job on a Redis-backed queue — one pending job per schedule, re-armed after every fire. Fires are idempotent per occurrence, so at-least-once delivery cannot run one twice and a boot cannot swallow one that is due; a periodic reconcile re-arms any schedule whose queue job vanished. The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window. Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
+Schedules are Postgres rows owned by the api-server, each armed as a delayed job on a Redis-backed queue — one pending job per schedule, re-armed after every fire. Fires are idempotent per occurrence, so at-least-once delivery cannot run one twice and a boot cannot swallow one that is due; a periodic reconcile re-arms any schedule whose queue job vanished. The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window. Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time. Every RRULE counts its steps from one fixed start — midnight on 1 January 2001 in the schedule's timezone, a Monday and the first of a month — so its occurrences never depend on when they are computed and stay put across restarts and re-arms: an unanchored rule defaults to midnight, weekly to Monday, monthly to the 1st. `COUNT` is rejected, because counted from that start it would be spent, and so is `FREQ=SECONDLY`, because schedules fire at minute granularity. A rule with no future occurrence is rejected at save time; the occurrence search is bounded, so a rule that can never fire answers at once instead of blocking the api-server. A local time erased by the spring-forward jump is skipped, as RFC 5545 requires. An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 
 When a fire is due:
 

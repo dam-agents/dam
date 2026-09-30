@@ -228,6 +228,7 @@ export interface Schedule {
     lastRun?: string;
     nextRun?: string;
     lastResult?: string;
+    stopReason?: string;
     lastDeclinedAt?: string;
     declinedCount?: number;
     lastPrecheckError?: string;

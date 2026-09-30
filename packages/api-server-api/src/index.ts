@@ -228,10 +228,14 @@ export {
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
-  isInQuietHours,
+  nextVisibleOccurrence,
+  rruleProblem,
   rruleToText,
 } from "./modules/schedules/rrule.js";
-export type { FrequencyPreset } from "./modules/schedules/rrule.js";
+export type {
+  FrequencyPreset,
+  VisibleOccurrence,
+} from "./modules/schedules/rrule.js";
 
 export type {
   ProviderPresetType,

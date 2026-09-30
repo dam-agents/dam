@@ -29,8 +29,13 @@ function DetailCard({
 
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
+  const stopReason = enabled ? status?.stopReason : undefined;
   const nextRun =
-    enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
+    enabled && status?.nextRun
+      ? timeUntil(status.nextRun)
+      : stopReason
+        ? "Stopped"
+        : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
@@ -69,6 +74,11 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           >
             <Time size={12} /> {nextRun}
           </span>
+          {stopReason && (
+            <p className="mt-1 text-xs font-normal break-words text-destructive">
+              {stopReason}
+            </p>
+          )}
         </DetailCard>
         <DetailCard label="Last run">
           <div className="flex flex-col gap-0.5">

@@ -216,6 +216,40 @@ describe("updateRRule precheck status", () => {
   });
 });
 
+// TEST_SCENARIO: an enabled schedule with no next run has stopped for good, so a read names why instead of leaving the owner a bare last result; the reason is derived on read, so a repaired and re-armed schedule shows none.
+describe("stop reason", () => {
+  function withRule(rrule: string, nextRun?: string): Schedule {
+    const current = makeCurrent();
+    return {
+      ...current,
+      spec: { ...current.spec, rrule } as ScheduleSpec,
+      ...(nextRun ? { status: { nextRun } } : {}),
+    };
+  }
+
+  it("names why an enabled schedule has no next run", async () => {
+    const { service } = makeDeps(withRule("FREQ=DAILY;UNTIL=20200101T000000Z"));
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBe("it has no more occurrences");
+  });
+
+  it("names none for an armed schedule", async () => {
+    const { service } = makeDeps(withRule(RRULE, "2026-10-01T07:00:00.000Z"));
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBeUndefined();
+  });
+
+  it("names none for a paused schedule", async () => {
+    const current = withRule("FREQ=DAILY;UNTIL=20200101T000000Z");
+    const { service } = makeDeps({
+      ...current,
+      spec: { ...current.spec, enabled: false },
+    });
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBeUndefined();
+  });
+});
+
 describe("runNow", () => {
   function makeRunNowDeps(opts?: { found?: boolean; outcome?: RunNowResult }) {
     const ran: string[] = [];

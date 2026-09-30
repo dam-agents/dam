@@ -17,6 +17,7 @@
     "@trpc/server": "^11.19.0",
     "agent-runtime-api": "workspace:*",
     "rrule": "^2.8.1",
+    "rrule-temporal": "2.2.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {

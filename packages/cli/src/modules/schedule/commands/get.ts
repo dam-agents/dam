@@ -40,6 +40,8 @@ function renderSchedule(view: ScheduleView): string {
   lines.push(`Created by:  ${view.createdBy}`);
   if (view.status?.lastRun) lines.push(`Last run:    ${view.status.lastRun}`);
   if (view.status?.nextRun) lines.push(`Next run:    ${view.status.nextRun}`);
+  if (view.status?.stopReason)
+    lines.push(`Stopped:     ${view.status.stopReason}`);
   if (view.status?.lastResult) {
     lines.push(`Last result: ${view.status.lastResult}`);
   }

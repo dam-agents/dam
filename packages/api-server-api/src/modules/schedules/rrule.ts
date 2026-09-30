@@ -1,5 +1,7 @@
+/// <reference lib="esnext.temporal" />
 import * as rruleModule from "rrule";
 import type { Weekday } from "rrule";
+import { RRuleTemporal } from "rrule-temporal";
 import type { QuietWindow } from "./types.js";
 
 const rrulePkg = (Reflect.get(rruleModule, "default") ??
@@ -140,9 +142,73 @@ export function detectTimezone(): string {
   }
 }
 
-export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
+const RRULE_ANCHOR = { year: 2001, month: 1, day: 1 };
+const QUIET_SKIP_LIMIT = 1440;
+const FLOATING_UNTIL = /UNTIL=(\d{8}T\d{6})(?!Z)/;
+
+export type VisibleOccurrence =
+  | { kind: "next"; at: Temporal.ZonedDateTime }
+  | { kind: "exhausted" }
+  | { kind: "suppressed" };
+
+function nextOccurrence(
+  rruleBody: string,
+  timezone: string,
+  after: Temporal.Instant,
+): Temporal.ZonedDateTime | null {
+  const rule = new RRuleTemporal({
+    rruleString: withUtcUntil(rruleBody, timezone),
+    dtstart: Temporal.ZonedDateTime.from({
+      ...RRULE_ANCHOR,
+      timeZone: timezone,
+    }),
+  });
+  return rule.next(after.toZonedDateTimeISO(timezone), false);
+}
+
+function withUtcUntil(rruleBody: string, timezone: string): string {
+  return rruleBody.replace(FLOATING_UNTIL, (_, local: string) => {
+    const utc = Temporal.PlainDateTime.from(local)
+      .toZonedDateTime(timezone)
+      .toInstant()
+      .toZonedDateTimeISO("UTC");
+    const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+    return `UNTIL=${pad(utc.year, 4)}${pad(utc.month)}${pad(utc.day)}T${pad(utc.hour)}${pad(utc.minute)}${pad(utc.second)}Z`;
+  });
+}
+
+export function nextVisibleOccurrence(
+  rruleBody: string,
+  timezone: string,
+  after: Temporal.Instant,
+  windows: QuietWindow[],
+): VisibleOccurrence {
+  const enabled = windows.filter((w) => w.enabled);
+  let cursor = after;
+  for (let i = 0; i < QUIET_SKIP_LIMIT; i++) {
+    const next = nextOccurrence(rruleBody, timezone, cursor);
+    if (!next) return i === 0 ? { kind: "exhausted" } : { kind: "suppressed" };
+    if (!isInQuietHours(next, enabled)) return { kind: "next", at: next };
+    cursor = next.toInstant();
+  }
+  return { kind: "suppressed" };
+}
+
+export function rruleProblem(rruleBody: string): string | null {
+  const options = RRule.parseString(rruleBody);
+  if (options.freq === Frequency.SECONDLY)
+    return "FREQ=SECONDLY is not supported, schedules run at minute granularity";
+  if (options.count != null)
+    return "COUNT is not supported, a schedule has no start date to count from";
+  return null;
+}
+
+export function isInQuietHours(
+  time: { hour: number; minute: number },
+  windows: QuietWindow[],
+): boolean {
   if (windows.length === 0) return false;
-  const m = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const m = time.hour * 60 + time.minute;
   for (const w of windows) {
     if (!w.enabled) continue;
     const start = parseHHMM(w.startTime);
@@ -161,17 +227,13 @@ export function hasVisibleOccurrence(
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return true;
   try {
-    const rule = RRule.fromString(rruleBody);
-    let visible = false;
-    rule.all((date, i) => {
-      if (i >= 1440) return false;
-      if (!isInQuietHours(date, enabled)) {
-        visible = true;
-        return false;
-      }
-      return true;
-    });
-    return visible;
+    const next = nextVisibleOccurrence(
+      rruleBody,
+      "UTC",
+      Temporal.Now.instant(),
+      enabled,
+    );
+    return next.kind !== "suppressed";
   } catch {
     return true;
   }

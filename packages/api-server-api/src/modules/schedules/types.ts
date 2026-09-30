@@ -41,6 +41,7 @@ export interface ScheduleStatus {
   lastRun?: string;
   nextRun?: string;
   lastResult?: string;
+  stopReason?: string;
   lastDeclinedAt?: string;
   declinedCount?: number;
   lastPrecheckError?: string;
