@@ -1,5 +1,5 @@
 ---
-id: 094
+id: 095
 title: A local cluster may run without the mesh dataplane
 status: accepted
 subsystem: security-and-credentials
@@ -7,11 +7,12 @@ tags: [istio, ambient, local-dev, smolvm]
 summary: A local development cluster whose kernel cannot run the ambient dataplane may install the platform with every AuthorizationPolicy rendered and none enforced; the chart accepts this only on a cluster the local install task marked, and that task refuses CI.
 ---
 
-# ADR-094: A local cluster may run without the mesh dataplane
+# ADR-095: A local cluster may run without the mesh dataplane
 
 **Date:** 2026-09-30
 **Status:** Accepted
 **Owner:** @jezekra1
+**Amends:** ADR-041
 
 ## Context
 
@@ -41,6 +42,14 @@ keep ADR-041's mandatory mesh unchanged.
   status.
 - The mode attempts no partial enforcement. Its only promise is that it is
   loud and cannot be reached by accident.
+
+## Amends
+
+- **ADR-041** — "Istio is a hard cluster prerequisite … there is no
+  `enabled: false` toggle" now holds everywhere but a local cluster the local
+  install task marked. The rest of ADR-041 is unchanged: per-agent identity
+  still lives only in the mesh, and every other install keeps its admission
+  checks, including the refusal of an unlabelled release namespace.
 
 ## Alternatives Considered
 

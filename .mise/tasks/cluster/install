@@ -576,7 +576,9 @@ if [ "$NO_MESH" = true ]; then
       helm uninstall "$release" -n istio-system --wait
     fi
   done
-  kubectl -n istio-system delete cronjob ztunnel-cert-watchdog --ignore-not-found
+  # The SVID watchdog and the RBAC it runs with, exactly as applied below.
+  kubectl -n istio-system delete cronjob,serviceaccount,role,rolebinding ztunnel-cert-watchdog --ignore-not-found
+  kubectl delete clusterrole,clusterrolebinding ztunnel-cert-watchdog-waypoints --ignore-not-found
   # An istio-base an earlier mesh install created still carries the default
   # validator, which now has no istiod behind it.
   kubectl delete validatingwebhookconfiguration istiod-default-validator --ignore-not-found

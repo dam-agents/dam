@@ -713,7 +713,7 @@ these knobs. Recovery lives in the
   certificate rotation and stall every mesh hop. The local install lengthens
   workload certificates and runs a watchdog that rolls stalled workloads.
 - **No mesh, local only.** A kernel without conntrack marks and zones cannot
-  run the ambient dataplane. `cluster:install --no-mesh` installs Istio's CRDs
-  but no dataplane: every AuthorizationPolicy exists, none is enforced, and any
-  pod can call the harness as any agent. The chart refuses this unless the
-  cluster carries a marker only that task writes, and the task refuses CI.
+  run the ambient dataplane. The local install's no-mesh mode installs Istio's
+  CRDs but no dataplane: every AuthorizationPolicy exists, none is enforced,
+  and any pod can call the harness as any agent. The chart refuses this unless
+  the cluster carries a marker only that mode writes, and the mode refuses CI.
