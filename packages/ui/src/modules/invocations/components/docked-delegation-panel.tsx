@@ -30,10 +30,11 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
   const close = useStore((s) => s.setOpenDelegation);
   const agents = useAgentsList();
   const ids = useMemo(() => [id], [id]);
-  const { data: tree, isPending: treePending } = useDelegationTree(
-    driverAgentId,
-    ids,
-  );
+  const {
+    data: tree,
+    isPending: treePending,
+    isError: treeUnread,
+  } = useDelegationTree(driverAgentId, ids);
   const node = tree?.nodes[0];
   const driverName =
     agents.find((a) => a.id === driverAgentId)?.name ?? driverAgentId;
@@ -72,6 +73,8 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           driverAgentId={driverAgentId}
           driverName={driverName}
         />
+      ) : treeUnread ? (
+        <Notice text="This delegation could not be read." />
       ) : !treePending ? (
         <Notice text="This delegation is no longer recorded." />
       ) : (
