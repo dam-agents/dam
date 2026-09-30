@@ -222,10 +222,7 @@ impl Runtime for Smolvm {
     }
 
     fn console_tail(&self, id: &str) -> String {
-        console::tail_of(
-            &vm_data_dir(id).join(console::CONSOLE_LOG),
-            console::CONSOLE_TAIL_BYTES,
-        )
+        console::machine_tail(&vm_data_dir(id))
     }
 }
 
