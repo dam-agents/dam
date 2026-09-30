@@ -357,14 +357,17 @@ describe("slack reply / react tools", () => {
   });
 
   /**
-   * TEST_SCENARIO: Every agent post carries a Delete button. Slack tells the
-   * platform which message was clicked and who clicked it, so the only gate is
-   * the owner check through the clicker's identity link: an unlinked user is
-   * told to link, anyone else is refused, and only the owner gets the
-   * confirmation. On confirm the post and its attachment are deleted and the
-   * session that posted it is told, with the owner's reason.
+   * TEST_SCENARIO: An agent post carries no delete control of its own, so the
+   * owner removes one with the delete command, naming the post by its Slack
+   * link. Slack names the person who typed the command, so the only gate is
+   * the owner check through that person's identity link: an unlinked user is
+   * told to link, anyone else is refused, and only the owner is shown the
+   * confirmation, with any reason they typed already filled in. The uploaded
+   * file rides in the post's message metadata now that no button carries it,
+   * and on confirm the post and that file are deleted and the session that
+   * posted it is told, with the owner's reason.
    */
-  it("deletes a post from its Delete button for the owner only and tells the posting session", async () => {
+  it("deletes a post from the delete command for the owner only and tells the posting session", async () => {
     const prompts: { text: string; resume?: string }[] = [];
     const h = harness({
       sendPrompt: async (prompt, opts) => {
@@ -389,49 +392,58 @@ describe("slack reply / react tools", () => {
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
     const posted = (await posts.mock.results[0]!.value) as { ts: string };
-    const blocks = posts.mock.calls[0]![0].blocks as {
-      type: string;
-      elements?: { action_id: string; value: string }[];
-    }[];
-    const button = blocks.find((b) => b.type === "actions")!.elements![0]!;
-    expect(JSON.parse(button.value)).toEqual({ files: ["F1-report.md"] });
+    const sent = posts.mock.calls[0]![0];
+    expect(
+      (sent.blocks ?? []).map((b) => (b as { type: string }).type),
+    ).toEqual(["markdown", "context"]);
+    expect(sent.metadata).toEqual({
+      eventType: "agent_post",
+      payload: { files: ["F1-report.md"] },
+    });
     expect(
       h
         .records()
         .filter((r) => r.kind === "message" || r.kind === "upload")
         .map((r) => r.kind),
     ).toEqual(["message", "upload"]);
+
+    h.gw.setMessage("C1", {
+      ts: posted.ts,
+      threadTs: "1.1",
+      text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
+      ...(sent.blocks ? { blocks: sent.blocks } : {}),
+      ...(sent.metadata ? { metadata: sent.metadata } : {}),
+    });
+    const link = await h.gw.getPermalink("C1", posted.ts, "");
+
     const modals = vi.spyOn(h.gw, "openModal");
-    const click = (userId: string) =>
-      h.gw.fireBlockAction({
-        actionId: button.action_id,
-        value: button.value,
+    const run = (userId: string) =>
+      h.gw.fireCommand({
+        text: `delete ${link} Don't share that here.`,
         userId,
-        teamId: "",
-        channel: "C1",
-        message: {
-          ts: posted.ts,
-          threadTs: "1.1",
-          text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
-          blocks,
-        },
-        triggerId: "trigger-1",
+        channelId: "C1",
       });
     const ephemerals = () =>
       h.records().flatMap((r) => (r.kind === "ephemeral" ? [r.text] : []));
 
-    await click("U-STRANGER");
-    await click("U-OTHER");
-    expect(ephemerals()).toEqual([
-      "Link your account first: run `/dam login`, then press Delete again.",
+    expect(await run("U-STRANGER")).toBe(
+      "Link your account first: run `/dam login`, then run `/dam delete` again.",
+    );
+    expect(await run("U-OTHER")).toBe(
       "Only this agent's owner can delete its posts.",
-    ]);
+    );
     expect(modals).not.toHaveBeenCalled();
 
-    await click("U-OWNER");
+    expect(await run("U-OWNER")).toBe("");
     const deletes = vi.spyOn(h.gw, "deleteMessage");
     const fileDeletes = vi.spyOn(h.gw, "deleteFile");
-    const view = modals.mock.calls[0]![0].view as { private_metadata: string };
+    const view = modals.mock.calls[0]![0].view as {
+      private_metadata: string;
+      blocks: { element?: { initial_value?: string } }[];
+    };
+    expect(view.blocks[1]!.element!.initial_value).toBe(
+      "Don't share that here.",
+    );
     await h.gw.fireViewSubmission({
       callbackId: "agent_post_delete_confirm",
       privateMetadata: view.private_metadata,

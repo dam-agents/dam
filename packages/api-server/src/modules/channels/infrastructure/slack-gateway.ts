@@ -37,11 +37,12 @@ export interface SlackSlashCommand {
   userId: string;
   channelId: string;
   teamId: SlackWorkspace;
+  triggerId: string;
 }
 
 export type SlackChannelMessageEvent = SlackMentionEvent;
 
-export type SlackAck = (response: { text: string }) => Promise<void>;
+export type SlackAck = (response?: { text: string }) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
@@ -59,18 +60,7 @@ export interface SlackGatewayHandlers {
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
-  onBlockAction: (event: SlackBlockAction) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
-}
-
-export interface SlackBlockAction {
-  actionId: string;
-  value: string;
-  userId: string;
-  teamId: SlackWorkspace;
-  channel: string;
-  message: SlackMessage & { ts: string };
-  triggerId: string;
 }
 
 export interface SlackViewSubmission {
@@ -125,6 +115,11 @@ export interface SlackThreadWindow {
 
 export const THREAD_TAIL_MAX_PAGES = 20;
 
+export interface SlackMessageMetadata {
+  eventType: string;
+  payload: Record<string, unknown>;
+}
+
 export interface SlackMessage {
   ts?: string;
   user?: string;
@@ -135,6 +130,7 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
+  metadata?: SlackMessageMetadata;
 }
 
 export type SlackBlock = Record<string, unknown>;
@@ -155,6 +151,7 @@ export interface SlackPostMessage {
   unfurlMedia?: boolean;
   username?: string;
   iconUrl?: string;
+  metadata?: SlackMessageMetadata;
 }
 
 export interface SlackPostEphemeral {
@@ -289,6 +286,12 @@ export interface SlackGateway {
     oldest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
+  getMessage(args: {
+    channel: string;
+    ts: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<(SlackMessage & { ts: string }) | null>;
   uploadFile(args: SlackUpload): Promise<void>;
   reserveFile(args: {
     filename: string;
@@ -320,7 +323,12 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{ isMember: boolean; name: string | null } | null>;
+  ): Promise<{
+    isMember: boolean;
+    isDirectMessage: boolean;
+    name: string | null;
+  } | null>;
+  listSharedChannels(userId: string, teamId: SlackWorkspace): Promise<string[]>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,

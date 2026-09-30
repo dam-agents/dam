@@ -79,6 +79,7 @@ import {
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
+  findExternalUsersByIdentity,
   upsertIdentityLink,
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
@@ -807,6 +808,7 @@ export async function bootstrap() {
 
   const identityLinkService = createIdentityLinkService({
     findByExternalUser: findIdentityByExternalUser(db),
+    findExternalUsers: findExternalUsersByIdentity(db),
     upsert: upsertIdentityLink(db),
     delete: deleteIdentityLink(db),
   });

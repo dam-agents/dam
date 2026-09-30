@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -25,10 +26,16 @@ import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
+  useRunScheduleNow,
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
-import { precheckAlert, scheduleCadenceText } from "../lib/schedule-format.js";
+import {
+  precheckAlert,
+  runNowConfirmText,
+  runNowStartedText,
+  scheduleCadenceText,
+} from "../lib/schedule-format.js";
 import { ScheduleDetails } from "./schedule-details.js";
 
 interface Props {
@@ -52,6 +59,7 @@ export function ScheduleCard({
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
+  const runScheduleNow = useRunScheduleNow();
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
@@ -70,6 +78,24 @@ export function ScheduleCard({
       )
     )
       deleteSchedule.mutate({ id });
+  };
+
+  const handleRunNow = async () => {
+    if (
+      await showConfirm(runNowConfirmText(schedule), "Run now", {
+        confirmLabel: "Run now",
+      })
+    )
+      runScheduleNow.mutate(
+        { id },
+        {
+          onSuccess: () =>
+            emitToast({
+              kind: "success",
+              message: runNowStartedText(schedule),
+            }),
+        },
+      );
   };
 
   const handleReset = async () => {
@@ -152,6 +178,7 @@ export function ScheduleCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleEdit}>
               Edit schedule
             </DropdownMenuItem>
