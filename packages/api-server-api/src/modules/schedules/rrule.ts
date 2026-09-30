@@ -190,11 +190,56 @@ export function occurrenceRule(
 export function rruleProblem(options: RRuleOptions): string | null {
   if (!dayFiltersMatchSomeDate(options))
     return "its BYMONTH/BYMONTHDAY/BYYEARDAY/BYWEEKNO filters match no date";
+  if (!positionsPickSomething(options)) return "its BYSETPOS selects no time";
   if (!pinsTimeOfDay(options)) return null;
-  if (periodTimes(options).length === 0) return "its BYSETPOS selects no time";
   if (pinnedSlots(options).length === 0)
     return "its INTERVAL never lands on its BYHOUR/BYMINUTE";
   return null;
+}
+
+function positionsPickSomething(options: RRuleOptions): boolean {
+  const positions = toNumArray(options.bysetpos);
+  if (positions.length === 0) return true;
+  const size = largestPeriod(options);
+  return size === null || positions.some((p) => Math.abs(p) <= size);
+}
+
+function largestPeriod(options: RRuleOptions): number | null {
+  const distinct = (v: unknown) => new Set(toNumArray(v)).size || 1;
+  const perMinute = distinct(options.bysecond);
+  const perHour = distinct(options.byminute) * perMinute;
+  const perDay = distinct(options.byhour) * perHour;
+  switch (options.freq) {
+    case Frequency.SECONDLY:
+      return 1;
+    case Frequency.MINUTELY:
+      return perMinute;
+    case Frequency.HOURLY:
+      return perHour;
+    case Frequency.DAILY:
+      return perDay;
+    case Frequency.WEEKLY:
+      return daysInWeekPeriod(options) * perDay;
+    default:
+      return null;
+  }
+}
+
+function daysInWeekPeriod(options: RRuleOptions): number {
+  const weekdays = new Set(plainWeekdays(options.byweekday) ?? []).size;
+  if (weekdays > 0) return weekdays;
+  return filtersDays(options) ? 7 : 1;
+}
+
+function filtersDays(options: RRuleOptions): boolean {
+  const { bymonth, bymonthday, byyearday, byweekno, byeaster } = options;
+  return (
+    toNumArray(bymonth).length > 0 ||
+    toNumArray(bymonthday).length > 0 ||
+    toNumArray(byyearday).length > 0 ||
+    toNumArray(byweekno).length > 0 ||
+    typeof byeaster === "number"
+  );
 }
 
 function pinsTimeOfDay(options: RRuleOptions): boolean {
@@ -319,14 +364,8 @@ function modInverse(a: number, n: number): number {
 const PROBE_START = new Date(Date.UTC(2000, 0, 1));
 
 function dayFiltersMatchSomeDate(options: RRuleOptions): boolean {
+  if (!filtersDays(options)) return true;
   const { bymonth, bymonthday, byyearday, byweekno, byeaster } = options;
-  const filtered =
-    toNumArray(bymonth).length > 0 ||
-    toNumArray(bymonthday).length > 0 ||
-    toNumArray(byyearday).length > 0 ||
-    toNumArray(byweekno).length > 0 ||
-    typeof byeaster === "number";
-  if (!filtered) return true;
   const probe = new RRule({
     freq: Frequency.YEARLY,
     dtstart: PROBE_START,

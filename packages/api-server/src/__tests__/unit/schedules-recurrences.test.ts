@@ -280,10 +280,35 @@ describe("validateRRule", () => {
     ).not.toThrow();
   });
 
-  it("rejects a BYSETPOS that selects no time", () => {
-    expect(() => validateRRule("FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=3")).toThrow(
-      /BYSETPOS selects no time/,
-    );
+  it.each([
+    "FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=3",
+    "FREQ=HOURLY;BYSETPOS=3",
+    "FREQ=MINUTELY;BYSETPOS=2",
+    "FREQ=SECONDLY;BYSETPOS=2",
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0,30;BYSETPOS=-3",
+    "FREQ=WEEKLY;BYDAY=MO,TU;BYSETPOS=3",
+  ])("rejects %s, whose BYSETPOS selects no time", (rrule) => {
+    expect(() => validateRRule(rrule)).toThrow(/BYSETPOS selects no time/);
+  });
+
+  it.each([
+    "FREQ=HOURLY;BYSETPOS=-1",
+    "FREQ=HOURLY;BYSECOND=0,30;BYSETPOS=2",
+    "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=2",
+    "FREQ=WEEKLY;BYDAY=MO,TU;BYSETPOS=-1",
+    "FREQ=MONTHLY;BYDAY=MO;BYSETPOS=5",
+  ])("accepts %s, whose BYSETPOS selects a time", (rrule) => {
+    expect(() => validateRRule(rrule)).not.toThrow();
+  });
+
+  it("answers quickly for an unpinned BYSETPOS that selects no time", () => {
+    const started = Date.now();
+    const rrule = "FREQ=HOURLY;BYSETPOS=3";
+    const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
+    const spec = rruleSpec(rrule, "UTC", quiet);
+    expect(nextFireAt(spec, new Date("2026-09-25T11:47:00Z"))).toBeNull();
+    expect(() => validateHasVisibleOccurrence(rrule, quiet)).not.toThrow();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("accepts an unpinned interval that does not divide the day", () => {
