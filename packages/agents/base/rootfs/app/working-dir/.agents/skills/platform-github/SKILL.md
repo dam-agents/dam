@@ -29,6 +29,8 @@ It lists every GitHub account granted to this agent, named after the platform Co
   curl -H "Authorization: token $(gh auth token --user <account>)" https://api.github.com/user
   ```
 
+  On a GitHub Enterprise Server host (`GH_HOST` is set to it), gh ignores `GH_TOKEN`; use `GH_ENTERPRISE_TOKEN="$(gh auth token --hostname "$GH_HOST" --user <account>)"` instead, and send the curl header to `api.$GH_HOST`.
+
 - A state push from the platform (a grant change, or the user choosing a different default) resets the active account to the default. Switch again if you need the other one.
 
 ## When GitHub answers 403 or 404
