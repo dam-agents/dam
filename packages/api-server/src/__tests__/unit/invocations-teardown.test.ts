@@ -4,6 +4,7 @@ import type {
   InvocationRow,
   InvocationsRepository,
 } from "../../modules/invocations/infrastructure/invocations-repository.js";
+import { createDelegationControl } from "../../modules/invocations/services/delegation-control.js";
 import type { DelegationFramesPort } from "../../modules/invocations/services/delegation-frames.js";
 import { createDriverCascade } from "../../modules/invocations/services/driver-cascade.js";
 import { createTargetCapture } from "../../modules/invocations/services/target-capture.js";
@@ -221,5 +222,35 @@ describe("the driver cascade", () => {
     expect(reaper.reap).toHaveBeenCalledTimes(1);
     expect(reaper.reap.mock.calls[0]).toContainEqual({ capture: true });
     expect(calls.deleteByRoot).not.toHaveBeenCalled();
+  });
+});
+
+describe("stopping a delegation", () => {
+  test("fails a running child of the owner's driver and reaps it", async () => {
+    const { repo, calls } = fakeRepo([row("agent-a")]);
+    const reaper = { reap: vi.fn(async () => {}) };
+    await createDelegationControl({ repo, owner: "owner-1", reaper }).stop({
+      driverAgentId: "root-1",
+      id: "agent-a",
+    });
+    expect(calls.fail).toHaveBeenCalledWith("agent-a", "stopped by the user");
+    expect(reaper.reap).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not find a child that is another owner's or under another root", async () => {
+    const { repo, calls } = fakeRepo([
+      row("agent-a", { owner: "owner-2" }),
+      row("agent-b", { rootDriverId: "root-9" }),
+    ]);
+    const reaper = { reap: vi.fn(async () => {}) };
+    const control = createDelegationControl({ repo, owner: "owner-1", reaper });
+    await expect(
+      control.stop({ driverAgentId: "root-1", id: "agent-a" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      control.stop({ driverAgentId: "root-1", id: "agent-b" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(calls.fail).not.toHaveBeenCalled();
+    expect(reaper.reap).not.toHaveBeenCalled();
   });
 });

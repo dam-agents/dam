@@ -21,6 +21,7 @@ import {
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
+  composeInvocationsControlForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
@@ -173,6 +174,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const invocationsQuery = composeInvocationsQueryForOwner({
       db,
       owner: user.sub,
+      frames: delegationFrames,
+    });
+    const invocationsControl = composeInvocationsControlForOwner({
+      db,
+      owner: user.sub,
+      agents,
       frames: delegationFrames,
     });
     const { kbShares } = composeKbSharesForOwner({
@@ -337,6 +344,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       attention,
       egressRules,
       invocationsQuery,
+      invocationsControl,
       starterKits,
       kbShares,
       artifactLibrary,

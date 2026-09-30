@@ -1,9 +1,11 @@
 import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
+  operateAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  invocationStopInputSchema,
   invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
   invocationsTreeInputSchema,
@@ -27,5 +29,11 @@ export const invocationsRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.driverAgentId);
       return ctx.invocationsQuery.transcript(input);
+    }),
+  stop: operateAgentsProcedure
+    .input(invocationStopInputSchema)
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsControl.stop(input);
     }),
 });

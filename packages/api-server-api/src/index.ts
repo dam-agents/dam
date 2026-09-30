@@ -31,6 +31,7 @@ export type {
   SpawnInvocationResponse,
   InvocationView,
   InvocationStatus,
+  InvocationsControlService,
   InvocationsQueryService,
   DelegationNode,
 } from "./modules/invocations/types.js";

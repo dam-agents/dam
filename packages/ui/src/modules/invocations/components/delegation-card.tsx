@@ -1,4 +1,4 @@
-import { Bot, Chat } from "@carbon/icons-react";
+import { Bot, Chat, StopFilledAlt } from "@carbon/icons-react";
 import type { DelegationNode, TurnSummary } from "api-server-api";
 import { type ReactNode, useState } from "react";
 
@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
+import { useStopDelegation } from "../api/mutations.js";
 import { delegationState, firstLine } from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
@@ -95,7 +96,12 @@ export function DelegationCard({
               <ToolContentBlock text={JSON.stringify(node.result, null, 2)} />
             </Field>
           )}
-          <OpenConversation node={node} driverAgentId={driverAgentId} />
+          <div className="flex flex-wrap items-center gap-2">
+            <OpenConversation node={node} driverAgentId={driverAgentId} />
+            {node.status === "running" && (
+              <StopDelegation node={node} driverAgentId={driverAgentId} />
+            )}
+          </div>
           {node.children.map((child) => (
             <DelegationCard
               key={child.id}
@@ -108,6 +114,33 @@ export function DelegationCard({
         </div>
       )}
     </div>
+  );
+}
+
+function StopDelegation({
+  node,
+  driverAgentId,
+}: {
+  node: DelegationNode;
+  driverAgentId: string;
+}) {
+  const showConfirm = useStore((s) => s.showConfirm);
+  const stop = useStopDelegation();
+  return (
+    <Button
+      variant="destructive"
+      size="xs"
+      disabled={stop.isPending}
+      onClick={async () => {
+        const ok = await showConfirm(
+          "The agent is removed and the driver gets a failed result.",
+          "Stop this temporary agent?",
+        );
+        if (ok) stop.mutate({ driverAgentId, id: node.id });
+      }}
+    >
+      <StopFilledAlt size={14} /> Stop
+    </Button>
   );
 }
 
@@ -139,16 +172,12 @@ function OpenConversation({
       <Chat size={14} /> Open conversation
     </Button>
   );
-  return (
-    <div>
-      {blocked ? (
-        <Tooltip content={blocked} side="top">
-          <span className="inline-flex">{button}</span>
-        </Tooltip>
-      ) : (
-        button
-      )}
-    </div>
+  return blocked ? (
+    <Tooltip content={blocked} side="top">
+      <span className="inline-flex">{button}</span>
+    </Tooltip>
+  ) : (
+    button
   );
 }
 

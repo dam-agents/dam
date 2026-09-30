@@ -66,3 +66,5 @@ export const invocationTranscriptInputSchema = z.object({
   driverAgentId: z.string().min(1),
   id: z.string().min(1),
 });
+
+export const invocationStopInputSchema = invocationTranscriptInputSchema;

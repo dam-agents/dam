@@ -2,6 +2,7 @@ export { createInvocationsRepository } from "./infrastructure/invocations-reposi
 export {
   composeInvocationsForOwner,
   composeInvocationsQueryForOwner,
+  composeInvocationsControlForOwner,
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,

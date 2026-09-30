@@ -1,10 +1,12 @@
 import type { Db } from "db";
 import type {
   AgentsService,
+  InvocationsControlService,
   InvocationsQueryService,
   SkillsService,
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
+import { createDelegationControl } from "./services/delegation-control.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
@@ -82,6 +84,20 @@ export function composeInvocationsQueryForOwner(opts: {
     repo: createInvocationsRepository(opts.db),
     owner: opts.owner,
     frames: opts.frames,
+  });
+}
+
+export function composeInvocationsControlForOwner(opts: {
+  db: Db;
+  owner: string;
+  agents: AgentsService;
+  frames: DelegationFramesPort;
+}): InvocationsControlService {
+  const repo = createInvocationsRepository(opts.db);
+  return createDelegationControl({
+    repo,
+    owner: opts.owner,
+    reaper: composeReaper(repo, () => opts.agents, opts.frames),
   });
 }
 
