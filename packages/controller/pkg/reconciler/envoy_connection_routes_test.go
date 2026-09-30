@@ -255,7 +255,7 @@ func TestRenderEnvoyBootstrap_ConnectionChainReadsTheAddressFirst(t *testing.T) 
 			connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "api.github.com"),
 			connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "api.github.com"),
 		),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, luaFilterType)
@@ -349,7 +349,7 @@ func TestRenderEnvoyBootstrap_ContestedInjectorsSkipWhenTheMarkerNamesTheRival(t
 			connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "api.github.com"),
 			connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "api.github.com"),
 		),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	injectors := injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.github.com"))
@@ -370,7 +370,7 @@ func TestRenderEnvoyBootstrap_UncontestedInjectorsStayPlain(t *testing.T) {
 		connectionChain("api.example.com",
 			connectionCredential("conn-one", "platform-conn-one", "Authorization", "api.example.com"),
 		),
-	})
+	}, false)
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
 
@@ -402,7 +402,7 @@ func TestLuaConnectionAddressScript_RefusesUnaddressedContestedScopesItself(t *t
 func TestRenderEnvoyBootstrap_UnlabelledChainReadsNoAddress(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-cred-legacy", "api.example.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "connection_address")
 }
