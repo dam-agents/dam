@@ -26,6 +26,8 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
+import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
+import { registerInvocationTools } from "./invocation-tools.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -122,6 +124,7 @@ export interface McpSessionDeps {
   } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
+  driverOps: DriverOps;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -968,6 +971,8 @@ export function createMcpSession(
     },
   );
 
+  registerInvocationTools(server, { ops: deps.driverOps });
+
   if (deps.satellites)
     registerSatelliteTools(server, {
       ops: deps.satellites.ops,
@@ -992,6 +997,7 @@ export interface MountMcpDeps {
   onboardingChecklist: OnboardingChecklistOps;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
+  driverOpsFor: DriverOpsFor;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1055,6 +1061,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         : null,
       artifactLibrary,
       invocations,
+      driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

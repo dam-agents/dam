@@ -16,10 +16,10 @@ their own, since other harnesses do not get the skill.
    `packages/agents/claude-code/rootfs/app/working-dir/.agents/skills/dam-invoke/SKILL.md`:
    - Update the frontmatter `description` so it triggers on hand-off requests too, and add
      the platform MCP tools to `allowed-tools`.
-   - New first section, "Built-in sub-agent or platform sub-agent": the need-based rule
-     from the README, worded the same as `spawn_sub_agent`'s description.
+   - New first section, "Your harness's subagent or an invoked agent": the need-based rule
+     from the README, worded the same as `invoke_agent`'s description.
    - New section, "Hand off with a tool": `list_harnesses` / `list_connections` first
-     (ask the human when unclear, as today), `spawn_sub_agent`, `await_sub_agents` in a
+     (ask the human when unclear, as today), `invoke_agent`, `await_invocations` in a
      loop with the still-running ids, and that ending the turn is fine because the
      outcome arrives as a new turn.
    - Keep "The SDK", the setup options table, `ttl_ms`, failures, schema shorthand, and
@@ -39,6 +39,6 @@ their own, since other harnesses do not get the skill.
 ## Smoke test
 
 `mise run check`. Then on the local cluster with the rebuilt Claude Code image: ask an
-agent "delegate computing 6 * 7 to a sub-agent" and check it uses `spawn_sub_agent`, not a
+agent "delegate computing 6 * 7 to a sub-agent" and check it uses `invoke_agent`, not a
 script. Ask "run this 20-item eval loop on sub-agents and score each" and check it writes
 a script.
