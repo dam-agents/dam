@@ -64,6 +64,7 @@ export interface InvocationsRepository {
   markReaped(id: string): Promise<void>;
   markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
   listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
+  listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
@@ -256,6 +257,19 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .orderBy(desc(invocationsTable.createdAt))
         .limit(limit);
       return rows.reverse().map(toRow);
+    },
+
+    async listUnreapedByRoot(rootDriverId) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.rootDriverId, rootDriverId),
+            isNull(invocationsTable.reapedAt),
+          ),
+        );
+      return rows.map(toRow);
     },
 
     async listTargetsByOwner(owner) {

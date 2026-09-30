@@ -28,6 +28,7 @@ function makeService(row: InvocationRow) {
     listTerminalUnreaped: async () => [],
     markReaped: async () => {},
     listByRoot: async () => [],
+    listUnreapedByRoot: async () => [],
     delete: async () => {},
     markTranscriptCaptured: async () => {},
     deleteByRoot: async () => 0,

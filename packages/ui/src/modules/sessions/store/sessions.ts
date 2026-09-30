@@ -229,6 +229,7 @@ export const createSessionsSlice: StateCreator<
         terminalPaused: false,
         openFilePath: null,
         openArtifactId: null,
+        openDelegation: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,

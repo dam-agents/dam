@@ -64,6 +64,8 @@ function fakeRepo(rows: InvocationRow[]) {
     listTerminalUnreaped: async () => [],
     markReaped: calls.markReaped,
     listByRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
+    listUnreapedByRoot: async (root) =>
+      rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
     delete: async () => {},
     markTranscriptCaptured: calls.markTranscriptCaptured,
     deleteByRoot: calls.deleteByRoot,

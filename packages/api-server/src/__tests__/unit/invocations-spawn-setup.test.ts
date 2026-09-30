@@ -33,6 +33,7 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     markReaped: async () => {},
     markTranscriptCaptured: async () => {},
     listByRoot: async () => [],
+    listUnreapedByRoot: async () => [],
     delete: async () => {},
     deleteByRoot: async () => 0,
     ...overrides,

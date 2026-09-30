@@ -17,6 +17,10 @@ import {
 } from "../api/queries.js";
 import { delegationState, firstLine } from "../lib/delegation-state.js";
 import { framesToMessages } from "../lib/frames-to-messages.js";
+import {
+  DelegationOwnersProvider,
+  useDelegationOwners,
+} from "./delegation-owners.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
 interface Props {
@@ -114,6 +118,7 @@ function PanelBody({
     () => (transcript.data ? framesToMessages(transcript.data.frames) : []),
     [transcript.data],
   );
+  const owners = useDelegationOwners(messages);
 
   return (
     <>
@@ -140,7 +145,7 @@ function PanelBody({
         ) : transcript.isError ? (
           <Notice text="This conversation is no longer kept." />
         ) : (
-          <>
+          <DelegationOwnersProvider value={owners}>
             {transcript.data.truncated && (
               <Notice text="The start of this conversation was not kept." />
             )}
@@ -157,7 +162,7 @@ function PanelBody({
                 onDelete={noop}
               />
             ))}
-          </>
+          </DelegationOwnersProvider>
         )}
       </div>
       {finished && (

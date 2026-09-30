@@ -2,8 +2,6 @@ import { securityLog } from "../../../core/security-log.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import type { TargetReaper } from "./target-reaper.js";
 
-const ROOT_ROW_LIMIT = 2000;
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a deleted Agent leaves of its delegations. A
  * deleted target fails its own record and its running children, whose
@@ -39,9 +37,7 @@ export function createDriverCascade(deps: {
       }
       return;
     }
-    const unreaped = (
-      await deps.repo.listByRoot(agentId, ROOT_ROW_LIMIT)
-    ).filter((row) => row.reapedAt === null);
+    const unreaped = await deps.repo.listUnreapedByRoot(agentId);
     for (const row of unreaped) {
       if (row.status === "running") await failDriven(row, agentId);
       await deps.reaper.reap(row, { capture: false });

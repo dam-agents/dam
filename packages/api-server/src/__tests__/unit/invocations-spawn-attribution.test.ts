@@ -32,6 +32,7 @@ function makeService(opts: {
     listTerminalUnreaped: async () => [],
     markReaped: async () => {},
     listByRoot: async () => [],
+    listUnreapedByRoot: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
     },
