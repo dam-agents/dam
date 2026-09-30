@@ -521,7 +521,7 @@ export function ChatView() {
       >
         <div
           style={{ width: leftW }}
-          className="flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
+          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
           <Button
             variant="ghost"
@@ -539,6 +539,7 @@ export function ChatView() {
                 size={40}
                 sleeping={isAsleep(agentDisplay?.state)}
                 stopped={agentView.stopRequested}
+                className="@max-[149px]:hidden"
               />
             ) : (
               <span
@@ -549,13 +550,21 @@ export function ChatView() {
             <h1 className="text-sm font-bold text-foreground truncate">
               {selectedAgentName}
             </h1>
-            {agentView && <VmRuntimeBadge agent={agentView} />}
+            {agentView && (
+              <span className="flex shrink-0 @max-[119px]:hidden">
+                <VmRuntimeBadge
+                  agent={agentView}
+                  labelClassName="@max-[279px]:sr-only"
+                />
+              </span>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   aria-label={surfaceCopy.actionsAria}
+                  className="shrink-0"
                 >
                   <OverflowMenuVertical size={16} />
                 </Button>

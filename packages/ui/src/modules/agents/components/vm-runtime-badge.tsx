@@ -12,7 +12,13 @@ import type { AgentView } from "../../../types.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { runtimeBadge } from "../utils/runtime-migration.js";
 
-export function VmRuntimeBadge({ agent }: { agent: AgentView }) {
+export function VmRuntimeBadge({
+  agent,
+  labelClassName,
+}: {
+  agent: AgentView;
+  labelClassName?: string;
+}) {
   const badge = runtimeBadge(agent, useVmRuntime());
   if (!badge) return null;
   const { Icon, variant } = match(badge.kind)
@@ -23,7 +29,8 @@ export function VmRuntimeBadge({ agent }: { agent: AgentView }) {
     .exhaustive(() => ({ Icon: ContainerRuntime, variant: "muted" as const }));
   return (
     <Badge variant={variant} className="shrink-0 gap-1" title={badge.title}>
-      <Icon size={12} aria-hidden /> {badge.label}
+      <Icon size={12} aria-hidden />
+      <span className={labelClassName}>{badge.label}</span>
     </Badge>
   );
 }
