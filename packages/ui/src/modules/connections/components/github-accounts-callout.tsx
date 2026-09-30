@@ -15,6 +15,7 @@ interface Props {
   granted: readonly ConnectionView[];
   grants: ReadonlyMap<string, GrantDetails>;
   onPrefer: (connectionId: string) => void;
+  pending?: boolean;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ export function GitHubAccountsCallout({
   granted,
   grants,
   onPrefer,
+  pending = false,
   className,
 }: Props) {
   const groups = useMemo(
@@ -66,6 +68,7 @@ export function GitHubAccountsCallout({
                     key={account.connectionId}
                     variant="outline"
                     size="sm"
+                    disabled={pending}
                     onClick={() => onPrefer(account.connectionId)}
                     data-testid={`prefer-connection-${account.connectionId}`}
                   >

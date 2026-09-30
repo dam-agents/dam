@@ -71,6 +71,7 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
         onPreferConnection={(connectionId) =>
           setPreferred.mutate({ agentId, connectionId })
         }
+        preferPending={setPreferred.isPending}
         leading={
           satellites.granted.length > 0 && (
             <SatellitesGroupCard

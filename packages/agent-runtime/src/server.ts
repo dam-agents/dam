@@ -233,9 +233,6 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: ({ namesChanged }) => {
         acpRuntime.refreshEnv({ force: namesChanged });
         podService?.refreshEnv();
-        configureGitCredentialHelper(envStore, (msg) =>
-          process.stderr.write(`[git] ${msg}\n`),
-        );
         scheduleRecovery();
       },
     }),
@@ -243,7 +240,12 @@ const runtimeChannel = await composeRuntimeChannel({
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  ...(reconcileOnState ? { onSnapshotProcessed: reconcileOnState } : {}),
+  onSnapshotProcessed: (contributions) => {
+    reconcileOnState?.(contributions);
+    configureGitCredentialHelper(envStore, (msg) =>
+      process.stderr.write(`[git] ${msg}\n`),
+    );
+  },
 });
 
 seedHarnessModel = async () => {

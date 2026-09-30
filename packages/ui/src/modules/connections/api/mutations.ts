@@ -1,10 +1,35 @@
 import { useMutation } from "@tanstack/react-query";
+import type { AgentConnections } from "api-server-api";
 
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
 export function useSetPreferredConnection() {
   return useMutation({
-    ...trpc.connections.setPreferredConnection.mutationOptions(),
+    mutationFn: (vars: { agentId: string; connectionId: string }) =>
+      api.connections.setPreferredConnection.mutate(vars),
+    onMutate: async (vars) => {
+      const key = trpc.connections.getAgentConnections.queryKey({
+        agentId: vars.agentId,
+      });
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AgentConnections>(key);
+      if (previous) {
+        queryClient.setQueryData<AgentConnections>(key, {
+          ...previous,
+          connections: previous.connections.map((c) => ({
+            ...c,
+            preferred: c.connectionId === vars.connectionId,
+          })),
+        });
+      }
+      return { previous, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous)
+        queryClient.setQueryData(context.key, context.previous);
+    },
     meta: {
       invalidates: [trpc.connections.getAgentConnections.queryKey()],
       errorToast: "Couldn't change the default account",

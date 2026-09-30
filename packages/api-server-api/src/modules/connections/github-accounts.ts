@@ -45,10 +45,12 @@ function accountNames(members: readonly GitHubAccountSource[]): string[] {
 }
 
 function byGrantTime(a: GitHubAccountSource, b: GitHubAccountSource): number {
-  if (a.grantedAt === b.grantedAt) return 0;
-  if (a.grantedAt === undefined) return 1;
-  if (b.grantedAt === undefined) return -1;
-  return a.grantedAt < b.grantedAt ? -1 : 1;
+  if (a.grantedAt !== b.grantedAt) {
+    if (a.grantedAt === undefined) return 1;
+    if (b.grantedAt === undefined) return -1;
+    return a.grantedAt < b.grantedAt ? -1 : 1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 export function githubAccountGroups(

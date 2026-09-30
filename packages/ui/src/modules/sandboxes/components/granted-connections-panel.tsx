@@ -24,6 +24,7 @@ interface Props {
   onOpenCatalog: () => void;
   grants?: ReadonlyMap<string, GrantDetails>;
   onPreferConnection?: (connectionId: string) => void;
+  preferPending?: boolean;
   title?: string;
   leading?: React.ReactNode;
 }
@@ -36,6 +37,7 @@ export function GrantedConnectionsPanel({
   onOpenCatalog,
   grants,
   onPreferConnection,
+  preferPending,
   title = "My connections",
   leading,
 }: Props) {
@@ -63,6 +65,7 @@ export function GrantedConnectionsPanel({
           granted={granted}
           grants={grants}
           onPrefer={onPreferConnection}
+          pending={preferPending}
           className="mb-3"
         />
       )}

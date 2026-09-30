@@ -85,6 +85,27 @@ describe("githubAccountGroups", () => {
     expect(group?.accounts.find((a) => a.active)?.connectionId).toBe("conn-b");
   });
 
+  /** TEST_SCENARIO: Two grants made in one call share a grant time. The active
+   * account must still be the same one on every delivery, so the tie breaks on
+   * the connection id rather than on input order. */
+  it("breaks equal grant times on the connection id", () => {
+    const at = "2026-09-01T00:00:00Z";
+    const [forward] = githubAccountGroups([
+      github("conn-b", "Personal", { grantedAt: at }),
+      github("conn-a", "Work", { grantedAt: at }),
+    ]);
+    const [reversed] = githubAccountGroups([
+      github("conn-a", "Work", { grantedAt: at }),
+      github("conn-b", "Personal", { grantedAt: at }),
+    ]);
+    expect(forward?.accounts.find((a) => a.active)?.connectionId).toBe(
+      "conn-a",
+    );
+    expect(reversed?.accounts.map((a) => a.connectionId)).toEqual(
+      forward?.accounts.map((a) => a.connectionId),
+    );
+  });
+
   /** TEST_SCENARIO: Account names are what `gh auth switch -u` takes, so they
    * are derived from the Connection names and kept distinct. */
   it("derives distinct account names from the connection names", () => {
