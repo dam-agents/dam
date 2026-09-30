@@ -382,6 +382,27 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	assert.NotEqual(t, first, second, "the next attempt carries a capability of its own")
 }
 
+// TEST_SCENARIO: an Agent with no session goes idle while its home is being copied. The idle checker hibernating it stops the machine, and that stop must keep the machine marked as migrating: the runner reads the mark off the latest spec it holds, so a stop without it refuses the running Job's seed and costs a copy attempt.
+func TestHibernatingAnAgentMidCopyKeepsItsMachineSeedable(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annLastActivity] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	agent.Spec.HibernationTimeout = &metav1.Duration{Duration: time.Minute}
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NotNil(t, node.spec("my-agent").Migration)
+
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.check(ctx)
+
+	assert.False(t, node.spec("my-agent").Running)
+	assert.NotNil(t, node.spec("my-agent").Migration, "the copy's capability can still seed the machine")
+}
+
 // TEST_SCENARIO: the copy is bounded. Once its attempts are spent the migration is Failed, with the last attempt's reason, rather than retrying forever; the container stays down, since it was stopped for the copy, until the user acts. A retry the user asks for after the failure starts over from the preflight with a fresh machine and its attempts reset, and the container serves again meanwhile.
 func TestACopyOutOfAttemptsFailsAndARetryStartsOver(t *testing.T) {
 	ctx := context.Background()
