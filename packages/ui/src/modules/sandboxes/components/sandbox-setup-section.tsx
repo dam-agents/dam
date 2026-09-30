@@ -84,29 +84,6 @@ export function SandboxSetupSection({ f }: Props) {
         </p>
       </section>
 
-      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
-
-      <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-      />
-
-      <KnowledgeSection agent={agent} />
-
-      <section className="mb-8">
-        <SectionLabel spaced>Network access</SectionLabel>
-        <Callout inset>
-          <AgentEgressEditor
-            agentId={agent.id}
-            currentPreset={f.currentPreset}
-            staged={f.egressStaged}
-          />
-        </Callout>
-      </section>
-
       <section className="mb-8">
         <SectionLabel spaced>Lifecycle</SectionLabel>
         <Inset>
@@ -124,6 +101,29 @@ export function SandboxSetupSection({ f }: Props) {
             )}
           />
         </Inset>
+      </section>
+
+      <SandboxSizeSection
+        sizeCpuMilli={f.sizeCpuMilli}
+        sizeMemoryMi={f.sizeMemoryMi}
+        onChange={f.setSize}
+        disabled={f.saving}
+        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+      />
+
+      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+
+      <KnowledgeSection agent={agent} />
+
+      <section className="mb-8">
+        <SectionLabel spaced>Network access</SectionLabel>
+        <Callout inset>
+          <AgentEgressEditor
+            agentId={agent.id}
+            currentPreset={f.currentPreset}
+            staged={f.egressStaged}
+          />
+        </Callout>
       </section>
 
       <section className="mb-8">
