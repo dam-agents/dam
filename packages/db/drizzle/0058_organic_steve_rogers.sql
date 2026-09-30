@@ -1,2 +1,0 @@
-ALTER TABLE "invocations" ADD COLUMN "transcript_captured" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE "invocations" ADD COLUMN "transcript_truncated" boolean DEFAULT false NOT NULL;

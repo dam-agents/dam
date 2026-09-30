@@ -1,5 +1,5 @@
 {
-  "id": "ab13baca-9419-4105-8a6b-a90172f31c69",
+  "id": "aae5dabf-ce9f-4f28-af17-c7849b7bd7ea",
   "prevId": "5e5e0f54-e4ed-43a2-9407-7dd3f1bcf276",
   "version": "7",
   "dialect": "postgresql",
@@ -1853,11 +1853,31 @@
           "primaryKey": false,
           "notNull": false
         },
+        "reaped_at": {
+          "name": "reaped_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "transcript_captured": {
+          "name": "transcript_captured",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "transcript_truncated": {
+          "name": "transcript_truncated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -1887,6 +1907,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "invocations_unreaped_idx": {
+          "name": "invocations_unreaped_idx",
+          "columns": [
+            {
+              "expression": "completed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"invocations\".\"reaped_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
