@@ -609,6 +609,69 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's empty disk is still formatted from the template.
+    #[test]
+    fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
+        use std::os::unix::fs::FileExt;
+        let home = Home::new("keep-disk");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let ext4 = |path: &std::path::Path, payload: &[u8]| {
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(false)
+                .open(path)
+                .unwrap();
+            file.write_all_at(&[0x53, 0xEF], 1024 + 56).unwrap();
+            file.write_all_at(payload, 1 << 20).unwrap();
+        };
+        let payload = |path: &std::path::Path| {
+            let mut read = [0; 8];
+            fs::File::open(path)
+                .unwrap()
+                .read_exact_at(&mut read, 1 << 20)
+                .unwrap();
+            read
+        };
+        fs::create_dir_all(home.path.join(".smolvm")).unwrap();
+        ext4(
+            &home.path.join(".smolvm/storage-template.ext4"),
+            b"TEMPLATE",
+        );
+        let smolvm = Smolvm::open().unwrap();
+        let spec = spec();
+        let launch = launch();
+        for id in ["used", "fresh"] {
+            smolvm
+                .create(
+                    id,
+                    &Machine {
+                        spec: &spec,
+                        image: "quay.io/x/vm:1",
+                        host_port: 32000,
+                        share: &share,
+                        launch: &launch,
+                    },
+                )
+                .unwrap();
+        }
+        ext4(&storage_disk_path("used"), b"HOMEDATA");
+        let proc_root = home.path.join("proc");
+        fs::create_dir_all(&proc_root).unwrap();
+
+        for id in ["used", "fresh"] {
+            clear_for_start(id, &proc_root, &vm_data_dir(id), VMM_EXIT_WAIT).unwrap();
+            StorageDisk::open_or_create_at(&storage_disk_path(id), 20)
+                .unwrap()
+                .ensure_formatted()
+                .unwrap();
+        }
+
+        assert_eq!(&payload(&storage_disk_path("used")), b"HOMEDATA");
+        assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+    }
+
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
     #[test]
     fn an_update_reshapes_the_stopped_machine_and_keeps_its_disk() {
