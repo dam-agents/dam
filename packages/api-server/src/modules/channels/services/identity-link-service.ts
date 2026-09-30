@@ -2,6 +2,7 @@ import type { IdentityLink } from "../infrastructure/identity-links-repository.j
 
 export interface IdentityLinkService {
   resolve(provider: string, externalUserId: string): Promise<string | null>;
+  externalUsersOf(provider: string, keycloakSub: string): Promise<string[]>;
   link(
     provider: string,
     externalUserId: string,
@@ -15,6 +16,10 @@ export function createIdentityLinkService(deps: {
     provider: string,
     externalUserId: string,
   ) => Promise<IdentityLink | null>;
+  findExternalUsers: (
+    provider: string,
+    keycloakSub: string,
+  ) => Promise<string[]>;
   upsert: (
     provider: string,
     externalUserId: string,
@@ -26,6 +31,10 @@ export function createIdentityLinkService(deps: {
     async resolve(provider, externalUserId) {
       const link = await deps.findByExternalUser(provider, externalUserId);
       return link?.keycloakSub ?? null;
+    },
+
+    async externalUsersOf(provider, keycloakSub) {
+      return deps.findExternalUsers(provider, keycloakSub);
     },
 
     async link(provider, externalUserId, keycloakSub) {

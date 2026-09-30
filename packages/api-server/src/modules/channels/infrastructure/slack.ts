@@ -90,7 +90,6 @@ import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
   SlackBlock,
-  SlackBlockAction,
   SlackBotJoinedChannelEvent,
   SlackConversationName,
   SlackConversationRef,
@@ -129,11 +128,11 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 import {
-  DELETE_POST_ACTION,
   DELETE_POST_CONFIRM,
-  deletePostActions,
+  agentPostMetadata,
   deletePostFileIds,
   deletePostModal,
+  parseAgentPostLink,
   parseDeletePostModal,
 } from "./slack-post-delete.js";
 import {
@@ -807,6 +806,10 @@ async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
+  refuseOutsideOwnerReach: (
+    conversationId: string,
+    teamId: SlackWorkspace,
+  ) => Promise<{ error: string } | null>,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -848,7 +851,7 @@ async function resolveOutboundTarget(
   if (conversationId.startsWith("D")) {
     return { id: conversationId, teamId };
   }
-  let info: { isMember: boolean } | null;
+  let info: { isMember: boolean; isDirectMessage: boolean } | null;
   try {
     info = await gateway.getConversationInfo(conversationId, teamId);
   } catch (err) {
@@ -865,6 +868,10 @@ async function resolveOutboundTarget(
     return {
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
+  }
+  if (!info.isDirectMessage) {
+    const refused = await refuseOutsideOwnerReach(conversationId, teamId);
+    if (refused) return refused;
   }
   return { id: conversationId, teamId };
 }
@@ -1070,6 +1077,57 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
+
+  async function ownerReach(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<Set<string> | "unlinked"> {
+    const owner = await getInstanceOwner(instanceName);
+    const slackUsers = owner
+      ? await identityLinks.externalUsersOf("slack", owner)
+      : [];
+    if (slackUsers.length === 0) return "unlinked";
+    const reach = new Set<string>();
+    for (const userId of slackUsers) {
+      for (const id of await gw.listSharedChannels(userId, teamId)) {
+        reach.add(id);
+      }
+    }
+    return reach;
+  }
+
+  async function refuseOutsideOwnerReach(
+    gw: SlackGateway,
+    instanceName: string,
+    conversationId: string,
+    teamId: SlackWorkspace,
+  ): Promise<{ error: string } | null> {
+    let reach: Set<string> | "unlinked";
+    try {
+      reach = await ownerReach(gw, instanceName, teamId);
+    } catch (err) {
+      return {
+        error: `could not check whether your owner is a member of ${conversationId}: ${formatError(err)}`,
+      };
+    }
+    if (reach === "unlinked") {
+      return {
+        error:
+          `You may reach only channels your owner is a member of, and your ` +
+          `owner has not linked their Slack account: ask them to run ` +
+          `\`/${brandShort} login\` in Slack`,
+      };
+    }
+    if (!reach.has(conversationId)) {
+      return {
+        error:
+          `your owner is not a member of ${conversationId}. You may reach ` +
+          `only channels your owner is in`,
+      };
+    }
+    return null;
+  }
 
   type TurnRef = {
     channel: string;
@@ -1590,21 +1648,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     agentId: string;
     userId: string;
     channel: string;
+    replyChannel: string;
     teamId: SlackWorkspace;
-    replyThreadTs?: string;
     post: SlackMessage & { ts: string };
     fileIds: string[];
     expiresAt: number;
   };
-
-  function ephemeralThreadTs(message: SlackMessage & { ts: string }) {
-    const { threadTs } = message;
-    return threadTs &&
-      threadTs !== message.ts &&
-      message.subtype !== "thread_broadcast"
-      ? threadTs
-      : undefined;
-  }
 
   const pendingPostDeletes = new Map<string, PendingPostDelete>();
 
@@ -1634,33 +1683,58 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ok: false,
       text: invoker
         ? "Only this agent's owner can delete its posts."
-        : `Link your account first: run \`/${brandShort} login\`, then press Delete again.`,
+        : `Link your account first: run \`/${brandShort} login\`, then run \`/${brandShort} delete\` again.`,
     };
   }
 
-  async function handleBlockAction(event: SlackBlockAction): Promise<void> {
+  async function handleDeleteCommand(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ): Promise<void> {
     const gw = gateway;
-    if (event.actionId !== DELETE_POST_ACTION || !gw) return;
-    const agentId = parseAgentFooter(event.message)?.agentId;
-    if (!agentId) return;
-    const replyThreadTs = ephemeralThreadTs(event.message);
-    const reply = (text: string) =>
-      gw
-        .postEphemeral({
-          channel: event.channel,
-          user: event.userId,
-          ...(replyThreadTs ? { threadTs: replyThreadTs } : {}),
-          text,
-          teamId: event.teamId,
-        })
-        .catch(() => {});
+    if (!gw) {
+      await ack({
+        text: "Slack isn't connected right now. Try again shortly.",
+      });
+      return;
+    }
+    const after = command.text.trim().replace(/^\S+\s*/, "");
+    const linkText = /^\S+/.exec(after)?.[0] ?? "";
+    const link = parseAgentPostLink(linkText);
+    if (!link) {
+      await ack({
+        text:
+          `Usage: \`/${brandShort} delete <message link> [reason]\`. Get the ` +
+          `link from the post's "Copy link" action.`,
+      });
+      return;
+    }
+    const reason = after.slice(linkText.length).trim() || null;
+    const post = await gw
+      .getMessage({ ...link, teamId: command.teamId })
+      .catch(() => null);
+    if (!post) {
+      await ack({
+        text:
+          "I can't find that message. Check the link points at a message in " +
+          "this workspace, and that I am in that conversation.",
+      });
+      return;
+    }
+    const agentId = parseAgentFooter(post)?.agentId;
+    if (!agentId) {
+      await ack({
+        text: "That message is not an agent post, so there is nothing for me to delete.",
+      });
+      return;
+    }
     const auth = await authorizePostDelete(
-      event.userId,
+      command.userId,
       agentId,
-      event.channel,
+      link.channel,
     );
     if (!auth.ok) {
-      await reply(auth.text);
+      await ack({ text: auth.text });
       return;
     }
     const now = Date.now();
@@ -1669,31 +1743,33 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const pendingId = randomUUID();
     pendingPostDeletes.set(pendingId, {
       agentId,
-      userId: event.userId,
-      channel: event.channel,
-      teamId: event.teamId,
-      ...(replyThreadTs ? { replyThreadTs } : {}),
-      post: event.message,
-      fileIds: deletePostFileIds(event.value),
+      userId: command.userId,
+      channel: link.channel,
+      replyChannel: command.channelId,
+      teamId: command.teamId,
+      post,
+      fileIds: deletePostFileIds(post),
       expiresAt: now + PENDING_POST_DELETE_TTL_MS,
     });
     try {
       await gw.openModal({
-        triggerId: event.triggerId,
-        teamId: event.teamId,
-        view: deletePostModal({
-          pendingId,
-          channel: event.channel,
-          ...(replyThreadTs ? { threadTs: replyThreadTs } : {}),
-        }),
+        triggerId: command.triggerId,
+        teamId: command.teamId,
+        view: deletePostModal(
+          { pendingId, channel: command.channelId },
+          reason,
+        ),
       });
+      await ack();
     } catch (err) {
       pendingPostDeletes.delete(pendingId);
       getLogger().warn(
         { agentId, err: formatError(err) },
         "slack.post_delete.modal_failed",
       );
-      await reply("Couldn't open the confirmation. Press Delete again.");
+      await ack({
+        text: `Couldn't open the confirmation. Run \`/${brandShort} delete\` again.`,
+      });
     }
   }
 
@@ -1708,20 +1784,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const pending = pendingPostDeletes.get(metadata.pendingId);
     if (pending && pending.userId !== event.userId) return;
     pendingPostDeletes.delete(metadata.pendingId);
-    const channel = pending?.channel ?? metadata.channel;
-    const threadTs = pending ? pending.replyThreadTs : metadata.threadTs;
+    const channel = pending?.replyChannel ?? metadata.channel;
     const reply = (text: string) =>
       gw
         .postEphemeral({
           channel,
           user: event.userId,
-          ...(threadTs ? { threadTs } : {}),
           text,
           teamId: pending?.teamId ?? event.teamId,
         })
         .catch(() => {});
     if (!pending || pending.expiresAt < Date.now()) {
-      await reply("That confirmation expired. Press Delete on the post again.");
+      await reply(
+        `That confirmation expired. Run \`/${brandShort} delete\` again.`,
+      );
       return;
     }
     const auth = await authorizePostDelete(
@@ -1747,7 +1823,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     try {
       deleted = await gw.deleteMessage(channel, post.ts, teamId);
     } catch (err) {
-      return `Couldn't delete the post (${formatError(err)}). Press Delete on it again to retry.`;
+      return `Couldn't delete the post (${formatError(err)}). Run \`/${brandShort} delete\` again to retry.`;
     }
     let fileFailure: string | null = null;
     for (const fileId of fileIds) {
@@ -2841,12 +2917,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
+      .with("delete", async () => {
+        await handleDeleteCommand(command, ack);
+      })
       .with("default", async () => {
         await handleDefaultCommand(rest, command, ack);
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, or \`/${brandShort} ambient [agent] on|off\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3954,7 +4033,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onMessage: handleChannelMessage,
         onDirectMessage: handleDirectMessage,
         onBotJoinedChannel: handleBotJoinedChannel,
-        onBlockAction: handleBlockAction,
         onViewSubmission: handleViewSubmission,
       });
       if (!connected) {
@@ -4056,8 +4134,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               : id,
         };
       });
+      const reachable = new Set<string>();
+      if (gw) {
+        for (const teamId of new Set(bound.map((c) => c.teamId))) {
+          try {
+            const reach = await ownerReach(gw, instanceName, teamId);
+            if (reach !== "unlinked") reach.forEach((id) => reachable.add(id));
+          } catch (err) {
+            process.stderr.write(
+              `[slack] owner channel lookup failed: ${formatError(err)}\n`,
+            );
+          }
+        }
+      }
       const others = botChannels
-        .filter((c) => !boundIds.includes(c.id))
+        .filter((c) => !boundIds.includes(c.id) && reachable.has(c.id))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((c) => ({ id: c.id, title: `#${c.name}` }));
       return [...boundConversations, ...others];
@@ -4088,6 +4179,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         conversationId,
+        (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) {
         return target;
@@ -4113,11 +4205,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 teamId: target.teamId,
                 text,
                 ...persona,
-                blocks: [
-                  { type: "markdown", text },
-                  contextBlock,
-                  deletePostActions(fileIds),
-                ],
+                blocks: [{ type: "markdown", text }, contextBlock],
+                metadata: agentPostMetadata(fileIds),
                 ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
               }),
@@ -4348,6 +4437,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         args.conversationId ?? turn?.channel,
+        async (id, teamId) =>
+          id === turn?.channel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 
@@ -4369,10 +4462,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               threadTs,
               text: args.text,
               ...persona,
-              blocks: [
-                ...renderAssistantBlocks(footer, args.text),
-                deletePostActions(fileIds),
-              ],
+              blocks: renderAssistantBlocks(footer, args.text),
+              metadata: agentPostMetadata(fileIds),
               ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
               ...(args.unfurlLinks !== undefined
                 ? { unfurlLinks: args.unfurlLinks }
@@ -4428,6 +4519,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         args.conversationId ?? turnChannel,
+        async (id, teamId) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 
@@ -4579,6 +4674,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         query.conversationId ?? turnChannel,
+        async (id, teamId) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) return target;
 

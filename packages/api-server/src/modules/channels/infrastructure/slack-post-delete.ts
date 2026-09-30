@@ -1,45 +1,60 @@
-import type { SlackBlock } from "./slack-gateway.js";
-
-export const DELETE_POST_ACTION = "agent_post_delete";
+import type {
+  SlackBlock,
+  SlackMessage,
+  SlackMessageMetadata,
+} from "./slack-gateway.js";
 
 export const DELETE_POST_CONFIRM = "agent_post_delete_confirm";
+
+const AGENT_POST_METADATA = "agent_post";
 
 const REASON_INPUT = "reason";
 
 const REASON_MAX_CHARS = 2000;
 
-export function deletePostActions(fileIds: string[]): SlackBlock {
+const POST_LINK_RE = /\/archives\/([A-Za-z0-9]+)\/p(\d{10})(\d{6})/;
+
+const THREAD_TS_RE = /[?&]thread_ts=([\d.]+)/;
+
+export interface AgentPostLink {
+  channel: string;
+  ts: string;
+  threadTs?: string;
+}
+
+export function parseAgentPostLink(raw: string): AgentPostLink | null {
+  const link = raw.trim().replace(/^</, "").replace(/>$/, "").split("|")[0];
+  const target = link ? POST_LINK_RE.exec(link) : null;
+  if (!target || !link) return null;
+  const threadTs = THREAD_TS_RE.exec(link)?.[1];
   return {
-    type: "actions",
-    elements: [
-      {
-        type: "button",
-        action_id: DELETE_POST_ACTION,
-        text: { type: "plain_text", text: "Delete (owner only)" },
-        value: JSON.stringify({ files: fileIds }),
-      },
-    ],
+    channel: target[1]!,
+    ts: `${target[2]!}.${target[3]!}`,
+    ...(threadTs ? { threadTs } : {}),
   };
 }
 
-export function deletePostFileIds(value: string): string[] {
-  try {
-    const files = (JSON.parse(value) as { files?: unknown }).files;
-    return Array.isArray(files)
-      ? files.filter((f): f is string => typeof f === "string")
-      : [];
-  } catch {
-    return [];
-  }
+export function agentPostMetadata(fileIds: string[]): SlackMessageMetadata {
+  return { eventType: AGENT_POST_METADATA, payload: { files: fileIds } };
+}
+
+export function deletePostFileIds(message: SlackMessage): string[] {
+  if (message.metadata?.eventType !== AGENT_POST_METADATA) return [];
+  const files = message.metadata.payload["files"];
+  return Array.isArray(files)
+    ? files.filter((f): f is string => typeof f === "string")
+    : [];
 }
 
 export interface DeletePostModalMetadata {
   pendingId: string;
   channel: string;
-  threadTs?: string;
 }
 
-export function deletePostModal(metadata: DeletePostModalMetadata): SlackBlock {
+export function deletePostModal(
+  metadata: DeletePostModalMetadata,
+  reason: string | null,
+): SlackBlock {
   return {
     type: "modal",
     callback_id: DELETE_POST_CONFIRM,
@@ -67,6 +82,9 @@ export function deletePostModal(metadata: DeletePostModalMetadata): SlackBlock {
           action_id: REASON_INPUT,
           multiline: true,
           max_length: REASON_MAX_CHARS,
+          ...(reason
+            ? { initial_value: reason.slice(0, REASON_MAX_CHARS) }
+            : {}),
         },
       },
     ],

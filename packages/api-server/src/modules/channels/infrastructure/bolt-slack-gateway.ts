@@ -70,7 +70,14 @@ function toSlackMessage(m: {
   reply_count?: number;
   latest_reply?: string;
   subtype?: string;
+  metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
 }): SlackMessage {
+  const metadata = m.metadata?.event_type
+    ? {
+        eventType: m.metadata.event_type,
+        payload: m.metadata.event_payload ?? {},
+      }
+    : null;
   return {
     ts: m.ts,
     user: m.user,
@@ -81,6 +88,7 @@ function toSlackMessage(m: {
     ...(m.reply_count ? { replyCount: m.reply_count } : {}),
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
+    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -298,29 +306,13 @@ export function createBoltSlackGateway(
             userId: command.user_id,
             channelId: command.channel_id,
             teamId: command.team_id ?? NO_WORKSPACE,
+            triggerId: command.trigger_id,
           },
           (response) =>
-            ack({ response_type: "ephemeral", text: response.text }),
+            response
+              ? ack({ response_type: "ephemeral", text: response.text })
+              : ack(),
         );
-      });
-
-      bolt.action(/.+/, async ({ ack, body, context }) => {
-        await ack();
-        if (body.type !== "block_actions") return;
-        const action = body.actions[0];
-        const message = body.message as
-          (Parameters<typeof toSlackMessage>[0] & { ts?: string }) | undefined;
-        const channel = body.channel?.id ?? body.container?.channel_id;
-        if (!action || !message?.ts || !channel) return;
-        await handlers.onBlockAction({
-          actionId: action.action_id,
-          value: "value" in action ? (action.value ?? "") : "",
-          userId: body.user.id,
-          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
-          channel,
-          message: { ...toSlackMessage(message), ts: message.ts },
-          triggerId: body.trigger_id,
-        });
       });
 
       bolt.view(/.+/, async ({ ack, body, view, context }) => {
@@ -412,6 +404,14 @@ export function createBoltSlackGateway(
           : {}),
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
+        ...(args.metadata
+          ? {
+              metadata: {
+                event_type: args.metadata.eventType,
+                event_payload: args.metadata.payload,
+              },
+            }
+          : {}),
       } as ChatPostMessageArgs);
       return res.ts ? { ts: res.ts } : null;
     },
@@ -586,6 +586,32 @@ export function createBoltSlackGateway(
       );
     },
 
+    async getMessage(args) {
+      if (!app) return null;
+      const token = await tokenFor(args.teamId);
+      if (!token) return null;
+      const page = args.threadTs
+        ? await app.client.conversations.replies({
+            token,
+            channel: args.channel,
+            ts: args.threadTs,
+            latest: args.ts,
+            inclusive: true,
+            limit: 1,
+            include_all_metadata: true,
+          })
+        : await app.client.conversations.history({
+            token,
+            channel: args.channel,
+            latest: args.ts,
+            inclusive: true,
+            limit: 1,
+            include_all_metadata: true,
+          });
+      const found = (page.messages ?? []).find((m) => m.ts === args.ts);
+      return found ? { ...toSlackMessage(found), ts: args.ts } : null;
+    },
+
     async getChannelHistory(args) {
       if (!app) return { messages: [], hasMore: false };
       const token = await tokenFor(args.teamId);
@@ -753,12 +779,42 @@ export function createBoltSlackGateway(
         if (!info.channel) return null;
         return {
           isMember: !!info.channel.is_member,
+          isDirectMessage: !!info.channel.is_im || !!info.channel.is_mpim,
           name: info.channel.name ?? null,
         };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;
         throw err;
       }
+    },
+
+    async listSharedChannels(userId: string, teamId: SlackWorkspace) {
+      if (!app) return [];
+      const token = await tokenFor(teamId);
+      if (!token) return [];
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      do {
+        let page;
+        try {
+          page = await app.client.users.conversations({
+            token,
+            user: userId,
+            types: "public_channel,private_channel",
+            exclude_archived: true,
+            limit: 200,
+            cursor,
+          });
+        } catch (err) {
+          if (formatError(err).includes("user_not_found")) return [];
+          throw err;
+        }
+        for (const c of page.channels ?? []) {
+          if (c.id) ids.push(c.id);
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return ids;
     },
 
     async getUserInfo(

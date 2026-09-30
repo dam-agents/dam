@@ -19,7 +19,7 @@ configureLogger({ level: "error", write: () => {} });
 
 const workspace: FakeSlackChannel[] = [
   { id: BOUND, name: "agent-home", botIsMember: true },
-  { id: "C-GENERAL", name: "general", botIsMember: true },
+  { id: "C-GENERAL", name: "general", botIsMember: true, members: ["U-OWNER"] },
   { id: "C-STAFF", name: "staff", botIsMember: false },
 ];
 
@@ -50,7 +50,10 @@ function harness(opts: {
     makeAcpClient: () => acp,
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => null } as never,
+    identityLinks: {
+      resolve: async () => null,
+      externalUsersOf: async () => ["U-OWNER"],
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,

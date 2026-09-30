@@ -56,6 +56,7 @@ export interface SchedulesRepository {
   findOwnerByAgent(agentId: string): Promise<string | null>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  stampFire(id: string, result: string): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -264,6 +265,17 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastFiredAt: new Date(),
           lastFiredResult: result,
           nextRun,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async stampFire(id, result): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastFiredAt: new Date(),
+          lastFiredResult: result,
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));

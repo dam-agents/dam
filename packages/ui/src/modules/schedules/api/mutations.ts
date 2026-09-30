@@ -89,3 +89,13 @@ export function useResetScheduleSession() {
     },
   });
 }
+
+export function useRunScheduleNow() {
+  return useMutation({
+    ...trpc.schedules.runNow.mutationOptions(),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to run schedule",
+    },
+  });
+}

@@ -2,7 +2,6 @@ import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
-  SlackBlockAction,
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
@@ -22,13 +21,18 @@ export interface FakeSlackChannel {
   id: string;
   name: string;
   botIsMember: boolean;
+  members?: string[];
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
   teamId?: string;
 };
-export type FiredSlackCommand = Omit<SlackSlashCommand, "teamId"> & {
+export type FiredSlackCommand = Omit<
+  SlackSlashCommand,
+  "teamId" | "triggerId"
+> & {
   teamId?: string;
+  triggerId?: string;
 };
 export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
   teamId?: string;
@@ -40,12 +44,12 @@ export interface FakeSlackGateway extends SlackGateway {
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
-  fireBlockAction(event: SlackBlockAction): Promise<void>;
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
+  setMessage(channel: string, message: SlackMessage & { ts: string }): void;
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
@@ -152,6 +156,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
+  const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
   const fileBytes = new Map<string, Buffer>();
 
   function requireHandlers(): SlackGatewayHandlers {
@@ -307,6 +312,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return walk;
     },
 
+    async getMessage(args) {
+      return messagesByRef.get(`${args.channel}:${args.ts}`) ?? null;
+    },
+
     async getChannelHistory(args) {
       const newestFirst = channelWindowOf(
         history,
@@ -374,8 +383,18 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         (c) => c.id === channelId,
       );
       return channel
-        ? { isMember: channel.botIsMember, name: channel.name }
+        ? {
+            isMember: channel.botIsMember,
+            isDirectMessage: false,
+            name: channel.name,
+          }
         : null;
+    },
+
+    async listSharedChannels(userId, teamId) {
+      return (channelsByWorkspace.get(teamId) ?? [])
+        .filter((c) => c.botIsMember && (c.members ?? []).includes(userId))
+        .map((c) => c.id);
     },
 
     async getUserInfo(userId) {
@@ -411,10 +430,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       await requireHandlers().onMessage(event);
     },
 
-    async fireBlockAction(event) {
-      await requireHandlers().onBlockAction(event);
-    },
-
     async fireViewSubmission(event) {
       await requireHandlers().onViewSubmission(event);
     },
@@ -438,10 +453,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       const command: SlackSlashCommand = {
         ...input,
         teamId: input.teamId ?? FAKE_WORKSPACE,
+        triggerId: input.triggerId ?? "fake-trigger",
       };
       let ackText = "";
-      await requireHandlers().onCommand(command, async ({ text }) => {
-        ackText = text;
+      await requireHandlers().onCommand(command, async (response) => {
+        ackText = response?.text ?? "";
       });
       return ackText;
     },
@@ -461,6 +477,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     setHistory(next) {
       history = [...next];
       modelsThreads = false;
+    },
+
+    setMessage(channel, message) {
+      messagesByRef.set(`${channel}:${message.ts}`, message);
     },
 
     setThreadedHistory(next) {
