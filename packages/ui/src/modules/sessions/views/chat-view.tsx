@@ -44,7 +44,6 @@ import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
-  useAgentLacksLiveUpdates,
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
@@ -139,7 +138,6 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
-  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
     selectedAgent,
     agentInaccessible,
@@ -157,6 +155,7 @@ export function ChatView() {
     [restartingAgents],
   );
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
+  const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
     ? resolveAgentDisplay(agentView, restartingIds)
     : null;

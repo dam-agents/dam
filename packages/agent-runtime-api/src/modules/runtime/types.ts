@@ -308,7 +308,7 @@ export const capabilities = z.object({
 export type Capabilities = z.infer<typeof capabilities>;
 
 export interface RuntimeFeatures {
-  liveUpdates: boolean;
+  liveUpdates: boolean | null;
 }
 
 const runtimeFeatureFlags = z.looseObject({
@@ -316,6 +316,7 @@ const runtimeFeatureFlags = z.looseObject({
 });
 
 export function runtimeFeaturesOf(caps: unknown): RuntimeFeatures {
+  if (caps == null) return { liveUpdates: null };
   const parsed = runtimeFeatureFlags.safeParse(caps);
   return { liveUpdates: parsed.success && parsed.data.liveUpdates === true };
 }

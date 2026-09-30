@@ -137,7 +137,7 @@ export interface AgentView {
   createdAt?: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
-  features: { liveUpdates: boolean };
+  features: { liveUpdates: boolean | null };
   image: string;
   description?: string;
   env?: EnvVar[];
