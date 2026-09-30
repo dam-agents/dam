@@ -1,5 +1,5 @@
 import { Idea, Power } from "@carbon/icons-react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,15 +7,23 @@ import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
+import { IconRail } from "../../components/icon-rail.js";
 import {
   BEE_NAMES,
   BeeAvatar,
   type BeeColors,
 } from "../agents/components/bee-avatar.js";
+import {
+  CHAR_COLORS,
+  CHAR_NAMES,
+  CharAvatar,
+  type CharName,
+} from "../agents/components/char-avatar.js";
+import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { BeePongInline } from "./bee-pong-game.js";
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
-type SheetTab = "bees" | "carbon";
+type SheetTab = "bees" | "carbon" | "paul-rand";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -30,18 +38,22 @@ function BeeTile({
   sleeping,
   idle,
   colors,
+  dark,
 }: {
   name: (typeof BEE_NAMES)[number];
   sleeping: boolean;
   idle?: boolean;
   colors?: BeeColors;
+  dark?: boolean;
 }) {
   return (
     <div className="group flex flex-col items-center gap-2">
       <div
         className={cn(
-          CARD_SURFACE,
-          "flex size-24 cursor-pointer items-center justify-center transition-colors hover:bg-muted/40",
+          "rounded-lg border flex size-24 cursor-pointer items-center justify-center transition-colors",
+          dark
+            ? "bg-black hover:bg-zinc-900 border-zinc-800"
+            : cn(CARD_SURFACE, "hover:bg-muted/40"),
         )}
       >
         <BeeAvatar
@@ -85,7 +97,34 @@ function SampleAgentCard({
   beeName: (typeof BEE_NAMES)[number];
   colors?: BeeColors;
 }) {
-  const beeState = state === "hibernated" ? "hibernated" : "running";
+  return (
+    <AgentCardShell
+      name={name}
+      subtitle={subtitle}
+      state={state}
+      avatar={
+        <BeeAvatar
+          beeName={beeName}
+          state={state === "hibernated" ? "hibernated" : "running"}
+          colors={colors}
+          idle={state === "idle"}
+        />
+      }
+    />
+  );
+}
+
+function AgentCardShell({
+  name,
+  subtitle,
+  state,
+  avatar,
+}: {
+  name: string;
+  subtitle: string;
+  state: CardState;
+  avatar: React.ReactNode;
+}) {
   return (
     <div
       className={cn(
@@ -94,7 +133,7 @@ function SampleAgentCard({
       )}
     >
       <div className="flex items-start gap-4 p-5">
-        <BeeAvatar beeName={beeName} state={beeState} colors={colors} idle={state === "idle"} />
+        {avatar}
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-base font-semibold text-foreground transition-colors group-hover:text-primary">
             {name}
@@ -142,6 +181,63 @@ const SAMPLE_TIPS = [
 ];
 
 function WakeUpPreview() {
+  return (
+    <WakeUpFrame agentName="packaging-layouts">
+      <div className="relative" style={{ width: 400, height: 120 }}>
+        <BeePongInline
+          className="flex items-center justify-center"
+          areaW={400}
+          areaH={120}
+        />
+      </div>
+    </WakeUpFrame>
+  );
+}
+
+const WAKE_SCREENS: { charName: CharName; agentName: string }[] = [
+  { charName: "compass", agentName: "design-qa" },
+  { charName: "spark", agentName: "user-research" },
+  { charName: "lens", agentName: "qa-test-runner" },
+];
+
+function CharWakeUpPreview({
+  charName,
+  agentName,
+}: {
+  charName: CharName;
+  agentName: string;
+}) {
+  const loopRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = loopRef.current;
+    if (!el) return;
+    const play = () => {
+      el.classList.remove("bee-play");
+      void el.offsetWidth;
+      el.classList.add("bee-play");
+    };
+    play();
+    const iv = setInterval(play, 1600);
+    return () => clearInterval(iv);
+  }, []);
+
+  return (
+    <WakeUpFrame agentName={agentName}>
+      <div ref={loopRef} className="flex h-[120px] items-center justify-center">
+        <CharAvatar name={charName} state="running" className="size-28" />
+      </div>
+    </WakeUpFrame>
+  );
+}
+
+function WakeUpFrame({
+  agentName,
+  children,
+}: {
+  agentName: string;
+  children: React.ReactNode;
+}) {
   const [progress, setProgress] = useState(0);
   const [tipIdx, setTipIdx] = useState(0);
 
@@ -172,18 +268,12 @@ function WakeUpPreview() {
         </div>
 
         <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="relative" style={{ width: 400, height: 120 }}>
-            <BeePongInline
-              className="flex items-center justify-center"
-              areaW={400}
-              areaH={120}
-            />
-          </div>
+          {children}
           <h2
             className="mt-3 text-center font-extralight tracking-tighter text-foreground"
             style={{ fontSize: "clamp(1.5rem, 4vw, 2.5rem)", lineHeight: 1 }}
           >
-            packaging-layouts
+            {agentName}
           </h2>
 
           <div className="mt-6 max-w-sm">
@@ -210,30 +300,128 @@ function WakeUpPreview() {
   );
 }
 
+function CharTile({
+  name,
+  state,
+  colors,
+  idle,
+}: {
+  name: CharName;
+  state: string;
+  colors?: BeeColors;
+  idle?: boolean;
+}) {
+  return (
+    <div className="group flex flex-col items-center gap-2">
+      <div
+        className={cn(
+          "rounded-lg border flex size-24 cursor-pointer items-center justify-center transition-colors",
+          cn(CARD_SURFACE, "hover:bg-muted/40"),
+        )}
+      >
+        <CharAvatar
+          name={name}
+          state={state}
+          colors={colors}
+          idle={idle}
+          className="size-16"
+        />
+      </div>
+      <span className="text-sm text-muted-foreground">
+        {CHAR_NAMES.indexOf(name) + 1}
+      </span>
+    </div>
+  );
+}
+
+const CHAR_CARDS: {
+  charName: CharName;
+  agentName: string;
+  state: CardState;
+  subtitle: string;
+}[] = [
+  {
+    charName: "stack",
+    agentName: "spec-writer",
+    state: "running",
+    subtitle: "2 CPU · 2 Gi",
+  },
+  {
+    charName: "shield",
+    agentName: "security-review",
+    state: "idle",
+    subtitle: "1 CPU · 1 Gi",
+  },
+  {
+    charName: "roller",
+    agentName: "prototype-builder",
+    state: "running",
+    subtitle: "2 CPU · 2 Gi",
+  },
+  {
+    charName: "tower",
+    agentName: "release-manager",
+    state: "hibernated",
+    subtitle: "0.5 CPU · 512 Mi",
+  },
+  {
+    charName: "wave",
+    agentName: "roadmap-planner",
+    state: "running",
+    subtitle: "1 CPU · 1 Gi",
+  },
+  {
+    charName: "compass",
+    agentName: "design-qa",
+    state: "idle",
+    subtitle: "2 CPU · 2 Gi",
+  },
+  {
+    charName: "spark",
+    agentName: "user-research",
+    state: "hibernated",
+    subtitle: "0.5 CPU · 512 Mi",
+  },
+  {
+    charName: "lens",
+    agentName: "qa-test-runner",
+    state: "idle",
+    subtitle: "2 CPU · 2 Gi",
+  },
+];
+
+function SampleCharCard({
+  name,
+  subtitle,
+  state,
+  charName,
+}: {
+  name: string;
+  subtitle: string;
+  state: CardState;
+  charName: CharName;
+}) {
+  return (
+    <AgentCardShell
+      name={name}
+      subtitle={subtitle}
+      state={state}
+      avatar={
+        <CharAvatar
+          name={charName}
+          state={state === "hibernated" ? "hibernated" : "running"}
+          colors={CHAR_COLORS[charName]}
+          idle={state === "idle"}
+        />
+      }
+    />
+  );
+}
+
 const IBM_BEE_COLORS: BeeColors = {
   wings: "#0e6027",
   eyes: "#9f1853",
   body: "#d2a106",
-};
-
-const INDIVIDUAL_COLORS: Record<(typeof BEE_NAMES)[number], BeeColors> = {
-  signal: { eyes: "#009d9a", body: "#009d9a", wings: "#009d9a" },
-  cross: { eyes: "#0072c3", body: "#0072c3", wings: "#0072c3" },
-  crown: { eyes: "#0043ce", body: "#0043ce", wings: "#0043ce" },
-  shield: { eyes: "#8a3ffc", body: "#8a3ffc", wings: "#8a3ffc" },
-  bloom: { eyes: "#24a148", body: "#24a148", wings: "#24a148" },
-  tower: { eyes: "#d02670", body: "#d02670", wings: "#d02670" },
-  tilt: { eyes: "#0f62fe", body: "#0f62fe", wings: "#0f62fe" },
-};
-
-const MULTI_COLORS: Record<(typeof BEE_NAMES)[number], BeeColors> = {
-  signal: { eyes: "#0043ce", body: "#009d9a", wings: "#24a148" },
-  cross: { eyes: "#8a3ffc", body: "#0072c3", wings: "#d02670" },
-  crown: { eyes: "#d02670", body: "#24a148", wings: "#0043ce" },
-  shield: { eyes: "#0072c3", body: "#8a3ffc", wings: "#009d9a" },
-  bloom: { eyes: "#009d9a", body: "#d02670", wings: "#0f62fe" },
-  tower: { eyes: "#24a148", body: "#0043ce", wings: "#0072c3" },
-  tilt: { eyes: "#d02670", body: "#009d9a", wings: "#8a3ffc" },
 };
 
 function BeeSheet() {
@@ -339,9 +527,9 @@ function BeeSheet() {
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Color Pack — Individual</SectionLabel>
+        <SectionLabel>Color Pack — IBM Bee (copy)</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
-          Each bee gets its own unique Carbon color.
+          Duplicate of classic IBM bee for iteration.
         </p>
         <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
           {BEE_NAMES.map((name) => (
@@ -349,26 +537,309 @@ function BeeSheet() {
               key={name}
               name={name}
               sleeping={false}
-              colors={INDIVIDUAL_COLORS[name]}
+              colors={
+                name === "crown"
+                  ? { wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }
+                  : name === "bloom" || name === "tilt"
+                    ? { wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }
+                    : name === "cross" || name === "shield"
+                      ? { wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }
+                      : IBM_BEE_COLORS
+              }
+            />
+          ))}
+        </div>
+        <div className="mt-6 flex flex-wrap gap-5">
+          {[
+            { hex: "#0e6027", name: "Green 60 (wings)" },
+            { hex: "#0072c3", name: "Cyan 60 (wings)" },
+            { hex: "#9f1853", name: "Magenta 60 (eyes)" },
+            { hex: "#d2a106", name: "Yellow 40 (body)" },
+            { hex: "#eb6200", name: "Orange 50 (body)" },
+          ].map((s) => (
+            <div key={s.hex} className="flex flex-col items-center gap-1.5">
+              <div
+                className="size-8 rounded-full"
+                style={{ backgroundColor: s.hex }}
+                title={s.name}
+              />
+              <span className="text-[11px] leading-tight text-muted-foreground">
+                {s.name}
+              </span>
+              <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
+                {s.hex}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Agent Cards — New Color Set</SectionLabel>
+        <div className="flex flex-col gap-3">
+          <SampleAgentCard
+            name="signal-agent"
+            subtitle="2 CPU · 2 Gi"
+            state="running"
+            beeName="signal"
+            colors={IBM_BEE_COLORS}
+          />
+          <SampleAgentCard
+            name="cross-agent"
+            subtitle="1 CPU · 1 Gi"
+            state="idle"
+            beeName="cross"
+            colors={{ wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }}
+          />
+          <SampleAgentCard
+            name="crown-agent"
+            subtitle="2 CPU · 2 Gi"
+            state="running"
+            beeName="crown"
+            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
+          />
+          <SampleAgentCard
+            name="shield-agent"
+            subtitle="0.25 CPU · 512 Mi"
+            state="hibernated"
+            beeName="shield"
+            colors={{ wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }}
+          />
+          <SampleAgentCard
+            name="bloom-agent"
+            subtitle="1 CPU · 1 Gi"
+            state="running"
+            beeName="bloom"
+            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
+          />
+          <SampleAgentCard
+            name="tower-agent"
+            subtitle="2 CPU · 2 Gi"
+            state="idle"
+            beeName="tower"
+            colors={IBM_BEE_COLORS}
+          />
+          <SampleAgentCard
+            name="tilt-agent"
+            subtitle="0.25 CPU · 512 Mi"
+            state="hibernated"
+            beeName="tilt"
+            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
+          />
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Carbon Color Options</SectionLabel>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Harmonious Carbon neighbors for each bee part.
+        </p>
+        <div className="flex flex-col gap-8">
+          <div>
+            <p className="mb-3 text-sm font-medium text-foreground">Wings</p>
+            <div className="flex flex-wrap gap-5">
+              {[
+                { hex: "#0e6027", name: "Green 60" },
+                { hex: "#198038", name: "Green 50" },
+                { hex: "#044317", name: "Green 70" },
+                { hex: "#005d5d", name: "Teal 60" },
+                { hex: "#007d79", name: "Teal 50" },
+                { hex: "#005149", name: "Teal 70" },
+                { hex: "#1192e8", name: "Cyan 50" },
+                { hex: "#0072c3", name: "Cyan 60" },
+                { hex: "#00539a", name: "Cyan 70" },
+                { hex: "#003a6d", name: "Cyan 80" },
+                { hex: "#33b1ff", name: "Cyan 40" },
+              ].map((s) => (
+                <div key={s.hex} className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="size-8 rounded-full"
+                    style={{ backgroundColor: s.hex }}
+                    title={s.name}
+                  />
+                  <span className="text-[11px] leading-tight text-muted-foreground">
+                    {s.name}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
+                    {s.hex}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-3 text-sm font-medium text-foreground">Eyes</p>
+            <div className="flex flex-wrap gap-5">
+              {[
+                { hex: "#9f1853", name: "Magenta 60" },
+                { hex: "#d02670", name: "Magenta 50" },
+                { hex: "#ff7eb6", name: "Magenta 40" },
+                { hex: "#740937", name: "Magenta 70" },
+                { hex: "#da1e28", name: "Red 50" },
+                { hex: "#a2191f", name: "Red 60" },
+                { hex: "#8a3ffc", name: "Purple 50" },
+              ].map((s) => (
+                <div key={s.hex} className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="size-8 rounded-full"
+                    style={{ backgroundColor: s.hex }}
+                    title={s.name}
+                  />
+                  <span className="text-[11px] leading-tight text-muted-foreground">
+                    {s.name}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
+                    {s.hex}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-3 text-sm font-medium text-foreground">Body</p>
+            <div className="flex flex-wrap gap-5">
+              {[
+                { hex: "#d2a106", name: "Yellow 40" },
+                { hex: "#f1c21b", name: "Yellow 30" },
+                { hex: "#b28600", name: "Yellow 50" },
+                { hex: "#8e6a00", name: "Yellow 60" },
+                { hex: "#eb6200", name: "Orange 50" },
+                { hex: "#ba4e00", name: "Orange 60" },
+                { hex: "#8a3800", name: "Orange 70" },
+              ].map((s) => (
+                <div key={s.hex} className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="size-8 rounded-full"
+                    style={{ backgroundColor: s.hex }}
+                    title={s.name}
+                  />
+                  <span className="text-[11px] leading-tight text-muted-foreground">
+                    {s.name}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
+                    {s.hex}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function PaulRandSheet() {
+  return (
+    <>
+      <section className="mb-12">
+        <SectionLabel>Character Avatars — Awake</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Less bee-influenced, more abstract — still built from Paul Rand rebus
+          pieces. Hover to see gesture animations.
+        </p>
+        <div className="grid grid-cols-4 gap-4 md:grid-cols-8">
+          {CHAR_NAMES.map((n) => (
+            <CharTile
+              key={n}
+              name={n}
+              state="running"
+              colors={CHAR_COLORS[n]}
             />
           ))}
         </div>
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Color Pack — Multi-color</SectionLabel>
+        <SectionLabel>Character Avatars — Idle</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
-          Each bee uses 3 different Carbon colors across its parts.
+          Sleeping eyes at rest. Hover to wake — eyes open and parts animate.
         </p>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile
-              key={name}
-              name={name}
-              sleeping={false}
-              colors={MULTI_COLORS[name]}
+        <div className="grid grid-cols-4 gap-4 md:grid-cols-8">
+          {CHAR_NAMES.map((n) => (
+            <CharTile
+              key={n}
+              name={n}
+              state="idle"
+              idle
+              colors={CHAR_COLORS[n]}
             />
           ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Character Avatars — Hibernating</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          All fills gray, squished posture, occasional twitches. Hover triggers
+          breathing.
+        </p>
+        <div className="grid grid-cols-4 gap-4 md:grid-cols-8">
+          {CHAR_NAMES.map((n) => (
+            <CharTile
+              key={n}
+              name={n}
+              state="hibernated"
+              colors={CHAR_COLORS[n]}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Characters on Agent Cards</SectionLabel>
+        <div className="flex flex-col gap-3">
+          {CHAR_CARDS.map((c) => (
+            <SampleCharCard
+              key={c.charName}
+              name={c.agentName}
+              subtitle={c.subtitle}
+              state={c.state}
+              charName={c.charName}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Waking from Hibernation</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          When a hibernated agent is opened, it auto-wakes. Its character sits
+          in the center and loops its hover animation while the pod spins up.
+        </p>
+        <div className="flex flex-col gap-6">
+          {WAKE_SCREENS.map((w) => (
+            <CharWakeUpPreview
+              key={w.charName}
+              charName={w.charName}
+              agentName={w.agentName}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Left Navigation — Agent List</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          The sidebar from design/sidebar-agent-list with each agent&apos;s
+          character as its avatar in place of a status dot. Hover a row to
+          animate its character.
+        </p>
+        <div className="h-[760px] w-fit overflow-hidden rounded-xl border-2 border-border">
+          <IconRail expanded hideMobileBar />
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Create Agent — Choose a Character</SectionLabel>
+        <p className="mb-4 text-sm text-muted-foreground">
+          The agent creation screen with a character next to the name. Click the
+          character to pick one of the eight to represent the agent.
+        </p>
+        <div className="h-[900px] overflow-y-auto rounded-xl border-2 border-border bg-background">
+          <div className="mx-auto w-full max-w-[720px] px-8 py-10">
+            <AgentSetupView embedded />
+          </div>
         </div>
       </section>
     </>
@@ -399,16 +870,25 @@ export function AvatarSheetView() {
               Bees
             </TabPill>
             <TabPill
-              active={tab === "carbon"}
-              onClick={() => setTab("carbon")}
+              active={tab === "paul-rand"}
+              onClick={() => setTab("paul-rand")}
             >
+              Paul Rand
+            </TabPill>
+            <TabPill active={tab === "carbon"} onClick={() => setTab("carbon")}>
               Carbon
             </TabPill>
           </div>
         }
       />
 
-      {tab === "bees" ? <BeeSheet /> : <CarbonSheet />}
+      {tab === "bees" ? (
+        <BeeSheet />
+      ) : tab === "paul-rand" ? (
+        <PaulRandSheet />
+      ) : (
+        <CarbonSheet />
+      )}
     </div>
   );
 }

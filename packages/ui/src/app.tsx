@@ -109,26 +109,12 @@ function MainApp() {
       </>
     );
 
-  if (view === "avatar-sheet")
-    return (
-      <div className="flex flex-col h-full bg-background relative overflow-hidden">
-        <main className="flex-1 overflow-y-auto">
-          <AvatarSheetView />
-        </main>
-        <DialogOverlay />
-      </div>
-    );
-
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-          <AgentsView />
-        </div>
+        <AvatarSheetView />
       </main>
       <DialogOverlay />
-      <ConnectionBanner />
-      <DocsLauncher />
     </div>
   );
 }

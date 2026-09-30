@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import { SAMPLE_TRANSCRIPT } from "../../../mock/data/transcript.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -48,6 +49,7 @@ import {
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
+import { AgentAvatar } from "../../agents/components/char-avatar.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
@@ -529,6 +531,23 @@ export function ChatView() {
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
 
+  const shownMessages =
+    import.meta.env.VITE_MOCK &&
+    messages.length === 0 &&
+    !loadingSession &&
+    !sessionError &&
+    !launchPaneActive
+      ? SAMPLE_TRANSCRIPT
+      : messages;
+  const messageAgent =
+    selectedAgent && agentDisplay
+      ? {
+          id: selectedAgent,
+          name: selectedAgentName ?? "Agent",
+          state: agentDisplay.state,
+        }
+      : undefined;
+
   const lastMessage = messages[messages.length - 1];
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
@@ -557,11 +576,14 @@ export function ChatView() {
           <ArrowLeft size={14} />
         </Button>
         <div className="flex items-center gap-3 min-w-0">
-          {!isDemo && (
-            <span
-              aria-hidden
-              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-            />
+          {!isDemo && selectedAgent && agentDisplay && (
+            <span className="group flex">
+              <AgentAvatar
+                agentId={selectedAgent}
+                state={agentDisplay.state}
+                className="size-8"
+              />
+            </span>
           )}
           <h1
             className={cn(
@@ -571,6 +593,12 @@ export function ChatView() {
           >
             {selectedAgentName}
           </h1>
+          {!isDemo && (
+            <span
+              aria-hidden
+              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+            />
+          )}
           {isDemo && <DemoHeaderTag />}
           {!isDemo && (
             <DropdownMenu>
@@ -735,7 +763,7 @@ export function ChatView() {
                     )}
                     {!loadingSession &&
                       !sessionError &&
-                      messages.length === 0 &&
+                      shownMessages.length === 0 &&
                       (launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
                           <Spinner size={22} className="mb-3" />
@@ -765,15 +793,16 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {messages.map((m, mi) => (
+                    {shownMessages.map((m, mi) => (
                       <ChatMessage
                         key={m.id}
                         message={m}
-                        isLast={mi === messages.length - 1}
+                        isLast={mi === shownMessages.length - 1}
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
                         onLoadOlder={loadOlderKeepingScroll}
+                        agent={messageAgent}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}

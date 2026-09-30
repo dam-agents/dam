@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
@@ -17,20 +17,34 @@ import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
 export function NameSection({
   value,
   onChange,
+  avatar,
+  autoFocus = true,
 }: {
   value: string;
   onChange: (name: string) => void;
+  avatar?: ReactNode;
+  autoFocus?: boolean;
 }) {
+  const field = (
+    <FormField label="Name" className={avatar ? "flex-1" : undefined}>
+      <Input
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="my-agent"
+      />
+    </FormField>
+  );
   return (
     <section className="mb-8">
-      <FormField label="Name">
-        <Input
-          autoFocus
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="my-agent"
-        />
-      </FormField>
+      {avatar ? (
+        <div className="flex items-end gap-4">
+          {avatar}
+          {field}
+        </div>
+      ) : (
+        field
+      )}
     </section>
   );
 }

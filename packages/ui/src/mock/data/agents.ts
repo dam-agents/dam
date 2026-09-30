@@ -18,7 +18,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.codexResearch,
     spawnedBy: null,
-    name: "brand-asset-generator",
+    name: "prototype-builder",
     templateId: "codex",
     templateUpdate: null,
     image: "ghcr.io/openai/codex:latest",
@@ -45,7 +45,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.claudeCodeMain,
     spawnedBy: null,
-    name: "packaging-layouts",
+    name: "spec-writer",
     templateId: "claude-code",
     templateUpdate: {
       fromImage: "ghcr.io/anthropics/claude-code:1.0.18",
@@ -74,7 +74,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.geminiPipeline,
     spawnedBy: null,
-    name: "photo-retouching",
+    name: "qa-test-runner",
     templateId: "gemini-cli",
     templateUpdate: {
       fromImage: "ghcr.io/google/gemini-cli:1.2.0",
@@ -104,7 +104,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase,
     spawnedBy: null,
-    name: "brand-guidelines",
+    name: "user-research",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
@@ -131,7 +131,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment1,
     spawnedBy: null,
-    name: "color-palette-testing",
+    name: "ab-test-analyzer",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
@@ -157,7 +157,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment2,
     spawnedBy: null,
-    name: "font-pairing-eval",
+    name: "release-notes",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
@@ -183,7 +183,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase2,
     spawnedBy: null,
-    name: "competitor-mood-boards",
+    name: "roadmap-planner",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
@@ -209,7 +209,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.knowledgeBase3,
     spawnedBy: null,
-    name: "photography-style-guide",
+    name: "backlog-triage",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
@@ -241,7 +241,7 @@ export const agents: AgentView[] = [
   {
     id: AGENT_IDS.experiment3,
     spawnedBy: null,
-    name: "hero-image-variants",
+    name: "launch-checklist",
     templateId: "claude-code",
     templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",

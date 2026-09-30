@@ -51,6 +51,9 @@ import { ScheduleSetupSection } from "../../schedules/components/schedule-setup-
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { hashIndex } from "../components/bee-avatar.js";
+import { CHAR_NAMES, type CharName } from "../components/char-avatar.js";
+import { CharacterPicker } from "../components/character-picker.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -61,7 +64,7 @@ import { nextNameWithPrefix } from "../lib/sandbox-name.js";
 
 const RETURN_PATH = routeToPath({ view: "agent-new" });
 
-export function AgentSetupView() {
+export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
   const pendingPack = useStore((s) => s.pendingPack);
   const setPendingPack = useStore((s) => s.setPendingPack);
   const { data: agentsData } = useAgents();
@@ -97,6 +100,10 @@ export function AgentSetupView() {
     "coding-agent",
     pendingPack ? { ...packDefaults, name: "" } : {},
     RETURN_PATH,
+  );
+
+  const [character, setCharacter] = useState<CharName>(
+    () => CHAR_NAMES[hashIndex(form.name || "new-agent", CHAR_NAMES.length)]!,
   );
 
   const takenNames = useMemo(
@@ -383,7 +390,12 @@ export function AgentSetupView() {
         }}
       />
 
-      <NameSection value={form.name} onChange={(name) => update({ name })} />
+      <NameSection
+        value={form.name}
+        onChange={(name) => update({ name })}
+        autoFocus={!embedded}
+        avatar={<CharacterPicker value={character} onChange={setCharacter} />}
+      />
 
       <ImageSection
         harnesses={catalogue.harnesses}

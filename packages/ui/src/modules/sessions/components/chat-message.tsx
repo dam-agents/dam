@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 
 import type { Attachment, Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
+import { AgentAvatar } from "../../agents/components/char-avatar.js";
+import type { AgentDisplayState } from "../../agents/utils/agent-resolver.js";
 import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -18,6 +20,7 @@ interface Props {
   onRetry: (text: string, attachments?: Attachment[]) => void;
   onFileClick: (path: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
+  agent?: { id: string; name: string; state: AgentDisplayState };
 }
 
 function LoadOlderMarker({
@@ -79,6 +82,7 @@ export const ChatMessage = memo(function ChatMessage({
   onRetry,
   onFileClick,
   onLoadOlder,
+  agent,
 }: Props) {
   if (message.notice) {
     if (message.loadOlderBefore !== undefined && onLoadOlder) {
@@ -112,9 +116,22 @@ export const ChatMessage = memo(function ChatMessage({
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-        {isAssistant ? "Agent" : "You"}
-      </span>
+      {isAssistant && agent ? (
+        <span className="group mb-0.5 flex items-center gap-2">
+          <AgentAvatar
+            agentId={agent.id}
+            state={agent.state}
+            className="size-6"
+          />
+          <span className="text-sm font-semibold text-foreground">
+            {agent.name}
+          </span>
+        </span>
+      ) : (
+        <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
+          {isAssistant ? "Agent" : "You"}
+        </span>
+      )}
       {(!error || parts.length > 0) && (
         <div
           className={

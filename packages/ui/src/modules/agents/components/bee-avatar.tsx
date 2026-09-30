@@ -25,7 +25,6 @@ export const BEE_NAMES = [
 ] as const;
 
 const bees: BeeRenderer[] = [
-  // signal (viewBox 112×112)
   (fill) => (
     <svg viewBox="0 0 112 112" overflow="visible" fill="none">
       <path
@@ -37,16 +36,48 @@ const bees: BeeRenderer[] = [
         fill={f(fill, "wings")}
       />
       <g className="bee-eyes-sleep">
-        <path d="M0,53.86 A7.98,7.98 0 0 0 15.97,53.86" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M0.2,30 A7.9,7.9 0 0 0 16.01,30" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M95.88,77.81 A7.98,7.98 0 0 0 111.85,77.81" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M96.04,53.95 A7.9,7.9 0 0 0 111.85,53.95" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M0,53.86 A7.98,7.98 0 0 0 15.97,53.86"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M0.2,30 A7.9,7.9 0 0 0 16.01,30"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M95.88,77.81 A7.98,7.98 0 0 0 111.85,77.81"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M96.04,53.95 A7.9,7.9 0 0 0 111.85,53.95"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
-        <path d="M15.9672 53.8554C15.9672 49.4245 12.4145 45.8718 7.98362 45.8718C3.55271 45.8718 0 49.4245 0 53.8554C0 58.2864 3.55271 61.8391 7.98362 61.8391C12.4145 61.8391 15.9672 58.2864 15.9672 53.8554Z" fill={f(fill, "eyes")} />
-        <path d="M15.9673 29.9984C15.9673 25.6473 12.4545 22.0946 8.06354 22.0946C3.67255 22.0946 0.199677 25.6473 0.199677 29.9984C0.199677 34.3495 3.71247 37.9022 8.10346 37.9022C12.4945 37.9022 16.0072 34.3894 16.0072 29.9984H15.9673Z" fill={f(fill, "eyes")} />
-        <path d="M111.851 77.8105C111.851 73.3796 108.298 69.8269 103.867 69.8269C99.4361 69.8269 95.8834 73.3796 95.8834 77.8105C95.8834 82.2414 99.4361 85.7941 103.867 85.7941C108.298 85.7941 111.851 82.2414 111.851 77.8105Z" fill={f(fill, "eyes")} />
-        <path d="M111.851 53.9497C111.851 49.5986 108.338 46.0459 103.947 46.0459C99.5558 46.0459 96.043 49.5587 96.043 53.9497C96.043 58.3407 99.5558 61.8535 103.947 61.8535C108.338 61.8535 111.851 58.3407 111.851 53.9497Z" fill={f(fill, "eyes")} />
+        <path
+          d="M15.9672 53.8554C15.9672 49.4245 12.4145 45.8718 7.98362 45.8718C3.55271 45.8718 0 49.4245 0 53.8554C0 58.2864 3.55271 61.8391 7.98362 61.8391C12.4145 61.8391 15.9672 58.2864 15.9672 53.8554Z"
+          fill={f(fill, "eyes")}
+        />
+        <path
+          d="M15.9673 29.9984C15.9673 25.6473 12.4545 22.0946 8.06354 22.0946C3.67255 22.0946 0.199677 25.6473 0.199677 29.9984C0.199677 34.3495 3.71247 37.9022 8.10346 37.9022C12.4945 37.9022 16.0072 34.3894 16.0072 29.9984H15.9673Z"
+          fill={f(fill, "eyes")}
+        />
+        <path
+          d="M111.851 77.8105C111.851 73.3796 108.298 69.8269 103.867 69.8269C99.4361 69.8269 95.8834 73.3796 95.8834 77.8105C95.8834 82.2414 99.4361 85.7941 103.867 85.7941C108.298 85.7941 111.851 82.2414 111.851 77.8105Z"
+          fill={f(fill, "eyes")}
+        />
+        <path
+          d="M111.851 53.9497C111.851 49.5986 108.338 46.0459 103.947 46.0459C99.5558 46.0459 96.043 49.5587 96.043 53.9497C96.043 58.3407 99.5558 61.8535 103.947 61.8535C108.338 61.8535 111.851 58.3407 111.851 53.9497Z"
+          fill={f(fill, "eyes")}
+        />
       </g>
       <path
         d="M87.9395 71.7953V55.8281L23.9508 31.9969V47.9642L87.9395 71.7953Z"
@@ -55,12 +86,21 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // cross (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M42.97,62.34 A7.81,7.81 0 0 0 58.59,62.34" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M66.41,62.34 A7.81,7.81 0 0 0 82.03,62.34" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M42.97,62.34 A7.81,7.81 0 0 0 58.59,62.34"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M66.41,62.34 A7.81,7.81 0 0 0 82.03,62.34"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="50.7812" cy="62.3438" r="7.8125" fill={f(fill, "eyes")} />
@@ -85,12 +125,21 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // crown (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M42.97,42.78 A7.81,7.81 0 0 0 58.59,42.78" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M66.41,42.78 A7.81,7.81 0 0 0 82.03,42.78" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M42.97,42.78 A7.81,7.81 0 0 0 58.59,42.78"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M66.41,42.78 A7.81,7.81 0 0 0 82.03,42.78"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="50.7814" cy="42.7817" r="7.8125" fill={f(fill, "eyes")} />
@@ -121,12 +170,21 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // shield (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M66.6,31.06 A7.82,7.82 0 0 0 82.23,31.06" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M43.24,31.14 A7.77,7.77 0 0 0 58.79,31.14" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M66.6,31.06 A7.82,7.82 0 0 0 82.23,31.06"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M43.24,31.14 A7.77,7.77 0 0 0 58.79,31.14"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="74.4144" cy="31.0586" r="7.8125" fill={f(fill, "eyes")} />
@@ -139,7 +197,13 @@ const bees: BeeRenderer[] = [
         height="15.625"
         fill={f(fill, "body")}
       />
-      <rect x="43.1253" y="70.238" width="39.101" height="15.625" fill={f(fill, "body")} />
+      <rect
+        x="43.1253"
+        y="70.238"
+        width="39.101"
+        height="15.625"
+        fill={f(fill, "body")}
+      />
       <rect
         x="43.1253"
         y="93.6758"
@@ -158,12 +222,21 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // bloom (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M66.05,78.55 A7.82,7.82 0 0 0 81.68,78.55" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M42.62,78.55 A7.81,7.81 0 0 0 58.24,78.55" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M66.05,78.55 A7.82,7.82 0 0 0 81.68,78.55"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M42.62,78.55 A7.81,7.81 0 0 0 58.24,78.55"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="73.8673" cy="78.5464" r="7.8125" fill={f(fill, "eyes")} />
@@ -195,18 +268,33 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // tower (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M66.21,23.37 A7.82,7.82 0 0 0 81.84,23.37" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M42.85,23.44 A7.77,7.77 0 0 0 58.40,23.44" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M66.21,23.37 A7.82,7.82 0 0 0 81.84,23.37"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M42.85,23.44 A7.77,7.77 0 0 0 58.40,23.44"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="74.0241" cy="23.3693" r="7.8125" fill={f(fill, "eyes")} />
         <circle cx="50.6654" cy="23.4447" r="7.8125" fill={f(fill, "eyes")} />
       </g>
-      <rect x="43.008" y="39.0702" width="15.625" height="70.313" fill={f(fill, "body")} />
+      <rect
+        x="43.008"
+        y="39.0702"
+        width="15.625"
+        height="70.313"
+        fill={f(fill, "body")}
+      />
       <rect
         x="66.4457"
         y="39.0702"
@@ -225,12 +313,21 @@ const bees: BeeRenderer[] = [
     </svg>
   ),
 
-  // tilt (viewBox 125×125)
   (fill) => (
     <svg viewBox="0 0 125 125" fill="none">
       <g className="bee-eyes-sleep">
-        <path d="M78.1,23.35 A7.81,7.81 0 0 0 93.72,23.35" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
-        <path d="M54.78,23.43 A7.77,7.77 0 0 0 70.33,23.43" fill="none" stroke={f(fill, "eyes")} strokeWidth="6" />
+        <path
+          d="M78.1,23.35 A7.81,7.81 0 0 0 93.72,23.35"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
+        <path
+          d="M54.78,23.43 A7.77,7.77 0 0 0 70.33,23.43"
+          fill="none"
+          stroke={f(fill, "eyes")}
+          strokeWidth="6"
+        />
       </g>
       <g className="bee-eyes-wake">
         <circle cx="85.9106" cy="23.3539" r="7.8125" fill={f(fill, "eyes")} />
@@ -254,7 +351,7 @@ const bees: BeeRenderer[] = [
 
 const SLEEPING_STATES = new Set(["hibernated", "hibernating"]);
 
-function hashId(id: string): number {
+export function hashIndex(id: string, n: number): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
@@ -263,7 +360,11 @@ function hashId(id: string): number {
   h ^= h >>> 16;
   h = Math.imul(h, 0x45d9f3b);
   h ^= h >>> 16;
-  return (h >>> 0) % bees.length;
+  return (h >>> 0) % n;
+}
+
+function hashId(id: string): number {
+  return hashIndex(id, bees.length);
 }
 
 const BEE_STYLES = `
@@ -420,15 +521,245 @@ const BEE_STYLES = `
 .group:hover .bee-sleeping svg > rect {
   animation: none !important;
 }
+
+/* ═══════════════════════════════════════════════════
+   Character animations (.bee-char scope)
+   Scoped so they don't collide with overlapping bee
+   data-icon names (crown, bloom, tower, shield).
+   ═══════════════════════════════════════════════════ */
+
+/* ── Character hover: eyes look around (scaled for 3486 viewBox) ── */
+@keyframes bee-char-look-leye {
+  0%, 100%  { transform: translate(0, 0) scale(1); }
+  25%, 38%  { transform: translate(135px, -80px) scale(1); }
+  58%, 72%  { transform: translate(-135px, -80px) scale(1.15); }
+}
+@keyframes bee-char-look-reye {
+  0%, 100%  { transform: translate(0, 0) scale(1); }
+  25%, 38%  { transform: translate(135px, -80px) scale(1.15); }
+  58%, 72%  { transform: translate(-135px, -80px) scale(1); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char .bee-eyes-wake > :nth-child(1) { animation: bee-char-look-leye 1.2s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char .bee-eyes-wake > :nth-child(2) { animation: bee-char-look-reye 1.2s ease-in-out; }
+
+/* ── Character blink overrides (shield) ── */
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="shield"] .bee-eyes-wake > :nth-child(1) { animation: bee-blink 0.9s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="shield"] .bee-eyes-wake > :nth-child(2) { animation: bee-blink 0.9s ease-in-out 0.06s; }
+
+/* ── Character hover: piece animations ── */
+
+/* stack: staggered bob — bars pop up in sequence */
+@keyframes bee-char-bob {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-220px); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="stack"] svg > rect:nth-of-type(3) { animation: bee-char-bob 0.4s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="stack"] svg > rect:nth-of-type(2) { animation: bee-char-bob 0.4s ease-in-out 0.1s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="stack"] svg > rect:nth-of-type(1) { animation: bee-char-bob 0.4s ease-in-out 0.2s; }
+
+/* shield: mouth squishes, D-wings stay still */
+@keyframes bee-shield-mouth {
+  0%, 100% { transform: scaleX(1); }
+  25%      { transform: scaleX(0.55); }
+  55%      { transform: scaleX(1.06); }
+  75%      { transform: scaleX(0.95); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="shield"] svg > rect:nth-of-type(1) { transform-box: fill-box; transform-origin: center; animation: bee-shield-mouth 0.5s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="shield"] svg > path:nth-of-type(1) { animation: none; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="shield"] svg > path:nth-of-type(2) { animation: none; }
+
+/* roller: feet (wheels) stomp and push the body up */
+@keyframes bee-roller-stomp {
+  0%, 100% { transform: translateY(0); }
+  10% { transform: translateY(80px); }
+  35%, 50% { transform: translateY(-300px); }
+  78% { transform: translateY(-50px); }
+}
+@keyframes bee-roller-lift {
+  0%, 14% { transform: translateY(0); }
+  38%, 54% { transform: translateY(-250px); }
+  82% { transform: translateY(-40px); }
+  100% { transform: translateY(0); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="roller"] svg > rect:nth-of-type(1) { animation: bee-roller-lift 0.6s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="roller"] svg > path:nth-of-type(1) { animation: bee-roller-lift 0.6s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="roller"] svg > path:nth-of-type(2) { animation: bee-roller-stomp 0.6s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="roller"] svg > path:nth-of-type(3) { animation: bee-roller-stomp 0.6s ease-in-out 0.06s; }
+
+/* tower: cowers down (scaleY shrink) then pops back up, eyes look around */
+@keyframes bee-tower-cower {
+  0% { transform: scaleY(1); }
+  25%, 40% { transform: scaleY(0.55); }
+  65% { transform: scaleY(1.06); }
+  80% { transform: scaleY(0.97); }
+  100% { transform: scaleY(1); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="tower"] svg > rect:nth-of-type(1) { transform-box: fill-box; transform-origin: center bottom; animation: bee-tower-cower 0.7s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="tower"] svg > rect:nth-of-type(2) { transform-box: fill-box; transform-origin: center bottom; animation: bee-tower-cower 0.7s ease-in-out 0.05s; }
+
+/* wave: crescents scale up from center, top drifts higher, bottom drifts lower */
+@keyframes bee-wave-expand-up {
+  0%, 100% { transform: scale(1) translateY(0); }
+  35%, 55% { transform: scale(1.25) translateY(-150px); }
+  80% { transform: scale(1.03) translateY(-20px); }
+}
+@keyframes bee-wave-expand-down {
+  0%, 100% { transform: scale(1) translateY(0); }
+  35%, 55% { transform: scale(1.25) translateY(150px); }
+  80% { transform: scale(1.03) translateY(20px); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="wave"] svg > path:nth-of-type(1) { transform-box: fill-box; transform-origin: center; animation: bee-wave-expand-up 0.7s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="wave"] svg > path:nth-of-type(2) { transform-box: fill-box; transform-origin: center; animation: bee-wave-expand-down 0.7s ease-in-out; }
+
+
+/* spark: D-wings squeeze in, orbit the body (opposite sides), expand back out */
+@keyframes bee-spark-orbit-l {
+  0%       { transform: translateX(0) translateY(0); }
+  15%      { transform: translateX(180px) translateY(0); }
+  35%      { transform: translateX(180px) translateY(-300px); }
+  55%      { transform: translateX(180px) translateY(300px); }
+  75%      { transform: translateX(180px) translateY(0); }
+  100%     { transform: translateX(0) translateY(0); }
+}
+@keyframes bee-spark-orbit-r {
+  0%       { transform: translateX(0) translateY(0); }
+  15%      { transform: translateX(-180px) translateY(0); }
+  35%      { transform: translateX(-180px) translateY(300px); }
+  55%      { transform: translateX(-180px) translateY(-300px); }
+  75%      { transform: translateX(-180px) translateY(0); }
+  100%     { transform: translateX(0) translateY(0); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="spark"] svg > path:nth-of-type(1) { animation: none; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="spark"] svg > path:nth-of-type(2) { animation: bee-spark-orbit-l 1s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="spark"] svg > path:nth-of-type(3) { animation: bee-spark-orbit-r 1s ease-in-out; }
+
+
+/* compass: 4 teardrops flutter (bee-scale viewBox 125, no .bee-char) */
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] svg > path:nth-of-type(4) { transform-origin: 12.8% 54.3%; animation: bee-flutter-l 0.5s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] svg > path:nth-of-type(3) { transform-origin: 12.8% 45.7%; animation: bee-flutter-r 0.5s ease-in-out 0.06s; }
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] svg > path:nth-of-type(2) { transform-origin: 87.0% 45.7%; animation: bee-flutter-l 0.5s ease-in-out 0.12s; }
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] svg > path:nth-of-type(1) { transform-origin: 87.0% 54.3%; animation: bee-flutter-r 0.5s ease-in-out 0.18s; }
+
+/* compass: eyes blink (no .bee-char) */
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] .bee-eyes-wake > :nth-child(1) { animation: bee-blink 0.9s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle)[data-icon="compass"] .bee-eyes-wake > :nth-child(2) { animation: bee-blink 0.9s ease-in-out 0.06s; }
+
+/* lens: 7 eyes bounce and blink independently on hover */
+@keyframes bee-lens-1 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  20% { transform: translate(40px,-60px) scaleY(1); }
+  38% { transform: translate(40px,-60px) scaleY(0.08); }
+  45% { transform: translate(40px,-60px) scaleY(1); }
+  70% { transform: translate(-20px,30px) scaleY(1); }
+}
+@keyframes bee-lens-2 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  15% { transform: translate(-50px,40px) scaleY(1); }
+  35% { transform: translate(-50px,40px) scaleY(0.08); }
+  42% { transform: translate(-50px,40px) scaleY(1); }
+  65% { transform: translate(25px,-15px) scaleY(1); }
+}
+@keyframes bee-lens-3 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  25% { transform: translate(30px,50px) scaleY(1); }
+  42% { transform: translate(30px,50px) scaleY(0.08); }
+  50% { transform: translate(30px,50px) scaleY(1); }
+  75% { transform: translate(-15px,-25px) scaleY(1); }
+}
+@keyframes bee-lens-4 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  18% { transform: translate(-35px,-45px) scaleY(1); }
+  32% { transform: translate(-35px,-45px) scaleY(0.08); }
+  40% { transform: translate(-35px,-45px) scaleY(1); }
+  68% { transform: translate(20px,20px) scaleY(1); }
+}
+@keyframes bee-lens-5 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  22% { transform: translate(55px,35px) scaleY(1); }
+  40% { transform: translate(55px,35px) scaleY(0.08); }
+  48% { transform: translate(55px,35px) scaleY(1); }
+  72% { transform: translate(-30px,-10px) scaleY(1); }
+}
+@keyframes bee-lens-6 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  28% { transform: translate(-45px,55px) scaleY(1); }
+  45% { transform: translate(-45px,55px) scaleY(0.08); }
+  52% { transform: translate(-45px,55px) scaleY(1); }
+  78% { transform: translate(15px,-30px) scaleY(1); }
+}
+@keyframes bee-lens-7 {
+  0%, 100% { transform: translate(0,0) scaleY(1); }
+  12% { transform: translate(25px,-40px) scaleY(1); }
+  30% { transform: translate(25px,-40px) scaleY(0.08); }
+  38% { transform: translate(25px,-40px) scaleY(1); }
+  60% { transform: translate(-10px,20px) scaleY(1); }
+}
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye { transform-box: fill-box; transform-origin: center; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(1) { animation: bee-lens-1 1.0s ease-in-out; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(2) { animation: bee-lens-2 0.9s ease-in-out 0.05s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(3) { animation: bee-lens-3 1.1s ease-in-out 0.1s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(4) { animation: bee-lens-4 0.95s ease-in-out 0.15s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(5) { animation: bee-lens-5 1.0s ease-in-out 0.08s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(6) { animation: bee-lens-6 1.05s ease-in-out 0.2s; }
+.group:hover :is(.bee-awake, .bee-idle).bee-char[data-icon="lens"] .lens-eye:nth-of-type(7) { animation: bee-lens-7 0.85s ease-in-out 0.12s; }
+
+/* lens idle: each eye opens at its own moment, then blinks at its own moment */
+@keyframes bee-lens-show { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bee-lens-hide { from { opacity: 1; } to { opacity: 0; } }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .bee-eyes-sleep { display: inline; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(1) { animation: bee-lens-hide 1ms linear 0.32s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(1) { animation: bee-lens-show 1ms linear 0.32s both, bee-blink 0.9s ease-in-out 0.95s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(2) { animation: bee-lens-hide 1ms linear 0s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(2) { animation: bee-lens-show 1ms linear 0s both, bee-blink 0.9s ease-in-out 0.7s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(3) { animation: bee-lens-hide 1ms linear 0.5s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(3) { animation: bee-lens-show 1ms linear 0.5s both, bee-blink 0.9s ease-in-out 1.3s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(4) { animation: bee-lens-hide 1ms linear 0.18s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(4) { animation: bee-lens-show 1ms linear 0.18s both, bee-blink 0.9s ease-in-out 0.85s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(5) { animation: bee-lens-hide 1ms linear 0.62s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(5) { animation: bee-lens-show 1ms linear 0.62s both, bee-blink 0.9s ease-in-out 1.15s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(6) { animation: bee-lens-hide 1ms linear 0.08s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(6) { animation: bee-lens-show 1ms linear 0.08s both, bee-blink 0.9s ease-in-out 0.6s; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(7) { animation: bee-lens-hide 1ms linear 0.4s both; }
+.group:hover .bee-idle.bee-char[data-icon="lens"] .lens-eye:nth-of-type(7) { animation: bee-lens-show 1ms linear 0.4s both, bee-blink 0.9s ease-in-out 1.45s; }
+
+/* ── Character sleeping: gentle twitches ── */
+@keyframes bee-char-twitch {
+  0%, 92%, 100% { transform: rotate(0deg); }
+  93% { transform: rotate(4deg); }
+  95% { transform: rotate(-2deg); }
+  96.5% { transform: rotate(1deg); }
+  97.5% { transform: rotate(0deg); }
+}
+.bee-sleeping.bee-char[data-icon="stack"] svg > rect:nth-of-type(2) { animation: bee-char-twitch 4.5s ease-in-out infinite 3s; }
+.bee-sleeping.bee-char[data-icon="shield"] svg > path:nth-of-type(1) { transform-box: fill-box; transform-origin: center; animation: bee-char-twitch 4s ease-in-out infinite 4.5s; }
+.bee-sleeping.bee-char[data-icon="roller"] svg > path:nth-of-type(1) { transform-box: fill-box; transform-origin: center top; animation: bee-char-twitch 4s ease-in-out infinite 4s; }
+.bee-sleeping.bee-char[data-icon="tower"] svg > rect:nth-of-type(1) { animation: bee-char-twitch 4s ease-in-out infinite 4.5s; }
+.bee-sleeping.bee-char[data-icon="wave"] svg > path:nth-of-type(1) { transform-box: fill-box; transform-origin: center; animation: bee-char-twitch 3.5s ease-in-out infinite 4s; }
+.bee-sleeping.bee-char[data-icon="spark"] svg > path:nth-of-type(2) { transform-box: fill-box; transform-origin: 100% 50%; animation: bee-char-twitch 4s ease-in-out infinite 4.2s; }
+.bee-sleeping.bee-char[data-icon="lens"] .lens-eye-closed:nth-of-type(3) { transform-box: fill-box; transform-origin: center; animation: bee-char-twitch 4s ease-in-out infinite 5s; }
+.group:hover .bee-sleeping.bee-char[data-icon="lens"] .lens-eye-closed { animation: none; }
+
+/* compass sleeping twitch (no .bee-char — uses bee-scale viewBox) */
+.bee-sleeping[data-icon="compass"] svg > path:nth-of-type(1) { transform-origin: 87.0% 54.3%; animation: bee-twitch 4.5s ease-in-out infinite 4s; }
 `;
+
+function playRules(css: string): string {
+  const rules = css.match(/[^{}]+\{[^{}]*\}/g) ?? [];
+  return rules
+    .filter((rule) => rule.includes(".group:hover"))
+    .map((rule) => rule.split(".group:hover").join(".bee-play"))
+    .join("\n");
+}
 
 let stylesInjected = false;
 
-function injectStyles() {
+export function injectBeeStyles() {
   if (stylesInjected) return;
   stylesInjected = true;
+  document.getElementById("bee-avatar-styles")?.remove();
   const style = document.createElement("style");
-  style.textContent = BEE_STYLES;
+  style.id = "bee-avatar-styles";
+  style.textContent = BEE_STYLES + "\n" + playRules(BEE_STYLES);
   document.head.appendChild(style);
 }
 
@@ -447,12 +778,16 @@ export function BeeAvatar({
   idle?: boolean;
   className?: string;
 }) {
-  injectStyles();
+  injectBeeStyles();
   const idx = beeName ? BEE_NAMES.indexOf(beeName) : hashId(agentId ?? "");
   const sleeping = SLEEPING_STATES.has(state);
   const fill: FillArg = sleeping ? "#a2a9b0" : (colors ?? "black");
   const render = bees[idx]!;
-  const stateClass = idle ? "bee-idle" : sleeping ? "bee-sleeping" : "bee-awake";
+  const stateClass = idle
+    ? "bee-idle"
+    : sleeping
+      ? "bee-sleeping"
+      : "bee-awake";
   return (
     <div
       className={cn(

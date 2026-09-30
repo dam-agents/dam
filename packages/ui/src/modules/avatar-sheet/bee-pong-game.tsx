@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const GRAVITY = 0.15;
+const GRAVITY = 0.12;
 const BOUNCE = 0.78;
-const HIT_UP = -3.5;
-const HIT_ACROSS = 2.8;
-const AI_SPEED = 2.2;
+const HIT_UP = -3.0;
+const HIT_ACROSS = 2.4;
+const AI_SPEED = 1.8;
 const GRAB_RADIUS = 80;
 
 const ICON_PX = 56;
@@ -219,12 +219,24 @@ export function BeePongInline({
           BAR_H,
         )
       ) {
-        if (s.ball.vx > 0) {
+        const oL = s.ball.x + BALL_R - barX;
+        const oR = barX + BAR_W - (s.ball.x - BALL_R);
+        const oT = s.ball.y + BALL_R - by;
+        const oB = by + BAR_H - (s.ball.y - BALL_R);
+        const min = Math.min(oL, oR, oT, oB);
+        if (min === oT) {
+          s.ball.y = by - BALL_R;
+          s.ball.vy = -Math.abs(s.ball.vy) * BOUNCE;
+        } else if (min === oB) {
+          s.ball.y = by + BAR_H + BALL_R;
+          s.ball.vy = Math.abs(s.ball.vy) * BOUNCE;
+        } else if (min === oL) {
           s.ball.x = barX - BALL_R;
+          s.ball.vx = -Math.abs(s.ball.vx) * BOUNCE;
         } else {
           s.ball.x = barX + BAR_W + BALL_R;
+          s.ball.vx = Math.abs(s.ball.vx) * BOUNCE;
         }
-        s.ball.vx *= -BOUNCE;
       }
     }
 
@@ -250,11 +262,7 @@ export function BeePongInline({
         barX + BAR_W + 4,
         areaW - WING_W,
       );
-      s.rightWing.y = clamp(
-        mouseRef.current.y - WING_H / 2,
-        0,
-        floor - WING_H,
-      );
+      s.rightWing.y = clamp(mouseRef.current.y - WING_H / 2, 0, floor - WING_H);
       s.rightWing.vy = 0;
       if (s.phase === "dropped") s.phase = "playing";
     } else {
@@ -387,12 +395,31 @@ export function BeePongInline({
         className="absolute inset-0 h-full w-full"
         style={{ overflow: "hidden" }}
       >
-        {/* body bars — always at exact icon position */}
-        <rect x={barX} y={bar1Y} width={BAR_W} height={BAR_H} rx={1} fill={COL_BODY} />
-        <rect x={barX} y={bar2Y} width={BAR_W} height={BAR_H} rx={1} fill={COL_BODY} />
-        <rect x={barX} y={bar3Y} width={BAR_W} height={BAR_H} rx={1} fill={COL_BODY} />
+        <rect
+          x={barX}
+          y={bar1Y}
+          width={BAR_W}
+          height={BAR_H}
+          rx={1}
+          fill={COL_BODY}
+        />
+        <rect
+          x={barX}
+          y={bar2Y}
+          width={BAR_W}
+          height={BAR_H}
+          rx={1}
+          fill={COL_BODY}
+        />
+        <rect
+          x={barX}
+          y={bar3Y}
+          width={BAR_W}
+          height={BAR_H}
+          rx={1}
+          fill={COL_BODY}
+        />
 
-        {/* eyes — visible only during intact, then merge into ball */}
         {isIntact && (
           <>
             <circle cx={eyeLX} cy={eyeY} r={eyeR} fill={COL_EYE} />
@@ -400,7 +427,6 @@ export function BeePongInline({
           </>
         )}
 
-        {/* left wing */}
         <svg
           x={state.leftWing.x}
           y={state.leftWing.y}
@@ -412,7 +438,6 @@ export function BeePongInline({
           <path d={LW_D} fill={COL_WING} />
         </svg>
 
-        {/* right wing */}
         <svg
           x={state.rightWing.x}
           y={state.rightWing.y}
@@ -424,9 +449,13 @@ export function BeePongInline({
           <path d={RW_D} fill={COL_WING} />
         </svg>
 
-        {/* ball — hidden during intact */}
         {!isIntact && (
-          <circle cx={state.ball.x} cy={state.ball.y} r={BALL_R} fill={COL_EYE} />
+          <circle
+            cx={state.ball.x}
+            cy={state.ball.y}
+            r={BALL_R}
+            fill={COL_EYE}
+          />
         )}
       </svg>
 

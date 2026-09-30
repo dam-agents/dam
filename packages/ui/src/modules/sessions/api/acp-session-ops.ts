@@ -116,6 +116,9 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
+  const mockFn = (window as any).__mockListAgentSessions;
+  if (mockFn) return mockFn(agentId);
+
   if (agentLacksLiveUpdates(agentId)) {
     return listAgentSessionsOverAcp(agentId);
   }

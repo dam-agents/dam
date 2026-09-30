@@ -34,29 +34,6 @@ export function MockStateBar() {
           <div className="flex flex-col gap-0.5 p-2">
             <button
               type="button"
-              onClick={() => setView("agents")}
-              className={cn(
-                "rounded-md px-3 py-2 text-left transition-colors",
-                view === "agents" ? "bg-muted" : "hover:bg-muted/50",
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "inline-block size-1.5 rounded-full",
-                    view === "agents" ? "bg-foreground" : "bg-border",
-                  )}
-                />
-                <span className="text-sm font-medium text-foreground">
-                  Home
-                </span>
-              </span>
-              <p className="mt-0.5 pl-3.5 text-sm leading-snug text-muted-foreground">
-                Agent cards with bee avatars.
-              </p>
-            </button>
-            <button
-              type="button"
               onClick={() => setView("avatar-sheet")}
               className={cn(
                 "rounded-md px-3 py-2 text-left transition-colors",
