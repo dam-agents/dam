@@ -19,7 +19,10 @@ interface Props {
  * chip lands, not on this block's next poll.
  */
 export function LiveDelegationBlock({ driverAgentId, busy, claimed }: Props) {
-  const { data } = useRunningDelegations(driverAgentId, busy);
+  const { data } = useRunningDelegations(driverAgentId, {
+    busy,
+    watch: claimed.size > 0,
+  });
   const nodes = useMemo(
     () => (data?.nodes ?? []).filter((node) => !claimed.has(node.id)),
     [data, claimed],

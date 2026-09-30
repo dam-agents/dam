@@ -268,7 +268,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .where(
           and(
             eq(invocationsTable.owner, owner),
-            eq(invocationsTable.status, "running"),
+            isNull(invocationsTable.reapedAt),
           ),
         );
       return rows;

@@ -1,4 +1,4 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 import { awaitsCapture, hasRunning } from "../lib/delegation-state.js";
@@ -48,16 +48,30 @@ export function useInvocationTurns(
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a driver's running children are read while its
+ * turn runs, while its transcript names a fan-out, and for as long as the last
+ * answer still had a child running, so a background fan-out stays in view
+ * without every open chat polling forever.
+ */
 export function useRunningDelegations(
   driverAgentId: string | null,
-  busy: boolean,
+  opts: { busy: boolean; watch: boolean },
 ) {
+  const options = trpc.invocations.running.queryOptions(
+    driverAgentId ? { driverAgentId } : skipToken,
+  );
+  const cached = useQueryClient().getQueryData(options.queryKey);
   return useQuery({
-    ...trpc.invocations.running.queryOptions(
-      driverAgentId ? { driverAgentId } : skipToken,
-    ),
+    ...options,
+    enabled:
+      driverAgentId !== null &&
+      (opts.busy || opts.watch || hasRunning(cached?.nodes ?? [])),
     staleTime: 1_000,
-    refetchInterval: busy ? LIVE_POLL_MS : IDLE_POLL_MS,
+    refetchInterval: (query) =>
+      opts.busy || hasRunning(query.state.data?.nodes ?? [])
+        ? LIVE_POLL_MS
+        : IDLE_POLL_MS,
     retry: false,
   });
 }

@@ -49,7 +49,10 @@ export function createDelegationFramesStore(
   const fileOf = (invocationId: string) => `${invocationId}.jsonl`;
 
   function evictBeyondCap(keep: string): void {
-    const files = readdirSync(dir)
+    const names = readdirSync(dir);
+    for (const name of names)
+      if (name.endsWith(".tmp")) unlinkSync(join(dir, name));
+    const files = names
       .filter((name) => name.endsWith(".jsonl"))
       .map((name) => {
         const stat = statSync(join(dir, name));

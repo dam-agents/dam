@@ -18,7 +18,11 @@ interface Props {
 export function DelegationBlock({ chip, spawns }: Props) {
   const driverAgentId = useStore((s) => s.selectedAgent);
   const spawnIds = useMemo(() => spawns.map((s) => s.id), [spawns]);
-  const { data: tree, isPending } = useDelegationTree(driverAgentId, spawnIds);
+  const {
+    data: tree,
+    isPending,
+    isError,
+  } = useDelegationTree(driverAgentId, spawnIds);
   const nodes = useMemo(() => tree?.nodes ?? [], [tree]);
 
   return (
@@ -26,8 +30,13 @@ export function DelegationBlock({ chip, spawns }: Props) {
       verb="Delegated to"
       nodes={driverAgentId ? nodes : []}
       driverAgentId={driverAgentId ?? ""}
+      expected={spawns.length}
       fallback={spawns.map((spawn) => (
-        <PendingRow key={spawn.id} label={spawn.label} loading={isPending} />
+        <PendingRow
+          key={spawn.id}
+          label={spawn.label}
+          state={isPending ? "loading" : isError ? "unread" : "missing"}
+        />
       ))}
       footer={<ScriptFold chip={chip} />}
     />
@@ -54,12 +63,19 @@ function ScriptFold({ chip }: { chip: ToolChip }) {
   );
 }
 
-function PendingRow({ label, loading }: { label: string; loading: boolean }) {
+function PendingRow({
+  label,
+  state,
+}: {
+  label: string;
+  state: "loading" | "unread" | "missing";
+}) {
   return (
     <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-      {loading && <Spinner size={12} />}
+      {state === "loading" && <Spinner size={12} />}
       <span className="truncate">{label}</span>
-      {!loading && <span>no record</span>}
+      {state === "unread" && <span>could not be read</span>}
+      {state === "missing" && <span>no record</span>}
     </div>
   );
 }

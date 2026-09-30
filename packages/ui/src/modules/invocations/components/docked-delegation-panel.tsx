@@ -30,7 +30,10 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
   const close = useStore((s) => s.setOpenDelegation);
   const agents = useAgentsList();
   const ids = useMemo(() => [id], [id]);
-  const { data: tree } = useDelegationTree(driverAgentId, ids);
+  const { data: tree, isPending: treePending } = useDelegationTree(
+    driverAgentId,
+    ids,
+  );
   const node = tree?.nodes[0];
   const driverName =
     agents.find((a) => a.id === driverAgentId)?.name ?? driverAgentId;
@@ -69,6 +72,8 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           driverAgentId={driverAgentId}
           driverName={driverName}
         />
+      ) : !treePending ? (
+        <Notice text="This delegation is no longer recorded." />
       ) : (
         <div className="flex flex-1 items-center justify-center">
           <Spinner size={16} />
@@ -141,6 +146,7 @@ function PanelBody({
                 key={message.id}
                 message={message}
                 userLabel={driverName}
+                readOnly
                 isLast={i === messages.length - 1}
                 hasPendingPermission={false}
                 onRetry={noop}

@@ -43,7 +43,7 @@ interface Props {
   role: Role;
   streaming: boolean;
   isLast: boolean;
-  onFileClick: (path: string) => void;
+  onFileClick?: (path: string) => void;
 }
 
 export function ChatMessagePart({

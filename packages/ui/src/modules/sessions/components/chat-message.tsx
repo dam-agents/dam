@@ -21,6 +21,7 @@ interface BaseProps {
   message: Message;
   avatarAgentName?: string;
   userLabel?: string;
+  readOnly?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -85,6 +86,7 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgentName,
   userLabel = "You",
+  readOnly = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -162,7 +164,7 @@ export const ChatMessage = memo(function ChatMessage({
               role={role}
               streaming={streaming}
               isLast={i === parts.length - 1}
-              onFileClick={onFileClick}
+              onFileClick={readOnly ? undefined : onFileClick}
             />
           ))}
           {streaming && queued && parts.length === 0 && (
@@ -173,7 +175,7 @@ export const ChatMessage = memo(function ChatMessage({
               Waiting for previous prompt…
             </span>
           )}
-          {isAssistant && isLast && <PermissionStatusLine />}
+          {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
           {isAssistant && streaming && !queued && !hasPendingPermission && (
             <span role="status" className="inline-flex items-center py-1">
               <WorkingDots size="md" className="text-accent" />

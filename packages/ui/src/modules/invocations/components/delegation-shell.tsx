@@ -10,6 +10,7 @@ interface Props {
   verb: string;
   nodes: readonly DelegationNode[];
   driverAgentId: string;
+  expected?: number;
   fallback?: ReactNode;
   footer?: ReactNode;
 }
@@ -24,12 +25,13 @@ export function DelegationShell({
   verb,
   nodes,
   driverAgentId,
+  expected = 0,
   fallback,
   footer,
 }: Props) {
   const [open, setOpen] = useState(true);
   const counts = countByStatus(nodes);
-  const total = nodes.length > 0 ? flattenIds(nodes).length : 0;
+  const total = nodes.length > 0 ? flattenIds(nodes).length : expected;
 
   return (
     <ActivityBlock
