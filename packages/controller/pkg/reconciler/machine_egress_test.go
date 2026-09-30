@@ -105,7 +105,7 @@ func TestTheMachineResolverAnswersLocallyAndForwardsNothing(t *testing.T) {
 	assert.NotContains(t, cm.Data, machineDNSCorefileKey)
 }
 
-// TEST_SCENARIO: the resolver runs beside Envoy only in a machine's gateway, answers with the address it was handed, runs as a stated numeric uid, and keeps a single capability. The image names its user (`nonroot`), which the kubelet cannot verify against RunAsNonRoot, so without a numeric uid the container never starts and the gateway pod never becomes ready. CoreDNS's binary carries the bind capability as a file capability, which the kernel refuses to exec outside the bounding set — dropping it too leaves a gateway pod that never starts.
+// TEST_SCENARIO: the resolver runs beside Envoy only in a machine's gateway, answers with the address it was handed, and keeps a single capability. It states no uid, so OpenShift's restricted policy can assign one from the namespace range; a stated uid would fit no SCC the gateway may use. CoreDNS's binary carries the bind capability as a file capability, which the kernel refuses to exec outside the bounding set — dropping it too leaves a gateway pod that never starts.
 func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
 	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "172.30.1.2", testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	containers := ss.Spec.Template.Spec.Containers
@@ -117,8 +117,8 @@ func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
 	assert.Equal(t, []corev1.Capability{"ALL"}, dns.SecurityContext.Capabilities.Drop)
 	assert.Equal(t, []corev1.Capability{"NET_BIND_SERVICE"}, dns.SecurityContext.Capabilities.Add)
 	assert.True(t, *dns.SecurityContext.RunAsNonRoot)
-	require.NotNil(t, dns.SecurityContext.RunAsUser, "the image names its user, so the kubelet refuses RunAsNonRoot unless a numeric uid is stated")
-	assert.Equal(t, int64(65532), *dns.SecurityContext.RunAsUser)
+	assert.Nil(t, dns.SecurityContext.RunAsUser)
+	assert.Nil(t, dns.SecurityContext.RunAsGroup)
 	assert.True(t, *dns.SecurityContext.ReadOnlyRootFilesystem)
 
 	container := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil)

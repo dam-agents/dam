@@ -14,7 +14,6 @@ const (
 	gatewayMachineDNSPort  = 10053
 	machineDNSCorefileKey  = "Corefile"
 	machineDNSGatewayIPEnv = "GATEWAY_IP"
-	machineDNSUser         = int64(65532)
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
@@ -31,9 +30,8 @@ const machineDNSCorefile = `.:10053 {
 }
 `
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine's resolver, beside Envoy in the gateway pod. It answers from the address the controller hands it rather than from anything the machine says. CoreDNS's binary carries the bind capability as a file capability, and the kernel refuses to exec such a file when the capability is outside the container's bounding set, so NET_BIND_SERVICE is the one capability kept. The image names its user rather than numbering it, which the kubelet cannot check against RunAsNonRoot and refuses to start, so the distroless nonroot uid is stated here.
+// UNIT_BOUNDARY_DESCRIPTION: the machine's resolver, beside Envoy in the gateway pod. It answers from the address the controller hands it rather than from anything the machine says. CoreDNS's binary carries the bind capability as a file capability, and the kernel refuses to exec such a file when the capability is outside the container's bounding set, so NET_BIND_SERVICE is the one capability kept. No uid is set: the image declares a numeric non-root user the kubelet can check against RunAsNonRoot, and OpenShift assigns one from the namespace range.
 func machineDNSContainer(cfg *config.Config, gatewayIP string) corev1.Container {
-	user := machineDNSUser
 	return corev1.Container{
 		Name:            "machine-dns",
 		Image:           cfg.MachineDNSImage,
@@ -59,8 +57,6 @@ func machineDNSContainer(cfg *config.Config, gatewayIP string) corev1.Container 
 			AllowPrivilegeEscalation: new(false),
 			ReadOnlyRootFilesystem:   new(true),
 			RunAsNonRoot:             new(true),
-			RunAsUser:                &user,
-			RunAsGroup:               &user,
 		},
 	}
 }
