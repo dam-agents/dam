@@ -21,6 +21,11 @@ import {
 } from "../agents/components/char-avatar.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { BeePongInline } from "./bee-pong-game.js";
+import {
+  GettingStartedControls,
+  GettingStartedDock,
+} from "./getting-started-checklist.js";
+import { OnboardingSpecimens } from "./onboarding-specimens.js";
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
 type SheetTab = "bees" | "carbon" | "paul-rand";
@@ -830,18 +835,50 @@ function PaulRandSheet() {
         </div>
       </section>
 
-      <section className="mb-12">
+      <section id="create-agent-preview" className="mb-12 scroll-mt-6">
         <SectionLabel>Create Agent — Choose a Character</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
           The agent creation screen with a character next to the name. Click the
           character to pick one of the eight to represent the agent.
         </p>
-        <div className="h-[900px] overflow-y-auto rounded-xl border-2 border-border bg-background">
-          <div className="mx-auto w-full max-w-[720px] px-8 py-10">
-            <AgentSetupView embedded />
+        <div className="relative left-1/2 w-[min(1440px,calc(100vw-80px))] -translate-x-1/2 overflow-hidden rounded-xl border-2 border-border">
+          <div className="flex h-[900px] bg-background">
+            <IconRail expanded hideMobileBar />
+            <main className="relative flex-1 overflow-y-auto">
+              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <AgentSetupView embedded />
+              </div>
+            </main>
           </div>
         </div>
       </section>
+
+      <section className="mb-12">
+        <SectionLabel>Getting Started — Catch New Avatars</SectionLabel>
+        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
+          The checklist is docked in the lower right of this page and stays
+          there until every task is done. Collapse it to a pill that shows
+          progress. New users start with no avatars. Clicking Create agent on
+          the creation screen above catches their first one at random and puts
+          it on that agent. Every other task catches another random avatar, and
+          all the ones not caught yet are closed pods, so each one is a
+          surprise. When a task is finished, even with the checklist collapsed,
+          the pod swings open above the dock and the new avatar joins the crew
+          and the character picker.
+        </p>
+        <GettingStartedControls />
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Onboarding Components</SectionLabel>
+        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
+          Every piece of the getting-started flow on its own, in each of its
+          states. These are separate from the live dock, so nothing here changes
+          your progress.
+        </p>
+        <OnboardingSpecimens />
+      </section>
+      <GettingStartedDock />
     </>
   );
 }

@@ -2,6 +2,7 @@ import { Search } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
@@ -26,9 +27,15 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSelect: (pack: Pack) => void;
+  onStartFromScratch?: () => void;
 }
 
-export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
+export function BrowsePacksModal({
+  open,
+  onClose,
+  onSelect,
+  onStartFromScratch,
+}: Props) {
   const [category, setCategory] = useState<CategoryFilter>("All");
   const [search, setSearch] = useState("");
   const isSearching = search.trim().length > 0;
@@ -56,10 +63,10 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
     <Modal widthClass="w-[960px]">
       <DialogHeader onClose={onClose} divided>
         <h2 className="text-lg font-semibold text-foreground">
-          Browse presets
+          Browse starter kits
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Pick a preset to pre-fill your agent setup
+          Pick a starter kit to pre-fill your agent setup
         </p>
       </DialogHeader>
 
@@ -70,7 +77,7 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <Input
-            placeholder="Search presets..."
+            placeholder="Search starter kits..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-9 pl-9"
@@ -83,7 +90,7 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
             onValueChange={setCategory}
             variant="pill"
             size="sm"
-            ariaLabel="Filter presets by category"
+            ariaLabel="Filter starter kits by category"
             className="mt-3"
           />
         )}
@@ -92,7 +99,7 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
       <div className="max-h-[60vh] overflow-y-auto px-6 py-4">
         {filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No presets match your search
+            No starter kits match your search
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -132,6 +139,13 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
           </div>
         )}
       </div>
+      {onStartFromScratch && (
+        <div className="flex justify-end border-t border-border px-6 py-4">
+          <Button variant="ghost" onClick={onStartFromScratch}>
+            Start from scratch
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }

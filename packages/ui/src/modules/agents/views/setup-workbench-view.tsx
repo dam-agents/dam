@@ -169,7 +169,7 @@ function ScheduleWorkbench({ pack }: { pack: Pack | null }) {
     () =>
       scheduleSlots.map((s) => ({
         name: s.label,
-        task: s.description,
+        task: s.description ?? "",
         kind: "daily" as const,
         interval: "1",
         time: "09:00",

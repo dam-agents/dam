@@ -1,4 +1,5 @@
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { agentsKeys } from "../../agents/api/queries.js";
 import type { Pack } from "../data/packs.js";
@@ -37,6 +38,7 @@ export function mockCreateAgentFromPack(
   };
 
   insertAgentIntoCache(agent);
+  useStore.getState().initOnboarding(agentId, pack);
   return agentId;
 }
 

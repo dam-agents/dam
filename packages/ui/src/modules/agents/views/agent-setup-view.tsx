@@ -1,12 +1,14 @@
 import {
   Add,
-  Box,
+  Checkmark,
   Close,
+  Cube,
+  Information,
   Launch,
   LogoGithub,
   TrashCan,
 } from "@carbon/icons-react";
-import type { SkillSource } from "api-server-api";
+import type { ConnectionView, SkillSource } from "api-server-api";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,16 +25,28 @@ import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
+import type {
+  RowGrantControls,
+  RowMaintenanceActions,
+} from "../../connections/components/catalog-connection-row.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { ConnectionRowActions } from "../../connections/components/connection-row-actions.js";
+import { ConnectionStatusBadge } from "../../connections/components/connection-status-badge.js";
+import {
+  catalogProviderTitle,
+  connectionKindSubtitle,
+} from "../../connections/lib/catalog-providers.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
+import { PackIngredientSummary } from "../../packs/components/pack-ingredient-summary.js";
 import type { Pack, PackSlot } from "../../packs/data/packs.js";
 import { mockCreateAgentFromPack } from "../../packs/lib/mock-create-from-pack.js";
 import { buildPackSummaryMessage } from "../../packs/lib/pack-summary-message.js";
 import { packToSetupDefaults } from "../../packs/lib/pack-to-setup-defaults.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
+import { SandboxSizeSection } from "../../sandboxes/components/sandbox-size-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
@@ -50,24 +64,27 @@ import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { ScheduleSetupSection } from "../../schedules/components/schedule-setup-section.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
-import { useAgents } from "../api/queries.js";
 import { hashIndex } from "../components/bee-avatar.js";
-import { CHAR_NAMES, type CharName } from "../components/char-avatar.js";
+import type { CharName } from "../components/char-avatar.js";
 import { CharacterPicker } from "../components/character-picker.js";
+import {
+  completeQuest,
+  FIRST_AGENT_QUEST_ID,
+  getCharacterUnlocks,
+  useCharacterUnlocks,
+} from "../lib/character-unlocks.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
   hasPartialRegistryCredential,
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
-import { nextNameWithPrefix } from "../lib/sandbox-name.js";
 
 const RETURN_PATH = routeToPath({ view: "agent-new" });
 
 export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
   const pendingPack = useStore((s) => s.pendingPack);
   const setPendingPack = useStore((s) => s.setPendingPack);
-  const { data: agentsData } = useAgents();
   const { data: userConnections } = useAppConnections();
 
   const userConnectionTemplateMap = useMemo(() => {
@@ -102,24 +119,31 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
     RETURN_PATH,
   );
 
-  const [character, setCharacter] = useState<CharName>(
-    () => CHAR_NAMES[hashIndex(form.name || "new-agent", CHAR_NAMES.length)]!,
-  );
+  const [character, setCharacter] = useState<CharName | null>(() => {
+    const { caught } = getCharacterUnlocks();
+    if (caught.length === 0) return null;
+    return caught[hashIndex(form.name || "new-agent", caught.length)]!;
+  });
+  const { caught, rewards, working: questWorking } = useCharacterUnlocks();
+  const firstReward = rewards.get(FIRST_AGENT_QUEST_ID) ?? null;
+  const [avatarPop, setAvatarPop] = useState(false);
 
-  const takenNames = useMemo(
-    () => (agentsData?.list ?? []).map((a) => a.name),
-    [agentsData],
-  );
-
-  const namePrefilledRef = useRef(false);
   useEffect(() => {
-    if (!pendingPack || namePrefilledRef.current) return;
-    if (form.name && !form.name.startsWith(pendingPack.id)) return;
-    const slug = pendingPack.id;
-    const suggested = nextNameWithPrefix(slug, takenNames);
-    update({ name: suggested });
-    namePrefilledRef.current = true;
-  }, [pendingPack, form.name, takenNames, update]);
+    if (!firstReward) return;
+    setCharacter(firstReward);
+    setAvatarPop(true);
+    const t = setTimeout(() => setAvatarPop(false), 700);
+    return () => clearTimeout(t);
+  }, [firstReward]);
+
+  useEffect(() => {
+    if (caught.length === 0) setCharacter(null);
+  }, [caught.length]);
+
+  const catchingFirst = questWorking === FIRST_AGENT_QUEST_ID;
+  const previewCreate = () => {
+    if (!firstReward) completeQuest(FIRST_AGENT_QUEST_ID);
+  };
 
   const { data: templates, isLoading } = useTemplates();
   const { data: flags } = useFeatures();
@@ -164,6 +188,8 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
       providerRef: form.providerRef,
       connectionIds: form.connectionIds,
       registryCredential,
+      sizeCpuMilli: form.sizeCpuMilli,
+      sizeMemoryMi: form.sizeMemoryMi,
     };
     return isCodingAgentSetupComplete(draft);
   })();
@@ -175,6 +201,8 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
     providerRef: form.providerRef,
     connectionIds: form.connectionIds,
     registryCredential,
+    sizeCpuMilli: form.sizeCpuMilli,
+    sizeMemoryMi: form.sizeMemoryMi,
   });
 
   const create = async () => {
@@ -212,6 +240,7 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         reset();
         setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
         setRegistryDisclosureOverride(null);
+        useStore.getState().setCreatedFromPack(agentId, pendingPack.id);
         setPendingPack(null);
         selectAgent(agentId);
         useStore.getState().setSessionId(`pack-session-${Date.now()}`);
@@ -226,6 +255,8 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         providerRef: form.providerRef,
         connectionIds: form.connectionIds,
         registryCredential,
+        sizeCpuMilli: form.sizeCpuMilli,
+        sizeMemoryMi: form.sizeMemoryMi,
       };
       const agent = await createAgent.mutateAsync(
         buildCodingAgentSetupInput(draft),
@@ -233,6 +264,9 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
+      if (pendingPack) {
+        useStore.getState().setCreatedFromPack(agent.id, pendingPack.id);
+      }
       setPendingPack(null);
       selectAgent(agent.id);
     } catch {}
@@ -249,9 +283,6 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
 
   const [browsePacksOpen, setBrowsePacksOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState<string | boolean>(false);
-  const [dismissedSkills, setDismissedSkills] = useState<Set<string>>(
-    new Set(),
-  );
   const [dismissedRecommended, setDismissedRecommended] = useState<Set<string>>(
     new Set(),
   );
@@ -266,15 +297,14 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
 
   const recommendedSlots = useMemo(() => {
     if (!pendingPack) return [];
-    const allSlots = [...pendingPack.included, ...pendingPack.required];
-    return allSlots.filter(
+    return [...pendingPack.required, ...pendingPack.included].filter(
       (s) => s.kind === "connection" && s.connectionTemplateId,
     );
   }, [pendingPack]);
 
   const recommendedKbSlots = useMemo(() => {
     if (!pendingPack) return [];
-    return [...pendingPack.included, ...pendingPack.required].filter(
+    return [...pendingPack.required, ...pendingPack.included].filter(
       (s) => s.kind === "knowledge-base",
     );
   }, [pendingPack]);
@@ -293,17 +323,54 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
     );
   }, [pendingPack]);
 
-  const visibleSkills = useMemo(
-    () => skillSlots.filter((s) => !dismissedSkills.has(s.label)),
-    [skillSlots, dismissedSkills],
-  );
-
   const visibleRecommended = useMemo(
     () =>
       [...recommendedSlots, ...recommendedKbSlots].filter(
         (s) => !dismissedRecommended.has(`${s.kind}-${s.label}`),
       ),
     [recommendedSlots, recommendedKbSlots, dismissedRecommended],
+  );
+
+  const { unfulfilledSlots, fulfilledSlots } = useMemo(() => {
+    const grantedTemplateIds = new Set(
+      form.connectionIds
+        .map((id) => userConnectionTemplateMap.get(id))
+        .filter(Boolean),
+    );
+    const unfulfilled: PackSlot[] = [];
+    const fulfilled: { slot: PackSlot; connection: ConnectionView }[] = [];
+    for (const slot of visibleRecommended) {
+      if (!slot.connectionTemplateId) {
+        unfulfilled.push(slot);
+        continue;
+      }
+      if (grantedTemplateIds.has(slot.connectionTemplateId)) {
+        const conn = (userConnections ?? []).find(
+          (c) =>
+            c.templateId === slot.connectionTemplateId &&
+            form.connectionIds.includes(c.id),
+        );
+        if (conn) {
+          fulfilled.push({ slot, connection: conn });
+          continue;
+        }
+      }
+      unfulfilled.push(slot);
+    }
+    return { unfulfilledSlots: unfulfilled, fulfilledSlots: fulfilled };
+  }, [
+    visibleRecommended,
+    form.connectionIds,
+    userConnectionTemplateMap,
+    userConnections,
+  ]);
+
+  const fulfilledConnectionIds = useMemo(
+    () =>
+      fulfilledSlots.length > 0
+        ? new Set(fulfilledSlots.map((f) => f.connection.id))
+        : undefined,
+    [fulfilledSlots],
   );
 
   const [selectedChannels, setSelectedChannels] = useState<Set<string>>(
@@ -340,8 +407,11 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
               Finish or clear the private-registry credentials.
             </p>
           )}
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            {isPending ? "Creating…" : "Create agent"}
+          <Button
+            onClick={() => (embedded ? previewCreate() : void create())}
+            disabled={!canCreate || catchingFirst}
+          >
+            {isPending || catchingFirst ? "Creating…" : "Create agent"}
           </Button>
         </>
       }
@@ -352,28 +422,26 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
             pack={pendingPack}
             onRemove={() => {
               setPendingPack(null);
-              namePrefilledRef.current = false;
-              setDismissedSkills(new Set());
               setDismissedRecommended(new Set());
               reset();
             }}
             onChange={() => setBrowsePacksOpen(true)}
           />
         ) : (
-          <div className="flex items-center gap-3 rounded-lg border border-preset-border bg-preset-light/60 px-4 py-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset/15">
-              <Box size={16} className="text-preset" />
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
+              <Cube size={16} className="text-preset" />
             </div>
             <p className="flex-1 text-sm text-foreground/70">
-              Want a head start? Pick a preset to pre-fill harness, skills, and
-              connections.
+              Want a head start? Pick a starter kit to pre-fill harness, skills,
+              and connections.
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setBrowsePacksOpen(true)}
             >
-              Browse presets
+              Browse starter kits
             </Button>
           </div>
         )}
@@ -384,9 +452,13 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         onClose={() => setBrowsePacksOpen(false)}
         onSelect={(pack) => {
           setPendingPack(pack);
-          namePrefilledRef.current = false;
-          setDismissedSkills(new Set());
           setDismissedRecommended(new Set());
+        }}
+        onStartFromScratch={() => {
+          setBrowsePacksOpen(false);
+          setPendingPack(null);
+          setDismissedRecommended(new Set());
+          reset();
         }}
       />
 
@@ -394,7 +466,14 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         value={form.name}
         onChange={(name) => update({ name })}
         autoFocus={!embedded}
-        avatar={<CharacterPicker value={character} onChange={setCharacter} />}
+        avatar={
+          <CharacterPicker
+            value={character}
+            onChange={setCharacter}
+            wobble={catchingFirst}
+            pop={avatarPop}
+          />
+        }
       />
 
       <ImageSection
@@ -422,6 +501,23 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         policy={setupProviderPolicy("coding-agent")}
       />
 
+      <SandboxSizeSection
+        sizeCpuMilli={form.sizeCpuMilli}
+        sizeMemoryMi={form.sizeMemoryMi}
+        onChange={(patch) => update(patch)}
+        recommendedCpuMilli={pendingPack?.sizeCpuMilli}
+        recommendedMemoryMi={pendingPack?.sizeMemoryMi}
+        onResetToRecommended={
+          pendingPack?.sizeCpuMilli != null
+            ? () =>
+                update({
+                  sizeCpuMilli: pendingPack.sizeCpuMilli,
+                  sizeMemoryMi: pendingPack.sizeMemoryMi,
+                })
+            : undefined
+        }
+      />
+
       <ScheduleSetupSection
         drafts={form.scheduleDrafts}
         onDraftsChange={(scheduleDrafts) => update({ scheduleDrafts })}
@@ -438,14 +534,41 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
           })
         }
         oauthReturnView={RETURN_PATH}
+        excludeIds={fulfilledConnectionIds}
       >
-        {visibleRecommended.length > 0 && (
+        {(unfulfilledSlots.length > 0 || fulfilledSlots.length > 0) && (
           <div className="flex flex-col gap-3">
-            {visibleRecommended.map((slot) => (
+            {fulfilledSlots.map(({ slot, connection }) => (
+              <ConnectedRecommendationCard
+                key={`${slot.kind}-${slot.label}`}
+                connection={connection}
+                subtitle={connectionKindSubtitle(
+                  connection,
+                  connectionTemplatesData?.find(
+                    (t) => t.id === connection.templateId,
+                  ),
+                )}
+                providerTitle={catalogProviderTitle(connection.templateId)}
+                iconSlug={iconSlugForSlot(slot)}
+                grant={{
+                  granted: true,
+                  onToggle: (on) => {
+                    update({
+                      connectionIds: on
+                        ? [...new Set([...form.connectionIds, connection.id])]
+                        : form.connectionIds.filter((x) => x !== connection.id),
+                    });
+                  },
+                  actionHidden: true,
+                }}
+              />
+            ))}
+            {unfulfilledSlots.map((slot) => (
               <RecommendedCard
                 key={`${slot.kind}-${slot.label}`}
                 slot={slot}
                 iconSlug={iconSlugForSlot(slot)}
+                packName={pendingPack?.name}
                 onAdd={() => setCatalogOpen(slot.connectionTemplateId ?? true)}
                 onDismiss={() =>
                   setDismissedRecommended(
@@ -459,11 +582,8 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
       </ConnectionsSetupSection>
 
       <SkillsSetupSection
-        presetSkills={visibleSkills}
+        presetSkills={skillSlots}
         addedSources={addedSkillSources}
-        onDismissPresetSkill={(label) =>
-          setDismissedSkills((prev) => new Set([...prev, label]))
-        }
         onRemoveSource={(id) =>
           setAddedSkillSources((prev) => prev.filter((s) => s.id !== id))
         }
@@ -498,6 +618,7 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
             return next;
           })
         }
+        packName={pendingPack?.name}
       />
 
       {catalogOpen && (
@@ -522,7 +643,7 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function PresetBar({
+export function PresetBar({
   pack,
   onRemove,
   onChange,
@@ -531,18 +652,16 @@ function PresetBar({
   onRemove: () => void;
   onChange: () => void;
 }) {
-  const Icon = pack.icon;
-
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-preset-border bg-preset-border/40 px-4 py-4">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset/15">
-        <Icon size={16} className="text-preset" />
+    <div className="flex items-center gap-3 rounded-lg border border-preset-border/50 bg-preset-light/50 px-4 py-4">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
+        <Cube size={16} className="text-preset" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-preset">{pack.name}</p>
-        <p className="text-sm text-foreground/70">
-          Preset applied to this agent
-        </p>
+        <div className="mt-0.5">
+          <PackIngredientSummary pack={pack} />
+        </div>
       </div>
       <Button variant="outline" size="sm" onClick={onChange}>
         Change
@@ -550,7 +669,7 @@ function PresetBar({
       <Button
         variant="ghost"
         size="icon-sm"
-        className="text-muted-foreground hover:bg-preset-border hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground"
         onClick={onRemove}
       >
         <Close size={16} />
@@ -559,107 +678,181 @@ function PresetBar({
   );
 }
 
-function RecommendedCard({
+export function RecommendedCard({
   slot,
   iconSlug,
+  packName,
   onAdd,
   onDismiss,
 }: {
   slot: PackSlot;
   iconSlug?: string;
+  packName?: string;
   onAdd?: () => void;
   onDismiss?: () => void;
 }) {
   const isKb = slot.kind === "knowledge-base";
 
   return (
-    <Card className="flex items-center gap-4 border-preset-border/50 bg-preset-light/60 p-4">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset/8">
-        <ConnectionIcon iconSlug={iconSlug} alt={slot.label} size={16} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-foreground">{slot.label}</p>
-          <Badge variant="preset">Preset</Badge>
+    <Card className="overflow-hidden border-preset-border/50 bg-preset-light/50">
+      {packName && slot.description && (
+        <div className="px-4 py-3">
+          <div className="flex items-start gap-2.5 rounded-lg bg-preset-border/50 px-3 py-2.5">
+            <Information size={16} className="mt-0.5 shrink-0 text-preset" />
+            <p className="text-[14px] leading-relaxed text-foreground/80">
+              {packName} needs {slot.label} access to{" "}
+              {slot.description.toLowerCase()}
+            </p>
+          </div>
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {slot.description}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {isKb ? (
-          <span className="text-sm text-muted-foreground/60">Coming soon</span>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={onAdd}
-          >
-            <Add size={16} />
-            Connect
-          </Button>
+      )}
+      <div
+        className={cn(
+          "flex items-center gap-4 p-4",
+          packName && slot.description && "border-t border-preset-border/30",
         )}
-        {onDismiss && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:bg-preset-border hover:text-foreground"
-            onClick={onDismiss}
-            aria-label={`Remove ${slot.label}`}
-          >
-            <Close size={16} />
-          </Button>
-        )}
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
+          <ConnectionIcon iconSlug={iconSlug} alt={slot.label} size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">
+              {slot.label}
+            </p>
+            <Badge variant="preset">Starter Kit</Badge>
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {slot.description}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {isKb ? (
+            <span className="text-sm text-muted-foreground/60">
+              Coming soon
+            </span>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={onAdd}
+            >
+              <Add size={16} />
+              Connect
+            </Button>
+          )}
+          {onDismiss && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:bg-preset-light/50 hover:text-foreground"
+              onClick={onDismiss}
+              aria-label={`Remove ${slot.label}`}
+            >
+              <Close size={16} />
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );
 }
 
-function SkillCard({
-  slot,
-  onDismiss,
+export function ConnectedRecommendationCard({
+  connection,
+  subtitle,
+  providerTitle,
+  iconSlug,
+  grant,
+  maintenance,
+  onManage,
+  onDelete,
+  deleting = false,
 }: {
-  slot: PackSlot;
-  onDismiss: () => void;
+  connection: ConnectionView;
+  subtitle: string;
+  providerTitle?: string;
+  iconSlug?: string;
+  grant?: RowGrantControls;
+  maintenance?: RowMaintenanceActions;
+  onManage?: () => void;
+  onDelete?: (id: string, name: string) => void;
+  deleting?: boolean;
 }) {
   return (
-    <Card className="flex items-center gap-4 border-preset-border/50 bg-preset-light/60 p-4">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset/8">
+    <section className="rounded-lg border border-preset-border/50 bg-preset-light/50">
+      <header className="flex h-[52px] items-center gap-2.5 border-b border-preset-border/30 px-4">
+        <ConnectionIcon
+          iconSlug={iconSlug}
+          alt=""
+          size={16}
+          className="shrink-0 text-foreground/80"
+        />
+        <h3 className="min-w-0 truncate text-[15px] font-semibold text-foreground">
+          {providerTitle ?? connection.name}
+        </h3>
+        <span className="shrink-0 text-sm text-muted-foreground">
+          1 connection
+        </span>
+        <Badge variant="preset">Starter Kit</Badge>
+      </header>
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="min-w-[160px] flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-[15px] text-foreground">
+                {connection.name}
+              </p>
+              {connection.status !== "active" && (
+                <ConnectionStatusBadge status={connection.status} />
+              )}
+            </div>
+            <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+          </div>
+          <ConnectionRowActions
+            connection={connection}
+            grant={grant}
+            maintenance={maintenance}
+            onManage={onManage}
+            onDelete={
+              onDelete && (() => onDelete(connection.id, connection.name))
+            }
+            deleting={deleting}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SkillCard({ slot }: { slot: PackSlot }) {
+  return (
+    <Card className="flex items-center gap-4 border-preset-border/50 bg-preset-light/50 p-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
         <Launch size={16} className="text-preset" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="text-sm font-semibold text-foreground">{slot.label}</p>
-          <Badge variant="preset">Preset</Badge>
+          <Badge variant="preset">Starter Kit</Badge>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {slot.description}
         </p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="shrink-0 text-muted-foreground hover:bg-preset-border hover:text-foreground"
-        onClick={onDismiss}
-        aria-label={`Remove ${slot.label}`}
-      >
-        <Close size={16} />
-      </Button>
     </Card>
   );
 }
 
-function SkillsSetupSection({
+export function SkillsSetupSection({
   presetSkills,
   addedSources,
-  onDismissPresetSkill,
   onRemoveSource,
   onOpenModal,
 }: {
   presetSkills: PackSlot[];
   addedSources: SkillSource[];
-  onDismissPresetSkill: (label: string) => void;
   onRemoveSource: (id: string) => void;
   onOpenModal: () => void;
 }) {
@@ -698,11 +891,7 @@ function SkillsSetupSection({
       </div>
       <Inset className="flex flex-col gap-3">
         {presetSkills.map((slot) => (
-          <SkillCard
-            key={slot.label}
-            slot={slot}
-            onDismiss={() => onDismissPresetSkill(slot.label)}
-          />
+          <SkillCard key={slot.label} slot={slot} />
         ))}
         {addedSources.map((source) => (
           <Card key={source.id}>
@@ -736,7 +925,7 @@ function SkillsSetupSection({
   );
 }
 
-const AVAILABLE_CHANNELS: {
+export const AVAILABLE_CHANNELS: {
   id: string;
   label: string;
   description: string;
@@ -758,15 +947,19 @@ const AVAILABLE_CHANNELS: {
   },
 ];
 
-function ChannelsSetupSection({
+export function ChannelsSetupSection({
   presetChannels,
   selectedChannels,
   onToggleChannel,
+  packName,
 }: {
   presetChannels: PackSlot[];
   selectedChannels: Set<string>;
   onToggleChannel: (label: string) => void;
+  packName?: string;
 }) {
+  const suggestedSlot = presetChannels[0];
+
   return (
     <section className="mb-8">
       <SectionLabel spaced>
@@ -775,6 +968,15 @@ function ChannelsSetupSection({
           <span className="font-normal text-muted-foreground">(optional)</span>
         </span>
       </SectionLabel>
+      {packName && suggestedSlot && (
+        <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-preset-border/50 bg-preset-light/50 px-3 py-2.5">
+          <Information size={16} className="mt-0.5 shrink-0 text-preset" />
+          <p className="text-sm leading-relaxed text-foreground/80">
+            {packName} suggests connecting {suggestedSlot.label} to{" "}
+            {suggestedSlot.description?.toLowerCase() ?? "stay in the loop"}
+          </p>
+        </div>
+      )}
       <Inset className="flex flex-col gap-3">
         {AVAILABLE_CHANNELS.map((ch) => {
           const matchesSlot = (s: PackSlot) => {
@@ -808,7 +1010,7 @@ function ChannelsSetupSection({
   );
 }
 
-function ChannelCard({
+export function ChannelCard({
   channel,
   isSelected,
   isFromPreset,
@@ -819,22 +1021,14 @@ function ChannelCard({
   isFromPreset: boolean;
   onToggle: () => void;
 }) {
-  const isPresetSelected = isSelected && isFromPreset;
-
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={
-        isPresetSelected
-          ? cn(
-              "flex items-center gap-3 rounded-lg border border-preset-border/50 bg-preset-light/60 px-4 py-3 text-left transition-colors",
-            )
-          : cardSelectionVariants({
-              selected: isSelected,
-              className: "flex items-center gap-3 px-4 py-3 text-left",
-            })
-      }
+      className={cardSelectionVariants({
+        selected: isSelected,
+        className: "flex items-center gap-3 px-4 py-3 text-left",
+      })}
     >
       <span className="shrink-0">
         <ConnectionIcon iconSlug={channel.iconSlug} alt="" size={16} />
@@ -844,7 +1038,6 @@ function ChannelCard({
           <span className="text-sm font-medium text-foreground">
             {channel.label}
           </span>
-          {isFromPreset && <Badge variant="preset">Preset</Badge>}
         </span>
         <span className="block text-sm text-muted-foreground">
           {channel.description}
@@ -852,19 +1045,14 @@ function ChannelCard({
       </span>
       <span className="ml-auto shrink-0">
         <span
-          className={`flex size-4 items-center justify-center rounded-full border ${
-            isPresetSelected
-              ? "border-preset"
-              : isSelected
-                ? "border-foreground"
-                : "border-muted-foreground/50"
-          }`}
-        >
-          {isSelected && (
-            <span
-              className={`size-2 rounded-full ${isPresetSelected ? "bg-preset" : "bg-foreground"}`}
-            />
+          className={cn(
+            "flex size-4 items-center justify-center rounded-[3px] border",
+            isSelected
+              ? "border-foreground bg-foreground"
+              : "border-muted-foreground/50",
           )}
+        >
+          {isSelected && <Checkmark size={12} className="text-white" />}
         </span>
       </span>
     </button>

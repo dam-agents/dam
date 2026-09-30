@@ -43,6 +43,8 @@ export const setupFormSchema = z.object({
   scheduleDrafts: z.array(scheduleDraftInnerSchema).default([]),
   intentId: z.string().nullable().default(null),
   audience: z.enum(["just-me", "my-team"]).nullable().default(null),
+  sizeCpuMilli: z.number().nullable().default(null),
+  sizeMemoryMi: z.number().nullable().default(null),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 

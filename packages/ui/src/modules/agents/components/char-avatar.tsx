@@ -491,7 +491,7 @@ export function CharAvatar({
   agentId?: string;
   name?: CharName;
   state: string;
-  colors?: BeeColors;
+  colors?: BeeColors | string;
   idle?: boolean;
   className?: string;
 }) {

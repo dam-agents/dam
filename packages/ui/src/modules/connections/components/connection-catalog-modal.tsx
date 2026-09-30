@@ -5,6 +5,9 @@ import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
+import { trpc } from "../../../trpc.js";
 import { useAppConnections } from "../api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
@@ -178,13 +181,28 @@ export function ConnectionCatalogModal({
             <ChoosePane
               group={groupById(pane.providerId)}
               onBack={() => setPane({ kind: "browse" })}
-              onPick={(t) =>
+              onPick={(t) => {
+                if (import.meta.env.VITE_MOCK) {
+                  void (api.connections.create as any)
+                    .mutate({
+                      templateId: t.id,
+                      name: t.name,
+                      authKind: t.authKind,
+                    })
+                    .then((result: { id: string }) => {
+                      void queryClient.invalidateQueries({
+                        queryKey: trpc.connections.list.queryKey(),
+                      });
+                      onCreated(result.id);
+                    });
+                  return;
+                }
                 setPane({
                   kind: "create",
                   templateId: t.id,
                   providerId: pane.providerId,
-                })
-              }
+                });
+              }}
             />
           )}
           {pane.kind === "create" && (

@@ -53,5 +53,12 @@ export function packToSetupDefaults(
     }));
   }
 
+  if (pack.sizeCpuMilli != null) {
+    defaults.sizeCpuMilli = pack.sizeCpuMilli;
+  }
+  if (pack.sizeMemoryMi != null) {
+    defaults.sizeMemoryMi = pack.sizeMemoryMi;
+  }
+
   return defaults;
 }

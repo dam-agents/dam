@@ -1,7 +1,6 @@
-import { Add, TrashCan } from "@carbon/icons-react";
+import { Add, Close } from "@carbon/icons-react";
 import {
   type Control,
-  Controller,
   useFieldArray,
   type UseFormRegister,
   useWatch,
@@ -9,114 +8,113 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 
 import { FormError } from "../../../components/form-error.js";
 import { TIME_OPTIONS } from "../lib/schedule-form-options.js";
 import type { ScheduleFormValues } from "./schedule-form-schema.js";
 
-const timeOptions = TIME_OPTIONS.map((o) => (
-  <option key={o.value} value={o.value}>
-    {o.label}
-  </option>
-));
-
-interface Props {
+interface RowsProps {
   control: Control<ScheduleFormValues>;
   register: UseFormRegister<ScheduleFormValues>;
+}
+
+interface EditorProps extends RowsProps {
   error?: string;
 }
 
-export function QuietHoursEditor({ control, register, error }: Props) {
+export function QuietHoursEditor({ control, register, error }: EditorProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionLabel>Quiet hours</SectionLabel>
+      <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
+        <QuietHoursRows control={control} register={register} />
+      </div>
+      <FormError message={error} />
+    </div>
+  );
+}
+
+export function QuietHoursRows({ control, register }: RowsProps) {
   const { fields, append, remove } = useFieldArray({
     control,
     name: "quietHours",
   });
   const rows = useWatch({ control, name: "quietHours" });
 
-  const addButton = (
-    <Button
-      type="button"
-      variant="outline"
-      className="h-[30px] px-2.5 text-sm"
-      onClick={() =>
-        append({ startTime: "22:00", endTime: "06:00", enabled: true })
-      }
-    >
-      <Add size={16} /> Add
-    </Button>
-  );
-
   return (
-    <div className="flex flex-col gap-2">
-      {fields.length === 0 ? (
-        <>
-          <SectionLabel>Quiet hours</SectionLabel>
-          <div>{addButton}</div>
-        </>
-      ) : (
-        <>
-          <div className="flex items-center justify-between">
-            <SectionLabel>Quiet hours</SectionLabel>
-            {addButton}
+    <>
+      <div className="flex items-center justify-between px-4 py-3">
+        <span className="shrink-0 text-[14px] text-foreground">
+          Quiet hours
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-auto px-2 py-1 text-[14px] text-muted-foreground"
+          onClick={() =>
+            append({ startTime: "22:00", endTime: "06:00", enabled: true })
+          }
+        >
+          <Add size={16} />
+          Add
+        </Button>
+      </div>
+
+      {fields.map((field, idx) => {
+        const row = rows?.[idx];
+        const degenerate = row && row.startTime === row.endTime;
+
+        return (
+          <div
+            key={field.id}
+            className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-3"
+          >
+            <div className="flex min-w-0 items-center gap-2 text-[14px]">
+              <TimeSelect
+                degenerate={degenerate}
+                {...register(`quietHours.${idx}.startTime`)}
+              />
+              <span className="text-muted-foreground">to</span>
+              <TimeSelect
+                degenerate={degenerate}
+                {...register(`quietHours.${idx}.endTime`)}
+              />
+              {degenerate && (
+                <span className="text-[14px] text-destructive">Same time</span>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => remove(idx)}
+            >
+              <Close size={16} />
+            </Button>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Runs inside a window are suppressed; start is inside, end is
-            outside.
-          </p>
-          {fields.map((field, idx) => {
-            const degenerate =
-              rows?.[idx] && rows[idx].startTime === rows[idx].endTime;
-            const variant = degenerate ? ("invalid" as const) : undefined;
-            return (
-              <div key={field.id} className="flex items-center gap-2">
-                <div className="w-[120px]">
-                  <Select
-                    className="h-10"
-                    variant={variant}
-                    {...register(`quietHours.${idx}.startTime`)}
-                  >
-                    {timeOptions}
-                  </Select>
-                </div>
-                <span className="text-sm text-muted-foreground">→</span>
-                <div className="w-[120px]">
-                  <Select
-                    className="h-10"
-                    variant={variant}
-                    {...register(`quietHours.${idx}.endTime`)}
-                  >
-                    {timeOptions}
-                  </Select>
-                </div>
-                <Controller
-                  control={control}
-                  name={`quietHours.${idx}.enabled`}
-                  render={({ field: enabled }) => (
-                    <Switch
-                      checked={enabled.value}
-                      onCheckedChange={enabled.onChange}
-                      label="Window enabled"
-                      className="ml-1"
-                    />
-                  )}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="ml-auto text-muted-foreground hover:text-destructive"
-                  onClick={() => remove(idx)}
-                >
-                  <TrashCan size={13} />
-                </Button>
-              </div>
-            );
-          })}
-        </>
-      )}
-      <FormError message={error} />
-    </div>
+        );
+      })}
+    </>
   );
 }
+
+const TimeSelect = ({
+  degenerate,
+  ...props
+}: React.ComponentProps<"select"> & { degenerate?: boolean }) => (
+  <select
+    className={`h-auto cursor-pointer appearance-none rounded-md border bg-transparent px-2 py-1 text-[14px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring ${
+      degenerate ? "border-destructive" : "border-border"
+    }`}
+    {...props}
+  >
+    {TIME_OPTIONS.map((o) => (
+      <option key={o.value} value={o.value}>
+        {o.label}
+      </option>
+    ))}
+  </select>
+);
