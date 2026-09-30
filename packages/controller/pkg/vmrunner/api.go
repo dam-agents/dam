@@ -9,8 +9,14 @@ type MachineSpec struct {
 	Env        map[string]string `json:"env,omitempty"`
 	CACert     string            `json:"caCert,omitempty"`
 	AllowCIDRs []string          `json:"allowCidrs,omitempty"`
-	Revision   string            `json:"revision,omitempty"`
-	Running    bool              `json:"running"`
+	// UNIT_BOUNDARY_DESCRIPTION: for a runner outside the cluster, the port on
+	// UNIT_BOUNDARY_DESCRIPTION: that host's loopback where the machine's
+	// UNIT_BOUNDARY_DESCRIPTION: paired gateway is forwarded. It replaces
+	// UNIT_BOUNDARY_DESCRIPTION: AllowCIDRs: the guest reaches that one port at
+	// UNIT_BOUNDARY_DESCRIPTION: its own gateway address and nothing else.
+	GatewayHostPort int    `json:"gatewayHostPort,omitempty"`
+	Revision        string `json:"revision,omitempty"`
+	Running         bool   `json:"running"`
 	// UNIT_BOUNDARY_DESCRIPTION: the docker configs the runner fetches this
 	// UNIT_BOUNDARY_DESCRIPTION: machine's image with, one per pull Secret a
 	// UNIT_BOUNDARY_DESCRIPTION: pod would list and in that order. The runner

@@ -1,12 +1,14 @@
 import type {
-  PodSession,
   SessionHistory,
+  SessionListQuery,
+  SessionPage,
   SessionsService,
 } from "agent-runtime-api";
 
 import { noticeStream } from "../../../core/notice-stream.js";
 import {
   composeSessionList,
+  pageSessions,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
@@ -17,6 +19,50 @@ import type { SessionChanges } from "./session-changes.js";
 
 const EMPTY_HISTORY: SessionHistory = { frames: [], truncated: false };
 
+const HARNESS_LISTING_TTL_MS = 30_000;
+const MAX_HARNESS_PAGES = 200;
+
+interface HarnessListPage {
+  sessions?: ListedHarnessSession[];
+  nextCursor?: string | null;
+}
+
+async function readHarnessListing(
+  caller: InProcessCaller,
+  log: (msg: string) => void,
+): Promise<ListedHarnessSession[]> {
+  await caller.request("initialize", {
+    protocolVersion: 1,
+    clientCapabilities: { fs: {} },
+    clientInfo: { name: "platform-sessions", version: "1.0.0" },
+  });
+  const byId = new Map<string, ListedHarnessSession>();
+  let cursor: string | undefined;
+  for (let page = 0; ; page++) {
+    if (page === MAX_HARNESS_PAGES) {
+      log(
+        `session list: stopped after ${MAX_HARNESS_PAGES} harness pages with ${byId.size} sessions; older ones are not listed`,
+      );
+      break;
+    }
+    const result = await caller.request<HarnessListPage>("session/list", {
+      cwd: ".",
+      ...(cursor !== undefined && { cursor }),
+    });
+    for (const { sessionId, title, updatedAt } of result.sessions ?? []) {
+      if (!byId.has(sessionId))
+        byId.set(sessionId, {
+          sessionId,
+          title: title ?? null,
+          updatedAt: updatedAt ?? null,
+        });
+    }
+    cursor = result.nextCursor ?? undefined;
+    if (cursor === undefined) break;
+  }
+  return [...byId.values()];
+}
+
 export function createSessionsService(deps: {
   openCaller: () => InProcessCaller;
   sessionMetadata: SessionMetadataStore;
@@ -25,31 +71,45 @@ export function createSessionsService(deps: {
   sessionFrames: (sessionId: string) => SessionHistory;
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
+  log: (msg: string) => void;
+  now?: () => number;
 }): SessionsService {
+  const now = deps.now ?? Date.now;
+  let listing:
+    { readAt: number; sessions: Promise<ListedHarnessSession[]> } | undefined;
+  deps.changes.watch(() => {
+    listing = undefined;
+  });
+
+  function harnessListing(): Promise<ListedHarnessSession[]> {
+    if (listing && now() - listing.readAt < HARNESS_LISTING_TTL_MS)
+      return listing.sessions;
+    const caller = deps.openCaller();
+    const entry = {
+      readAt: now(),
+      sessions: readHarnessListing(caller, deps.log).finally(() =>
+        caller.close(),
+      ),
+    };
+    entry.sessions.catch(() => {
+      if (listing === entry) listing = undefined;
+    });
+    listing = entry;
+    return entry.sessions;
+  }
+
   return {
-    async list(): Promise<PodSession[]> {
-      const caller = deps.openCaller();
-      try {
-        await caller.request("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: { fs: {} },
-          clientInfo: { name: "platform-sessions", version: "1.0.0" },
-        });
-        const result = await caller.request<{
-          sessions?: ListedHarnessSession[];
-        }>("session/list", { cwd: "." });
-        return composeSessionList(
-          result.sessions ?? [],
-          deps.sessionMetadata.all(),
-          {
-            isTombstoned: (sessionId) =>
-              deps.sessionMetadata.isTombstoned(sessionId),
-            isRunning: deps.isRunning,
-          },
-        );
-      } finally {
-        caller.close();
-      }
+    async list(query?: SessionListQuery): Promise<SessionPage> {
+      const composed = composeSessionList(
+        await harnessListing(),
+        deps.sessionMetadata.all(),
+        {
+          isTombstoned: (sessionId) =>
+            deps.sessionMetadata.isTombstoned(sessionId),
+          isRunning: deps.isRunning,
+        },
+      );
+      return pageSessions(composed, query);
     },
 
     /**

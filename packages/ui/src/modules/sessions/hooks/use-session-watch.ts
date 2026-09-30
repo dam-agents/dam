@@ -8,7 +8,7 @@ import {
   useAgentLacksLiveUpdates,
   useAgentRunState,
 } from "../../agents/api/queries.js";
-import { acpSessionsKeys } from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
 
 export function useSessionWatch(agentId: string | null) {
   const queryClient = useQueryClient();
@@ -23,7 +23,7 @@ export function useSessionWatch(agentId: string | null) {
         onData: (notice) => {
           if (!podSessionNoticeSchema.safeParse(notice).success) return;
           void queryClient.invalidateQueries({
-            queryKey: acpSessionsKeys.agentLists(agentId),
+            queryKey: acpSessionsKeys.agent(agentId),
           });
         },
         onError,

@@ -636,9 +636,20 @@ export function createMcpSession(
         .describe(
           "Optional short note on why no reply was needed (not posted).",
         ),
+      threadTs: z
+        .string()
+        .optional()
+        .describe(
+          "The thread this turn is answering, as shown in its turn instructions. Required when you are handling more than one message at once, so the right turn is the one recorded as silent.",
+        ),
     },
-    async () => {
-      await deps.channelManager.declineTurn(agentId, ChannelType.Slack);
+    async ({ threadTs }) => {
+      const result = await deps.channelManager.declineTurn(
+        agentId,
+        ChannelType.Slack,
+        threadTs,
+      );
+      if ("error" in result) return errorResult(result.error);
       return textResult("No reply sent.");
     },
   );

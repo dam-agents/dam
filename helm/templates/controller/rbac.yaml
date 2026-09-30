@@ -119,6 +119,12 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # A vm agent on a runner outside the cluster (virtualization.runner.hostAddress)
+  # has no runner pod for its Service to select; the controller names the
+  # runner's address in the Service's own EndpointSlice instead.
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "update"]
 
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to

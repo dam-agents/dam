@@ -57,18 +57,19 @@ func matchesTheContract[T any](t *testing.T, name string, filled T) {
 
 func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 	matchesTheContract(t, "machine-spec", MachineSpec{
-		Image:      "quay.io/x/vm:1",
-		CPUs:       2,
-		MemoryMiB:  2048,
-		StorageGiB: 20,
-		Env:        map[string]string{"A": "b"},
-		CACert:     "-----BEGIN CERTIFICATE-----",
-		AllowCIDRs: []string{"10.0.0.1/32"},
-		Revision:   "r1",
-		Running:    true,
-		PullAuths:  []string{`{"auths":{}}`},
-		Migration:  &MachineMigration{},
-		ExpectSeed: &SeedResult{Bytes: 1234, SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"},
+		Image:           "quay.io/x/vm:1",
+		CPUs:            2,
+		MemoryMiB:       2048,
+		StorageGiB:      20,
+		Env:             map[string]string{"A": "b"},
+		CACert:          "-----BEGIN CERTIFICATE-----",
+		AllowCIDRs:      []string{"10.0.0.1/32"},
+		GatewayHostPort: 30100,
+		Revision:        "r1",
+		Running:         true,
+		PullAuths:       []string{`{"auths":{}}`},
+		Migration:       &MachineMigration{},
+		ExpectSeed:      &SeedResult{Bytes: 1234, SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"},
 	})
 	matchesTheContract(t, "machine-status", MachineStatus{
 		State:     StateRunning,

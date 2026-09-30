@@ -70,10 +70,13 @@ func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 // TEST_SCENARIO: two guest paths are named by the controller and laid out by platform-init: the agent home, which the controller sets as HOME and platform-init bind-mounts the disk onto, and the CA file, which the controller names in NODE_EXTRA_CA_CERTS and platform-init binds from the machine's share. Neither side can import the other's constant, so both are held to one fixture — a home nobody mounts loses the agent's work at the first stop, and a CA file that is not there fails every intercepted TLS call.
 func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	var guest struct {
-		AgentHome string `json:"agentHome"`
-		CAFile    string `json:"caFile"`
+		AgentHome      string `json:"agentHome"`
+		CAFile         string `json:"caFile"`
+		GatewayAddress string `json:"gatewayAddress"`
 	}
 	readRunnerContract(t, "guest.json", &guest)
+
+	assert.Equal(t, guest.GatewayAddress, vmHostGatewayAddress)
 
 	assert.Equal(t, guest.AgentHome, agentHomeDir)
 	env := envToMap(agentPlatformEnv("my-agent", testConfig, agentHomeDir, "http://10.96.42.42:10000"))

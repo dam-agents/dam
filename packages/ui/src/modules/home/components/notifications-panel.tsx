@@ -53,7 +53,10 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const [filters, setFilters] = useState<ActivityFilters>(
     defaultActivityFilters,
   );
-  const [needsYou, setNeedsYou] = useState(false);
+  const needsYou = useStore((s) => s.activityView === "approvals");
+  const setActivityView = useStore((s) => s.setActivityView);
+  const setNeedsYou = (on: boolean) =>
+    setActivityView(on ? "approvals" : "feed");
 
   const artifactsFor = (item: FeedItem): readonly ArtifactTouched[] => {
     if (item.kind !== "unread") return EMPTY_ARTIFACTS;
@@ -65,11 +68,19 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const live = sticky.merge(items).filter((item) => !isDismissed(item));
-  const visible = applyActivityFilters(live, filters);
+  const visible = applyActivityFilters(
+    live.filter((item) => item.kind !== "approval"),
+    filters,
+  );
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
   const filtered = filtersDiffer(filters);
   const approvals = applyActivityFilters(useWaitingApprovals(), filters);
-  const shown = needsYou ? approvals : visible;
+  const shown = needsYou
+    ? applyActivityFilters(
+        live.filter((item) => item.kind === "approval"),
+        filters,
+      )
+    : visible;
 
   const toggleChannelType = (type: ChannelType) =>
     setFilters((prev) => {
@@ -78,8 +89,17 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       else next.add(type);
       return { ...prev, channelTypes: next };
     });
-  const changeState = (state: StateFilter) =>
-    setFilters((prev) => ({ ...prev, state }));
+  const resetFilters = () => {
+    setNeedsYou(false);
+    setFilters(defaultActivityFilters());
+  };
+  const changeState = (state: StateFilter) => {
+    setNeedsYou(state === "attention");
+    setFilters((prev) => ({
+      ...prev,
+      state: state === "attention" ? "any" : state,
+    }));
+  };
 
   return (
     <>
@@ -111,11 +131,11 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="flex items-center gap-1.5 border-b border-border px-5 py-3">
           <ActivityFilterBar
-            filters={filters}
+            filters={needsYou ? { ...filters, state: "attention" } : filters}
             onToggleChannelType={toggleChannelType}
             onChangeState={changeState}
-            onReset={() => setFilters(defaultActivityFilters())}
-            filtered={filtered}
+            onReset={resetFilters}
+            filtered={filtered || needsYou}
           />
           {!needsYou && dismissible.length > 0 && (
             <button
@@ -161,10 +181,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 resetLabel="Back to Activity"
               />
             ) : (
-              <ActivityEmpty
-                filtered={filtered}
-                onReset={() => setFilters(defaultActivityFilters())}
-              />
+              <ActivityEmpty filtered={filtered} onReset={resetFilters} />
             )
           ) : (
             <>

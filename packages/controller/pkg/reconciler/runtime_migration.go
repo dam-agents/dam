@@ -775,7 +775,11 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	if !found {
 		return r.setRuntimeMigrationNote(ctx, agent, m, fmt.Sprintf("the volume %s this migration copies from no longer exists", source))
 	}
-	if err := applyNetworkPolicy(ctx, r.client, buildRuntimeMigrationNetworkPolicy(agent, owner, r.config.Namespace)); err != nil {
+	np := buildRuntimeMigrationNetworkPolicy(agent, owner, r.config.Namespace)
+	if r.config.VM.Runner.HostAddress != "" {
+		np.Spec.Egress[0].To = []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: runnerIP + "/32"}}}
+	}
+	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return err
 	}
 	desired, err := r.buildRuntimeMigrationJob(agent, owner, source, runnerIP, reader)
@@ -1139,6 +1143,9 @@ func runtimeMigrationBootHeld(m runtimeMigration, hardStop bool, overBudget stri
 
 // UNIT_BOUNDARY_DESCRIPTION: the address the copy Job reaches the runner at. The runner's Service is headless, so its name resolves to this very pod address; writing it into the Job's hosts file under the Service's name keeps the name the runner's certificate is issued for while the Job needs no resolver. A runner pod replaced mid-copy fails the upload either way, and the retry pins the new pod.
 func (r *AgentReconciler) runnerPodIP(ctx context.Context, owner string) (string, error) {
+	if r.config.VM.Runner.HostAddress != "" {
+		return r.config.VM.Runner.HostAddress, nil
+	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set(vmRunnerSelector(owner)).String()})
 	if err != nil {
 		return "", fmt.Errorf("finding the owner's VM runner pod: %w", err)

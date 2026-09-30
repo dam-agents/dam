@@ -119,7 +119,7 @@ export function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
   canLookupUsers: boolean;
-  batch?: { count: number; inThread: boolean };
+  batch?: { count: number; inThread: boolean; separateTargets: boolean };
   permalink: string | null;
   identity: SlackBotIdentity;
   reach: SlackTurnReach;
@@ -130,17 +130,16 @@ export function slackTurnContract(ctx: {
   const where = ctx.reach.isDirectMessage
     ? "a 1:1 direct message"
     : "a shared channel or group DM";
-  const replyBullet =
-    multi && ctx.batch?.inThread === false
-      ? `• ${TOOL}reply — post a message threaded under the batched message ` +
-        "you are answering: pass its [ts …] tag as threadTs (several messages " +
-        "share this turn, so an id-less reply is refused). Pass " +
-        "alsoSendToChannel when that message is old enough that people " +
-        "watching the channel would miss a thread-only reply."
-      : `• ${TOOL}reply — post a message into this thread ` +
-        `(threadTs="${ctx.replyThreadTs}"). The thread is where your answer ` +
-        "belongs: leave alsoSendToChannel off unless you are asked to " +
-        "surface the answer to the whole channel.";
+  const replyBullet = ctx.batch?.separateTargets
+    ? `• ${TOOL}reply — post a message threaded under the batched message ` +
+      "you are answering: pass its [ts …] tag as threadTs (several messages " +
+      "share this turn, so an id-less reply is refused). Pass " +
+      "alsoSendToChannel when that message is old enough that people " +
+      "watching the channel would miss a thread-only reply."
+    : `• ${TOOL}reply — post a message into this thread ` +
+      `(threadTs="${ctx.replyThreadTs}"). The thread is where your answer ` +
+      "belongs: leave alsoSendToChannel off unless you are asked to " +
+      "surface the answer to the whole channel.";
   const reactIds = multi
     ? "messageTs = the [ts …] tag of the message you are reacting to"
     : `messageTs="${ctx.eventTs}"`;
@@ -155,7 +154,9 @@ export function slackTurnContract(ctx: {
       "emoji that suits the message (e.g. eyes on a bug report, tada on good " +
       `news) (${reactIds}). Pass the Slack emoji short name, no colons.`,
     `• ${TOOL}no_reply_needed — end your turn without posting anything, when ` +
-      "the message doesn't call for a response.",
+      "the message doesn't call for a response. Pass the same threadTs you " +
+      "would reply with, so the turn recorded as silent is this one and not " +
+      "another you are answering at the same time.",
     (ctx.batch?.inThread === false
       ? "Your response belongs in a thread under the message you are " +
         `answering — use ${TOOL}reply, not ${TOOL}send_channel_message. `

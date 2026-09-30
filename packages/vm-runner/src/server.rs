@@ -25,7 +25,7 @@ use crate::imagecache::{
 use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
-use crate::plan::{admissible, reads_ready, step, Action, Health};
+use crate::plan::{admissible, gateway_port_admissible, reads_ready, step, Action, Health};
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
@@ -394,6 +394,7 @@ impl Server {
     pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
         check_id(id)?;
         admissible(&spec).map_err(Rejected::bad_request)?;
+        gateway_port_admissible(&spec, &self.config.ports).map_err(Rejected::bad_request)?;
         {
             let mut machines = locked(&self.machines);
             let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;

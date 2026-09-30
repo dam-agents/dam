@@ -14,6 +14,7 @@ import { useUpdateConnection } from "../api/mutations.js";
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
+import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
 
 export function ConnectionMaintenanceDialog({
   maintenance,
@@ -25,6 +26,17 @@ export function ConnectionMaintenanceDialog({
     closeEditScope?: () => void;
   };
 }) {
+  if (
+    maintenance.editingScope?.authKind === "oauth" &&
+    maintenance.closeEditScope
+  ) {
+    return (
+      <ConnectionEditGithubUserTokenScopeDialog
+        connection={maintenance.editingScope}
+        onClose={maintenance.closeEditScope}
+      />
+    );
+  }
   if (maintenance.editingScope && maintenance.closeEditScope) {
     return (
       <ConnectionEditGithubAppScopeDialog

@@ -376,10 +376,15 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <Callout tone="default" inset>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-foreground">
-                Want a head start? Pick a starter kit to pre-fill your agent
-                setup.
-              </span>
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
+                  <Gift size={16} />
+                </span>
+                <span className="text-sm text-foreground">
+                  Want a head start? Pick a starter kit to pre-fill your agent
+                  setup.
+                </span>
+              </div>
               <Button
                 variant="outline"
                 size="sm"

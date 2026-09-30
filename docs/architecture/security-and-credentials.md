@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-28
+Last verified: 2026-09-29
 
 ## Overview
 
@@ -230,7 +230,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   api-server's `/api/oauth/callback` writes the access + refresh token
   pair plus a structured **host list** describing every wire position
   the token should be injected on. The refresh-token loop re-mints
-  access tokens before expiry; the agent never sees the refresh token.
+  access tokens before expiry; the agent never sees the refresh token. A
+  narrowed GitHub sign-in keeps this pair at rest and injects a scoped token
+  made from it ([connections](connections.md)).
   Re-running login and consent against an existing connection replaces its
   tokens in place, keeping the connection's identity and grants. When the
   connection stores the OAuth app's *client* secret itself (rather than
@@ -278,16 +280,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   A Connection may additionally **narrow the authority of the token it mints**,
   below what the app installation itself holds — to a chosen set of repositories,
   to a chosen set of permissions, or both. An installation is an
-  organization-wide grant, typically far broader than any one agent's task, and
-  narrowing is how one broadly-installed app backs many least-privilege
+  organization-wide grant, and narrowing is how one broadly-installed app backs many least-privilege
   Connections without a second app per task. GitHub is the arbiter: it refuses
   any request exceeding the installation, so the narrowing can only ever reduce
   authority, never claim it. The chosen subset is **part of the credential's
   stored identity, not a one-time argument** — every renewal and every key
   rotation re-mints against the same subset, so a Connection cannot silently
   widen back to the whole installation between renewals. Narrowing is opt-in:
-  a Connection that names no subset carries the installation's full authority,
-  which is what every Connection made before the capability existed does. Once
+  a Connection that names no subset carries the installation's full authority. Once
   a subset stops being covered — the organization drops a repository from the
   installation, or revokes a permission — renewal is *rejected* rather than
   merely failing, so the Connection reads expired and waits for someone to

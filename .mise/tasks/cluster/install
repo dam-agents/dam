@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true the k3s VM gets nested virtualization (Apple silicon M3+) so the chart's VM runner pod can run vm-backend agents as microVMs. Honors LIMA_INSTANCE; SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD also skips importing them."
+#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true vm-backend agents run as microVMs: on a Mac on one VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the chart's VM runner pods, which on a lima VM needs nested virtualization (Apple silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Honors LIMA_INSTANCE; SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD also skips importing them."
 #MISE raw=true
 #USAGE flag "--lima-template <path>" default="etc/lima/k3s.yaml"
 #USAGE flag "--helm-values <path>"
@@ -55,6 +55,21 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
     --set=virtualization.enabled=false) VIRT_ENABLED="" ;;
   esac
 done
+# On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
+# than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
+# boots several times slower, and only M3 and later nest at all.
+# PLATFORM_NESTED_VIRT=1 keeps the pods.
+HOST_RUNNER=""
+if [ -n "$VIRT_ENABLED" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  HOST_RUNNER=1
+  export VM_HOST_RUNNER=1
+  HELM_EXTRA_ARGS+=(--set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS" --set=virtualization.devicePlugin.enabled=false)
+fi
+# A host runner reaches each machine's gateway through a NodePort, which lima
+# forwards to the Mac's loopback only when a rule names it ahead of the k3s
+# template's catch-all ignore.
+NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
 # Probe by opening: the node can exist while the device cgroup still denies it.
 if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; then
   echo "FATAL: virtualization.enabled=true needs a usable /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
@@ -133,12 +148,20 @@ else
     # M3+/macOS 15). Enabled automatically with virtualization.enabled=true;
     # PLATFORM_NESTED_VIRT=1 forces it for a plain install. Create-time only —
     # an existing VM needs cluster:delete + reinstall to gain it.
-    if [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
+    if [ -n "$HOST_RUNNER" ]; then
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false --set "$NODEPORT_FORWARD"
+    elif [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
         --set '.vmType = "vz" | .nestedVirtualization = true'
     else
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
     fi
+  fi
+  # A VM made before the host runner has no such rule; lima reads it at start.
+  if [ -n "$HOST_RUNNER" ] && [ "$(yq '[.portForwards[] | select(.guestPortRange[0] == 30000)] | length' "${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/lima.yaml")" = 0 ]; then
+    echo "Forwarding NodePorts from $LIMA_INSTANCE to this Mac's loopback (restarts the VM)..."
+    limactl stop "$LIMA_INSTANCE" 2>/dev/null || true
+    limactl edit "$LIMA_INSTANCE" --tty=false --set "$NODEPORT_FORWARD"
   fi
   STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
   if [ "$STATUS" != "Running" ]; then
@@ -147,7 +170,7 @@ else
   fi
   # Pre-existing VM without nested virt (create-time only): the VM runner
   # pod would have no /dev/kvm — stop early with the fix.
-  if [ -n "$VIRT_ENABLED" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
+  if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
     echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the VM runner needs it." >&2
     echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true" >&2
     echo "(nested virtualization needs Apple silicon M3+ on macOS 15+)." >&2
@@ -793,6 +816,7 @@ else
   stage_vm_images
 fi
 [ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
+[ -z "$HOST_RUNNER" ] || mise run cluster:host-runner
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not

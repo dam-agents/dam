@@ -2,13 +2,14 @@ import { t } from "../../trpc.js";
 import {
   delegationFramesInputSchema,
   sessionHistoryInputSchema,
+  sessionListInputSchema,
   storeDelegationFramesInputSchema,
 } from "./schemas.js";
 
 export const sessionsRouter = t.router({
-  list: t.procedure.query(async ({ ctx }) => ({
-    sessions: await ctx.sessions.list(),
-  })),
+  list: t.procedure
+    .input(sessionListInputSchema)
+    .query(({ ctx, input }) => ctx.sessions.list(input)),
 
   history: t.procedure
     .input(sessionHistoryInputSchema)

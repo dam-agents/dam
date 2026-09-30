@@ -1,0 +1,47 @@
+{{- if and .Values.virtualization.enabled .Values.virtualization.runner.hostAddress }}
+{{- /*
+The one runner outside the cluster (virtualization.runner.hostAddress). The
+controller reads its credentials by these names, as it reads a runner pod's,
+but mints neither: the runner has to hold them before any agent reconciles, so
+`cluster:install` copies them to the host and starts it. The token survives
+upgrades; a new one would lock out the runner already holding the old.
+*/}}
+{{- $name := printf "%s-vm-runner-host" (include "platform.fullname" .) }}
+{{- $existing := lookup "v1" "Secret" .Values.agentNamespace $name }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+data:
+  token: {{ ($existing.data | default dict).token | default (randAlphaNum 64 | b64enc) }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-tls
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner
+spec:
+  secretName: {{ $name }}-tls
+  # The runner holds a copy made when cluster:host-runner last ran, which a
+  # renewal here does not reach, so the certificate outlives a dev cluster.
+  duration: 8760h
+  ipAddresses:
+    - {{ .Values.virtualization.runner.hostAddress | quote }}
+  usages:
+    - digital signature
+    - server auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.virtualization.runnerCA.issuerName }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+{{- end }}

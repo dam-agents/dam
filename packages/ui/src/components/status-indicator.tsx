@@ -1,12 +1,5 @@
-import { Power } from "@carbon/icons-react";
-import { useState } from "react";
-
 import { Badge, type BadgeProps } from "@/components/ui/badge";
-import {
-  TooltipContent,
-  TooltipRoot,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
@@ -49,11 +42,9 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
 export function StatusBadge({
   state,
   working,
-  alwaysOn,
 }: {
   state: AgentDisplayState;
   working?: boolean;
-  alwaysOn?: boolean;
 }) {
   const splitRunning = state === "running" && working !== undefined;
   const label = splitRunning
@@ -62,34 +53,20 @@ export function StatusBadge({
       : "Idle"
     : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  const [open, setOpen] = useState(false);
-  if (!alwaysOn) {
-    return <Badge variant={variant}>{label}</Badge>;
-  }
+  return <Badge variant={variant}>{label}</Badge>;
+}
+
+export function AlwaysOnTag() {
   return (
-    <TooltipRoot open={open} onOpenChange={setOpen}>
-      <span
-        className="inline-flex"
-        onPointerEnter={() => setOpen(true)}
-        onPointerLeave={() => setOpen(false)}
-      >
-        <Badge variant={variant} className="gap-1">
-          <TooltipTrigger asChild>
-            <span className="flex" tabIndex={0}>
-              <Power size={12} aria-label="Always on" />
-            </span>
-          </TooltipTrigger>
-          {label}
+    <Tooltip
+      side="top"
+      content="This agent never hibernates on its own and keeps its compute reserved."
+    >
+      <span className="inline-flex" tabIndex={0}>
+        <Badge variant="muted" data-testid="always-on-tag">
+          Always on
         </Badge>
       </span>
-      <TooltipContent
-        tail
-        side="top"
-        className="max-w-xs text-xs leading-relaxed"
-      >
-        Always on. This agent never hibernates on its own and keeps its compute
-        reserved.
-      </TooltipContent>
-    </TooltipRoot>
+    </Tooltip>
   );
 }

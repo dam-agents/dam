@@ -305,6 +305,7 @@ async function refreshOne(
   auth: Extract<ConnectionAuthConfig, { kind: "oauth" }>,
   deps: {
     engine: OAuthEngine;
+    githubAppEngine: GitHubAppEngine;
     templates: ConnectionTemplateRegistry;
     secretStore: SecretStore;
     db: Db;
@@ -325,6 +326,7 @@ async function refreshOne(
       conn: fresh,
       auth: fresh.auth,
       engine: deps.engine,
+      githubAppEngine: deps.githubAppEngine,
       templates: deps.templates,
       secretStore: deps.secretStore,
     });

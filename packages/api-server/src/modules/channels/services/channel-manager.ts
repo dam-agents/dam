@@ -126,7 +126,10 @@ interface Worker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
-  declineTurn?(instanceName: string): Promise<{ ok: true } | { error: string }>;
+  declineTurn?(
+    instanceName: string,
+    threadTs?: string,
+  ): Promise<{ ok: true } | { error: string }>;
   handOffTurn?(
     instanceName: string,
     targetName: string,
@@ -178,6 +181,7 @@ export interface ChannelManager {
   declineTurn(
     instanceName: string,
     channelType: ChannelType,
+    threadTs?: string,
   ): Promise<{ ok: true } | { error: string }>;
   handOffTurn(
     instanceName: string,
@@ -237,7 +241,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   postMessage: forInstance.rest(z.unknown()),
   reply: forInstance.rest(z.unknown()),
   react: forInstance.rest(z.unknown()),
-  declineTurn: forInstance,
+  declineTurn: forInstance.rest(z.unknown()),
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
@@ -482,13 +486,14 @@ export function createChannelManager(deps: {
         });
       return worker.react(instanceName, reaction);
     },
-    declineTurn: (instanceName: string, channelType: ChannelType) => {
+    declineTurn: (
+      instanceName: string,
+      channelType: ChannelType,
+      threadTs?: string,
+    ) => {
       const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.declineTurn)
-        return Promise.resolve({
-          error: `declining a turn is not supported on ${channelType}`,
-        });
-      return worker.declineTurn(instanceName);
+      if (!worker?.declineTurn) return Promise.resolve({ ok: true as const });
+      return worker.declineTurn(instanceName, threadTs);
     },
     handOffTurn: (
       instanceName: string,
@@ -662,9 +667,11 @@ export function createChannelManager(deps: {
       );
     },
 
-    declineTurn(instanceName, channelType) {
-      return dispatchResult("declineTurn", [instanceName, channelType], () =>
-        localHandlers.declineTurn(instanceName, channelType),
+    declineTurn(instanceName, channelType, threadTs) {
+      return dispatchResult(
+        "declineTurn",
+        [instanceName, channelType, threadTs],
+        () => localHandlers.declineTurn(instanceName, channelType, threadTs),
       );
     },
 

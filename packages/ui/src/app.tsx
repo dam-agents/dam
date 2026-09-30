@@ -61,8 +61,8 @@ const SETUP_VIEWS = new Set<Route["view"]>(["agent-new", "starter-kit-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityOpen);
-  const setActivityOpen = useStore((s) => s.setActivityOpen);
+  const activityOpen = useStore((s) => s.activityView !== null);
+  const setActivityView = useStore((s) => s.setActivityView);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -98,14 +98,14 @@ function MainApp() {
           <div className="relative z-content flex-1 min-w-0">
             <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
-                <NotificationsBell onOpen={() => setActivityOpen(true)} />
+                <NotificationsBell onOpen={() => setActivityView("feed")} />
               </div>
             </div>
             <ChatView />
           </div>
         </div>
         {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityOpen(false)} />
+          <NotificationsPanel onClose={() => setActivityView(null)} />
         )}
         <DialogOverlay />
         <PendingBindModal />
@@ -120,7 +120,7 @@ function MainApp() {
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
             <div className="pointer-events-auto">
-              <NotificationsBell onOpen={() => setActivityOpen(true)} />
+              <NotificationsBell onOpen={() => setActivityView("feed")} />
             </div>
           </div>
           {view === "sandbox-home" ? (
@@ -161,7 +161,7 @@ function MainApp() {
         </main>
       </div>
       {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityOpen(false)} />
+        <NotificationsPanel onClose={() => setActivityView(null)} />
       )}
       <DialogOverlay />
       <PendingBindModal />

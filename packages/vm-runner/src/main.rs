@@ -48,6 +48,9 @@ struct Args {
     port_min: u16,
     #[arg(long = "port-max", default_value_t = 31099)]
     port_max: u16,
+    // UNIT_BOUNDARY_DESCRIPTION: the address machines are published on; empty is every interface, which a pod's own network namespace keeps inside the cluster. A runner on a laptop is on the laptop's own network, so it publishes on loopback, where the cluster's VM reaches it and the LAN does not.
+    #[arg(long = "publish-address", default_value = "")]
+    publish_address: String,
     // UNIT_BOUNDARY_DESCRIPTION: memory the runner may commit to machines. Required: without it the runner admits machines against no limit at all.
     #[arg(long = "memory-mib", default_value_t = 0)]
     memory_mib: i64,
@@ -69,6 +72,20 @@ fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Opt
         return None;
     }
     Some(args.next().map(PathBuf::from))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the gateway port the runner recorded for this VMM's machine. smolvm's host service is one port per process, and every VMM is its own process, so each maps only its own machine's gateway. A file that is there and unreadable fails the boot rather than booting a guest with no way out.
+fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
+    let file = boot_config.with_file_name(vm_runner::runtime::GATEWAY_HOST_PORT_FILE);
+    match std::fs::read_to_string(&file) {
+        Ok(port) => Ok(Some(
+            port.trim()
+                .parse()
+                .map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?,
+        )),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", file.display())),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag.
@@ -111,6 +128,18 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     Ok(listener)
 }
 
+fn publisher(address: &str) -> anyhow::Result<Option<Arc<vm_runner::forward::Listen>>> {
+    if address.is_empty() {
+        return Ok(None);
+    }
+    let ip: std::net::IpAddr = address
+        .parse()
+        .map_err(|e| anyhow::anyhow!("--publish-address {address}: {e}"))?;
+    Ok(Some(Arc::new(move |port| {
+        std::net::TcpListener::bind((ip, port))
+    })))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE and STOP_ON_CLOSE the controller's termination grace on the runner pod covers.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
@@ -137,6 +166,10 @@ fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        if let Some(port) = gateway_host_port(&config)? {
+            smolvm::network::launch::configure_guest_host_service(port, port)
+                .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
+        }
         smolvm::internal_boot::run(config)?;
         return Ok(());
     }
@@ -213,7 +246,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
-            listen: None,
+            listen: publisher(&args.publish_address)?,
         },
         runtime,
     )?;

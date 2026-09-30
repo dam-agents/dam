@@ -8,11 +8,13 @@ import type { PlatformStore } from "../../../store.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 
+export type ActivityView = "feed" | "approvals";
+
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
-  activityOpen: boolean;
-  setActivityOpen: (open: boolean) => void;
+  activityView: ActivityView | null;
+  setActivityView: (view: ActivityView | null) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -30,6 +32,6 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
   },
-  activityOpen: false,
-  setActivityOpen: (open) => set({ activityOpen: open }),
+  activityView: null,
+  setActivityView: (view) => set({ activityView: view }),
 });

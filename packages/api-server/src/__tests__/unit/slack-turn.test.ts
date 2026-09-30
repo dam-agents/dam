@@ -49,6 +49,7 @@ function harness(opts: {
   agentName?: string;
   wakePatienceMs?: number;
   turnStatus?: AcpClient["turnStatus"];
+  ambient?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -79,7 +80,7 @@ function harness(opts: {
         {
           instanceName: "agent-1",
           owner: OWNER,
-          ambient: false,
+          ambient: opts.ambient === true,
           isDefault: true,
         },
       ],
@@ -738,7 +739,14 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
-  it("two rapid first messages in a new thread mint one session — the second resumes it", async () => {
+  /**
+   * TEST_SCENARIO: a thread's session is minted on whichever turn reaches it
+   * first, and nothing in a store guards the key. An addressed mention and a
+   * read-along message land in that thread through two different queues, so
+   * only the per-(Agent, session key) lock keeps them from minting a session
+   * each — which would split one thread across two conversations.
+   */
+  it("a mention and a read-along message in one thread mint one session — the second resumes it", async () => {
     const sessions: Array<{
       sessionId: string;
       platform: { threadTs?: string };
@@ -758,19 +766,24 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       await new Promise<void>((r) => gates.push(r));
       return "answer";
     };
-    const h = harness({ sendPrompt, listSessions: async () => sessions });
+    const h = harness({
+      sendPrompt,
+      listSessions: async () => sessions,
+      ambient: true,
+    });
     await h.start();
     void h.gw.fireMention({
       user: "U1",
       channel: "C1",
-      ts: "100.1",
+      ts: "100.2",
+      threadTs: "100.1",
       text: "first",
       teamId: "T-e2e",
     });
-    void h.gw.fireMention({
+    void h.gw.fireMessage({
       user: "U2",
       channel: "C1",
-      ts: "100.2",
+      ts: "100.3",
       threadTs: "100.1",
       text: "second",
       teamId: "T-e2e",
@@ -779,6 +792,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (let i = 0; i < 20; i++) await tick();
     expect(gates).toHaveLength(1);
     expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.platform.threadTs).toBe(slackThreadKey("C1", "100.1"));
 
     gates[0]!();
     for (let i = 0; i < 200 && gates.length < 2; i++) await tick();

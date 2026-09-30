@@ -34,7 +34,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "The agent is starting up." },
+  starting: { description: "" },
   preparing_workspace: {
     description: "Setting up the workspace. This finishes shortly.",
   },
@@ -133,12 +133,19 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          <StatusBadge state={state} />
+          {state !== "starting" && <StatusBadge state={state} />}
         </div>
       </div>
-      <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      {description && (
+        <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      )}
+      {state === "starting" && (
+        <p role="status" className="sr-only">
+          The agent is starting up.
+        </p>
+      )}
       {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">

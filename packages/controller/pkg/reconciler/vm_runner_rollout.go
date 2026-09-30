@@ -264,7 +264,7 @@ func runnerPodRolledOut(dep *appsv1.Deployment) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: a changed runner pod is applied when one of that owner's agents reconciles, and a hibernated owner's agents may not reconcile for days. The sweep offers every runner its turn, in name order, so a roll reaches the whole install even where nothing else would ask. Each turn holds the owner's lock and only updates a runner that still exists, so it cannot race the orphan sweep into recreating a runner that sweep has just removed.
 func (r *AgentReconciler) ReconcileRunnerRollout(ctx context.Context) {
-	if !r.config.VM.Enabled {
+	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
 		return
 	}
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{

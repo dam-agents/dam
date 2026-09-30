@@ -143,6 +143,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
+    log: opts.log,
   });
 
   return {

@@ -92,11 +92,8 @@ import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
-import {
-  acpSessionsKeys,
-  optimisticInsertSession,
-  setSessionRunning,
-} from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -520,6 +517,8 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
+  const leftPanelWidth = { width: leftW };
+
   const dotColor = agentDisplay
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
@@ -532,67 +531,90 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
-        <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+        <div
+          style={leftPanelWidth}
+          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
-          <ArrowLeft size={14} />
-        </Button>
-        <div className="flex items-center gap-3 min-w-0">
-          {avatarsEnabled && agentView ? (
-            <AgentAvatar
-              name={agentView.name}
-              size={40}
-              sleeping={isAsleep(agentDisplay?.state)}
-              stopped={agentView.stopRequested}
-            />
-          ) : (
-            <span
-              aria-hidden
-              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-            />
-          )}
-          <h1 className="text-sm font-bold text-foreground truncate">
-            {selectedAgentName}
-          </h1>
-          {agentView && <VmRuntimeBadge agent={agentView} />}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={surfaceCopy.actionsAria}
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                {surfaceCopy.configure}
-              </DropdownMenuItem>
-              {canShareKnowledge && (
-                <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
-                  Share knowledge base
+          <Button
+            variant="ghost"
+            size="inline"
+            aria-label="Back"
+            onClick={handleBack}
+            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          >
+            <ArrowLeft size={14} />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            {avatarsEnabled && agentView ? (
+              <>
+                <AgentAvatar
+                  name={agentView.name}
+                  size={40}
+                  sleeping={isAsleep(agentDisplay?.state)}
+                  stopped={agentView.stopRequested}
+                  className="@max-[149px]:hidden"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
+                    dotColor,
+                  )}
+                />
+              </>
+            ) : (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1 className="text-sm font-bold text-foreground truncate">
+              {selectedAgentName}
+            </h1>
+            {agentView && (
+              <span className="flex shrink-0 @max-[119px]:hidden">
+                <VmRuntimeBadge
+                  agent={agentView}
+                  labelClassName="@max-[279px]:sr-only"
+                />
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={surfaceCopy.actionsAria}
+                  className="shrink-0"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                  {surfaceCopy.configure}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={handleRestartSandbox}>
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={handleDeleteSandbox}
-              >
-                {surfaceCopy.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {canShareKnowledge && (
+                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
+                    Share knowledge base
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={handleRestartSandbox}>
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={handleDeleteSandbox}
+                >
+                  {surfaceCopy.delete}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 px-6">
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
@@ -607,7 +629,7 @@ export function ChatView() {
       <div className="flex flex-1 min-h-0">
         {}
         <div
-          style={{ width: leftW }}
+          style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
@@ -673,7 +695,7 @@ export function ChatView() {
                   true,
                 );
                 queryClient.invalidateQueries({
-                  queryKey: acpSessionsKeys.all,
+                  queryKey: acpSessionsKeys.agent(selectedAgent),
                 });
               }}
               onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}

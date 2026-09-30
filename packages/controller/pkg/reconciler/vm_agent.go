@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +40,9 @@ const (
 	vmHealthPoll      = time.Minute
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the address a guest reaches its host at: smolvm's own gateway address, which it relays to the host's loopback. A runner outside the cluster has the guest's proxy there, on the port its gateway is forwarded to. contract/guest.json holds both sides to it.
+	vmHostGatewayAddress = "100.96.0.1"
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
@@ -73,8 +78,15 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
 
+	proxy, allow, gatewayHostPort := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0
+	if r.config.VM.Runner.HostAddress != "" {
+		if gatewayHostPort, err = r.exposeGatewayOnHost(ctx, name); err != nil {
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("exposing the gateway to the host runner: %w", err)
+		}
+		proxy, allow = fmt.Sprintf("http://%s:%d", vmHostGatewayAddress, gatewayHostPort), nil
+	}
 	env := map[string]string{}
-	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, agentProxyAddr(r.config, gatewayIP)) {
+	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, proxy) {
 		env[e.Name] = e.Value
 	}
 	for _, e := range defaults.Env {
@@ -119,17 +131,18 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 
 	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
-		Image:      spec.Image,
-		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
-		MemoryMiB:  r.machineMemoryMiB(spec),
-		StorageGiB: storageGiB,
-		Env:        env,
-		CACert:     string(leaf.Data["ca.crt"]),
-		AllowCIDRs: []string{gatewayIP + "/32"},
-		Revision:   agent.Annotations[annRollRev],
-		Running:    running,
-		PullAuths:  pullAuths,
-		ExpectSeed: runtimeMigrationExpectSeed(agent),
+		Image:           spec.Image,
+		CPUs:            max(int((cpu.MilliValue()+999)/1000), 1),
+		MemoryMiB:       r.machineMemoryMiB(spec),
+		StorageGiB:      storageGiB,
+		Env:             env,
+		CACert:          string(leaf.Data["ca.crt"]),
+		AllowCIDRs:      allow,
+		GatewayHostPort: gatewayHostPort,
+		Revision:        agent.Annotations[annRollRev],
+		Running:         running,
+		PullAuths:       pullAuths,
+		ExpectSeed:      runtimeMigrationExpectSeed(agent),
 	}
 	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
 		machine.Migration = &vmrunner.MachineMigration{}
@@ -152,12 +165,34 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	return st, true, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster reaches the machine's gateway through a NodePort, which the local cluster's VM forwards to that host's loopback. Kubernetes picks the port, so it is read back from the Service rather than chosen here, and a gateway that is already a NodePort keeps the port it has.
+func (r *AgentReconciler) exposeGatewayOnHost(ctx context.Context, agentName string) (int, error) {
+	cli := r.client.CoreV1().Services(r.config.Namespace)
+	svc, err := cli.Get(ctx, GatewayName(agentName), metav1.GetOptions{})
+	if err != nil {
+		return 0, err
+	}
+	if svc.Spec.Type != corev1.ServiceTypeNodePort {
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+		if svc, err = cli.Update(ctx, svc, metav1.UpdateOptions{}); err != nil {
+			return 0, err
+		}
+	}
+	return int(svc.Spec.Ports[0].NodePort), nil
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
 func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner string, port int, ownerRef metav1.OwnerReference) error {
 	desired := BuildAgentService(name, r.config, ownerRef)
 	desired.Spec.ClusterIP = ""
 	desired.Spec.Selector = vmRunnerSelector(owner)
 	desired.Spec.Ports[0].TargetPort = intstr.FromInt(port)
+	if r.config.VM.Runner.HostAddress != "" {
+		desired.Spec.Selector = nil
+		if err := r.applyHostRunnerEndpoints(ctx, desired, port); err != nil {
+			return err
+		}
+	}
 
 	cli := r.client.CoreV1().Services(r.config.Namespace)
 	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
@@ -174,11 +209,49 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster is no pod a selector can find, so the agent's Service has no selector and this slice names the runner's address and the machine's published port instead. The slice is the Service's own: it carries the Service's name label, which is how kube-proxy joins the two, and a managed-by value of its own, so the EndpointSlice controller leaves it alone.
+func (r *AgentReconciler) applyHostRunnerEndpoints(ctx context.Context, svc *corev1.Service, port int) error {
+	desired := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            svc.Name,
+			Namespace:       svc.Namespace,
+			OwnerReferences: svc.OwnerReferences,
+			Labels: map[string]string{
+				discoveryv1.LabelServiceName: svc.Name,
+				discoveryv1.LabelManagedBy:   "platform-controller",
+			},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{r.config.VM.Runner.HostAddress}}},
+		Ports: []discoveryv1.EndpointPort{{
+			Name:     &svc.Spec.Ports[0].Name,
+			Port:     new(int32(port)),
+			Protocol: new(corev1.ProtocolTCP),
+		}},
+	}
+	cli := r.client.DiscoveryV1().EndpointSlices(svc.Namespace)
+	existing, err := cli.Get(ctx, svc.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	existing.Endpoints, existing.Ports = desired.Endpoints, desired.Ports
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
+	return err
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how long a runner that cannot be reached, and whose owner has no Agent of any kind, is kept before the sweep removes it anyway. Only an agent's reconcile creates a runner, so such a runner serves nobody; the grace covers a runner that is merely restarting while its owner's Agents are being recreated.
 const orphanRunnerGrace = 30 * time.Minute
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	if !r.config.VM.Enabled {
+		return
+	}
+	if r.config.VM.Runner.HostAddress != "" {
+		r.sweepHostRunner(ctx)
 		return
 	}
 	runners, err := r.knownRunners(ctx)
@@ -239,6 +312,39 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	r.deleteRunner(ctx, owner)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner and is never removed, so the sweep only collects machines no Agent names. The machines are listed before the Agents: an Agent exists before its machine does, so every machine in the first list has its Agent in the second, and one created in between is simply not looked at yet.
+func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
+	runner, err := r.runnerFor(ctx, "")
+	if err != nil {
+		slog.Warn("orphan machine GC: the host VM runner cannot be reached", "error", err)
+		return
+	}
+	ids, err := runner.List(ctx)
+	if err != nil {
+		slog.Warn("orphan machine GC: listing the host VM runner's machines failed", "error", err)
+		return
+	}
+	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("orphan machine GC: listing agents failed", "error", err)
+		return
+	}
+	claimed := map[string]bool{}
+	for i := range agents.Items {
+		claimed[agents.Items[i].GetName()] = true
+	}
+	for _, id := range ids {
+		if claimed[id] {
+			continue
+		}
+		if err := runner.Delete(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+			continue
+		}
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+	}
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed with whatever its disk still holds — it is reported at error level, because that is the one path where the platform deletes a claim it could not see into.
 func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
 	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
@@ -282,15 +388,17 @@ func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string)
 	if !r.config.VM.Enabled {
 		return nil
 	}
-	if owner == "" {
+	if owner == "" && r.config.VM.Runner.HostAddress == "" {
 		return r.deleteMachineEverywhere(ctx, name)
 	}
-	_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("reading the owner's VM runner: %w", err)
+	if r.config.VM.Runner.HostAddress == "" {
+		_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("reading the owner's VM runner: %w", err)
+		}
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {

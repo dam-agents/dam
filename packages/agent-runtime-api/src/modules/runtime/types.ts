@@ -288,9 +288,18 @@ export const harnessConfigCurrent = z.object({
 });
 export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 
+function advertisedKinds<T extends string>(known: readonly T[]) {
+  const recognised = new Set<string>(known);
+  return z
+    .array(z.string())
+    .transform((kinds) =>
+      kinds.filter((kind): kind is T => recognised.has(kind)),
+    );
+}
+
 export const capabilities = z.object({
-  contributions: z.array(contributionKind),
-  events: z.array(eventKind),
+  contributions: advertisedKinds(contributionKind.options),
+  events: advertisedKinds(eventKind.options),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   kbPublish: z.number().int().optional(),

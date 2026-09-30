@@ -37,6 +37,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
   const prompts: Array<string | ContentBlock[]> = [];
   const nudges: Array<string | ContentBlock[]> = [];
   const steered: string[] = [];
+  const sessionKeys: string[] = [];
   const gates: Gate[] = [];
   let holdTurns = false;
 
@@ -54,7 +55,12 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
         return "nudged";
       }
       prompts.push(prompt);
-      sendOpts.onSession?.(SESSION);
+      const meta = (sendOpts as { platformMeta?: { threadTs?: string } })
+        .platformMeta;
+      if (meta?.threadTs !== undefined) sessionKeys.push(meta.threadTs);
+      sendOpts.onSession?.(
+        meta?.threadTs ? `${SESSION}-${meta.threadTs}` : SESSION,
+      );
       if (holdTurns) {
         await new Promise<void>((resolve) => gates.push({ release: resolve }));
       }
@@ -101,6 +107,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     prompts,
     nudges,
     steered,
+    sessionKeys,
     worker,
     async start() {
       await worker.start("agent-1");
@@ -119,6 +126,15 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
         channel: "C1",
         ts,
         ...(threadTs !== undefined ? { threadTs } : {}),
+        text,
+        teamId: "T-e2e",
+      });
+    },
+    fireDm(ts: string, text: string, user = "U1") {
+      return gw.fireDirectMessage({
+        user,
+        channel: "D1",
+        ts,
         text,
         teamId: "T-e2e",
       });
@@ -228,9 +244,113 @@ describe("slack addressed turns — coalescing", () => {
   });
 
   /**
+   * TEST_SCENARIO: The #4023 bug. In a channel a second top-level mention only
+   * reaches the agent because the person tagged it again, so it is a new
+   * request, not the rest of a thought — even from the same person, even while
+   * the first is still running. Each one must open its own thread session, or
+   * one answer lands in the other's thread and the first thread gets nothing.
+   */
+  it("gives each of one person's top-level mentions its own turn and session", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+    h.hold();
+
+    void h.fire("100.1", "run the long thing");
+    await h.waitFor(() => h.prompts.length === 1);
+
+    void h.fire("200.2", "separate question: what is 17 x 23?");
+    await h.waitFor(() => h.prompts.length === 2);
+
+    expect(h.steered).toHaveLength(0);
+    expect(h.sessionKeys).toEqual(["C1:100.1", "C1:200.2"]);
+    expect(String(h.prompts[0])).toContain("run the long thing");
+    expect(String(h.prompts[0])).not.toContain("17 x 23");
+    expect(String(h.prompts[1])).toContain("17 x 23");
+    expect(String(h.prompts[1])).toContain('threadTs="200.2"');
+
+    h.releaseAll();
+    await h.waitFor(() => false);
+  });
+
+  /**
+   * TEST_SCENARIO: The other half of #4023. A follow-up posted inside the
+   * thread a turn is answering belongs to that turn — "wait, don't approve
+   * yet" is worthless once the approval is out. It must be steered into the
+   * running turn rather than queued behind it.
+   */
+  it("steers a thread reply into the top-level turn it belongs to", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+    h.hold();
+
+    void h.fire("100.1", "approve the release");
+    await h.waitFor(() => h.prompts.length === 1);
+
+    void h.fire("100.5", "wait, do not approve yet", "100.1");
+    await h.waitFor(() => h.steered.length === 1);
+
+    expect(h.prompts).toHaveLength(1);
+    expect(h.steered[0]).toContain("wait, do not approve yet");
+    expect(h.steered[0]).not.toContain("pass the [ts");
+
+    h.releaseAll();
+    await h.waitFor(() => false);
+  });
+
+  /**
+   * TEST_SCENARIO: A 1:1 DM is the case merging was built for — no tag is
+   * needed, so people really do type one thought in pieces, and only they see
+   * the answer. Splitting a DM burst per message is what the channel rule must
+   * not spread to.
+   */
+  it("still merges a 1:1 DM burst from one person", async () => {
+    const h = harness({ settleMs: 5 });
+    await h.start();
+
+    const a = h.fireDm("100.1", "can you look at the deploy");
+    const b = h.fireDm("200.2", "the migration one specifically");
+    await Promise.all([a, b]);
+
+    expect(h.prompts).toHaveLength(1);
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("can you look at the deploy");
+    expect(prompt).toContain("the migration one specifically");
+    expect(prompt).toContain("an id-less reply is refused");
+  });
+
+  /**
+   * TEST_SCENARIO: A decline naming a turn the agent is not running is a
+   * mistake, not a silence. Answering ok would record nothing and leave the
+   * turn looking unanswered, so the delivery nudge would push the agent into
+   * posting the reply it withheld — the same failure an unnamed decline had.
+   */
+  it("refuses a decline that names no turn the agent is running", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+
+    expect(await h.worker.declineTurn("agent-1", "999.9")).toMatchObject({
+      error: expect.stringContaining("999.9"),
+    });
+
+    h.hold();
+    void h.fire("100.1", "run the long thing");
+    await h.waitFor(() => h.prompts.length === 1);
+
+    expect(await h.worker.declineTurn("agent-1", "999.9")).toMatchObject({
+      error: expect.stringContaining("999.9"),
+    });
+
+    h.releaseAll();
+    await h.waitFor(() => h.nudges.length === 1);
+
+    expect(h.nudges).toHaveLength(1);
+  });
+
+  /**
    * TEST_SCENARIO: Two people addressing the agent about different things are
    * two conversations, not one thought — merging them would answer one person
-   * under the other's message, so they stay separate turns.
+   * under the other's message. Each top-level mention roots its own thread, so
+   * they stay separate turns whoever sent them.
    */
   it("keeps two senders' top-level mentions apart", async () => {
     const h = harness({ settleMs: 5 });
@@ -241,6 +361,81 @@ describe("slack addressed turns — coalescing", () => {
     await Promise.all([a, b]);
 
     expect(h.prompts).toHaveLength(2);
+  });
+
+  /**
+   * TEST_SCENARIO: The quiet period is what merges a split thought, and it must
+   * not merge two top-level mentions that only look like one because they
+   * arrived close together. Same person, same channel, inside the same quiet
+   * period — still two requests, so still two turns.
+   */
+  it("does not merge one person's top-level mentions inside the quiet period", async () => {
+    const h = harness({ settleMs: 5 });
+    await h.start();
+
+    const a = h.fire("100.1", "question one");
+    const b = h.fire("200.2", "question two");
+    await Promise.all([a, b]);
+
+    expect(h.prompts).toHaveLength(2);
+    expect(h.sessionKeys).toEqual(["C1:100.1", "C1:200.2"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A mention and a reply the sender adds under it inside the
+   * quiet period are one thread, so they are one turn. The turn opened at the
+   * top level, so it is framed that way and answers into the thread the
+   * mention roots — one target, not one per message.
+   */
+  it("carries a mention and a reply under it into one thread turn", async () => {
+    const h = harness({ settleMs: 5 });
+    await h.start();
+
+    const a = h.fire("100.1", "can you check the deploy");
+    const b = h.fire("100.5", "the migration one", "100.1");
+    await Promise.all([a, b]);
+
+    expect(h.prompts).toHaveLength(1);
+    expect(h.sessionKeys).toEqual(["C1:100.1"]);
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("can you check the deploy");
+    expect(prompt).toContain("the migration one");
+    expect(prompt).toContain('threadTs="100.1"');
+    expect(prompt).not.toContain("an id-less reply is refused");
+  });
+
+  /**
+   * TEST_SCENARIO: Concurrent top-level turns are the normal case now, and
+   * no_reply_needed has to say which of them it is ending. Unnamed it cannot
+   * be resolved, and answering ok anyway would leave the turn looking
+   * unanswered — the delivery nudge would then push the agent into posting the
+   * very reply it decided to withhold.
+   */
+  it("declines the turn it names while another is in flight", async () => {
+    const h = harness({ steer: () => "injected" });
+    await h.start();
+    h.hold();
+
+    void h.fire("100.1", "run the long thing");
+    await h.waitFor(() => h.prompts.length === 1);
+    void h.fire("200.2", "thanks, ignore that");
+    await h.waitFor(() => h.prompts.length === 2);
+
+    const unnamed = await h.worker.declineTurn("agent-1");
+    expect(unnamed).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+
+    expect(await h.worker.declineTurn("agent-1", "200.2")).toEqual({
+      ok: true,
+    });
+
+    h.releaseAll();
+    await h.waitFor(() => h.nudges.length === 1);
+    await h.waitFor(() => false);
+
+    expect(h.nudges).toHaveLength(1);
+    expect(String(h.nudges[0])).toContain("100.1");
   });
 
   /**

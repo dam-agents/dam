@@ -1,10 +1,14 @@
 import {
   podSessionModeSchema,
   podSessionTypeSchema,
+  sessionMatchesQuery,
   type PodSession,
   type PodSessionMode,
   type PodSessionType,
   type SessionDirectoryEntry,
+  type SessionListCursor,
+  type SessionListQuery,
+  type SessionPage,
 } from "agent-runtime-api";
 
 const EPOCH = new Date(0).toISOString();
@@ -122,6 +126,46 @@ export function composeSessionList(
   }
 
   return composed;
+}
+
+function activityAt(session: PodSession): string {
+  return session.updatedAt ?? session.createdAt;
+}
+
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function compareToCursor(
+  session: PodSession,
+  cursor: SessionListCursor,
+): number {
+  return (
+    compareCodeUnits(cursor.activityAt, activityAt(session)) ||
+    compareCodeUnits(session.sessionId, cursor.sessionId)
+  );
+}
+
+function cursorOf(session: PodSession): SessionListCursor {
+  return { activityAt: activityAt(session), sessionId: session.sessionId };
+}
+
+export function pageSessions(
+  sessions: readonly PodSession[],
+  query: SessionListQuery = {},
+): SessionPage {
+  const { after, limit } = query;
+  const ordered = sessions
+    .filter(
+      (s) =>
+        sessionMatchesQuery(s, query) &&
+        (!after || compareToCursor(s, after) > 0),
+    )
+    .sort((a, b) => compareToCursor(a, cursorOf(b)));
+  if (limit === undefined || ordered.length <= limit)
+    return { sessions: ordered, nextCursor: null };
+  const page = ordered.slice(0, limit);
+  return { sessions: page, nextCursor: cursorOf(page[page.length - 1]!) };
 }
 
 export function sessionDirectoryEntries(

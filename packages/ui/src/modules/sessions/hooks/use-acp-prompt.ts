@@ -18,7 +18,8 @@ import {
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
-import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { optimisticInsertSession } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
@@ -333,7 +334,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         delivery.endSend(promptId);
         if (startedRef.current === started) startedRef.current = null;
         started?.finish();
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
         if (viewerStillHere(selectedAgent, aId)) textareaRef.current?.focus();
       }
     },

@@ -27,6 +27,33 @@ export const podSessionSchema = z.object({
   running: z.boolean(),
 });
 
+export const SESSION_CATEGORIES = [
+  "chats",
+  "scheduled",
+  "channels",
+  "runs",
+  "terminal",
+] as const;
+
+export const sessionCategorySchema = z.enum(SESSION_CATEGORIES);
+
+export const SESSION_LIST_MAX_LIMIT = 200;
+
+export const sessionListCursorSchema = z.object({
+  activityAt: z.string(),
+  sessionId: z.string().min(1),
+});
+
+export const sessionListInputSchema = z
+  .object({
+    categories: z.array(sessionCategorySchema).optional(),
+    sessionId: z.string().min(1).optional(),
+    scheduleId: z.string().min(1).optional(),
+    after: sessionListCursorSchema.optional(),
+    limit: z.number().int().min(1).max(SESSION_LIST_MAX_LIMIT).optional(),
+  })
+  .optional();
+
 export const sessionHistoryInputSchema = z.object({
   sessionId: z.string().min(1),
 });

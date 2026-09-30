@@ -67,6 +67,10 @@ futures-util = { version = "0.3", default-features = false }
 tower = { version = "0.5", features = ["util"] }
 # Backdating a file is how eviction's oldest-write-first order is tested.
 filetime = "0.2"
+# The address a guest reaches its host at, read from smolvm's own network
+# defaults so the controller's copy in contract/guest.json cannot drift from it.
+# In the lock by way of smolvm, so this adds an edge and no crate.
+smolvm-network = { path = ".smolvm/crates/smolvm-network" }
 
 [lints.clippy]
 all = "deny"

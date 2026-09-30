@@ -269,6 +269,14 @@ virtualization:
     # runners their agent image; empty means runners fetch images from the
     # registry.
     imageArchiveHostPath: ""
+    # Local dev on macOS only. Set, the controller creates no runner pods:
+    # every vm machine, whatever its owner, runs on one vm-runner process on
+    # the host, which uses the host's own hypervisor instead of one nested in
+    # the cluster's VM. This is the address pods reach that host at (lima:
+    # 192.168.5.2). The chart renders that runner's token Secret and serving
+    # certificate; `mise run cluster:install` starts it. There is no per-owner
+    # boundary: one owner's escaped guest reaches every owner's machines.
+    hostAddress: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever
     # egressExceptCidrs confines this pod away from Service and pod addresses,
