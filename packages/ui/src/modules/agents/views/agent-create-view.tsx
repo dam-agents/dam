@@ -80,6 +80,7 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { VmRuntimeNotice } from "../components/vm-runtime-notice.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
@@ -372,6 +373,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </>
       }
     >
+      {!kit && <VmRuntimeNotice className="mb-8" />}
+
       {!kit && (
         <section className="mb-8">
           <Callout tone="default" inset>
