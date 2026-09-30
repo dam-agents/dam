@@ -1,10 +1,10 @@
 import {
+  Book,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
   Folders,
   Gift,
-  Help,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -67,7 +67,7 @@ export function IconRail({
   };
   const docs: Destination = {
     label: "Documentation",
-    icon: Help,
+    icon: Book,
     active: false,
     badge: 0,
     navigate: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer"),
