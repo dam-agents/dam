@@ -631,19 +631,29 @@ export function createBoltSlackGateway(
       );
     },
 
-    async stageFile(args) {
+    async reserveFile(args) {
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(args.teamId);
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
       const reserved = await app.client.files.getUploadURLExternal({
         token,
         filename: args.filename,
-        length: args.file.length,
+        length: args.length,
       });
       if (!reserved.upload_url || !reserved.file_id)
         throw new Error("files.getUploadURLExternal returned no upload URL");
-      await postFileBytes(reserved.upload_url, token, args.file, args.filename);
-      return reserved.file_id;
+      return { fileId: reserved.file_id, uploadUrl: reserved.upload_url };
+    },
+
+    async sendFileBytes(args) {
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await postFileBytes(
+        args.reserved.uploadUrl,
+        token,
+        args.file,
+        args.filename,
+      );
     },
 
     async shareFile(args) {

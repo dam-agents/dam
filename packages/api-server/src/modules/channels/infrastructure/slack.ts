@@ -99,6 +99,7 @@ import type {
   SlackChannelMessageEvent,
   SlackGateway,
   SlackPostMessage,
+  SlackReservedFile,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -1534,36 +1535,52 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     persona: Pick<SlackPostMessage, "username" | "iconUrl">,
     post: (fileIds: string[]) => Promise<unknown>,
   ): Promise<string | null> {
-    let staged: { fileId: string; attachment: ChannelAttachment } | null = null;
+    let reserved: SlackReservedFile | null = null;
     let uploadError: string | null = null;
     if (attachment) {
       try {
-        const fileId = await gw.stageFile({
-          file: attachment.data,
+        reserved = await gw.reserveFile({
           filename: attachment.filename,
+          length: attachment.data.length,
           teamId: target.teamId,
         });
-        staged = { fileId, attachment };
       } catch (err) {
         uploadError = formatError(err);
       }
     }
-    await post(staged ? [staged.fileId] : []);
-    if (staged) {
-      try {
-        await gw.shareFile({
-          fileId: staged.fileId,
-          filename: staged.attachment.filename,
-          ...(staged.attachment.title !== undefined
-            ? { title: staged.attachment.title }
-            : {}),
-          ...persona,
-          channelId: target.id,
-          ...(threadTs ? { threadTs } : {}),
-          teamId: target.teamId,
-        });
-      } catch (err) {
-        uploadError = formatError(err);
+    const bytesSent =
+      reserved && attachment
+        ? gw
+            .sendFileBytes({
+              reserved,
+              file: attachment.data,
+              filename: attachment.filename,
+              teamId: target.teamId,
+            })
+            .then(
+              () => null,
+              (err: unknown) => formatError(err),
+            )
+        : null;
+    await post(reserved ? [reserved.fileId] : []);
+    if (reserved && attachment && bytesSent) {
+      uploadError = await bytesSent;
+      if (uploadError === null) {
+        try {
+          await gw.shareFile({
+            fileId: reserved.fileId,
+            filename: attachment.filename,
+            ...(attachment.title !== undefined
+              ? { title: attachment.title }
+              : {}),
+            ...persona,
+            channelId: target.id,
+            ...(threadTs ? { threadTs } : {}),
+            teamId: target.teamId,
+          });
+        } catch (err) {
+          uploadError = formatError(err);
+        }
       }
     }
     return uploadError;

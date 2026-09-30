@@ -329,11 +329,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async stageFile(args) {
+    async reserveFile(args) {
       const fileId = `F${nextFileId++}-${args.filename}`;
       stagedFiles.set(fileId, args.filename);
-      return fileId;
+      return { fileId, uploadUrl: `https://files.fake/${fileId}` };
     },
+
+    async sendFileBytes() {},
 
     async shareFile(args) {
       outbound.push({

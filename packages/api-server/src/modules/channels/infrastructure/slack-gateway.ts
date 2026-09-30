@@ -139,6 +139,11 @@ export interface SlackMessage {
 
 export type SlackBlock = Record<string, unknown>;
 
+export interface SlackReservedFile {
+  fileId: string;
+  uploadUrl: string;
+}
+
 export interface SlackPostMessage {
   channel: string;
   text: string;
@@ -285,11 +290,17 @@ export interface SlackGateway {
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   uploadFile(args: SlackUpload): Promise<void>;
-  stageFile(args: {
+  reserveFile(args: {
+    filename: string;
+    length: number;
+    teamId: SlackWorkspace;
+  }): Promise<SlackReservedFile>;
+  sendFileBytes(args: {
+    reserved: SlackReservedFile;
     file: Buffer;
     filename: string;
     teamId: SlackWorkspace;
-  }): Promise<string>;
+  }): Promise<void>;
   shareFile(args: {
     fileId: string;
     filename: string;
