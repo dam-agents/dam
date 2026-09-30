@@ -32,8 +32,8 @@ features:
     always_online: true
   slash_commands:
     - command: /dam
-      description: Connect or disconnect an agent for this conversation
-      usage_hint: "bind | unbind"
+      description: Connect an agent to this conversation, or delete one of its posts
+      usage_hint: "bind | unbind | delete <message link>"
       should_escape: false
 
 oauth_config:
@@ -50,8 +50,8 @@ oauth_config:
     bot:
       - commands
       # Posting replies (chat.postMessage), the one-person notices a turn
-      # can need (chat.postEphemeral), and deleting an agent's post from its
-      # Delete button (chat.delete).
+      # can need (chat.postEphemeral), and deleting an agent's post when its
+      # owner runs the delete command (chat.delete).
       - chat:write
       # The working status on a turn (assistant.threads.setStatus). Listed here
       # as well as implied by the assistant_view feature above — Slack's own
@@ -84,8 +84,9 @@ oauth_config:
       # with their post (files.delete).
       - files:read
       - files:write
-      # Channel history backs context injection on new sessions, and the
-      # message.* event subscriptions below (ambient mode) require it too.
+      # Channel history backs context injection on new sessions, the
+      # message.* event subscriptions below (ambient mode) require it too, and
+      # the delete command reads the linked post back to find its footer.
       - channels:history
       - groups:history
       # Direct messages and group DMs: read inbound messages (im:history backs
