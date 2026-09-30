@@ -22,6 +22,12 @@ chart linting and offline rendering are unaffected.
 {{- fail "Istio AuthorizationPolicy CRD is missing. Install Istio (base + istiod + cni + ztunnel, ambient profile) in `istio-system` before installing this chart. `mise run cluster:install` provisions Istio automatically." }}
 {{- end }}
 
+{{- /* The rest proves the ambient dataplane is present and enrolls the
+       release namespace. istio.enforce=false (local-only, see
+       platform.validate.unenforcedMeshOnlyOnALocalCluster) installs no
+       dataplane, so only the CRD checks above apply to it. */ -}}
+{{- if .Values.istio.enforce }}
+
 {{- /* ztunnel DaemonSet — proves the ambient data plane is actually present */ -}}
 {{- $ztunnel := lookup "apps/v1" "DaemonSet" "istio-system" "ztunnel" }}
 {{- if not $ztunnel }}
@@ -37,6 +43,8 @@ chart linting and offline rendering are unaffected.
 {{- if ne $mode "ambient" }}
 {{- fail (printf "release namespace `%s` must carry label `istio.io/dataplane-mode=ambient`. Run: kubectl label namespace %s istio.io/dataplane-mode=ambient --overwrite" .Release.Namespace .Release.Namespace) }}
 {{- end }}
+{{- end }}
+
 {{- end }}
 
 {{- end }}

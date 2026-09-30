@@ -1,6 +1,6 @@
 ---
 name: cluster-ops
-description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283".
+description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283", "no-mesh", "istio-cni", "conntrack". Also when pods sit in ContainerCreating with `FailedCreatePodSandBox ... nftables run failed ... Operation not supported`, or istio-cni crash-loops on `error initializing host addressSet manager`.
 ---
 
 # Cluster operations
@@ -14,6 +14,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 - `cluster:install` — create the k3s VM, build images, install cert-manager + the Platform chart (upgrades in place if already installed)
 - `cluster:build -- <controller|api-server|ui|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image)
 - `cluster:status` — pods and cluster state
+- `cluster:install -- --no-mesh` — local-only install with no Istio dataplane, for kernels that cannot run ambient (see below)
 - `cluster:logs` — api-server pod logs
 - `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
 - `cluster:stop` / `cluster:uninstall` / `cluster:delete`
@@ -31,6 +32,12 @@ Services are available at `*.localhost:4444` automatically (Traefik on port 4444
 `e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.
 
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is the always-on tier — CI (in both lanes, see [vm backend](#vm-backend-kvm-only)) and plain `e2e` / `e2e:loop` run exactly it. **Full** = smoke plus the slow, scenario-heavy specs under `src/tests/full/`, run on demand only: `mise run e2e:loop -- --full` (or `mise run e2e -- --full` for the fresh-cluster path). Conventions for `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), each spec references its motivating ticket in the test title.
+
+## No mesh (local only)
+
+Some kernels cannot run Istio's ambient dataplane. smolvm's guest kernel, for one, is built without ipset and without conntrack marks and zones, and the nftables rules istio-cni writes for each pod joining the mesh set exactly those. There, istio-cni crash-loops on `error initializing host addressSet manager: invalid argument`, and pods stay in ContainerCreating with `FailedCreatePodSandBox: ... nftables run failed ... Operation not supported`. `cluster:install -- --no-mesh` installs Istio's CRDs and no dataplane, removing any dataplane an earlier install left, and installs the chart with `istio.enforce=false`. Everything runs, and every AuthorizationPolicy exists, but **nothing enforces them**: no mTLS, and any pod can call the harness as any agent. Its test results say nothing about isolation.
+
+It is local-only on purpose. The task refuses to run under CI, and the chart refuses `istio.enforce=false` unless the cluster carries the `kube-system/platform-local-no-mesh` ConfigMap the task writes, so `helm template`, a GitOps render and every other cluster fail. `cluster:status` says NO MESH while the marker is there. A later `cluster:install` without the flag installs the mesh again and removes the marker. Pass the flag on every run you want to stay mesh-free, `cluster:helm` included.
 
 ## vm backend (KVM only)
 

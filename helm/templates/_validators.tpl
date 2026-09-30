@@ -20,6 +20,30 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
+{{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
+{{- end -}}
+
+{{/*
+istio.enforce=false leaves every AuthorizationPolicy rendered and none
+enforced: the api-server trusts the agent ID in a harness URL because the
+waypoint admitted only that agent's principal, so without the mesh any pod
+can act as any agent. That is acceptable on a developer's own cluster whose
+kernel cannot run the ambient dataplane, and nowhere else. The marker is a
+ConfigMap only `mise run cluster:install -- --no-mesh` creates, and that task
+refuses to run under CI. `lookup` finds nothing during an offline render, so
+helm template, a GitOps controller's render and a pipeline's render all fail
+here, and so does an install on any cluster nobody provisioned that way.
+*/}}
+{{- define "platform.validate.unenforcedMeshOnlyOnALocalCluster" -}}
+{{- $enforce := .Values.istio.enforce -}}
+{{- if not (kindIs "bool" $enforce) -}}
+{{- fail (printf "istio.enforce must be true or false, got the %s %q (--set-string and quoted YAML make a string)." (kindOf $enforce) (toString $enforce)) -}}
+{{- end -}}
+{{- if not $enforce -}}
+{{- if not (lookup "v1" "ConfigMap" "kube-system" "platform-local-no-mesh") -}}
+{{- fail "istio.enforce=false is local-only: it leaves every AuthorizationPolicy unenforced, so any pod can call the harness as any agent. The chart accepts it only on a cluster provisioned by `mise run cluster:install -- --no-mesh`, which marks the cluster with the kube-system ConfigMap platform-local-no-mesh. It is refused in an offline render (helm template, GitOps) and on every other cluster." -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

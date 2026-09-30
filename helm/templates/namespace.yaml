@@ -9,6 +9,8 @@ metadata:
     # opt the agent namespace into Istio ambient. ztunnel
     # transparently mTLSes pod-to-pod traffic; AuthorizationPolicy on
     # the gateway / ext-authz / harness Services enforces per-agent
-    # SPIFFE identity.
+    # SPIFFE identity. istio.enforce=false (local-only) leaves it out.
+    {{- if .Values.istio.enforce }}
     istio.io/dataplane-mode: ambient
+    {{- end }}
 {{- end }}

@@ -82,6 +82,20 @@ for removed in 'virtualization.imageCache.preload.enabled=false' \
     exit 1
   fi
 done
+# istio.enforce=false is local-only. An offline render finds no local no-mesh
+# marker, so it must fail, and fail for that reason rather than another one; a
+# value that is not a boolean must not slip through as truthy either.
+for unenforced in '--set istio.enforce=false' '--set-string istio.enforce=false'; do
+  # shellcheck disable=SC2086
+  if out=$(helm template platform . "${COMMON[@]}" $unenforced 2>&1 >/dev/null); then
+    echo "a render with $unenforced succeeded, but only a local no-mesh cluster may leave the mesh unenforced" >&2
+    exit 1
+  fi
+  case "$out" in
+    *'istio.enforce=false is local-only'* | *'istio.enforce must be true or false'*) ;;
+    *) echo "a render with $unenforced failed for another reason: $out" >&2; exit 1 ;;
+  esac
+done
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \

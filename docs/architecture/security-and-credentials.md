@@ -319,7 +319,7 @@ filter chain per host, stacking entries that share a host, and mounts
 the Secret once. The same list drives the egress allowlist, one rule per
 host and connection, so there is no second source of truth.
 
-GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
+GitHub.com is the motivating case:
 the same OAuth token must reach the API host as a bearer token, the git
 host as basic auth carrying the token as a password (so `git clone` of
 private repos works without a credential helper), and the raw-content
@@ -703,15 +703,17 @@ the agent runs untrusted code and is held at the kernel layer; the
 gateway is platform-controlled and its identity flows through the
 mesh.
 
-## Dev cluster: SVID rotation resilience
+## Dev cluster
 
-A dev-cluster constraint, not an architectural property. A lima VM that
-sleeps with the host can slip past the mesh's default certificate rotation
-window, expiring workload SVIDs (and cert-manager's webhook cert) and stalling
-every mesh hop — an expired waypoint cert stalls only the flows through that
-waypoint, so it can masquerade as an app-level bug. The local
-`cluster:install` lengthens the workload cert TTL and installs a watchdog that
-rolls affected mesh workloads; `cluster:status` reports the signature and
-`cluster:fix-certs` heals on demand. Symptoms and recovery live in the
-[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill. Production
-deployments configure mesh PKI separately and get none of these knobs.
+Dev-cluster constraints, not architectural properties; production gets none of
+these knobs. Recovery lives in the
+[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill.
+
+- **SVID rotation.** A lima VM sleeping with its host can outlast the mesh's
+  certificate rotation and stall every mesh hop. The local install lengthens
+  workload certificates and runs a watchdog that rolls stalled workloads.
+- **No mesh, local only.** A kernel without conntrack marks and zones cannot
+  run the ambient dataplane. `cluster:install --no-mesh` installs Istio's CRDs
+  but no dataplane: every AuthorizationPolicy exists, none is enforced, and any
+  pod can call the harness as any agent. The chart refuses this unless the
+  cluster carries a marker only that task writes, and the task refuses CI.

@@ -1,4 +1,11 @@
 {{ .Values.brand.name }} has been deployed!
+{{- if not .Values.istio.enforce }}
+
+WARNING: istio.enforce=false. This is a LOCAL-ONLY install with no mesh:
+AuthorizationPolicies exist but nothing enforces them, traffic inside the
+cluster is plaintext, and any pod can call the harness as any agent. Never
+expose it, and do not read its test results as proof of isolation.
+{{- end }}
 
 Components:
   - PostgreSQL: {{ include "platform.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432

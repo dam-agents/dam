@@ -143,6 +143,14 @@ istio:
   # Service. Istio's mesh-controller synthesises the waypoint Deployment
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
+  # LOCAL-ONLY. `false` renders every AuthorizationPolicy but puts no
+  # workload in the mesh, so nothing enforces them: no mTLS, and any pod can
+  # call the harness and ext-authz ports as any agent. It exists for local
+  # clusters whose kernel cannot run the ambient dataplane. The chart refuses
+  # it unless the cluster carries the marker only `mise run cluster:install
+  # -- --no-mesh` creates, which that task refuses to do under CI — so an
+  # offline render (helm template, GitOps) and any real cluster fail.
+  enforce: true
 
 # -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM

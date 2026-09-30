@@ -39,17 +39,23 @@ case "${1:-}" in
     # One-shot only — log fetches are too slow for the --watch loop.
     echo ''
     echo '=== Mesh cert health (istio-system) ==='
-    CERT_HITS=$(kubectl -n istio-system logs \
-        -l app=ztunnel --since=30m --tail=2000 --prefix 2>/dev/null \
-      | grep -iE "$MESH_CERT_EXPIRED" | tail -5 || true)
-    if [ -n "$CERT_HITS" ]; then
-      echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
-      echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
-      echo 'agent pods looping "[runtime] hello failed" (workspace seeding never starts).'
-      echo 'Fix now: mise run cluster:fix-certs   (the watchdog auto-heals within ~10 min)'
-      printf '%s\n' "$CERT_HITS"
+    # A cluster:install --no-mesh cluster has no ztunnel to read, and an empty
+    # log search would otherwise read as healthy.
+    if kubectl -n kube-system get configmap platform-local-no-mesh >/dev/null 2>&1; then
+      echo 'NO MESH (local-only, cluster:install --no-mesh): AuthorizationPolicies exist but nothing enforces them.'
     else
-      echo 'ok — no expired-cert signature in recent ztunnel logs'
+      CERT_HITS=$(kubectl -n istio-system logs \
+          -l app=ztunnel --since=30m --tail=2000 --prefix 2>/dev/null \
+        | grep -iE "$MESH_CERT_EXPIRED" | tail -5 || true)
+      if [ -n "$CERT_HITS" ]; then
+        echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
+        echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
+        echo 'agent pods looping "[runtime] hello failed" (workspace seeding never starts).'
+        echo 'Fix now: mise run cluster:fix-certs   (the watchdog auto-heals within ~10 min)'
+        printf '%s\n' "$CERT_HITS"
+      else
+        echo 'ok — no expired-cert signature in recent ztunnel logs'
+      fi
     fi
     echo ''
     echo '=== cert-manager webhook health ==='
