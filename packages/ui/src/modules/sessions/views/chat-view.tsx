@@ -119,8 +119,14 @@ import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
+const LEFT_MIN_W = 240;
+const LEFT_MAX_W = 400;
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
+
+function clampLeftWidth(width: number): number {
+  return Math.max(LEFT_MIN_W, Math.min(LEFT_MAX_W, width));
+}
 
 function PanelDivider({
   stack,
@@ -194,7 +200,7 @@ export function ChatView() {
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
   const [leftW, setLeftW] = useState(() =>
-    readPersistedNumber(LEFT_WIDTH_KEY, 220),
+    clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
   );
   const leftWRef = useRef(leftW);
   const [rightW, setRightW] = useState<number | null>(() =>
@@ -650,7 +656,7 @@ export function ChatView() {
         <ResizeHandle
           side="left"
           onResize={(d) => {
-            const v = Math.max(140, Math.min(400, leftWRef.current + d));
+            const v = clampLeftWidth(leftWRef.current + d);
             leftWRef.current = v;
             writePersistedNumber(LEFT_WIDTH_KEY, v);
             setLeftW(v);

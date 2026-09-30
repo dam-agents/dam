@@ -173,12 +173,14 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="text-sm font-normal text-muted-foreground"
+            className="min-w-0 text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
-            {sessionFilter.length === SESSION_CATEGORIES.length
-              ? "All"
-              : `Filter (${sessionFilter.length})`}
+            <span className="truncate">
+              {sessionFilter.length === SESSION_CATEGORIES.length
+                ? "All"
+                : `Filter (${sessionFilter.length})`}
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
