@@ -9,76 +9,29 @@ import { cn } from "@/lib/utils";
 
 import { IconRail } from "../../components/icon-rail.js";
 import {
-  BEE_NAMES,
-  BeeAvatar,
   type BeeColors,
-} from "../agents/components/bee-avatar.js";
-import {
   CHAR_COLORS,
   CHAR_NAMES,
   CharAvatar,
   type CharName,
 } from "../agents/components/char-avatar.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
-import { BeePongInline } from "./bee-pong-game.js";
 import { EyeBeeMRebus } from "./eye-bee-m.js";
 import {
   AppFrame,
   FirstAgentScreens,
   SetupColumn,
 } from "./first-agent-screens.js";
-import {
-  GettingStartedControls,
-  GettingStartedDock,
-} from "./getting-started-checklist.js";
+import { GettingStartedControls } from "./getting-started-checklist.js";
 import { OnboardingSpecimens } from "./onboarding-specimens.js";
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
-type SheetTab = "bees" | "carbon" | "paul-rand";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
       {children}
     </h2>
-  );
-}
-
-function BeeTile({
-  name,
-  sleeping,
-  idle,
-  colors,
-  dark,
-}: {
-  name: (typeof BEE_NAMES)[number];
-  sleeping: boolean;
-  idle?: boolean;
-  colors?: BeeColors;
-  dark?: boolean;
-}) {
-  return (
-    <div className="group flex flex-col items-center gap-2">
-      <div
-        className={cn(
-          "rounded-lg border flex size-24 cursor-pointer items-center justify-center transition-colors",
-          dark
-            ? "bg-black hover:bg-zinc-900 border-zinc-800"
-            : cn(CARD_SURFACE, "hover:bg-muted/40"),
-        )}
-      >
-        <BeeAvatar
-          beeName={name}
-          state={sleeping ? "hibernated" : "running"}
-          colors={colors}
-          idle={idle}
-          className="size-16"
-        />
-      </div>
-      <span className="text-sm text-muted-foreground">
-        {BEE_NAMES.indexOf(name) + 1}
-      </span>
-    </div>
   );
 }
 
@@ -93,36 +46,6 @@ function cardBadge(state: CardState) {
     case "starting":
       return <Badge variant="warning">Starting</Badge>;
   }
-}
-
-function SampleAgentCard({
-  name,
-  subtitle,
-  state,
-  beeName,
-  colors,
-}: {
-  name: string;
-  subtitle: string;
-  state: CardState;
-  beeName: (typeof BEE_NAMES)[number];
-  colors?: BeeColors;
-}) {
-  return (
-    <AgentCardShell
-      name={name}
-      subtitle={subtitle}
-      state={state}
-      avatar={
-        <BeeAvatar
-          beeName={beeName}
-          state={state === "hibernated" ? "hibernated" : "running"}
-          colors={colors}
-          idle={state === "idle"}
-        />
-      }
-    />
-  );
 }
 
 function AgentCardShell({
@@ -159,51 +82,12 @@ function AgentCardShell({
   );
 }
 
-function TabPill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-foreground text-background"
-          : "border border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 const SAMPLE_TIPS = [
   "Idle agents hibernate to save resources, then wake the instant you or a schedule ping them.",
   "Your workspace survives between runs. Pick up exactly where the agent left off.",
   "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",
   "Set the hibernation timeout to 0 to stop an agent sleeping, for background work with no open session.",
 ];
-
-function WakeUpPreview() {
-  return (
-    <WakeUpFrame agentName="packaging-layouts">
-      <div className="relative" style={{ width: 400, height: 120 }}>
-        <BeePongInline
-          className="flex items-center justify-center"
-          areaW={400}
-          areaH={120}
-        />
-      </div>
-    </WakeUpFrame>
-  );
-}
 
 const CHOOSE_AVATAR_POOL: CharName[] = [
   "shield",
@@ -437,317 +321,6 @@ function SampleCharCard({
   );
 }
 
-const IBM_BEE_COLORS: BeeColors = {
-  wings: "#0e6027",
-  eyes: "#9f1853",
-  body: "#d2a106",
-};
-
-function BeeSheet() {
-  return (
-    <>
-      <section className="mb-12">
-        <SectionLabel>All Agents — Awake</SectionLabel>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile
-              key={name}
-              name={name}
-              sleeping={false}
-              colors={IBM_BEE_COLORS}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>All Agents — Idle</SectionLabel>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile
-              key={name}
-              name={name}
-              sleeping={false}
-              idle
-              colors={IBM_BEE_COLORS}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>All Agents — Sleeping</SectionLabel>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile key={name} name={name} sleeping={true} />
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Bees on Agent Cards</SectionLabel>
-        <div className="flex flex-col gap-3">
-          <SampleAgentCard
-            name="api-gateway"
-            subtitle="2 CPU · 2 Gi"
-            state="running"
-            beeName="signal"
-            colors={IBM_BEE_COLORS}
-          />
-          <SampleAgentCard
-            name="test-runner"
-            subtitle="1 CPU · 1 Gi"
-            state="idle"
-            beeName="cross"
-            colors={IBM_BEE_COLORS}
-          />
-          <SampleAgentCard
-            name="ci-pipeline"
-            subtitle="0.25 CPU · 512 Mi"
-            state="running"
-            beeName="crown"
-            colors={IBM_BEE_COLORS}
-          />
-          <SampleAgentCard
-            name="code-review"
-            subtitle="2 CPU · 2 Gi"
-            state="hibernated"
-            beeName="shield"
-            colors={IBM_BEE_COLORS}
-          />
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Waking from Hibernation</SectionLabel>
-        <p className="mb-4 text-sm text-muted-foreground">
-          When a hibernated agent is opened, it auto-wakes. The bee icon breaks
-          apart into a mini pong game while the pod spins up — wings become
-          paddles, eyes become the ball, body bars form the net.
-        </p>
-        <WakeUpPreview />
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Color Pack — IBM Bee</SectionLabel>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Green wings, pink eyes, yellow bodies — inspired by the IBM bee.
-        </p>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile
-              key={name}
-              name={name}
-              sleeping={false}
-              colors={IBM_BEE_COLORS}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Color Pack — IBM Bee (copy)</SectionLabel>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Duplicate of classic IBM bee for iteration.
-        </p>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-7">
-          {BEE_NAMES.map((name) => (
-            <BeeTile
-              key={name}
-              name={name}
-              sleeping={false}
-              colors={
-                name === "crown"
-                  ? { wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }
-                  : name === "bloom" || name === "tilt"
-                    ? { wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }
-                    : name === "cross" || name === "shield"
-                      ? { wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }
-                      : IBM_BEE_COLORS
-              }
-            />
-          ))}
-        </div>
-        <div className="mt-6 flex flex-wrap gap-5">
-          {[
-            { hex: "#0e6027", name: "Green 60 (wings)" },
-            { hex: "#0072c3", name: "Cyan 60 (wings)" },
-            { hex: "#9f1853", name: "Magenta 60 (eyes)" },
-            { hex: "#d2a106", name: "Yellow 40 (body)" },
-            { hex: "#eb6200", name: "Orange 50 (body)" },
-          ].map((s) => (
-            <div key={s.hex} className="flex flex-col items-center gap-1.5">
-              <div
-                className="size-8 rounded-full"
-                style={{ backgroundColor: s.hex }}
-                title={s.name}
-              />
-              <span className="text-[11px] leading-tight text-muted-foreground">
-                {s.name}
-              </span>
-              <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
-                {s.hex}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Agent Cards — New Color Set</SectionLabel>
-        <div className="flex flex-col gap-3">
-          <SampleAgentCard
-            name="signal-agent"
-            subtitle="2 CPU · 2 Gi"
-            state="running"
-            beeName="signal"
-            colors={IBM_BEE_COLORS}
-          />
-          <SampleAgentCard
-            name="cross-agent"
-            subtitle="1 CPU · 1 Gi"
-            state="idle"
-            beeName="cross"
-            colors={{ wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }}
-          />
-          <SampleAgentCard
-            name="crown-agent"
-            subtitle="2 CPU · 2 Gi"
-            state="running"
-            beeName="crown"
-            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
-          />
-          <SampleAgentCard
-            name="shield-agent"
-            subtitle="0.25 CPU · 512 Mi"
-            state="hibernated"
-            beeName="shield"
-            colors={{ wings: "#0072c3", eyes: "#9f1853", body: "#d2a106" }}
-          />
-          <SampleAgentCard
-            name="bloom-agent"
-            subtitle="1 CPU · 1 Gi"
-            state="running"
-            beeName="bloom"
-            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
-          />
-          <SampleAgentCard
-            name="tower-agent"
-            subtitle="2 CPU · 2 Gi"
-            state="idle"
-            beeName="tower"
-            colors={IBM_BEE_COLORS}
-          />
-          <SampleAgentCard
-            name="tilt-agent"
-            subtitle="0.25 CPU · 512 Mi"
-            state="hibernated"
-            beeName="tilt"
-            colors={{ wings: "#0e6027", eyes: "#9f1853", body: "#eb6200" }}
-          />
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Carbon Color Options</SectionLabel>
-        <p className="mb-6 text-sm text-muted-foreground">
-          Harmonious Carbon neighbors for each bee part.
-        </p>
-        <div className="flex flex-col gap-8">
-          <div>
-            <p className="mb-3 text-sm font-medium text-foreground">Wings</p>
-            <div className="flex flex-wrap gap-5">
-              {[
-                { hex: "#0e6027", name: "Green 60" },
-                { hex: "#198038", name: "Green 50" },
-                { hex: "#044317", name: "Green 70" },
-                { hex: "#005d5d", name: "Teal 60" },
-                { hex: "#007d79", name: "Teal 50" },
-                { hex: "#005149", name: "Teal 70" },
-                { hex: "#1192e8", name: "Cyan 50" },
-                { hex: "#0072c3", name: "Cyan 60" },
-                { hex: "#00539a", name: "Cyan 70" },
-                { hex: "#003a6d", name: "Cyan 80" },
-                { hex: "#33b1ff", name: "Cyan 40" },
-              ].map((s) => (
-                <div key={s.hex} className="flex flex-col items-center gap-1.5">
-                  <div
-                    className="size-8 rounded-full"
-                    style={{ backgroundColor: s.hex }}
-                    title={s.name}
-                  />
-                  <span className="text-[11px] leading-tight text-muted-foreground">
-                    {s.name}
-                  </span>
-                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
-                    {s.hex}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-3 text-sm font-medium text-foreground">Eyes</p>
-            <div className="flex flex-wrap gap-5">
-              {[
-                { hex: "#9f1853", name: "Magenta 60" },
-                { hex: "#d02670", name: "Magenta 50" },
-                { hex: "#ff7eb6", name: "Magenta 40" },
-                { hex: "#740937", name: "Magenta 70" },
-                { hex: "#da1e28", name: "Red 50" },
-                { hex: "#a2191f", name: "Red 60" },
-                { hex: "#8a3ffc", name: "Purple 50" },
-              ].map((s) => (
-                <div key={s.hex} className="flex flex-col items-center gap-1.5">
-                  <div
-                    className="size-8 rounded-full"
-                    style={{ backgroundColor: s.hex }}
-                    title={s.name}
-                  />
-                  <span className="text-[11px] leading-tight text-muted-foreground">
-                    {s.name}
-                  </span>
-                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
-                    {s.hex}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-3 text-sm font-medium text-foreground">Body</p>
-            <div className="flex flex-wrap gap-5">
-              {[
-                { hex: "#d2a106", name: "Yellow 40" },
-                { hex: "#f1c21b", name: "Yellow 30" },
-                { hex: "#b28600", name: "Yellow 50" },
-                { hex: "#8e6a00", name: "Yellow 60" },
-                { hex: "#eb6200", name: "Orange 50" },
-                { hex: "#ba4e00", name: "Orange 60" },
-                { hex: "#8a3800", name: "Orange 70" },
-              ].map((s) => (
-                <div key={s.hex} className="flex flex-col items-center gap-1.5">
-                  <div
-                    className="size-8 rounded-full"
-                    style={{ backgroundColor: s.hex }}
-                    title={s.name}
-                  />
-                  <span className="text-[11px] leading-tight text-muted-foreground">
-                    {s.name}
-                  </span>
-                  <span className="font-mono text-[10px] uppercase text-muted-foreground/60">
-                    {s.hex}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
 function PaulRandSheet() {
   return (
     <>
@@ -911,54 +484,18 @@ function PaulRandSheet() {
         </p>
         <OnboardingSpecimens />
       </section>
-      <GettingStartedDock />
     </>
   );
 }
 
-function CarbonSheet() {
-  return (
-    <iframe
-      src="/agent-avatar-design-sheet.html"
-      className="h-[calc(100vh-140px)] w-full rounded-lg border border-border"
-      title="Carbon Avatar Design Sheet"
-    />
-  );
-}
-
 export function AvatarSheetView() {
-  const [tab, setTab] = useState<SheetTab>("bees");
-
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
       <PageHeader
         title="Avatar Design Sheet"
-        description="Bee icons and Carbon robot avatars for agent cards."
-        actions={
-          <div className="flex items-center gap-2">
-            <TabPill active={tab === "bees"} onClick={() => setTab("bees")}>
-              Bees
-            </TabPill>
-            <TabPill
-              active={tab === "paul-rand"}
-              onClick={() => setTab("paul-rand")}
-            >
-              Paul Rand
-            </TabPill>
-            <TabPill active={tab === "carbon"} onClick={() => setTab("carbon")}>
-              Carbon
-            </TabPill>
-          </div>
-        }
+        description="Paul Rand robot avatars — design specs and component reference."
       />
-
-      {tab === "bees" ? (
-        <BeeSheet />
-      ) : tab === "paul-rand" ? (
-        <PaulRandSheet />
-      ) : (
-        <CarbonSheet />
-      )}
+      <PaulRandSheet />
     </div>
   );
 }

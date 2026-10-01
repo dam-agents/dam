@@ -3,7 +3,13 @@ import type React from "react";
 import { cn } from "@/lib/utils";
 
 import type { AgentDisplayState } from "../utils/agent-resolver.js";
-import { type BeeColors, hashIndex, injectBeeStyles } from "./bee-avatar.js";
+import {
+  type BeeColors,
+  hashIndex,
+  injectBeeStyles,
+} from "./bee-avatar.js";
+
+export type { BeeColors };
 
 const LENS_EYES: [number, number, number][] = [
   [1100, 900, 340],

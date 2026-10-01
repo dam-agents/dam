@@ -133,13 +133,13 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-chat",
       agent: decodeSegment(knowledgeBaseChatMatch[1]!),
     };
-  return { view: "avatar-sheet" };
+  return { view: "home" };
 }
 
 export function routeToPath(route: Route): string {
   switch (route.view) {
     case "home":
-      return "/avatar-sheet";
+      return "/";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session

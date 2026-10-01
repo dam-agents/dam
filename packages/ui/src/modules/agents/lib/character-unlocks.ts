@@ -144,6 +144,26 @@ export function markCharacterSeen(name: CharName) {
   setState({ fresh });
 }
 
+export function unlockAllCharacters() {
+  if (workTimer) clearTimeout(workTimer);
+  workTimer = null;
+  const all = [...CHAR_NAMES] as CharName[];
+  const rewards = new Map<string, CharName>();
+  for (let i = 0; i < CHARACTER_QUESTS.length; i++) {
+    rewards.set(CHARACTER_QUESTS[i]!.id, all[i]!);
+  }
+  setState({
+    caught: all,
+    unlocked: new Set(all),
+    fresh: new Set(),
+    rewards,
+    working: null,
+    celebrating: null,
+    collected: null,
+    pickerRequest: 0,
+  });
+}
+
 export function resetCharacterUnlocks() {
   if (workTimer) clearTimeout(workTimer);
   workTimer = null;

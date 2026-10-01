@@ -12,6 +12,7 @@ import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { AvatarSheetView } from "./modules/avatar-sheet/avatar-sheet-view.js";
+import { GettingStartedDock } from "./modules/avatar-sheet/getting-started-checklist.js";
 import { FlowBoardView } from "./modules/flow-board/flow-board-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
@@ -58,6 +59,41 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
+function MainContent() {
+  const view = useStore((s) => s.view);
+  switch (view) {
+    case "home":
+      return <HomeView />;
+    case "chat":
+    case "knowledge-base-chat":
+      return <ChatView />;
+    case "agents":
+      return <AgentsView />;
+    case "agent-new":
+      return <AgentSetupView />;
+    case "settings":
+      return <SettingsView />;
+    case "sandbox-home":
+      return <SandboxHomeView />;
+    case "knowledge-bases":
+      return <KnowledgeBasesListView />;
+    case "knowledge-base-new":
+      return <KnowledgeBaseSetupView />;
+    case "knowledge-base-config":
+      return <KnowledgeBaseConfigView />;
+    case "artifacts":
+      return <ArtifactsView />;
+    case "packs":
+      return <PacksView />;
+    case "setup-workbench":
+      return <SetupWorkbenchView />;
+    case "avatar-sheet":
+      return <AvatarSheetView />;
+    default:
+      return <HomeView />;
+  }
+}
+
 function MainApp() {
   const view = useStore((s) => s.view);
 
@@ -86,21 +122,6 @@ function MainApp() {
     }
   }, []);
 
-  if (view === "chat" || view === "knowledge-base-chat")
-    return (
-      <>
-        <div className="flex h-full bg-background overflow-hidden">
-          <IconRail hideMobileBar />
-          <div className="relative z-content flex-1 min-w-0">
-            <ChatView />
-          </div>
-        </div>
-        <DialogOverlay />
-        <ConnectionBanner />
-        <DocsLauncher />
-      </>
-    );
-
   if (view === "flow-board")
     return (
       <>
@@ -110,11 +131,17 @@ function MainApp() {
     );
 
   return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      <main className="flex-1 overflow-y-auto">
-        <AvatarSheetView />
-      </main>
+    <>
+      <div className="flex h-full bg-background overflow-hidden">
+        <IconRail hideMobileBar />
+        <div className="relative z-content flex-1 min-w-0 overflow-y-auto">
+          <MainContent />
+        </div>
+      </div>
+      <GettingStartedDock />
       <DialogOverlay />
-    </div>
+      <ConnectionBanner />
+      <DocsLauncher />
+    </>
   );
 }
