@@ -22,6 +22,7 @@ It lists every GitHub account granted to this agent, named after the platform Co
 ## Act as another account
 
 - `gh auth switch --user <account>` switches gh. `git` follows automatically through gh's credential helper, so clones, fetches and pushes act as the switched account too. With exactly two accounts, `gh auth switch` alone toggles.
+- Switching changes which account authenticates, not the name and email on your commits: `user.name` and `user.email` stay the default account's, and a default account that signed in with a token has none. To commit as the switched account, pass its details explicitly, for example `git -c user.name="<name>" -c user.email="<email>" commit`; `gh api user` shows them for the account you switched to.
 - For one command without switching:
 
   ```
