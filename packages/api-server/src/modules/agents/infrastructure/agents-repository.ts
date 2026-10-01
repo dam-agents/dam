@@ -98,6 +98,8 @@ export interface AgentActivityStamp {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through writeRuntimeMigration; every other spec write that names the Backend is a bug and fails loudly.
+const PIN_CONFLICT_RETRIES = 4;
+
 function assertBackendUntouched(patch: Record<string, unknown>): void {
   if ("backend" in patch)
     throw new Error(
@@ -330,15 +332,24 @@ export function createAgentsRepository(
     },
 
     async setInvocationPin(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) return false;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          resourceVersion: obj.metadata?.resourceVersion,
-          annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
-        },
-      });
-      return true;
+      for (let attempt = 0; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY])
+          return false;
+        if (obj.metadata?.annotations?.[INVOCATIONS_ACTIVE_KEY] === "true")
+          return true;
+        try {
+          await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: {
+              resourceVersion: obj.metadata?.resourceVersion,
+              annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
+            },
+          });
+          return true;
+        } catch (e) {
+          if (!isConflict(e) || attempt >= PIN_CONFLICT_RETRIES) throw e;
+        }
+      }
     },
 
     async readInvocationPin(id) {
