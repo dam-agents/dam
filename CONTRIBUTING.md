@@ -48,7 +48,11 @@ mise generate git-pre-commit --write --task=check
 3. Run `mise run check` and `mise run test`.
 4. Open a pull request that links the issue it addresses and explains what changed and why.
 
-A maintainer will review it. Please respond to review comments by pushing follow-up commits to the same branch.
+One of the [maintainers](MAINTAINERS.md) will review it. Please respond to review comments by pushing follow-up commits to the same branch.
+
+## Questions
+
+Ask in [GitHub Discussions](https://github.com/dam-agents/dam/discussions), or open an issue. [`MAINTAINERS.md`](MAINTAINERS.md) lists who maintains the project.
 
 ## Working with coding agents
 
