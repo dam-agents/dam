@@ -53,6 +53,9 @@ yq = "latest"
 zizmor = "latest"
 
 [settings]
+# mise.lock pins the npm tools by their aube dependency graphs, and mise
+# refuses those under any other installer; mise's own default is npm.
+npm.package_manager = "aube"
 experimental = true
 lockfile_platforms = ["linux-arm64", "linux-x64", "macos-arm64"]
 task.disable_spec_from_run_scripts = true
