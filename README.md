@@ -174,7 +174,7 @@ If you want to have Git run checks before every commit, run:
 mise generate git-pre-commit --write --task=check
 ```
 
-See [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md) for the contributor workflow and [`CLAUDE.md`](CLAUDE.md) for engineering conventions.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute and [`CLAUDE.md`](CLAUDE.md) for engineering conventions.
 
 ---
 
