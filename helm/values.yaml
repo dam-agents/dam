@@ -717,13 +717,13 @@ clickstack:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-keeper
-            tag: "25.7-alpine"
+            tag: "26.8-alpine"
     cluster:
       spec:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-server
-            tag: "25.7-alpine"
+            tag: "26.8-alpine"
         dataVolumeClaimSpec:
           resources:
             requests:
