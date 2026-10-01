@@ -2,19 +2,21 @@
 
 The people below maintain this project: they triage issues, review pull requests, and make merge and release decisions.
 
+Names are listed alphabetically by last name; the order carries no meaning.
+
 | Name | GitHub |
 | --- | --- |
-| Jan Jeliga | [@jjeliga](https://github.com/jjeliga) |
-| Jan Pokorný | [@JanPokorny](https://github.com/JanPokorny) |
-| Jenna Winkler | [@jenna-winkler](https://github.com/jenna-winkler) |
-| Lukáš Janeček | [@xjacka](https://github.com/xjacka) |
-| Matous Havlena | [@matoushavlena](https://github.com/matoushavlena) |
 | Petr Bulánek | [@PetrBulanek](https://github.com/PetrBulanek) |
-| Petr Kadlec | [@kapetr](https://github.com/kapetr) |
-| Radek Ježek | [@jezekra1](https://github.com/jezekra1) |
 | Tomáš Dvořák | [@Tomas2D](https://github.com/Tomas2D) |
+| Matous Havlena | [@matoushavlena](https://github.com/matoushavlena) |
+| Lukáš Janeček | [@xjacka](https://github.com/xjacka) |
+| Jan Jeliga | [@jjeliga](https://github.com/jjeliga) |
+| Radek Ježek | [@jezekra1](https://github.com/jezekra1) |
+| Petr Kadlec | [@kapetr](https://github.com/kapetr) |
 | Tomas Pilar | [@pilartomas](https://github.com/pilartomas) |
+| Jan Pokorný | [@JanPokorny](https://github.com/JanPokorny) |
 | Tomáš Weiss | [@tomkis](https://github.com/tomkis) |
+| Jenna Winkler | [@jenna-winkler](https://github.com/jenna-winkler) |
 
 ## Getting in touch
 
