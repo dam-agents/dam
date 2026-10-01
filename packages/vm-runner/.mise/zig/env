@@ -1,0 +1,13 @@
+# Sourced by mise into every task of this package, through `_.source` in
+# config.toml. Cargo links build scripts, proc macros and tests with the
+# system's `cc`, and the cc crate (ring, aws-lc, zstd, sqlite) compiles C with
+# it and archives with `ar`. A machine with a `cc` keeps it, CI's runners and
+# macOS included: nothing changes there. On a Linux machine without one, the
+# zig mise installs for this package stands in for both, through the wrappers
+# beside this file, and it carries its own libc headers.
+if [ "$(uname -s)" = Linux ] && ! command -v cc >/dev/null 2>&1; then
+  zig_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  export CC="$zig_dir/cc" AR="$zig_dir/ar"
+  export "CARGO_TARGET_$(uname -m | tr '[:lower:]' '[:upper:]')_UNKNOWN_LINUX_GNU_LINKER=$zig_dir/cc"
+  unset zig_dir
+fi

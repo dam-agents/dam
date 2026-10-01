@@ -147,7 +147,7 @@ Nothing needs Docker or another container runtime on your machine. Each package'
 
 On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM. The cluster tasks run their privileged steps through sudo, or directly when already root, so a root sandbox needs no sudo.
 
-On Linux, the agent and VM runner images build with sudo, and the VM runner's build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu).
+On Linux, the agent and VM runner images build with sudo, and the VM runner's image build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu). Checking and testing the VM runner need no C toolchain of the machine's own: on Linux without `cc`, mise's zig stands in for it.
 
 ### Setup
 

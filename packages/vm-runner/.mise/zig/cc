@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# `zig cc` for the host's architecture at its baseline CPU, with zig's own
+# glibc. The cc crate passes clang a Rust triple (`--target=x86_64-unknown-linux-gnu`),
+# which zig cannot parse, so it is dropped for zig's own spelling of the target.
+set -euo pipefail
+args=()
+for a; do
+  case $a in --target=*) ;; *) args+=("$a") ;; esac
+done
+exec zig cc -target "$(uname -m)-linux-gnu" "${args[@]}"

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# The archiver the cc crate runs, for a machine without binutils.
+exec zig ar "$@"
