@@ -4,7 +4,6 @@ The people below maintain this project: they triage issues, review pull requests
 
 | Name | GitHub |
 | --- | --- |
-| Helen Stanton | [@helen-stanton](https://github.com/helen-stanton) |
 | Jan Jeliga | [@jjeliga](https://github.com/jjeliga) |
 | Jan Pokorný | [@JanPokorny](https://github.com/JanPokorny) |
 | Jenna Winkler | [@jenna-winkler](https://github.com/jenna-winkler) |
