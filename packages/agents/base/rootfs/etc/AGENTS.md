@@ -11,9 +11,9 @@ Available:
 - `gh`, `rg`, `fd`, `jq`, `kubectl`
 - `agent-browser` for any browser task, before Playwright; other sessions share this machine and its browser, so always pass `--session` with this conversation's id (`$CLAUDE_CODE_SESSION_ID`, `$CODEX_THREAD_ID`, `$PI_SESSION_ID`, or `$HARNESS_SESSION_ID` in a terminal; otherwise pick a name and keep it)
 - Playwright (`playwright`, `npx playwright`), sharing agent-browser's bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs
-- `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
+- `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart; `npm:` tools install through aube, which refuses a package under 1000 weekly downloads until its entry sets `allow_low_downloads = true`
 
 Additionally available if running in a root VM:
 - `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`, through `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO`, which name a copy of the image's own bundle with it appended; a tool that reads none of them, such as a Java keystore or GnuTLS-based wget and apt, still needs it added
 - `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
-- `apt-get` to install extra software
+- `apt-get` to install extra software, and `sudo` for scripts that call it

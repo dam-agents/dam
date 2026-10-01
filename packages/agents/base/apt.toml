@@ -3,7 +3,9 @@
 # every build otherwise. They go onto the root config's base_image_debian.
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, and from
+# libnss3-tools for Chromium's trust store, sudo for scripts a root machine
+# runs that call it (no sudoers entry names the agent, and a container agent's
+# no_new_privs leaves the setuid bit inert), and from
 # libasound2t64 on, what Playwright lists for its Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
@@ -20,6 +22,7 @@
 "apt:openssl" = "latest"
 "apt:patch" = "latest"
 "apt:procps" = "latest"
+"apt:sudo" = "latest"
 "apt:unzip" = "latest"
 "apt:xz-utils" = "latest"
 "apt:zip" = "latest"

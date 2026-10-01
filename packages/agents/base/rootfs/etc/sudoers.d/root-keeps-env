@@ -1,0 +1,4 @@
+# Root keeps its environment and PATH through sudo: on a root machine the
+# scripts that call sudo are root already, and the tools they run (k3s among
+# them) live under mise, outside secure_path.
+Defaults:root !env_reset, !secure_path
