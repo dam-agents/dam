@@ -14,7 +14,6 @@ import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
-import { isFeaturesMenuRevealed } from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
@@ -54,8 +53,9 @@ const themeOptions = [
 
 export function SettingsView() {
   const { data: flags } = useFeatures();
+  const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
   const showFeatures =
-    isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
+    featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
   const slackInstall = useSlackInstallAvailability();
   const showSlackWorkspaces = slackInstall.data === true;
   const tabs = [

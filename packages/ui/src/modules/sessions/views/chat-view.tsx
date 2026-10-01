@@ -44,7 +44,6 @@ import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
-  useAgentLacksLiveUpdates,
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
@@ -72,6 +71,7 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
+import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
@@ -151,7 +151,6 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
-  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
     selectedAgent,
     agentInaccessible,
@@ -160,6 +159,7 @@ export function ChatView() {
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
+  const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
@@ -169,8 +169,9 @@ export function ChatView() {
     [restartingAgents],
   );
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
+  const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds)
+    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);

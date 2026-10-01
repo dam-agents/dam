@@ -92,6 +92,7 @@ export interface Agent {
   overBudget: boolean;
   overBudgetMessage?: string;
   podTerminationReason?: string;
+  notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];

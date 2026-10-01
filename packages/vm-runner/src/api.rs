@@ -75,6 +75,9 @@ pub struct SeedResult {
     pub sha256: String,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk — so the controller fails the migration at once instead of spending its attempts on it.
+pub const SEED_EXIT_PERMANENT: u8 = 3;
+
 fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
     *n == T::default()
 }
@@ -259,5 +262,6 @@ mod tests {
                 REASON_SEED_MISSING,
             ])
         );
+        assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);
     }
 }

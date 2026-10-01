@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use clap::Parser;
-use vm_runner::api::SeedResult;
+use vm_runner::api::{SeedResult, SEED_EXIT_PERMANENT};
 use vm_runner::seed::{write_seed, Limits, Options, OwnerMap, Tally};
 
 // UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
@@ -180,7 +180,32 @@ async fn await_reachable(url: &str, deadline: Duration) -> anyhow::Result<()> {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: a failure that a fresh attempt at the same home meets again: the home is past a walk limit, or the runner refused it as larger than the machine's disk.
+#[derive(Debug)]
+struct Permanent(String);
+
+impl std::fmt::Display for Permanent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Permanent {}
+
+// UNIT_BOUNDARY_DESCRIPTION: the error goes to stderr as a Result returned from main would print it, because the controller reads it back from there as the pod's termination message.
+fn main() -> std::process::ExitCode {
+    let Err(e) = upload() else {
+        return std::process::ExitCode::SUCCESS;
+    };
+    eprintln!("Error: {e:?}");
+    if e.is::<Permanent>() {
+        std::process::ExitCode::from(SEED_EXIT_PERMANENT)
+    } else {
+        std::process::ExitCode::FAILURE
+    }
+}
+
+fn upload() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().init();
     let args = Args::parse();
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -214,6 +239,9 @@ fn main() -> anyhow::Result<()> {
             let archived = archiving.await?;
             let response = match (response, &archived) {
                 (Ok(response), _) => response,
+                (Err(_), Err(e)) if e.kind() == io::ErrorKind::QuotaExceeded => {
+                    return Err(Permanent(format!("archiving the seed: {e}")).into())
+                }
                 (Err(_), Err(e)) if e.kind() != io::ErrorKind::BrokenPipe => {
                     anyhow::bail!("archiving the seed: {e}")
                 }
@@ -223,6 +251,9 @@ fn main() -> anyhow::Result<()> {
             };
             let status = response.status();
             let answer = response.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+                return Err(Permanent(format!("the runner refused the seed: {status}: {}", answer.trim())).into());
+            }
             anyhow::ensure!(
                 status.is_success(),
                 "the runner refused the seed: {status}: {}",

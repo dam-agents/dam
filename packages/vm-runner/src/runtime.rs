@@ -3,6 +3,9 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
+use smolvm::storage::STORAGE_DISK_FILENAME;
+
 use crate::api::{MachineSpec, State};
 use crate::guest::INIT_PATH;
 use crate::launch::ImageLaunch;
@@ -235,10 +238,42 @@ pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
+const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
+
+// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
+fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
+    let disk = vm_dir.join(STORAGE_DISK_FILENAME);
+    let marker = disk.with_extension("formatted");
+    if marker.exists() || !holds_ext4(&disk)? {
+        return Ok(());
+    }
+    tracing::warn!(
+        machine = id,
+        "the storage disk holds a filesystem but no format marker; marking it so it is never copied over"
+    );
+    fs::write(&marker, "1").with_context(|| format!("marking {} formatted", disk.display()))
+}
+
+fn holds_ext4(disk: &Path) -> anyhow::Result<bool> {
+    use std::os::unix::fs::FileExt;
+    let file = match fs::File::open(disk) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", disk.display())),
+    };
+    let mut magic = [0; 2];
+    match file.read_exact_at(&mut magic, EXT4_MAGIC_OFFSET) {
+        Ok(()) => Ok(magic == [0x53, 0xEF]),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
 pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
 pub fn clear_for_start(
     id: &str,
     proc_root: &Path,
@@ -261,6 +296,7 @@ pub fn clear_for_start(
         let _ = fs::remove_file(vm_dir.join(file));
     }
     discard_overlay(id, proc_root, vm_dir);
+    keep_formatted_storage(id, vm_dir)?;
     crate::console::clear_console(id, vm_dir);
     Ok(())
 }

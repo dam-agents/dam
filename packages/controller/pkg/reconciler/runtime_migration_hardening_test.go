@@ -486,6 +486,23 @@ func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	assert.Contains(t, migrationMessage(t, r, agent), "the move goes on when it next starts")
 }
 
+// TEST_SCENARIO: the plan tells the owner of a stopped Agent that it is started once to finish the move, so a stop from before the migration began does not hold its boot, and the Agent goes back to stopped once its guest has answered.
+func TestAStopFromBeforeTheMigrationLetsItsBootThrough(t *testing.T) {
+	ctx := context.Background()
+	began := time.Now().Add(-time.Hour).UTC()
+	agent := bootingAgentCR(t)
+	agent.Status.Conditions[0].LastTransitionTime = metav1.NewTime(began)
+	agent.Annotations[annStopRequested] = began.Add(-time.Minute).Format(time.RFC3339Nano)
+	r, node, _ := setupMigrationReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.True(t, node.spec("my-agent").Running, "the boot the plan promised goes ahead")
+	assert.NotContains(t, migrationMessage(t, r, agent), "stopped before its new machine first answered")
+
+	verified := migratingAgentIn(apiv1.ReasonRuntimeMigrationVerified, began)
+	verified.Annotations[annStopRequested] = agent.Annotations[annStopRequested]
+	assert.False(t, shouldRunMigrating(verified.Annotations, runtimeMigrationOf(verified.Annotations, verified.Status), 0, time.Now()), "once verified, the old stop holds again")
+}
+
 // TEST_SCENARIO: a migration boot over the owner's budget waits and says why, and keeps being retried rather than parked until the next activity. It does not hibernate the owner's idle agents to make room: the user asked to move one agent, not to stop others.
 func TestABootingMigrationOverBudgetWaitsWithoutReclaiming(t *testing.T) {
 	ctx := context.Background()

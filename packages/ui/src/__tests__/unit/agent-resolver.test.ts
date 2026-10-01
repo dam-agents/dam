@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   transitionPausingAgents,
   transitionRestartingAgents,
+  transitionStartingSince,
 } from "../../modules/agents/store.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import type { AgentView } from "../../types.js";
@@ -78,6 +79,25 @@ describe("resolveAgentDisplay", () => {
     );
     expect(out.state).toBe("hibernated");
     expect(out.powerAction).toBe("start");
+  });
+
+  // TEST_SCENARIO: a vm agent whose guest stopped answering reads as starting forever. Once it has been starting past the wake budget the user must be able to restart it, instead of only deleting it.
+  test("an agent stuck starting offers Restart", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "starting"),
+      new Set(),
+      new Set(),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("starting");
+    expect(out.slowStart).toBe(true);
+    expect(out.powerAction).toBe("restart");
+  });
+
+  test("an agent that just began starting offers no power action", () => {
+    const out = resolveAgentDisplay(agent("a", "starting"), new Set());
+    expect(out.slowStart).toBe(false);
+    expect(out.powerAction).toBe(null);
   });
 
   test("restart wins over pause when an id is in both sets", () => {
@@ -219,5 +239,35 @@ describe("transitionPausingAgents", () => {
     );
     expect(next).not.toBe(current);
     expect([...next.keys()]).toEqual(["a"]);
+  });
+});
+
+describe("transitionStartingSince", () => {
+  const NOW = 1_000_000_000_000;
+
+  test("keeps the time an agent was first seen starting", () => {
+    const current = new Map([["a", NOW - 5_000]]);
+    const next = transitionStartingSince(
+      current,
+      [agent("a", "starting"), agent("b", "starting")],
+      NOW,
+    );
+    expect([...next]).toEqual([
+      ["a", NOW - 5_000],
+      ["b", NOW],
+    ]);
+  });
+
+  test("forgets an agent once it is no longer starting", () => {
+    const current = new Map([["a", NOW - 5_000]]);
+    const next = transitionStartingSince(current, [agent("a", "running")], NOW);
+    expect(next.size).toBe(0);
+  });
+
+  test("returns the same reference when nothing changed", () => {
+    const current = new Map([["a", NOW - 5_000]]);
+    expect(
+      transitionStartingSince(current, [agent("a", "starting")], NOW),
+    ).toBe(current);
   });
 });

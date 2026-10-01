@@ -105,3 +105,6 @@ const (
 	ReasonBootFailed       = "MachineBootFailed"
 	ReasonSeedMissing      = "MachineSeedMissing"
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk.
+const SeedExitPermanent = 3

@@ -20,6 +20,7 @@ import {
   isCreateAgentDraftComplete,
 } from "../lib/create-agent-input.js";
 import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
+import { VmRuntimeNotice } from "./vm-runtime-notice.js";
 
 interface Props {
   onCreated: (agent: AgentView) => void;
@@ -58,6 +59,8 @@ export function CreateAgentInline({ onCreated }: Props) {
 
   return (
     <Card className="flex flex-col gap-4 p-4">
+      <VmRuntimeNotice />
+
       <FormField label="Name" labelInset>
         <Input
           value={name}

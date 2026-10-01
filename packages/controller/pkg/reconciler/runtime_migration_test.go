@@ -382,6 +382,27 @@ func TestAFailedHomeCopyIsReportedAndRetriedWithoutBooting(t *testing.T) {
 	assert.NotEqual(t, first, second, "the next attempt carries a capability of its own")
 }
 
+// TEST_SCENARIO: an Agent with no session goes idle while its home is being copied. The idle checker hibernating it stops the machine, and that stop must keep the machine marked as migrating: the runner reads the mark off the latest spec it holds, so a stop without it refuses the running Job's seed and costs a copy attempt.
+func TestHibernatingAnAgentMidCopyKeepsItsMachineSeedable(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annLastActivity] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	agent.Spec.HibernationTimeout = &metav1.Duration{Duration: time.Minute}
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NotNil(t, node.spec("my-agent").Migration)
+
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.check(ctx)
+
+	assert.False(t, node.spec("my-agent").Running)
+	assert.NotNil(t, node.spec("my-agent").Migration, "the copy's capability can still seed the machine")
+}
+
 // TEST_SCENARIO: the copy is bounded. Once its attempts are spent the migration is Failed, with the last attempt's reason, rather than retrying forever; the container stays down, since it was stopped for the copy, until the user acts. A retry the user asks for after the failure starts over from the preflight with a fresh machine and its attempts reset, and the container serves again meanwhile.
 func TestACopyOutOfAttemptsFailsAndARetryStartsOver(t *testing.T) {
 	ctx := context.Background()
@@ -593,6 +614,43 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 	assert.Equal(t,
 		"copying the home directory failed (Error: uploading the seed to https://runner:4600/machines/my-agent/seed; 0: error sending request; 1: Connection refused (os error 111)); retrying (attempt 1 of 3)",
 		migrationCondition(reloaded(t, r, agent)).Message)
+}
+
+// TEST_SCENARIO: a home the machine's disk cannot hold is refused the same way by every attempt, so the first refusal fails the migration at once, with what the user can do ahead of the runner's own words, instead of spending attempts ten minutes apart.
+func TestAHomeThatCannotFitFailsTheMigrationAtOnce(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: job.Name + "-0", Namespace: "test-agents",
+			Labels: map[string]string{batchv1.JobNameLabel: job.Name},
+		},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name: "seed",
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				ExitCode: vmrunner.SeedExitPermanent,
+				Message:  "Error: the runner refused the seed: 413 Payload Too Large: the seed is larger than machine my-agent's 1073741824 byte disk\n",
+			}},
+		}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	completeJob(t, r, batchv1.JobFailed, time.Now())
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
+	assert.Equal(t, int32(1), agent.Status.RuntimeMigrationAttempts)
+	assert.Contains(t, c.Message, "make the agent's home smaller and retry")
+	assert.Contains(t, c.Message, "1073741824 byte disk")
+	assert.Empty(t, seedCapabilityNow(t, r), "a failed migration leaves no capability behind")
 }
 
 // TEST_SCENARIO: an agent created and never woken has no volume at all, so once its StatefulSet is held at zero there is provably nothing to copy. The copy step ends at once: the migration goes straight to `Booting`, with a message that says so, and its machine is held to no seed and starts from the image. A guest that answers with the image's home is the verified boot, and the switch follows as for any migration.

@@ -238,7 +238,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
+	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
 	var migrationVMErr error
@@ -257,7 +257,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
 			secretRefused = refusal
 		}
-		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun(), true)
+		machineRuns := running
+		if !running && !hardStop && !parked && !migration.holdsDown() {
+			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
+			}
+		}
+		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 			r.publishCertificateWait(ctx, agent, err)
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -364,6 +370,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	err = r.publishReconciled(ctx, agent)
 	timer.mark("reconciled")
 	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile.
+func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, error) {
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0, nil
 }
 
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {

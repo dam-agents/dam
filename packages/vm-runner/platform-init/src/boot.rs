@@ -48,11 +48,11 @@ fn announce(message: &str) {
 
 const KMSG: &str = "/dev/kmsg";
 
-// UNIT_BOUNDARY_DESCRIPTION: one kernel log record. The kernel takes a record of about a kilobyte, and prints it to the console only when its level is below the console's, which a quiet kernel sets to warnings. So the line is cut to fit and sent at error level.
+// UNIT_BOUNDARY_DESCRIPTION: one kernel log record. The kernel takes a record of about a kilobyte, and prints it to the console only when its level is below the console's, which smolvm's quiet kernel sets to errors, so an error-level record stays in the ring buffer and never leaves the guest. So the line is cut to fit and sent at critical level, which reaches the console while its level is above that. A console quieter still would need emergency level, the one level every console prints.
 const CONSOLE_LINE_MAX: usize = 900;
 
 fn console_line(message: &str) -> String {
-    let mut line = format!("<3>platform-init: {message}");
+    let mut line = format!("<2>platform-init: {message}");
     if line.len() > CONSOLE_LINE_MAX {
         let mut cut = CONSOLE_LINE_MAX;
         while !line.is_char_boundary(cut) {
@@ -2405,13 +2405,13 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the kernel log is how FATAL and the hand-off reach the machine's console, which is all the runner reads of a guest. A quiet kernel prints only records below warning level, and the kernel takes a record of about a kilobyte, so the line is sent at error level and cut to fit, on a character boundary.
+    // TEST_SCENARIO: the kernel log is how FATAL and the hand-off reach the machine's console, which is all the runner reads of a guest. smolvm's quiet kernel prints only records below error level, and the kernel takes a record of about a kilobyte, so the line is sent at critical level and cut to fit, on a character boundary.
     #[test]
-    fn console_lines_are_errors_that_fit_one_kernel_record() {
-        assert_eq!(console_line("FATAL: x"), "<3>platform-init: FATAL: x\n");
+    fn console_lines_are_critical_and_fit_one_kernel_record() {
+        assert_eq!(console_line("FATAL: x"), "<2>platform-init: FATAL: x\n");
         let long = console_line(&"é".repeat(2000));
         assert!(long.len() <= CONSOLE_LINE_MAX + 1);
-        assert!(long.starts_with("<3>platform-init: é"));
+        assert!(long.starts_with("<2>platform-init: é"));
         assert!(long.ends_with('\n'));
     }
 

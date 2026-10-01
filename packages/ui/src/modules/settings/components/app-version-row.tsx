@@ -8,10 +8,6 @@ import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import {
-  isFeaturesMenuRevealed,
-  setFeaturesMenuRevealed,
-} from "../../features/lib/menu-reveal.js";
 import { useAppVersion } from "../api/queries.js";
 
 const TAPS_TO_TOGGLE_FEATURES = 5;
@@ -36,6 +32,8 @@ const PRESENTATION: Record<
 export function AppVersionRow() {
   const { data: version } = useAppVersion();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
+  const setFeaturesMenuRevealed = useStore((s) => s.setFeaturesMenuRevealed);
   const [taps, setTaps] = useState(0);
   const [copyUnavailable, setCopyUnavailable] = useState(false);
   const { copy, state } = useCopy();
@@ -48,7 +46,7 @@ export function AppVersionRow() {
       return;
     }
     setTaps(0);
-    const revealed = !isFeaturesMenuRevealed();
+    const revealed = !featuresMenuRevealed;
     setFeaturesMenuRevealed(revealed);
     navigateToSettings(revealed ? "features" : "account");
   };

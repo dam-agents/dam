@@ -126,12 +126,15 @@ interface ComputeView {
 }
 
 export function computeView(
-  runningAgents: readonly AgentView[],
+  agents: readonly AgentView[],
   workingAgentIds: ReadonlySet<string>,
   budget: BudgetReserved,
 ): ComputeView {
   const unit = slotUnitOf(budget);
-  const held = runningAgents.map((agent) => {
+  const scaledUp = agents.filter(
+    (agent) => agent.state !== "hibernated" && !agent.overBudget,
+  );
+  const held = scaledUp.map((agent) => {
     const size = sizeInMi(agent.size);
     return {
       agent,

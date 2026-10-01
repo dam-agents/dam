@@ -37,16 +37,25 @@ if [ ! -f "$release/storage-template.ext4" ]; then
   limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
 fi
 
-# platform-init runs inside the guest, so it is the static Linux binary from
-# the runner image, not anything built for this Mac.
+# smolvm shrinks a disk asked for below the 20 GiB template with resize2fs, and
+# looks for Homebrew's keg-only e2fsprogs; without it the disk keeps 20 GiB.
+[ -x /opt/homebrew/opt/e2fsprogs/sbin/resize2fs ] || command -v resize2fs >/dev/null ||
+  echo "note: no resize2fs, so vm agent disks below 20 GiB are made at 20 GiB; brew install e2fsprogs honours their size" >&2
+
+# platform-init and platform-runc run inside the guest, so they are the static
+# Linux binaries from the runner image, not anything built for this Mac. The
+# image is rebuilt unless the caller just did (SKIP_IMAGE_BUILD), so they match
+# the runner built above.
 image="$pkg/dist/oci/vm-runner.tar"
-[ -f "$image" ] || mise run //packages/vm-runner:oci
-for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
-  tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - usr/local/libexec/platform-init > "$R/platform-init.new" 2>/dev/null || true
-  [ ! -s "$R/platform-init.new" ] || break
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
+for bin in platform-init platform-runc; do
+  for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
+    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "usr/local/libexec/$bin" > "$R/$bin.new" 2>/dev/null || true
+    [ ! -s "$R/$bin.new" ] || break
+  done
+  [ -s "$R/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
+  chmod 755 "$R/$bin.new"
 done
-[ -s "$R/platform-init.new" ] || { echo "FATAL: no platform-init in $image" >&2; exit 1; }
-chmod 755 "$R/platform-init.new"
 
 # The chart renders the runner's token and asks cert-manager for its serving
 # certificate (virtualization.runner.hostAddress); the runner holds copies.
@@ -63,6 +72,7 @@ images="$(host_runner_images)"
 host_runner_stop
 mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
+mv "$R/platform-runc.new" "$R/platform-runc"
 mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
 (
   cd "$R"
@@ -72,7 +82,7 @@ mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
     --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) \
     --memory-mib="$mem_mib" --reserve-mib=256 \
-    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --crane="$(command -v crane)" \
+    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" --crane="$(command -v crane)" \
     >> "$R/runner.log" 2>&1 &
   echo $! > "$R/runner.pid"
 )

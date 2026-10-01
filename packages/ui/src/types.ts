@@ -137,7 +137,7 @@ export interface AgentView {
   createdAt?: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
-  features: { liveUpdates: boolean };
+  features: { liveUpdates: boolean | null };
   image: string;
   description?: string;
   env?: EnvVar[];
@@ -151,6 +151,7 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];

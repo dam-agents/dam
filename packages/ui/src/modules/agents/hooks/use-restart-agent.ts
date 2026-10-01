@@ -25,13 +25,15 @@ export function useSyncRestartingAgents() {
     const next = transitionRestartingAgents(current, data.list);
     if (next === current) return;
     setRestartingAgents(next);
-    const freshlyParked = data.list.some(
+    const freshlyParked = data.list.find(
       (a) => a.overBudget && current.get(a.id)?.parkedAtClick === false,
     );
     if (freshlyParked) {
+      const reason =
+        freshlyParked.overBudgetMessage ?? "stop a running agent to free room";
       void showConfirm(
-        "It looks like you've reached your usage limit for active agents. To start this agent, please hibernate some of your running sandboxes. You can manage your sandboxes by clicking the button below.",
-        "You do not have enough usage slots to start this agent.",
+        `${reason[0].toUpperCase()}${reason.slice(1)}.`,
+        "This agent could not start",
         { confirmLabel: "Manage sandboxes" },
       ).then((ok) => ok && setView("home"));
     }

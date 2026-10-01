@@ -465,7 +465,11 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if err != nil {
 		return err
 	}
-	if _, err := client.Ensure(ctx, name, vmrunner.MachineSpec{Running: false}); err != nil {
+	halt := vmrunner.MachineSpec{Running: false}
+	if runtimeMigrationOfObject(agent).seedable() {
+		halt.Migration = &vmrunner.MachineMigration{}
+	}
+	if _, err := client.Ensure(ctx, name, halt); err != nil {
 		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
 	return nil

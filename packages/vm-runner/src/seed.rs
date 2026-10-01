@@ -41,7 +41,7 @@ impl OwnerMap {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how deep, how many entries and how many bytes of file data a seed may hold. The walk keeps one open directory per level and, for each file with several names, the name it was stored under, so without a bound a deep or wide tree would exhaust the copy Job's descriptors or memory rather than fail. A seed that passes one fails with a message that names the limit, because that message becomes the migration's.
+// UNIT_BOUNDARY_DESCRIPTION: how deep, how many entries and how many bytes of file data a seed may hold. The walk keeps one open directory per level and, for each file with several names, the name it was stored under, so without a bound a deep or wide tree would exhaust the copy Job's descriptors or memory rather than fail. A seed that passes one fails with a message that names the limit, because that message becomes the migration's, and as QuotaExceeded, because a fresh attempt at the same home passes it again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     pub depth: usize,
@@ -156,10 +156,13 @@ impl Walk<'_> {
             if child.is_dir() {
                 let depth = self.options.limits.depth;
                 if open.len() >= depth {
-                    return Err(io::Error::other(format!(
-                        "{} is more than {depth} directories deep, deeper than a seed may go",
-                        named.display()
-                    )));
+                    return Err(io::Error::new(
+                        io::ErrorKind::QuotaExceeded,
+                        format!(
+                            "{} is more than {depth} directories deep, deeper than a seed may go",
+                            named.display()
+                        ),
+                    ));
                 }
                 open.push((fs::read_dir(&path)?, named));
             }
@@ -177,7 +180,7 @@ impl Walk<'_> {
         self.entries += 1;
         let most = self.options.limits.entries;
         if self.entries > most {
-            return Err(io::Error::other(format!(
+            return Err(io::Error::new(io::ErrorKind::QuotaExceeded, format!(
                 "the home holds more than {most} entries, more than a seed may carry; the walk stopped at {}",
                 name.display()
             )));
@@ -262,7 +265,7 @@ impl Walk<'_> {
             self.linked_names += name.as_os_str().len() + LINKED_OVERHEAD;
             let most = self.options.limits.linked_names;
             if self.linked_names > most {
-                return Err(io::Error::other(format!(
+                return Err(io::Error::new(io::ErrorKind::QuotaExceeded, format!(
                     "the home has more files with several names than a seed can keep track of (more than {most} bytes of their names); the walk stopped at {}",
                     name.display()
                 )));
@@ -281,7 +284,7 @@ impl Walk<'_> {
     fn count(&mut self, bytes: u64, name: &Path) -> io::Result<()> {
         self.bytes = self.bytes.saturating_add(bytes);
         match self.options.limits.bytes {
-            Some(most) if self.bytes > most => Err(io::Error::other(format!(
+            Some(most) if self.bytes > most => Err(io::Error::new(io::ErrorKind::QuotaExceeded, format!(
                 "the home holds more than {most} bytes of file data, more than the seed may carry; the walk stopped at {}",
                 name.display()
             ))),
@@ -713,6 +716,11 @@ mod tests {
         ] {
             let err = seed_with(home.path(), &limited(limits)).unwrap_err();
             assert!(err.to_string().contains(says), "{limits:?}: {err}");
+            assert_eq!(
+                err.kind(),
+                io::ErrorKind::QuotaExceeded,
+                "{limits:?}: vm-seed tells a limit from a transient failure by its kind"
+            );
         }
         assert!(seed_with(home.path(), &Options::default()).is_ok());
     }

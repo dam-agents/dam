@@ -147,6 +147,22 @@ export function AgentUnavailableOverlay({
         </p>
       )}
       {!Icon && <StartupTip sandbox={agent.name} />}
+      {display.slowStart && !agent.podTerminationReason && (
+        <div className="flex max-w-105 flex-col gap-2 text-sm">
+          <p
+            role="status"
+            className="flex items-center justify-center gap-1.5 text-warning"
+          >
+            <Warning size={14} className="shrink-0" />
+            Starting is taking longer than usual.
+          </p>
+          {agent.notReadyMessage && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-left font-mono text-xs text-muted-foreground">
+              {agent.notReadyMessage}
+            </pre>
+          )}
+        </div>
+      )}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
