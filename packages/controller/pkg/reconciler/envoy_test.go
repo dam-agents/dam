@@ -1796,3 +1796,19 @@ func TestBuildEnvoyBootstrapConfigMap_CarriesTheTrustBundleOnlyWhenConfigured(t 
 	require.NoError(t, err)
 	assert.Equal(t, cfg.GatewayUpstreamTrustBundle, cm.Data[envoyUpstreamCAKey])
 }
+
+func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing.T) {
+	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
+	hosts := []string{"api.github.com"}
+
+	assert.Equal(t, envoySecretsRev(secrets, hosts), envoyGatewayRev(bootstrapTestCfg, secrets, hosts),
+		"an install without extra CAs keeps today's revision, so upgrading rolls no gateway")
+
+	withCA := *bootstrapTestCfg
+	withCA.GatewayUpstreamTrustBundle = "bundle one"
+	otherCA := *bootstrapTestCfg
+	otherCA.GatewayUpstreamTrustBundle = "bundle two"
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, secrets, hosts), envoyGatewayRev(&withCA, secrets, hosts))
+	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts), envoyGatewayRev(&otherCA, secrets, hosts))
+	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts), envoyGatewayRev(&withCA, secrets, hosts))
+}

@@ -757,6 +757,15 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string) string {
+	rev := envoySecretsRev(secrets, l7Hosts)
+	if cfg.GatewayUpstreamTrustBundle == "" {
+		return rev
+	}
+	sum := sha256.Sum256([]byte(rev + "\ntrust=" + cfg.GatewayUpstreamTrustBundle))
+	return hex.EncodeToString(sum[:8])
+}
+
 func sdsDataKeys(s corev1.Secret) []string {
 	var keys []string
 	for k := range s.Data {

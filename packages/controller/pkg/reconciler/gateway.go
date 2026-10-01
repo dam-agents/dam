@@ -44,7 +44,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGa
 
 	annotations := map[string]string{
 		// + leaf cert. Per-agent grain: a sibling agent's rule never
-		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets, l7Hosts),
+		"agent-platform.ai/envoy-secrets-rev": envoyGatewayRev(cfg, credentialSecrets, l7Hosts),
 	}
 
 	podSpec := corev1.PodSpec{
