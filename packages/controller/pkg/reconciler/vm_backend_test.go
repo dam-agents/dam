@@ -462,6 +462,32 @@ func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
+// TEST_SCENARIO: an install switched from runner pods to the host runner still holds the runner Deployment it made for an owner before, whose pod can never schedule without a KVM device. The host-mode sweep removes that Deployment and keeps its claim, which holds the disks of the machines it ran, and leaves the host runner's own Secret, whose name a per-owner lookup would resolve to in host mode, alone.
+func TestTheHostRunnerSweepDropsRunnerPodsLeftFromBefore(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	podRunner := r.runnerName(testOwner)
+	_, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, podRunner, metav1.GetOptions{})
+	require.NoError(t, err, "the runner pod's Deployment exists before the switch")
+
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	hostSecret := runnerSecret()
+	hostSecret.Name = r.runnerName(testOwner)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, hostSecret, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	r.ReconcileOrphanMachines(ctx)
+
+	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, podRunner, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the runner pod left from before is removed")
+	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, podRunner, metav1.GetOptions{})
+	assert.NoError(t, err, "its claim, holding its machines' disks, is kept")
+	_, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, hostSecret.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "the host runner's own Secret is left alone")
+}
+
 // TEST_SCENARIO: a machine on its way up is watched with a long poll on its runner, not by running the whole reconcile twice a second. However often the Agent reconciles, it has one watch; while the status holds still nothing is requeued; and the moment the status changes — the guest answering — the Agent is requeued at once, and the watch ends so the reconcile that follows can publish the change.
 func TestAMachineComingUpIsWatchedAndAChangeRequeuesTheAgent(t *testing.T) {
 	agent := vmAgentCR()
