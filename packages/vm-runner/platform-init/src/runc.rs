@@ -1,7 +1,10 @@
-// UNIT_BOUNDARY_DESCRIPTION: platform-runc, the OCI runtime every container inside a machine is started through: docker's containers, the RUN steps of its builds, and k3s pods. A container's root is the image it runs, not the guest, so it trusts only the public roots that image ships and fails TLS to every host the gateway intercepts. On `create` and `run` this gives the container copies of the image's own CA bundles with the platform CA appended, in a directory of the wrapper's own mounted read-only, and points the CA environment variables at them; then it execs the real runc. The image's own files are never mounted over, so a build that rebuilds its trust store keeps working, nothing reaches the image's layers or config, and a Dockerfile needs no change. Any failure to inject is reported and the container starts without the CA, because refusing it would stop every container on the machine.
+// UNIT_BOUNDARY_DESCRIPTION: platform-runc, the OCI runtime every container inside a machine is started through: docker's containers, the RUN steps of its builds, and k3s pods. A container's root is the image it runs, not the guest, so it trusts only the public roots that image ships and fails TLS to every host the gateway intercepts. On `create` and `run` this gives the container copies of the CA bundles it would read, from its image or its bind mounts, with the platform CA appended, in a directory of the wrapper's own mounted read-only, and points the CA environment variables at them; then it execs the real runc. The image's own files and the mounts' sources are never written or mounted over, so a build that rebuilds its trust store keeps working, nothing reaches the image's layers or config, and a Dockerfile needs no change. Any failure to inject is reported and the container starts without the CA, because refusing it would stop every container on the machine.
+use std::collections::VecDeque;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
@@ -14,7 +17,7 @@ use crate::guest;
 // UNIT_BOUNDARY_DESCRIPTION: the name the image's entrypoint moves docker's own runc to when it puts this wrapper in its place. docker's builder runs whatever `runc` it finds on PATH and ignores the daemon's default runtime, so the wrapper has to take the name itself, and it finds the binary it replaced beside it under this suffix.
 pub const REAL_SUFFIX: &str = ".real";
 
-// UNIT_BOUNDARY_DESCRIPTION: where distributions keep the CA bundle their TLS clients read: Debian, Ubuntu and Alpine; Fedora and RHEL; SUSE; and the path LibreSSL and some minimal images use. The first one the image ships as a real file is the bundle the copies start from; a path that is a symlink in the image is skipped, because its target is on this list too.
+// UNIT_BOUNDARY_DESCRIPTION: where distributions keep the CA bundle their TLS clients read: Debian, Ubuntu and Alpine; Fedora and RHEL; SUSE; and the path LibreSSL and some minimal images use. The first one the container sees as a file, in its image or in a bind mount over it, is the bundle the copies start from.
 pub const BUNDLES: &[&str] = &[
     "/etc/ssl/certs/ca-certificates.crt",
     "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
@@ -23,7 +26,7 @@ pub const BUNDLES: &[&str] = &[
     "/etc/ssl/cert.pem",
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: the variables TLS clients read a CA bundle from: OpenSSL-based tools, Go, Ruby and Python's ssl; curl, including a curl built with its own bundle path; Python's requests and pip; Node, which adds these to its built-in roots; and git, whose GnuTLS build reads none of the others. Each is pointed at a copy of the bundle it would otherwise use, with the CA appended — a variable the container sets to a file keeps that file's roots. A client that reads only the distribution's own path and no variable, like a Java keystore or GnuTLS-based wget and apt, does not see the CA.
+// UNIT_BOUNDARY_DESCRIPTION: the variables TLS clients read a CA bundle from: OpenSSL-based tools, Go, Ruby and Python's ssl; curl, including a curl built with its own bundle path; Python's requests and pip; Node, which adds these to its built-in roots; and git, whose GnuTLS build reads none of the others. Each is pointed at a copy of the bundle it would otherwise use, with the CA appended — a variable the container sets to a file keeps that file's roots, whether the image ships the file or a bind mount puts it there, like the Secret a nested platform mounts its own CA from. A client that reads only the distribution's own path and no variable, like a Java keystore or GnuTLS-based wget and apt, does not see the CA.
 pub const ENV: &[&str] = &[
     "SSL_CERT_FILE",
     "CURL_CA_BUNDLE",
@@ -38,7 +41,7 @@ pub const GUEST_DIR: &str = "/run/platform-ca";
 // UNIT_BOUNDARY_DESCRIPTION: the copies are written into the container's bundle directory, which the caller creates for this one container and removes with it, so nothing here has to be cleaned up.
 pub const MERGED_DIR: &str = "platform-ca";
 
-// UNIT_BOUNDARY_DESCRIPTION: the image decides what sits at a bundle path, so a file larger than any real CA bundle is left alone rather than copied on every container start.
+// UNIT_BOUNDARY_DESCRIPTION: the image or a mount decides what sits at a bundle path, so a file larger than any real CA bundle is left alone rather than copied on every container start.
 pub const MAX_BUNDLE_BYTES: u64 = 16 << 20;
 
 const GLOBAL_FLAGS_WITH_VALUE: &[&str] =
@@ -127,7 +130,7 @@ pub fn inject(bundle: &Path, ca: &[u8]) -> io::Result<usize> {
         .pointer("/root/path")
         .and_then(Value::as_str)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "the spec names no root"))?;
-    let root = bundle.join(root);
+    let container = Container::from_spec(bundle, Path::new(root), &spec)?;
     let taken = spec
         .get("mounts")
         .and_then(Value::as_array)
@@ -147,7 +150,7 @@ pub fn inject(bundle: &Path, ca: &[u8]) -> io::Result<usize> {
 
     let mut system = None;
     for path in BUNDLES {
-        if let Some(own) = read_in_root(&root, path)? {
+        if let Some(own) = container.read(path)? {
             system = Some((path.to_string(), own));
             break;
         }
@@ -158,7 +161,7 @@ pub fn inject(bundle: &Path, ca: &[u8]) -> io::Result<usize> {
     for name in ENV {
         let source = match value_of(&env, name) {
             Some(value) if nameable(value) => {
-                read_in_root(&root, value)?.map(|own| (value.to_string(), own))
+                container.read(value)?.map(|own| (value.to_string(), own))
             }
             Some(_) => None,
             None => system.clone(),
@@ -233,29 +236,207 @@ fn nameable(value: &str) -> bool {
     path.is_absolute() && !path.components().any(|c| c == Component::ParentDir)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads a bundle path inside the container's root without following a symlink anywhere along it. The root is the image's, and a link there resolves against the guest, so following one would copy a file of the guest's into the container.
-pub fn read_in_root(root: &Path, path: &str) -> io::Result<Option<Vec<u8>>> {
-    let mut at = root.to_path_buf();
-    for component in Path::new(path).components() {
-        let Component::Normal(name) = component else {
-            continue;
+// UNIT_BOUNDARY_DESCRIPTION: the Linux limit on symlinks followed while resolving one path. A loop of links in an image or a volume ends the walk there and the path reads as absent.
+const MAX_SYMLINKS: usize = 40;
+
+// UNIT_BOUNDARY_DESCRIPTION: the files a container will see, read from outside it before it starts: its root, with each bind mount of the spec laid over it in the spec's order. A path resolves the way it will inside the container: a symlink resolves against the container's root, never the guest's, and a path under a bind mount reads from the mount's source. A variable the container sets to a mounted file — a Secret or ConfigMap volume, or a docker bind mount — then keeps that file's roots like a file of the image. Every read stays inside the root or a bind mount's source, so a path or link the container chose never copies one of the guest's own files into it.
+struct Container {
+    root: PathBuf,
+    mounts: Vec<Mount>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one mount of the spec. The destination is resolved through the root and the mounts before it, as runc resolves it, so a mount on `/var/run/...` in an image where `/var/run` links to `/run` covers `/run/...`. Only a bind mount has a source to read; any other mount, a tmpfs or a proc, hides what is under it, so a path there reads as absent.
+struct Mount {
+    destination: Vec<OsString>,
+    source: Option<PathBuf>,
+}
+
+enum Reached {
+    Found { base: PathBuf, host: PathBuf },
+    Unreadable,
+}
+
+impl Container {
+    fn from_spec(bundle: &Path, root: &Path, spec: &Value) -> io::Result<Self> {
+        let mut container = Container {
+            root: fs::canonicalize(bundle.join(root))?,
+            mounts: Vec::new(),
         };
-        at.push(name);
-        let meta = match fs::symlink_metadata(&at) {
-            Ok(meta) => meta,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) if e.raw_os_error() == Some(libc::ENOTDIR) => return Ok(None),
-            Err(e) => return Err(e),
-        };
-        if meta.file_type().is_symlink() {
-            return Ok(None);
+        for mount in spec
+            .get("mounts")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let Some(destination) = mount.get("destination").and_then(Value::as_str) else {
+                continue;
+            };
+            let destination = match container.walk(Path::new(destination)) {
+                Ok((resolved, _)) => resolved,
+                Err(_) => lexical(Vec::new(), steps(Path::new(destination))),
+            };
+            let source = mount
+                .get("source")
+                .and_then(Value::as_str)
+                .filter(|_| is_bind(mount))
+                .and_then(|source| fs::canonicalize(bundle.join(source)).ok());
+            container.mounts.push(Mount {
+                destination,
+                source,
+            });
+        }
+        Ok(container)
+    }
+
+    fn read(&self, path: &str) -> io::Result<Option<Vec<u8>>> {
+        match self.walk(Path::new(path))? {
+            (_, Reached::Found { base, host }) => read_beneath(&base, &host),
+            (_, Reached::Unreadable) => Ok(None),
         }
     }
-    let meta = fs::symlink_metadata(&at)?;
+
+    // UNIT_BOUNDARY_DESCRIPTION: resolves a path inside the container one component at a time, without following any link on the guest: each step is looked up in the root or the bind mount that covers it, and a link found there is spliced into the rest of the path, from the container's root when it is absolute. A missing component, a non-bind mount or a loop of links stops the walk, and the rest of the path is appended as written, which is how runc places a mount whose destination does not exist yet.
+    fn walk(&self, path: &Path) -> io::Result<(Vec<OsString>, Reached)> {
+        let mut at: Vec<OsString> = Vec::new();
+        let mut rest = steps(path);
+        let mut links = 0;
+        while let Some(step) = rest.pop_front() {
+            match step {
+                Step::Into(name) => at.push(name),
+                Step::Up => {
+                    at.pop();
+                    continue;
+                }
+            }
+            if self.leads_to_a_mount(&at) {
+                continue;
+            }
+            let Some((_, host)) = self.host_path(&at) else {
+                return Ok((lexical(at, rest), Reached::Unreadable));
+            };
+            let meta = match fs::symlink_metadata(&host) {
+                Ok(meta) => meta,
+                Err(e) if is_absent(&e) => return Ok((lexical(at, rest), Reached::Unreadable)),
+                Err(e) => return Err(e),
+            };
+            if !meta.file_type().is_symlink() {
+                continue;
+            }
+            links += 1;
+            if links > MAX_SYMLINKS {
+                return Ok((lexical(at, rest), Reached::Unreadable));
+            }
+            let target = fs::read_link(&host)?;
+            at.pop();
+            if target.is_absolute() {
+                at.clear();
+            }
+            for step in steps(&target).into_iter().rev() {
+                rest.push_front(step);
+            }
+        }
+        let reached = match self.host_path(&at) {
+            Some((base, host)) => Reached::Found { base, host },
+            None => Reached::Unreadable,
+        };
+        Ok((at, reached))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a directory a mount placed after the one covering it is mounted inside. runc creates such a directory when it is missing, a link already resolved when the mount's destination was, so the walk goes through it as a directory without reading it: `/var/run/secrets` for a Secret mounted beneath it, or `/dev` for a file mounted inside the tmpfs there.
+    fn leads_to_a_mount(&self, at: &[OsString]) -> bool {
+        let after = self
+            .mounts
+            .iter()
+            .rposition(|m| at.starts_with(&m.destination))
+            .map_or(0, |covering| covering + 1);
+        self.mounts[after..]
+            .iter()
+            .any(|m| m.destination.len() > at.len() && m.destination.starts_with(at))
+    }
+
+    fn host_path(&self, at: &[OsString]) -> Option<(PathBuf, PathBuf)> {
+        let (base, under) = match self
+            .mounts
+            .iter()
+            .rev()
+            .find(|m| at.starts_with(&m.destination))
+        {
+            Some(mount) => (mount.source.clone()?, &at[mount.destination.len()..]),
+            None => (self.root.clone(), at),
+        };
+        let host = under
+            .iter()
+            .fold(base.clone(), |path, name| path.join(name));
+        Some((base, host))
+    }
+}
+
+fn is_bind(mount: &Value) -> bool {
+    mount.get("type").and_then(Value::as_str) == Some("bind")
+        || mount
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|o| matches!(o.as_str(), Some("bind" | "rbind")))
+}
+
+fn is_absent(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::NotFound || e.raw_os_error() == Some(libc::ENOTDIR)
+}
+
+enum Step {
+    Into(OsString),
+    Up,
+}
+
+fn steps(path: &Path) -> VecDeque<Step> {
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(Step::Into(name.to_owned())),
+            Component::ParentDir => Some(Step::Up),
+            _ => None,
+        })
+        .collect()
+}
+
+fn lexical(mut at: Vec<OsString>, rest: VecDeque<Step>) -> Vec<OsString> {
+    for step in rest {
+        match step {
+            Step::Into(name) => at.push(name),
+            Step::Up => {
+                at.pop();
+            }
+        }
+    }
+    at
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: reads one resolved file only if it is still a regular file beneath `base` once open. A volume another container writes to can swap a directory for a link between the walk and the open; the open refuses a link in the last component, and the opened file's real path is checked against `base`, so the swap reads nothing. A FIFO is opened without blocking and then refused as not a file.
+fn read_beneath(base: &Path, host: &Path) -> io::Result<Option<Vec<u8>>> {
+    let file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(host)
+    {
+        Ok(file) => file,
+        Err(e) if is_absent(&e) || e.raw_os_error() == Some(libc::ELOOP) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let meta = file.metadata()?;
     if !meta.is_file() || meta.len() > MAX_BUNDLE_BYTES {
         return Ok(None);
     }
-    fs::read(&at).map(Some)
+    let opened = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+    if !opened.starts_with(base) {
+        return Ok(None);
+    }
+    let mut own = Vec::new();
+    file.take(MAX_BUNDLE_BYTES + 1).read_to_end(&mut own)?;
+    if own.len() as u64 > MAX_BUNDLE_BYTES {
+        return Ok(None);
+    }
+    Ok(Some(own))
 }
 
 fn merge(own: &[u8], ca: &[u8]) -> Vec<u8> {
@@ -276,7 +457,7 @@ fn is_executable(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    // TEST_OVERVIEW: platform-runc stands between every container runtime in a machine and runc. It must find the real runc whichever runtime called it, touch only the commands that start a container, give a container copies of the image's own CA bundles with the platform CA appended at a path of its own, without following the image's symlinks into the guest or mounting over the image's files, keep the roots a variable the image sets names, and change nothing when the image ships no bundle.
+    // TEST_OVERVIEW: platform-runc stands between every container runtime in a machine and runc. It must find the real runc whichever runtime called it, touch only the commands that start a container, give a container copies of the image's own CA bundles with the platform CA appended at a path of its own, resolve links and bind mounts as the container will see them without ever reading a file of the guest's, never write or mount over the image's files or a mount's source, keep the roots a variable names whether the image ships the file or a bind mount puts it there, and change nothing when the container has no bundle.
     use super::*;
     use std::os::unix::fs::symlink;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -522,7 +703,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: an image's symlinks resolve against the guest when read from outside the container. A link on the way to a bundle path is not followed, so no file of the guest's is copied into a container.
+    // TEST_SCENARIO: an image's symlinks resolve against the guest when read naively from outside the container. A link on the way to a bundle path resolves against the container's root instead, so a link naming a guest directory finds nothing and no file of the guest's is copied into a container.
     #[test]
     fn a_symlink_in_the_image_is_never_followed() {
         let dir = TempDir::new("escape");
@@ -625,6 +806,254 @@ mod tests {
         );
 
         assert_eq!(inject(&bundle, CA).unwrap(), ENV.len());
+    }
+
+    fn with_mounts(mut spec: Value, env: &[&str], mounts: Value) -> Value {
+        let mut all = spec["mounts"].as_array().unwrap().clone();
+        all.extend(mounts.as_array().unwrap().iter().cloned());
+        spec["mounts"] = Value::Array(all);
+        let mut vars = vec![json!("PATH=/usr/bin")];
+        vars.extend(env.iter().map(|v| json!(v)));
+        spec["process"]["env"] = Value::Array(vars);
+        spec
+    }
+
+    fn secret_volume(dir: &Path, files: &[(&str, &str)]) -> PathBuf {
+        let volume = dir.join("kubelet/volumes/secret");
+        let data = volume.join("..2026_10_01_00_00_00.000000000");
+        fs::create_dir_all(&data).unwrap();
+        symlink("..2026_10_01_00_00_00.000000000", volume.join("..data")).unwrap();
+        for (name, content) in files {
+            fs::write(data.join(name), content).unwrap();
+            symlink(format!("..data/{name}"), volume.join(name)).unwrap();
+        }
+        volume
+    }
+
+    fn bind(destination: &str, source: &Path) -> Value {
+        json!({
+            "destination": destination,
+            "type": "bind",
+            "source": source,
+            "options": ["rbind", "rprivate", "ro"],
+        })
+    }
+
+    // TEST_SCENARIO: the nested platform case. Its agent pods set NODE_EXTRA_CA_CERTS to the nested gateway's CA, which kubelet mounts from a Secret: a directory of links through `..data` to a timestamped directory. Node reads only that variable, so it must name a copy of the Secret's file with the platform CA appended, written beside the other copies, while the read-only volume itself stays as kubelet wrote it.
+    #[test]
+    fn a_variable_naming_a_file_in_a_secret_volume_keeps_its_roots_and_gains_the_ca() {
+        let dir = TempDir::new("secret");
+        let volume = secret_volume(dir.path(), &[("ca.crt", "nested gateway ca")]);
+        let bundle = bundle_with(
+            dir.path(),
+            &[("/etc/ssl/certs/ca-certificates.crt", "debian roots")],
+            with_mounts(
+                spec(),
+                &["NODE_EXTRA_CA_CERTS=/var/run/platform/ca/ca.crt"],
+                json!([bind("/var/run/platform/ca", &volume)]),
+            ),
+        );
+
+        assert_eq!(inject(&bundle, CA).unwrap(), ENV.len());
+
+        let spec = read_spec(&bundle);
+        assert_eq!(
+            copy_named_by(&bundle, &spec, "NODE_EXTRA_CA_CERTS"),
+            [b"nested gateway ca\n".as_slice(), CA].concat()
+        );
+        assert_eq!(
+            copy_named_by(&bundle, &spec, "SSL_CERT_FILE"),
+            [b"debian roots\n".as_slice(), CA].concat()
+        );
+        assert_eq!(
+            fs::read(volume.join("ca.crt")).unwrap(),
+            b"nested gateway ca",
+            "the mount's source must not change: it is the Secret's"
+        );
+        assert_eq!(mount_at(&spec, "/var/run/platform/ca").len(), 1);
+    }
+
+    // TEST_SCENARIO: a Secret or ConfigMap key mounted with subPath, or a docker bind mount of one file, makes the mount's source the file itself.
+    #[test]
+    fn a_file_mounted_on_its_own_is_read_from_its_source() {
+        let dir = TempDir::new("subpath");
+        let source = dir.path().join("host/ca.pem");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "mounted roots").unwrap();
+        let bundle = bundle_with(
+            dir.path(),
+            &[],
+            with_mounts(
+                spec(),
+                &["SSL_CERT_FILE=/etc/custom/ca.pem"],
+                json!([bind("/etc/custom/ca.pem", &source)]),
+            ),
+        );
+
+        assert_eq!(inject(&bundle, CA).unwrap(), 1);
+        assert_eq!(
+            copy_named_by(&bundle, &read_spec(&bundle), "SSL_CERT_FILE"),
+            [b"mounted roots\n".as_slice(), CA].concat()
+        );
+    }
+
+    // TEST_SCENARIO: runc places mounts in the spec's order, so a later mount covers what an earlier one or the image put at its path, and a mount inside another one's directory covers only its own part of it. Each variable reads the file the container will see there: the inner mount's, the outer mount's, and not the image's file the outer mount hides.
+    #[test]
+    fn the_mount_that_covers_a_path_last_is_the_one_read() {
+        let dir = TempDir::new("nested");
+        let outer = dir.path().join("outer");
+        let inner = dir.path().join("inner");
+        let replaced = dir.path().join("replaced");
+        for (source, content) in [(&outer, "outer"), (&inner, "inner"), (&replaced, "hidden")] {
+            fs::create_dir_all(source).unwrap();
+            fs::write(source.join("ca.pem"), content).unwrap();
+        }
+        let bundle = bundle_with(
+            dir.path(),
+            &[("/certs/image.pem", "image")],
+            with_mounts(
+                spec(),
+                &[
+                    "SSL_CERT_FILE=/certs/ca.pem",
+                    "CURL_CA_BUNDLE=/certs/inner/ca.pem",
+                    "GIT_SSL_CAINFO=/certs/image.pem",
+                ],
+                json!([
+                    bind("/certs", &replaced),
+                    bind("/certs", &outer),
+                    bind("/certs/inner", &inner),
+                ]),
+            ),
+        );
+
+        assert_eq!(inject(&bundle, CA).unwrap(), 2);
+
+        let spec = read_spec(&bundle);
+        assert_eq!(
+            copy_named_by(&bundle, &spec, "SSL_CERT_FILE"),
+            [b"outer\n".as_slice(), CA].concat()
+        );
+        assert_eq!(
+            copy_named_by(&bundle, &spec, "CURL_CA_BUNDLE"),
+            [b"inner\n".as_slice(), CA].concat()
+        );
+        assert!(spec["process"]["env"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("GIT_SSL_CAINFO=/certs/image.pem")));
+    }
+
+    // TEST_SCENARIO: Debian links `/var/run` to `/run`, and kubelet mounts volumes under `/var/run/...`. runc resolves a mount's destination inside the image, so the mount lands under `/run`, and a variable naming the file by either path reads the mount's file.
+    #[test]
+    fn a_mount_under_a_link_in_the_image_is_found_by_either_path() {
+        let dir = TempDir::new("varrun");
+        let volume = secret_volume(dir.path(), &[("ca.crt", "nested")]);
+        let bundle = bundle_with(
+            dir.path(),
+            &[],
+            with_mounts(
+                spec(),
+                &[
+                    "NODE_EXTRA_CA_CERTS=/var/run/secrets/ca/ca.crt",
+                    "SSL_CERT_FILE=/run/secrets/ca/ca.crt",
+                ],
+                json!([bind("/var/run/secrets/ca", &volume)]),
+            ),
+        );
+        fs::create_dir_all(bundle.join("rootfs/run")).unwrap();
+        fs::create_dir_all(bundle.join("rootfs/var")).unwrap();
+        symlink("../run", bundle.join("rootfs/var/run")).unwrap();
+
+        assert_eq!(inject(&bundle, CA).unwrap(), 2);
+
+        let spec = read_spec(&bundle);
+        for name in ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"] {
+            assert_eq!(
+                copy_named_by(&bundle, &spec, name),
+                [b"nested\n".as_slice(), CA].concat(),
+                "{name}"
+            );
+        }
+    }
+
+    // TEST_SCENARIO: a link in a volume resolves inside the container. One that climbs out of the mount with `..` lands in the container's own directories, not beside the mount's source on the guest, and one with an absolute target starts again from the container's root. Neither reads a guest file, even one sitting where the naive host path would point.
+    #[test]
+    fn a_link_in_a_volume_never_reads_beside_its_source() {
+        let dir = TempDir::new("volume-escape");
+        let volume = dir.path().join("volume");
+        fs::create_dir_all(&volume).unwrap();
+        fs::write(dir.path().join("guest.pem"), "guest file").unwrap();
+        symlink("../guest.pem", volume.join("up.pem")).unwrap();
+        symlink(dir.path().join("guest.pem"), volume.join("absolute.pem")).unwrap();
+        symlink("/etc/image.pem", volume.join("image.pem")).unwrap();
+        let bundle = bundle_with(
+            dir.path(),
+            &[("/etc/image.pem", "image roots")],
+            with_mounts(
+                spec(),
+                &[
+                    "SSL_CERT_FILE=/mnt/up.pem",
+                    "CURL_CA_BUNDLE=/mnt/absolute.pem",
+                    "GIT_SSL_CAINFO=/mnt/image.pem",
+                ],
+                json!([bind("/mnt", &volume)]),
+            ),
+        );
+
+        assert_eq!(inject(&bundle, CA).unwrap(), 1);
+
+        let spec = read_spec(&bundle);
+        assert_eq!(
+            copy_named_by(&bundle, &spec, "GIT_SSL_CAINFO"),
+            [b"image roots\n".as_slice(), CA].concat()
+        );
+        let env = spec["process"]["env"].as_array().unwrap();
+        assert!(env.contains(&json!("SSL_CERT_FILE=/mnt/up.pem")));
+        assert!(env.contains(&json!("CURL_CA_BUNDLE=/mnt/absolute.pem")));
+    }
+
+    // TEST_SCENARIO: a tmpfs or any other mount that is not a bind has no source to read and hides what the image has beneath it, so the image's bundle there is not the one the container sees. A file the variable names that does not exist yet, in a volume that does, is left exactly as set.
+    #[test]
+    fn a_path_under_a_non_bind_mount_or_missing_from_a_volume_is_left_alone() {
+        let dir = TempDir::new("tmpfs");
+        let volume = dir.path().join("volume");
+        fs::create_dir_all(&volume).unwrap();
+        let bundle = bundle_with(
+            dir.path(),
+            &[("/etc/ssl/certs/ca-certificates.crt", "hidden roots")],
+            with_mounts(
+                spec(),
+                &["NODE_EXTRA_CA_CERTS=/mnt/later.pem"],
+                json!([
+                    {"destination": "/etc/ssl", "type": "tmpfs", "source": "tmpfs"},
+                    bind("/mnt", &volume),
+                ]),
+            ),
+        );
+
+        assert_eq!(inject(&bundle, CA).unwrap(), 0);
+        assert!(!bundle.join(MERGED_DIR).exists());
+    }
+
+    // TEST_SCENARIO: a volume another container writes to can swap a directory for a link to the guest between the walk and the read. The read checks where the opened file really is, so a file outside the root or mount it was resolved under is never returned, and a link in the last component is refused at open.
+    #[test]
+    fn a_file_outside_the_base_it_was_resolved_under_is_not_read() {
+        let dir = TempDir::new("swap");
+        let base = dir.path().join("volume");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(dir.path().join("guest.pem"), "guest file").unwrap();
+        symlink(dir.path(), base.join("swapped")).unwrap();
+        symlink(dir.path().join("guest.pem"), base.join("link.pem")).unwrap();
+
+        assert_eq!(
+            read_beneath(&base, &base.join("swapped/guest.pem")).unwrap(),
+            None
+        );
+        assert_eq!(read_beneath(&base, &base.join("link.pem")).unwrap(), None);
+        assert_eq!(
+            read_beneath(dir.path(), &dir.path().join("guest.pem")).unwrap(),
+            Some(b"guest file".to_vec())
+        );
     }
 
     // TEST_SCENARIO: a spec that cannot be read is an error the caller reports, and the spec file is left as it was, so the container still starts, only without the CA.
