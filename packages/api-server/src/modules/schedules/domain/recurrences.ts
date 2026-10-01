@@ -86,7 +86,9 @@ function nextRRuleFire(
     const message = errorMessage(e);
     return {
       kind: "stopped",
-      reason: /Maximum iterations/.test(message) ? "it never fires" : message,
+      reason: /^Maximum (iterations|candidate evaluations)/.test(message)
+        ? "it never fires"
+        : message,
     };
   }
 }

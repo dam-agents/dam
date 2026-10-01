@@ -25,6 +25,7 @@ Schedule occurrences are computed with `rrule-temporal`, whose search is bounded
 - A rule with no future occurrence is rejected at save time, in the schedule's own timezone and quiet hours. An enabled schedule left with no next run reports why — refused, never fires, ran out, or quiet hours cover it — derived when the schedule is read, so a repaired and re-armed schedule shows none.
 - `COUNT` is rejected: counted from 2001, a count is spent before the schedule exists.
 - `FREQ=SECONDLY` is rejected: schedules fire at minute granularity.
+- Every search is capped well below the library's defaults: 1,500 periods (a leap cycle of days) and 10,000 candidate times. A rule longer than 1,000 characters or with an `INTERVAL` above 10,000 is rejected. An occurrence inside quiet hours resumes the search at the end of that window, and after 64 windows the rule counts as covered by quiet hours. The search runs synchronously on the api-server's event loop, so its cost must be small by construction.
 - `rrule` stays for building preset rules and rendering them as text. Neither computes occurrences.
 
 ## Amends
@@ -41,9 +42,10 @@ Schedule occurrences are computed with `rrule-temporal`, whose search is bounded
 
 ## Consequences
 
-- **Easier:** every rule that hung the api-server or took seconds under `rrule` now answers within 100 ms. `rrule-temporal` matched a minute-by-minute RFC 5545 walk on 6,000 random pinned HOURLY/MINUTELY rules and on all 144 preset shapes tested.
+- **Easier:** every rule that hung the api-server or took seconds under `rrule` now answers within 100 ms. With the library's default caps, `rrule-temporal` itself still took up to 5 s on some accepted rules, and quiet hours covering a sparse rule took 18 s. Under these caps the worst of 2,000 random rules, half with quiet hours, took 0.6 s. `rrule-temporal` matched a minute-by-minute RFC 5545 walk on 6,000 random pinned HOURLY/MINUTELY rules and on all 144 preset shapes tested.
 - **Easier:** occurrences no longer depend on when they are computed. `FREQ=DAILY;INTERVAL=7;BYDAY=TU` used to fire or not depending on the evaluation day; it now never fires and is rejected at save.
 - **Harder:** existing rules change phase. `FREQ=HOURLY` saved at 11:47 fired at xx:47 and now fires on the hour; a 02:30 daily rule skips the spring-forward night, as RFC 5545 requires, instead of firing at 03:30.
 - **Harder:** stored rules with `COUNT` or `FREQ=SECONDLY` stop at their next re-arm and show the reason on the schedule.
+- **Harder:** a rule whose next occurrence lies more than 1,500 periods away reads as never firing. The one realistic case found is a daily rule for 29 February on a Monday; its yearly form still works.
 - **Committed-to:** the fixed start. Changing it moves the occurrences of every rule whose interval does not divide its period.
 - **Committed-to:** a runtime with `Temporal`. Node provides it; a browser without it skips the form's quiet-hours check, and the save call still runs it.

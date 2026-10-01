@@ -208,6 +208,34 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
   });
 });
 
+// TEST_SCENARIO: the search runs on the api-server's event loop, so rules that once took seconds to answer, quiet hours that cover a sparse rule among them, now answer within a fraction of a second.
+describe("nextFire (bounded work)", () => {
+  const allDay = [{ startTime: "00:00", endTime: "23:59", enabled: true }];
+  it.each([
+    ["FREQ=MONTHLY;INTERVAL=3;BYWEEKNO=2", "Europe/Prague", allDay],
+    ["FREQ=YEARLY;BYSETPOS=400;BYDAY=MO;BYHOUR=1,2", "America/New_York", []],
+    [
+      "FREQ=HOURLY;INTERVAL=10000;BYMONTH=2;BYMINUTE=1;BYSETPOS=366",
+      "Australia/Lord_Howe",
+      [],
+    ],
+  ])("answers %s in %s quickly", (rrule, timezone, quiet) => {
+    const started = Date.now();
+    nextFire(
+      rruleSpec(rrule, timezone, quiet),
+      new Date("2026-10-01T08:47:13Z"),
+    );
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("resumes after the quiet window instead of stepping through it", () => {
+    const spec = rruleSpec("FREQ=MINUTELY", "UTC", allDay);
+    expect(nextFireAt(spec, new Date("2026-10-01T08:47:13Z"))).toEqual(
+      new Date("2026-10-01T23:59:00Z"),
+    );
+  });
+});
+
 // TEST_SCENARIO: a rule saved before its kind was rejected must stop rather than keep firing, so nextFireAt refuses exactly what the save call refuses.
 it.each(["FREQ=SECONDLY", "FREQ=HOURLY;COUNT=5"])(
   "stops a stored %s rule",
@@ -278,6 +306,11 @@ describe("validateRRule", () => {
     ["FREQ=DAILY;UNTIL=20200101T000000Z", /it has no more occurrences/],
     ["FREQ=SECONDLY", /FREQ=SECONDLY is not supported/],
     ["FREQ=DAILY;COUNT=3", /COUNT is not supported/],
+    ["FREQ=MINUTELY;INTERVAL=10001", /INTERVAL above 10000 is not supported/],
+    [
+      `FREQ=MONTHLY;BYMONTHDAY=1;BYSETPOS=${"1,".repeat(500)}1`,
+      /longer than 1000 characters is not supported/,
+    ],
   ])("rejects %s", (rrule, message) => {
     expect(() => validateRRule(rrule, "UTC", [])).toThrow(message);
   });

@@ -143,28 +143,17 @@ export function detectTimezone(): string {
 }
 
 const RRULE_ANCHOR = { year: 2001, month: 1, day: 1 };
-const QUIET_SKIP_LIMIT = 1440;
+const MAX_PERIODS = 1500;
+const MAX_CANDIDATES = 10_000;
+const QUIET_SKIP_LIMIT = 64;
+const MAX_RRULE_LENGTH = 1000;
+const MAX_INTERVAL = 10_000;
 const FLOATING_UNTIL = /UNTIL=(\d{8}T\d{6})(?!Z)/;
 
 export type VisibleOccurrence =
   | { kind: "next"; at: Temporal.ZonedDateTime }
   | { kind: "exhausted" }
   | { kind: "suppressed" };
-
-function nextOccurrence(
-  rruleBody: string,
-  timezone: string,
-  after: Temporal.Instant,
-): Temporal.ZonedDateTime | null {
-  const rule = new RRuleTemporal({
-    rruleString: withUtcUntil(rruleBody, timezone),
-    dtstart: Temporal.ZonedDateTime.from({
-      ...RRULE_ANCHOR,
-      timeZone: timezone,
-    }),
-  });
-  return rule.next(after.toZonedDateTimeISO(timezone), false);
-}
 
 function withUtcUntil(rruleBody: string, timezone: string): string {
   return rruleBody.replace(FLOATING_UNTIL, (_, local: string) => {
@@ -184,40 +173,64 @@ export function nextVisibleOccurrence(
   windows: QuietWindow[],
 ): VisibleOccurrence {
   const enabled = windows.filter((w) => w.enabled);
-  let cursor = after;
+  const rule = new RRuleTemporal({
+    rruleString: withUtcUntil(rruleBody, timezone),
+    dtstart: Temporal.ZonedDateTime.from({
+      ...RRULE_ANCHOR,
+      timeZone: timezone,
+    }),
+    maxIterations: MAX_PERIODS,
+    maxCandidateEvaluations: MAX_CANDIDATES,
+  });
+  let cursor = after.toZonedDateTimeISO(timezone);
+  let inclusive = false;
   for (let i = 0; i < QUIET_SKIP_LIMIT; i++) {
-    const next = nextOccurrence(rruleBody, timezone, cursor);
+    const next = rule.next(cursor, inclusive);
     if (!next) return i === 0 ? { kind: "exhausted" } : { kind: "suppressed" };
-    if (!isInQuietHours(next, enabled)) return { kind: "next", at: next };
-    cursor = next.toInstant();
+    const end = quietWindowEnd(next, enabled);
+    if (!end) return { kind: "next", at: next };
+    inclusive = Temporal.ZonedDateTime.compare(end, next) > 0;
+    cursor = inclusive ? end : next;
   }
   return { kind: "suppressed" };
 }
 
+function quietWindowEnd(
+  time: Temporal.ZonedDateTime,
+  windows: QuietWindow[],
+): Temporal.ZonedDateTime | null {
+  const m = time.hour * 60 + time.minute;
+  let latest: Temporal.ZonedDateTime | null = null;
+  for (const w of windows) {
+    const start = parseHHMM(w.startTime);
+    const end = parseHHMM(w.endTime);
+    if (start == null || end == null || start === end) continue;
+    const hit = start < end ? m >= start && m < end : m >= start || m < end;
+    if (!hit) continue;
+    const day = start > end && m >= start ? time.add({ days: 1 }) : time;
+    const at = day.toPlainDate().toZonedDateTime({
+      timeZone: time.timeZoneId,
+      plainTime: Temporal.PlainTime.from({
+        hour: Math.floor(end / 60),
+        minute: end % 60,
+      }),
+    });
+    if (!latest || Temporal.ZonedDateTime.compare(at, latest) > 0) latest = at;
+  }
+  return latest;
+}
+
 export function rruleProblem(rruleBody: string): string | null {
+  if (rruleBody.length > MAX_RRULE_LENGTH)
+    return `an rrule longer than ${MAX_RRULE_LENGTH} characters is not supported`;
   const options = RRule.parseString(rruleBody);
   if (options.freq === Frequency.SECONDLY)
     return "FREQ=SECONDLY is not supported, schedules run at minute granularity";
   if (options.count != null)
     return "COUNT is not supported, a schedule has no start date to count from";
+  if ((options.interval ?? 1) > MAX_INTERVAL)
+    return `INTERVAL above ${MAX_INTERVAL} is not supported`;
   return null;
-}
-
-export function isInQuietHours(
-  time: { hour: number; minute: number },
-  windows: QuietWindow[],
-): boolean {
-  if (windows.length === 0) return false;
-  const m = time.hour * 60 + time.minute;
-  for (const w of windows) {
-    if (!w.enabled) continue;
-    const start = parseHHMM(w.startTime);
-    const end = parseHHMM(w.endTime);
-    if (start == null || end == null || start === end) continue;
-    const hit = start < end ? m >= start && m < end : m >= start || m < end;
-    if (hit) return true;
-  }
-  return false;
 }
 
 export function hasVisibleOccurrence(
