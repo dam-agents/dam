@@ -241,6 +241,7 @@ export type {
   ProviderPresetType,
   EnvMapping,
   BobModelPins,
+  BedrockPins,
 } from "./modules/connections/providers.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
@@ -255,6 +256,11 @@ export {
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
+  bedrockEnvMappings,
+  bedrockProfilePrefix,
+  bedrockRuntimeHost,
+  BEDROCK_REGION_PATTERN,
+  BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,

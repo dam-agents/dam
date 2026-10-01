@@ -1,4 +1,5 @@
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
+export type ProviderPresetType =
+  "anthropic" | "ibm-litellm" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -37,6 +38,42 @@ export function openaiEnvMappings(): EnvMapping[] {
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: "https://api.openai.com/v1" },
   ];
+}
+
+export const BEDROCK_TEMPLATE_ID = "bedrock";
+
+export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
+
+export function bedrockRuntimeHost(region: string): string {
+  return `bedrock-runtime.${region}.amazonaws.com`;
+}
+
+const BEDROCK_PROFILE_PREFIXES: Record<string, string> = {
+  "ap-northeast-1": "jp",
+  "ap-southeast-2": "au",
+};
+
+export function bedrockProfilePrefix(region: string): string {
+  const special = BEDROCK_PROFILE_PREFIXES[region];
+  if (special) return special;
+  if (region.startsWith("eu-")) return "eu";
+  if (region.startsWith("us-")) return "us";
+  return "global";
+}
+
+export function bedrockEnvMappings(): EnvMapping[] {
+  return [
+    {
+      envName: "AWS_BEARER_TOKEN_BEDROCK",
+      placeholder: DEFAULT_ENV_PLACEHOLDER,
+    },
+    { envName: "AWS_BEDROCK_FORCE_HTTP1", placeholder: "1" },
+  ];
+}
+
+export interface BedrockPins {
+  region: string;
+  model?: string;
 }
 
 export interface BobModelPins {
@@ -127,6 +164,13 @@ export const PROVIDERS = {
     id: "bob",
     displayName: "Bob Shell",
     modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
+  },
+  bedrock: {
+    id: "bedrock",
+    displayName: "AWS Bedrock",
+    modes: [
+      { key: "api-key", label: "API Key", templateId: BEDROCK_TEMPLATE_ID },
+    ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 

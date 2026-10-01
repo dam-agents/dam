@@ -224,6 +224,22 @@ lists once they are ordered ([harness configuration](harness-config.md#model-dis
 The seed yields to a pin rather than overriding it — it fills an empty
 slot only, so a chosen model is never swapped for one nobody picked.
 
+### App preset: AWS Bedrock
+
+Models an organization hosts in AWS Bedrock, authenticated with a
+**Bedrock API key**. Such a key authenticates as a bearer token on both the
+Bedrock and Bedrock Runtime APIs, so this is an ordinary header Connection:
+the gateway overwrites `Authorization` with `Bearer <key>` on the region's
+runtime host, and the agent holds only a placeholder in
+`AWS_BEARER_TOKEN_BEDROCK`. The region is a required input at connect time
+and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a
+Connection serves one region; it also lands in `AWS_REGION`. An optional
+model input becomes the provider's model pin. The Connection also asks the
+harness's Bedrock client for HTTP/1.1, which every credential chain speaks
+by default. IAM access keys and assumed roles are not accepted: Bedrock
+requires those to sign each request with SigV4, and the gateway injects a
+credential rather than signing one.
+
 ### Custom Header credential
 
 ```jsonc

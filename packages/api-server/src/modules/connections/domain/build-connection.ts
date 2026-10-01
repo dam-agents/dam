@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import {
+  BEDROCK_TEMPLATE_ID,
+  bedrockRuntimeHost,
   SHARED_KB_TEMPLATE_ID,
   type ConnectionAuthConfig,
   type ConnectionCreateInput,
@@ -507,12 +509,30 @@ function buildGitHubApp(
   };
 }
 
+function bedrockHostFromRegion(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+): string {
+  const spec = template.configInputs?.find((c) => c.inputName === "region");
+  const region = input.configInputs?.region?.trim();
+  if (!spec || !region) throw new Error(`${spec?.label ?? "Region"}: required`);
+  if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(region)) {
+    throw new Error(`${spec.label}: "${region}" is not valid`);
+  }
+  return bedrockRuntimeHost(region);
+}
+
 function buildHeader(
   template: Extract<ConnectionTemplate, { authKind: "header" }>,
   input: Extract<ConnectionCreateInput, { authKind: "header" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
-  const rawHost = input.host ?? template.host;
+  const rawHost =
+    input.host ??
+    template.host ??
+    (template.id === BEDROCK_TEMPLATE_ID
+      ? bedrockHostFromRegion(template, input)
+      : undefined);
   const headerName = input.headerName ?? template.headerName;
   const valueFormat = input.valueFormat ?? template.valueFormat ?? "{value}";
   if (!rawHost) throw new Error(`template ${template.id}: missing host`);
