@@ -203,7 +203,7 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
         new Date("2026-09-25T11:47:00Z"),
       ),
     ).toBeNull();
-    expect(hasVisibleOccurrence(rrule, quiet)).toBe(true);
+    expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
     expect(Date.now() - started).toBeLessThan(2000);
   });
 });

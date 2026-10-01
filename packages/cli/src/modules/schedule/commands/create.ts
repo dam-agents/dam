@@ -112,7 +112,7 @@ export function buildCreateCommand(deps: {
       }
       const timezone = opts.timezone ?? detectTimezone();
 
-      if (!hasVisibleOccurrence(rrule, quietHours)) {
+      if (!hasVisibleOccurrence(rrule, timezone, quietHours)) {
         process.stderr.write(
           "error: quiet hours cover every scheduled occurrence — this schedule would never fire\n",
         );

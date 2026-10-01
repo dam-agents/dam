@@ -222,6 +222,7 @@ export function isInQuietHours(
 
 export function hasVisibleOccurrence(
   rruleBody: string,
+  timezone: string,
   windows: QuietWindow[],
 ): boolean {
   const enabled = windows.filter((w) => w.enabled);
@@ -229,7 +230,7 @@ export function hasVisibleOccurrence(
   try {
     const next = nextVisibleOccurrence(
       rruleBody,
-      "UTC",
+      timezone,
       Temporal.Now.instant(),
       enabled,
     );

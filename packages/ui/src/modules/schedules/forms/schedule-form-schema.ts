@@ -68,7 +68,7 @@ export const scheduleFormSchema = z
       });
       return;
     }
-    if (!hasVisibleOccurrence(body, v.quietHours))
+    if (!hasVisibleOccurrence(body, v.timezone, v.quietHours))
       ctx.addIssue({
         code: "custom",
         path: ["quietHours"],

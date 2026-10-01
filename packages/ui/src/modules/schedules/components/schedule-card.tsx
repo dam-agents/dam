@@ -66,6 +66,7 @@ export function ScheduleCard({
   const alert = precheckAlert(schedule);
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
+  const stopReason = enabled ? status?.stopReason : undefined;
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -150,6 +151,17 @@ export function ScheduleCard({
                   }
                 >
                   <Time size={12} /> {nextRunHint}
+                </span>
+              </>
+            )}
+            {stopReason && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-destructive"
+                  title={stopReason}
+                >
+                  <Time size={12} /> Stopped
                 </span>
               </>
             )}

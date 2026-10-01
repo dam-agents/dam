@@ -170,7 +170,8 @@ export function buildUpdateCommand(deps: {
         }
       }
 
-      if (!hasVisibleOccurrence(rrule, quietHours)) {
+      const timezone = opts.timezone ?? view.timezone ?? detectTimezone();
+      if (!hasVisibleOccurrence(rrule, timezone, quietHours)) {
         process.stderr.write(
           "error: quiet hours cover every scheduled occurrence — this schedule would never fire\n",
         );
@@ -182,7 +183,7 @@ export function buildUpdateCommand(deps: {
         id,
         name: opts.name ?? view.name,
         rrule,
-        timezone: opts.timezone ?? view.timezone ?? detectTimezone(),
+        timezone,
         quietHours,
         task: opts.task ?? view.task ?? "",
         ...(sessionMode ? { sessionMode } : {}),
