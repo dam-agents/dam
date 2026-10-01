@@ -351,7 +351,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
-| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
+| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys. |
 
 ## Invariants
 
