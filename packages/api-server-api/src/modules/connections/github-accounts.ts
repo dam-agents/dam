@@ -4,6 +4,7 @@ import { GH_TOKEN_ENV, githubHostOf } from "./github-host.js";
 
 export { GH_HOST_ENV, GH_TOKEN_ENV, githubHostOf } from "./github-host.js";
 export const GH_HOSTS_FILE_PATH = "$HOME/.config/gh/hosts.yml";
+export const GITCONFIG_FILE_PATH = "$HOME/.gitconfig";
 export const GH_TOKEN_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 
 export interface GitHubAccountSource {
@@ -115,6 +116,10 @@ function isReplacedByHostsFile(c: Contribution): boolean {
   );
 }
 
+function isCommitIdentity(c: Contribution): boolean {
+  return c.kind === "file" && c.path === GITCONFIG_FILE_PATH;
+}
+
 export function composeGitHubAccounts(
   granted: readonly GitHubAccountSource[],
 ): Contribution[] {
@@ -125,12 +130,23 @@ export function composeGitHubAccounts(
   const grouped = new Set(
     groups.flatMap((group) => group.accounts.map((a) => a.connectionId)),
   );
+  const active = new Set(
+    groups.flatMap((group) =>
+      group.accounts.filter((a) => a.active).map((a) => a.connectionId),
+    ),
+  );
   const out: Contribution[] = [];
   for (const source of granted) {
+    if (!grouped.has(source.id)) {
+      out.push(...source.contributions);
+      continue;
+    }
+    const keepsIdentity = active.has(source.id);
     out.push(
-      ...(grouped.has(source.id)
-        ? source.contributions.filter((c) => !isReplacedByHostsFile(c))
-        : source.contributions),
+      ...source.contributions.filter(
+        (c) =>
+          !isReplacedByHostsFile(c) && (keepsIdentity || !isCommitIdentity(c)),
+      ),
     );
   }
   for (const group of groups) out.push(ghHostsFile(group));

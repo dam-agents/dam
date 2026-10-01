@@ -279,6 +279,7 @@ export {
   GH_HOSTS_FILE_PATH,
   GH_TOKEN_AVAILABLE_ENV,
   GH_TOKEN_ENV,
+  GITCONFIG_FILE_PATH,
   composeGitHubAccounts,
   githubAccountGroups,
   githubHostOf,

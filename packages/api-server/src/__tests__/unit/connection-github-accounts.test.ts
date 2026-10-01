@@ -5,11 +5,14 @@
  * writes both accounts into gh's own multi-account hosts file, each under its
  * per-Connection token placeholder, with the preferred grant active. The agent
  * switches with `gh auth switch`; a single GitHub Connection is untouched.
+ * The commit identity git uses follows the active account: only its name and
+ * email are delivered, and an active account without one delivers none.
  */
 import { describe, expect, it } from "vitest";
 import type { Contribution } from "api-server-api";
 import {
   GH_HOSTS_FILE_PATH,
+  GITCONFIG_FILE_PATH,
   applyConnectionEgressAddressing,
   composeGitHubAccounts,
   githubAccountGroups,
@@ -38,6 +41,32 @@ function github(
       templateContributions("github-pat"),
     ),
   };
+}
+
+function withIdentity(
+  source: GitHubAccountSource,
+  name: string,
+  email: string,
+): GitHubAccountSource {
+  return {
+    ...source,
+    contributions: [
+      ...source.contributions,
+      {
+        kind: "file",
+        path: GITCONFIG_FILE_PATH,
+        format: "ini",
+        mergeMode: "section-marker",
+        content: { user: { name, email } },
+      },
+    ],
+  };
+}
+
+function commitIdentities(contributions: Contribution[]): unknown[] {
+  return contributions.flatMap((c) =>
+    c.kind === "file" && c.path === GITCONFIG_FILE_PATH ? [c.content] : [],
+  );
 }
 
 function hostsFile(contributions: Contribution[]): Record<string, unknown> {
@@ -174,6 +203,65 @@ describe("composeGitHubAccounts", () => {
       c.kind === "egress-inject" ? [c.host] : [],
     );
     expect(injectedHosts.filter((h) => h === "api.github.com")).toHaveLength(2);
+  });
+
+  /** TEST_SCENARIO: Each OAuth account writes its own [user] block, and git
+   * takes the last one, so the agent would commit as whichever Connection was
+   * created last. Only the active account's identity may reach the file. */
+  it("delivers only the active account's commit identity", () => {
+    const out = composeGitHubAccounts([
+      withIdentity(
+        github("conn-a", "Work", { grantedAt: "2026-09-01T00:00:00Z" }),
+        "Work Bot",
+        "work@example.com",
+      ),
+      withIdentity(
+        github("conn-b", "Personal", { grantedAt: "2026-09-02T00:00:00Z" }),
+        "Pat",
+        "pat@example.com",
+      ),
+    ]);
+    expect(commitIdentities(out)).toEqual([
+      { user: { name: "Work Bot", email: "work@example.com" } },
+    ]);
+  });
+
+  /** TEST_SCENARIO: The preferred grant is the active account, so its identity
+   * is the one delivered even when it was granted later. */
+  it("follows the preferred grant's commit identity", () => {
+    const out = composeGitHubAccounts([
+      withIdentity(
+        github("conn-a", "Work", { grantedAt: "2026-09-01T00:00:00Z" }),
+        "Work Bot",
+        "work@example.com",
+      ),
+      withIdentity(
+        github("conn-b", "Personal", {
+          grantedAt: "2026-09-02T00:00:00Z",
+          preferred: true,
+        }),
+        "Pat",
+        "pat@example.com",
+      ),
+    ]);
+    expect(commitIdentities(out)).toEqual([
+      { user: { name: "Pat", email: "pat@example.com" } },
+    ]);
+  });
+
+  /** TEST_SCENARIO: A token or App account has no identity of its own. When it
+   * is the active one, the other account's name must not stand in for it, so
+   * nothing is delivered and git asks for an identity instead. */
+  it("delivers no commit identity when the active account has none", () => {
+    const out = composeGitHubAccounts([
+      github("conn-a", "Work", { grantedAt: "2026-09-01T00:00:00Z" }),
+      withIdentity(
+        github("conn-b", "Personal", { grantedAt: "2026-09-02T00:00:00Z" }),
+        "Pat",
+        "pat@example.com",
+      ),
+    ]);
+    expect(commitIdentities(out)).toEqual([]);
   });
 
   /** TEST_SCENARIO: A GitHub Connection on a different host is a different
