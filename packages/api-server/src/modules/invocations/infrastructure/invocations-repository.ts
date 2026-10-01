@@ -13,6 +13,8 @@ import {
 
 export type InvocationStatus = "running" | "done" | "failed";
 
+export type InvocationOrigin = "tool" | "script";
+
 export interface InvocationSpec {
   label: string | null;
   prompt: string;
@@ -50,6 +52,7 @@ export interface InvocationsRepository {
       owner: string;
       resultSchema: unknown;
       expiresAt: Date;
+      origin?: InvocationOrigin;
     },
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
@@ -72,7 +75,7 @@ export interface InvocationsRepository {
   deleteReapedByRoot(rootDriverId: string): Promise<number>;
 }
 
-function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
+export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
     driverAgentId: r.driverAgentId,
@@ -118,6 +121,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
+        ...(input.origin ? { origin: input.origin } : {}),
       });
     },
 

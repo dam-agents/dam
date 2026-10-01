@@ -407,6 +407,13 @@
       "when": 1790768678581,
       "tag": "0057_delegation_record",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790842843748,
+      "tag": "0058_invocation_outcome_delivery",
+      "breakpoints": true
     }
   ]
 }

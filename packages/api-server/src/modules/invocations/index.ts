@@ -1,9 +1,15 @@
-export { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
+export {
+  createInvocationsRepository,
+  type InvocationOrigin,
+} from "./infrastructure/invocations-repository.js";
 export {
   composeInvocationsForOwner,
   composeInvocationsQueryForOwner,
   composeInvocationsControlForOwner,
   composeInvocationLivenessSweep,
+  composeInvocationOutcomeDelivery,
+  composeInvocationAwaitMarks,
+  type InvocationAwaitMarks,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,

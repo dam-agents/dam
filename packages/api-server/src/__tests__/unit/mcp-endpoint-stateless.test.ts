@@ -33,6 +33,8 @@ function replica() {
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),
     invocationsServiceFor: () => ({}),
+    driverOpsFor: () => ({}),
+    invocationAwaitsFor: () => ({}),
     carriesInspectorRole: async () => false,
     caseStudySubmissions: {},
     caseStudyInspection: {},

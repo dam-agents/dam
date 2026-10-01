@@ -5,6 +5,7 @@ import {
   type AgentSetup,
   type AgentsService,
   DEFAULT_INVOCATION_TTL_MS,
+  type InvocationView,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
   type ProviderPresetType,
@@ -32,8 +33,8 @@ import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
 import type {
+  InvocationOrigin,
   InvocationsRepository,
-  InvocationStatus,
 } from "../infrastructure/invocations-repository.js";
 
 export class AttenuationError extends Error {
@@ -85,6 +86,7 @@ export interface SpawnInput {
   schema: unknown;
   label?: string;
   ttlMs?: number;
+  origin?: InvocationOrigin;
 }
 
 export interface RecordResult {
@@ -97,7 +99,7 @@ export interface InvocationsService {
   get(
     invocationId: string,
     driverAgentId: string,
-  ): Promise<{ status: InvocationStatus; result: unknown } | null>;
+  ): Promise<InvocationView | null>;
   recordResult(invocationId: string, result: unknown): Promise<RecordResult>;
 }
 
@@ -208,6 +210,7 @@ export function createInvocationsService(deps: {
         ttlMs,
         resultSchema: input.schema,
         expiresAt,
+        origin: input.origin ?? "script",
       });
       let agent;
       try {

@@ -1,3 +1,4 @@
+import type { InvocationSessionStore } from "../acp/infrastructure/invocation-session-store.js";
 import { join } from "node:path";
 import { eventKind } from "agent-runtime-api";
 import type {
@@ -26,6 +27,7 @@ import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import {
   createInitializationPlugin,
+  createInvocationOutcomePlugin,
   createSatelliteOutcomePlugin,
 } from "./drivers/session-event-plugins.js";
 import {
@@ -67,6 +69,7 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  invocationSessions: InvocationSessionStore;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
@@ -118,6 +121,12 @@ export async function composeRuntimeChannel(
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
+  );
+  registry.register(
+    createInvocationOutcomePlugin({
+      driver: opts.triggerDriver,
+      sessions: opts.invocationSessions,
+    }),
   );
 
   const harnessConfigRaw = resolved["harness-config"];

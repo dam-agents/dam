@@ -3,10 +3,14 @@ import type {
   Plugin,
   SatelliteOutcomeEventPayload,
 } from "agent-runtime-api";
-import { initializationEventPayload } from "agent-runtime-api";
+import {
+  initializationEventPayload,
+  invocationOutcomeEventPayload,
+} from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 
 import type { TriggerSessionDriver } from "../../acp/index.js";
+import type { InvocationSessionStore } from "../../acp/infrastructure/invocation-session-store.js";
 
 type SessionStart = Parameters<TriggerSessionDriver["start"]>[0];
 
@@ -56,3 +60,42 @@ export const createSatelliteOutcomePlugin = sessionEventPlugin(
     platformMeta: { type: SessionType.Regular, mode: SessionMode.Chat },
   }),
 );
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Handles the invocation-outcome Event: an agent this
+ * one invoked through the invoke_agent tool finished while nothing was waiting
+ * on it. The Event carries what await_invocations would have returned, and the
+ * turn continues the Session whose tool call started the Invocation, so the
+ * result lands where it was asked for. A Session the store no longer knows
+ * falls back to a new regular chat Session.
+ */
+export function createInvocationOutcomePlugin(deps: {
+  driver: TriggerSessionDriver;
+  sessions: InvocationSessionStore;
+}): Plugin {
+  return {
+    name: "invocation-outcome",
+    bindEvent(kind: string): EventHandler {
+      if (kind !== "invocation-outcome") {
+        throw new Error(
+          `plugin "invocation-outcome" does not handle event kind "${kind}"`,
+        );
+      }
+      return async (payload) => {
+        const { task, ids } = invocationOutcomeEventPayload.parse(payload);
+        const resumeSessionId = deps.sessions.sessionOf(ids);
+        await deps.driver.start(
+          resumeSessionId
+            ? { task, resumeSessionId }
+            : {
+                task,
+                platformMeta: {
+                  type: SessionType.Regular,
+                  mode: SessionMode.Chat,
+                },
+              },
+        );
+      };
+    },
+  };
+}
