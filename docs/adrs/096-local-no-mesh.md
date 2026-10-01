@@ -1,5 +1,5 @@
 ---
-id: 095
+id: 096
 title: A local cluster may run without the mesh dataplane
 status: accepted
 subsystem: security-and-credentials
@@ -7,7 +7,7 @@ tags: [istio, ambient, local-dev, smolvm]
 summary: A local development cluster whose kernel cannot run the ambient dataplane may install the platform with every AuthorizationPolicy rendered and none enforced; the chart accepts this only on a cluster the local install task marked, and that task refuses CI.
 ---
 
-# ADR-095: A local cluster may run without the mesh dataplane
+# ADR-096: A local cluster may run without the mesh dataplane
 
 **Date:** 2026-09-30
 **Status:** Accepted
