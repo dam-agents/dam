@@ -272,3 +272,25 @@ function envoy_on_request(rh)
   end
 end
 `
+
+func skippedUnlessAddressed(filter ev, innerName, connectionID string) ev {
+	return ev{
+		"name": filter["name"],
+		"typed_config": ev{
+			"@type":            extensionWithMatcherType,
+			"extension_config": ev{"name": innerName, "typed_config": filter["typed_config"]},
+			"xds_matcher": ev{
+				"matcher_list": ev{"matchers": []any{ev{
+					"predicate": ev{"not_matcher": ev{"single_predicate": ev{
+						"input": ev{
+							"name":         "request-headers",
+							"typed_config": ev{"@type": requestHeaderInputType, "header_name": connectionAddressHeader},
+						},
+						"value_match": ev{"exact": connectionID},
+					}}},
+					"on_match": ev{"action": ev{"name": "skip", "typed_config": ev{"@type": skipFilterActionType}}},
+				}}},
+			},
+		},
+	}
+}

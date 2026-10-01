@@ -45,6 +45,7 @@ type bootstrapParams struct {
 	Transparent            bool
 	OTel                   envoyOTelView
 	UpstreamTrustedCA      string
+	RequireAddress         bool
 }
 
 func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
@@ -67,6 +68,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 	}
 	p := bootstrapParams{
 		UpstreamTrustedCA:      gatewayUpstreamTrustedCA(cfg),
+		RequireAddress:         cfg.GatewayRequireConnectionAddress,
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
 		Chains:                 chains,
@@ -351,7 +353,13 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	filters = append(filters, extAuthzHTTPFilter(p))
 	for _, cred := range c.Credentials {
 		rivals := c.RivalsOf(cred)
-		filters = append(filters, skippedForRivals(ev{
+		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
+		if p.RequireAddress && cred.ConnectionID != "" {
+			gate = func(filter ev, innerName string) ev {
+				return skippedUnlessAddressed(filter, innerName, cred.ConnectionID)
+			}
+		}
+		filters = append(filters, gate(ev{
 			"name": cred.FilterName(),
 			"typed_config": ev{
 				"@type":     "type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
@@ -373,15 +381,15 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 					},
 				},
 			},
-		}, "envoy.filters.http.credential_injector", rivals))
+		}, "envoy.filters.http.credential_injector"))
 		if cred.QueryParamName != "" {
-			filters = append(filters, skippedForRivals(ev{
+			filters = append(filters, gate(ev{
 				"name": cred.QueryParamFilterName(),
 				"typed_config": ev{
 					"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
 					"default_source_code": ev{"inline_string": luaQueryParamScript(cred.HeaderName, cred.QueryParamName)},
 				},
-			}, "envoy.filters.http.lua", rivals))
+			}, "envoy.filters.http.lua"))
 		}
 	}
 	filters = append(filters, dynamicForwardProxyHTTPFilter(), routerHTTPFilter())

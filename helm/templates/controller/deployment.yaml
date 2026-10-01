@@ -172,6 +172,10 @@ spec:
               value: "svc.cluster.local"
             - name: ENVOY_IMAGE
               value: {{ .Values.controller.envoyImage | quote }}
+            {{- if .Values.controller.gatewayRequireConnectionAddress }}
+            - name: PLATFORM_GATEWAY_REQUIRE_CONNECTION_ADDRESS
+              value: "true"
+            {{- end }}
             {{- with .Values.controller.gatewayUpstreamExtraCAs }}
             - name: PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS
               value: {{ . | quote }}

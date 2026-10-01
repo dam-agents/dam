@@ -759,10 +759,16 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 
 func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string) string {
 	rev := envoySecretsRev(secrets, l7Hosts)
-	if cfg.GatewayUpstreamTrustBundle == "" {
+	if cfg.GatewayUpstreamTrustBundle == "" && !cfg.GatewayRequireConnectionAddress {
 		return rev
 	}
-	sum := sha256.Sum256([]byte(rev + "\ntrust=" + cfg.GatewayUpstreamTrustBundle))
+	if cfg.GatewayUpstreamTrustBundle != "" {
+		rev += "\ntrust=" + cfg.GatewayUpstreamTrustBundle
+	}
+	if cfg.GatewayRequireConnectionAddress {
+		rev += "\nrequire-connection-address"
+	}
+	sum := sha256.Sum256([]byte(rev))
 	return hex.EncodeToString(sum[:8])
 }
 

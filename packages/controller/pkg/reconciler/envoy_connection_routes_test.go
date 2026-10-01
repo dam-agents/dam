@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -424,4 +425,97 @@ func TestLuaConnectionAddressScript_ListsEveryClaimedHeaderAndParam(t *testing.T
 		"a credential no connection owns has no address to read")
 	assert.Contains(t, script, "rh:clearRouteCache()")
 	assert.Contains(t, script, `string.lower(scheme) == "basic"`)
+}
+
+func requireAddressCfg() *config.Config {
+	cfg := *bootstrapTestCfg
+	cfg.GatewayRequireConnectionAddress = true
+	return &cfg
+}
+
+func assertInjectsOnlyWhenAddressed(t *testing.T, filter map[string]any, connectionID string) {
+	t.Helper()
+	cfg := filter["typed_config"].(map[string]any)
+	require.Equal(t, extensionWithMatcherType, cfg["@type"])
+	matchers := cfg["xds_matcher"].(map[string]any)["matcher_list"].(map[string]any)["matchers"].([]any)
+	require.Len(t, matchers, 1)
+	m := matchers[0].(map[string]any)
+	action := m["on_match"].(map[string]any)["action"].(map[string]any)["typed_config"].(map[string]any)
+	assert.Equal(t, skipFilterActionType, action["@type"])
+	single := m["predicate"].(map[string]any)["not_matcher"].(map[string]any)["single_predicate"].(map[string]any)
+	assert.Equal(t, connectionAddressHeader, single["input"].(map[string]any)["typed_config"].(map[string]any)["header_name"])
+	assert.Equal(t, map[string]any{"exact": connectionID}, single["value_match"],
+		"the injector skips every request that does not name this connection")
+}
+
+func TestRenderEnvoyBootstrap_RequireAddressGatesASingleConnection(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+		connectionChain("api.anthropic.com",
+			connectionCredential("conn-one", "platform-conn-one", "Authorization", "api.anthropic.com"),
+		),
+	}, false)
+	require.NoError(t, err)
+
+	injectors := injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.anthropic.com"))
+	require.Len(t, injectors, 1)
+	assertInjectsOnlyWhenAddressed(t, injectors[0], "conn-one")
+	inner := injectors[0]["typed_config"].(map[string]any)["extension_config"].(map[string]any)
+	assert.Equal(t, "envoy.filters.http.credential_injector", inner["name"])
+	assert.Equal(t, true, inner["typed_config"].(map[string]any)["overwrite"])
+}
+
+func TestRenderEnvoyBootstrap_RequireAddressGatesRivalsByTheirOwnAddress(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+		connectionChain("api.github.com",
+			connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "api.github.com"),
+			connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "api.github.com"),
+		),
+	}, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	injectors := injectorFilters(httpFiltersForHost(t, doc, "api.github.com"))
+	require.Len(t, injectors, 2)
+	assertInjectsOnlyWhenAddressed(t, injectors[0], "conn-aaa")
+	assertInjectsOnlyWhenAddressed(t, injectors[1], "conn-bbb")
+	assert.Contains(t, got, "rh:respond", "a contested scope still refuses an unaddressed request")
+}
+
+func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T) {
+	cred := connectionCredential("conn-q", "platform-conn-q", "X-Key", "api.example.com")
+	cred.QueryParamName = "key"
+	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+		connectionChain("api.example.com", cred),
+	}, false)
+	require.NoError(t, err)
+
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "api.example.com")
+	var queryStep map[string]any
+	for _, f := range filters {
+		if f["name"] == cred.QueryParamFilterName() {
+			queryStep = f
+		}
+	}
+	require.NotNil(t, queryStep)
+	assertInjectsOnlyWhenAddressed(t, queryStep, "conn-q")
+}
+
+func TestRenderEnvoyBootstrap_RequireAddressLeavesCredentialsWithoutAConnectionPlain(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	}, false)
+	require.NoError(t, err)
+
+	for _, f := range injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.github.com")) {
+		assert.Equal(t,
+			"type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
+			f["typed_config"].(map[string]any)["@type"],
+			"a credential with no connection has no address, so it injects as before")
+	}
+}
+
+func TestEnvoyGatewayRev_RollsTheGatewayWhenRequireAddressToggles(t *testing.T) {
+	assert.Equal(t, envoySecretsRev(nil, nil), envoyGatewayRev(bootstrapTestCfg, nil, nil),
+		"an install that leaves the flag off keeps today's revision")
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, nil, nil), envoyGatewayRev(requireAddressCfg(), nil, nil))
 }
