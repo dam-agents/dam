@@ -149,7 +149,7 @@ Declare only what the design actually needs; every one of these is optional.
 | `egressRules: [{host, verdict, …}]` | hosts the job always needs beyond the preset, or must never reach (`verdict: deny`); same shape as a rule written by hand |
 | `egressPreset: none \| trusted \| all` | the agent's web access at create. Omit for the platform default (`trusted`); `none` for a job that needs no network beyond its connections, `all` only when the job browses arbitrary sites |
 | `hibernationTimeoutMin` | a heartbeat finer than the install's idle timeout, so the agent is not paid for round-trip wake-ups |
-| `requireConnectionAddress: true` | the agent runs its own copy of the platform, so its gateway must inject only requests that name a connection and leave the nested gateways' credentials alone |
+| `requireConnectionAddress: true` | the agent runs tools (Docker containers, nested agents) that call the same services with their own credentials or none, so its gateway must inject only requests that name a connection and leave theirs alone |
 | `env: [{name, value}]` | a **fixed** value every deployment shares. Instance values belong in the config dialog, never here |
 | `bundledSkills: {path}` | the design bundles a skill — a scan root (`.agents/skills`); declared for display, the platform installs nothing |
 | `skills: [{source, name}]` | a skill from another repository, installed at apply from a connected Skill Source |

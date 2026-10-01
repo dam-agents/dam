@@ -666,6 +666,14 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           ) : undefined
         }
       />
+      {!kit && addressingOffered && (
+        <ConnectionAddressingSetupSection
+          value={form.requireConnectionAddress}
+          onChange={(requireConnectionAddress) =>
+            update({ requireConnectionAddress })
+          }
+        />
+      )}
       {!kit && (
         <LifecycleSetupSection
           value={form.hibernationTimeoutMin}
@@ -674,14 +682,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           }
           sizeMi={
             selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
-          }
-        />
-      )}
-      {!kit && addressingOffered && (
-        <ConnectionAddressingSetupSection
-          value={form.requireConnectionAddress}
-          onChange={(requireConnectionAddress) =>
-            update({ requireConnectionAddress })
           }
         />
       )}

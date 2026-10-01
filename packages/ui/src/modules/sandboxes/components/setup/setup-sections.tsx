@@ -226,10 +226,9 @@ export function ConnectionAddressingSetupSection({
             Inject only into addressed requests
           </span>
           <span className="mt-0.5 block text-sm text-muted-foreground">
-            The gateway adds a connection&apos;s credential only to a request
-            that names that connection, and leaves every other request with the
-            credential it already carries. Turn on for an agent that runs its
-            own copy of the platform.
+            Credentials go only into requests that name a connection; others are
+            sent as-is. For agents whose tools (Docker containers, nested
+            agents) call the same services with their own credentials or none.
           </span>
         </span>
         <Switch

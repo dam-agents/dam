@@ -17,7 +17,7 @@ Each agent's gateway verifies the upstream before it injects a credential. If so
 
 ### Agents that inject only addressed requests (experimental)
 
-By default a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header. An agent created with **addressed injection** has a gateway that injects only when the request names the Connection: by its token placeholder or by its `/__platform_conn/<connection id>/` path prefix. Every other request keeps its own credential. Use it for an agent that runs its own copy of the platform, so its gateway stops replacing the nested agents' credentials.
+By default a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header. An agent created with **addressed injection** has a gateway that injects only when the request names the Connection: by its token placeholder or by its `/__platform_conn/<connection id>/` path prefix. Every other request keeps its own credential. Use it for an agent whose tools — Docker containers, nested agents — call the same services with their own credentials or none, so its gateway stops overwriting them.
 
 It is set per agent:
 
