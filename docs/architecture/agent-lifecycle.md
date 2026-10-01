@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-30
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -111,6 +111,8 @@ Both verbs are runtime-mediated: a hot `session/resume` engages the channel and 
 A session runs one turn at a time, and one scheduler is the only place a prompt waits. A prompt is **queued** rather than refused or forwarded whenever its session cannot take it — a turn already running, no channel engaged to read the answer, or the harness not yet holding the session — and promoted the moment that clears — a scheduled fire is **unattended**, its sender gone once the prompt is accepted and nobody reading the turn live, so it waits on the harness alone and never on a channel; a queue at capacity rejects further prompts with an error whose cause a sender can tell from any other refusal. So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (waiting for its session to be able to take it), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
 
 The runtime therefore reports them, over the same channel extension as the end-of-turn signal — which is logged and replayed, and names the ending turn's prompt id and stop reason: one notification on acceptance (and whether the prompt queued), one when it starts. Both ride a sender-minted prompt id as platform metadata, stripped before the agent sees it and used to group the prompt's echo in the log; a sender that mints none — channel workers, older clients — gets no notifications and behaves as before. Both are **sender-only and ephemeral** — never logged or replayed, since they describe one send's fate, not the conversation. Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
+
+A turn the harness ends with an error rather than a stop reason carries that error on its end-of-turn signal instead. Only the sender holds the failed request, so the logged signal is what lets every other viewer, and any later load of the log, show a reply cut short as interrupted rather than merely short. It lasts as long as the in-memory log: a log rebuilt from the harness's own transcript after a restart has no end-of-turn signals to carry it.
 
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived". A client fails a prompt on evidence instead:
 

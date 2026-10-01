@@ -12,6 +12,7 @@ import type {
   ToolChip,
   ToolContent,
 } from "../../types.js";
+import { describeJsonRpcError } from "./errors.js";
 import type { AcpUpdate } from "./types.js";
 
 const PLUMBING_TAGS = [
@@ -128,7 +129,13 @@ function applyUpdateOf(
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
-      return closeActiveAssistant(messages, at, telemetryPromptId);
+      return closeActiveAssistant(
+        messages,
+        at,
+        telemetryPromptId,
+        update.error &&
+          describeJsonRpcError(update.error.message, update.error.details),
+      );
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
@@ -590,6 +597,7 @@ function closeActiveAssistant(
   messages: Message[],
   at?: string,
   telemetryPromptId?: string,
+  interruption?: string,
 ): Message[] {
   const i = activeReplyIndex(messages);
   if (i === -1) return messages;
@@ -599,6 +607,8 @@ function closeActiveAssistant(
           ...x,
           ...(at !== undefined && { at }),
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(interruption !== undefined &&
+            hasAgentContent(x) && { error: { message: interruption } }),
           streaming: false,
         }
       : x,

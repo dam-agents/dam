@@ -1,19 +1,27 @@
 import {
+  jsonRpcErrorDetails,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+
+export function describeJsonRpcError(
+  message: string,
+  details: string | undefined,
+): string {
+  if (!details || message.includes(details)) return message;
+  return /^internal error\.?$/i.test(message.trim())
+    ? details
+    : `${message}: ${details}`;
+}
 
 export function extractErrorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) {
     const m = (e as { message: unknown }).message;
     if (typeof m === "string" && m) {
-      const details = jsonRpcErrorDetails(e);
-      if (details && !m.includes(details)) {
-        return /^internal error\.?$/i.test(m.trim())
-          ? details
-          : `${m}: ${details}`;
-      }
-      return m;
+      return describeJsonRpcError(
+        m,
+        jsonRpcErrorDetails((e as { data?: unknown }).data),
+      );
     }
   }
   if (e instanceof Error) return e.message;
@@ -24,16 +32,6 @@ export function extractErrorMessage(e: unknown): string {
     return "Connection error";
   }
   return String(e);
-}
-
-function jsonRpcErrorDetails(e: object): string | null {
-  const data = (e as { data?: unknown }).data;
-  if (typeof data === "string" && data) return data;
-  if (data && typeof data === "object") {
-    const details = (data as { details?: unknown }).details;
-    if (typeof details === "string" && details) return details;
-  }
-  return null;
 }
 
 export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {

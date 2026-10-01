@@ -19,6 +19,7 @@ const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
+const FAIL_MIDTURN_DIRECTIVE = /__FAIL_MIDTURN__/;
 const ASK_TIMEOUT_MS = 30_000;
 
 export interface AcpServiceDeps {
@@ -124,6 +125,12 @@ export function startAcpService(deps: AcpServiceDeps): void {
       const text = await replyWithFetch(sid, fetchUrl);
       await maybeSlackReply(text, slackThreadTs);
       respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
+    if (FAIL_MIDTURN_DIRECTIVE.test(promptStr)) {
+      emitText(sid, "partial reply before the failure");
+      respondError(id, -32603, "simulated model failure");
       return;
     }
 

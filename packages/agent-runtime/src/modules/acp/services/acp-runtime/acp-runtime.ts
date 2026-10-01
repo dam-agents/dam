@@ -5,8 +5,10 @@ import type { PodSession } from "agent-runtime-api";
 import {
   buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
+  jsonRpcErrorDetails,
   platformUndeliveredPromptSchema,
   SessionType,
+  type PlatformTurnEndedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
@@ -69,6 +71,8 @@ const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 const RUN_TEXT_BYTES_CAP = 1024 * 1024;
+
+const TURN_ERROR_TEXT_CAP = 4 * 1024;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
@@ -730,6 +734,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
+          const error = extractTurnError(frame);
           transcript.append(
             sid,
             JSON.stringify(
@@ -737,6 +742,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 sessionId: sid,
                 ...(promptId !== null && { promptId }),
                 ...(stopReason !== null && { stopReason }),
+                ...(error !== undefined && { error }),
               }),
             ),
           );
@@ -1236,6 +1242,27 @@ function extractStopReason(frame: unknown): string | null {
   return typeof stopReason === "string" && stopReason.length > 0
     ? stopReason
     : null;
+}
+
+function extractTurnError(frame: unknown): PlatformTurnEndedParams["error"] {
+  if (!isNonNullObject(frame)) return undefined;
+  const error = frame.error;
+  if (!isNonNullObject(error)) return undefined;
+  const message =
+    typeof error.message === "string" && error.message.length > 0
+      ? capped(error.message)
+      : "Internal error";
+  const details = jsonRpcErrorDetails(error.data);
+  return {
+    message,
+    ...(details !== undefined && { details: capped(details) }),
+  };
+}
+
+function capped(text: string): string {
+  return text.length > TURN_ERROR_TEXT_CAP
+    ? `${text.slice(0, TURN_ERROR_TEXT_CAP)}…`
+    : text;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {

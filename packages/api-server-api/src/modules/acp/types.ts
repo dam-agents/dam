@@ -4,10 +4,25 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
+export function jsonRpcErrorDetails(data: unknown): string | undefined {
+  if (typeof data === "string" && data) return data;
+  if (data && typeof data === "object") {
+    const details = (data as { details?: unknown }).details;
+    if (typeof details === "string" && details) return details;
+  }
+  return undefined;
+}
+
+const platformTurnErrorSchema = z.object({
+  message: z.string().min(1),
+  details: z.string().min(1).optional(),
+});
+
 export const platformTurnEndedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1).optional(),
   stopReason: z.string().min(1).optional(),
+  error: platformTurnErrorSchema.optional(),
 });
 export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema
