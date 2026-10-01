@@ -44,4 +44,24 @@ When the user states how something works, check whether the code agrees. If you 
 
 When a term is resolved, update `docs/ubiquitous-language.md` right there. Don't batch these up — capture them as they happen.
 
+### Keep a decision log
+
+After each answer, append an entry to a log file outside the repo (the session scratchpad if there is one, otherwise a temp file):
+
+```
+<n>. <the question, one sentence>
+   Recommended: <your recommended answer, one line>
+   Decided: <"Accepted", or the user's answer in one line>
+```
+
+Leave out questions you answered yourself by exploring the code, and leave out your reasoning. Build the wrap-up from this file, not from memory: long sessions get compacted and lose the early questions.
+
+## Wrap up
+
+When no open branches remain, or the user asks to wrap up:
+
+1. Show the decision log from the file, followed by an "Open questions" list of anything left unresolved. No intro line.
+2. If the session was about a GitHub issue, ask whether to post the log to that issue as a comment. Post with `gh issue comment` only after the user approves the exact text. Never edit the issue body; if the body is now out of date, say so under "Open questions".
+3. If the session was not about an issue, offer to file one with the `file-issue` skill, passing the log as its input.
+
 </supporting-info>
