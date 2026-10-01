@@ -39,7 +39,10 @@ import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
-import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
+import type {
+  InvocationOrigin,
+  InvocationsRepository,
+} from "../infrastructure/invocations-repository.js";
 
 export class AttenuationError extends Error {
   constructor(public readonly offending: string[]) {
@@ -91,6 +94,7 @@ export interface SpawnInput {
   label?: string;
   ttlMs?: number;
   harnessConfig?: InvocationHarnessConfig;
+  origin?: InvocationOrigin;
 }
 
 export interface RecordResult {
@@ -216,6 +220,7 @@ export function createInvocationsService(deps: {
         resultSchema: input.schema,
         expiresAt,
         harnessConfig: input.harnessConfig ?? null,
+        origin: input.origin ?? "script",
       });
       let agent;
       try {

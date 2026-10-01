@@ -14,6 +14,8 @@ import type { InvocationHarnessConfig } from "api-server-api";
 
 export type InvocationStatus = "running" | "done" | "failed";
 
+export type InvocationOrigin = "tool" | "script";
+
 export interface InvocationSpec {
   label: string | null;
   prompt: string;
@@ -53,6 +55,7 @@ export interface InvocationsRepository {
       resultSchema: unknown;
       expiresAt: Date;
       harnessConfig: InvocationHarnessConfig | null;
+      origin?: InvocationOrigin;
     },
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
@@ -75,7 +78,7 @@ export interface InvocationsRepository {
   deleteReapedByRoot(rootDriverId: string): Promise<number>;
 }
 
-function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
+export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
     driverAgentId: r.driverAgentId,
@@ -123,6 +126,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         status: "running",
         expiresAt: input.expiresAt,
         harnessConfig: input.harnessConfig,
+        ...(input.origin ? { origin: input.origin } : {}),
       });
     },
 

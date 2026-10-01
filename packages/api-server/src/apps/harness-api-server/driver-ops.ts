@@ -18,6 +18,7 @@ import {
   InvalidSchemaError,
   ProviderMismatchError,
   UnresolvableDriverError,
+  type InvocationOrigin,
   type InvocationsService,
   type SpawnInput,
 } from "../../modules/invocations/index.js";
@@ -58,7 +59,10 @@ function driverOps(
   const conns = deps.connectionsServiceFor(owner);
 
   return {
-    async spawn(body: SpawnRequest): Promise<SpawnOutcome> {
+    async spawn(
+      body: SpawnRequest,
+      origin: InvocationOrigin = "script",
+    ): Promise<SpawnOutcome> {
       const target: SpawnInput["target"] = body.image
         ? { image: body.image }
         : {};
@@ -130,6 +134,7 @@ function driverOps(
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
           ...(body.harnessConfig ? { harnessConfig: body.harnessConfig } : {}),
+          origin,
         });
         return { ok: true, id };
       } catch (err) {
