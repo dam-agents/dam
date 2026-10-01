@@ -449,15 +449,19 @@ export function ChatView() {
   );
 
   const handleNewSession = useCallback(() => {
+    const focusComposer = () =>
+      requestAnimationFrame(() => textareaRef.current?.focus());
     if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
+      focusComposer();
       return;
     }
     pushSessionUrl(null, null);
     setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
+    focusComposer();
   }, [
     selectedAgent,
     sessionId,
