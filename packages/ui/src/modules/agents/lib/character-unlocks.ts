@@ -5,17 +5,52 @@ import { CHAR_NAMES, type CharName } from "../components/char-avatar.js";
 export interface CharacterQuest {
   id: string;
   title: string;
-  cta: string;
+  help: string;
 }
 
 export const FIRST_AGENT_QUEST_ID = "first-agent";
 
 export const CHARACTER_QUESTS: readonly CharacterQuest[] = [
-  { id: FIRST_AGENT_QUEST_ID, title: "Create your first agent", cta: "Create" },
-  { id: "connect-github", title: "Connect GitHub", cta: "Connect" },
-  { id: "add-skill", title: "Add a skill", cta: "Add" },
-  { id: "add-schedule", title: "Schedule a recurring task", cta: "Schedule" },
-  { id: "slack", title: "Talk to an agent in Slack", cta: "Open" },
+  {
+    id: FIRST_AGENT_QUEST_ID,
+    title: "Create your first agent",
+    help: "Click + next to Agents in the sidebar. Give it a name, pick a harness and a provider, then click Create agent.",
+  },
+  {
+    id: "first-message",
+    title: "Send your agent a message",
+    help: "Open your agent from the sidebar and type what you want it to do in the chat box at the bottom.",
+  },
+  {
+    id: "connect-github",
+    title: "Connect GitHub",
+    help: "Go to Settings, then Connections. Choose GitHub and approve the repos your agents can use.",
+  },
+  {
+    id: "add-skill",
+    title: "Add a skill",
+    help: "Open an agent's settings and go to Skills. Add a skill source from a Git repo to teach it something new.",
+  },
+  {
+    id: "starter-kit",
+    title: "Try a starter kit",
+    help: "Go to Starter Kits in the sidebar and pick one. It sets up a new agent with skills and connections already in place.",
+  },
+  {
+    id: "add-schedule",
+    title: "Schedule a recurring task",
+    help: "Ask your agent in chat to do something on a schedule, like every weekday morning, or add one in the agent's Schedules.",
+  },
+  {
+    id: "save-artifact",
+    title: "Save an artifact",
+    help: "When an agent makes a file you want to keep, save it from the chat. Saved files live in Artifacts in the sidebar.",
+  },
+  {
+    id: "slack",
+    title: "Talk to an agent in Slack",
+    help: "Connect Slack in Settings, then Channels. Add your agent to a channel and @mention it.",
+  },
 ];
 
 const WORK_MS = 700;

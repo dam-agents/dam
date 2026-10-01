@@ -57,7 +57,7 @@ const PIECE_LABELS: [PieceKey, string][] = [
 
 const IN_PROGRESS_REWARDS = new Map<string, CharName>([
   ["first-agent", "shield"],
-  ["connect-github", "compass"],
+  ["first-message", "compass"],
 ]);
 const IN_PROGRESS_CAUGHT: CharName[] = ["shield", "compass"];
 
@@ -143,7 +143,7 @@ function LiveCatch() {
     setRun((r) => ({ n: (r?.n ?? 0) + 1, variant }));
   return (
     <div className="flex w-full flex-col items-end gap-3">
-      <div className="flex h-[190px] w-full items-end justify-end overflow-hidden rounded-lg bg-muted/30 p-4">
+      <div className="flex h-[240px] w-full items-end justify-end overflow-hidden rounded-lg bg-muted/30 p-4">
         {run && (
           <CatchCelebration
             key={run.n}
@@ -155,10 +155,10 @@ function LiveCatch() {
       </div>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={() => replay("first")}>
-          Replay first catch
+          Replay first unlock
         </Button>
         <Button variant="outline" size="sm" onClick={() => replay("new")}>
-          Replay later catch
+          Replay later unlock
         </Button>
       </div>
     </div>
@@ -173,51 +173,72 @@ export function OnboardingSpecimens() {
       <Specimen
         n={1}
         title="Checklist panel — new user"
-        note="Expanded dock on first visit: nothing caught yet, every slot is a closed pod."
+        note="Expanded dock on first visit. Avatars aren't mentioned yet; the first task is creating an agent."
       >
         <ChecklistPanel
           done={0}
           total={TOTAL}
           crew={crewFor([])}
           rows={rowsFor(new Map())}
+          showAvatars={false}
         />
       </Specimen>
 
       <Specimen
         n={2}
-        title="Checklist panel — in progress"
-        note="First agent created and GitHub connected, one task working. Done rows show the avatar they caught."
+        title="Checklist panel — after the first unlock"
+        note="The first avatar is unlocked, so the crew row appears with eggs for the rest, and every task shows an egg."
       >
-        <ChecklistPanel
-          done={2}
-          total={TOTAL}
-          crew={crewFor(IN_PROGRESS_CAUGHT)}
-          rows={rowsFor(IN_PROGRESS_REWARDS, "add-schedule")}
-          disabled
-        />
-      </Specimen>
-
-      <Specimen
-        n={3}
-        title="Collapsed pill"
-        note="The dock collapsed to progress only. It pulses when a new avatar lands."
-        wide
-      >
-        <Labeled label="0 of 5">
-          <ChecklistPill done={0} total={TOTAL} />
-        </Labeled>
-        <Labeled label="3 of 5">
-          <ChecklistPill done={3} total={TOTAL} />
-        </Labeled>
-        <ReplayOnClick label="Replay pulse">
+        <ReplayOnClick label="Replay reveal">
           {(k) => (
-            <ChecklistPill key={k} done={4} total={TOTAL} pulse={k > 0} />
+            <ChecklistPanel
+              key={k}
+              done={1}
+              total={TOTAL}
+              crew={crewFor(["shield"]).map((slot, i) =>
+                i === 0 ? { ...slot, justCaught: k > 0 } : slot,
+              )}
+              rows={rowsFor(new Map([["first-agent", "shield"]]))}
+              revealAvatars={k > 0}
+            />
           )}
         </ReplayOnClick>
       </Specimen>
 
       <Specimen
+        n={3}
+        title="Checklist panel — in progress"
+        note="First agent created and first message sent, with GitHub finishing up. Done rows show the avatar they unlocked."
+      >
+        <ChecklistPanel
+          done={2}
+          total={TOTAL}
+          crew={crewFor(IN_PROGRESS_CAUGHT)}
+          rows={rowsFor(IN_PROGRESS_REWARDS, "connect-github")}
+        />
+      </Specimen>
+
+      <Specimen
         n={4}
+        title="Collapsed pill"
+        note="The dock collapsed to progress only. It pulses when a new avatar lands."
+        wide
+      >
+        <Labeled label={`0 of ${TOTAL}`}>
+          <ChecklistPill done={0} total={TOTAL} />
+        </Labeled>
+        <Labeled label={`3 of ${TOTAL}`}>
+          <ChecklistPill done={3} total={TOTAL} />
+        </Labeled>
+        <ReplayOnClick label="Replay pulse">
+          {(k) => (
+            <ChecklistPill key={k} done={6} total={TOTAL} pulse={k > 0} />
+          )}
+        </ReplayOnClick>
+      </Specimen>
+
+      <Specimen
+        n={5}
         title="Progress ring"
         note="One segment per task, so it reads as steps rather than a spinner."
       >
@@ -229,9 +250,9 @@ export function OnboardingSpecimens() {
       </Specimen>
 
       <Specimen
-        n={5}
-        title="Closed pod"
-        note="Stands in for every avatar that hasn't been caught, so each one stays a surprise."
+        n={6}
+        title="Egg"
+        note="Stands in for every avatar that hasn't been unlocked, so each one stays a surprise."
       >
         <Labeled label="20px">
           <MysteryAvatar className="size-5" />
@@ -245,14 +266,14 @@ export function OnboardingSpecimens() {
       </Specimen>
 
       <Specimen
-        n={6}
+        n={7}
         title="Crew slot"
-        note="The dock's crew row fills left to right in the order avatars are caught."
+        note="The dock's crew row fills left to right in the order avatars are unlocked."
       >
         <Labeled label="Empty">
           <CrewSlot name={null} />
         </Labeled>
-        <Labeled label="Caught">
+        <Labeled label="Unlocked">
           <CrewSlot name="shield" />
         </Labeled>
         <ReplayOnClick label="Replay landing">
@@ -261,57 +282,49 @@ export function OnboardingSpecimens() {
       </Specimen>
 
       <Specimen
-        n={7}
+        n={8}
         title="Task row"
-        note="Status, task, a pod for its surprise avatar, and its action."
+        note="Each row is just the task and its egg; finishing a task happens elsewhere in the app. Hover the i to read how and where to do it. Before the first unlock, rows don't show eggs."
         wide
       >
         <ul className="w-[340px] rounded-xl border border-border bg-card py-1.5">
-          <QuestRow
-            title="Connect GitHub"
-            cta="Connect"
-            reward={null}
-            state="todo"
-          />
-          <QuestRow
-            title="Add a skill"
-            cta="Add"
-            reward={null}
-            state="working"
-            disabled
-          />
-          <QuestRow
-            title="Schedule a recurring task"
-            cta="Schedule"
-            reward="wave"
-            state="done"
-          />
+          {CHARACTER_QUESTS.slice(0, 2).map((q) => (
+            <QuestRow
+              key={q.id}
+              title={q.title}
+              help={q.help}
+              reward={null}
+              state="todo"
+              showReward={false}
+            />
+          ))}
+        </ul>
+        <ul className="w-[340px] rounded-xl border border-border bg-card py-1.5">
+          {(
+            [
+              ["add-schedule", "done", "wave"],
+              ["connect-github", "working", null],
+              ["add-skill", "todo", null],
+            ] as const
+          ).map(([id, state, reward]) => {
+            const q = CHARACTER_QUESTS.find((x) => x.id === id)!;
+            return (
+              <QuestRow
+                key={id}
+                title={q.title}
+                help={q.help}
+                reward={reward}
+                state={state}
+              />
+            );
+          })}
         </ul>
       </Specimen>
 
       <Specimen
-        n={8}
-        title="First agent — avatar spot"
-        note="A new user has no avatars. The creation screen shows a pod; creating the agent catches one at random and puts it on the agent."
-        wide
-      >
-        <Labeled label="No avatar yet">
-          <AvatarTrigger value={null} />
-        </Labeled>
-        <Labeled label="Catching (after Create)">
-          <AvatarTrigger value={null} wobble />
-        </Labeled>
-        <ReplayOnClick label="Replay reveal">
-          {(k) => (
-            <AvatarTrigger key={k} value="shield" pop={k > 0} hasNew={false} />
-          )}
-        </ReplayOnClick>
-      </Specimen>
-
-      <Specimen
         n={9}
-        title="Catch moment — frames"
-        note="Shown above the dock, outside the panel. The pod wobbles, swings open, and the avatar pops out with confetti."
+        title="Unlock moment — frames"
+        note="Shown above the dock, outside the panel. The egg wobbles, cracks open, and the avatar pops out with confetti."
         wide
       >
         <Labeled label="1 · Wobble">
@@ -327,8 +340,8 @@ export function OnboardingSpecimens() {
 
       <Specimen
         n={10}
-        title="Catch moment — live"
-        note="The full sequence for the first catch and for later ones. It shrinks toward the dock after a few seconds or on Nice."
+        title="Unlock moment — live"
+        note="The full sequence for the first unlock and for later ones. It shrinks toward the dock after a few seconds or on Nice."
         wide
       >
         <LiveCatch />
@@ -336,8 +349,8 @@ export function OnboardingSpecimens() {
 
       <Specimen
         n={11}
-        title="Catch bubble"
-        note="The message next to the avatar: first catch, later catches, and finishing the checklist."
+        title="Unlock bubble"
+        note="The message next to the avatar: first unlock, later unlocks, and finishing the checklist."
         wide
       >
         <Labeled label="First avatar">
@@ -399,7 +412,7 @@ export function OnboardingSpecimens() {
         <Labeled label="Default">
           <AvatarTrigger value="shield" />
         </Labeled>
-        <Labeled label="New avatar caught">
+        <Labeled label="New avatar unlocked">
           <AvatarTrigger value="shield" hasNew />
         </Labeled>
         <Labeled label="Open">
@@ -410,7 +423,7 @@ export function OnboardingSpecimens() {
       <Specimen
         n={15}
         title="Avatar picker tiles"
-        note="Caught avatars come first; the rest are locked pods."
+        note="Unlocked avatars come first; the rest are locked eggs."
       >
         <Labeled label="Available">
           <AvatarTile name="compass" />
@@ -418,7 +431,7 @@ export function OnboardingSpecimens() {
         <Labeled label="Selected">
           <AvatarTile name="shield" selected />
         </Labeled>
-        <Labeled label="Just caught">
+        <Labeled label="Just unlocked">
           <AvatarTile name="spark" isNew />
         </Labeled>
         <Labeled label="Locked">
@@ -428,17 +441,7 @@ export function OnboardingSpecimens() {
 
       <Specimen
         n={16}
-        title="Avatar picker — before first agent"
-        note="Opened from the pod on a new user's first agent."
-      >
-        <div className="rounded-lg border border-border bg-card p-4 shadow-md">
-          <AvatarGrid value={null} caught={[]} fresh={new Set()} />
-        </div>
-      </Specimen>
-
-      <Specimen
-        n={17}
-        title="Avatar picker — after two catches"
+        title="Avatar picker — after two unlocks"
         note="The first avatar is on the agent; the newer one has a dot."
       >
         <div className="rounded-lg border border-border bg-card p-4 shadow-md">

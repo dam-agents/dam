@@ -21,6 +21,12 @@ import {
 } from "../agents/components/char-avatar.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { BeePongInline } from "./bee-pong-game.js";
+import { EyeBeeMRebus } from "./eye-bee-m.js";
+import {
+  AppFrame,
+  FirstAgentScreens,
+  SetupColumn,
+} from "./first-agent-screens.js";
 import {
   GettingStartedControls,
   GettingStartedDock,
@@ -198,6 +204,14 @@ function WakeUpPreview() {
     </WakeUpFrame>
   );
 }
+
+const CHOOSE_AVATAR_POOL: CharName[] = [
+  "shield",
+  "compass",
+  "spark",
+  "wave",
+  "lens",
+];
 
 const WAKE_SCREENS: { charName: CharName; agentName: string }[] = [
   { charName: "compass", agentName: "design-qa" },
@@ -738,6 +752,18 @@ function PaulRandSheet() {
   return (
     <>
       <section className="mb-12">
+        <SectionLabel>Source — Eye Bee M</SectionLabel>
+        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
+          Paul Rand&apos;s Eye Bee M rebus. Every agent avatar below is built
+          from its pieces: the eye&apos;s lid and iris, the bee&apos;s teardrop
+          wings, eyes and striped body, and the bars of the M.
+        </p>
+        <div className="inline-flex overflow-hidden rounded-xl border border-border">
+          <EyeBeeMRebus className="block size-[360px]" />
+        </div>
+      </section>
+
+      <section className="mb-12">
         <SectionLabel>Character Avatars — Awake</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
           Less bee-influenced, more abstract — still built from Paul Rand rebus
@@ -824,6 +850,20 @@ function PaulRandSheet() {
       </section>
 
       <section className="mb-12">
+        <SectionLabel>Create Agent — Choose an Avatar</SectionLabel>
+        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
+          Once a user has unlocked avatars, the creation screen shows an avatar
+          button next to the name. Click it to pick from the unlocked ones; this
+          example has five unlocked and three still in eggs.
+        </p>
+        <AppFrame height={900}>
+          <SetupColumn>
+            <AgentSetupView embedded avatarPool={CHOOSE_AVATAR_POOL} />
+          </SetupColumn>
+        </AppFrame>
+      </section>
+
+      <section className="mb-12">
         <SectionLabel>Left Navigation — Agent List</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
           The sidebar from design/sidebar-agent-list with each agent&apos;s
@@ -837,34 +877,27 @@ function PaulRandSheet() {
 
       <section id="create-agent-preview" className="mb-12 scroll-mt-6">
         <SectionLabel>Create Agent — Choose a Character</SectionLabel>
-        <p className="mb-4 text-sm text-muted-foreground">
-          The agent creation screen with a character next to the name. Click the
-          character to pick one of the eight to represent the agent.
+        <p className="mb-6 max-w-[760px] text-sm text-muted-foreground">
+          A first-time user creating their first agent, step by step. Avatars
+          stay hidden until the first one is unlocked, then the checklist shows
+          there are more to unlock.
         </p>
-        <div className="relative left-1/2 w-[min(1440px,calc(100vw-80px))] -translate-x-1/2 overflow-hidden rounded-xl border-2 border-border">
-          <div className="flex h-[900px] bg-background">
-            <IconRail expanded hideMobileBar />
-            <main className="relative flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-                <AgentSetupView embedded />
-              </div>
-            </main>
-          </div>
-        </div>
+        <FirstAgentScreens />
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Getting Started — Catch New Avatars</SectionLabel>
+        <SectionLabel>Getting Started — Unlock New Avatars</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
           The checklist is docked in the lower right of this page and stays
-          there until every task is done. Collapse it to a pill that shows
-          progress. New users start with no avatars. Clicking Create agent on
-          the creation screen above catches their first one at random and puts
-          it on that agent. Every other task catches another random avatar, and
-          all the ones not caught yet are closed pods, so each one is a
-          surprise. When a task is finished, even with the checklist collapsed,
-          the pod swings open above the dock and the new avatar joins the crew
-          and the character picker.
+          there until all eight tasks are done, one per avatar. Collapse it to a
+          pill that shows progress. Tasks are finished elsewhere in the app;
+          hover the i on a task to see how. New users start with no avatars.
+          Clicking Create agent on the first screen above unlocks their first
+          one at random and puts it on that agent. Every other task unlocks
+          another random avatar, and the ones not unlocked yet stay eggs, so
+          each one is a surprise. When a task is finished, even with the
+          checklist collapsed, the egg cracks open above the dock and the new
+          avatar joins the crew.
         </p>
         <GettingStartedControls />
       </section>

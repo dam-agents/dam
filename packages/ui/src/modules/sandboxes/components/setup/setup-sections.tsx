@@ -26,7 +26,11 @@ export function NameSection({
   autoFocus?: boolean;
 }) {
   const field = (
-    <FormField label="Name" className={avatar ? "flex-1" : undefined}>
+    <FormField
+      label="Name"
+      disableInset={!!avatar}
+      className={avatar ? "min-w-0 flex-1" : undefined}
+    >
       <Input
         autoFocus={autoFocus}
         value={value}
@@ -38,7 +42,7 @@ export function NameSection({
   return (
     <section className="mb-8">
       {avatar ? (
-        <div className="flex items-end gap-4">
+        <div className="flex items-end gap-4 md:-ml-4">
           {avatar}
           {field}
         </div>

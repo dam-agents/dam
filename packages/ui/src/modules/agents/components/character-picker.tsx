@@ -166,7 +166,7 @@ export function AvatarGrid({
           return name === null ? (
             <Tooltip
               key={`locked-${i}`}
-              content="Finish getting-started tasks to catch more avatars"
+              content="Finish getting-started tasks to unlock more avatars"
               side="top"
               className="text-sm"
             >
@@ -181,8 +181,8 @@ export function AvatarGrid({
       </div>
       <p className="mt-3 max-w-[280px] text-sm text-muted-foreground">
         {caught.length === 0
-          ? "Create this agent to catch your first avatar. It's a surprise!"
-          : `${caught.length} of ${CHAR_NAMES.length} caught · finish getting-started tasks to catch more`}
+          ? "Create this agent to unlock your first avatar. It's a surprise!"
+          : `${caught.length} of ${CHAR_NAMES.length} unlocked · finish getting-started tasks to unlock more`}
       </p>
     </>
   );
@@ -193,14 +193,19 @@ export function CharacterPicker({
   onChange,
   wobble,
   pop,
+  caughtOverride,
 }: {
   value: CharName | null;
   onChange: (name: CharName) => void;
   wobble?: boolean;
   pop?: boolean;
+  caughtOverride?: readonly CharName[];
 }) {
   const [open, setOpen] = useState(false);
-  const { caught, fresh, pickerRequest } = useCharacterUnlocks();
+  const unlocks = useCharacterUnlocks();
+  const caught = caughtOverride ?? unlocks.caught;
+  const fresh = caughtOverride ? new Set<CharName>() : unlocks.fresh;
+  const { pickerRequest } = unlocks;
 
   useEffect(() => {
     if (pickerRequest === 0) return;

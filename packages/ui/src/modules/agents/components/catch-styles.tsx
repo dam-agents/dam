@@ -7,11 +7,14 @@ const CATCH_CSS = `
   62% { transform: rotate(7deg); }
   78% { transform: rotate(-3deg); }
 }
-@keyframes catch-open-left {
-  to { transform: translate(-22px, 4px) rotate(-42deg); opacity: 0; }
+@keyframes catch-open-top {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  40% { transform: translate(-4px, -14px) rotate(-18deg); opacity: 1; }
+  100% { transform: translate(-10px, -34px) rotate(-38deg); opacity: 0; }
 }
-@keyframes catch-open-right {
-  to { transform: translate(22px, 4px) rotate(42deg); opacity: 0; }
+@keyframes catch-open-bottom {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(0, 14px) scale(0.92); opacity: 0; }
 }
 @keyframes catch-pop {
   0% { transform: scale(0.2); opacity: 0; }
@@ -30,6 +33,10 @@ const CATCH_CSS = `
 }
 @keyframes catch-collect {
   to { transform: translate(28px, 80px) scale(0.2); opacity: 0; }
+}
+@keyframes dock-reveal {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes dock-pulse {
   0% { box-shadow: 0 0 0 0 rgba(69, 137, 255, 0.45); transform: scale(1); }

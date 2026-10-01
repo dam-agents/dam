@@ -82,7 +82,15 @@ import {
 
 const RETURN_PATH = routeToPath({ view: "agent-new" });
 
-export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
+export function AgentSetupView({
+  embedded = false,
+  firstTime = false,
+  avatarPool,
+}: {
+  embedded?: boolean;
+  firstTime?: boolean;
+  avatarPool?: readonly CharName[];
+}) {
   const pendingPack = useStore((s) => s.pendingPack);
   const setPendingPack = useStore((s) => s.setPendingPack);
   const { data: userConnections } = useAppConnections();
@@ -120,25 +128,25 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
   );
 
   const [character, setCharacter] = useState<CharName | null>(() => {
-    const { caught } = getCharacterUnlocks();
-    if (caught.length === 0) return null;
-    return caught[hashIndex(form.name || "new-agent", caught.length)]!;
+    const pool = avatarPool ?? getCharacterUnlocks().caught;
+    if (pool.length === 0) return null;
+    return pool[hashIndex(form.name || "new-agent", pool.length)]!;
   });
   const { caught, rewards, working: questWorking } = useCharacterUnlocks();
   const firstReward = rewards.get(FIRST_AGENT_QUEST_ID) ?? null;
   const [avatarPop, setAvatarPop] = useState(false);
 
   useEffect(() => {
-    if (!firstReward) return;
+    if (!firstReward || avatarPool) return;
     setCharacter(firstReward);
     setAvatarPop(true);
     const t = setTimeout(() => setAvatarPop(false), 700);
     return () => clearTimeout(t);
-  }, [firstReward]);
+  }, [firstReward, avatarPool]);
 
   useEffect(() => {
-    if (caught.length === 0) setCharacter(null);
-  }, [caught.length]);
+    if (!avatarPool && caught.length === 0) setCharacter(null);
+  }, [caught.length, avatarPool]);
 
   const catchingFirst = questWorking === FIRST_AGENT_QUEST_ID;
   const previewCreate = () => {
@@ -467,12 +475,15 @@ export function AgentSetupView({ embedded = false }: { embedded?: boolean }) {
         onChange={(name) => update({ name })}
         autoFocus={!embedded}
         avatar={
-          <CharacterPicker
-            value={character}
-            onChange={setCharacter}
-            wobble={catchingFirst}
-            pop={avatarPop}
-          />
+          firstTime ? undefined : (
+            <CharacterPicker
+              value={character}
+              onChange={setCharacter}
+              caughtOverride={avatarPool}
+              wobble={catchingFirst}
+              pop={avatarPop}
+            />
+          )
         }
       />
 

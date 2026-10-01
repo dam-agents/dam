@@ -48,6 +48,7 @@ import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
 import { useStore } from "../store.js";
+import type { AgentView } from "../types.js";
 
 const SIDEBAR_ACTIVITY_PAGE = 5;
 const AGENT_SESSION_PAGE = 5;
@@ -64,9 +65,13 @@ interface Destination {
 export function IconRail({
   hideMobileBar = false,
   expanded,
+  agentsOverride,
+  showActivity = true,
 }: {
   hideMobileBar?: boolean;
   expanded?: boolean;
+  agentsOverride?: AgentView[];
+  showActivity?: boolean;
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -107,7 +112,8 @@ export function IconRail({
     navigate: () => navigateToSettings(),
   };
 
-  const agents = useAgentsList();
+  const listedAgents = useAgentsList();
+  const agents = agentsOverride ?? listedAgents;
   const restartingAgents = useStore((s) => s.restartingAgents);
   const pausingAgents = useStore((s) => s.pausingAgents);
   const restartingIds = useMemo(
@@ -375,7 +381,7 @@ export function IconRail({
                           <AgentAvatar
                             agentId={agent.id}
                             state={display.state}
-                            className="size-6"
+                            className="size-8"
                           />
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                             {agent.name}
@@ -475,7 +481,7 @@ export function IconRail({
                                     }
                                   }}
                                   className={cn(
-                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-11 pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
+                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-[52px] pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
                                     hasSession &&
                                       activeSessionId === item.session.sessionId
                                       ? "bg-muted"
@@ -552,7 +558,7 @@ export function IconRail({
                                       AGENT_SESSION_PAGE,
                                   }))
                                 }
-                                className="w-full py-1 pl-11 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                                className="w-full py-1 pl-[52px] pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                               >
                                 View more
                               </button>
@@ -577,7 +583,7 @@ export function IconRail({
               </div>
             )}
 
-            {visibleActivity.length > 0 && (
+            {showActivity && visibleActivity.length > 0 && (
               <div className="mt-6 pb-4">
                 <div ref={activitySentinelRef} className="h-0" />
                 <SectionLabel
@@ -755,7 +761,7 @@ export function IconRail({
                             <AgentAvatar
                               agentId={agent.id}
                               state={display.state}
-                              className="size-6"
+                              className="size-8"
                             />
                             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                               {agent.name}

@@ -1,8 +1,14 @@
-import { CheckmarkFilled, ChevronDown, ChevronUp } from "@carbon/icons-react";
+import {
+  CheckmarkFilled,
+  ChevronDown,
+  ChevronUp,
+  Information,
+} from "@carbon/icons-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { CatchStyles } from "../agents/components/catch-styles.js";
@@ -12,11 +18,8 @@ import {
   type CharName,
 } from "../agents/components/char-avatar.js";
 import {
+  EggShape,
   MysteryAvatar,
-  POD_LEFT,
-  POD_LEFT_FILL,
-  POD_RIGHT,
-  POD_RIGHT_FILL,
 } from "../agents/components/mystery-avatar.js";
 import {
   AVATAR_PIECES,
@@ -28,7 +31,6 @@ import {
   completeQuest,
   endCelebration,
   FIRST_AGENT_QUEST_ID,
-  requestCharacterPicker,
   resetCharacterUnlocks,
   useCharacterUnlocks,
 } from "../agents/lib/character-unlocks.js";
@@ -53,15 +55,9 @@ export type QuestRowState = "todo" | "working" | "done";
 export interface QuestRowData {
   id: string;
   title: string;
-  cta: string;
+  help: string;
   reward: CharName | null;
   state: QuestRowState;
-}
-
-function scrollToCreatePreview() {
-  document
-    .getElementById("create-agent-preview")
-    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 export function ProgressRing({ done, total }: { done: number; total: number }) {
@@ -124,12 +120,11 @@ export function CrewSlot({ name, justCaught }: CrewSlotData) {
 
 export function QuestRow({
   title,
-  cta,
+  help,
   reward,
   state,
-  disabled,
-  onStart,
-}: Omit<QuestRowData, "id"> & { disabled?: boolean; onStart?: () => void }) {
+  showReward = true,
+}: Omit<QuestRowData, "id"> & { showReward?: boolean }) {
   const done = state === "done";
   return (
     <li className="flex list-none items-center gap-3 px-4 py-1.5">
@@ -142,29 +137,34 @@ export function QuestRow({
           <span className="size-4 rounded-full border-2 border-border" />
         )}
       </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-sm",
-          done ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {title}
-      </span>
-      {done && reward ? (
-        <span className="group flex">
-          <CharAvatar name={reward} state="running" className="size-6" />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span
+          className={cn(
+            "truncate text-sm",
+            done ? "text-muted-foreground" : "text-foreground",
+          )}
+        >
+          {title}
         </span>
-      ) : (
-        <span className="flex items-center gap-2">
-          <MysteryAvatar className="size-5" />
+        <Tooltip content={help} side="left" className="text-sm">
           <button
             type="button"
-            disabled={disabled}
-            onClick={onStart}
-            className="w-[68px] text-right text-sm font-medium text-primary hover:underline disabled:cursor-default disabled:no-underline disabled:opacity-50"
+            aria-label={`How to ${title.toLowerCase()}`}
+            className="flex shrink-0 rounded-full text-muted-foreground transition-colors hover:text-foreground"
           >
-            {state === "working" ? "Working…" : cta}
+            <Information size={16} />
           </button>
+        </Tooltip>
+      </span>
+      {showReward && (
+        <span className="flex size-6 shrink-0 items-center justify-center">
+          {done && reward ? (
+            <span className="group flex">
+              <CharAvatar name={reward} state="running" className="size-6" />
+            </span>
+          ) : (
+            <MysteryAvatar className="size-5" />
+          )}
         </span>
       )}
     </li>
@@ -176,26 +176,32 @@ export function ChecklistPanel({
   total,
   crew,
   rows,
-  disabled,
-  onStart,
+  showAvatars = true,
+  revealAvatars,
   onCollapse,
 }: {
   done: number;
   total: number;
   crew: CrewSlotData[];
   rows: QuestRowData[];
-  disabled?: boolean;
-  onStart?: (id: string) => void;
+  showAvatars?: boolean;
+  revealAvatars?: boolean;
   onCollapse?: () => void;
 }) {
   return (
     <div className="w-[340px] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-      <div className="flex items-center gap-3 px-4 pb-3 pt-3.5">
+      <div
+        className={cn(
+          "flex items-center gap-3 px-4 pt-3.5",
+          showAvatars ? "pb-3" : "pb-3.5",
+        )}
+      >
         <ProgressRing done={done} total={total} />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">Get started</p>
           <p className="text-sm text-muted-foreground">
-            {done} of {total} done · catch new avatars
+            {done} of {total} done
+            {showAvatars && " · unlock new avatars"}
           </p>
         </div>
         <Button
@@ -208,20 +214,23 @@ export function ChecklistPanel({
         </Button>
       </div>
 
-      <div className="flex gap-1.5 px-4 pb-3">
-        {crew.map((slot) => (
-          <CrewSlot key={slot.name} {...slot} />
-        ))}
-      </div>
+      {showAvatars && (
+        <div
+          className={cn(
+            "flex gap-1.5 px-4 pb-3",
+            revealAvatars &&
+              "animate-[dock-reveal_0.45s_cubic-bezier(0.34,1.56,0.64,1)]",
+          )}
+        >
+          {crew.map((slot, i) => (
+            <CrewSlot key={slot.name ?? `empty-${i}`} {...slot} />
+          ))}
+        </div>
+      )}
 
       <ul className="border-t border-border py-1.5">
         {rows.map((row) => (
-          <QuestRow
-            key={row.id}
-            {...row}
-            disabled={disabled}
-            onStart={() => onStart?.(row.id)}
-          />
+          <QuestRow key={row.id} {...row} showReward={showAvatars} />
         ))}
       </ul>
     </div>
@@ -319,39 +328,33 @@ export function ConfettiBurst({
   );
 }
 
-function PodHalves({
+function EggHalves({
   animate,
-  leftStyle,
-  rightStyle,
+  topStyle,
+  bottomStyle,
 }: {
   animate?: boolean;
-  leftStyle?: CSSProperties;
-  rightStyle?: CSSProperties;
+  topStyle?: CSSProperties;
+  bottomStyle?: CSSProperties;
 }) {
   return (
     <>
-      <svg
-        viewBox="0 0 40 40"
-        aria-hidden
-        style={leftStyle}
+      <EggShape
+        part="bottom"
+        style={bottomStyle}
         className={cn(
-          "absolute inset-0 origin-bottom",
-          animate && "animate-[catch-open-left_0.45s_ease-out_0.9s_forwards]",
+          "absolute inset-0 size-full",
+          animate && "animate-[catch-open-bottom_0.45s_ease-out_0.9s_forwards]",
         )}
-      >
-        <path d={POD_LEFT} fill={POD_LEFT_FILL} />
-      </svg>
-      <svg
-        viewBox="0 0 40 40"
-        aria-hidden
-        style={rightStyle}
+      />
+      <EggShape
+        part="top"
+        style={topStyle}
         className={cn(
-          "absolute inset-0 origin-bottom",
-          animate && "animate-[catch-open-right_0.45s_ease-out_0.9s_forwards]",
+          "absolute inset-0 size-full origin-bottom",
+          animate && "animate-[catch-open-top_0.5s_ease-out_0.9s_forwards]",
         )}
-      >
-        <path d={POD_RIGHT} fill={POD_RIGHT_FILL} />
-      </svg>
+      />
     </>
   );
 }
@@ -376,21 +379,15 @@ export function CatchStageFrame({
           className="absolute inset-9"
           style={{ transform: stage === "wobble" ? "rotate(-14deg)" : "none" }}
         >
-          <PodHalves
-            leftStyle={
+          <EggHalves
+            topStyle={
               stage === "opening"
-                ? {
-                    transform: "translate(-11px, 2px) rotate(-21deg)",
-                    opacity: 0.6,
-                  }
+                ? { transform: "translate(-5px, -16px) rotate(-22deg)" }
                 : undefined
             }
-            rightStyle={
+            bottomStyle={
               stage === "opening"
-                ? {
-                    transform: "translate(11px, 2px) rotate(21deg)",
-                    opacity: 0.6,
-                  }
+                ? { transform: "translate(0, 5px)", opacity: 0.85 }
                 : undefined
             }
           />
@@ -414,28 +411,26 @@ export function CatchStageFrame({
 
 const BUBBLE_COPY: Record<CatchVariant, { title: string; body: string }> = {
   first: {
-    title: "You caught your first agent avatar!",
-    body: "It's on your new agent. Finish the checklist to catch more.",
+    title: "You unlocked your first agent avatar!",
+    body: "It's now your new agent's avatar. Finish the checklist to unlock more.",
   },
   new: {
-    title: "You caught a new agent avatar!",
+    title: "You unlocked a new agent avatar!",
     body: "It's ready to pick the next time you create an agent.",
   },
   last: {
-    title: "Checklist complete!",
-    body: "More avatars are still out there to catch as you keep building.",
+    title: "You unlocked every agent avatar!",
+    body: "Your crew is complete. Pick any of them when you create an agent.",
   },
 };
 
 export function CatchBubble({
   variant = "new",
   animated,
-  onUse,
   onDismiss,
 }: {
   variant?: CatchVariant;
   animated?: boolean;
-  onUse?: () => void;
   onDismiss?: () => void;
 }) {
   const copy = BUBBLE_COPY[variant];
@@ -450,20 +445,9 @@ export function CatchBubble({
       <p className="text-sm font-semibold text-foreground">{copy.title}</p>
       <p className="mt-0.5 text-sm text-muted-foreground">{copy.body}</p>
       <div className="mt-3 flex gap-2">
-        {variant === "first" ? (
-          <Button size="sm" onClick={onDismiss}>
-            Nice
-          </Button>
-        ) : (
-          <>
-            <Button size="sm" onClick={onUse}>
-              Use it
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onDismiss}>
-              Nice
-            </Button>
-          </>
-        )}
+        <Button size="sm" onClick={onDismiss}>
+          Nice
+        </Button>
       </div>
       <span className="absolute -right-[7px] bottom-9 size-3.5 rotate-45 border-r border-t border-border bg-card" />
     </div>
@@ -473,12 +457,10 @@ export function CatchBubble({
 export function CatchCelebration({
   name,
   variant = "new",
-  onUse,
   onFinished,
 }: {
   name: CharName;
   variant?: CatchVariant;
-  onUse?: () => void;
   onFinished?: () => void;
 }) {
   const [collecting, setCollecting] = useState(false);
@@ -520,16 +502,12 @@ export function CatchCelebration({
       <CatchBubble
         variant={variant}
         animated
-        onUse={() => {
-          onUse?.();
-          setCollecting(true);
-        }}
         onDismiss={() => setCollecting(true)}
       />
       <div className="relative size-32 shrink-0">
         <ConfettiBurst name={name} />
         <div className="absolute inset-9 animate-[catch-wobble_0.9s_ease-in-out]">
-          <PodHalves animate />
+          <EggHalves animate />
         </div>
         <div className="absolute inset-0 flex items-center justify-center opacity-0 animate-[catch-pop_0.6s_cubic-bezier(0.34,1.56,0.64,1)_0.95s_forwards]">
           <div ref={loopRef}>
@@ -580,10 +558,6 @@ export function GettingStartedDock() {
           key={celebrating.name}
           name={celebrating.name}
           variant={variant}
-          onUse={() => {
-            requestCharacterPicker();
-            scrollToCreatePreview();
-          }}
           onFinished={endCelebration}
         />
       )}
@@ -594,11 +568,8 @@ export function GettingStartedDock() {
           total={total}
           crew={crew}
           rows={rows}
-          disabled={working !== null || celebrating !== null}
-          onStart={(id) => {
-            if (id === FIRST_AGENT_QUEST_ID) scrollToCreatePreview();
-            else completeQuest(id);
-          }}
+          showAvatars={done > 0}
+          revealAvatars={done === 1 && collected !== null}
           onCollapse={() => setExpanded(false)}
         />
       ) : (
