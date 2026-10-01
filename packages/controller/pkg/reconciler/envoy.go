@@ -43,7 +43,6 @@ const (
 	connectionEgressPathSegment = "__platform_conn"
 	envoyImageCABundle          = "/etc/ssl/certs/ca-certificates.crt"
 	envoyUpstreamCAKey          = "upstream-ca.pem"
-	agentExtraCAsKey            = "agent-extra-cas.crt"
 )
 
 const (
@@ -689,9 +688,6 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, c
 	data := map[string]string{"envoy.yaml": yaml}
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
-	}
-	if cfg.ExtraTrustedCAs != "" {
-		data[agentExtraCAsKey] = cfg.ExtraTrustedCAs
 	}
 	if vm {
 		data[machineDNSCorefileKey] = machineDNSCorefile

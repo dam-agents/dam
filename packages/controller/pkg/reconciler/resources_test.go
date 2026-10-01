@@ -480,7 +480,7 @@ func TestSanitizeMountName(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: an install that names extra CAs hands them to every agent beside its gateway's CA, in the one directory the entrypoint trusts, so a host the gateway passes through still verifies when a proxy further out intercepts it; the extras come from the agent's own gateway ConfigMap.
+// TEST_SCENARIO: an install that names extra CAs hands them to every agent beside its gateway's CA, in the one directory the entrypoint trusts, so a host the gateway passes through still verifies when a proxy further out intercepts it; the extras come from the one ConfigMap the chart renders for all agents, optionally, so a missing one never blocks the pod.
 func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
 	cfg := *testConfig
 	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
@@ -499,6 +499,8 @@ func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
 	assert.Equal(t, "my-instance-envoy-tls", leaf.Name)
 	assert.Equal(t, []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}, leaf.Items)
 	require.NotNil(t, extras)
-	assert.Equal(t, EnvoyBootstrapName("my-instance"), extras.Name)
-	assert.Equal(t, []corev1.KeyToPath{{Key: agentExtraCAsKey, Path: "extra-cas.crt"}}, extras.Items)
+	assert.Equal(t, "agent-trusted-cas", extras.Name)
+	assert.Equal(t, []corev1.KeyToPath{{Key: "extra-cas.crt", Path: "extra-cas.crt"}}, extras.Items)
+	require.NotNil(t, extras.Optional)
+	assert.True(t, *extras.Optional)
 }

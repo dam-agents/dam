@@ -437,7 +437,12 @@ func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Qua
 	return derived
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an agent trusts under /etc/platform/ca: its gateway's MITM CA, and the extra CAs the install names, so a host its gateway passes through untouched still verifies when a TLS-inspecting proxy further out intercepts it. Without extra CAs the volume is the leaf Secret alone, exactly as before. The extras ride in the agent's own gateway ConfigMap, which the controller already writes from the same config.
+const (
+	agentTrustedCAsConfigMap = "agent-trusted-cas"
+	agentTrustedCAsKey       = "extra-cas.crt"
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: what an agent trusts under /etc/platform/ca: its gateway's MITM CA, and the extra CAs the install names, so a host its gateway passes through untouched still verifies when a TLS-inspecting proxy further out intercepts it. Without extra CAs the volume is the leaf Secret alone, exactly as before. The extras come from the one ConfigMap the chart renders from the same value for every agent; the projection is optional, so a pod still starts with its gateway's CA alone if that ConfigMap is missing.
 func agentCAVolume(name string, cfg *config.Config) corev1.Volume {
 	leaf := corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}
 	if cfg.ExtraTrustedCAs == "" {
@@ -458,8 +463,9 @@ func agentCAVolume(name string, cfg *config.Config) corev1.Volume {
 					Items:                []corev1.KeyToPath{leaf},
 				}},
 				{ConfigMap: &corev1.ConfigMapProjection{
-					LocalObjectReference: corev1.LocalObjectReference{Name: EnvoyBootstrapName(name)},
-					Items:                []corev1.KeyToPath{{Key: agentExtraCAsKey, Path: "extra-cas.crt"}},
+					LocalObjectReference: corev1.LocalObjectReference{Name: agentTrustedCAsConfigMap},
+					Items:                []corev1.KeyToPath{{Key: agentTrustedCAsKey, Path: agentTrustedCAsKey}},
+					Optional:             new(true),
 				}},
 			},
 		}},
