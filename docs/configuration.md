@@ -19,9 +19,9 @@ Each agent's gateway verifies the upstream before it injects a credential. If so
 
 By default a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header. An agent created with **addressed injection** has a gateway that injects only when the request names the Connection: by its token placeholder or by its `/__platform_conn/<connection id>/` path prefix. Every other request keeps its own credential. Use it for an agent that runs its own copy of the platform, so its gateway stops replacing the nested agents' credentials.
 
-It is set per agent, at create:
+It is set per agent:
 
-- **Create page:** turn on *Addressed credential injection* under Settings → Experimental features to see the switch.
+- **Create page and agent settings:** turn on *Addressed credential injection* under Settings → Experimental features to see the switch. Settings show it without the flag on an agent that already has it, so it can be turned off. Changing it there restarts the agent's gateway.
 - **Starter kit:** `requireConnectionAddress: true` in `kit.yaml`. A kit sets it whether or not the creating user has the feature flag on.
 
 Values the platform hands an agent already carry an address. A Custom Header Connection that sets no environment variable must be reached through its path prefix on such an agent.

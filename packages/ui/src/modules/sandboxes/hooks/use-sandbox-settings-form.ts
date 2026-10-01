@@ -11,6 +11,7 @@ import {
   useCurrentPreset,
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import {
@@ -42,6 +43,7 @@ export function useSandboxSettingsForm() {
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
+  const features = useFeatures();
 
   const userInitialEnv = useMemo(
     () => (agent?.env ?? []).filter((e) => !isProtectedAgentEnvName(e.name)),
@@ -68,6 +70,7 @@ export function useSandboxSettingsForm() {
       hibernationTimeoutMin: 60,
       sizeCpuMilli: 1000,
       sizeMemoryMi: 1024,
+      requireConnectionAddress: false,
     },
   });
   const { errors, isDirty, isSubmitting } = formState;
@@ -98,6 +101,7 @@ export function useSandboxSettingsForm() {
       hibernationTimeoutMin: agent.hibernationTimeoutMin,
       sizeCpuMilli: parseCpuMilli(agent.size.cpu) ?? 1000,
       sizeMemoryMi: parseMemoryMi(agent.size.memory) ?? 1024,
+      requireConnectionAddress: agent.requireConnectionAddress,
     });
     setFormReady(true);
   }, [
@@ -203,6 +207,12 @@ export function useSandboxSettingsForm() {
     draftName: watch("name"),
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
+    requireConnectionAddress: watch("requireConnectionAddress"),
+    setRequireConnectionAddress: (next: boolean) =>
+      setValue("requireConnectionAddress", next, { shouldDirty: true }),
+    addressingOffered:
+      features.data?.["strict-connection-addressing"] === true ||
+      agent?.requireConnectionAddress === true,
     setSize: (patch: { sizeCpuMilli: number; sizeMemoryMi: number }) => {
       setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
       setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });

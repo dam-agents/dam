@@ -16,6 +16,7 @@ export const settingsSchema = z.object({
     .nonnegative(),
   sizeCpuMilli: z.number().int().positive(),
   sizeMemoryMi: z.number().int().positive(),
+  requireConnectionAddress: z.boolean(),
 });
 export type SettingsValues = z.infer<typeof settingsSchema>;
 

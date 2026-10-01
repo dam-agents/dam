@@ -211,33 +211,34 @@ export function LifecycleSetupSection({
 export function ConnectionAddressingSetupSection({
   value,
   onChange,
+  disabled,
 }: {
   value: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <section className="mb-8">
       <SectionLabel spaced>Credential injection</SectionLabel>
-      <Inset>
-        <label className="flex cursor-pointer items-start justify-between gap-4">
-          <span>
-            <span className="block text-sm font-medium text-foreground">
-              Inject only into addressed requests
-            </span>
-            <span className="mt-0.5 block text-sm text-muted-foreground">
-              The gateway adds a connection&apos;s credential only to a request
-              that names that connection, and leaves every other request with
-              the credential it already carries. Turn on for an agent that runs
-              its own copy of the platform.
-            </span>
+      <label className="flex cursor-pointer items-start justify-between gap-4">
+        <span>
+          <span className="block text-sm font-medium text-foreground">
+            Inject only into addressed requests
           </span>
-          <Switch
-            checked={value}
-            onCheckedChange={onChange}
-            label="Inject only into addressed requests"
-          />
-        </label>
-      </Inset>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            The gateway adds a connection&apos;s credential only to a request
+            that names that connection, and leaves every other request with the
+            credential it already carries. Turn on for an agent that runs its
+            own copy of the platform.
+          </span>
+        </span>
+        <Switch
+          checked={value}
+          onCheckedChange={onChange}
+          disabled={disabled}
+          label="Inject only into addressed requests"
+        />
+      </label>
     </section>
   );
 }

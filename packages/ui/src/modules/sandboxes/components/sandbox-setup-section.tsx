@@ -16,6 +16,7 @@ import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.
 import { LifecycleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
+import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 
@@ -110,6 +111,14 @@ export function SandboxSetupSection({ f }: Props) {
         disabled={f.saving}
         currentSize={f.sizeRestartsAgent ? agent.size : undefined}
       />
+
+      {f.addressingOffered && (
+        <ConnectionAddressingSetupSection
+          value={f.requireConnectionAddress}
+          onChange={f.setRequireConnectionAddress}
+          disabled={f.saving}
+        />
+      )}
 
       <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
 

@@ -24,7 +24,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "strict-connection-addressing",
     label: "Addressed credential injection",
     description:
-      "Shows a switch on the create page that makes the new agent's gateway inject a connection's credential only into requests that name that connection. For agents that run their own copy of the platform. Starter kits can set it whatever this switch says.",
+      "Shows a switch on the create page and in agent settings that makes the agent's gateway inject a connection's credential only into requests that name that connection. For agents that run their own copy of the platform. Starter kits can set it whatever this switch says.",
   },
   {
     id: "interactive-artifacts",

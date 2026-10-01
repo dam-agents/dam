@@ -8,7 +8,7 @@ Last verified: 2026-10-01
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, session costs, addressed credential injection (a create-page switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says), agent telemetry (a per-reply timeline
+interactive artifacts, session costs, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says), agent telemetry (a per-reply timeline
 in the conversation) and agent avatars (a robot head drawn in the browser from
 a hash of the agent's name and its owner's identity, so nothing is stored,
 two people's default-named agents look different, and renaming an agent

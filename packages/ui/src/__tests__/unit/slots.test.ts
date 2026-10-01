@@ -36,6 +36,7 @@ const agent = (
   starterKitOnboarded: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
+  requireConnectionAddress: false,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,

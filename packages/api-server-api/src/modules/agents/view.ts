@@ -17,6 +17,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     description: agent.spec.description,
     env: agent.spec.env,
     hibernationTimeoutMin: agent.effectiveHibernationTimeoutMin,
+    requireConnectionAddress: agent.spec.requireConnectionAddress === true,
     grantedSecretIds: agent.spec.grantedSecretIds ?? [],
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
