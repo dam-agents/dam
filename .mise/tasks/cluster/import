@@ -8,7 +8,7 @@ eval "tars=($usage_tar)"
 import_one() {
   local t=$1 g
   if [ -n "${IS_SANDBOX:-}" ]; then
-    sudo k3s ctr images import "$t"
+    as_root k3s ctr images import "$t"
   else
     g="/tmp/${t##*/}"
     limactl copy "$t" "$LIMA_INSTANCE:$g"

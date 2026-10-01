@@ -145,7 +145,7 @@ The hosted deployment provides IBM internal model endpoints and integrations tha
 
 Nothing needs Docker or another container runtime on your machine. Each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM. The Keycloak theme's full preview (`mise run //packages/keycloak-theme:run`) runs the Keycloak image's server on the host's Java.
 
-On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM. The cluster tasks run their privileged steps through sudo, or directly when already root, so a root sandbox needs no sudo.
 
 On Linux, the agent and VM runner images build with sudo, and the VM runner's build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu).
 

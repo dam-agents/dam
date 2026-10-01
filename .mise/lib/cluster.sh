@@ -1,6 +1,8 @@
 # Sourced by the cluster:* and e2e:* tasks: the one place that names the
 # cluster they act on. LIMA_INSTANCE picks the lima VM (the e2e tasks pin
 # platform-k3s-test); IS_SANDBOX means k3s runs on this host.
+. "$(dirname "${BASH_SOURCE[0]}")/root.sh"
+
 export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
 if [ -n "${IS_SANDBOX:-}" ]; then
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -25,10 +27,10 @@ MESH_CERT_EXPIRED='certificate expired|AlertReceived\(CertificateExpired\)'
 # Not `crictl rmi --prune`: with no instance pods running, the agent images
 # just loaded are unpinned, and it would wipe them too.
 prune_dangling_images() {
-  local prune='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+  local prune='k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r k3s crictl rmi >/dev/null 2>&1 || true'
   if [ -n "${IS_SANDBOX:-}" ]; then
-    bash -c "$prune"
+    as_root bash -c "$prune"
   else
-    limactl shell "$LIMA_INSTANCE" bash -c "$prune"
+    limactl shell "$LIMA_INSTANCE" sudo bash -c "$prune"
   fi
 }

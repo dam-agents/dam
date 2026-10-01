@@ -62,7 +62,7 @@ if [ -n "${VM_HOST_RUNNER:-}" ]; then
   IMAGE_DIR="$(host_runner_images)"
   sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
 elif [ -n "${IS_SANDBOX:-}" ]; then
-  sudo sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
+  as_root sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
 else
   limactl copy "$work/rootfs.tar" "$LIMA_INSTANCE:/tmp/$name.rootfs.tar"
   limactl copy "$work/launch.json" "$LIMA_INSTANCE:/tmp/$name.launch.json"

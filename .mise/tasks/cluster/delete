@@ -22,8 +22,8 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
     /usr/local/bin/k3s-uninstall.sh
   else
-    sudo pkill -f 'k3s server' || true
-    sudo rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
+    as_root pkill -f 'k3s server' || true
+    as_root rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
   fi
   echo "k3s stopped and its cluster data removed."
 else

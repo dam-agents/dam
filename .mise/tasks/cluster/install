@@ -136,10 +136,10 @@ if [ -n "${IS_SANDBOX:-}" ]; then
       curl -fsSL --retry 3 --retry-all-errors -o "$K3S_TMP/$K3S_ASSET" "$K3S_URL/$K3S_ASSET"
       curl -fsSL --retry 3 --retry-all-errors -o "$K3S_TMP/sums" "$K3S_URL/$K3S_SUMS"
       (cd "$K3S_TMP" && grep " $K3S_ASSET\$" sums | sha256sum -c --quiet -)
-      sudo install -m 0755 "$K3S_TMP/$K3S_ASSET" /usr/local/bin/k3s
+      as_root install -m 0755 "$K3S_TMP/$K3S_ASSET" /usr/local/bin/k3s
       rm -rf "$K3S_TMP"
       for tool in kubectl crictl ctr; do
-        command -v "$tool" >/dev/null 2>&1 || sudo ln -sf /usr/local/bin/k3s "/usr/local/bin/$tool"
+        command -v "$tool" >/dev/null 2>&1 || as_root ln -sf /usr/local/bin/k3s "/usr/local/bin/$tool"
       done
     fi
     # istio-cni mounts the netns directory with mount propagation, which a
@@ -147,7 +147,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     # nothing has.
     case "$(findmnt -no PROPAGATION /)" in
       *shared*) ;;
-      *) sudo mount --make-rshared / ;;
+      *) as_root mount --make-rshared / ;;
     esac
     # k3s exempts the pod and service ranges from the proxy, not the node's
     # own address; behind a proxy the API server's calls to the kubelet
@@ -222,12 +222,12 @@ K3S_CONFIG_YAML='kubelet-arg:
   - "container-log-max-files=3"
 '
 if [ -n "${IS_SANDBOX:-}" ]; then
-  if ! sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
+  if ! as_root grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
     echo "Configuring k3s container log rotation (issue #244)..."
-    sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
-    printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
+    as_root mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | as_root tee "$K3S_LOGROT_DROPIN" >/dev/null
     if [ -d /run/systemd/system ]; then
-      sudo systemctl restart k3s
+      as_root systemctl restart k3s
       kubectl wait --for=condition=Ready node --all --timeout=120s
     else
       echo "No service manager here — container log rotation applies the next time k3s starts."
@@ -276,14 +276,14 @@ prepull_images() {
 }
 pull_one() {
   local start=$SECONDS cmd=(timeout 300 k3s crictl pull "$1")
-  if [ -n "${IS_SANDBOX:-}" ]; then cmd=(sudo "${cmd[@]}"); else cmd=(limactl shell "$LIMA_INSTANCE" sudo "${cmd[@]}"); fi
+  if [ -n "${IS_SANDBOX:-}" ]; then cmd=(as_root "${cmd[@]}"); else cmd=(limactl shell "$LIMA_INSTANCE" sudo "${cmd[@]}"); fi
   if "${cmd[@]}" >/dev/null 2>&1; then
     echo "pulled $1 in $((SECONDS - start))s"
   else
     echo "could not pull $1; the kubelet will"
   fi
 }
-export -f pull_one
+export -f pull_one as_root
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
