@@ -1,0 +1,3 @@
+#!/bin/sh
+rm -rf "$HOME/.pi/agent/extensions/pi-dynamic-providers"
+exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"

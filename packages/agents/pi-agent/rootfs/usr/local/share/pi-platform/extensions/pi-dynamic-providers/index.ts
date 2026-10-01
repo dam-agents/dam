@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Provider } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -38,12 +39,10 @@ const SPECS: ProviderSpec[] = [
 ];
 
 export default async function register(pi: ExtensionAPI): Promise<void> {
+	if (env("PI_PLATFORM_REPORT_ERRORS") === "1") reportProviderErrors(pi);
 	const state = loadState();
-
-	if (env("AWS_BEARER_TOKEN_BEDROCK")) {
-		await activateBedrock(state);
-		return;
-	}
+	const onBedrock = env("AWS_BEARER_TOKEN_BEDROCK") !== undefined;
+	const clearedBedrock = onBedrock ? false : clearBedrockDefaults(state);
 
 	let lastActivated: Activation | undefined;
 	for (const spec of SPECS) {
@@ -51,7 +50,17 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
 		if (activated) lastActivated = activated;
 	}
 
-	if (lastActivated) persistState(state, lastActivated);
+	if (onBedrock) {
+		await activateBedrock(pi, state);
+		writeJson(state.paths.models, state.models);
+		writeJson(state.paths.auth, state.auth);
+		writeJson(state.paths.settings, state.settings);
+	} else if (lastActivated) {
+		persistState(state, lastActivated);
+	} else if (clearedBedrock) {
+		writeJson(state.paths.models, state.models);
+		writeJson(state.paths.settings, state.settings);
+	}
 }
 
 async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigState): Promise<Activation | undefined> {
@@ -85,36 +94,107 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	return { name: spec.name, model: defaultModel };
 }
 
-async function activateBedrock(state: ConfigState): Promise<void> {
+function reportProviderErrors(pi: ExtensionAPI): void {
+	let lastError: string | undefined;
+	pi.on("message_end", (event) => {
+		const message = event.message as { role?: string; stopReason?: string; errorMessage?: string };
+		if (message.role !== "assistant") return;
+		lastError = message.stopReason === "error" ? message.errorMessage : undefined;
+	});
+	pi.on("agent_before_settle", (event, ctx) => {
+		const error = lastError;
+		lastError = undefined;
+		if (event.outcome === "error" && error) ctx.ui.notify(`Model request failed: ${error}`, "error");
+	});
+}
+
+function clearBedrockDefaults(state: ConfigState): boolean {
+	const hadEntry = BEDROCK_PROVIDER in state.models.providers;
+	delete state.models.providers[BEDROCK_PROVIDER];
+	if (state.settings.defaultProvider !== BEDROCK_PROVIDER) return hadEntry;
+	delete state.settings.defaultProvider;
+	delete state.settings.defaultModel;
+	return true;
+}
+
+async function activateBedrock(pi: ExtensionAPI, state: ConfigState): Promise<void> {
+	const [builtin, profiles] = await Promise.all([loadBuiltinBedrockProvider(), discoverBedrockProfiles()]);
+	const isBedrockModel = (id: string) =>
+		hasModel(builtin, id) || (profiles ?? []).some((p) => p.toLowerCase() === id.toLowerCase());
 	const current = typeof state.settings.defaultModel === "string" ? state.settings.defaultModel.trim() : "";
 	const provider = state.settings.defaultProvider;
-	const keptModel = current && (provider === BEDROCK_PROVIDER || provider === undefined) ? current : undefined;
-	const model = keptModel ?? env("AWS_BEDROCK_MODEL");
+	const kept =
+		current && (provider === BEDROCK_PROVIDER || (provider === undefined && isBedrockModel(current)))
+			? current
+			: undefined;
+	const model = kept ?? env("AWS_BEDROCK_MODEL");
 
 	state.settings.defaultProvider = BEDROCK_PROVIDER;
 	if (model) {
 		state.settings.defaultModel = model;
-		if (!(await isBuiltInBedrockModel(model))) {
-			addBedrockModel(state, model);
-			writeJson(state.paths.models, state.models);
-		}
+		if (!hasModel(builtin, model)) addBedrockModel(state, model);
 	} else {
 		delete state.settings.defaultModel;
 	}
-	writeJson(state.paths.settings, state.settings);
+
+	if (builtin && profiles && profiles.length > 0) narrowBedrockModels(pi, builtin, profiles, model);
 }
 
-async function isBuiltInBedrockModel(id: string): Promise<boolean> {
+async function discoverBedrockProfiles(): Promise<string[] | undefined> {
+	const base = env("AWS_ENDPOINT_URL_BEDROCK")?.replace(/\/+$/, "");
+	if (!base) return undefined;
+	const url = `${base}/inference-profiles?maxResults=1000`;
 	try {
-		const builtins = (await import(BUILTIN_PROVIDERS_MODULE)) as {
-			getBuiltinModels?: (provider: string) => { id: string }[];
-		};
-		const wanted = id.toLowerCase();
-		return (builtins.getBuiltinModels?.(BEDROCK_PROVIDER) ?? []).some((m) => m.id.toLowerCase() === wanted);
+		const res = await fetch(url, { signal: AbortSignal.timeout(intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000)) });
+		if (!res.ok) {
+			console.warn(`[pi-dynamic-providers] ${url}: HTTP ${res.status} ${res.statusText}`);
+			return undefined;
+		}
+		const json = (await res.json()) as { inferenceProfileSummaries?: unknown };
+		if (!Array.isArray(json?.inferenceProfileSummaries)) {
+			console.warn(`[pi-dynamic-providers] ${url}: response missing 'inferenceProfileSummaries'`);
+			return undefined;
+		}
+		const ids: string[] = [];
+		for (const entry of json.inferenceProfileSummaries) {
+			if (!entry || typeof entry !== "object") continue;
+			const { status, inferenceProfileId } = entry as { status?: unknown; inferenceProfileId?: unknown };
+			if (status === "ACTIVE" && typeof inferenceProfileId === "string" && inferenceProfileId) ids.push(inferenceProfileId);
+		}
+		return ids;
 	} catch (err) {
-		console.warn(`[pi-dynamic-providers] Bedrock model catalog unavailable: ${err instanceof Error ? err.message : String(err)}`);
-		return false;
+		console.warn(`[pi-dynamic-providers] ${url}: ${err instanceof Error ? err.message : String(err)}`);
+		return undefined;
 	}
+}
+
+function narrowBedrockModels(pi: ExtensionAPI, builtin: Provider, profiles: readonly string[], keep: string | undefined): void {
+	const wanted = new Set(profiles.map((id) => id.toLowerCase()));
+	if (keep) wanted.add(keep.toLowerCase());
+	const offered = (m: { id: string }) => wanted.has(m.id.toLowerCase());
+	const models = builtin.getModels().filter(offered);
+	if (models.length === 0) return;
+	const allModels = builtin.getAllModels?.().filter(offered);
+	pi.registerProvider({
+		...builtin,
+		getModels: () => models,
+		...(allModels ? { getAllModels: () => allModels } : {}),
+	});
+}
+
+async function loadBuiltinBedrockProvider(): Promise<Provider | undefined> {
+	try {
+		const mod = (await import(BUILTIN_PROVIDERS_MODULE)) as { builtinProviders?: () => readonly Provider[] };
+		return mod.builtinProviders?.().find((p) => p.id === BEDROCK_PROVIDER);
+	} catch (err) {
+		console.warn(`[pi-dynamic-providers] built-in providers unavailable: ${err instanceof Error ? err.message : String(err)}`);
+		return undefined;
+	}
+}
+
+function hasModel(provider: Provider | undefined, id: string): boolean {
+	const wanted = id.toLowerCase();
+	return (provider?.getModels() ?? []).some((m) => m.id.toLowerCase() === wanted);
 }
 
 function addBedrockModel(state: ConfigState, id: string): void {

@@ -3,13 +3,25 @@ packages:
   - "packages/e2e/agents/mock"
   - "packages/e2e/agents/mock-api"
   - "packages/e2e/playwright"
-  - "packages/agents/pi-agent/rootfs/app/working-dir/.pi/agent/extensions/*"
+  - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
   # rrule-temporal@2.2.7 (2026-09-25) fixes sub-daily rules with BYxxx parts
   # ignoring the INTERVAL cadence, which 2.2.6 gets wrong for pinned schedules.
   # Drop this entry once it is older than 7 days (2026-10-02).
   - "rrule-temporal@2.2.7"
+  # The pi-agent image pins @earendil-works/pi-coding-agent 0.99.2 (2026-09-30)
+  # and the pi-dynamic-providers extension type-checks against the same
+  # version; the fork publishes all its packages in lockstep. Drop these once
+  # the release ages past the floor (2026-10-07).
+  - "@earendil-works/chord@0.99.2"
+  - "@earendil-works/pi-agent-core@0.99.2"
+  - "@earendil-works/pi-ai@0.99.2"
+  - "@earendil-works/pi-codemode@0.99.2"
+  - "@earendil-works/pi-coding-agent@0.99.2"
+  - "@earendil-works/pi-mcp@0.99.2"
+  - "@earendil-works/pi-telemetry@0.99.2"
+  - "@earendil-works/pi-tui@0.99.2"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
