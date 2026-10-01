@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -81,6 +82,33 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 	containerOuter := bootstrapListeners(t, mustParseBootstrap(t, container))["agent_egress"]
 	assert.Nil(t, containerOuter["listener_filters"], "a container agent's proxy listener is unchanged")
 	assert.Len(t, containerOuter["filter_chains"].([]any), 1)
+}
+
+// TEST_SCENARIO: a name no public resolver could answer does not exist, so a cluster inside the machine falls back to its own search list for `<service>.<namespace>.svc` instead of dialing the gateway; every name that could be public still resolves to the gateway. The patterns are read out of the Corefile as CoreDNS reads them, so a quoting slip that turns them into something else fails here.
+func TestTheMachineResolverDeniesNamesThatCannotBePublic(t *testing.T) {
+	var patterns []*regexp.Regexp
+	for _, line := range strings.Split(machineDNSCorefile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "match" {
+			patterns = append(patterns, regexp.MustCompile(strings.Trim(fields[1], `"`)))
+		}
+	}
+	require.NotEmpty(t, patterns)
+	denied := func(name string) bool {
+		for _, p := range patterns {
+			if p.MatchString(name) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range []string{"agent-1.agents.svc.", "api.platform.svc.cluster.local.", "postgres.", "localhost.", "printer.local.", "db.internal.", "x.test.", "router.home.arpa."} {
+		assert.True(t, denied(name), "%s must not exist", name)
+	}
+	for _, name := range []string{"github.com.", "api.anthropic.com.", "my-svc.com.", "svc.example.com.", "local.example.org.", "homexarpa.com.", "internal.company.io."} {
+		assert.False(t, denied(name), "%s must still resolve to the gateway", name)
+	}
+	assert.Contains(t, machineDNSCorefile, "rcode NXDOMAIN\n        fallthrough", "without fallthrough every other name fails instead of reaching the A template")
 }
 
 // TEST_SCENARIO: the machine resolver is what closes DNS exfiltration. It must answer every A with the gateway's address from the controller, refuse every type that could carry an answer back, and hold no plugin that forwards, recurses or logs — so a name the agent looks up never leaves the gateway and is never written anywhere.

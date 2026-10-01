@@ -16,8 +16,14 @@ const (
 	machineDNSGatewayIPEnv = "GATEWAY_IP"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
+// UNIT_BOUNDARY_DESCRIPTION: A name no public resolver could answer — a single label, or one under a special-use or cluster-internal suffix such as `svc`, `local` or `internal` — does not exist. A cluster inside the machine relies on that: its resolver asks upstream before its own search list, and a gateway address for `<service>.<namespace>.svc` would send it to the gateway instead of the Service. Every other name's A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
 const machineDNSCorefile = `.:10053 {
+    template ANY ANY {
+        match "^[^.]+\.$"
+        match "\.(svc|local|localhost|internal|invalid|test|example|home\.arpa)\.$"
+        rcode NXDOMAIN
+        fallthrough
+    }
     template IN A {
         answer "{{ .Name }} 60 IN A {$` + machineDNSGatewayIPEnv + `}"
     }
