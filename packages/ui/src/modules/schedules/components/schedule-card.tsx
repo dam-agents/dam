@@ -161,7 +161,7 @@ export function ScheduleCard({
                   className="inline-flex items-center gap-1 whitespace-nowrap text-destructive"
                   title={stopReason}
                 >
-                  <Time size={12} /> Stopped
+                  <WarningAlt size={12} /> Stopped
                 </span>
               </>
             )}

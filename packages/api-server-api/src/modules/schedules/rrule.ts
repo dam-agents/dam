@@ -208,16 +208,32 @@ function quietWindowEnd(
     const hit = start < end ? m >= start && m < end : m >= start || m < end;
     if (!hit) continue;
     const day = start > end && m >= start ? time.add({ days: 1 }) : time;
-    const at = day.toPlainDate().toZonedDateTime({
-      timeZone: time.timeZoneId,
-      plainTime: Temporal.PlainTime.from({
-        hour: Math.floor(end / 60),
-        minute: end % 60,
-      }),
-    });
+    const at = firstWallTimeAfter(
+      day.toPlainDate().toPlainDateTime(
+        Temporal.PlainTime.from({
+          hour: Math.floor(end / 60),
+          minute: end % 60,
+        }),
+      ),
+      time,
+    );
     if (!latest || Temporal.ZonedDateTime.compare(at, latest) > 0) latest = at;
   }
   return latest;
+}
+
+function firstWallTimeAfter(
+  wall: Temporal.PlainDateTime,
+  after: Temporal.ZonedDateTime,
+): Temporal.ZonedDateTime {
+  const earlier = wall.toZonedDateTime(after.timeZoneId, {
+    disambiguation: "earlier",
+  });
+  const first = earlier.toPlainDateTime().equals(wall)
+    ? earlier
+    : (earlier.getTimeZoneTransition("next") ?? earlier);
+  if (Temporal.ZonedDateTime.compare(first, after) > 0) return first;
+  return wall.toZonedDateTime(after.timeZoneId, { disambiguation: "later" });
 }
 
 export function rruleProblem(rruleBody: string): string | null {

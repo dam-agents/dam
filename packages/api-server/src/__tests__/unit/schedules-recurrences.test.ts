@@ -228,6 +228,39 @@ describe("nextFire (bounded work)", () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
+  // TEST_SCENARIO: a quiet window can end at a wall time the clocks skip or repeat, so the search resumes at the first moment after the window rather than an hour past it or back inside it.
+  it.each([
+    [
+      "FREQ=MINUTELY;INTERVAL=15",
+      "01:00",
+      "02:30",
+      "2027-03-14T06:01:00Z",
+      "2027-03-14T07:00:00Z",
+    ],
+    [
+      "FREQ=MINUTELY;INTERVAL=10",
+      "01:00",
+      "02:59",
+      "2027-03-14T06:01:00Z",
+      "2027-03-14T07:00:00Z",
+    ],
+    [
+      "FREQ=MINUTELY;INTERVAL=15",
+      "00:00",
+      "01:30",
+      "2026-11-01T05:59:00Z",
+      "2026-11-01T06:30:00Z",
+    ],
+  ])(
+    "gives %s with quiet %s-%s in New York from %s the fire at %s",
+    (rrule, startTime, endTime, from, expected) => {
+      const spec = rruleSpec(rrule, "America/New_York", [
+        { startTime, endTime, enabled: true },
+      ]);
+      expect(nextFireAt(spec, new Date(from))).toEqual(new Date(expected));
+    },
+  );
+
   it("resumes after the quiet window instead of stepping through it", () => {
     const spec = rruleSpec("FREQ=MINUTELY", "UTC", allDay);
     expect(nextFireAt(spec, new Date("2026-10-01T08:47:13Z"))).toEqual(
