@@ -99,11 +99,14 @@ describe("env driver change classification (#3143)", () => {
 });
 
 describe("env driver gh availability flag", () => {
-  /** TEST_SCENARIO: One GitHub account hands the agent GH_TOKEN, and that alone
-   * says gh credentials are available. */
-  it("derives the flag from GH_TOKEN", async () => {
+  /** TEST_SCENARIO: One GitHub account hands the agent GH_TOKEN, or
+   * GH_ENTERPRISE_TOKEN for an Enterprise Server host, and either alone says gh
+   * credentials are available. */
+  it("derives the flag from GH_TOKEN or GH_ENTERPRISE_TOKEN", async () => {
     const h = harness();
     await h.apply([env("GH_TOKEN", "platform:conn:aaa")]);
+    expect(h.env().PLATFORM_GH_TOKEN_AVAILABLE).toBe("true");
+    await h.apply([env("GH_ENTERPRISE_TOKEN", "platform:conn:ghes")]);
     expect(h.env().PLATFORM_GH_TOKEN_AVAILABLE).toBe("true");
   });
 

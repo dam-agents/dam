@@ -276,6 +276,7 @@ export {
   unaddressableRivalHost,
 } from "./modules/connections/egress-addressing.js";
 export {
+  GH_ENTERPRISE_TOKEN_ENV,
   GH_HOSTS_FILE_PATH,
   GH_TOKEN_AVAILABLE_ENV,
   GH_TOKEN_ENV,

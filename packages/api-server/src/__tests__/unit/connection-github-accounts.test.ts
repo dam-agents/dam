@@ -6,7 +6,9 @@
  * per-Connection token placeholder, with the preferred grant active. The agent
  * switches with `gh auth switch`; a single GitHub Connection is untouched.
  * The commit identity git uses follows the active account: only its name and
- * email are delivered, and an active account without one delivers none.
+ * email are delivered, and an active account without one delivers none. An
+ * Enterprise Server Connection hands the agent GH_ENTERPRISE_TOKEN, the env gh
+ * reads for such a host, so it never shadows github.com.
  */
 import { describe, expect, it } from "vitest";
 import type { Contribution } from "api-server-api";
@@ -264,24 +266,37 @@ describe("composeGitHubAccounts", () => {
     expect(commitIdentities(out)).toEqual([]);
   });
 
-  /** TEST_SCENARIO: A GitHub Connection on a different host is a different
-   * group, so it keeps its own env beside the github.com pair. */
-  it("groups by gh host", () => {
-    const enterprise: GitHubAccountSource = {
-      id: "conn-ghe",
-      name: "GHE",
+  /** TEST_SCENARIO: gh reads GH_ENTERPRISE_TOKEN for an Enterprise Server host
+   * and GH_TOKEN for github.com and ghe.com tenants, and an env beats the hosts
+   * file for its hosts. A GitHub Connection on another host is its own group,
+   * and an Enterprise Server one must hand the agent GH_ENTERPRISE_TOKEN,
+   * grouped or alone, or it would shadow the github.com pair; a ghe.com tenant
+   * keeps GH_TOKEN. */
+  it("delivers an Enterprise Server token under gh's enterprise env", () => {
+    const onHost = (id: string, host: string): GitHubAccountSource => ({
+      id,
+      name: id,
       preferred: false,
       contributions: [
-        { kind: "env", name: "GH_TOKEN", placeholder: "platform:conn:ghe" },
-        { kind: "env", name: "GH_HOST", placeholder: "ghe.acme.com" },
+        { kind: "env", name: "GH_TOKEN", placeholder: `platform:conn:${id}` },
+        { kind: "env", name: "GH_HOST", placeholder: host },
       ],
-    };
+    });
+    const server = onHost("conn-ghes", "github.acme.internal");
     const out = composeGitHubAccounts([
       github("conn-a", "Work"),
-      enterprise,
+      server,
+      onHost("conn-tenant", "acme.ghe.com"),
       github("conn-b", "Personal"),
     ]);
     expect(envNames(out).filter((n) => n === "GH_TOKEN")).toHaveLength(1);
+    expect(envNames(out).filter((n) => n === "GH_ENTERPRISE_TOKEN")).toEqual([
+      "GH_ENTERPRISE_TOKEN",
+    ]);
     expect(Object.keys(hostsFile(out))).toEqual(["github.com"]);
+    expect(envNames(composeGitHubAccounts([server]))).toEqual([
+      "GH_ENTERPRISE_TOKEN",
+      "GH_HOST",
+    ]);
   });
 });
