@@ -314,7 +314,6 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	r.deleteRunner(ctx, owner)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner and is never removed, so the sweep only collects machines no Agent names. The machines are listed before the Agents: an Agent exists before its machine does, so every machine in the first list has its Agent in the second, and one created in between is simply not looked at yet.
 // UNIT_BOUNDARY_DESCRIPTION: an install switched from runner pods to the host runner keeps the per-owner runner Deployments it made before, and nothing else looks at them in host mode, so their pods stay Pending for want of a KVM device. Only the Deployment goes: its claim holds the disks of the machines it ran, the one copy of those homes, and switching back to runner pods remakes the Deployment on that same claim. A runner is recognized by its owner label and the per-owner name, never by the label alone, and is deleted only as it was listed.
 func (r *AgentReconciler) dropPodRunners(ctx context.Context) {
 	deps := r.client.AppsV1().Deployments(r.config.Namespace)
@@ -338,6 +337,7 @@ func (r *AgentReconciler) dropPodRunners(ctx context.Context) {
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner and is never removed, so the sweep only collects machines no Agent names. The machines are listed before the Agents: an Agent exists before its machine does, so every machine in the first list has its Agent in the second, and one created in between is simply not looked at yet.
 func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 	runner, err := r.runnerFor(ctx, "")
 	if err != nil {
