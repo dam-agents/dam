@@ -193,11 +193,7 @@ virtualization:
     # every node virt-handler runs on). Any plugin exposing /dev/kvm and
     # /dev/net/tun works; a cluster with none cannot host vm agents, and the
     # controller says so at startup when no schedulable node matching
-    # `nodeSelector` advertises these. On a node whose KVM module allows
-    # nesting (kvm_intel or kvm_amd `nested=1`) the runner also gives every
-    # machine the host's virtualization extensions, so a guest can run KVM
-    # itself; that exposes the host's nested-virtualization code to every
-    # guest, and `nested=0` on the node is how to keep them from it.
+    # `nodeSelector` advertises these.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
@@ -260,6 +256,15 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # true = every machine gets the node's virtualization extensions, so a
+    # guest can run KVM itself — e.g. a vm agent that hosts its own vm-backend
+    # install. The runner still nests only where the node's KVM allows it,
+    # which is the kernel default (kvm_intel and kvm_amd `nested=1`) and needs
+    # a module reload to change, so this value is the real switch. It exposes
+    # the host kernel's nested-virtualization code, which has had
+    # guest-to-host escapes, to every guest. Changing it rolls every runner,
+    # which reboots its owner's machines.
+    nestedVirtualization: false
     # Machines are processes of their runner, so any change to the runner pod
     # — a new `image`, or a controller release that renders the pod
     # differently — reboots every machine that owner has. The controller rolls

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,8 +29,14 @@ func readRunnerContract(t *testing.T, name string, into any) {
 
 func renderedRunnerArgs(t *testing.T) []string {
 	t.Helper()
+	return renderedRunnerArgsWith(t, func(*config.VMRunnerSpec) {})
+}
+
+func renderedRunnerArgsWith(t *testing.T, install func(*config.VMRunnerSpec)) []string {
+	t.Helper()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
+	install(&r.config.VM.Runner)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
@@ -42,6 +49,16 @@ func TestTheRunnerIsStartedWithTheArgsItsContractNames(t *testing.T) {
 	var want []string
 	readRunnerContract(t, "runner-args.json", &want)
 	assert.Equal(t, want, renderedRunnerArgs(t))
+}
+
+// TEST_SCENARIO: an install that sets virtualization.runner.nestedVirtualization starts its runners with the fixture's args plus the nesting args the runner's tests parse, and nothing else changes. One that does not is held to the plain fixture above, so its runner pods do not roll and never nest, even on a node whose KVM allows it by default.
+func TestARunnerTheInstallLetsNestIsStartedWithTheNestingArgs(t *testing.T) {
+	var base, nested []string
+	readRunnerContract(t, "runner-args.json", &base)
+	readRunnerContract(t, "runner-args-nested.json", &nested)
+	assert.Equal(t, append(base, nested...), renderedRunnerArgsWith(t, func(spec *config.VMRunnerSpec) {
+		spec.NestedVirtualization = true
+	}))
 }
 
 // TEST_SCENARIO: the runner publishes each machine on a port from the range its args name, and the NetworkPolicy admits the api-server to exactly the range it opens. Two ranges that differ leave a machine the api-server cannot dial, with nothing in any status saying why, so both are rendered from one pair of constants and held equal here.
