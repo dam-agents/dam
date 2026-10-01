@@ -62,6 +62,8 @@ type Config struct {
 	TelemetryCollectorPort int
 	ObjectStoreHost        string
 	ObjectStorePort        int
+
+	GatewayUpstreamTrustBundle string
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -246,6 +248,13 @@ func LoadFromEnv() (*Config, error) {
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
 	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
+	if extra := os.Getenv("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS"); strings.TrimSpace(extra) != "" {
+		bundle, err := GatewayUpstreamTrustBundle(systemCABundle, extra)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS: %w", err)
+		}
+		cfg.GatewayUpstreamTrustBundle = bundle
+	}
 	for _, q := range []struct {
 		dst      *resource.Quantity
 		key, def string

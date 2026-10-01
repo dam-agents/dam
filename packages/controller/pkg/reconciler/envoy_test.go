@@ -1737,3 +1737,62 @@ func TestRenderEnvoyBootstrap_PortUpgradesCARendersValidYAML(t *testing.T) {
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
 }
+
+func secureOTelCfg() config.Config {
+	cfg := *bootstrapTestCfg
+	cfg.GatewayOTLPEndpoint = "https://collector.example:4317"
+	cfg.GatewayOTLPProtocol = "grpc"
+	return cfg
+}
+
+func TestRenderEnvoyBootstrap_UpstreamTrustDefaultsToTheEnvoyImageBundle(t *testing.T) {
+	cfg := secureOTelCfg()
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, strings.Count(got, "filename: /etc/ssl/certs/ca-certificates.crt"),
+		"the forward proxy, the credentialed upstream and the OTel export each verify against the image's bundle")
+	assert.NotContains(t, got, envoyUpstreamCAKey)
+}
+
+func TestRenderEnvoyBootstrap_ExtraCAsMoveEveryUpstreamOntoTheMountedBundle(t *testing.T) {
+	cfg := secureOTelCfg()
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, strings.Count(got, "filename: /etc/envoy/upstream-ca.pem"))
+	assert.NotContains(t, got, "/etc/ssl/certs/ca-certificates.crt")
+	mustParseBootstrap(t, got)
+}
+
+func TestRenderEnvoyBootstrap_AConnectionsOwnCAStillWinsOverExtraCAs(t *testing.T) {
+	cfg := *bootstrapTestCfg
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	caFile := "/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, caFile),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Contains(t, got, "filename: "+caFile)
+	assert.Contains(t, got, "filename: /etc/envoy/upstream-ca.pem", "the forward proxy still takes the extended bundle")
+}
+
+func TestBuildEnvoyBootstrapConfigMap_CarriesTheTrustBundleOnlyWhenConfigured(t *testing.T) {
+	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
+
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, nil, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, cm.Data, envoyUpstreamCAKey)
+
+	cfg := *bootstrapTestCfg
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, &cfg, owner, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.GatewayUpstreamTrustBundle, cm.Data[envoyUpstreamCAKey])
+}

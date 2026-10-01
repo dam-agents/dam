@@ -44,6 +44,7 @@ type bootstrapParams struct {
 	AnyUpgrades            bool
 	Transparent            bool
 	OTel                   envoyOTelView
+	UpstreamTrustedCA      string
 }
 
 func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
@@ -65,6 +66,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		}
 	}
 	p := bootstrapParams{
+		UpstreamTrustedCA:      gatewayUpstreamTrustedCA(cfg),
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
 		Chains:                 chains,
@@ -649,9 +651,9 @@ func buildClusters(p bootstrapParams) []any {
 				},
 			},
 		},
-		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true),
-		dynamicForwardProxyCluster("dynamic_forward_proxy_tcp", false),
-		dynamicForwardProxyCluster("dynamic_forward_proxy_http", false),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true, p.UpstreamTrustedCA),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_tcp", false, ""),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_http", false, ""),
 		pinnedTCPCluster("harness_passthrough", p.HarnessHost, p.HarnessPort),
 	}
 	if p.ObjectStoreAuthority != "" {
@@ -659,7 +661,7 @@ func buildClusters(p bootstrapParams) []any {
 	}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
 		}
 	}
 	if p.Telemetry {
@@ -684,7 +686,7 @@ func buildClusters(p bootstrapParams) []any {
 	return clusters
 }
 
-func dynamicForwardProxyCluster(name string, withTLS bool) ev {
+func dynamicForwardProxyCluster(name string, withTLS bool, trustedCA string) ev {
 	c := ev{
 		"name":            name,
 		"connect_timeout": "5s",
@@ -703,7 +705,7 @@ func dynamicForwardProxyCluster(name string, withTLS bool) ev {
 			"typed_config": ev{
 				"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
 				"common_tls_context": ev{
-					"validation_context": ev{"trusted_ca": ev{"filename": "/etc/ssl/certs/ca-certificates.crt"}},
+					"validation_context": ev{"trusted_ca": ev{"filename": trustedCA}},
 				},
 			},
 		}
@@ -722,8 +724,7 @@ func pinnedTCPCluster(name, host string, port int) ev {
 	}
 }
 
-func buildUpstreamCluster(c envoyHostChain) ev {
-	trustedCA := "/etc/ssl/certs/ca-certificates.crt"
+func buildUpstreamCluster(c envoyHostChain, trustedCA string) ev {
 	if c.UpstreamCAFile != "" {
 		trustedCA = c.UpstreamCAFile
 	}
@@ -787,7 +788,7 @@ func buildOTelExportCluster(p bootstrapParams) ev {
 				"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
 				"sni":   p.OTel.CollectorHost,
 				"common_tls_context": ev{
-					"validation_context": ev{"trusted_ca": ev{"filename": "/etc/ssl/certs/ca-certificates.crt"}},
+					"validation_context": ev{"trusted_ca": ev{"filename": p.UpstreamTrustedCA}},
 				},
 			},
 		}

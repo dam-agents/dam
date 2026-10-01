@@ -41,6 +41,8 @@ const (
 	envoyLeafTLSVolume          = "envoy-tls"
 	envoyLeafTLSMount           = "/etc/envoy/tls"
 	connectionEgressPathSegment = "__platform_conn"
+	envoyImageCABundle          = "/etc/ssl/certs/ca-certificates.crt"
+	envoyUpstreamCAKey          = "upstream-ca.pem"
 )
 
 const (
@@ -50,6 +52,13 @@ const (
 
 func EnvoyBootstrapName(instanceName string) string {
 	return instanceName + "-envoy-bootstrap"
+}
+
+func gatewayUpstreamTrustedCA(cfg *config.Config) string {
+	if cfg.GatewayUpstreamTrustBundle == "" {
+		return envoyImageCABundle
+	}
+	return envoyBootstrapMount + "/" + envoyUpstreamCAKey
 }
 
 type envoyCredential struct {
@@ -673,6 +682,9 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, c
 		return nil, err
 	}
 	data := map[string]string{"envoy.yaml": yaml}
+	if cfg.GatewayUpstreamTrustBundle != "" {
+		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
+	}
 	if vm {
 		data[machineDNSCorefileKey] = machineDNSCorefile
 	}

@@ -11,6 +11,10 @@ The Envoy sidecar in each agent pod injects credentials on the wire — agents n
 1. **Add a secret** — open the Connections panel in the UI. For Anthropic, you can use `claude setup-token` as the token value. For other connections, use the OAuth flow for the provider or a Generic secret.
 2. **Connect an OAuth app** — for GitHub, GitHub Enterprise, and other named providers, click Connect and complete the browser flow. The api-server stores the resulting tokens; the refresh-token loop re-mints them before expiry.
 
+### Egress through a TLS-inspecting proxy
+
+Each agent's gateway verifies the upstream before it injects a credential. If something on the cluster's egress path intercepts TLS with its own CA (a corporate inspecting proxy, or the platform's own gateway when the platform runs inside one of its agents), every injected connection fails its handshake and the agent reports a 503. Name that CA with `controller.gatewayUpstreamExtraCAs`: `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`. Gateways then trust it on top of the public roots. A connection that carries its upstream's own CA still validates against that CA alone. `mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
+
 ## Skills
 
 Three kinds of source show up in the Skills panel:

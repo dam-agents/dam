@@ -26,6 +26,15 @@ HELM_VALUES="${usage_helm_values:-}"
 eval "sets=(${usage_set:-})"
 HELM_EXTRA_ARGS=()
 for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
+# Inside one of the platform's own vm agents, every upstream this cluster
+# reaches leaves through that agent's gateway, which intercepts TLS with its
+# own CA. The agent's guest holds that CA at the guest contract's caFile path;
+# the cluster's gateways must trust it too or every injected connection fails
+# its TLS handshake. Nowhere else does the file exist.
+OUTER_GATEWAY_CA=/etc/platform/ca/ca.crt
+if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
+  HELM_EXTRA_ARGS+=("--set-file=controller.gatewayUpstreamExtraCAs=$OUTER_GATEWAY_CA")
+fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 

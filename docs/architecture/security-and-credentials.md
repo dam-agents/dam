@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-30
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -407,8 +407,7 @@ On the wire:
    per-Agent gateway Service routes to the paired gateway pod. TLS
    egress arrives as HTTP CONNECT, plain HTTP in absolute form,
    forwarded without interception.
-2. Envoy's outer listener (bound on `0.0.0.0`, reach gated by
-   NetworkPolicy) stamps the trusted attribution header on every
+2. Envoy's outer listener (reach gated by NetworkPolicy) stamps the trusted attribution header on every
    request it forwards, or strips it where no telemetry backend is
    configured; either way the agent cannot supply its own (see
    [observability](observability.md)). CONNECT it terminates, routing
@@ -416,7 +415,7 @@ On the wire:
 3. Per-host filter chains terminate TLS with the leaf cert, run the
    credential injector(s) to add the configured header(s) (or rewrite
    `?<param>=<value>` into the URL — see below), then forward to a
-   per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
+   per-chain cluster pinned to the host (explicit upstream
    SNI, SAN-bound TLS validation). The agent's inner `Host` header has
    no influence on the upstream destination — the route-confusion
    exfiltration path is structurally closed. Allow-only chains
@@ -485,8 +484,8 @@ A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 
 **Non-443 upstreams and streaming.** Per-host injection descriptors can
-carry three more chain-level attributes, motivating case being external
-Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/issues/2314)):
+carry three more chain-level attributes, for upstreams such as external
+Kubernetes clusters:
 
 - **Upstream port** — the pinned cluster dials the declared port (default
   443). Only L7 chains honor ports: the SNI-miss L4 catch-all always dials
@@ -499,11 +498,13 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
   after the 101 the gateway splices bytes under a long tunnel idle timeout.
   Upgrade chains stay HTTP/1.1 — upgrades don't survive an HTTP/2 upstream
   leg.
-- **Private upstream CA** — a connection can carry the upstream's CA
-  bundle in its K8s Secret; the chain validates the upstream handshake
-  against it instead of the system trust store (self-signed cluster CAs),
-  with SAN pinning unchanged. Agent-side trust is unaffected: the agent
-  always trusts the platform MITM CA, never the upstream's.
+- **Upstream trust** — chains validate the upstream against the system
+  trust store, plus any CA the install names for a TLS-intercepting egress
+  path (a corporate proxy, or the platform's own gateway when it runs in
+  an agent). A connection carrying its upstream's own CA in its Secret
+  (self-signed cluster CAs) is validated against that alone. SAN pinning
+  is unchanged; the agent always trusts the platform MITM CA, never an
+  upstream's.
 
 **Path rewriting.** An injection descriptor can declare path prefix
 rewrites for its host: the chain matches those prefixes ahead of its
