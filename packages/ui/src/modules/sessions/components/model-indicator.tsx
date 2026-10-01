@@ -16,9 +16,19 @@ interface Props {
     label: string;
     onConfigure: () => void;
   };
+  sessionChoices?: {
+    current: string;
+    choices: readonly { value: string; name: string }[];
+    onChoose: (value: string) => void;
+  };
 }
 
-export function ModelIndicator({ model, subject, settings }: Props) {
+export function ModelIndicator({
+  model,
+  subject,
+  settings,
+  sessionChoices,
+}: Props) {
   const titleId = useId();
 
   return (
@@ -55,8 +65,33 @@ export function ModelIndicator({ model, subject, settings }: Props) {
         <p className="text-muted-foreground">
           This {subject} is using{" "}
           <span className="text-foreground">{model}</span>
-          {settings ? `. Change the model in ${settings.label}.` : "."}
+          {guidance((sessionChoices?.choices.length ?? 0) > 0, settings?.label)}
         </p>
+        {sessionChoices && sessionChoices.choices.length > 0 && (
+          <ul
+            aria-label="Models for this session"
+            className="-mx-1 max-h-56 overflow-y-auto"
+          >
+            {sessionChoices.choices.map((choice) => (
+              <li key={choice.value}>
+                <PopoverClose asChild>
+                  <button
+                    type="button"
+                    aria-current={
+                      choice.value === sessionChoices.current
+                        ? "true"
+                        : undefined
+                    }
+                    onClick={() => sessionChoices.onChoose(choice.value)}
+                    className="w-full truncate rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
+                  >
+                    {choice.name}
+                  </button>
+                </PopoverClose>
+              </li>
+            ))}
+          </ul>
+        )}
         {settings && (
           <PopoverClose asChild>
             <button
@@ -71,4 +106,13 @@ export function ModelIndicator({ model, subject, settings }: Props) {
       </PopoverContent>
     </Popover>
   );
+}
+
+function guidance(canSwitch: boolean, settingsLabel: string | undefined) {
+  if (canSwitch && settingsLabel) {
+    return `. Switch it below, or change the default for new sessions in ${settingsLabel}.`;
+  }
+  if (canSwitch) return ". Switch it below.";
+  if (settingsLabel) return `. Change the model in ${settingsLabel}.`;
+  return ".";
 }

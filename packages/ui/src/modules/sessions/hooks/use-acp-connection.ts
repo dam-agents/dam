@@ -1,4 +1,7 @@
-import type { ClientConnection } from "@agentclientprotocol/sdk";
+import type {
+  ClientConnection,
+  LoadSessionResponse,
+} from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
@@ -30,6 +33,7 @@ import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
+import { sessionModelFrom } from "../lib/session-model.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
@@ -214,6 +218,14 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
+        const viewing = useStore.getState().sessionId;
+        if (viewing === null || viewing === startedSessionId) {
+          useStore
+            .getState()
+            .setSessionModel(
+              sessionModelFrom(startedSessionId, session.configOptions),
+            );
+        }
       } catch (err) {
         try {
           ws.close();
@@ -411,6 +423,14 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
+        useStore
+          .getState()
+          .setSessionModel(
+            sessionModelFrom(
+              sid,
+              (result as LoadSessionResponse | null)?.configOptions,
+            ),
+          );
         useStore
           .getState()
           .setRunStarts([
