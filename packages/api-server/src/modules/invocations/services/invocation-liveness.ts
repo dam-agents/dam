@@ -14,6 +14,7 @@ export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   reaper: TargetReaper;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  hasAgent: (agentId: string) => Promise<boolean>;
   batchSize: number;
   now?: () => Date;
 }
@@ -69,7 +70,18 @@ export function createInvocationLivenessSweep(
         graceEnd,
         deps.batchSize,
       );
-      for (const row of unreaped) await deps.reaper.reap(row);
+      for (const row of unreaped) {
+        await deps.reaper.reap(row);
+        try {
+          if (!(await deps.hasAgent(row.rootDriverId))) {
+            await deps.repo.deleteReapedByRoot(row.rootDriverId);
+          }
+        } catch (err) {
+          process.stderr.write(
+            `[invocation-liveness] orphan-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+      }
     } finally {
       running = false;
     }

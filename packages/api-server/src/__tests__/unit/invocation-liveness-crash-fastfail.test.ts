@@ -46,17 +46,26 @@ function runningRow(id: string): InvocationRow {
 function makeSweep(
   rows: InvocationRow[],
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>,
+  opts: {
+    unreaped?: InvocationRow[];
+    hasAgent?: (agentId: string) => Promise<boolean>;
+  } = {},
 ) {
   const failed: { id: string; reason: string }[] = [];
   const deleted: string[] = [];
+  const droppedRoots: string[] = [];
   const repo = {
     listExpiredRunning: async () => [],
     listRunning: async () => rows,
-    listTerminalUnreaped: async () => [],
+    listTerminalUnreaped: async () => opts.unreaped ?? [],
     fail: async (id: string, reason: string) => {
       failed.push({ id, reason });
     },
     delete: async () => {},
+    deleteReapedByRoot: async (root: string) => {
+      droppedRoots.push(root);
+      return 0;
+    },
   } as unknown as InvocationsRepository;
 
   const sweep = createInvocationLivenessSweep({
@@ -67,9 +76,10 @@ function makeSweep(
       },
     },
     readTargetRestart,
+    hasAgent: opts.hasAgent ?? (async () => true),
     batchSize: 10,
   });
-  return { sweep, failed, deleted };
+  return { sweep, failed, deleted, droppedRoots };
 }
 
 describe("invocation liveness — crash fast-fail", () => {
@@ -142,5 +152,39 @@ describe("invocation liveness — crash fast-fail", () => {
 
     expect(seen).toEqual(["agent-unreadable", "agent-crashed"]);
     expect(failed.map((f) => f.id)).toEqual(["agent-crashed"]);
+  });
+});
+
+describe("invocation liveness — records of a deleted root", () => {
+  function terminalRow(id: string): InvocationRow {
+    return {
+      ...runningRow(id),
+      status: "done",
+      completedAt: new Date(Date.now() - 60_000),
+    };
+  }
+
+  // TEST_SCENARIO: A root's delete left a row whose reap had failed. The sweep
+  test("drops the reaped records of a root whose Agent is gone once it finishes the reap", async () => {
+    const { sweep, deleted, droppedRoots } = makeSweep([], async () => null, {
+      unreaped: [terminalRow("agent-late")],
+      hasAgent: async () => false,
+    });
+
+    await sweep.tick();
+
+    expect(deleted).toEqual(["agent-late"]);
+    expect(droppedRoots).toEqual(["driver-1"]);
+  });
+
+  test("keeps the records of a root that still exists", async () => {
+    const { sweep, deleted, droppedRoots } = makeSweep([], async () => null, {
+      unreaped: [terminalRow("agent-late")],
+    });
+
+    await sweep.tick();
+
+    expect(deleted).toEqual(["agent-late"]);
+    expect(droppedRoots).toEqual([]);
   });
 });

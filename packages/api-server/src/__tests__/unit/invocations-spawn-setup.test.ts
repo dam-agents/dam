@@ -35,7 +35,7 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     listByRoot: async () => [],
     listUnreapedByRoot: async () => [],
     delete: async () => {},
-    deleteByRoot: async () => 0,
+    deleteReapedByRoot: async () => 0,
     ...overrides,
   };
   return { repo, failed };

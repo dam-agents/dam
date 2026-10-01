@@ -7,8 +7,8 @@ import type { TargetReaper } from "./target-reaper.js";
  * deleted target fails its own record and its running children, whose
  * conversations are still kept for the root. A deleted root reaps every
  * target of its tree whose Agent may still exist, reported ones included, and
- * only then drops the records, since no sweep can find a target once its row
- * is gone.
+ * only then drops the records whose reap landed. A row whose reap failed stays
+ * for the liveness sweep, since no sweep can find a target once its row is gone.
  */
 export function createDriverCascade(deps: {
   repo: InvocationsRepository;
@@ -42,6 +42,6 @@ export function createDriverCascade(deps: {
       if (row.status === "running") await failDriven(row, agentId);
       await deps.reaper.reap(row, { capture: false });
     }
-    await deps.repo.deleteByRoot(agentId);
+    await deps.repo.deleteReapedByRoot(agentId);
   };
 }

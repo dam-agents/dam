@@ -69,7 +69,7 @@ export interface InvocationsRepository {
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
   delete(id: string): Promise<void>;
-  deleteByRoot(rootDriverId: string): Promise<number>;
+  deleteReapedByRoot(rootDriverId: string): Promise<number>;
 }
 
 function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
@@ -292,10 +292,15 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       await db.delete(invocationsTable).where(eq(invocationsTable.id, id));
     },
 
-    async deleteByRoot(rootDriverId) {
+    async deleteReapedByRoot(rootDriverId) {
       const deleted = await db
         .delete(invocationsTable)
-        .where(eq(invocationsTable.rootDriverId, rootDriverId))
+        .where(
+          and(
+            eq(invocationsTable.rootDriverId, rootDriverId),
+            isNotNull(invocationsTable.reapedAt),
+          ),
+        )
         .returning({ id: invocationsTable.id });
       return deleted.length;
     },

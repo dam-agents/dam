@@ -46,7 +46,7 @@ function fakeRepo(rows: InvocationRow[]) {
   const calls = {
     markReaped: vi.fn(async (_id: string) => {}),
     markTranscriptCaptured: vi.fn(async (_id: string, _t: boolean) => {}),
-    deleteByRoot: vi.fn(async (_root: string) => 0),
+    deleteReapedByRoot: vi.fn(async (_root: string) => 0),
     fail: vi.fn(async (_id: string, _reason: string) => {}),
   };
   const repo: InvocationsRepository = {
@@ -68,7 +68,7 @@ function fakeRepo(rows: InvocationRow[]) {
       rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
     delete: async () => {},
     markTranscriptCaptured: calls.markTranscriptCaptured,
-    deleteByRoot: calls.deleteByRoot,
+    deleteReapedByRoot: calls.deleteReapedByRoot,
   };
   return { repo, calls };
 }
@@ -205,7 +205,7 @@ describe("the driver cascade", () => {
     };
   }
 
-  test("a deleted root reaps every target of its tree that may still exist, then drops its records", async () => {
+  test("a deleted root reaps every target of its tree that may still exist, then drops the reaped records", async () => {
     const { repo, calls } = fakeRepo([
       row("agent-a"),
       row("agent-b", { driverAgentId: "agent-a" }),
@@ -223,7 +223,7 @@ describe("the driver cascade", () => {
       "agent-a",
       "agent-b",
     ]);
-    expect(calls.deleteByRoot).toHaveBeenCalledWith("root-1");
+    expect(calls.deleteReapedByRoot).toHaveBeenCalledWith("root-1");
   });
 
   test("a deleted target captures its own children and keeps the root's records", async () => {
@@ -240,7 +240,7 @@ describe("the driver cascade", () => {
     expect(calls.markReaped).toHaveBeenCalledWith("agent-mid");
     expect(reaper.reap).toHaveBeenCalledTimes(1);
     expect(reaper.reap.mock.calls[0]).toContainEqual({ capture: true });
-    expect(calls.deleteByRoot).not.toHaveBeenCalled();
+    expect(calls.deleteReapedByRoot).not.toHaveBeenCalled();
   });
 });
 

@@ -37,7 +37,7 @@ function makeService(opts: {
       rec.deleted.push(id);
     },
     markTranscriptCaptured: async () => {},
-    deleteByRoot: async () => 0,
+    deleteReapedByRoot: async () => 0,
   };
   const service = createInvocationsService({
     owner: "owner-1",

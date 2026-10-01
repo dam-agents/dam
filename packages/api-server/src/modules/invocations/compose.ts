@@ -105,6 +105,7 @@ export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  hasAgent: (agentId: string) => Promise<boolean>;
   batchSize: number;
   frames: DelegationFramesPort;
 }): InvocationLivenessSweep {
@@ -113,6 +114,7 @@ export function composeInvocationLivenessSweep(opts: {
     repo,
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
     readTargetRestart: opts.readTargetRestart,
+    hasAgent: opts.hasAgent,
     batchSize: opts.batchSize,
   });
 }

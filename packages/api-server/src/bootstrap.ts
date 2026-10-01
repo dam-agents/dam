@@ -1320,6 +1320,7 @@ export async function bootstrap() {
           }
         : null;
     },
+    hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
   });

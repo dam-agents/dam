@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-09-30
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -50,7 +50,7 @@ sequenceDiagram
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
 
-**One reap path.** Every way a target goes — reported, failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
+**One reap path.** Every way a target goes — reported, failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick. A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
 
 ## The delegation record
 
