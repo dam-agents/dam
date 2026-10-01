@@ -72,6 +72,46 @@ describe("seeding a discovered model", () => {
     return parsed.platform?.model;
   };
 
+  /**
+   * TEST_SCENARIO: Only the source that answers speaks for the seed. A pin or
+   * a redirect variable belonging to a source that was not asked must neither
+   * block the seed nor justify one.
+   */
+  it("judges pins and redirects by the source that answered", async () => {
+    const binding: HarnessConfigBinding = {
+      ...BINDING,
+      modelDiscovery: [
+        {
+          urlEnv: ["OPENAI_URL"],
+          redirectEnv: ["OPENAI_URL"],
+          pinEnv: ["OPENAI_MODEL"],
+        },
+        {
+          urlEnv: ["BEDROCK_URL"],
+          redirectEnv: ["BEDROCK_URL"],
+          pinEnv: ["BEDROCK_MODEL"],
+        },
+      ],
+    };
+    const env = {
+      BEDROCK_URL: "https://bedrock",
+      OPENAI_MODEL: "gpt-unrelated",
+    };
+    const plugin = createHarnessConfigPlugin({
+      binding,
+      agentHome: home,
+      envReader: { current: () => env, ready: () => true },
+      discoverModels: async () => ({
+        status: "observed",
+        via: "BEDROCK_URL",
+        models: [{ value: "eu.profile", name: "eu.profile" }],
+      }),
+      log: () => {},
+    });
+    expect(await plugin.seedModel()).toBe(true);
+    expect(readModel()).toBe("eu.profile");
+  });
+
   it("writes the first discovered model when a connection redirects the harness", async () => {
     expect(
       await seedWith({ REDIRECT_URL: "https://proxy" }, "REDIRECT_URL"),

@@ -32,7 +32,7 @@ Runtime APIs, so the first version needs **no gateway or controller change**: Be
   the header it produces), `AWS_REGION`, `AWS_BEDROCK_MODEL` when pinned, and
   `AWS_BEDROCK_FORCE_HTTP1=1` — Pi's Bedrock client defaults to HTTP/2 unless a proxy env
   applies, and the gateway's credential chains are HTTP/1.1 by default.
-- **Pi** (`@earendil-works/pi-ai` 0.86.1) already ships provider `amazon-bedrock`
+- **Pi** (`@earendil-works/pi-ai` 0.99.2) already ships provider `amazon-bedrock`
   (API `bedrock-converse-stream`); with `AWS_BEARER_TOKEN_BEDROCK` set it sends
   `Authorization: Bearer` instead of SigV4 and reads the region from `AWS_REGION`. Pi's
   dynamic-providers extension selects it as the default provider with the pinned model.
@@ -60,7 +60,7 @@ than Pi; surfacing every Pi provider error in the chat (its own issue).
 |----|-------|-------|------------|
 | 01 ✅ | Bedrock provider connection | Contract preset, connection template with region-derived host, Providers-tab form, icon, CLI prompt, connections doc | — |
 | 02 ✅ | Pi runs on Bedrock | Pi templates accept `bedrock`; Pi extension selects `amazon-bedrock` + pinned model; Pi README and harness-config doc | 01 |
-| 03 | Bedrock model discovery | Second injection host + `AWS_ENDPOINT_URL_BEDROCK`; discovery sources as a list with a `bedrock-inference-profiles` shape; Pi manifest source; extension narrows Pi's model list; docs | 02 |
+| 03 ✅ | Bedrock model discovery | Second injection host + `AWS_ENDPOINT_URL_BEDROCK`; discovery sources as a list with a `bedrock-inference-profiles` shape; Pi manifest source; extension narrows Pi's model list; docs | 02 |
 
 ## Conventions & glossary
 

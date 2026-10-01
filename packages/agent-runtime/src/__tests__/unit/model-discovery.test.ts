@@ -182,4 +182,80 @@ describe("createModelDiscovery", () => {
       discover({ urlEnv: ["U"] }, { U: "https://p" }),
     ).resolves.toEqual({ status: "unavailable" });
   });
+
+  /**
+   * TEST_SCENARIO: Bedrock lists inference profiles rather than models. Only
+   * an ACTIVE profile is invocable, so anything else is left out, and the
+   * request goes to the declared listing path on the control-plane endpoint.
+   */
+  it("reads a Bedrock inference-profile listing, keeping only active profiles", async () => {
+    const { fetchImpl, urls } = stubFetch({
+      body: {
+        inferenceProfileSummaries: [
+          {
+            inferenceProfileId: "eu.anthropic.claude-sonnet-4-6",
+            status: "ACTIVE",
+          },
+          {
+            inferenceProfileId: "eu.anthropic.claude-opus-4-8",
+            status: "INACTIVE",
+          },
+          { inferenceProfileId: "eu.amazon.nova-pro-v1:0", status: "ACTIVE" },
+          { status: "ACTIVE" },
+        ],
+      },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    expect(
+      await discover(
+        {
+          urlEnv: ["AWS_ENDPOINT_URL_BEDROCK"],
+          path: "/inference-profiles?maxResults=1000",
+          shape: "bedrock-inference-profiles",
+        },
+        {
+          AWS_ENDPOINT_URL_BEDROCK:
+            "https://bedrock.eu-central-1.amazonaws.com",
+        },
+      ),
+    ).toEqual({
+      status: "observed",
+      via: "AWS_ENDPOINT_URL_BEDROCK",
+      models: [
+        { value: "eu.amazon.nova-pro-v1:0", name: "eu.amazon.nova-pro-v1:0" },
+        {
+          value: "eu.anthropic.claude-sonnet-4-6",
+          name: "eu.anthropic.claude-sonnet-4-6",
+        },
+      ],
+    });
+    expect(urls).toEqual([
+      "https://bedrock.eu-central-1.amazonaws.com/inference-profiles?maxResults=1000",
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A manifest can declare several sources, one per provider
+   * dialect. The first whose variable the agent was granted answers, in that
+   * source's own dialect.
+   */
+  it("asks the first declared source whose variable is set", async () => {
+    const { fetchImpl, urls } = stubFetch({
+      body: {
+        inferenceProfileSummaries: [
+          { inferenceProfileId: "p", status: "ACTIVE" },
+        ],
+      },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    const outcome = await discover(
+      [
+        { urlEnv: ["OPENAI_BASE_URL"] },
+        { urlEnv: ["BEDROCK_URL"], shape: "bedrock-inference-profiles" },
+      ],
+      { BEDROCK_URL: "https://bedrock" },
+    );
+    expect(outcome).toMatchObject({ status: "observed", via: "BEDROCK_URL" });
+    expect(urls).toEqual(["https://bedrock/v1/models"]);
+  });
 });

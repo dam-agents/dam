@@ -246,7 +246,6 @@ export type {
 export {
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
-  bedrockProfilePrefix,
   BOB_CHAT_MODES,
   isValidEnvName,
   PROVIDERS,

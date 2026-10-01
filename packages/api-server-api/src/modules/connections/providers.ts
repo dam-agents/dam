@@ -48,18 +48,11 @@ export function bedrockRuntimeHost(region: string): string {
   return `bedrock-runtime.${region}.amazonaws.com`;
 }
 
-const BEDROCK_PROFILE_PREFIXES: Record<string, string> = {
-  "ap-northeast-1": "jp",
-  "ap-southeast-2": "au",
-};
-
-export function bedrockProfilePrefix(region: string): string {
-  const special = BEDROCK_PROFILE_PREFIXES[region];
-  if (special) return special;
-  if (region.startsWith("eu-")) return "eu";
-  if (region.startsWith("us-")) return "us";
-  return "global";
+export function bedrockControlHost(region: string): string {
+  return `bedrock.${region}.amazonaws.com`;
 }
+
+export const BEDROCK_CONTROL_URL_ENV = "AWS_ENDPOINT_URL_BEDROCK";
 
 export function bedrockEnvMappings(): EnvMapping[] {
   return [

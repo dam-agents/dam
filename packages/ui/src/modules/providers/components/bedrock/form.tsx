@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import {
   BEDROCK_REGION_PATTERN,
   type BedrockPins,
-  bedrockProfilePrefix,
   PROVIDERS,
 } from "../../../../types.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
@@ -40,14 +39,12 @@ export function BedrockForm({
   onSave: (input: { value: string; pins: BedrockPins }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const { register, handleSubmit, watch, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(bedrockCredentialSchema),
     mode: "onChange",
     defaultValues: { value: "", region: DEFAULT_REGION, model: "" },
   });
   const { errors, isSubmitting, isValid } = formState;
-  const region = watch("region").trim();
-  const modelPlaceholder = `${bedrockProfilePrefix(REGION_RE.test(region) ? region : DEFAULT_REGION)}.anthropic.claude-sonnet-4-6`;
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
@@ -107,13 +104,13 @@ export function BedrockForm({
           </FormField>
           <FormField
             label="Model"
-            hint="Optional default model. Most models are invocable only through an inference profile with a region prefix — a bare model ID is usually refused."
+            hint="Optional. Leave empty and agents start on one of the region's inference profiles, and offer the rest to choose from. A model set here must be an inference-profile ID such as eu.anthropic.claude-sonnet-4-6."
             error={errors.model?.message}
           >
             <Input
               type="text"
               autoComplete="off"
-              placeholder={modelPlaceholder}
+              placeholder="Pick one of the region's inference profiles"
               className="font-mono text-sm"
               {...register("model")}
             />

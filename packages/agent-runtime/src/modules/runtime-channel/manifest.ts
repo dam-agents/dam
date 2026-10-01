@@ -25,9 +25,17 @@ export const modelDiscoverySpec = z.object({
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
   path: z.string().startsWith("/").optional(),
-  shape: z.enum(["openai-models", "litellm-model-info"]).optional(),
+  shape: z
+    .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
+    .optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
+
+export const modelDiscoverySources = z.union([
+  modelDiscoverySpec,
+  z.array(modelDiscoverySpec).nonempty(),
+]);
+export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
@@ -49,7 +57,7 @@ export const harnessConfigBinding = z.object({
       },
     ),
   catalog: harnessConfigCatalog.optional(),
-  modelDiscovery: modelDiscoverySpec.optional(),
+  modelDiscovery: modelDiscoverySources.optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 

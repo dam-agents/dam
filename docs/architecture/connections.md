@@ -233,8 +233,15 @@ the gateway overwrites `Authorization` with `Bearer <key>` on the region's
 runtime host, and the agent holds only a placeholder in
 `AWS_BEARER_TOKEN_BEDROCK`. The region is a required input at connect time
 and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a
-Connection serves one region; it also lands in `AWS_REGION`. An optional
-model input becomes the provider's model pin. The Connection also asks the
+Connection serves one region; it also lands in `AWS_REGION`. The key is
+injected on the region's control-plane host too,
+`bedrock.<region>.amazonaws.com`, which the Connection names in
+`AWS_ENDPOINT_URL_BEDROCK`: that is where the harness-config driver lists
+the region's inference profiles
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)),
+so the Config panel offers only IDs Bedrock can invoke there and an
+unpinned agent is seeded one. An optional model input becomes the
+provider's model pin. The Connection also asks the
 harness's Bedrock client for HTTP/1.1, which every credential chain speaks
 by default. IAM access keys and assumed roles are not accepted: Bedrock
 requires those to sign each request with SigV4, and the gateway injects a
