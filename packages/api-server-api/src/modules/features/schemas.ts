@@ -7,6 +7,7 @@ export const featureIdSchema = z.enum([
   "interactive-artifacts",
   "agent-telemetry",
   "agent-avatars",
+  "strict-connection-addressing",
 ]);
 
 export const featureSetFlagInputSchema = z.object({

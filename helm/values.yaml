@@ -1772,15 +1772,6 @@ controller:
   # its image's own roots. Set with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
-  # -- EXPERIMENTAL. When true, a gateway injects a Connection's credential only
-  # into a request that names that Connection: by its token placeholder in the
-  # claimed header or query parameter, or by its path prefix, the same address
-  # that picks between two Connections on one host. Any other request goes
-  # upstream with the credential it already carries. That is what a platform
-  # running inside one of its own agents needs, so the outer gateway stops
-  # replacing the inner gateway's credentials. A Connection that gives the agent
-  # no address to send must then be reached through its path prefix.
-  gatewayRequireConnectionAddress: false
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like

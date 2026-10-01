@@ -28,6 +28,7 @@ const setupFormSchema = z.object({
     })
     .default({ slack: false, telegram: false }),
   slackChannelId: z.string().default(""),
+  requireConnectionAddress: z.boolean().default(false),
   skippedSchedules: z.array(z.string()).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });

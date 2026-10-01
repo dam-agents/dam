@@ -38,7 +38,10 @@ const (
 	// attempts of a runtime migration, which fails once they run out.
 	// Agent gen 14: movedFrom removed from Mount — a runtime migration now
 	// carries only HOME, so no mount is ever moved.
-	AgentSchemaGeneration = 14
+	// Agent gen 15: requireConnectionAddress added to AgentSpec — the agent's
+	// gateway injects a Connection's credential only into a request that names
+	// that Connection (#4246).
+	AgentSchemaGeneration = 15
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

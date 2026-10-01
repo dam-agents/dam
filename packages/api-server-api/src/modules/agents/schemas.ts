@@ -89,6 +89,7 @@ export const agentCreateInputSchema = z
       .optional(),
     egressPreset: egressPresetSchema.optional(),
     hibernationTimeoutMin: z.number().int().min(0).optional(),
+    requireConnectionAddress: z.boolean().optional(),
     gitRepo: z
       .object({
         url: z.url(),

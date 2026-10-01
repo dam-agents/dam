@@ -20,6 +20,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -29,6 +30,7 @@ import { ImageSection } from "../../sandboxes/components/setup/image-section.js"
 import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
+  ConnectionAddressingSetupSection,
   ConnectionsSetupSection,
   LifecycleSetupSection,
   NameSection,
@@ -141,6 +143,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       scope: kit ? `${kit.catalog}/${kit.id}` : undefined,
     });
   const vmRuntime = useVmRuntime();
+  const features = useFeatures();
+  const addressingOffered =
+    features.data?.["strict-connection-addressing"] === true;
   const agentsQ = useAgents();
   const availableChannels = agentsQ.data?.availableChannels;
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
@@ -289,6 +294,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     connectionIds: form.connectionIds,
     registryCredential,
     hibernationTimeoutMin: form.hibernationTimeoutMin,
+    requireConnectionAddress:
+      addressingOffered && form.requireConnectionAddress,
   };
   const selectedTemplate = catalogue.harnesses.find(
     (t) => t.id === form.templateId,
@@ -667,6 +674,14 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           }
           sizeMi={
             selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
+          }
+        />
+      )}
+      {!kit && addressingOffered && (
+        <ConnectionAddressingSetupSection
+          value={form.requireConnectionAddress}
+          onChange={(requireConnectionAddress) =>
+            update({ requireConnectionAddress })
           }
         />
       )}

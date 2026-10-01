@@ -136,6 +136,15 @@ export interface AgentSpecCR {
     [k: string]: string;
   };
   /**
+   * RequireConnectionAddress makes the agent's gateway inject a Connection's
+   * credential only into a request that names that Connection, by its token
+   * placeholder or its path prefix. Every other request goes upstream with
+   * the credential it already carries. For an agent that runs a nested
+   * platform, whose own gateways send credentials the outer gateway must
+   * not replace.
+   */
+  requireConnectionAddress?: boolean;
+  /**
    * Resources are the agent container's resource requests and limits.
    */
   resources?: {

@@ -277,6 +277,9 @@ export function createStarterKitsService(
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
           : {}),
+        ...(kit.requireConnectionAddress
+          ? { requireConnectionAddress: true }
+          : {}),
         starterKit: kitRef(loaded.catalog, kit.id, version),
       };
       const agent = await deps.agents.create(createInput);

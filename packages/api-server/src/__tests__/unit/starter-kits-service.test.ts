@@ -1075,6 +1075,26 @@ describe("starter kits: domain helpers", () => {
   });
 });
 
+describe("starter kits: connection addressing", () => {
+  // TEST_SCENARIO: a kit can ask for an agent whose gateway injects only addressed requests, whatever the creating user's own feature flags say, and a kit that does not ask leaves the create untouched.
+  it("passes the kit's choice to the create only when it asks for it", async () => {
+    const strict = makeHarness({
+      ...LOADED,
+      kit: kit({ requireConnectionAddress: true }),
+    });
+    await strict.service.apply(APPLY);
+    expect(strict.calls.created[0]).toMatchObject({
+      requireConnectionAddress: true,
+    });
+
+    const plain = makeHarness(LOADED);
+    await plain.service.apply(APPLY);
+    expect(plain.calls.created[0]).not.toHaveProperty(
+      "requireConnectionAddress",
+    );
+  });
+});
+
 describe("starter kits: egress preset", () => {
   // TEST_SCENARIO: the kit's egress preset seeds the agent's network rules at create, and a kit that names none leaves the create's own default in place rather than overriding it.
   it("passes the kit's egress preset to the create only when it declares one", async () => {

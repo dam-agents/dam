@@ -136,6 +136,14 @@ type AgentSpec struct {
 	// does not drive; it is service-only input, like the pre-minted id.
 	// +optional
 	TelemetryAttributionID string `json:"telemetryAttributionId,omitempty"`
+	// RequireConnectionAddress makes the agent's gateway inject a Connection's
+	// credential only into a request that names that Connection, by its token
+	// placeholder or its path prefix. Every other request goes upstream with
+	// the credential it already carries. For an agent that runs a nested
+	// platform, whose own gateways send credentials the outer gateway must
+	// not replace.
+	// +optional
+	RequireConnectionAddress bool `json:"requireConnectionAddress,omitempty"`
 }
 
 // Backend is a discriminated union selecting the agent's isolation substrate
@@ -304,7 +312,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=14
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=15
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

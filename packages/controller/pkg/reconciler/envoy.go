@@ -85,6 +85,7 @@ type envoyPathRewrite struct {
 }
 
 type envoyHostChain struct {
+	RequireAddress  bool
 	ChainID         string
 	Host            string
 	Credentials     []envoyCredential
@@ -675,8 +676,11 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 	return v
 }
 
-func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
+func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets, l7Hosts)
+	for i := range chains {
+		chains[i].RequireAddress = requireAddress
+	}
 	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, vm)
 	if err != nil {
 		return nil, err
@@ -757,15 +761,15 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string) string {
+func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) string {
 	rev := envoySecretsRev(secrets, l7Hosts)
-	if cfg.GatewayUpstreamTrustBundle == "" && !cfg.GatewayRequireConnectionAddress {
+	if cfg.GatewayUpstreamTrustBundle == "" && !requireAddress {
 		return rev
 	}
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		rev += "\ntrust=" + cfg.GatewayUpstreamTrustBundle
 	}
-	if cfg.GatewayRequireConnectionAddress {
+	if requireAddress {
 		rev += "\nrequire-connection-address"
 	}
 	sum := sha256.Sum256([]byte(rev))

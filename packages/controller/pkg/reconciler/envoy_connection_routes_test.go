@@ -4,9 +4,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func connectionChain(host string, creds ...envoyCredential) envoyHostChain {
@@ -427,10 +428,11 @@ func TestLuaConnectionAddressScript_ListsEveryClaimedHeaderAndParam(t *testing.T
 	assert.Contains(t, script, `string.lower(scheme) == "basic"`)
 }
 
-func requireAddressCfg() *config.Config {
-	cfg := *bootstrapTestCfg
-	cfg.GatewayRequireConnectionAddress = true
-	return &cfg
+func requiringAddress(chains ...envoyHostChain) []envoyHostChain {
+	for i := range chains {
+		chains[i].RequireAddress = true
+	}
+	return chains
 }
 
 func assertInjectsOnlyWhenAddressed(t *testing.T, filter map[string]any, connectionID string) {
@@ -449,11 +451,11 @@ func assertInjectsOnlyWhenAddressed(t *testing.T, filter map[string]any, connect
 }
 
 func TestRenderEnvoyBootstrap_RequireAddressGatesASingleConnection(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
 		connectionChain("api.anthropic.com",
 			connectionCredential("conn-one", "platform-conn-one", "Authorization", "api.anthropic.com"),
 		),
-	}, false)
+	), false)
 	require.NoError(t, err)
 
 	injectors := injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.anthropic.com"))
@@ -465,12 +467,12 @@ func TestRenderEnvoyBootstrap_RequireAddressGatesASingleConnection(t *testing.T)
 }
 
 func TestRenderEnvoyBootstrap_RequireAddressGatesRivalsByTheirOwnAddress(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
 		connectionChain("api.github.com",
 			connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "api.github.com"),
 			connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "api.github.com"),
 		),
-	}, false)
+	), false)
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
 
@@ -484,9 +486,9 @@ func TestRenderEnvoyBootstrap_RequireAddressGatesRivalsByTheirOwnAddress(t *test
 func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T) {
 	cred := connectionCredential("conn-q", "platform-conn-q", "X-Key", "api.example.com")
 	cred.QueryParamName = "key"
-	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
 		connectionChain("api.example.com", cred),
-	}, false)
+	), false)
 	require.NoError(t, err)
 
 	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "api.example.com")
@@ -501,9 +503,9 @@ func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T)
 }
 
 func TestRenderEnvoyBootstrap_RequireAddressLeavesCredentialsWithoutAConnectionPlain(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", requireAddressCfg(), []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
 		credentialedChain("platform-conn-github", "api.github.com"),
-	}, false)
+	), false)
 	require.NoError(t, err)
 
 	for _, f := range injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.github.com")) {
@@ -515,7 +517,22 @@ func TestRenderEnvoyBootstrap_RequireAddressLeavesCredentialsWithoutAConnectionP
 }
 
 func TestEnvoyGatewayRev_RollsTheGatewayWhenRequireAddressToggles(t *testing.T) {
-	assert.Equal(t, envoySecretsRev(nil, nil), envoyGatewayRev(bootstrapTestCfg, nil, nil),
-		"an install that leaves the flag off keeps today's revision")
-	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, nil, nil), envoyGatewayRev(requireAddressCfg(), nil, nil))
+	assert.Equal(t, envoySecretsRev(nil, nil), envoyGatewayRev(bootstrapTestCfg, nil, nil, false),
+		"an agent that leaves the flag off keeps today's revision")
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, nil, nil, false), envoyGatewayRev(bootstrapTestCfg, nil, nil, true))
+}
+
+func TestBuildEnvoyBootstrapConfigMap_RequireAddressReachesEveryChain(t *testing.T) {
+	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
+	secret := ownerSecret("platform-conn-anthropic", "connection", "conn-anthropic")
+	delete(secret.Annotations, envoyHostPatternAnn)
+	secret.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.anthropic.com","headerName":"Authorization"}]`
+	secret = withHostSDS(secret, "api.anthropic.com")
+
+	off, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, false)
+	require.NoError(t, err)
+	on, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, true)
+	require.NoError(t, err)
+	assert.NotContains(t, off.Data["envoy.yaml"], "matcher_list")
+	assert.Contains(t, on.Data["envoy.yaml"], "matcher_list")
 }

@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "14"
+    agent-platform.ai/crd-schema-generation: "15"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -216,6 +216,15 @@ spec:
                   Container backend only — rejected on the vm backend, whose machine is
                   placed with its owner's VM runner.
                 type: object
+              requireConnectionAddress:
+                description: |-
+                  RequireConnectionAddress makes the agent's gateway inject a Connection's
+                  credential only into a request that names that Connection, by its token
+                  placeholder or its path prefix. Every other request goes upstream with
+                  the credential it already carries. For an agent that runs a nested
+                  platform, whose own gateways send credentials the outer gateway must
+                  not replace.
+                type: boolean
               resources:
                 description: Resources are the agent container's resource requests
                   and limits.

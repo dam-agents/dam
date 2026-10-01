@@ -140,15 +140,3 @@ func TestLoadFromEnv_GatewayUpstreamExtraCAs(t *testing.T) {
 	_, err = LoadFromEnv()
 	assert.ErrorContains(t, err, "PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS")
 }
-
-func TestLoadFromEnv_GatewayRequireConnectionAddress(t *testing.T) {
-	setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "r", "POD_NAME": "p"})
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.False(t, cfg.GatewayRequireConnectionAddress)
-
-	setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "r", "POD_NAME": "p", "PLATFORM_GATEWAY_REQUIRE_CONNECTION_ADDRESS": "true"})
-	cfg, err = LoadFromEnv()
-	require.NoError(t, err)
-	assert.True(t, cfg.GatewayRequireConnectionAddress)
-}

@@ -164,6 +164,7 @@ export const starterKitSchema = z.object({
   bundledSkills: starterKitBundledSkillsSchema.optional(),
   env: agentSetupShape.env,
   hibernationTimeoutMin: z.number().int().min(0).optional(),
+  requireConnectionAddress: z.boolean().optional(),
 });
 
 export const onboardingStepSchema = z.object({

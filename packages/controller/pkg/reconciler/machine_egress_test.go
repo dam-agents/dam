@@ -96,18 +96,18 @@ func TestTheMachineResolverAnswersLocallyAndForwardsNothing(t *testing.T) {
 	assert.Contains(t, machineDNSCorefile, "IN A {$"+machineDNSGatewayIPEnv+"}")
 	assert.Contains(t, machineDNSCorefile, "template ANY ANY {\n        rcode REFUSED")
 
-	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", true, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil)
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", true, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, machineDNSCorefile, cm.Data[machineDNSCorefileKey])
 
-	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil)
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, cm.Data, machineDNSCorefileKey)
 }
 
 // TEST_SCENARIO: the resolver runs beside Envoy only in a machine's gateway, answers with the address it was handed, and keeps a single capability. It states no uid, so OpenShift's restricted policy can assign one from the namespace range; a stated uid would fit no SCC the gateway may use. CoreDNS's binary carries the bind capability as a file capability, which the kernel refuses to exec outside the bounding set — dropping it too leaves a gateway pod that never starts.
 func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "172.30.1.2", testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "172.30.1.2", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	containers := ss.Spec.Template.Spec.Containers
 	require.Len(t, containers, 2)
 	dns := containers[1]
@@ -121,7 +121,7 @@ func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
 	assert.Nil(t, dns.SecurityContext.RunAsGroup)
 	assert.True(t, *dns.SecurityContext.ReadOnlyRootFilesystem)
 
-	container := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
+	container := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	assert.Len(t, container.Spec.Template.Spec.Containers, 1)
 }
 

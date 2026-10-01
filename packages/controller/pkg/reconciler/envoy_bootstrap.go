@@ -45,7 +45,6 @@ type bootstrapParams struct {
 	Transparent            bool
 	OTel                   envoyOTelView
 	UpstreamTrustedCA      string
-	RequireAddress         bool
 }
 
 func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
@@ -68,7 +67,6 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 	}
 	p := bootstrapParams{
 		UpstreamTrustedCA:      gatewayUpstreamTrustedCA(cfg),
-		RequireAddress:         cfg.GatewayRequireConnectionAddress,
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
 		Chains:                 chains,
@@ -354,7 +352,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	for _, cred := range c.Credentials {
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
-		if p.RequireAddress && cred.ConnectionID != "" {
+		if c.RequireAddress && cred.ConnectionID != "" {
 			gate = func(filter ev, innerName string) ev {
 				return skippedUnlessAddressed(filter, innerName, cred.ConnectionID)
 			}
