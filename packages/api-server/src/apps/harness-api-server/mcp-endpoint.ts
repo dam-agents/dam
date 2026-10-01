@@ -24,7 +24,10 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { InvocationsService } from "../../modules/invocations/index.js";
+import type {
+  InvocationAwaitMarks,
+  InvocationsService,
+} from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
 import { registerInvocationTools } from "./invocation-tools.js";
@@ -125,6 +128,7 @@ export interface McpSessionDeps {
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   driverOps: DriverOps;
+  invocationAwaits: InvocationAwaitMarks;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -971,7 +975,10 @@ export function createMcpSession(
     },
   );
 
-  registerInvocationTools(server, { ops: deps.driverOps });
+  registerInvocationTools(server, {
+    ops: deps.driverOps,
+    awaits: deps.invocationAwaits,
+  });
 
   if (deps.satellites)
     registerSatelliteTools(server, {
@@ -998,6 +1005,7 @@ export interface MountMcpDeps {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   driverOpsFor: DriverOpsFor;
+  invocationAwaitsFor: (driverAgentId: string) => InvocationAwaitMarks;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1062,6 +1070,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       artifactLibrary,
       invocations,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
+      invocationAwaits: deps.invocationAwaitsFor(agentId),
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

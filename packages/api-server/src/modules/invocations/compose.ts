@@ -7,6 +7,7 @@ import type {
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createDelegationControl } from "./services/delegation-control.js";
+import { createInvocationOutcomesRepository } from "./infrastructure/invocation-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
@@ -36,6 +37,11 @@ import {
 } from "./services/invocation-pin.js";
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import {
+  createInvocationOutcomeDelivery,
+  createInvocationOutcomeWakeRetry,
+  type InvocationOutcomeDeliveryDeps,
+} from "./services/outcome-delivery.js";
 
 function composeReaper(
   repo: InvocationsRepository,
@@ -116,6 +122,31 @@ export function composeInvocationLivenessSweep(opts: {
     readTargetRestart: opts.readTargetRestart,
     hasAgent: opts.hasAgent,
     batchSize: opts.batchSize,
+  });
+}
+
+export function composeInvocationOutcomeDelivery(
+  opts: Omit<InvocationOutcomeDeliveryDeps, "repo"> & { db: Db },
+): { deliver: () => Promise<number>; retry: () => Promise<number> } {
+  const deps = { ...opts, repo: createInvocationOutcomesRepository(opts.db) };
+  return {
+    deliver: createInvocationOutcomeDelivery(deps),
+    retry: createInvocationOutcomeWakeRetry(deps),
+  };
+}
+
+export interface InvocationAwaitMarks {
+  markAwaited(ids: string[], until: Date): Promise<void>;
+  markCollected(ids: string[]): Promise<void>;
+}
+
+export function composeInvocationAwaitMarks(
+  db: Db,
+): (driverAgentId: string) => InvocationAwaitMarks {
+  const repo = createInvocationOutcomesRepository(db);
+  return (driverAgentId) => ({
+    markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
+    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
   });
 }
 

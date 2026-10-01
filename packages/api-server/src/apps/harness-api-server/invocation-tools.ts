@@ -7,6 +7,7 @@ import {
   run,
   textResult,
 } from "../../core/mcp-tool-result.js";
+import type { InvocationAwaitMarks } from "../../modules/invocations/index.js";
 import type { DriverOps } from "./driver-ops.js";
 
 /**
@@ -18,6 +19,8 @@ import type { DriverOps } from "./driver-ops.js";
 export const INVOCATION_WAIT_MS = 240_000;
 
 const POLL_MS = 2_000;
+
+const AWAIT_MARGIN_MS = 30_000;
 
 const MAX_AWAIT_IDS = 50;
 
@@ -33,7 +36,7 @@ Prefer your harness's own subagent tool when it can do the job: it runs in this 
 
 The invoked agent cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the invocation at once with the reason. Do not retry this call blindly after an error: a duplicate call is a second agent.`;
 
-const AWAIT_DESCRIPTION = `Wait for invocations you started with invoke_agent. Pass the invocation ids you are waiting on. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting. An id that is not one of your invocations comes back under unknown.`;
+const AWAIT_DESCRIPTION = `Wait for invocations you started with invoke_agent. Pass the invocation ids you are waiting on. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: an invocation that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your invocations comes back under unknown.`;
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
@@ -126,9 +129,9 @@ function summarize(settled: Settled[]) {
 
 export function registerInvocationTools(
   server: McpServer,
-  deps: { ops: DriverOps; waitMs?: number },
+  deps: { ops: DriverOps; awaits: InvocationAwaitMarks; waitMs?: number },
 ): void {
-  const { ops } = deps;
+  const { ops, awaits } = deps;
   const waitMs = deps.waitMs ?? INVOCATION_WAIT_MS;
 
   server.tool("invoke_agent", INVOKE_DESCRIPTION, spawnInput, (args) =>
@@ -140,7 +143,7 @@ export function registerInvocationTools(
         );
       }
       const body = parsed.data;
-      const outcome = await ops.spawn(body);
+      const outcome = await ops.spawn(body, "tool");
       if (!outcome.ok) {
         return errorResult(`invoke_agent refused: ${outcome.message}`);
       }
@@ -163,12 +166,15 @@ export function registerInvocationTools(
         .array(z.string().min(1))
         .min(1)
         .max(MAX_AWAIT_IDS)
-        .describe("Invocation ids returned by invoke_agent that you are waiting on."),
+        .describe(
+          "Invocation ids returned by invoke_agent that you are waiting on.",
+        ),
     },
     ({ ids }, extra) =>
       run(async () => {
         const unique = [...new Set(ids)];
         const deadline = Date.now() + waitMs;
+        await awaits.markAwaited(unique, new Date(deadline + AWAIT_MARGIN_MS));
         let settled = await readAll(ops, unique);
         while (
           !settled.some((s) => s.status === "done" || s.status === "failed") &&
@@ -182,7 +188,12 @@ export function registerInvocationTools(
           );
           settled = await readAll(ops, unique);
         }
-        return json(summarize(settled));
+        const summary = summarize(settled);
+        await awaits.markCollected([
+          ...summary.done.map((d) => d.id),
+          ...summary.failed.map((f) => f.id),
+        ]);
+        return json(summary);
       }),
   );
 

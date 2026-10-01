@@ -199,6 +199,7 @@ import {
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
+  composeInvocationOutcomeDelivery,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
@@ -1352,6 +1353,23 @@ export async function bootstrap() {
     });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
+  );
+  const invocationOutcomes = composeInvocationOutcomeDelivery({
+    db,
+    bump: (agentId, events) =>
+      runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    log: (msg) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  });
+  await periodicJobs.register("invocation-outcome-delivery", 10_000, () =>
+    invocationOutcomes.deliver(),
+  );
+  await periodicJobs.register("invocation-outcome-wake-retry", 3_600_000, () =>
+    invocationOutcomes.retry(),
   );
 
   const agentSweep = createAgentSweep({

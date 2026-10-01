@@ -127,6 +127,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "satellite-outcome" },
     defaultOn: true,
   },
+  "invocation-outcome": {
+    binding: { impl: "invocation-outcome" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([

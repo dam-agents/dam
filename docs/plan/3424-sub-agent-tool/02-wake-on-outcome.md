@@ -47,7 +47,9 @@ first; mirror them.
 6. **Runtime event kind.** In `packages/agent-runtime-api/src/modules/runtime/types.ts` add
    the `invocation-outcome` kind and its payload schema beside `satellite-outcome`. In
    `packages/agent-runtime/src/modules/runtime-channel/drivers/session-event-plugins.ts`
-   add `createInvocationOutcomePlugin` with `sessionEventPlugin` (regular chat session),
+   add `createInvocationOutcomePlugin`. It resumes the Session whose tool call started the
+   Invocation (the runtime records `[invoke] spawned … -> <id>` lines from completed tool
+   calls in a small store on its own disk) and opens a regular chat Session only as a fallback,
    and register it in `runtime-channel/manifest.ts` with `defaultOn: true`. A runtime that
    does not advertise the kind drops the event at dispatch; the driver still has
    `await_invocations`.
@@ -57,8 +59,8 @@ first; mirror them.
 
 ## Acceptance criteria
 
-- [ ] A tool-spawned child that ends while no `await_invocations` covers it opens one outcome
-      session on its driver, waking the driver if it hibernated.
+- [ ] A tool-spawned child that ends while no `await_invocations` covers it continues the
+      session that invoked it, once, waking the driver if it hibernated.
 - [ ] A child returned by `await_invocations` never produces an outcome turn.
 - [ ] A child that ends during a running `await_invocations` call is returned by that call,
       not pushed.

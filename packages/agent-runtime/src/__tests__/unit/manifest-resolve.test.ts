@@ -23,6 +23,7 @@ describe("resolveDrivers", () => {
       "env",
       "file",
       "initialization",
+      "invocation-outcome",
       "mcp-entry",
       "satellite-outcome",
       "schedule-reset",
@@ -91,6 +92,7 @@ describe("resolveDrivers", () => {
     expect(Object.keys(eventDrivers(r)).sort()).toEqual([
       "harness-config",
       "initialization",
+      "invocation-outcome",
       "satellite-outcome",
       "schedule-reset",
       "trigger",

@@ -797,9 +797,18 @@ export const invocations = pgTable(
     transcriptTruncated: boolean("transcript_truncated")
       .notNull()
       .default(false),
+    origin: text("origin").notNull().default("script"),
+    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    wokeAt: timestamp("woke_at", { withTimezone: true }),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
+    index("invocations_undelivered_idx")
+      .on(table.completedAt)
+      .where(
+        sql`${table.origin} = 'tool' AND ${table.status} <> 'running' AND (${table.deliveredAt} IS NULL OR ${table.wokeAt} IS NULL)`,
+      ),
     index("invocations_root_driver_idx").on(table.rootDriverId),
     index("invocations_unreaped_idx")
       .on(table.completedAt)
