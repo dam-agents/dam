@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -27,9 +27,26 @@ pub struct Smolvm {
     runtime: EmbeddedRuntime,
     db: SmolvmDb,
     proc_root: PathBuf,
+    nested: bool,
 }
 
 const USER: &str = "root";
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the node's KVM lets a guest run KVM itself, read from the `nested` parameter of kvm_intel or kvm_amd — the same files libkrun's krun_check_nested_virt reads, so the runner asks for nesting exactly when smolvm would grant it, and a node that cannot nest boots its machines as before instead of refusing them. A runner pod sees the node's kernel under /sys, so the node's operator decides: `nested=0` on the module keeps every guest from reaching the hypervisor's nested-VMX code.
+fn host_nests(sys_root: &Path) -> bool {
+    ["kvm_intel", "kvm_amd"].iter().any(|module| {
+        std::fs::read_to_string(
+            sys_root
+                .join("module")
+                .join(module)
+                .join("parameters/nested"),
+        )
+        .is_ok_and(|value| {
+            let value = value.trim();
+            value == "1" || value.eq_ignore_ascii_case("y")
+        })
+    })
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: where smolvm's gateway forwards a guest's DNS when the spec names no resolver. The gateway answers every guest query on port 53, whatever address it was sent to, by relaying it from the runner's own network, and its egress allowlist never gates that relay — so with smolvm's default, the runner's resolver, a guest that holds nothing but its gateway's address could still tunnel data out through DNS. The relay therefore goes only to the paired gateway's own resolver, which answers every name with the gateway's address and forwards nothing, or, with none named, nowhere. No address is safe to relay to for that: a pod's loopback has nothing on port 53, but a Mac's often runs a resolver of its own there. So a machine with no resolver named gets an empty list of names it may resolve, which smolvm still reads as a filter: its gateway answers every query itself — its own name with its address, anything else NXDOMAIN — and relays none. The record's resolver is set to this address all the same, so the record reads as relaying nowhere too.
 const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
@@ -43,6 +60,7 @@ impl Smolvm {
             runtime: EmbeddedRuntime::new().context("opening the smolvm runtime")?,
             db: SmolvmDb::open().context("opening the smolvm database")?,
             proc_root: PathBuf::from("/proc"),
+            nested: host_nests(Path::new("/sys")),
         })
     }
 
@@ -183,7 +201,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is written the same way, from what the node offers now, so a machine created before its node allowed nesting gains it on its next boot and one whose node stopped allowing it still boots.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -191,8 +209,10 @@ impl Runtime for Smolvm {
             clear_for_start(id, &self.proc_root, &dir, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
-        self.db
-            .update_vm(id, |r| guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK)))?;
+        self.db.update_vm(id, |r| {
+            guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
+            r.nested_virt = Some(self.nested);
+        })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
             kill_orphans(&self.proc_root, &dir);
@@ -568,6 +588,60 @@ mod tests {
             smolvm.record("m1").unwrap().unwrap().allowed_cidrs,
             Some(vec!["10.96.0.7/32".to_string()])
         );
+    }
+
+    // TEST_SCENARIO: the runner nests guests only on a node whose KVM module allows it. kvm_intel reports `Y`, kvm_amd `1`, and either is enough; `N`, `0` or no KVM module at all means no nesting, so a node that cannot nest boots its machines as before.
+    #[test]
+    fn nesting_follows_the_nodes_kvm_module() {
+        let dir = crate::testdir::TempDir::new("sys");
+        let param = |module: &str, value: &str| {
+            let params = dir.path().join("module").join(module).join("parameters");
+            fs::create_dir_all(&params).unwrap();
+            fs::write(params.join("nested"), value).unwrap();
+        };
+        assert!(!host_nests(dir.path()));
+        param("kvm_intel", "N\n");
+        assert!(!host_nests(dir.path()));
+        param("kvm_amd", "0\n");
+        assert!(!host_nests(dir.path()));
+        param("kvm_amd", "1\n");
+        assert!(host_nests(dir.path()));
+        param("kvm_amd", "0\n");
+        param("kvm_intel", "Y\n");
+        assert!(host_nests(dir.path()));
+    }
+
+    // TEST_SCENARIO: every start writes the node's nesting onto the record smolvm boots from, whatever an earlier start wrote, so a machine that predates nesting gains it on its next boot and one moved to a node without it still boots.
+    #[test]
+    fn every_start_records_whether_the_node_nests() {
+        let home = Home::new("nested");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let mut smolvm = Smolvm::open().unwrap();
+        let spec = MachineSpec {
+            gateway_host_port: 30100,
+            ..spec()
+        };
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec,
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+
+        for nested in [true, false] {
+            smolvm.nested = nested;
+            let _ = smolvm.start("m1");
+            let record = smolvm.record("m1").unwrap().unwrap();
+            assert_eq!(record.nested_virt, Some(nested));
+        }
     }
 
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.

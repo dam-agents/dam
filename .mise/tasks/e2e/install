@@ -52,6 +52,10 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )
+else
+  # The container lane says so: in sandbox mode cluster:install turns the vm
+  # backend on by itself wherever it can open /dev/kvm.
+  INSTALL_ARGS+=(--set=virtualization.enabled=false)
 fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
 
