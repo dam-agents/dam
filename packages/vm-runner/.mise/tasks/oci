@@ -20,6 +20,11 @@ if [ "$(uname -s)" != Linux ]; then
   exit
 fi
 
+# platform-init links statically against glibc's static archive, which zig
+# cannot provide, so the image builds with the system's C toolchain rather than
+# the zig .mise/zig/env selects for checks and tests.
+unset CC AR "CARGO_TARGET_$(uname -m | tr '[:lower:]' '[:upper:]')_UNKNOWN_LINUX_GNU_LINKER"
+
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

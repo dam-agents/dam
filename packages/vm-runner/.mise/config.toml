@@ -13,13 +13,9 @@ sources = ["smolvm.pin"]
 outputs = [".smolvm/.pinned"]
 run = "./.mise/fetch-smolvm"
 
-# A C toolchain for a Linux machine without one: .mise/zig/env points cargo
-# and the cc crate at zig only when no `cc` is on the PATH, so a machine that
-# has one builds with it as before. On macOS cargo needs Apple's command line
-# tools anyway, so zig is not installed there.
-[tools]
-zig = { version = "0.16", os = ["linux"] }
-
+# On Linux, cargo and the cc crate build with the zig the repository's mise
+# installs (.mise/zig/env), so no system C toolchain is needed. On macOS they
+# use Apple's command line tools, which cargo needs there anyway.
 [env]
 _.source = "{{config_root}}/.mise/zig/env"
 
