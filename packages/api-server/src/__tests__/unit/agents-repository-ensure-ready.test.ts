@@ -472,14 +472,14 @@ describe("setInvocationPin", () => {
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBeUndefined();
   });
 
-  // TEST_SCENARIO: a sibling spawn pinned the Driver first; this spawn reads the pin and writes nothing, so two spawns in flight never race on the write.
-  it("writes nothing when the Driver is already pinned", async () => {
+  // TEST_SCENARIO: a sibling spawn pinned the Driver first; this spawn still writes, because the reconcile's release is conditional on the Driver's version and only a write makes a spawn landing in between fail it.
+  it("writes the pin again when the Driver is already pinned", async () => {
     const { repo, store, patches } = recordingHarness("");
     store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
 
     expect(await repo.setInvocationPin("a1")).toBe(true);
 
-    expect(patches).toEqual([]);
+    expect(patches).toHaveLength(1);
   });
 
   function conflicting(times: number) {
