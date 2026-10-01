@@ -1,7 +1,5 @@
 import { X509Certificate } from "node:crypto";
-import type { Contribution } from "api-server-api";
-
-import { CONNECTION_TOKEN_PLACEHOLDER } from "./connection-sds.js";
+import { type Contribution, DEFAULT_ENV_PLACEHOLDER } from "api-server-api";
 
 export const KUBERNETES_TEMPLATE_ID = "kubernetes";
 
@@ -78,7 +76,7 @@ export function buildKubernetesContributions(
             },
           },
         ],
-        users: [{ name: label, user: { token: CONNECTION_TOKEN_PLACEHOLDER } }],
+        users: [{ name: label, user: { token: DEFAULT_ENV_PLACEHOLDER } }],
         contexts: [
           {
             name: label,

@@ -281,7 +281,7 @@ describe("addressing a credential that keeps a vendor prefix", () => {
     const out = applyConnectionEgressAddressing("conn-x", [
       inject("api.example.com"),
       { kind: "env", name: "MODEL", placeholder: "aws/claude-opus-4-8" },
-      { kind: "env", name: "KEY", placeholder: "sk-dummy" },
+      { kind: "env", name: "KEY", placeholder: "sk-not-a-placeholder" },
       {
         kind: "env",
         name: "LONG",
@@ -294,7 +294,7 @@ describe("addressing a credential that keeps a vendor prefix", () => {
         .map((c) => c.kind === "env" && c.placeholder),
     ).toEqual([
       "aws/claude-opus-4-8",
-      "sk-dummy",
+      "sk-not-a-placeholder",
       "toolongprefix-dummy-placeholder",
     ]);
   });
@@ -318,8 +318,35 @@ describe("what counts as addressed", () => {
     expect(
       carriesCredentialPlaceholder([
         inject("api.example.com"),
-        { kind: "env", name: "KEY", placeholder: "sk-dummy" },
+        { kind: "env", name: "KEY", placeholder: "sk-not-a-placeholder" },
       ]),
     ).toBe(false);
+  });
+});
+
+describe("connections stored before vendor-prefixed addressing", () => {
+  /** TEST_SCENARIO: A Kubernetes or IBM LiteLLM connection created earlier keeps
+   * the placeholder it was stored with. Delivery still turns it into an address,
+   * so such a connection keeps working on an agent that requires addresses. */
+  it("addresses the legacy kubeconfig token and LiteLLM key", () => {
+    const out = applyConnectionEgressAddressing("conn-old", [
+      inject("ete-litellm.example"),
+      { kind: "env", name: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
+      {
+        kind: "file",
+        path: "$HOME/.kube/connections/old.yaml",
+        format: "yaml",
+        mergeMode: "overwrite",
+        content: {
+          users: [{ name: "old", user: { token: "injected-by-gateway" } }],
+        },
+      },
+    ]);
+    expect(out.find((c) => c.kind === "env")).toMatchObject({
+      placeholder: "sk-platform:conn:conn-old",
+    });
+    expect(out.find((c) => c.kind === "file")).toMatchObject({
+      content: { users: [{ user: { token: "platform:conn:conn-old" } }] },
+    });
   });
 });

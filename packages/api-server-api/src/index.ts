@@ -244,6 +244,7 @@ export {
   RESERVED_MCP_SERVER_NAMES,
 } from "./modules/shared.js";
 export {
+  DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,

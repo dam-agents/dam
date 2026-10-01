@@ -63,11 +63,18 @@ const VENDOR_PREFIXED_PLACEHOLDER = new RegExp(
   `^([a-z]{1,8}-)${DEFAULT_ENV_PLACEHOLDER}$`,
 );
 
+const LEGACY_PLACEHOLDERS: Readonly<Record<string, string>> = {
+  "injected-by-gateway": "",
+  "sk-dummy": "sk-",
+};
+
 function addressedValue(
   value: string,
   placeholder: string,
 ): string | undefined {
   if (value === DEFAULT_ENV_PLACEHOLDER) return placeholder;
+  const legacy = LEGACY_PLACEHOLDERS[value];
+  if (legacy !== undefined) return `${legacy}${placeholder}`;
   const vendor = VENDOR_PREFIXED_PLACEHOLDER.exec(value)?.[1];
   return vendor === undefined ? undefined : `${vendor}${placeholder}`;
 }

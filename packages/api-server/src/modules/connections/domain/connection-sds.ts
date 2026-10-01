@@ -1,6 +1,7 @@
+import { DEFAULT_ENV_PLACEHOLDER } from "api-server-api";
 import type { Contribution } from "api-server-api";
 
-export const CONNECTION_TOKEN_PLACEHOLDER = "dummy-placeholder";
+export const CONNECTION_TOKEN_PLACEHOLDER = DEFAULT_ENV_PLACEHOLDER;
 
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
