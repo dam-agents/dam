@@ -136,7 +136,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		MemoryMiB:       r.machineMemoryMiB(spec),
 		StorageGiB:      storageGiB,
 		Env:             env,
-		CACert:          string(leaf.Data["ca.crt"]),
+		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),
 		AllowCIDRs:      allow,
 		GatewayHostPort: gatewayHostPort,
 		GuestResolver:   resolver,
@@ -589,4 +589,12 @@ func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaul
 		}
 	}
 	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a machine trusts, as the one ca.crt its share carries: the gateway's MITM CA, then the extra CAs the install names. The entrypoint trusts every certificate in it, and the runtime wrapper hands all of them to the containers the machine runs.
+func machineTrustedCAs(gatewayCA string, cfg *config.Config) string {
+	if cfg.ExtraTrustedCAs == "" {
+		return gatewayCA
+	}
+	return strings.TrimRight(gatewayCA, "\n") + "\n" + cfg.ExtraTrustedCAs
 }

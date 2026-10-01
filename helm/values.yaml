@@ -1774,11 +1774,12 @@ controller:
   # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
   envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
-  # public roots. Needed when something on the cluster's egress path
-  # intercepts TLS with its own CA: a corporate TLS-inspecting proxy, or the
-  # platform's own gateway when the platform runs inside one of its agents
-  # (`mise run cluster:install` sets it there). Empty leaves each gateway on
-  # its image's own roots. Set with --set-file, e.g.
+  # public roots, and every agent trusts beside its gateway's CA, for the hosts
+  # its gateway passes through untouched. Needed when something on the
+  # cluster's egress path intercepts TLS with its own CA: a corporate
+  # TLS-inspecting proxy, or the platform's own gateway when the platform runs
+  # inside one of its agents (`mise run cluster:install` sets it there). Empty
+  # leaves each gateway on its image's own roots. Set with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway

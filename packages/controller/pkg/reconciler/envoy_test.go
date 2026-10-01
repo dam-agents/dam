@@ -1812,3 +1812,18 @@ func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing
 	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&otherCA, secrets, hosts, false))
 	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
 }
+
+// TEST_SCENARIO: the agent's gateway ConfigMap carries the install's extra CAs alone, for the agent pod to mount, and only when the install names any; the gateway's own bundle still holds the public roots too.
+func TestBuildEnvoyBootstrapConfigMap_CarriesTheExtraCAsForTheAgent(t *testing.T) {
+	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
+
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, nil, nil, false)
+	require.NoError(t, err)
+	assert.NotContains(t, cm.Data, agentExtraCAsKey)
+
+	cfg := *bootstrapTestCfg
+	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, &cfg, owner, nil, nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.ExtraTrustedCAs, cm.Data[agentExtraCAsKey])
+}

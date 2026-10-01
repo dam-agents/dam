@@ -10,8 +10,8 @@ import (
 
 const systemCABundle = "/etc/ssl/certs/ca-certificates.crt"
 
-// UNIT_BOUNDARY_DESCRIPTION: the CA bundle every agent gateway verifies its upstreams against when the install names CAs beyond the public roots — a TLS-inspecting proxy on the cluster's egress path, or the platform's own gateway when the platform runs inside one of its agents. Envoy takes a single file for its trusted CAs, so the extra CAs are appended to the public roots this process reads from its own image. Each extra must be a certificate that parses, and nothing else may sit between them, because a bundle that silently dropped one would leave every gateway failing upstream with no clue why.
-func GatewayUpstreamTrustBundle(basePath, extra string) (string, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the CAs an install names beyond the public roots — a TLS-inspecting proxy on the cluster's egress path, or the platform's own gateway when the platform runs inside one of its agents — as one PEM bundle. Each must be a certificate that parses, and nothing else may sit between them, because a bundle that silently dropped one would leave every gateway and agent failing TLS with no clue why.
+func ExtraTrustedCAs(extra string) (string, error) {
 	var extras []string
 	rest := []byte(extra)
 	for {
@@ -34,7 +34,15 @@ func GatewayUpstreamTrustBundle(basePath, extra string) (string, error) {
 	if len(extras) == 0 {
 		return "", fmt.Errorf("holds no PEM certificate")
 	}
+	return strings.Join(extras, ""), nil
+}
 
+// UNIT_BOUNDARY_DESCRIPTION: the CA bundle every agent gateway verifies its upstreams against when the install names extra CAs. Envoy takes a single file for its trusted CAs, so the extra CAs are appended to the public roots this process reads from its own image.
+func GatewayUpstreamTrustBundle(basePath, extra string) (string, error) {
+	extras, err := ExtraTrustedCAs(extra)
+	if err != nil {
+		return "", err
+	}
 	base, err := os.ReadFile(basePath)
 	if err != nil {
 		return "", fmt.Errorf("reading the public roots to extend: %w", err)
@@ -42,5 +50,5 @@ func GatewayUpstreamTrustBundle(basePath, extra string) (string, error) {
 	if !strings.Contains(string(base), "-----BEGIN CERTIFICATE-----") {
 		return "", fmt.Errorf("the public roots at %s hold no certificate", basePath)
 	}
-	return strings.TrimRight(string(base), "\n") + "\n" + strings.Join(extras, ""), nil
+	return strings.TrimRight(string(base), "\n") + "\n" + extras, nil
 }

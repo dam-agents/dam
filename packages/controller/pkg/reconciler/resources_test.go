@@ -131,6 +131,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
+	assert.Equal(t, "1", envMap["NODE_USE_SYSTEM_CA"], "Node reads the system bundle, which the entrypoint fills with every platform CA")
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
 	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
@@ -477,4 +478,27 @@ func TestSanitizeMountName(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.expected, sanitizeMountName(tt.path))
 	}
+}
+
+// TEST_SCENARIO: an install that names extra CAs hands them to every agent beside its gateway's CA, in the one directory the entrypoint trusts, so a host the gateway passes through still verifies when a proxy further out intercepts it; the extras come from the agent's own gateway ConfigMap.
+func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
+	cfg := *testConfig
+	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "")
+
+	var ca corev1.Volume
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		if v.Name == "ca-cert" {
+			ca = v
+		}
+	}
+	require.NotNil(t, ca.Projected, "the gateway CA and the extras share /etc/platform/ca")
+	require.Len(t, ca.Projected.Sources, 2)
+	leaf, extras := ca.Projected.Sources[0].Secret, ca.Projected.Sources[1].ConfigMap
+	require.NotNil(t, leaf)
+	assert.Equal(t, "my-instance-envoy-tls", leaf.Name)
+	assert.Equal(t, []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}, leaf.Items)
+	require.NotNil(t, extras)
+	assert.Equal(t, EnvoyBootstrapName("my-instance"), extras.Name)
+	assert.Equal(t, []corev1.KeyToPath{{Key: agentExtraCAsKey, Path: "extra-cas.crt"}}, extras.Items)
 }

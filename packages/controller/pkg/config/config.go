@@ -64,6 +64,7 @@ type Config struct {
 	ObjectStorePort        int
 
 	GatewayUpstreamTrustBundle string
+	ExtraTrustedCAs            string
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -249,11 +250,16 @@ func LoadFromEnv() (*Config, error) {
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
 	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
 	if extra := os.Getenv("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS"); strings.TrimSpace(extra) != "" {
-		bundle, err := GatewayUpstreamTrustBundle(systemCABundle, extra)
+		extras, err := ExtraTrustedCAs(extra)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS: %w", err)
+		}
+		bundle, err := GatewayUpstreamTrustBundle(systemCABundle, extras)
 		if err != nil {
 			return nil, fmt.Errorf("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS: %w", err)
 		}
 		cfg.GatewayUpstreamTrustBundle = bundle
+		cfg.ExtraTrustedCAs = extras
 	}
 	for _, q := range []struct {
 		dst      *resource.Quantity

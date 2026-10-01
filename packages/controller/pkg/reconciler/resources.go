@@ -110,6 +110,7 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
+		{Name: "NODE_USE_SYSTEM_CA", Value: "1"},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "NO_PROXY", Value: "localhost,127.0.0.1,::1"},
@@ -198,18 +199,7 @@ func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.
 		}
 	}
 
-	volumes = append(volumes, corev1.Volume{
-		Name: "ca-cert",
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: EnvoyLeafSecretName(name),
-				Items: []corev1.KeyToPath{{
-					Key:  "ca.crt",
-					Path: "ca.crt",
-				}},
-			},
-		},
-	})
+	volumes = append(volumes, agentCAVolume(name, cfg))
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
@@ -445,4 +435,33 @@ func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Qua
 		derived = limit
 	}
 	return derived
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what an agent trusts under /etc/platform/ca: its gateway's MITM CA, and the extra CAs the install names, so a host its gateway passes through untouched still verifies when a TLS-inspecting proxy further out intercepts it. Without extra CAs the volume is the leaf Secret alone, exactly as before. The extras ride in the agent's own gateway ConfigMap, which the controller already writes from the same config.
+func agentCAVolume(name string, cfg *config.Config) corev1.Volume {
+	leaf := corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}
+	if cfg.ExtraTrustedCAs == "" {
+		return corev1.Volume{
+			Name: "ca-cert",
+			VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+				SecretName: EnvoyLeafSecretName(name),
+				Items:      []corev1.KeyToPath{leaf},
+			}},
+		}
+	}
+	return corev1.Volume{
+		Name: "ca-cert",
+		VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+			Sources: []corev1.VolumeProjection{
+				{Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: EnvoyLeafSecretName(name)},
+					Items:                []corev1.KeyToPath{leaf},
+				}},
+				{ConfigMap: &corev1.ConfigMapProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: EnvoyBootstrapName(name)},
+					Items:                []corev1.KeyToPath{{Key: agentExtraCAsKey, Path: "extra-cas.crt"}},
+				}},
+			},
+		}},
+	}
 }

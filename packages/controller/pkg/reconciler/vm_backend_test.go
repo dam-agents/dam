@@ -1569,3 +1569,13 @@ func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	require.NoError(t, err, "labelling the Secret with its owner is all an existing one needs")
 	assert.Equal(t, "theirs", got.Name)
 }
+
+// TEST_SCENARIO: a machine's ca.crt is its gateway's MITM CA followed by the install's extra CAs, each a whole PEM block even when the gateway CA lacks a trailing newline; without extras it is the gateway CA unchanged.
+func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
+	assert.Equal(t, "MITM-CA", machineTrustedCAs("MITM-CA", testConfig))
+
+	cfg := *testConfig
+	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
+	assert.Equal(t, "-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----\n"+cfg.ExtraTrustedCAs,
+		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
+}

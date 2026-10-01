@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,18 @@ func TestLoadFromEnv_GatewayUpstreamExtraCAs(t *testing.T) {
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Empty(t, cfg.GatewayUpstreamTrustBundle, "no extra CAs leaves the gateway on its own image's roots")
+	assert.Empty(t, cfg.ExtraTrustedCAs, "and gives agents nothing beyond their gateway's CA")
+
+	ca := newTestCA(t, "extra")
+	withCA := map[string]string{"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS": ca.pem}
+	for k, v := range base {
+		withCA[k] = v
+	}
+	setEnv(t, withCA)
+	cfg, err = LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, ca.pem, cfg.ExtraTrustedCAs, "agents get the extra CAs alone, without the public roots")
+	assert.True(t, strings.HasSuffix(cfg.GatewayUpstreamTrustBundle, ca.pem))
 
 	withBad := map[string]string{"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS": "not a certificate"}
 	for k, v := range base {
