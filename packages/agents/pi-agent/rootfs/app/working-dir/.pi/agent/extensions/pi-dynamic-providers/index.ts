@@ -15,12 +15,18 @@ type DiscoveredModel = { id: string; contextWindow?: number };
 
 type Activation = { name: string; model: string };
 
+type BedrockModelEntry = { id: string; name: string; api: string; baseUrl: string };
+
 type ConfigState = {
 	paths: { models: string; auth: string; settings: string };
 	models: { providers: Record<string, ProviderConfig> };
 	auth: Record<string, { type: string; key: string }>;
 	settings: Record<string, unknown>;
 };
+
+const BEDROCK_PROVIDER = "amazon-bedrock";
+const BEDROCK_API = "bedrock-converse-stream";
+const BUILTIN_PROVIDERS_MODULE: string = "@earendil-works/pi-ai/providers/all";
 
 const SPECS: ProviderSpec[] = [
 	{ name: "rits", envPrefix: "RITS" },
@@ -33,6 +39,11 @@ const SPECS: ProviderSpec[] = [
 
 export default async function register(pi: ExtensionAPI): Promise<void> {
 	const state = loadState();
+
+	if (env("AWS_BEARER_TOKEN_BEDROCK")) {
+		await activateBedrock(state);
+		return;
+	}
 
 	let lastActivated: Activation | undefined;
 	for (const spec of SPECS) {
@@ -72,6 +83,51 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	const requestedLower = requestedModel?.toLowerCase();
 	const defaultModel = models.find((m) => m.id.toLowerCase() === requestedLower)?.id ?? models[0].id;
 	return { name: spec.name, model: defaultModel };
+}
+
+async function activateBedrock(state: ConfigState): Promise<void> {
+	const current = typeof state.settings.defaultModel === "string" ? state.settings.defaultModel.trim() : "";
+	const provider = state.settings.defaultProvider;
+	const keptModel = current && (provider === BEDROCK_PROVIDER || provider === undefined) ? current : undefined;
+	const model = keptModel ?? env("AWS_BEDROCK_MODEL");
+
+	state.settings.defaultProvider = BEDROCK_PROVIDER;
+	if (model) {
+		state.settings.defaultModel = model;
+		if (!(await isBuiltInBedrockModel(model))) {
+			addBedrockModel(state, model);
+			writeJson(state.paths.models, state.models);
+		}
+	} else {
+		delete state.settings.defaultModel;
+	}
+	writeJson(state.paths.settings, state.settings);
+}
+
+async function isBuiltInBedrockModel(id: string): Promise<boolean> {
+	try {
+		const builtins = (await import(BUILTIN_PROVIDERS_MODULE)) as {
+			getBuiltinModels?: (provider: string) => { id: string }[];
+		};
+		const wanted = id.toLowerCase();
+		return (builtins.getBuiltinModels?.(BEDROCK_PROVIDER) ?? []).some((m) => m.id.toLowerCase() === wanted);
+	} catch (err) {
+		console.warn(`[pi-dynamic-providers] Bedrock model catalog unavailable: ${err instanceof Error ? err.message : String(err)}`);
+		return false;
+	}
+}
+
+function addBedrockModel(state: ConfigState, id: string): void {
+	const region = env("AWS_REGION") ?? "us-east-1";
+	const entry: BedrockModelEntry = {
+		id,
+		name: id,
+		api: BEDROCK_API,
+		baseUrl: `https://bedrock-runtime.${region}.amazonaws.com`,
+	};
+	const provider = (state.models.providers[BEDROCK_PROVIDER] ?? {}) as { models?: BedrockModelEntry[] };
+	const others = (provider.models ?? []).filter((m) => m.id !== id);
+	state.models.providers[BEDROCK_PROVIDER] = { ...provider, models: [...others, entry] } as unknown as ProviderConfig;
 }
 
 function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: ConfigState): void {

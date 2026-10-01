@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-09-29
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -15,6 +15,8 @@ The choices travel as a `harness-config` Event over the [runtime channel](runtim
 ## Model discovery and the seeded model
 
 A discovery source is also what lets a **seeded model** exist, and it is the one write to that file no user action is behind. A harness pointed at somebody else's provider cannot rely on its own built-in default: the model it would name need not exist upstream, and a listing that does not know it refuses the turn outright rather than substituting anything — so an agent nobody has configured yet fails its very first prompt. The seed closes that: with nothing set and nothing pinned on the provider, agent-runtime writes the first of the discovered names — the list is ordered, so the pick is stable rather than whatever the provider happened to return first — before the harness spawns for the first time, the boot gate holding early callers until it lands under a ceiling of its own. It never speaks over a value somebody chose: a panel pick, a hand-edit and a provider pin all outrank it, and it never runs twice for one agent. Between a pin and the file, the file wins: a connection's model pin is only a default, and a model in the file that the provider offers outranks it, so a choice is never silently overridden by the connection it rides on. Whether a source justifies it follows from *which* variable supplied the URL, which is why the manifest marks the redirecting ones apart from those that merely carry the harness's own endpoint: on its own provider the harness's default is the better answer and stays untouched. An unavailable listing seeds nothing, so a harness whose provider cannot be reached keeps the behavior it had — the seed can pick a model, not invent one. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section; a spawn that names choices for a child without it, or names a setting the child's catalog does not offer, fails rather than letting the child run on its default.
+
+A provider can also leave the harness on its own model list, with no discovery source behind it. The [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection does this on Pi: Pi ships a Bedrock model list of its own, so the harness selects its built-in Bedrock provider with the Connection's model pin, and nothing is seeded. The pin follows the same rule as a seed — it fills the slot when the agent has no Bedrock model yet and never replaces one somebody chose — and a model Pi does not know is added to its custom model file rather than refused. Because the Config panel's choices come from a discovery source, the panel offers no Bedrock models; the pin, or an edit of the harness's file, chooses one.
 
 ## Snapshots
 

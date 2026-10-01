@@ -51,7 +51,7 @@ the model.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Bedrock provider connection | Contract preset, connection template with region-derived host, Providers-tab form, icon, CLI prompt, connections doc | — |
+| 01 ✅ | Bedrock provider connection | Contract preset, connection template with region-derived host, Providers-tab form, icon, CLI prompt, connections doc | — |
 | 02 | Pi runs on Bedrock | Pi templates accept `bedrock`; Pi extension selects `amazon-bedrock` + pinned model; Pi README and harness-config doc | 01 |
 
 ## Conventions & glossary
