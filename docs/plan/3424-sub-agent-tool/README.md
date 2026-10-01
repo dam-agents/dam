@@ -77,7 +77,7 @@ lands. The feature is not finished before that.
 | 01 ✓ | Invocation tools on the platform MCP server | Five MCP tools; shared spawn-request resolution for routes and tools; long poll; invocations page | — |
 | 02 ✓ | Wake the driver when a tool-spawned child ends | Origin and delivery columns, outcome delivery and hourly retry, `invocation-outcome` event kind in the runtime | 01 |
 | 03 ✓ | Delegation card for tool spawns | Card anchors on the `invoke_agent` chip; `await_invocations` chips render compact | 01 |
-| 04 | `dam-invoke` skill leads with the tools | Tools first with the need-based rule; scripts for orchestration | 01, 02 |
+| 04 ✓ | `dam-invoke` skill leads with the tools | Tools first with the need-based rule; scripts for orchestration | 01, 02 |
 
 ```mermaid
 graph LR
