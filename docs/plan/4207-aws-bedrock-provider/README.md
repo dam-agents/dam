@@ -37,22 +37,30 @@ Runtime APIs, so the first version needs **no gateway or controller change**: Be
   `Authorization: Bearer` instead of SigV4 and reads the region from `AWS_REGION`. Pi's
   dynamic-providers extension selects it as the default provider with the pinned model.
 
-**Out of scope (follow-up issues):** SigV4 with IAM access keys or assumed roles (Envoy's
-`aws_request_signing` with a credentials file from the Connection Secret); live model discovery
-from Bedrock's list APIs, which would populate the Config panel's model dropdown; harnesses
-other than Pi.
+- **Model discovery** (slice 03, added after the first end-to-end test): Bedrock serves most
+  models only through an **inference profile** whose ID carries a region prefix
+  (`eu.anthropic.claude-sonnet-4-6`), and a profile from another region is refused, so a
+  typed model ID is a trap. Bedrock's `ListInferenceProfiles` on the region's control-plane
+  host (`bedrock.<region>.amazonaws.com`, covered by the same API key) lists exactly the IDs
+  that are invocable there. The Connection injects the key on that host too and names it in
+  `AWS_ENDPOINT_URL_BEDROCK`; the harness-config driver's model discovery gains a
+  `bedrock-inference-profiles` shape and a second source on Pi, so the Config panel's dropdown
+  lists invocable profiles and the platform seeds one when nothing is pinned, exactly as for
+  LiteLLM. Pi's own `/model` picker is narrowed to the same list by the extension. A model the
+  account has not enabled is not knowable from any listing and still fails at first use —
+  which is why provider errors must reach the chat (tracked separately).
 
-**Known limitation:** Pi's model choices in the Config panel come from model discovery, which
-reads OpenAI-shaped endpoints only, so a Bedrock agent's dropdown is empty until the discovery
-follow-up. The connection's model input and a hand-edit of Pi's `settings.json` still choose
-the model.
+**Out of scope (follow-up issues):** SigV4 with IAM access keys or assumed roles (Envoy's
+`aws_request_signing` with a credentials file from the Connection Secret); harnesses other
+than Pi; surfacing every Pi provider error in the chat (its own issue).
 
 ## Sub-issues
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | Bedrock provider connection | Contract preset, connection template with region-derived host, Providers-tab form, icon, CLI prompt, connections doc | — |
-| 02 | Pi runs on Bedrock | Pi templates accept `bedrock`; Pi extension selects `amazon-bedrock` + pinned model; Pi README and harness-config doc | 01 |
+| 02 ✅ | Pi runs on Bedrock | Pi templates accept `bedrock`; Pi extension selects `amazon-bedrock` + pinned model; Pi README and harness-config doc | 01 |
+| 03 | Bedrock model discovery | Second injection host + `AWS_ENDPOINT_URL_BEDROCK`; discovery sources as a list with a `bedrock-inference-profiles` shape; Pi manifest source; extension narrows Pi's model list; docs | 02 |
 
 ## Conventions & glossary
 
@@ -76,6 +84,9 @@ On the local cluster installed from this branch (`mise run cluster:install`):
    ID the key may invoke (e.g. `us.anthropic.claude-sonnet-4-6`). The row reads active.
 2. Create a Pi agent with AWS Bedrock as its provider; send "Reply with OK". The agent answers.
 3. The agent's env has `AWS_BEARER_TOKEN_BEDROCK=dummy-placeholder`, never the key.
+4. The agent's Config panel lists the region's inference profiles as model choices; picking
+   one and sending a prompt answers with it. A connection with no model input seeds the first
+   discovered profile instead of failing the first prompt.
 
 ## Delivery
 
