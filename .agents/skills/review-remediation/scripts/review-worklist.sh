@@ -57,18 +57,19 @@
 # payloads reach jq through files, never through argv.
 set -u
 
+err() { jq -nc --arg e "$1" '{outcome:"error", error:$e}' 2>/dev/null || printf '{"outcome":"error","error":"%s"}\n' "$1"; exit 1; }
+
 REPO=""; N=""; REVIEWER=""; VERIFY=false; WL_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    (--reviewer) REVIEWER="${2:-}"; shift 2;;
+    (--reviewer) [ $# -ge 2 ] || err "--reviewer needs a value"; REVIEWER="$2"; shift 2;;
     (--verify) VERIFY=true; shift;;
-    (--worklist) WL_FILE="${2:-}"; shift 2;;
+    (--worklist) [ $# -ge 2 ] || err "--worklist needs a value"; WL_FILE="$2"; shift 2;;
     (-h|--help) sed -n '2,52p' "$0"; exit 0;;
     (*) if [ -z "$REPO" ]; then REPO="$1"; elif [ -z "$N" ]; then N="$1"; fi; shift;;
   esac
 done
 
-err() { jq -nc --arg e "$1" '{outcome:"error", error:$e}' 2>/dev/null || printf '{"outcome":"error","error":"%s"}\n' "$1"; exit 1; }
 command -v jq >/dev/null 2>&1 || err "jq is required"
 command -v gh >/dev/null 2>&1 || err "gh is required"
 [ -n "$REPO" ] && [ -n "$N" ] || err "usage: review-worklist.sh <owner/repo> <pr-number> [--reviewer <login>]"
