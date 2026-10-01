@@ -17,7 +17,7 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
   return [
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
+    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy-placeholder" },
     { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "OPENAI_PROXY_URL", placeholder: IBM_LITELLM_BASE_URL },

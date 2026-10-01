@@ -128,7 +128,7 @@ describe("kubernetes connection template", () => {
     });
     expect(content["current-context"]).toBe("prod-cluster");
     expect(JSON.stringify(content)).not.toContain("sa-token");
-    expect(content.users[0].user.token).toBe("injected-by-gateway");
+    expect(content.users[0].user.token).toBe("dummy-placeholder");
   });
 
   it("gives distinct connections distinct kubeconfig files (so they compose)", async () => {

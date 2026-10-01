@@ -59,8 +59,27 @@ function addressedMcpEntry(
   return { ...entry, url: url.toString() };
 }
 
-function withPlaceholder(value: unknown, placeholder: string): unknown {
+const VENDOR_PREFIXED_PLACEHOLDER = new RegExp(
+  `^([a-z]{1,8}-)${DEFAULT_ENV_PLACEHOLDER}$`,
+);
+
+function addressedValue(
+  value: string,
+  placeholder: string,
+): string | undefined {
   if (value === DEFAULT_ENV_PLACEHOLDER) return placeholder;
+  const vendor = VENDOR_PREFIXED_PLACEHOLDER.exec(value)?.[1];
+  return vendor === undefined ? undefined : `${vendor}${placeholder}`;
+}
+
+function isCredentialPlaceholder(value: unknown): boolean {
+  return typeof value === "string" && addressedValue(value, "") !== undefined;
+}
+
+function withPlaceholder(value: unknown, placeholder: string): unknown {
+  if (typeof value === "string") {
+    return addressedValue(value, placeholder) ?? value;
+  }
   if (Array.isArray(value)) {
     return value.map((item) => withPlaceholder(item, placeholder));
   }
@@ -76,7 +95,7 @@ function withPlaceholder(value: unknown, placeholder: string): unknown {
 }
 
 function containsPlaceholder(value: unknown): boolean {
-  if (value === DEFAULT_ENV_PLACEHOLDER) return true;
+  if (isCredentialPlaceholder(value)) return true;
   if (Array.isArray(value)) return value.some(containsPlaceholder);
   if (value !== null && typeof value === "object") {
     return Object.values(value).some(containsPlaceholder);
@@ -107,7 +126,7 @@ export function carriesCredentialPlaceholder(
 ): boolean {
   return contributions.some(
     (c) =>
-      (c.kind === "env" && c.placeholder === DEFAULT_ENV_PLACEHOLDER) ||
+      (c.kind === "env" && isCredentialPlaceholder(c.placeholder)) ||
       (c.kind === "file" && containsPlaceholder(c.content)) ||
       (c.kind === "mcp-entry" && mentionsPlaceholder(c.headers)),
   );
@@ -133,10 +152,10 @@ export function applyConnectionEgressAddressing(
             }
           : entry;
       }
-      case "env":
-        return c.placeholder === DEFAULT_ENV_PLACEHOLDER
-          ? { ...c, placeholder }
-          : c;
+      case "env": {
+        const addressed = addressedValue(c.placeholder, placeholder);
+        return addressed === undefined ? c : { ...c, placeholder: addressed };
+      }
       case "file":
         return c.content === undefined
           ? c
@@ -179,7 +198,7 @@ function pathAddressedHosts(contributions: Contribution[]): Set<string> {
 function credentialEnvNames(contributions: Contribution[]): Set<string> {
   const names = new Set<string>();
   for (const c of contributions) {
-    if (c.kind === "env" && c.placeholder === DEFAULT_ENV_PLACEHOLDER) {
+    if (c.kind === "env" && isCredentialPlaceholder(c.placeholder)) {
       names.add(c.name);
     }
   }

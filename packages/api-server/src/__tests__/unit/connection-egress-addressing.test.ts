@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import type { Contribution } from "api-server-api";
 import {
   applyConnectionEgressAddressing,
+  carriesCredentialPlaceholder,
   connectionEgressPathPrefix,
   connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
@@ -230,5 +231,95 @@ describe("stripConnectionEgressPrefix", () => {
         "/__platform_conn/conn-aaa/__platform_conn/conn-bbb/mcp",
       ),
     ).toBe("/__platform_conn/conn-bbb/mcp");
+  });
+});
+
+describe("addressing a credential that keeps a vendor prefix", () => {
+  /** TEST_SCENARIO: The Modal case. A client that refuses a secret without its
+   * vendor's prefix is handed one that keeps it, so the address still reaches the
+   * gateway and the client still accepts the value. */
+  it("keeps a vendor prefix on an env placeholder", () => {
+    const out = applyConnectionEgressAddressing("conn-modal", [
+      inject("api.modal.com", {
+        headerName: "x-modal-token-secret",
+        valueFormat: "{value}",
+      }),
+      {
+        kind: "env",
+        name: "MODAL_TOKEN_SECRET",
+        placeholder: "as-dummy-placeholder",
+      },
+    ]);
+    const env = out.find((c) => c.kind === "env");
+    expect(env).toMatchObject({ placeholder: "as-platform:conn:conn-modal" });
+  });
+
+  /** TEST_SCENARIO: The Kubernetes case. The credential sits inside a structured
+   * config file the agent's tools read, and is addressed there like an env value. */
+  it("addresses a placeholder nested in a structured file", () => {
+    const out = applyConnectionEgressAddressing("conn-k8s", [
+      inject("api.cluster.example"),
+      {
+        kind: "file",
+        path: "$HOME/.kube/connections/k8s.yaml",
+        format: "yaml",
+        mergeMode: "overwrite",
+        content: {
+          users: [{ name: "k8s", user: { token: "dummy-placeholder" } }],
+        },
+      },
+    ]);
+    const file = out.find((c) => c.kind === "file");
+    expect(file).toMatchObject({
+      content: { users: [{ user: { token: "platform:conn:conn-k8s" } }] },
+    });
+  });
+
+  /** TEST_SCENARIO: Only a recognised placeholder is rewritten. A literal value that
+   * happens to share a prefix, a base URL or a model name, is left exactly as set. */
+  it("leaves values that are not placeholders alone", () => {
+    const out = applyConnectionEgressAddressing("conn-x", [
+      inject("api.example.com"),
+      { kind: "env", name: "MODEL", placeholder: "aws/claude-opus-4-8" },
+      { kind: "env", name: "KEY", placeholder: "sk-dummy" },
+      {
+        kind: "env",
+        name: "LONG",
+        placeholder: "toolongprefix-dummy-placeholder",
+      },
+    ]);
+    expect(
+      out
+        .filter((c) => c.kind === "env")
+        .map((c) => c.kind === "env" && c.placeholder),
+    ).toEqual([
+      "aws/claude-opus-4-8",
+      "sk-dummy",
+      "toolongprefix-dummy-placeholder",
+    ]);
+  });
+});
+
+describe("what counts as addressed", () => {
+  /** TEST_SCENARIO: A connection whose only credential placeholder keeps a vendor
+   * prefix still hands the agent an address, so both the rival check and an agent
+   * that requires addresses treat it as addressed. */
+  it("counts a vendor-prefixed placeholder as an address", () => {
+    expect(
+      carriesCredentialPlaceholder([
+        inject("api.modal.com"),
+        {
+          kind: "env",
+          name: "MODAL_TOKEN_SECRET",
+          placeholder: "as-dummy-placeholder",
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      carriesCredentialPlaceholder([
+        inject("api.example.com"),
+        { kind: "env", name: "KEY", placeholder: "sk-dummy" },
+      ]),
+    ).toBe(false);
   });
 });

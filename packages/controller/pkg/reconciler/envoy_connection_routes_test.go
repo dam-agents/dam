@@ -536,3 +536,12 @@ func TestBuildEnvoyBootstrapConfigMap_RequireAddressReachesEveryChain(t *testing
 	assert.NotContains(t, off.Data["envoy.yaml"], "matcher_list")
 	assert.Contains(t, on.Data["envoy.yaml"], "matcher_list")
 }
+
+func TestLuaConnectionAddressScript_ReadsAnAddressBehindAVendorPrefix(t *testing.T) {
+	script := luaConnectionAddressScript(connectionChain("api.modal.com",
+		connectionCredential("conn-modal", "platform-conn-modal", "x-modal-token-secret", "api.modal.com"),
+	))
+	assert.Contains(t, script, `local vendor = string.match(value, "^(%l+%-)")`,
+		"a client that insists on a key prefix (as-, sk-) still names its connection: as-platform:conn:<id>")
+	assert.Contains(t, script, `#vendor <= 9`)
+}

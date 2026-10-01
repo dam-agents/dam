@@ -207,6 +207,10 @@ local function address_in(value)
     end
     value = rest
   end
+  local vendor = string.match(value, "^(%l+%-)")
+  if vendor ~= nil and #vendor <= 9 and string.sub(value, #vendor + 1, #vendor + #PREFIX) == PREFIX then
+    value = string.sub(value, #vendor + 1)
+  end
   if string.sub(value, 1, #PREFIX) ~= PREFIX then return nil end
   local id = string.sub(value, #PREFIX + 1)
   if string.match(id, "^[%w%._~%-]+$") == nil then return nil end

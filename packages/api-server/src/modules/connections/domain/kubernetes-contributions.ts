@@ -1,13 +1,13 @@
 import { X509Certificate } from "node:crypto";
 import type { Contribution } from "api-server-api";
 
+import { CONNECTION_TOKEN_PLACEHOLDER } from "./connection-sds.js";
+
 export const KUBERNETES_TEMPLATE_ID = "kubernetes";
 
 const KUBECONFIG_DIR = "$HOME/.kube/connections";
 
 const PLATFORM_CA_PATH = "/etc/platform/ca/ca.crt";
-
-const KUBECONFIG_PLACEHOLDER_TOKEN = "injected-by-gateway";
 
 export interface KubernetesTarget {
   name: string;
@@ -78,7 +78,7 @@ export function buildKubernetesContributions(
             },
           },
         ],
-        users: [{ name: label, user: { token: KUBECONFIG_PLACEHOLDER_TOKEN } }],
+        users: [{ name: label, user: { token: CONNECTION_TOKEN_PLACEHOLDER } }],
         contexts: [
           {
             name: label,
