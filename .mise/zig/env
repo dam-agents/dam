@@ -1,0 +1,15 @@
+# Sourced by mise into every task of the repository, through `_.source` in
+# .mise/config.toml. Cargo links build scripts, proc macros and tests with a C
+# linker, and the cc crate (ring, aws-lc, zstd, sqlite) compiles C and archives
+# it. On Linux both go through the zig mise installs for the repository, via
+# the wrappers beside this file; zig carries its own libc headers, so the
+# machine needs no C toolchain of its own. Only the host target's
+# cargo- and cc-crate-specific variables are set: plain CC would also reach
+# cgo in `go test` and native Node addon builds.
+if [ "$(uname -s)" = Linux ]; then
+  zig_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  zig_target="$(uname -m)_unknown_linux_gnu"
+  export "CC_$zig_target=$zig_dir/cc" "AR_$zig_target=$zig_dir/ar"
+  export "CARGO_TARGET_$(printf '%s' "$zig_target" | tr '[:lower:]' '[:upper:]')_LINKER=$zig_dir/cc"
+  unset zig_dir zig_target
+fi

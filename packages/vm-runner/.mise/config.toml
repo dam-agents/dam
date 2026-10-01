@@ -13,12 +13,6 @@ sources = ["smolvm.pin"]
 outputs = [".smolvm/.pinned"]
 run = "./.mise/fetch-smolvm"
 
-# On Linux, cargo and the cc crate build with the zig the repository's mise
-# installs (.mise/zig/env), so no system C toolchain is needed. On macOS they
-# use Apple's command line tools, which cargo needs there anyway.
-[env]
-_.source = "{{config_root}}/.mise/zig/env"
-
 [tasks.check]
 depends = [":check:*"]
 

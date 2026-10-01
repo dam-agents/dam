@@ -50,8 +50,13 @@ trivy = "latest"
 usage = "latest"
 uv = "0.12"
 yq = "latest"
-zig = { version = "0.16", os = ["linux"] } # the vm-runner crate's C toolchain on Linux: cargo's linker and the cc crate's compiler (packages/vm-runner/.mise/zig)
+zig = { version = "0.16", os = ["linux"] } # the C toolchain Rust builds use on Linux: cargo's linker and the cc crate's compiler (.mise/zig)
 zizmor = "latest"
+
+# Rust's C toolchain on Linux is the zig above, so a machine needs none of its
+# own; see .mise/zig/env. On macOS cargo uses Apple's command line tools.
+[env]
+_.source = "{{config_root}}/.mise/zig/env"
 
 [settings]
 # mise.lock pins the npm tools by their aube dependency graphs, and mise
