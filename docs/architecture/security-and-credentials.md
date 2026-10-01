@@ -524,24 +524,23 @@ chain with an ordered list of credential injectors; a step that targets a
 query parameter has its value moved into the URL instead, percent-encoded,
 and the carrier header never reaches the upstream.
 
-**Two connections claiming one header.** Where two Connections inject one
-header on one host over paths that overlap, the header alone no longer
-says which account to act as. Chains are cut by path scope as well as
-host: a route per scope carries only the injectors whose own scope covers
-it, so one Connection per Google service composes untouched. Where a
-scope is claimed twice, the
-[per-Connection address](connections.md#addressing-a-connection) picks
-one, by either carrier. A Lua step ahead of every other filter on a
-Connection chain reads the address — the path prefix, or the token
-placeholder out of the claimed headers (bare, behind a scheme, or as a
-Basic password) and query parameters — and marks the request with the
-Connection it names before the route is chosen. Each injector skips
-itself when the marker names a rival on its header; the prefix is
-stripped and the marker dropped on the way upstream. A request naming no
-Connection on a contested scope is refused by that same step, ahead of
-the gate, not served from whichever credential sorted first. The gate
-reads the path with the prefix removed, so egress rules and approvals
-keep naming real paths.
+**Two connections claiming one header.** Where two Connections inject
+one header on one host over paths that overlap, the header alone no
+longer says which account to act as. Chains are cut by path scope as
+well as host: a route per scope carries only the injectors whose own
+scope covers it. Where a scope is claimed twice, the [per-Connection
+address](connections.md#addressing-a-connection) picks one, by either
+carrier. A Lua step ahead of every other filter on a Connection chain
+reads the address — the path prefix, or the token placeholder in a
+claimed header (bare, behind a scheme or a vendor prefix, or as a Basic
+password) or query parameter — and marks the request with its
+Connection. An injector skips when the marker names a rival on its
+header; on an Agent requiring addresses, unless it names its own
+Connection, so the request keeps its credential. The prefix and marker
+are dropped on the way upstream. A request naming no Connection on a
+contested scope is refused by that same step, not served from whichever
+credential sorted first. The gate reads the path with the prefix
+removed, so egress rules and approvals keep naming real paths.
 
 ## HITL ext_authz
 

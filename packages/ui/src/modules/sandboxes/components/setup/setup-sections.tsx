@@ -221,16 +221,10 @@ export function ConnectionAddressingSetupSection({
       <Inset>
         <label className="flex cursor-pointer items-start justify-between gap-4">
           <span>
-            <span
-              id="addressed-injection-label"
-              className="block text-sm font-medium text-foreground"
-            >
+            <span className="block text-sm font-medium text-foreground">
               Inject only into addressed requests
             </span>
-            <span
-              id="addressed-injection-hint"
-              className="mt-0.5 block text-sm text-muted-foreground"
-            >
+            <span className="mt-0.5 block text-sm text-muted-foreground">
               The gateway adds a connection&apos;s credential only to a request
               that names that connection, and leaves every other request with
               the credential it already carries. Turn on for an agent that runs
@@ -240,8 +234,7 @@ export function ConnectionAddressingSetupSection({
           <Switch
             checked={value}
             onCheckedChange={onChange}
-            aria-labelledby="addressed-injection-label"
-            aria-describedby="addressed-injection-hint"
+            label="Inject only into addressed requests"
           />
         </label>
       </Inset>
