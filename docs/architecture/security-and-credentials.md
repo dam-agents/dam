@@ -22,7 +22,7 @@ Three rules carry the security model:
    *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
-   gateway pod's SPIFFE principal.
+   gateway pod's SPIFFE principal (not on no-mesh dev clusters).
    The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:
    none`) so the kernel sees real destinations rather than HBONE
    tunnelled to ztunnel; its only admitted intra-cluster destination

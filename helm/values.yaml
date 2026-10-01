@@ -134,8 +134,9 @@ probes:
 # -- Istio ambient mesh settings. Istio is a hard prerequisite of
 # this chart — `validate-istio.yaml` fails install if the mesh is missing.
 # `mise run cluster:install` provisions Istio out-of-band (mirroring how
-# cert-manager is treated). There is no `enabled: false` mode; an
-# unauthenticated harness port is not a supported configuration.
+# cert-manager is treated). There is no `enabled: false` mode for a real
+# deployment; an unauthenticated harness port is not a supported
+# configuration. The one exception is the local-only `enforce` below.
 istio:
   # SPIFFE trust domain. Default for an istioctl ambient install.
   trustDomain: cluster.local

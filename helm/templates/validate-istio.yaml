@@ -1,7 +1,10 @@
 {{- /*
 Istio ambient is a HARD prerequisite of this chart. There is no
 `enabled: false` toggle — an unauthenticated harness port is not a
-supported configuration. This template never renders a resource; its
+supported configuration. The one exception is istio.enforce=false, which
+platform.validate.unenforcedMeshOnlyOnALocalCluster admits only on a
+local cluster: it keeps the CRD checks below and skips the dataplane ones.
+This template never renders a resource; its
 only job is to fail `helm install` early with an actionable message if
 Istio (or its prerequisites) is missing.
 
