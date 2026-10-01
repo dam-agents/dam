@@ -61,7 +61,7 @@ Leave out questions you answered yourself by exploring the code, and leave out y
 When no open branches remain, or the user asks to wrap up:
 
 1. Show the decision log from the file, followed by an "Open questions" list of anything left unresolved. No intro line.
-2. If the session was about a GitHub issue, ask whether to post the log to that issue as a comment. Post with `gh issue comment` only after the user approves the exact text. Never edit the issue body; if the body is now out of date, say so under "Open questions".
-3. If the session was not about an issue, offer to file one with the `file-issue` skill, passing the log as its input.
+2. If the session was about a GitHub issue, ask whether to post the log to that issue as a comment. Post with `gh issue comment` only after the user approves the exact text, then add the `agent/grilled` label with `gh issue edit --add-label agent/grilled`. Never edit the issue body; if the body is now out of date, say so under "Open questions".
+3. If the session was not about an issue, offer to file one with the `file-issue` skill, passing the log as its input. Add the `agent/grilled` label to the filed issue.
 
 </supporting-info>
