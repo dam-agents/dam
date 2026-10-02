@@ -108,6 +108,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      e2eEnabled: config.e2eEnabled,
     });
     const { budgets, resizeGate } = composeBudgetsModule({
       k8s: k8sClient,

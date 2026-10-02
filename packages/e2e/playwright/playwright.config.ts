@@ -118,6 +118,12 @@ const suite: NamedProject[] = [
     dependencies: ["egress-path-rules"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
+  {
+    name: "s3-signing",
+    testMatch: /12-.*\.spec\.ts$/,
+    dependencies: ["connection-regrant"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
   ...(full
     ? [
         {

@@ -642,6 +642,7 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      e2eEnabled: config.e2eEnabled,
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>

@@ -8,3 +8,7 @@ export const envName = "E2E_INJECTED_KEY";
 export const sentinel = "e2e-injected-secret-7f3a9c1";
 export const echoUrl = "https://httpbingo.org/headers";
 export const mockDefaultReply = "Hello from the mock agent.";
+export const s3ConnectionName = "e2e-s3-storage";
+export const s3AccessKeyId = "e2e-s3-key-4d8b2e6";
+export const s3Region = "us-east-1";
+export const s3Profile = "e2e-s3-storage";
