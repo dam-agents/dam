@@ -261,7 +261,8 @@ export function ChatView() {
       ? storedSessionModel
       : null;
   const indicatorModel = sessionModel
-    ? modelDisplayName(sessionModel.current)
+    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
+        ?.name ?? modelDisplayName(sessionModel.current))
     : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
