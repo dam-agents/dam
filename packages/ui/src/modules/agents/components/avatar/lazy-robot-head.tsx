@@ -17,7 +17,7 @@ export function LazyRobotHead({
 }: RobotHeadProps) {
   return (
     <span
-      className={cn("inline-flex shrink-0", className)}
+      className={cn("group inline-flex shrink-0", className)}
       style={{ width: size, height: size }}
     >
       <CharAvatar

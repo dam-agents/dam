@@ -30,7 +30,7 @@ export function AgentAvatar({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0",
+        "group inline-flex shrink-0",
         stopped && STOPPED_AVATAR_CLASS,
         className,
       )}

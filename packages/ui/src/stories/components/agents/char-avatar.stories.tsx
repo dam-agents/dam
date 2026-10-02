@@ -11,6 +11,13 @@ const meta = {
   component: CharAvatar,
   parameters: { layout: "centered" },
   args: { agentId: "demo-agent", state: "running" },
+  decorators: [
+    (Story) => (
+      <div className="group">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof CharAvatar>;
 
 export default meta;
@@ -26,7 +33,7 @@ export const AllCharacters: Story = {
   render: () => (
     <div className="flex flex-wrap gap-8">
       {CHAR_NAMES.map((name) => (
-        <div key={name} className="flex flex-col items-center gap-2">
+        <div key={name} className="group flex flex-col items-center gap-2">
           <CharAvatar name={name} state="running" colors={CHAR_COLORS[name]} />
           <span className="text-sm text-muted-foreground">{name}</span>
         </div>
@@ -39,7 +46,46 @@ export const AllSleeping: Story = {
   render: () => (
     <div className="flex flex-wrap gap-8">
       {CHAR_NAMES.map((name) => (
-        <div key={name} className="flex flex-col items-center gap-2">
+        <div key={name} className="group flex flex-col items-center gap-2">
+          <CharAvatar name={name} state="hibernated" />
+          <span className="text-sm text-muted-foreground">{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
+
+export const AllHovered: Story = {
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="bee-play flex flex-col items-center gap-2">
+          <CharAvatar name={name} state="running" colors={CHAR_COLORS[name]} />
+          <span className="text-sm text-muted-foreground">{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
+
+export const AllIdleHovered: Story = {
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="bee-play flex flex-col items-center gap-2">
+          <CharAvatar name={name} state="running" idle />
+          <span className="text-sm text-muted-foreground">{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
+
+export const AllSleepingHovered: Story = {
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="bee-play flex flex-col items-center gap-2">
           <CharAvatar name={name} state="hibernated" />
           <span className="text-sm text-muted-foreground">{name}</span>
         </div>
