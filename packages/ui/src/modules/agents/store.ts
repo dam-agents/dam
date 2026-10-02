@@ -25,6 +25,7 @@ export interface AgentsSlice {
   deletedAgents: ReadonlySet<string>;
   markAgentDeleted: (id: string) => void;
   selectAgent: (id: string) => void;
+  navigateToAgentLanding: (id: string) => void;
   openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
   goBack: () => void;
@@ -101,6 +102,15 @@ export const createAgentsSlice: StateCreator<
       view: "chat",
       mobileScreen: "sessions",
     });
+  },
+
+  navigateToAgentLanding: (id) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "agent-landing", agentId: id }),
+    );
+    set({ selectedAgent: id, view: "agent-landing", agentId: id });
   },
 
   openKnowledgeBase: (id) => {

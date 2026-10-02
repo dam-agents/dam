@@ -1,14 +1,12 @@
 import {
-  Code,
-  Edit,
-  Hashtag,
+  EdgeDevice,
   OverflowMenuVertical,
   Time,
   TrashCan,
+  Warning,
 } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
-  SessionMode,
   type SessionRuntime,
   SessionType,
   type SessionView,
@@ -35,6 +33,42 @@ import { WorkingDots } from "./working-dots.js";
 const LONG_PRESS_MS = 400;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
+
+type ChannelKind = "agent" | "slack" | "schedule" | "approval";
+
+const iconBg: Record<ChannelKind, string> = {
+  agent: "bg-[#f2f4f8] text-foreground dark:bg-white/10",
+  slack:
+    "bg-white border border-[#dde1e6] dark:bg-white/5 dark:border-white/10",
+  schedule:
+    "bg-[#edf5ff] text-[#0f62fe] dark:bg-[#0f62fe]/15 dark:text-[#78a9ff]",
+  approval: "bg-warning/10 text-warning",
+};
+
+function channelKindFor(s: SessionView, needsApproval: boolean): ChannelKind {
+  if (needsApproval) return "approval";
+  if (s.type === SessionType.ScheduleCron || s.scheduleId) return "schedule";
+  if (
+    s.type === SessionType.ChannelSlack ||
+    s.type === SessionType.ChannelTelegram ||
+    s.threadTs
+  )
+    return "slack";
+  return "agent";
+}
+
+function channelIcon(kind: ChannelKind) {
+  switch (kind) {
+    case "schedule":
+      return <Time size={16} />;
+    case "slack":
+      return <img src="/icons/slack.svg" alt="Slack" className="size-4" />;
+    case "approval":
+      return <Warning size={16} />;
+    case "agent":
+      return <EdgeDevice size={16} />;
+  }
+}
 
 interface Props {
   session: SessionView;
@@ -106,16 +140,13 @@ export function SessionRow({
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
     ? "text-muted-foreground italic"
-    : unread
+    : unread || working
       ? "font-semibold text-foreground"
       : "font-normal text-foreground";
 
-  const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
-  const terminal = s.mode === SessionMode.Terminal;
-  const channel =
-    s.type === SessionType.ChannelSlack ||
-    s.type === SessionType.ChannelTelegram;
+  const kind = channelKindFor(s, needsApproval);
   const slackKind = slackSessionKind(s);
+  const hasBackgroundWork = backgroundWork.length > 0;
 
   return (
     <div
@@ -123,8 +154,12 @@ export function SessionRow({
       data-session-id={s.sessionId}
       data-active={active ? "true" : "false"}
       className={cn(
-        "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
-        active ? "bg-muted" : "hover:bg-muted/60",
+        "group relative flex gap-3 rounded-xl px-4 py-3 cursor-pointer transition-colors",
+        active
+          ? "bg-muted"
+          : (unread || working) && !active
+            ? "bg-[#f4f4f4]/50 dark:bg-white/[0.03] hover:bg-muted/60"
+            : "hover:bg-muted/60",
       )}
       {...clickableProps(handleClick)}
       onTouchStart={startPress}
@@ -135,27 +170,50 @@ export function SessionRow({
         setMenuOpen(true);
       }}
     >
+      <div className="relative shrink-0 pt-0.5">
+        <div
+          className={cn(
+            "flex size-8 items-center justify-center rounded-lg",
+            iconBg[kind],
+          )}
+        >
+          {channelIcon(kind)}
+        </div>
+        {working && (
+          <span className="working-dots absolute -left-[6px] top-0 flex items-center -space-x-[1px]">
+            <span className="size-1.5 rounded-full border border-background bg-[#a2a9b0] dark:bg-white/40" />
+            <span className="size-1.5 rounded-full border border-background bg-[#a2a9b0] dark:bg-white/40" />
+            <span className="size-1.5 rounded-full border border-background bg-[#a2a9b0] dark:bg-white/40" />
+          </span>
+        )}
+        {!working && (unread || needsApproval) && (
+          <span className="absolute -left-0.5 top-0 size-2 rounded-full border-[1.5px] border-background bg-accent" />
+        )}
+      </div>
+
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          {}
-          <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
+          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
-          <SessionIndicators
-            scheduled={scheduled}
-            terminal={terminal}
-            channel={channel}
-            ambient={slackKind === "ambient"}
-            needsApproval={needsApproval}
-            working={working}
-            draft={draft}
-            backgroundWork={backgroundWork}
-          />
+          {slackKind && (
+            <span className="shrink-0 text-xs text-muted-foreground/60">
+              {slackKind === "ambient" ? "Ambient" : "Thread"}
+            </span>
+          )}
+          {draft && !working && !needsApproval && !unread && (
+            <span className="shrink-0 text-xs text-muted-foreground/60">
+              Draft
+            </span>
+          )}
+          {hasBackgroundWork && !working && (
+            <WorkingDots
+              className="working-dots-slow text-success shrink-0"
+              title={backgroundWorkLabel(backgroundWork)}
+            />
+          )}
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          {slackKind
-            ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
-            : ""}
+        <span className="text-xs text-muted-foreground">
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
           {cost && (
             <span
@@ -168,7 +226,7 @@ export function SessionRow({
           )}
         </span>
       </div>
-      {}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -192,7 +250,7 @@ export function SessionRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {}
+
       {menuOpen && (
         <div
           ref={menuRef}
@@ -214,94 +272,5 @@ export function SessionRow({
         </div>
       )}
     </div>
-  );
-}
-
-function SessionIndicators({
-  scheduled,
-  terminal,
-  channel,
-  ambient,
-  needsApproval,
-  working,
-  draft,
-  backgroundWork,
-}: {
-  scheduled: boolean;
-  terminal: boolean;
-  channel: boolean;
-  ambient: boolean;
-  needsApproval: boolean;
-  working: boolean;
-  draft: boolean;
-  backgroundWork: readonly BackgroundWorkItemView[];
-}) {
-  const hasBackgroundWork = backgroundWork.length > 0;
-  if (
-    !scheduled &&
-    !terminal &&
-    !channel &&
-    !needsApproval &&
-    !working &&
-    !hasBackgroundWork &&
-    !draft
-  )
-    return null;
-  return (
-    <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
-      {terminal && (
-        <Code size={16} className="text-foreground" aria-label="Terminal" />
-      )}
-      {channel &&
-        (ambient ? (
-          <span
-            className="inline-flex items-start text-foreground"
-            aria-label="Ambient channel session"
-          >
-            <Hashtag size={16} />
-            <span
-              className="text-[9px] font-semibold leading-none text-accent"
-              aria-hidden
-            >
-              A
-            </span>
-          </span>
-        ) : (
-          <Hashtag
-            size={16}
-            className="text-foreground"
-            aria-label="Channel session"
-          />
-        ))}
-      {scheduled && (
-        <Time size={16} className="text-foreground" aria-label="Scheduled" />
-      )}
-      {}
-      {needsApproval ? (
-        <span
-          data-testid="session-approval-dot"
-          role="img"
-          aria-label="Needs your approval"
-          className="w-2 h-2 rounded-full bg-accent shrink-0"
-        />
-      ) : working ? (
-        <WorkingDots className="text-accent" title="Working" />
-      ) : hasBackgroundWork ? (
-        <WorkingDots
-          className="working-dots-slow text-success"
-          title={backgroundWorkLabel(backgroundWork)}
-        />
-      ) : draft ? (
-        <span
-          data-testid="session-draft-marker"
-          role="img"
-          aria-label="Has a draft"
-          title="Has a draft"
-          className="inline-flex text-muted-foreground shrink-0"
-        >
-          <Edit size={16} />
-        </span>
-      ) : null}
-    </span>
   );
 }

@@ -34,6 +34,14 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import {
+  type AgentChrome,
+  LayoutVariantPicker,
+  WorkspaceChatHeader,
+  WorkspaceComposerLinks,
+  WorkspaceEdgeDock,
+  type WorkspaceHeaderMode,
+} from "../../../mock/chat-workspace-variants.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -107,17 +115,22 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { SkillsIndicator } from "../components/skills-indicator.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
-import {
-  pushSessionPath,
-  useSessionUrlSync,
-} from "../hooks/use-session-url-sync.js";
+import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+
+const HEADER_MODES: Record<number, WorkspaceHeaderMode> = {
+  1: "pills",
+  2: "agentMenu",
+  3: "search",
+  4: "title",
+  5: "icons",
+  6: "title",
+};
 
 const ConfigureAgentModal = lazy(() =>
   import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
@@ -175,7 +188,6 @@ export function ChatView() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
   const {
     experiment: dockedExperiment,
     options: experimentOptions,
@@ -217,14 +229,7 @@ export function ChatView() {
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsOpen, setSessionsOpen] = useState(true);
-  const [sessionsH, setSessionsH] = useState(
-    () => Number(localStorage.getItem("platform-sessions-h")) || 260,
-  );
-  const [resizingSections, setResizingSections] = useState(false);
-  const sectionTransition = resizingSections
-    ? undefined
-    : "transition-[flex] duration-200";
+  const sectionTransition = "transition-[flex] duration-200";
   const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
     flex: !open
       ? "0 0 44px"
@@ -235,6 +240,7 @@ export function ChatView() {
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [layoutVariant, setLayoutVariant] = useState(0);
 
   const {
     resetSession,
@@ -397,63 +403,6 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  const pushSessionUrl = useCallback(
-    (sid: string | null, mode: SessionMode | null) => {
-      if (view !== "chat" || !selectedAgent) return;
-      pushSessionPath(selectedAgent, sid, mode);
-    },
-    [view, selectedAgent],
-  );
-
-  const mobileResumeSession = useCallback(
-    (sid: string, mode?: SessionMode) => {
-      unfocusPendingLaunch();
-      pushSessionUrl(sid, mode ?? SessionMode.Chat);
-      setMobileScreen("chat");
-      setSessionMode(mode ?? SessionMode.Chat);
-      if (mode === SessionMode.Terminal) {
-        setSessionId(sid);
-        return;
-      }
-      if (sid === sessionId && !sessionError) {
-        scrollToBottom();
-        return;
-      }
-      resumeSession(sid);
-    },
-    [
-      sessionId,
-      sessionError,
-      setMobileScreen,
-      setSessionMode,
-      setSessionId,
-      resumeSession,
-      scrollToBottom,
-      unfocusPendingLaunch,
-      pushSessionUrl,
-    ],
-  );
-
-  const handleNewSession = useCallback(() => {
-    unfocusPendingLaunch();
-    if (!sessionId && messages.length === 0) {
-      setMobileScreen("chat");
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-  }, [
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    unfocusPendingLaunch,
-    pushSessionUrl,
-  ]);
-
   const showConfirm = useStore((s) => s.showConfirm);
 
   const handleNewTerminal = useCallback(() => {
@@ -600,111 +549,99 @@ export function ChatView() {
     />
   );
 
-  const renderHeader = () => {
-    return null;
+  const v = layoutVariant;
+  const chrome: AgentChrome = {
+    agentId: selectedAgent,
+    name: selectedAgentName ?? "",
+    statusDot,
+    menu: agentDropdown,
+    status: headerStatus,
+    backButton,
+    onOpenFile: openFileHandler,
   };
 
-  const renderSidebarAgentHeader = () => {
-    return (
-      <div
-        className={cn(
-          "shrink-0 border-b border-border p-3",
-          isDemo && DEMO_HEADER_CLASS,
-        )}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {backButton}
-          {statusDot}
-          <h1
-            className={cn(
-              "text-sm font-semibold truncate flex-1 min-w-0",
-              isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
-            )}
-          >
-            {selectedAgentName}
-          </h1>
-          {isDemo && <DemoHeaderTag />}
-          <div className="ml-auto shrink-0">{agentDropdown}</div>
-        </div>
-        <div className="mt-2 flex items-center gap-2">{headerStatus}</div>
+  const sidebarAgentHeader = (
+    <div
+      className={cn(
+        "shrink-0 border-b border-border p-3",
+        isDemo && DEMO_HEADER_CLASS,
+      )}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        {backButton}
+        {statusDot}
+        <h1
+          className={cn(
+            "text-sm font-semibold truncate flex-1 min-w-0",
+            isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+          )}
+        >
+          {selectedAgentName}
+        </h1>
+        {isDemo && <DemoHeaderTag />}
+        <div className="ml-auto shrink-0">{agentDropdown}</div>
       </div>
-    );
-  };
+      <div className="mt-2 flex items-center gap-2">{headerStatus}</div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {renderHeader()}
-
-      {}
       <div className="flex flex-1 min-h-0">
-        {}
-        <div
-          style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
-            mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
-        >
-          {renderSidebarAgentHeader()}
-          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-          <SessionsSidebar
-            open={sessionsOpen}
-            onToggle={() => setSessionsOpen((o) => !o)}
-            className={sectionTransition}
-            style={sectionFlex(
-              sessionsOpen,
-              sessionsOpen && filesSectionOpen ? sessionsH : undefined,
-            )}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          {sessionsOpen && filesSectionOpen && (
+        {v === 0 && (
+          <>
+            <div
+              style={{ width: leftW }}
+              className={cn(
+                "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",
+                mobileScreen === "chat" ? "hidden md:flex" : "flex",
+                mobileScreen === "sessions" && "max-md:!w-full",
+              )}
+            >
+              {sidebarAgentHeader}
+              {runtimeOutdated && (
+                <RuntimeOutdatedNotice agentId={selectedAgent} />
+              )}
+              <FilesPanel
+                open={filesSectionOpen}
+                onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
+                className={sectionTransition}
+                style={sectionFlex(filesSectionOpen)}
+                onOpenFile={openFileHandler}
+              />
+              <ChatArtifactsPanel
+                agentId={selectedAgent}
+                open={artifactsSectionOpen}
+                onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
+                className={sectionTransition}
+                style={sectionFlex(artifactsSectionOpen)}
+              />
+            </div>
             <ResizeHandle
-              orientation="vertical"
-              onResize={(d) => {
-                setResizingSections(true);
-                setSessionsH((h) => {
-                  const v = Math.max(120, Math.min(600, h + d));
-                  localStorage.setItem("platform-sessions-h", String(v));
-                  return v;
-                });
-              }}
-              onDragEnd={() => setResizingSections(false)}
+              side="left"
+              onResize={(d) =>
+                setLeftW((w) => {
+                  const next = Math.max(140, Math.min(400, w + d));
+                  localStorage.setItem("platform-left-w", String(next));
+                  return next;
+                })
+              }
             />
-          )}
-          <FilesPanel
-            open={filesSectionOpen}
-            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(filesSectionOpen)}
-            onOpenFile={openFileHandler}
-          />
-          <ChatArtifactsPanel
-            agentId={selectedAgent}
-            open={artifactsSectionOpen}
-            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(artifactsSectionOpen)}
-          />
-        </div>
-        <ResizeHandle
-          side="left"
-          onResize={(d) =>
-            setLeftW((w) => {
-              const v = Math.max(140, Math.min(400, w + d));
-              localStorage.setItem("platform-left-w", String(v));
-              return v;
-            })
-          }
-        />
-
-        {}
+          </>
+        )}
         <div
           className={cn(
             "relative flex flex-1 flex-col min-w-0",
-            mobileScreen === "sessions" ? "hidden md:flex" : "flex",
+            v === 0 && mobileScreen === "sessions" ? "hidden md:flex" : "flex",
           )}
         >
-          {}
+          {v >= 1 && (
+            <WorkspaceChatHeader chrome={chrome} mode={HEADER_MODES[v]!} />
+          )}
+          {v >= 1 && runtimeOutdated && (
+            <RuntimeOutdatedNotice agentId={selectedAgent} />
+          )}
+          {v === 6 && <WorkspaceEdgeDock chrome={chrome} />}
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
@@ -858,6 +795,9 @@ export function ChatView() {
                               agentId={selectedAgent}
                               onManage={() => setConfigureSection("skills")}
                             />
+                            {v === 4 && (
+                              <WorkspaceComposerLinks chrome={chrome} />
+                            )}
                           </>
                         )}
                       </div>
@@ -865,11 +805,13 @@ export function ChatView() {
                   </div>
                 )}
               </div>
+
             </>
           )}
         </div>
 
-        {}
+
+        {/* Docked file/artifact viewer (opens on click) */}
         {(openFilePath || openArtifactId || dockedExperiment) && (
           <>
             <div className="hidden md:flex">
@@ -921,6 +863,13 @@ export function ChatView() {
           </>
         )}
       </div>
+
+      {import.meta.env.VITE_MOCK && (
+        <LayoutVariantPicker
+          current={layoutVariant}
+          onChange={setLayoutVariant}
+        />
+      )}
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />

@@ -35,7 +35,12 @@ export type Route =
   | { view: "artifacts" }
   | { view: "presets" }
   | { view: "schedules" }
-  | { view: "card-gallery" };
+  | { view: "card-gallery" }
+  | { view: "component-showcase" }
+  | { view: "sidebar-specs" }
+  | { view: "nav-flows" }
+  | { view: "flow-screen"; flowId: string; screen: number }
+  | { view: "agent-landing"; agentId: string };
 
 export type View = Route["view"];
 
@@ -104,6 +109,17 @@ export function parseRoute(path: string): Route {
   if (path === "/presets") return { view: "presets" };
   if (path === "/schedules") return { view: "schedules" };
   if (path === "/card-gallery") return { view: "card-gallery" };
+  if (path === "/component-showcase") return { view: "component-showcase" };
+  if (path === "/sidebar-specs") return { view: "sidebar-specs" };
+  if (path === "/nav-flows") return { view: "nav-flows" };
+  const flowScreenMatch = path.match(/^\/flow-screen\/([^/]+)\/(\d+)$/);
+  if (flowScreenMatch) {
+    return {
+      view: "flow-screen",
+      flowId: decodeSegment(flowScreenMatch[1]!),
+      screen: Number(flowScreenMatch[2]),
+    };
+  }
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -114,6 +130,13 @@ export function parseRoute(path: string): Route {
     };
   }
   if (path === "/agents/new") return { view: "agent-new" };
+  const agentLandingMatch = path.match(/^\/agents\/([^/]+)$/);
+  if (agentLandingMatch && agentLandingMatch[1] !== "new") {
+    return {
+      view: "agent-landing",
+      agentId: decodeSegment(agentLandingMatch[1]!),
+    };
+  }
   if (path.startsWith("/knowledge-bases")) return { view: "home" };
   return { view: "home" };
 }
@@ -156,6 +179,16 @@ export function routeToPath(route: Route): string {
       return "/artifacts";
     case "card-gallery":
       return "/card-gallery";
+    case "component-showcase":
+      return "/component-showcase";
+    case "sidebar-specs":
+      return "/sidebar-specs";
+    case "nav-flows":
+      return "/nav-flows";
+    case "flow-screen":
+      return `/flow-screen/${encodeURIComponent(route.flowId)}/${route.screen}`;
+    case "agent-landing":
+      return `/agents/${encodeURIComponent(route.agentId)}`;
     default: {
       const unhandled: never = route;
       return unhandled;
@@ -171,7 +204,10 @@ export function routeToNavigationState(route: Route): {
 } {
   return {
     view: route.view,
-    agentId: route.view === "sandbox-home" ? route.agentId : null,
+    agentId:
+      route.view === "sandbox-home" || route.view === "agent-landing"
+        ? route.agentId
+        : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",

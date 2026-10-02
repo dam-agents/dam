@@ -1,5 +1,7 @@
 import { http, HttpResponse } from "msw";
 
+import { agentsKeys } from "../modules/agents/api/queries.js";
+import { queryClient } from "../query-client.js";
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
 import {
@@ -468,6 +470,23 @@ export const handlers = [
         if (proc === "agents.create") {
           mockEmpty = false;
           return { result: { data: agents[0] } };
+        }
+        if (proc === "agents.wake") {
+          const entry = body?.[String(idx)];
+          const input = entry?.json ?? entry ?? body?.json ?? body;
+          const target = agents.find((a) => a.id === input?.id) as
+            | { state: string }
+            | undefined;
+          if (target) {
+            target.state = "starting";
+            setTimeout(() => {
+              target.state = "running";
+              void queryClient.invalidateQueries({
+                queryKey: agentsKeys.root,
+              });
+            }, 1500);
+          }
+          return { result: { data: null } };
         }
         if (proc === "agents.upgrade") {
           return { result: { data: { ...agents[1], templateUpdate: null } } };

@@ -58,6 +58,18 @@ run = '''
 docker build -f packages/ui/Dockerfile -t platform-ui:latest .
 '''
 
+["ui:storybook"]
+description = "Start Storybook dev server"
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec storybook dev -p 6006"
+
+["ui:storybook:build"]
+description = "Build Storybook static site"
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec storybook build"
+
 ["ui:scan"]
 depends = ["ui:scan:*"]
 

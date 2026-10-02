@@ -1,4 +1,4 @@
-import { Activity } from "@carbon/icons-react";
+import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,11 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
+import { ComponentShowcase } from "./mock/data/component-showcase.js";
+import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
+import { SidebarSpecs } from "./mock/sidebar-specs.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { AgentLandingView } from "./modules/agents/views/agent-landing-view.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
@@ -53,6 +57,8 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "nav-flows") return <NavFlows />;
+  if (view === "flow-screen") return <FlowScreen />;
   return <MainApp />;
 }
 
@@ -69,12 +75,12 @@ function NotificationBell() {
       onClick={toggleNotifications}
       aria-label={
         needsYouCount > 0
-          ? `Notifications, ${needsYouCount} pending`
-          : "Notifications"
+          ? `Approvals waiting, ${needsYouCount}`
+          : "Approvals waiting"
       }
       className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <Activity size={16} />
+      <Notification size={16} />
       {needsYouCount > 0 && (
         <Badge
           variant="default"
@@ -151,7 +157,11 @@ function MainApp() {
               <NotificationBell />
             </div>
           </div>
-          {view === "sandbox-home" ? (
+          {view === "agent-landing" ? (
+            <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+              <AgentLandingView />
+            </div>
+          ) : view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : view === "home" ? (
             <HomeView />
@@ -171,6 +181,10 @@ function MainApp() {
             <div className="mx-auto w-full max-w-[1400px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
               <SetupWorkbenchView />
             </div>
+          ) : view === "sidebar-specs" ? (
+            <div className="w-full px-6 py-6 pb-20">
+              <SidebarSpecs />
+            </div>
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
               {view === "agent-new" ? (
@@ -179,6 +193,8 @@ function MainApp() {
                 <SettingsView />
               ) : view === "card-gallery" ? (
                 <AgentCardGallery />
+              ) : view === "component-showcase" ? (
+                <ComponentShowcase />
               ) : (
                 <HomeView />
               )}

@@ -5,239 +5,173 @@ const min = 60_000;
 const hr = 60 * min;
 const day = 24 * hr;
 
-export const mockSessions = {
-  // ── ci-pipeline ──────────────────────────────────────────────────────────
-  [AGENT_IDS.codexResearch]: [
-    // WORKING — schedule running (today)
-    {
-      sessionId: "sess-002",
-      agentId: AGENT_IDS.codexResearch,
-      type: "schedule_cron" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 25 * min).toISOString(),
-      updatedAt: new Date(now - 3 * min).toISOString(),
-      scheduleId: "sched-001",
-      title: "Nightly e2e test suite",
-      running: true,
-      seenAt: new Date(now - 20 * min).toISOString(),
-    },
-    // UNREAD — finished today
-    {
-      sessionId: "sess-003",
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 2 * hr).toISOString(),
-      updatedAt: new Date(now - 45 * min).toISOString(),
-      title: "Build Docker image for v2.4 release candidate",
-      running: false,
-      seenAt: new Date(now - 3 * hr).toISOString(),
-      artifactName: "release-v2.4-rc1-linux-amd64.tar.gz",
-    },
-    // READ — yesterday
-    {
-      sessionId: "sess-003b",
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - day - 2 * hr).toISOString(),
-      updatedAt: new Date(now - day - 40 * min).toISOString(),
-      title: "Deploy staging environment for QA",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-    // READ — last 30 days (15 days ago)
-    {
-      sessionId: "sess-020",
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 15 * day - 3 * hr).toISOString(),
-      updatedAt: new Date(now - 15 * day - hr).toISOString(),
-      title: "Benchmark database query performance",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-  ],
+const sessionTitles = [
+  "Design review for checkout flow redesign",
+  "User research synthesis — Q3 interviews",
+  "Sprint planning — mobile team",
+  "Competitive analysis of onboarding patterns",
+  "Finalize pricing page copy and layout",
+  "Accessibility audit for dashboard components",
+  "Write PRD for notifications feature",
+  "Prototype search and filter patterns",
+  "Customer journey map — enterprise tier",
+  "A/B test results for signup form variants",
+  "Update design system color tokens",
+  "Review analytics for feature adoption",
+  "Stakeholder presentation — Q4 roadmap",
+  "Persona update based on new survey data",
+  "Heuristic evaluation of settings flow",
+  "Draft release notes for v3.0 launch",
+  "Information architecture for help center",
+  "Usability test script — billing flow",
+  "Design QA for dark mode components",
+  "Weekly product sync — growth team",
+  "Map user flows for team onboarding",
+  "Prioritize backlog items for next sprint",
+  "Create wireframes for reporting dashboard",
+  "Review NPS feedback and tag themes",
+  "Define success metrics for new search",
+  "Update component library documentation",
+  "Analyze funnel drop-off in trial signup",
+  "Design handoff notes for profile page",
+  "Content strategy for empty states",
+  "Benchmark load times against competitors",
+  "Plan beta launch for collaboration features",
+  "Interview debrief — power user segment",
+  "Audit notification preferences UX",
+  "Spec out keyboard shortcuts for power users",
+  "Review support tickets for UX patterns",
+  "Design token migration to new naming scheme",
+  "Mockup variants for mobile navigation",
+  "Write acceptance criteria for file upload",
+  "Localization review for date formats",
+  "Gather feedback on new sidebar layout",
+  "Plan research sessions for Q4 features",
+  "Map integration touchpoints for Slack connect",
+  "Evaluate icon set for consistency",
+  "Draft microcopy for error messages",
+  "Analyze session recordings for friction points",
+  "Scope MVP for team permissions feature",
+  "Review brand guidelines for marketing pages",
+  "Prototype drag-and-drop reordering",
+  "Create storyboard for onboarding tutorial",
+  "Define edge cases for bulk actions flow",
+  "Compile insights from customer advisory board",
+  "Design system spacing scale proposal",
+  "Review competitor pricing and packaging",
+  "Test color contrast ratios for WCAG AA",
+  "Write user story for scheduled reports",
+  "Prepare demo for investor product review",
+  "Catalog reusable patterns across product",
+  "Plan migration path for legacy dashboard",
+  "Outline strategy for self-serve analytics",
+  "Compile feature requests from sales team",
+];
 
-  // ── bug-triage ───────────────────────────────────────────────────────────
-  [AGENT_IDS.geminiPipeline]: [
-    // WORKING — agent running (today)
-    {
-      sessionId: "sess-004",
-      agentId: AGENT_IDS.geminiPipeline,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 5 * min).toISOString(),
-      updatedAt: new Date(now - 2 * min).toISOString(),
-      title: "Triage and label open issues from last sprint",
-      running: true,
-      seenAt: new Date(now - 4 * min).toISOString(),
-    },
-    // UNREAD — finished today
-    {
-      sessionId: "sess-005",
-      agentId: AGENT_IDS.geminiPipeline,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 90 * min).toISOString(),
-      updatedAt: new Date(now - 30 * min).toISOString(),
-      title: "Classify P2 bugs from customer reports",
-      running: false,
-      seenAt: new Date(now - 2 * hr).toISOString(),
-    },
-    // READ — yesterday
-    {
-      sessionId: "sess-006",
-      agentId: AGENT_IDS.geminiPipeline,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - day - 3 * hr).toISOString(),
-      updatedAt: new Date(now - day - 60 * min).toISOString(),
-      title: "Investigate flaky test in payments module",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-    // READ — last 7 days (4 days ago)
-    {
-      sessionId: "sess-021",
-      agentId: AGENT_IDS.geminiPipeline,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 4 * day - 2 * hr).toISOString(),
-      updatedAt: new Date(now - 4 * day - hr).toISOString(),
-      title: "Auto-close stale issues older than 90 days",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-  ],
+const slackChannels = [
+  "code-review",
+  "incidents",
+  "deployments",
+  "api-docs",
+  "engineering",
+  "platform-alerts",
+  "security",
+];
 
-  // ── api-docs ─────────────────────────────────────────────────────────────
-  [AGENT_IDS.knowledgeBase]: [
-    // READ — slack, finished today
-    {
-      sessionId: "sess-008",
-      agentId: AGENT_IDS.knowledgeBase,
-      type: "channel_slack" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 3 * hr).toISOString(),
-      updatedAt: new Date(now - 2 * hr).toISOString(),
-      threadTs: "1725800000.000200",
-      title: "Update REST API reference for v2.4 endpoints",
-      running: false,
-      seenAt: new Date(now - hr).toISOString(),
-      slackChannel: "api-docs",
-    },
-    // READ — schedule, finished today
-    {
-      sessionId: "sess-009",
-      agentId: AGENT_IDS.knowledgeBase,
-      type: "schedule_cron" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 4 * hr).toISOString(),
-      updatedAt: new Date(now - 3 * hr).toISOString(),
-      scheduleId: "sched-003",
-      title: "Weekly OpenAPI spec sync",
-      running: false,
-      seenAt: new Date(now - hr).toISOString(),
-    },
-    // READ — last 7 days (3 days ago)
-    {
-      sessionId: "sess-010",
-      agentId: AGENT_IDS.knowledgeBase,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 3 * day - 4 * hr).toISOString(),
-      updatedAt: new Date(now - 3 * day - 50 * min).toISOString(),
-      title: "Generate auth middleware migration guide",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-      artifactName: "auth-migration-guide.md",
-    },
-    // READ — older (45 days ago)
-    {
-      sessionId: "sess-022",
-      agentId: AGENT_IDS.knowledgeBase,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 45 * day - 5 * hr).toISOString(),
-      updatedAt: new Date(now - 45 * day - 3 * hr).toISOString(),
-      title: "Rebuild search index for knowledge base",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-  ],
+function generateSessions(
+  agentId: string,
+  count: number,
+  options?: {
+    runningCount?: number;
+    slackRatio?: number;
+    scheduleRatio?: number;
+  },
+) {
+  const {
+    runningCount = 1,
+    slackRatio = 0.2,
+    scheduleRatio = 0.15,
+  } = options ?? {};
+  const sessions = [];
 
-  // ── pm-standup ───────────────────────────────────────────────────────────
-  [AGENT_IDS.experiment1]: [
-    // READ — schedule, finished today
-    {
-      sessionId: "sess-012",
-      agentId: AGENT_IDS.experiment1,
-      type: "schedule_cron" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 6 * hr).toISOString(),
-      updatedAt: new Date(now - 5 * hr).toISOString(),
-      scheduleId: "sched-004",
-      title: "Daily standup summary — backend team",
-      running: false,
-      seenAt: new Date(now - 4 * hr).toISOString(),
-    },
-    // READ — last 30 days (12 days ago)
-    {
-      sessionId: "sess-013",
-      agentId: AGENT_IDS.experiment1,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 12 * day - 4 * hr).toISOString(),
-      updatedAt: new Date(now - 12 * day - 90 * min).toISOString(),
-      title: "Sprint velocity report for Q3 planning",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-  ],
+  for (let i = 0; i < count; i++) {
+    const ageMs =
+      i < 3 ? i * 30 * min : (i - 2) * 4 * hr + Math.random() * 2 * hr;
+    const isRunning = i < runningCount;
+    const isSlack = !isRunning && Math.random() < slackRatio;
+    const isSchedule = !isRunning && !isSlack && Math.random() < scheduleRatio;
+    const isUnread = !isRunning && i < 6 && Math.random() < 0.5;
 
-  // ── code-review-bot ──────────────────────────────────────────────────────
-  [AGENT_IDS.claudeCodeMain]: [
-    // UNREAD — slack, finished today
-    {
-      sessionId: "sess-016",
-      agentId: AGENT_IDS.claudeCodeMain,
-      type: "channel_slack" as const,
+    const createdAt = new Date(now - ageMs - 30 * min).toISOString();
+    const updatedAt = new Date(now - ageMs).toISOString();
+    const seenAt =
+      isRunning || isUnread
+        ? new Date(now - ageMs - hr).toISOString()
+        : new Date(now - ageMs + 10 * min).toISOString();
+
+    sessions.push({
+      sessionId: `sess-${agentId.slice(-4)}-${String(i).padStart(3, "0")}`,
+      agentId,
+      type: isSlack
+        ? ("channel_slack" as const)
+        : isSchedule
+          ? ("schedule_cron" as const)
+          : ("regular" as const),
       mode: "chat" as const,
-      createdAt: new Date(now - 50 * min).toISOString(),
-      updatedAt: new Date(now - 25 * min).toISOString(),
-      threadTs: "1725800000.000500",
-      title: "Review PR #487 session history refactor",
-      running: false,
-      seenAt: new Date(now - 55 * min).toISOString(),
-      slackChannel: "code-review",
-    },
-    // READ — finished today
-    {
-      sessionId: "sess-017",
-      agentId: AGENT_IDS.claudeCodeMain,
-      type: "channel_slack" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 7 * hr).toISOString(),
-      updatedAt: new Date(now - 6 * hr).toISOString(),
-      threadTs: "1725800000.000600",
-      title: "Security review for OAuth token handling",
-      running: false,
-      seenAt: new Date(now - 5 * hr).toISOString(),
-      slackChannel: "code-review",
-    },
-    // READ — older (60 days ago)
-    {
-      sessionId: "sess-018",
-      agentId: AGENT_IDS.claudeCodeMain,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 60 * day - 3 * hr).toISOString(),
-      updatedAt: new Date(now - 60 * day - 2 * hr).toISOString(),
-      title: "Lint and format entire monorepo",
-      running: false,
-      seenAt: new Date(now).toISOString(),
-    },
-  ],
+      createdAt,
+      updatedAt,
+      title: sessionTitles[i % sessionTitles.length],
+      running: isRunning,
+      seenAt,
+      ...(isSlack
+        ? {
+            threadTs: `17258${String(i).padStart(5, "0")}.000${i}`,
+            slackChannel: slackChannels[i % slackChannels.length],
+          }
+        : {}),
+      ...(isSchedule
+        ? { scheduleId: `sched-${String(i).padStart(3, "0")}` }
+        : {}),
+    });
+  }
+
+  return sessions;
+}
+
+export const mockSessions: Record<string, unknown[]> = {
+  [AGENT_IDS.codexResearch]: generateSessions(AGENT_IDS.codexResearch, 55, {
+    runningCount: 2,
+    slackRatio: 0.1,
+    scheduleRatio: 0.25,
+  }),
+  [AGENT_IDS.claudeCodeMain]: generateSessions(AGENT_IDS.claudeCodeMain, 58, {
+    runningCount: 1,
+    slackRatio: 0.35,
+    scheduleRatio: 0.05,
+  }),
+  [AGENT_IDS.geminiPipeline]: generateSessions(AGENT_IDS.geminiPipeline, 50, {
+    runningCount: 0,
+    slackRatio: 0.15,
+    scheduleRatio: 0.1,
+  }),
+  [AGENT_IDS.knowledgeBase]: generateSessions(AGENT_IDS.knowledgeBase, 50, {
+    runningCount: 0,
+    slackRatio: 0.3,
+    scheduleRatio: 0.2,
+  }),
+  [AGENT_IDS.experiment1]: generateSessions(AGENT_IDS.experiment1, 40, {
+    runningCount: 0,
+    slackRatio: 0.1,
+    scheduleRatio: 0.3,
+  }),
+  [AGENT_IDS.experiment2]: generateSessions(AGENT_IDS.experiment2, 35, {
+    runningCount: 0,
+    slackRatio: 0.1,
+    scheduleRatio: 0.2,
+  }),
+  [AGENT_IDS.knowledgeBase2]: generateSessions(AGENT_IDS.knowledgeBase2, 30, {
+    runningCount: 0,
+    slackRatio: 0.2,
+    scheduleRatio: 0.15,
+  }),
 };

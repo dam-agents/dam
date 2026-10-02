@@ -20,7 +20,10 @@ type ParameterlessView =
   | "setup-workbench"
   | "presets"
   | "schedules"
-  | "card-gallery";
+  | "card-gallery"
+  | "component-showcase"
+  | "sidebar-specs"
+  | "nav-flows";
 
 export interface NavigationSlice {
   view: View;

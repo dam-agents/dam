@@ -373,6 +373,58 @@
   animation: slide-in-right 0.25s ease-out both;
 }
 
+@keyframes nav-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes nav-focus-in {
+  0% {
+    transform: scale(0.97);
+    outline-color: color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+  40% {
+    transform: scale(1);
+    outline-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    outline-color: color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+@keyframes nav-label-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.anim-nav-row-in {
+  animation: nav-row-in 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.anim-nav-focus-in {
+  outline: 4px solid transparent;
+  animation: nav-focus-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.anim-nav-label-in {
+  animation: nav-label-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-nav-row-in,
+  .anim-nav-focus-in,
+  .anim-nav-label-in {
+    animation: none;
+  }
+}
+
 @keyframes dot-jump {
   0%,
   60%,

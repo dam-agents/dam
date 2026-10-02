@@ -181,6 +181,14 @@ for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
     ["acp-sessions", agentId, "notifications"],
     sessions,
   );
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, { channels: false, scheduled: false }],
+    sessions,
+  );
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, { channels: true, scheduled: true }],
+    sessions,
+  );
 }
 (window as any).__mockListAgentSessions = (agentId: string) =>
   Promise.resolve(sessionsByAgent[agentId] ?? []);

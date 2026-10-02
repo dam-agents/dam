@@ -139,19 +139,19 @@ export function AgentRow({
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
 
-          {agent.size && computeSubtitle(agent.size) && (
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">
-              {computeSubtitle(agent.size)}
-            </p>
-          )}
-
-          {hasMeta && (
+          {(computeSubtitle(agent.size) || hasMeta) && (
             <div
               data-testid="attachments-row"
               className="mt-2 flex flex-wrap items-center gap-2"
             >
+              {computeSubtitle(agent.size) && (
+                <Badge variant="outline" className="gap-1">
+                  {computeSubtitle(agent.size)}
+                </Badge>
+              )}
+
               {hasSlack && (
-                <Badge variant="muted" className="gap-1.5">
+                <Badge variant="outline" className="gap-1.5">
                   <ConnectionIcon iconSlug="slack" alt="" size={16} />
                   {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
                   {slackOverflow > 0 && `, +${slackOverflow}`}
@@ -159,7 +159,7 @@ export function AgentRow({
               )}
 
               {hasSchedules && (
-                <Badge variant="muted">
+                <Badge variant="outline">
                   {scheduleCount} active schedule
                   {scheduleCount === 1 ? "" : "s"}
                 </Badge>

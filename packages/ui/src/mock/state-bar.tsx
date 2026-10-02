@@ -37,6 +37,21 @@ function useReviewScreens(): ReviewScreen[] {
       note: "Every card state side by side.",
       go: () => setView("card-gallery"),
     },
+    {
+      label: "Component showcase",
+      note: "All home-page components in every state for Figma capture.",
+      go: () => setView("component-showcase"),
+    },
+    {
+      label: "Sidebar specs",
+      note: "Left nav broken down into every piece and state.",
+      go: () => setView("sidebar-specs"),
+    },
+    {
+      label: "Left nav flows",
+      note: "Flow cards + screens in order, for sharing with devs and designers.",
+      go: () => setView("nav-flows"),
+    },
   ];
 }
 
@@ -48,7 +63,14 @@ const TOAST_AGENTS = [
   "Docs Sync Agent",
 ];
 
+const IN_FRAME = window.self !== window.top;
+
 export function MockStateBar() {
+  if (IN_FRAME) return null;
+  return <MockStateBarPanel />;
+}
+
+function MockStateBarPanel() {
   const [indexOpen, setIndexOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
@@ -82,7 +104,12 @@ export function MockStateBar() {
             {screens.map((s) => {
               const active =
                 (s.label === "Home" && view === "home") ||
-                (s.label === "Activity feed cards" && view === "card-gallery");
+                (s.label === "Activity feed cards" &&
+                  view === "card-gallery") ||
+                (s.label === "Component showcase" &&
+                  view === "component-showcase") ||
+                (s.label === "Sidebar specs" && view === "sidebar-specs") ||
+                (s.label === "Left nav flows" && view === "nav-flows");
               return (
                 <button
                   key={s.label}
