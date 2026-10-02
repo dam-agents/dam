@@ -12,6 +12,7 @@ export function parseFile(format: FileFormat, content: string): unknown {
     case "toml":
       return content ? parseToml(content) : {};
     case "ini":
+      return parseIni(content);
     case "text":
       return content;
   }
@@ -47,8 +48,49 @@ function serializeIni(value: unknown): string {
   for (const [sec, body] of sections) {
     out.push(`\n[${sec}]`);
     for (const [k, v] of Object.entries(body)) {
-      out.push(`${k}=${String(v)}`);
+      if (v && typeof v === "object") {
+        out.push(`${k}=`);
+        for (const [nk, nv] of Object.entries(v)) {
+          out.push(`  ${nk}=${String(nv)}`);
+        }
+      } else {
+        out.push(`${k}=${String(v)}`);
+      }
     }
   }
   return out.join("\n") + "\n";
+}
+
+const INI_SECTION = /^\[(.+)\]$/;
+
+function parseIni(content: string): Record<string, unknown> {
+  const root: Record<string, unknown> = {};
+  let table = root;
+  let nested: Record<string, unknown> | undefined;
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#") || line.startsWith(";")) continue;
+    const indented = /^\s/.test(raw);
+    const section = indented ? null : INI_SECTION.exec(line);
+    if (section) {
+      table = {};
+      root[section[1]!] = table;
+      nested = undefined;
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim();
+    if (indented && nested) {
+      nested[key] = value;
+    } else if (table !== root && value === "") {
+      nested = {};
+      table[key] = nested;
+    } else {
+      table[key] = value;
+      nested = undefined;
+    }
+  }
+  return root;
 }

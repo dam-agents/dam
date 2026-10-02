@@ -1,23 +1,23 @@
 import { useMutation } from "@tanstack/react-query";
 import type { AgentConnections, ConnectionView } from "api-server-api";
-import { githubHostOf } from "api-server-api";
+import { preferenceGroupOf } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
-function sameGitHubHost(connectionId: string): Set<string> {
+function samePreferenceGroup(connectionId: string): Set<string> {
   const connections =
     queryClient.getQueryData<ConnectionView[]>(
       trpc.connections.list.queryKey(),
     ) ?? [];
   const target = connections.find((c) => c.id === connectionId);
-  const host = target ? githubHostOf(target.contributions) : undefined;
-  if (host === undefined) return new Set();
+  const group = target ? preferenceGroupOf(target.contributions) : undefined;
+  if (group === undefined) return new Set();
   return new Set(
     connections
       .filter((c) => c.id !== connectionId)
-      .filter((c) => githubHostOf(c.contributions) === host)
+      .filter((c) => preferenceGroupOf(c.contributions) === group)
       .map((c) => c.id),
   );
 }
@@ -33,7 +33,7 @@ export function useSetPreferredConnection() {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<AgentConnections>(key);
       if (previous) {
-        const siblings = sameGitHubHost(vars.connectionId);
+        const siblings = samePreferenceGroup(vars.connectionId);
         queryClient.setQueryData<AgentConnections>(key, {
           ...previous,
           connections: previous.connections.map((c) => ({

@@ -290,6 +290,19 @@ export type {
   GitHubAccountGroup,
   GitHubAccountSource,
 } from "./modules/connections/github-accounts.js";
+export {
+  AWS_CONFIG_FILE_PATH,
+  AWS_CREDENTIALS_FILE_PATH,
+  AWS_PROFILE_ENV,
+  awsProfileGroup,
+  composeAwsProfiles,
+  isSigv4Connection,
+} from "./modules/connections/aws-profiles.js";
+export { preferenceGroupOf } from "./modules/connections/preference-group.js";
+export type {
+  AwsProfile,
+  AwsProfileSource,
+} from "./modules/connections/aws-profiles.js";
 
 export type {
   CaseStudyStatus,
