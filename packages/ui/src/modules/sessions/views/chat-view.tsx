@@ -87,6 +87,7 @@ import {
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
@@ -835,6 +836,7 @@ export function ChatView() {
                   key={selectedAgent ?? "none"}
                   agentId={selectedAgent}
                 />
+                <KitUpdateBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

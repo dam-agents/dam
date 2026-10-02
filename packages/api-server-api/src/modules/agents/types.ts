@@ -2,7 +2,11 @@ import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
-import type { OnboardingStep } from "../starter-kits/types.js";
+import type {
+  KitUpdatePending,
+  OnboardingStep,
+  SeedStamp,
+} from "../starter-kits/types.js";
 import type {
   agentCreateInputSchema,
   agentKindSchema,
@@ -104,6 +108,9 @@ export interface Agent {
   kbShareRoots?: string[];
   starterKit?: string;
   starterKitOnboarded?: string;
+  starterKitSeed?: SeedStamp;
+  kitUpdatePending?: KitUpdatePending;
+  kitUpdateSkipped?: string;
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
 }
@@ -112,6 +119,7 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   starterKit?: string;
+  starterKitSeed?: SeedStamp;
   id?: string;
   telemetryAttributionId?: string;
 };

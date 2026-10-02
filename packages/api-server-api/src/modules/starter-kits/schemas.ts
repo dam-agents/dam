@@ -213,3 +213,18 @@ export const starterKitApplyInputSchema = z.object({
   skipSchedules: z.array(z.string().min(1)).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
+
+export const seedStampSchema = z.object({
+  url: z.string().min(1),
+  branch: z.string().min(1).optional(),
+  commit: z.string().regex(/^[0-9a-f]{40}$/i),
+});
+
+export const kitUpdatePendingSchema = z.object({
+  targetCommit: z.string().regex(/^[0-9a-f]{40}$/i),
+  startedAt: z.string().min(1),
+});
+
+export const kitUpdateAgentInputSchema = z.object({
+  agentId: z.string().min(1),
+});

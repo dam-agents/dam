@@ -138,6 +138,12 @@ export type {
   StarterKitView,
   StarterKitsService,
   ResolvedStarterKit,
+  SeedStamp,
+  KitUpdatePending,
+  KitUpdateState,
+  KitUpdateStatus,
+  KitUpdateCommit,
+  KitUpdateChanges,
 } from "./modules/starter-kits/types.js";
 export {
   onboardingStepSchema,
@@ -146,6 +152,8 @@ export {
   starterKitScheduleOverrideSchema,
   starterKitCategorySchema,
   starterKitSchema,
+  seedStampSchema,
+  kitUpdatePendingSchema,
 } from "./modules/starter-kits/schemas.js";
 export { requirementAccepts } from "./modules/starter-kits/types.js";
 export { resolveKitSchedulePrecheck } from "./modules/starter-kits/types.js";

@@ -1,4 +1,9 @@
-import { agentKindSchema } from "api-server-api";
+import type { z } from "zod";
+import {
+  agentKindSchema,
+  kitUpdatePendingSchema,
+  seedStampSchema,
+} from "api-server-api";
 
 import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
@@ -15,6 +20,8 @@ import type {
   DriverFailure,
   RuntimeMigration,
   TemplateUpdate,
+  KitUpdatePending,
+  SeedStamp,
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
@@ -41,6 +48,9 @@ import {
   VERSION,
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
+  ANN_STARTER_KIT_SEED,
+  ANN_KIT_UPDATE_PENDING,
+  ANN_KIT_UPDATE_SKIPPED,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 import {
@@ -52,6 +62,20 @@ import {
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
+
+function jsonAnnotation<K extends string, T>(
+  key: K,
+  schema: z.ZodType<T>,
+  raw: string | undefined,
+): Partial<Record<K, T>> {
+  if (!raw) return {};
+  try {
+    const parsed = schema.safeParse(JSON.parse(raw));
+    return parsed.success ? ({ [key]: parsed.data } as Record<K, T>) : {};
+  } catch {
+    return {};
+  }
+}
 
 export interface AgentObject extends KubeObject {
   spec?: Record<string, unknown>;
@@ -85,6 +109,9 @@ export interface InfraAgent {
   kbShareRoots?: string[];
   starterKit?: string;
   starterKitOnboarded?: string;
+  starterKitSeed?: SeedStamp;
+  kitUpdatePending?: KitUpdatePending;
+  kitUpdateSkipped?: string;
   hibernatedSince?: Date;
   ready: boolean;
   hibernated: boolean;
@@ -225,6 +252,19 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_STARTER_KIT]
       ? { starterKit: annotations[ANN_STARTER_KIT] }
       : {}),
+    ...jsonAnnotation(
+      "starterKitSeed",
+      seedStampSchema,
+      annotations[ANN_STARTER_KIT_SEED],
+    ),
+    ...jsonAnnotation(
+      "kitUpdatePending",
+      kitUpdatePendingSchema,
+      annotations[ANN_KIT_UPDATE_PENDING],
+    ),
+    ...(annotations[ANN_KIT_UPDATE_SKIPPED]
+      ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
+      : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
@@ -326,6 +366,9 @@ export function assembleAgent(
     kbShareRoots: infra.kbShareRoots,
     starterKit: infra.starterKit,
     starterKitOnboarded: infra.starterKitOnboarded,
+    starterKitSeed: infra.starterKitSeed,
+    kitUpdatePending: infra.kitUpdatePending,
+    kitUpdateSkipped: infra.kitUpdateSkipped,
     ...(onboardingSteps ? { onboardingSteps } : {}),
     features,
   };

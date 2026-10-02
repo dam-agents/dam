@@ -15,6 +15,7 @@ export interface GitHostRepo {
   readonly gitUrl: string;
   file(ref: string, segments: readonly string[]): GitHostRequest;
   refAdvertisement(): GitHostRequest;
+  compare(base: string, head: string): GitHostRequest;
 }
 
 export interface GitHosts {
@@ -65,6 +66,12 @@ function publicRepo(owner: string, repo: string): GitHostRepo {
         headers: {},
       };
     },
+    compare(base, head) {
+      return {
+        url: `https://api.${PUBLIC_HOST}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        headers: { Accept: "application/vnd.github+json" },
+      };
+    },
   };
 }
 
@@ -94,6 +101,15 @@ function enterpriseRepo(
         url: `${gitUrl}/info/refs?service=git-upload-pack`,
         headers: {
           Authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+        },
+      };
+    },
+    compare(base, head) {
+      return {
+        url: `https://api.${host}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
         },
       };
     },

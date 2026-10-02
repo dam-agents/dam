@@ -20,3 +20,28 @@ export function useApplyStarterKit() {
     },
   });
 }
+
+export function useStartKitUpdate() {
+  return useMutation({
+    mutationFn: (agentId: string) =>
+      api.starterKits.startUpdate.mutate({ agentId }),
+    meta: {
+      invalidates: [
+        trpc.starterKits.updates.queryKey(),
+        trpc.agents.list.queryKey(),
+      ],
+      errorToast: "Failed to start the kit update",
+    },
+  });
+}
+
+export function useSkipKitUpdate() {
+  return useMutation({
+    mutationFn: (agentId: string) =>
+      api.starterKits.skipUpdate.mutate({ agentId }),
+    meta: {
+      invalidates: [trpc.starterKits.updates.queryKey()],
+      errorToast: "Failed to skip the kit update",
+    },
+  });
+}
