@@ -484,6 +484,40 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
+   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
+   * and only then does an env change arrive, before the load answers late.
+   * The change came while the harness was thought wedged, but it is owed all
+   * the same: the late answer must not call it off with the unresponsive
+   * recycle, or the harness would keep the old credentials.
+   */
+  it("should keep an env recycle that arrives before the late answer", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    world.runtime.refreshEnv({ force: true });
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent recycled for env change",
+    });
+  });
+
+  /**
    * TEST_SCENARIO: Two cold loads run past their budget while a turn is
    * running, and only one of them ever answers. The harness still owes the
    * other, so it stays wedged and is recycled when the grace period ends.

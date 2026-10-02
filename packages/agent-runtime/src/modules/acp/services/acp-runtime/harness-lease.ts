@@ -135,6 +135,17 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     }
   }
 
+  function oweRecycle(
+    reason: "config-recycle" | "env-recycle",
+    forced: boolean,
+  ): void {
+    if (pendingRecycle === "harness-unresponsive" && supersededRecycle) {
+      supersededRecycle.reason ??= reason;
+      supersededRecycle.forced ||= forced;
+    }
+    pendingRecycle ??= reason;
+  }
+
   function clearWarmGate(): void {
     if (warmTimer) {
       clearTimeout(warmTimer);
@@ -202,7 +213,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         return;
       }
       if (!agent) return;
-      pendingRecycle ??= "env-recycle";
+      oweRecycle("env-recycle", opts.force);
       if (!deps.busy()) {
         recycle();
         return;
@@ -217,7 +228,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     recycleForConfig() {
       if (!agent) return;
-      pendingRecycle ??= "config-recycle";
+      oweRecycle("config-recycle", true);
       if (!deps.busy()) {
         recycle();
         return;
