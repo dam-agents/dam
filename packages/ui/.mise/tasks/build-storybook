@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Build static Storybook to dist/storybook"
+set -euo pipefail
+pnpm exec storybook build -o dist/storybook "$@"

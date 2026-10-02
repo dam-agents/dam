@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run Storybook: the real app pages against an in-browser fake backend"
+set -euo pipefail
+pnpm exec storybook dev -p 6006 --ci "$@"

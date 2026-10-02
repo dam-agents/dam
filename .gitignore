@@ -3,6 +3,7 @@ node_modules/
 
 # Build output (all packages use dist/)
 dist/
+debug-storybook.log
 *.tsbuildinfo
 
 # Vite
