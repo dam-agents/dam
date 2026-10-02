@@ -4192,8 +4192,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const contextBlock = agentContextBlock(footer);
 
       try {
+        let attachmentError: string | null = null;
         if (text) {
-          const uploadError = await postWithAttachment(
+          attachmentError = await postWithAttachment(
             gw,
             target,
             attachment,
@@ -4211,10 +4212,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
               }),
           );
-          if (uploadError)
-            return {
-              error: `message posted, but the attachment upload failed: ${uploadError}`,
-            };
         } else if (attachment) {
           try {
             await gw.uploadFile({
@@ -4233,7 +4230,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           messaged: true,
           ...(text ? { replyText: text } : {}),
         });
-        return { ok: true as const };
+        return attachmentError
+          ? { ok: true as const, attachmentError }
+          : { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };
       }
@@ -4473,16 +4472,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 : {}),
             }),
         );
-        if (uploadError)
-          return {
-            error: `reply posted, but the attachment upload failed: ${uploadError}`,
-          };
         noteEngagedTurn(
           instanceName,
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,
           { messaged: true, replyText: args.text },
         );
-        return { ok: true as const };
+        return uploadError
+          ? { ok: true as const, attachmentError: uploadError }
+          : { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };
       }

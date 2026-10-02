@@ -282,6 +282,13 @@ describe("slack outbound — cross-workspace reach", () => {
     ]);
   });
 
+  /**
+   * TEST_SCENARIO: The text is posted before the file is shared, so a failed
+   * upload leaves a delivered message behind. The send succeeded and only the
+   * attachment is missing, so the result says ok and names the upload failure
+   * beside it. Reporting it as a plain failure would read as nothing having
+   * been sent, and the agent would send the whole message a second time.
+   */
   it("a failed upload after a delivered text message says the text landed", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     h.gw.shareFile = async () => {
@@ -291,8 +298,9 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toMatchObject({
-      error: expect.stringContaining("message posted, but"),
+    expect(result).toEqual({
+      ok: true,
+      attachmentError: expect.stringContaining("upload_error"),
     });
     expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
   });

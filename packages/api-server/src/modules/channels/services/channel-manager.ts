@@ -49,6 +49,9 @@ export interface ChannelReaction {
   conversationId?: string;
 }
 
+export type ChannelSendResult =
+  { ok: true; attachmentError?: string } | { error: string };
+
 export interface ChannelUser {
   id: string;
   username?: string;
@@ -117,11 +120,8 @@ interface Worker {
     instanceName: string,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
-  reply?(
-    instanceName: string,
-    reply: ChannelReply,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
+  reply?(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
   react?(
     instanceName: string,
     reaction: ChannelReaction,
@@ -167,12 +167,12 @@ export interface ChannelManager {
     channelType: ChannelType,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
   reply(
     instanceName: string,
     channelType: ChannelType,
     reply: ChannelReply,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
   react(
     instanceName: string,
     channelType: ChannelType,
@@ -256,6 +256,10 @@ const okOrErrorSchema = z.union([
   z.object({ ok: z.literal(true) }),
   z.object({ error: z.string() }),
 ]);
+const sendResultSchema = z.union([
+  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
+  z.object({ error: z.string() }),
+]);
 const channelUserSchema = z.object({
   id: z.string(),
   username: z.string().optional(),
@@ -274,8 +278,8 @@ const channelUserSchema = z.object({
 });
 const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
-  postMessage: okOrErrorSchema,
-  reply: okOrErrorSchema,
+  postMessage: sendResultSchema,
+  reply: sendResultSchema,
   react: okOrErrorSchema,
   declineTurn: okOrErrorSchema,
   handOffTurn: z.union([
