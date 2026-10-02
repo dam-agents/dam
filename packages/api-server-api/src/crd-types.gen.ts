@@ -31,7 +31,17 @@ export interface AgentSpecCR {
     /**
      * VM carries vm-backend props; present only when type == "vm".
      */
-    vm?: {};
+    vm?: {
+      /**
+       * NestedVirtualization asks for this agent's machine to get the node's
+       * virtualization extensions, so the guest can run KVM itself. It takes
+       * effect only on an install with virtualization.runner.nestedVirtualization
+       * and a node whose KVM allows nesting; the NestedVirtualization condition
+       * says whether it did. Other machines on the same runner are unaffected.
+       * Changing it restarts the agent's machine.
+       */
+      nestedVirtualization?: boolean;
+    };
   };
   /**
    * Description is an optional human-readable description.

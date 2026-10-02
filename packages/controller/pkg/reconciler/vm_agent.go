@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -144,6 +145,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Running:         running,
 		PullAuths:       pullAuths,
 		ExpectSeed:      runtimeMigrationExpectSeed(agent),
+
+		NestedVirtualization: wantsNesting(agent) && r.config.VM.Runner.NestedVirtualization,
 	}
 	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
 		machine.Migration = &vmrunner.MachineMigration{}
@@ -497,7 +500,30 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason)
+	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
+		func(s *apiv1.AgentStatus) { nestingCondition(s, agent, st, r.config.VM.Runner.NestedVirtualization) })
+}
+
+func wantsNesting(agent *apiv1.Agent) bool {
+	return agent.Spec.IsVM() && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: tells an owner who asked for nesting whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
+func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, installAllows bool) {
+	if !wantsNesting(agent) {
+		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionNestedVirtualization)
+		return
+	}
+	reason, msg := "NodeCannotNest", "the machine boots without nesting: the node's KVM does not allow it (kvm_intel or kvm_amd nested=0)"
+	switch {
+	case !installAllows:
+		reason, msg = "NotAllowedByInstall", "this install does not let machines nest: virtualization.runner.nestedVirtualization is off"
+	case st.Nested:
+		msg = ""
+	case st.State == "" || st.State == vmrunner.StateAbsent:
+		reason, msg = "MachinePending", "the machine has not been created yet"
+	}
+	setStatusCondition(s, apiv1.ConditionNestedVirtualization, st.Nested, "Enabled", reason, msg, agent.Generation)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent whose runner is not ready yet is looked at again after 3s, then twice as long each time up to a minute. A runner that never comes up — unschedulable, a pull that fails — would otherwise cost a full reconcile of every one of its owner's agents every three seconds; the runner Deployment's own changes requeue them the moment it does become ready.

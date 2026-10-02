@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "15"
+    agent-platform.ai/crd-schema-generation: "16"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -92,6 +92,16 @@ spec:
                   vm:
                     description: VM carries vm-backend props; present only when type
                       == "vm".
+                    properties:
+                      nestedVirtualization:
+                        description: |-
+                          NestedVirtualization asks for this agent's machine to get the node's
+                          virtualization extensions, so the guest can run KVM itself. It takes
+                          effect only on an install with virtualization.runner.nestedVirtualization
+                          and a node whose KVM allows nesting; the NestedVirtualization condition
+                          says whether it did. Other machines on the same runner are unaffected.
+                          Changing it restarts the agent's machine.
+                        type: boolean
                     type: object
                 required:
                 - type

@@ -123,7 +123,11 @@ impl Runtime for Smolvm {
             }
             record_gateway_host_port(id, machine.spec)?;
             let resolver = guest_resolver(machine.spec)?;
-            self.db.update_vm(id, |r| guest_dns(r, resolver))?;
+            let nested = machine.spec.nested_virtualization && self.nested;
+            self.db.update_vm(id, |r| {
+                guest_dns(r, resolver);
+                r.nested_virt = Some(nested);
+            })?;
             Ok(())
         })
     }
@@ -191,6 +195,7 @@ impl Runtime for Smolvm {
                     r.storage_gb = Some(gib);
                 }
                 r.allowed_cidrs = allowed_cidrs;
+                r.nested_virt = Some(desired.nested_virtualization && self.nested);
                 guest_dns(r, resolver);
                 match relaunch {
                     Some((image, workload)) => {
@@ -207,7 +212,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is written the same way, from what the install and the node allow now, so a machine created before nesting was allowed gains it on its next boot and one where it no longer is still boots.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -217,7 +222,7 @@ impl Runtime for Smolvm {
         }
         self.db.update_vm(id, |r| {
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
-            r.nested_virt = Some(self.nested);
+            r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
@@ -253,6 +258,10 @@ impl Runtime for Smolvm {
 
     fn console_tail(&self, id: &str) -> String {
         console::machine_tail(&vm_data_dir(id))
+    }
+
+    fn nests(&self) -> bool {
+        self.nested
     }
 }
 
@@ -617,37 +626,64 @@ mod tests {
         assert!(host_nests(dir.path()));
     }
 
-    // TEST_SCENARIO: every start writes the runner's nesting onto the record smolvm boots from, whatever an earlier start wrote, so a machine that predates nesting gains it on its next boot and one whose runner no longer nests still boots.
+    fn nested(smolvm: &Smolvm, id: &str) -> Option<bool> {
+        smolvm.record(id).unwrap().unwrap().nested_virt
+    }
+
+    // TEST_SCENARIO: nesting is per machine. Two machines share a runner that nests, and only the one whose spec asks for it is recorded to boot with the node's virtualization extensions; an update that stops asking takes them away and one that asks again gives them back. A start keeps what the record holds only while the runner still nests, so a runner the install stops letting nest never boots a guest with them, whatever its spec asked.
     #[test]
-    fn every_start_records_whether_the_node_nests() {
+    fn only_the_machine_that_asks_nests_and_only_while_the_runner_does() {
         let home = Home::new("nested");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
         let mut smolvm = Smolvm::open(false).unwrap();
-        let spec = MachineSpec {
+        smolvm.nested = true;
+        let plain = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
         };
+        let nesting = MachineSpec {
+            nested_virtualization: true,
+            ..plain.clone()
+        };
         let launch = launch();
-        smolvm
-            .create(
-                "m1",
-                &Machine {
-                    spec: &spec,
-                    image: "quay.io/x/vm:1",
-                    host_port: 32000,
-                    share: &share,
-                    launch: &launch,
-                },
-            )
-            .unwrap();
-
-        for nested in [true, false] {
-            smolvm.nested = nested;
-            let _ = smolvm.start("m1");
-            let record = smolvm.record("m1").unwrap().unwrap();
-            assert_eq!(record.nested_virt, Some(nested));
+        for (id, spec, port) in [("m1", &nesting, 32000), ("m2", &plain, 32001)] {
+            smolvm
+                .create(
+                    id,
+                    &Machine {
+                        spec,
+                        image: "quay.io/x/vm:1",
+                        host_port: port,
+                        share: &share,
+                        launch: &launch,
+                    },
+                )
+                .unwrap();
         }
+        assert_eq!(nested(&smolvm, "m1"), Some(true));
+        assert_eq!(nested(&smolvm, "m2"), Some(false));
+
+        for (desired, applied, want) in [(&plain, &nesting, false), (&nesting, &plain, true)] {
+            smolvm
+                .update(
+                    "m1",
+                    &Update {
+                        desired,
+                        applied: Some(applied),
+                        image: None,
+                    },
+                )
+                .unwrap();
+            assert_eq!(nested(&smolvm, "m1"), Some(want));
+        }
+
+        let _ = smolvm.start("m1");
+        assert_eq!(nested(&smolvm, "m1"), Some(true));
+        smolvm.nested = false;
+        let _ = smolvm.start("m1");
+        assert_eq!(nested(&smolvm, "m1"), Some(false));
+        assert!(!smolvm.nests());
     }
 
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.

@@ -35,6 +35,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: the seed this machine's home must be restored from, as the migration's upload was answered: the controller sends it while a runtime migration boots the machine, and not after. With it the runner starts the machine only while its share holds exactly that seed, and platform-init seeds the home from that seed or not at all, never from the image. It says nothing about the machine's shape, so a change to it alone restarts nothing.
     #[serde(rename = "expectSeed", skip_serializing_if = "Option::is_none")]
     pub expect_seed: Option<SeedResult>,
+    // UNIT_BOUNDARY_DESCRIPTION: asks for this machine alone to get the node's virtualization extensions, so its guest can run KVM itself. The runner grants it only when the install lets it nest and the node's KVM allows it; every other machine on the runner boots without them.
+    #[serde(rename = "nestedVirtualization", skip_serializing_if = "is_zero")]
+    pub nested_virtualization: bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
@@ -65,6 +68,9 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed this machine's home was restored from, once a guest booted with that seed expected has answered. Empty for a home seeded from the image, and for one not yet known to be on the disk. The controller ends a runtime migration only when this is the seed it expects.
     #[serde(rename = "homeSeededFrom", skip_serializing_if = "String::is_empty")]
     pub home_seeded_from: String,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine boots with the node's virtualization extensions: its spec asks for them and this runner grants them. The controller puts it on the Agent, so an owner who asked sees whether they got it.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub nested: bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
@@ -199,6 +205,7 @@ mod tests {
                     sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
                         .into(),
                 }),
+                nested_virtualization: true,
             },
         );
         matches_the_contract(
@@ -215,6 +222,7 @@ mod tests {
                 version: 1,
                 home_seeded_from:
                     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+                nested: true,
             },
         );
         matches_the_contract(

@@ -112,7 +112,7 @@ pub fn step(
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it.
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it. A guest reads its CPU's features only at boot, so nesting changes only with a restart.
 pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
     applied.revision != desired.revision
         || applied.ca_cert != desired.ca_cert
@@ -124,6 +124,7 @@ pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.allow_cidrs != desired.allow_cidrs
         || applied.gateway_host_port != desired.gateway_host_port
         || applied.guest_resolver != desired.guest_resolver
+        || applied.nested_virtualization != desired.nested_virtualization
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
@@ -279,7 +280,7 @@ mod tests {
         assert_eq!(step(None, &bare, State::Absent, false, false), None);
     }
 
-    // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image and egress allowlist included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.
+    // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image, egress allowlist and nesting included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.
     #[test]
     fn a_changed_shape_restarts_a_running_machine_and_starts_a_stopped_one() {
         let applied = running_spec();
@@ -295,6 +296,13 @@ mod tests {
                 "caCert",
                 MachineSpec {
                     ca_cert: "rotated".into(),
+                    ..running_spec()
+                },
+            ),
+            (
+                "nestedVirtualization",
+                MachineSpec {
+                    nested_virtualization: true,
                     ..running_spec()
                 },
             ),
@@ -656,6 +664,7 @@ mod tests {
             pull_auths: Vec::new(),
             migration: None,
             expect_seed: None,
+            nested_virtualization: false,
         }
     }
 

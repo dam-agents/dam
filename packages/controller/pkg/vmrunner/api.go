@@ -49,6 +49,13 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: restores the home from it or fails the boot,
 	// UNIT_BOUNDARY_DESCRIPTION: never falling back to the image's home.
 	ExpectSeed *SeedResult `json:"expectSeed,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: asks for this machine alone to get the
+	// UNIT_BOUNDARY_DESCRIPTION: node's virtualization extensions. The runner
+	// UNIT_BOUNDARY_DESCRIPTION: grants it only when its install lets it nest
+	// UNIT_BOUNDARY_DESCRIPTION: and its node's KVM allows it, and restarts
+	// UNIT_BOUNDARY_DESCRIPTION: the machine when it changes, since a guest
+	// UNIT_BOUNDARY_DESCRIPTION: reads its CPU's features only at boot.
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed as the runner answers its upload: the
@@ -85,6 +92,10 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: migration ends only when this is the seed it
 	// UNIT_BOUNDARY_DESCRIPTION: expects.
 	HomeSeededFrom string `json:"homeSeededFrom,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: whether the machine as recorded boots with
+	// UNIT_BOUNDARY_DESCRIPTION: the node's virtualization extensions: asked
+	// UNIT_BOUNDARY_DESCRIPTION: for, and granted by the runner.
+	Nested bool `json:"nested,omitempty"`
 }
 
 const (
