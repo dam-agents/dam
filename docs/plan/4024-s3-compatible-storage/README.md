@@ -16,8 +16,8 @@ with the real keys.
 S3 auth is SigV4. The secret key never travels on the wire. The client computes an HMAC over
 the request with it. So unlike every Connection today, the gateway cannot *replace a header
 value*: it has to **re-sign the request**. Read
-[security-and-credentials](../../architecture/security-and-credentials.md#envoy-credential-injection)
-(moved to its own page by slice 01) and [connections](../../architecture/connections.md)
+[credential-gateway](../../architecture/credential-gateway.md)
+(split out of security-and-credentials by slice 01) and [connections](../../architecture/connections.md)
 before starting any slice.
 
 **Connection.** One Connection = one HMAC key pair + one HTTPS endpoint (+ signing region,
@@ -79,7 +79,7 @@ uploads, rclone and minio-go config, private-network endpoints the cluster canno
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Split the credential gateway page](./01-split-gateway-page.md) | Docs only: move the gateway mechanics to their own page so the security page is under its cap | — |
+| 01 ✅ | [Split the credential gateway page](./01-split-gateway-page.md) | Docs only: move the gateway mechanics to their own page so the security page is under its cap | — |
 | 02 | [`sigv4` Connection: contract, template, create](./02-sigv4-connection.md) | Auth kind, `egress-sign` kind, template, Secret, egress rules, create-time validation, all exhaustive switches | — |
 | 03 | [Gateway signing step](./03-gateway-signing.md) | Controller: signing filter, STREAMING guard, `Credential=` address parsing, always gated; early IBM check | 02 |
 | 04 | [AWS profiles on the agent](./04-aws-profiles.md) | Addressing for `egress-sign`, profiles + `AWS_PROFILE`, ini parser fix, `platform-s3` skill | 02 |
