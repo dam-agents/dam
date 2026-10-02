@@ -1376,6 +1376,37 @@ describe("slack turn — network-access framing and attendance", () => {
   });
 
   /**
+   * TEST_SCENARIO: a reply posts its text before Slack shares its file, so an
+   * upload the workspace refuses leaves the answer sitting in the thread. The
+   * turn is disposed of, and nudging it would post that same answer a second
+   * time.
+   */
+  it("never nudges a reply whose attachment upload failed", async () => {
+    let turns = 0;
+    const h: ReturnType<typeof harness> = harness({
+      sendPrompt: async (_prompt, opts) => {
+        opts.onSession?.("sess-1");
+        turns += 1;
+        await h.worker.reply("agent-1", {
+          text: "answered",
+          attachment: { filename: "report.md", data: Buffer.from("x") },
+        });
+        return "ok";
+      },
+    });
+    h.gw.shareFile = async () => {
+      throw new Error("upload_error");
+    };
+    await h.mention();
+    await tick();
+
+    expect(turns).toBe(1);
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ text: "answered" });
+  });
+
+  /**
    * TEST_SCENARIO: no_reply_needed is the contract's own sanctioned way to end a
    * turn, so it must not read as the silence bug. It only can if the tool
    * reaches the worker — as a pure MCP no-op it left a decline and a failure

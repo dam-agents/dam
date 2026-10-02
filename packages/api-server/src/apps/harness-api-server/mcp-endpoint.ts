@@ -98,6 +98,18 @@ export async function textTool<T>(
   }
 }
 
+function renderAttachmentFailure(
+  sent: string,
+  repost: string,
+  attachmentError: string,
+): ToolContent {
+  return textResult(
+    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
+      `The text itself landed, so do not ${repost}. If the file matters, ` +
+      `say so in a short follow-up.`,
+  );
+}
+
 function renderChecklist(steps: OnboardingStep[]): string {
   const done = steps.filter((s) => s.done).length;
   return [
@@ -295,6 +307,9 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      const attachmentError =
+        "ok" in result ? result.attachmentError : undefined;
+      const logLevel = failed || attachmentError ? "warn" : "info";
       emit({
         type: EventType.ChannelMessageSent,
         channel,
@@ -304,19 +319,26 @@ export function createMcpSession(
         outcome: failed ? "failure" : "success",
         hasAttachment: resolved !== undefined,
       });
-      securityLog(failed ? "warn" : "info", "channel.outbound", {
+      securityLog(logLevel, "channel.outbound", {
         ...channelAudit(channel),
         result: failed ? "failure" : "success",
         detail: {
           ...(chatId ? { conversationId: chatId } : {}),
           hasAttachment: attachmentAudit !== undefined,
           ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
           textLength: text.length,
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
+      if (attachmentError)
+        return renderAttachmentFailure(
+          "Message sent",
+          "send the message again",
+          attachmentError,
+        );
       return textResult("Message sent");
     },
   );
@@ -522,6 +544,9 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
+      const attachmentError =
+        "ok" in result ? result.attachmentError : undefined;
+      const logLevel = failed || attachmentError ? "warn" : "info";
       emit({
         type: EventType.ChannelMessageSent,
         channel: ChannelType.Slack,
@@ -531,7 +556,7 @@ export function createMcpSession(
         outcome: failed ? "failure" : "success",
         hasAttachment: loaded !== undefined,
       });
-      securityLog(failed ? "warn" : "info", "channel.outbound", {
+      securityLog(logLevel, "channel.outbound", {
         ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
@@ -542,9 +567,16 @@ export function createMcpSession(
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           hasAttachment: loaded !== undefined,
           ...(loaded ? { attachment: loaded.audit } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
+      if (attachmentError)
+        return renderAttachmentFailure(
+          "Reply posted",
+          "post the reply again",
+          attachmentError,
+        );
       return textResult("Reply posted");
     },
   );
