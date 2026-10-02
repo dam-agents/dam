@@ -44,16 +44,6 @@ export const BEDROCK_TEMPLATE_ID = "bedrock";
 
 export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
 
-export function bedrockRuntimeHost(region: string): string {
-  return `bedrock-runtime.${region}.amazonaws.com`;
-}
-
-export function bedrockControlHost(region: string): string {
-  return `bedrock.${region}.amazonaws.com`;
-}
-
-export const BEDROCK_CONTROL_URL_ENV = "AWS_ENDPOINT_URL_BEDROCK";
-
 export function bedrockEnvMappings(): EnvMapping[] {
   return [
     {

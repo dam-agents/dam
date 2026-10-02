@@ -1,9 +1,6 @@
 import crypto from "node:crypto";
 import {
-  BEDROCK_CONTROL_URL_ENV,
   BEDROCK_TEMPLATE_ID,
-  bedrockControlHost,
-  bedrockRuntimeHost,
   SHARED_KB_TEMPLATE_ID,
   type ConnectionAuthConfig,
   type ConnectionCreateInput,
@@ -534,6 +531,16 @@ function bedrockRegionOf(
   const region = input.configInputs?.region?.trim();
   if (!spec || !region) throw new Error(`${spec?.label ?? "Region"}: required`);
   return validConfigInput(spec, region);
+}
+
+const BEDROCK_CONTROL_URL_ENV = "AWS_ENDPOINT_URL_BEDROCK";
+
+function bedrockRuntimeHost(region: string): string {
+  return `bedrock-runtime.${region}.amazonaws.com`;
+}
+
+function bedrockControlHost(region: string): string {
+  return `bedrock.${region}.amazonaws.com`;
 }
 
 function bedrockControlContributions(
