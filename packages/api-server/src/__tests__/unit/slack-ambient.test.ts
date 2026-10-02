@@ -256,7 +256,7 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 1);
   });
 
-  it("ambient on: a silent read-along turn does not repoint the proactive reply fallback", async () => {
+  it("ambient on: a settled silent read-along turn leaves no thread for an id-less reply", async () => {
     const h = harness({ binding: ambient });
     await h.message(STRANGER, "random chatter nobody asked about", {
       ts: "7.7",
@@ -489,10 +489,6 @@ describe("slack ambient inbound", () => {
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);
-
-    const reacted = await h.worker.react("agent-1", { emoji: "eyes" });
-    expect(reacted).toEqual({ ok: true });
-    expect(h.reactions()[0]).toMatchObject({ ts: "3.3" });
   });
 
   it("serializes a mention behind an in-flight ambient turn on the same thread session", async () => {
@@ -520,7 +516,7 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 2);
   });
 
-  it("an engaged ambient turn becomes the proactive reply fallback", async () => {
+  it("a settled engaged ambient turn leaves no thread for an id-less reply", async () => {
     const pending: Array<(v: string) => void> = [];
     const h = harness({
       binding: ambient,
@@ -534,9 +530,11 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 1);
     h.gw.resetOutbound();
 
-    const ok = await h.worker.reply("agent-1", { text: "build is green" });
-    expect(ok).toEqual({ ok: true });
-    expect(h.messages()[0]).toMatchObject({ threadTs: "9.9" });
+    const refused = await h.worker.reply("agent-1", { text: "build is green" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("no active thread"),
+    });
+    expect(h.messages()).toHaveLength(0);
   });
 
   it("keeps a relay-failed thread turn resolvable — an id-less reply is never cross-routed into another thread", async () => {

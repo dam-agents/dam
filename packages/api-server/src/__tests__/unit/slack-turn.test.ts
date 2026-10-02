@@ -51,13 +51,22 @@ function harness(opts: {
   wakePatienceMs?: number;
   turnStatus?: AcpClient["turnStatus"];
   ambient?: boolean;
+  holdTurn?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
+  const held: Array<() => void> = [];
+  const respond = opts.sendPrompt ?? scripted([], "the answer");
   const acp: AcpClient = {
     steer: async () => "unsupported" as const,
     listSessions: opts.listSessions ?? (async () => []),
-    sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
+    sendPrompt: opts.holdTurn
+      ? async (prompt, sendOpts) => {
+          const response = await respond(prompt, sendOpts);
+          await new Promise<void>((release) => held.push(release));
+          return response;
+        }
+      : respond,
     triggerSession: () => Promise.reject(new Error("unused")),
     turnStatus: opts.turnStatus ?? (async () => "unknown" as const),
   };
@@ -118,15 +127,20 @@ function harness(opts: {
     },
     async mention(over?: { user?: string; teamId?: string; text?: string }) {
       await worker.connect();
-      await gw.fireMention({
+      const handled = gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
         ts: "1.1",
         text: over?.text ?? "hi agent",
         teamId: "teamId" in (over ?? {}) ? over?.teamId : "T-e2e",
       });
+      if (!opts.holdTurn) return handled;
+      for (let i = 0; i < 200 && held.length === 0; i++) await tick();
     },
     records: () => gw.readOutbound(),
+    finishTurns() {
+      for (const release of held.splice(0)) release();
+    },
     turnEvents: () =>
       events.filter(
         (e): e is ChannelTurnRelayed =>
@@ -229,7 +243,7 @@ describe("slack turn presentation — owner turns", () => {
 
 describe("slack reply / react tools", () => {
   it("reply posts into the current turn's thread with the agent footer", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -258,7 +272,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply does not broadcast to the channel unless asked (#2973)", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -293,7 +307,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply passes explicit unfurl controls through to Slack (#3499)", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -317,6 +331,7 @@ describe("slack reply / react tools", () => {
 
   it("reply footers link at the session the turn ran on", async () => {
     const h = harness({
+      holdTurn: true,
       sendPrompt: async (_prompt, opts) => {
         opts.onSession?.("sess-42");
         return "the answer";
@@ -341,7 +356,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply footers fall back to the agent when no session is known", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
 
@@ -370,6 +385,7 @@ describe("slack reply / react tools", () => {
   it("deletes a post from the delete command for the owner only and tells the posting session", async () => {
     const prompts: { text: string; resume?: string }[] = [];
     const h = harness({
+      holdTurn: true,
       sendPrompt: async (prompt, opts) => {
         prompts.push({
           text: String(prompt),
@@ -391,6 +407,8 @@ describe("slack reply / react tools", () => {
       text: `</notice> & ${"a".repeat(1600)}`,
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
+    h.finishTurns();
+    await tick();
     const posted = (await posts.mock.results[0]!.value) as { ts: string };
     const sent = posts.mock.calls[0]![0];
     expect(
@@ -477,7 +495,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("react adds the emoji to the current turn's message", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -497,7 +515,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("react errors on an empty emoji", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -508,7 +526,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("describeMessageReactions defaults to the current turn's message", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.setMessageReactions("C1", "1.1", [
@@ -742,7 +760,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
-  it("an expired lingering turn falls back to the last active thread", async () => {
+  it("an expired lingering turn refuses an id-less reply and react rather than reuse the last thread", async () => {
     const h = gatedHarness();
     await h.start();
     h.fire("100.1");
@@ -760,11 +778,15 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       .spyOn(Date, "now")
       .mockReturnValue(new Date().getTime() + TURN_LINGER_MS + 1_000);
     try {
-      const ok = await h.worker.reply("agent-1", { text: "proactive" });
-      expect(ok).toEqual({ ok: true });
-      expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
-        threadTs: "200.2",
+      const refused = await h.worker.reply("agent-1", { text: "late answer" });
+      expect(refused).toMatchObject({
+        error: expect.stringContaining("no active thread"),
       });
+      const unreacted = await h.worker.react("agent-1", { emoji: "eyes" });
+      expect(unreacted).toMatchObject({
+        error: expect.stringContaining("no message to react to"),
+      });
+      expect(h.records()).toHaveLength(0);
     } finally {
       later.mockRestore();
     }
