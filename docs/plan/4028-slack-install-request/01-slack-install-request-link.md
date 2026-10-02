@@ -48,13 +48,17 @@ the UI (steps 5–9).
    before they render one (step 7).
 7. `packages/ui/src/components/explainer-popover.tsx`: add an optional `footer?: ReactNode` prop.
    Move the panel's padding from `PopoverContent` (`p-4` → `p-0`) onto the existing
-   `flex flex-col gap-3` body div (`p-4`). Without a footer, the result looks the same as today, so
-   `satellites-group-card.tsx` does not change. When `footer` is set, render it below the body as a
-   strip that reaches the panel's edges: a top border, a muted background, the body's horizontal
-   padding, and rounded bottom corners that follow the panel's `rounded-xl`. Reuse token
-   combinations that already exist, for example `border-t border-border/60 bg-muted/40` in
-   `folder-group.tsx`. Do not measure sizes from the images. Do not put `overflow-hidden` on
-   `PopoverContent`: the Radix arrow tail renders inside it, and `overflow-hidden` clips it.
+   `flex flex-col gap-3` body div (`p-4`). When `footer` is set, render it below the body as a
+   strip that reaches the panel's edges: a top border, `bg-muted` (the grey of the bind modal's
+   command blocks), and the body's horizontal padding. Do not measure sizes from the images.
+   Explainer popovers draw **no arrow tail**, as in the designs: `PopoverContent`
+   (`components/ui/popover.tsx`) gets an optional `tail` prop (default on, so other popovers do not
+   change), and `ExplainerPopover` passes `tail={false}`. With no tail, `overflow-hidden` on the
+   panel is safe and clips the strip to its rounded corners. This also removes the tail from the
+   satellites explainer, which shares the component. Where a tail stays (other popovers, hover
+   cards), the shared `PopoverContent` and `HoverCardContent` keep it at least 24 px
+   (`TAIL_CORNER_CLEARANCE`, Radix `arrowPadding`) from the panel's sides, so it never lands on a
+   rounded corner: the popover's 16 px padding plus 8.
 8. `packages/ui/src/components/channel-connection-explainer.tsx`: in both `SlackChannelExplainer`
    and `SlackAccountExplainer`, call `useSlackInstallRequestUrl()` and pass
    `footer={href ? <SlackInstallRequest href={href} /> : undefined}`. The call sites
@@ -98,10 +102,9 @@ file.
 - [ ] The brand name comes from `getBrand()`. No brand string and no deployment URL is in the code.
 - [ ] With the link unset, or set to a value that is not an `http(s)` URL, no surface shows the line,
       the popovers have no empty strip, and the modal footer looks as it does on `main`.
-- [ ] The satellites explainer popover looks as it does on `main`.
-- [ ] Open each popover both above and below its trigger. The arrow tail still looks attached. If the
-      tail shows as a white notch against the muted strip, report it. Do not style around it in
-      silence.
+- [ ] Explainer popovers (Slack Channel, Slack Account, satellites) draw no arrow tail, above or
+      below their trigger. The version switcher and model indicator popovers keep theirs.
+- [ ] A popover or hover card tail never sits closer than 24 px to the panel's side.
 - [ ] At phone width (375 px), the modal's request line wraps above the buttons, and the page does
       not scroll sideways.
 - [ ] `mise run check` passes, including `mise run //:check:comment-types` and

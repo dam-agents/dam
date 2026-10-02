@@ -15,12 +15,14 @@ export function ExplainerPopover({
   side = "top",
   align = "start",
   className,
+  footer,
   children,
 }: {
   label: string;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
   className?: string;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -57,9 +59,15 @@ export function ExplainerPopover({
         onMouseEnter={openNow}
         onMouseLeave={closeSoon}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        className="w-[360px] max-w-[calc(100vw-2rem)] p-4 text-sm"
+        tail={false}
+        className="w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 text-sm"
       >
-        <div className="flex flex-col gap-3">{children}</div>
+        <div className="flex flex-col gap-3 p-4">{children}</div>
+        {footer && (
+          <div className="border-t border-border/60 bg-muted px-4 py-3">
+            {footer}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

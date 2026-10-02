@@ -90,3 +90,5 @@ http):
 The feature is a single sub-issue, [01](./01-slack-install-request-link.md), which is one atomic
 commit. The whole feature lands as a single PR for
 https://github.com/dam-agents/dam/issues/4028.
+
+- [x] 01 — Slack install-request link in the Slack setup places
