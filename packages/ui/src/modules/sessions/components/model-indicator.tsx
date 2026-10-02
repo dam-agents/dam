@@ -30,6 +30,10 @@ export function ModelIndicator({
   sessionChoices,
 }: Props) {
   const titleId = useId();
+  const switchable =
+    sessionChoices && sessionChoices.choices.length > 0
+      ? sessionChoices
+      : undefined;
 
   return (
     <Popover>
@@ -65,24 +69,22 @@ export function ModelIndicator({
         <p className="text-muted-foreground">
           This {subject} is using{" "}
           <span className="text-foreground">{model}</span>
-          {guidance((sessionChoices?.choices.length ?? 0) > 0, settings?.label)}
+          {guidance(switchable !== undefined, settings?.label)}
         </p>
-        {sessionChoices && sessionChoices.choices.length > 0 && (
+        {switchable && (
           <ul
             aria-label="Models for this session"
             className="-mx-1 max-h-56 overflow-y-auto"
           >
-            {sessionChoices.choices.map((choice) => (
+            {switchable.choices.map((choice) => (
               <li key={choice.value}>
                 <PopoverClose asChild>
                   <button
                     type="button"
                     aria-current={
-                      choice.value === sessionChoices.current
-                        ? "true"
-                        : undefined
+                      choice.value === switchable.current ? "true" : undefined
                     }
-                    onClick={() => sessionChoices.onChoose(choice.value)}
+                    onClick={() => switchable.onChoose(choice.value)}
                     className="w-full truncate rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
                   >
                     {choice.name}

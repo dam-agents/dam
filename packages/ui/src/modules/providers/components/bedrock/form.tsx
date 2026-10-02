@@ -105,7 +105,6 @@ export function BedrockForm({
           <FormField
             label="Model"
             hint="Optional. Leave empty and agents start on one of the region's inference profiles, and offer the rest to choose from. A model set here must be an inference-profile ID such as eu.anthropic.claude-sonnet-4-6."
-            error={errors.model?.message}
           >
             <Input
               type="text"
