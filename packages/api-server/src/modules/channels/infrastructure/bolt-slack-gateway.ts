@@ -18,6 +18,9 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type ChatPostEphemeralArgs = Parameters<
+  BoltApp["client"]["chat"]["postEphemeral"]
+>[0];
 type FilesCompleteUploadExternalArgs = Parameters<
   BoltApp["client"]["files"]["completeUploadExternal"]
 >[0];
@@ -461,7 +464,10 @@ export function createBoltSlackGateway(
         user: args.user,
         thread_ts: args.threadTs,
         text: args.text,
-      });
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        ...(args.username ? { username: args.username } : {}),
+        ...(args.iconUrl ? { icon_url: args.iconUrl } : {}),
+      } as ChatPostEphemeralArgs);
     },
 
     async startStream(args): Promise<{ ts: string }> {

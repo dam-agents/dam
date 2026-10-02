@@ -159,7 +159,10 @@ export interface SlackPostEphemeral {
   user: string;
   threadTs?: string;
   text: string;
+  blocks?: SlackBlock[];
   teamId: SlackWorkspace;
+  username?: string;
+  iconUrl?: string;
 }
 
 export interface SlackUpload {
