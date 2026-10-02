@@ -8,10 +8,22 @@ import { describeSendError } from "../../acp/errors.js";
 interface Props {
   rawError: string;
   interrupted?: boolean;
+  quiet?: boolean;
 }
 
-export function SendErrorCard({ rawError, interrupted }: Props) {
+export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
   const { message, hint } = describeSendError(rawError);
+  if (interrupted && quiet) {
+    return (
+      <p
+        className="mt-1 flex max-w-[620px] items-start gap-1.5 text-xs text-muted-foreground break-words"
+        data-testid="prompt-delivery-error"
+      >
+        <Warning size={12} className="shrink-0 mt-0.5" />
+        <span>Response interrupted: {message}</span>
+      </p>
+    );
+  }
   return (
     <Callout
       tone="danger"

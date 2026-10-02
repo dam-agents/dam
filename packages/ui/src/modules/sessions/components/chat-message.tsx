@@ -195,6 +195,7 @@ export const ChatMessage = memo(function ChatMessage({
         <SendErrorCard
           rawError={error.message}
           interrupted={hasAgentContent(message)}
+          quiet={!isLast}
         />
       )}
     </div>
