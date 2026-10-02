@@ -1157,14 +1157,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
-  const lastTurn = new Map<string, TurnRef>();
-
-  function beginTurn(
-    instanceName: string,
-    ref: TurnRef,
-    opts?: { advanceLastTurn?: boolean },
-  ) {
-    if (opts?.advanceLastTurn !== false) lastTurn.set(instanceName, ref);
+  function beginTurn(instanceName: string, ref: TurnRef) {
     let live = inFlightTurns.get(instanceName);
     if (!live) {
       live = new Set();
@@ -1235,23 +1228,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   function resolveTurn(
     instanceName: string,
     kind: "reply" | "react",
-    opts: { liveOnly?: boolean } = {},
   ): { ref: TurnRef } | { ambiguous: true } | { none: true } {
     const candidates = [
       ...(inFlightTurns.get(instanceName) ?? []),
       ...lingeringFor(instanceName),
     ];
-    if (candidates.length === 0 && opts.liveOnly) return { none: true };
-    if (candidates.length > 0) {
-      const target = (ref: TurnRef) =>
-        kind === "reply"
-          ? `${ref.channel} ${ref.threadTs}`
-          : `${ref.channel} ${ref.eventTs}`;
-      const targets = new Set(candidates.map(target));
-      return targets.size === 1 ? { ref: candidates[0]! } : { ambiguous: true };
-    }
-    const last = lastTurn.get(instanceName);
-    return last ? { ref: last } : { none: true };
+    if (candidates.length === 0) return { none: true };
+    const target = (ref: TurnRef) =>
+      kind === "reply"
+        ? `${ref.channel} ${ref.threadTs}`
+        : `${ref.channel} ${ref.eventTs}`;
+    const targets = new Set(candidates.map(target));
+    return targets.size === 1 ? { ref: candidates[0]! } : { ambiguous: true };
   }
 
   function findTurnRef(
@@ -1286,7 +1274,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? `${engaged.replyText}\n${opts.replyText}`
         : opts.replyText;
     }
-    lastTurn.set(instanceName, engaged);
   }
 
   const userCache = new Map<
@@ -3789,7 +3776,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     try {
       for (const ref of turnRefs) {
-        beginTurn(args.instanceName, ref, { advanceLastTurn: false });
+        beginTurn(args.instanceName, ref);
       }
       await runWhileAgentStarts(runTurn, wakeWait);
       outcome = "success";
@@ -4238,7 +4225,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     async handOffTurn(instanceName: string, targetName: string, note?: string) {
       if (!gateway) return { error: "Slack is not connected." };
-      const turn = resolveTurn(instanceName, "reply", { liveOnly: true });
+      const turn = resolveTurn(instanceName, "reply");
       if ("none" in turn)
         return {
           error:
@@ -4421,7 +4408,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         if ("none" in resolved) {
           return {
             error:
-              "no active thread to reply to — use send_channel_message for a top-level post",
+              "no active thread to reply to — if you are answering a thread, pass " +
+              "the threadTs shown in that turn's instructions; for a top-level " +
+              "post use send_channel_message",
           };
         }
         threadTs = resolved.ref.threadTs;
