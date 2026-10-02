@@ -135,6 +135,7 @@ interface Worker {
   ): Promise<{ ok: true } | { error: string }>;
   handOffTurn?(
     instanceName: string,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
@@ -189,6 +190,7 @@ export interface ChannelManager {
   handOffTurn(
     instanceName: string,
     channelType: ChannelType,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
@@ -501,6 +503,7 @@ export function createChannelManager(deps: {
     handOffTurn: (
       instanceName: string,
       channelType: ChannelType,
+      threadTs: string,
       targetName: string,
       note?: string,
     ) => {
@@ -509,7 +512,7 @@ export function createChannelManager(deps: {
         return Promise.resolve({
           error: `handing a turn to another agent is not supported on ${channelType}`,
         });
-      return worker.handOffTurn(instanceName, targetName, note);
+      return worker.handOffTurn(instanceName, threadTs, targetName, note);
     },
     describeUsers: (
       instanceName: string,
@@ -678,14 +681,15 @@ export function createChannelManager(deps: {
       );
     },
 
-    handOffTurn(instanceName, channelType, targetName, note) {
+    handOffTurn(instanceName, channelType, threadTs, targetName, note) {
       return dispatchResult(
         "handOffTurn",
-        [instanceName, channelType, targetName, note],
+        [instanceName, channelType, threadTs, targetName, note],
         () =>
           localHandlers.handOffTurn(
             instanceName,
             channelType,
+            threadTs,
             targetName,
             note,
           ),
