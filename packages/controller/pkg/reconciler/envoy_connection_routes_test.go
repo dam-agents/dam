@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -576,4 +577,81 @@ func TestLuaConnectionAddressScript_ReadsAnAddressBehindAVendorPrefix(t *testing
 	assert.Contains(t, script, `local vendor = string.match(value, "^(%l+%-)")`,
 		"a client that insists on a key prefix (as-, sk-) still names its connection: as-platform:conn:<id>")
 	assert.Contains(t, script, `#vendor <= 9`)
+}
+
+func signingCredential(connectionID, secretName, pathPattern string) envoyCredential {
+	return envoyCredential{
+		ConnectionID: connectionID,
+		SecretName:   secretName,
+		HeaderName:   "Authorization",
+		PathPattern:  pathPattern,
+		VolumeName:   "cred-" + secretName,
+		Signing:      &envoySigning{Region: "us-south", Service: "s3", CredentialsKey: "aws-credentials"},
+	}
+}
+
+func filtersWithPrefix(filters []map[string]any, prefix string) []map[string]any {
+	var out []map[string]any
+	for _, f := range filters {
+		if name, _ := f["name"].(string); strings.HasPrefix(name, prefix) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TEST_SCENARIO: Bob's agent leaves requireConnectionAddress off, yet a request to a shared endpoint that names no S3 Connection (such as the platform's own presigned artifact link) must pass unsigned.
+func TestRenderEnvoyBootstrap_SigningStepsAreSkippedUnlessAddressedEvenWithoutRequireAddress(t *testing.T) {
+	chain := connectionChain("s3.example.com", signingCredential("conn-s3", "platform-conn-s3", "/bkt"))
+	require.False(t, chain.RequireAddress)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{chain}, false)
+	require.NoError(t, err)
+
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.com")
+	guards := filtersWithPrefix(filters, "streaming_guard_")
+	signers := filtersWithPrefix(filters, "aws_request_signing_")
+	require.Len(t, guards, 1)
+	require.Len(t, signers, 1)
+	assertInjectsOnlyWhenAddressed(t, guards[0], "conn-s3")
+	assertInjectsOnlyWhenAddressed(t, signers[0], "conn-s3")
+}
+
+func TestRenderEnvoyBootstrap_TwoSigningConnectionsOnOneHostAreNotContested(t *testing.T) {
+	chain := connectionChain("s3.example.com",
+		signingCredential("conn-a", "platform-conn-a", "/a"),
+		signingCredential("conn-a", "platform-conn-a", "/a/*"),
+		signingCredential("conn-b", "platform-conn-b", ""),
+	)
+	for _, cred := range chain.Credentials {
+		assert.Empty(t, chain.RivalsOf(cred))
+	}
+	for _, scope := range chain.PathScopes() {
+		assert.False(t, chain.ContestedAt(scope), scope)
+	}
+	assert.Empty(t, contestedScopes(chain))
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{chain}, false)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "direct_response", "no refusal route for two signing Connections")
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.com")
+	assert.Len(t, filtersWithPrefix(filters, "aws_request_signing_"), 2)
+}
+
+func TestRenderEnvoyBootstrap_SigningDoesNotContestAHeaderInjectorOnTheSameHost(t *testing.T) {
+	chain := connectionChain("s3.example.com",
+		signingCredential("conn-s3", "platform-conn-s3", ""),
+		connectionCredential("conn-other", "platform-conn-other", "Authorization", "s3.example.com"),
+	)
+	assert.Empty(t, chain.RivalsOf(chain.Credentials[1]))
+	assert.Empty(t, chain.RivalsOf(chain.Credentials[0]))
+	assert.Empty(t, contestedScopes(chain))
+}
+
+func TestLuaConnectionAddressScript_ReadsAnAddressFromASigV4Credential(t *testing.T) {
+	script := luaConnectionAddressScript(connectionChain("s3.example.com",
+		signingCredential("conn-s3", "platform-conn-s3", ""),
+	))
+	assert.Contains(t, script, `local HEADERS = {"authorization"}`)
+	assert.Contains(t, script, `^AWS4%-HMAC%-SHA256%s+.-Credential=([^/,%s]+)/`,
+		"the access key ID of an Authorization: AWS4-HMAC-SHA256 Credential=<key>/<date>/... header is the address")
 }

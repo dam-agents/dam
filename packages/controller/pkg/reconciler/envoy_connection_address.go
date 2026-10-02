@@ -23,14 +23,14 @@ func connectionAddressHTTPFilter(c envoyHostChain) ev {
 }
 
 func (c envoyHostChain) RivalsOf(cred envoyCredential) []string {
-	if cred.ConnectionID == "" {
+	if cred.ConnectionID == "" || cred.Signing != nil {
 		return nil
 	}
 	scope := injectionScope(cred.PathPattern)
 	seen := map[string]bool{}
 	var out []string
 	for _, other := range c.Credentials {
-		if other.ConnectionID == "" || other.ConnectionID == cred.ConnectionID || seen[other.ConnectionID] {
+		if other.ConnectionID == "" || other.Signing != nil || other.ConnectionID == cred.ConnectionID || seen[other.ConnectionID] {
 			continue
 		}
 		if !strings.EqualFold(other.HeaderName, cred.HeaderName) {
@@ -198,6 +198,8 @@ local function urldecode(s)
 end
 local function address_in(value)
   if value == nil then return nil end
+  local access_key = string.match(value, "^AWS4%-HMAC%-SHA256%s+.-Credential=([^/,%s]+)/")
+  if access_key ~= nil then value = access_key end
   local scheme, rest = string.match(value, "^(%a+)%s+(.+)$")
   if scheme ~= nil then
     if string.lower(scheme) == "basic" then

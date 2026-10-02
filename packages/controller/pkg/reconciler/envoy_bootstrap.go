@@ -349,7 +349,14 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		filters = append(filters, connectionAddressHTTPFilter(c))
 	}
 	filters = append(filters, extAuthzHTTPFilter(p))
+	var signing []envoyCredential
 	for _, cred := range c.Credentials {
+		if cred.Signing != nil {
+			if !slices.ContainsFunc(signing, func(o envoyCredential) bool { return o.FilterName() == cred.FilterName() }) {
+				signing = append(signing, cred)
+			}
+			continue
+		}
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
 		if c.RequireAddress && cred.ConnectionID != "" {
@@ -390,8 +397,61 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 			}, "envoy.filters.http.lua"))
 		}
 	}
+	for _, cred := range signing {
+		filters = append(filters, signingHTTPFilters(p, c, cred)...)
+	}
 	filters = append(filters, dynamicForwardProxyHTTPFilter(), routerHTTPFilter())
 	return filters
+}
+
+const streamingGuardBody = "The gateway re-signs requests to this endpoint, so a streaming (aws-chunked) payload signature cannot be used. " +
+	"Set request_checksum_calculation = when_required in the AWS config, or AWS_REQUEST_CHECKSUM_CALCULATION=when_required, and retry.\n"
+
+const luaStreamingGuardScript = `local BODY = ` + "%s" + `
+function envoy_on_request(rh)
+  local sha = rh:headers():get("x-amz-content-sha256")
+  if sha ~= nil and string.sub(sha, 1, 10) == "STREAMING-" then
+    rh:respond({[":status"] = "400", ["content-type"] = "text/plain"}, BODY)
+  end
+end
+`
+
+func signingHTTPFilters(p bootstrapParams, c envoyHostChain, cred envoyCredential) []any {
+	gate := func(filter ev, innerName string) ev {
+		return skippedUnlessAddressed(filter, innerName, cred.ConnectionID)
+	}
+	return []any{
+		gate(ev{
+			"name": cred.SigningGuardFilterName(),
+			"typed_config": ev{
+				"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
+				"default_source_code": ev{"inline_string": fmt.Sprintf(luaStreamingGuardScript, strconv.Quote(streamingGuardBody))},
+			},
+		}, "envoy.filters.http.lua"),
+		gate(ev{
+			"name": cred.FilterName(),
+			"typed_config": ev{
+				"@type":                "type.googleapis.com/envoy.extensions.filters.http.aws_request_signing.v3.AwsRequestSigning",
+				"service_name":         cred.Signing.Service,
+				"region":               cred.Signing.Region,
+				"use_unsigned_payload": true,
+				"host_rewrite":         c.HostRewrite(),
+				"match_excluded_headers": []any{
+					ev{"exact": connectionAddressHeader},
+				},
+				"credential_provider": ev{
+					"custom_credential_provider_chain": true,
+					"credentials_file_provider": ev{
+						"credentials_data_source": ev{
+							"filename":          cred.CredentialsFilePath(p.CredentialsRoot),
+							"watched_directory": ev{"path": p.CredentialsRoot + "/" + cred.VolumeName},
+						},
+						"profile": "default",
+					},
+				},
+			},
+		}, "envoy.filters.http.aws_request_signing"),
+	}
 }
 
 func buildChainForwardRoutes(c envoyHostChain) []any {
@@ -472,6 +532,9 @@ func disabledPerRoute(c envoyHostChain, connectionID, scope string) ev {
 	out := ev{}
 	for _, cred := range c.CredentialsDisabledAt(connectionID, scope) {
 		out[cred.FilterName()] = filterDisabledPerRoute()
+		if cred.Signing != nil {
+			out[cred.SigningGuardFilterName()] = filterDisabledPerRoute()
+		}
 		if cred.QueryParamName != "" {
 			out[cred.QueryParamFilterName()] = filterDisabledPerRoute()
 		}

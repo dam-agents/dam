@@ -69,9 +69,32 @@ type envoyCredential struct {
 	QueryParamName string
 	VolumeName     string
 	SDSFileKey     string
+	Signing        *envoySigning
+}
+
+type envoySigning struct {
+	Region         string
+	Service        string
+	CredentialsKey string
+}
+
+func (c envoyCredential) signingSuffix() string {
+	sg := c.Signing
+	return c.SecretName + "_" + shortHash(sg.Region+"\n"+sg.Service+"\n"+sg.CredentialsKey)
+}
+
+func (c envoyCredential) SigningGuardFilterName() string {
+	return "streaming_guard_" + c.signingSuffix()
+}
+
+func (c envoyCredential) CredentialsFilePath(root string) string {
+	return root + "/" + c.VolumeName + "/" + c.Signing.CredentialsKey
 }
 
 func (c envoyCredential) FilterName() string {
+	if c.Signing != nil {
+		return "aws_request_signing_" + c.signingSuffix()
+	}
 	return "credential_injector_" + c.SecretName + "_" + shortHash(c.HeaderName+"\n"+c.PathPattern)
 }
 
@@ -179,6 +202,9 @@ func (c envoyHostChain) credentialsAt(scope string) []envoyCredential {
 func (c envoyHostChain) ContestedAt(scope string) bool {
 	owners := map[string]string{}
 	for _, cred := range c.credentialsAt(scope) {
+		if cred.Signing != nil {
+			continue
+		}
 		if owner, seen := owners[cred.HeaderName]; seen && owner != cred.ConnectionID {
 			return true
 		}
@@ -222,12 +248,22 @@ func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envo
 	var out []envoyCredential
 	for _, cred := range c.Credentials {
 		outOfScope := !scopeCovers(injectionScope(cred.PathPattern), scope)
-		shadowed := connectionID != "" && cred.ConnectionID != connectionID && own[cred.HeaderName]
+		if cred.Signing != nil {
+			outOfScope = !c.signingCoversScope(cred, scope)
+		}
+		shadowed := cred.Signing == nil && connectionID != "" && cred.ConnectionID != connectionID && own[cred.HeaderName]
 		if outOfScope || shadowed {
 			out = append(out, cred)
 		}
 	}
 	return out
+}
+
+func (c envoyHostChain) signingCoversScope(signing envoyCredential, scope string) bool {
+	name := signing.FilterName()
+	return slices.ContainsFunc(c.Credentials, func(other envoyCredential) bool {
+		return other.Signing != nil && other.FilterName() == name && scopeCovers(injectionScope(other.PathPattern), scope)
+	})
 }
 
 const envoySecretTypeAllowOnly = "allow-only"
@@ -378,6 +414,13 @@ type connectionHostInjection struct {
 	Upgrades       bool               `json:"upgrades,omitempty"`
 	CAKey          string             `json:"caKey,omitempty"`
 	SDSKey         string             `json:"sdsKey,omitempty"`
+	Signing        *connectionSigning `json:"signing,omitempty"`
+}
+
+type connectionSigning struct {
+	Region         string `json:"region"`
+	Service        string `json:"service"`
+	CredentialsKey string `json:"credentialsKey"`
 }
 
 func sdsFileKeyForHost(host string) string {
@@ -435,6 +478,12 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		if e.Host == "" {
 			continue
 		}
+		if e.Signing != nil {
+			if hc, ok := expandSigningEntry(s, e, seen); ok {
+				out = append(out, hc)
+			}
+			continue
+		}
 		header := e.HeaderName
 		if header == "" {
 			header = "Authorization"
@@ -481,6 +530,38 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		})
 	}
 	return out
+}
+
+func expandSigningEntry(s corev1.Secret, e connectionHostInjection, seen map[struct{ host, header, scope string }]struct{}) (hostCredential, bool) {
+	key := struct{ host, header, scope string }{e.Host, "\x00signing", injectionScope(e.PathPattern)}
+	if _, dup := seen[key]; dup {
+		slog.Warn("duplicate (host, path scope) signing entry in injection-hosts; skipping later entry",
+			"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "pathPattern", e.PathPattern)
+		return hostCredential{}, false
+	}
+	seen[key] = struct{}{}
+	credKey := e.Signing.CredentialsKey
+	if strings.ContainsAny(credKey, "/\\") || strings.Contains(credKey, "..") {
+		slog.Warn("invalid signing credentialsKey in injection-hosts; ignoring",
+			"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "credentialsKey", credKey)
+		credKey = ""
+	}
+	return hostCredential{
+		host: e.Host,
+		opts: chainOpts{port: e.Port, pathRewrites: validPathRewrites(s, e)},
+		cred: envoyCredential{
+			ConnectionID: s.Labels[envoyConnectionLabel],
+			SecretName:   s.Name,
+			PathPattern:  e.PathPattern,
+			HeaderName:   "Authorization",
+			VolumeName:   "cred-" + s.Name,
+			Signing: &envoySigning{
+				Region:         e.Signing.Region,
+				Service:        e.Signing.Service,
+				CredentialsKey: credKey,
+			},
+		},
+	}, true
 }
 
 func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
@@ -586,6 +667,16 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		case "connection":
 			for _, hc := range expandConnectionSecret(s) {
 				cred := hc.cred
+				if sg := cred.Signing; sg != nil {
+					if sg.CredentialsKey == "" || sg.Region == "" || sg.Service == "" || len(s.Data[sg.CredentialsKey]) == 0 {
+						slog.Warn("connection Secret has no usable signing credentials; rendering host allow-only (no request signing)",
+							"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "credentialsKey", sg.CredentialsKey)
+						add(hc.host, s.Name, nil, hc.opts)
+						continue
+					}
+					add(hc.host, s.Name, &cred, hc.opts)
+					continue
+				}
 				if len(s.Data[cred.SDSFileKey]) == 0 {
 					slog.Warn("connection Secret missing SDS data key; rendering host allow-only (no credential injection)",
 						"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "sdsKey", cred.SDSFileKey)
@@ -741,7 +832,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v18-vendor-prefixed-addresses"
+const envoyBootstrapTemplateRev = "v19-request-signing"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
@@ -785,6 +876,14 @@ func sdsDataKeys(s corev1.Secret) []string {
 	for k := range s.Data {
 		if k == envoyCredentialKeySDS || strings.HasSuffix(k, ".sds.yaml") {
 			keys = append(keys, k)
+		}
+	}
+	for _, e := range parseConnectionHosts(s) {
+		if e.Signing == nil || e.Signing.CredentialsKey == "" {
+			continue
+		}
+		if _, ok := s.Data[e.Signing.CredentialsKey]; ok && !slices.Contains(keys, e.Signing.CredentialsKey) {
+			keys = append(keys, e.Signing.CredentialsKey)
 		}
 	}
 	sort.Strings(keys)
