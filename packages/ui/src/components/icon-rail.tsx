@@ -528,7 +528,7 @@ export function IconRail({
                         {isExpanded &&
                           clickVariant === 0 &&
                           visibleSessions.length > 0 && (
-                          <div className="mt-1 mb-3 flex flex-col gap-px">
+                          <div className="mt-2 mb-3 flex flex-col gap-1">
                             {visibleSessions.map((item) => {
                               const isRunning = item.type === "running";
                               const isUnread = item.type === "unread";
@@ -614,7 +614,7 @@ export function IconRail({
                                       <Button
                                         variant="ghost"
                                         size="icon-xs"
-                                        className="absolute right-1 top-1.5 opacity-0 transition-opacity group-hover/agentsession:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                                        className="absolute right-3 top-1.5 opacity-0 transition-opacity group-hover/agentsession:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                                         onClick={(e) => e.stopPropagation()}
                                         aria-label="More actions"
                                       >
@@ -792,7 +792,7 @@ export function IconRail({
                 )}
                 <div
                   key={clickVariant === 3 ? (scopedAgentId ?? "all") : "list"}
-                  className="flex flex-col gap-px px-2"
+                  className="flex flex-col gap-1 px-2"
                 >
                   {visibleActivity.map((item, activityIndex) => {
                     const isRunning = item.type === "running";
@@ -901,7 +901,7 @@ export function IconRail({
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              className="absolute right-2 top-2 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                               onClick={(e) => e.stopPropagation()}
                               aria-label="More actions"
                             >

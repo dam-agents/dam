@@ -1,0 +1,648 @@
+<title>DAM — Home</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #f2f4f8;
+    --fg: #121619;
+    --fg-secondary: #57534e;
+    --fg-muted: #4d5358;
+    --accent: #1d6be1;
+    --accent-hover: #1556b8;
+    --success: #24a148;
+    --success-light: #defbe6;
+    --warning: #ff832b;
+    --danger: #dc2626;
+    --danger-light: #fef2f2;
+    --border: #dde1e6;
+    --border-light: #ecedf0;
+    --card: #ffffff;
+    --muted: #f2f4f8;
+    --muted-fg: #4d5358;
+    --font: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161616; --surface: #161616; --surface-raised: #262626;
+      --fg: #fafaf9; --fg-secondary: #d6d3d1; --fg-muted: #a8a29e;
+      --accent: #3c92fd; --accent-hover: #2f88fd;
+      --success: #34d399; --success-light: #0f2a1f;
+      --warning: #fbbf24; --danger: #f87171; --danger-light: #3a1515;
+      --border: #393939; --border-light: #2a2a2a;
+      --card: #161616; --muted: #262626; --muted-fg: #a8a29e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161616; --surface: #161616; --surface-raised: #262626;
+    --fg: #fafaf9; --fg-secondary: #d6d3d1; --fg-muted: #a8a29e;
+    --accent: #3c92fd; --accent-hover: #2f88fd;
+    --success: #34d399; --success-light: #0f2a1f;
+    --warning: #fbbf24; --danger: #f87171; --danger-light: #3a1515;
+    --border: #393939; --border-light: #2a2a2a;
+    --card: #161616; --muted: #262626; --muted-fg: #a8a29e;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.5; -webkit-font-smoothing: antialiased; min-height: 100dvh; overflow: hidden; }
+  button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  a { text-decoration: none; color: inherit; }
+
+  .shell { display: flex; height: 100dvh; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { display: flex; flex-direction: column; height: 100%; background: var(--card); border-right: 1px solid var(--border); flex-shrink: 0; transition: width 200ms; overflow: hidden; width: 240px; }
+  .sidebar.collapsed { width: 56px; }
+  .sidebar-header { display: flex; align-items: center; padding: 8px 12px 4px; justify-content: space-between; }
+  .sidebar.collapsed .sidebar-header { justify-content: center; padding: 8px 0 4px; }
+  .sidebar.collapsed .brand-text, .sidebar.collapsed .collapse-toggle { display: none; }
+  .sidebar.collapsed .expand-trigger { display: flex; }
+  .expand-trigger { display: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 8px; color: var(--fg); opacity: 0.8; }
+  .brand-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--fg); opacity: 0.85; padding: 4px; border-radius: 8px; }
+  .collapse-toggle { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--muted-fg); transition: all 150ms; }
+  .collapse-toggle:hover { color: var(--fg); background: var(--muted); }
+  .nav-items { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .sidebar.collapsed .nav-items { align-items: center; padding: 0; }
+  .nav-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--fg); opacity: 0.8; transition: all 150ms; width: 100%; text-align: left; }
+  .nav-item:hover { opacity: 1; background: var(--muted); }
+  .nav-item.active { opacity: 1; background: var(--muted); }
+  .nav-item .label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar.collapsed .nav-item { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .sidebar.collapsed .nav-item .label, .sidebar.collapsed .nav-item .badge-inline { display: none; }
+  .nav-spacer { flex: 1; }
+  .sidebar.collapsed .nav-spacer { cursor: pointer; }
+  .nav-bottom { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 12px; }
+  .sidebar.collapsed .nav-bottom { align-items: center; padding: 0 0 12px; }
+  .badge-inline { min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
+  @media (max-width: 768px) { .sidebar { display: none; } }
+
+  /* ── Main + Pages ── */
+  .main { flex: 1; overflow-y: auto; min-width: 0; position: relative; }
+  .page { display: none; height: 100%; }
+  .page.active { display: flex; flex-direction: column; }
+  .scroll-area { flex: 1; overflow-y: auto; }
+  .content { max-width: 1200px; margin: 0 auto; padding: 24px 5% 40px; }
+  @media (max-width: 768px) { .content { padding: 24px 16px 80px; } }
+
+  /* ── Page: List views (agents, experiments, KB) ── */
+  .list-page-content { max-width: 960px; margin: 0 auto; padding: 24px 5% 40px; }
+  .list-page-title { font-size: 24px; font-weight: 600; letter-spacing: -0.4px; margin-bottom: 24px; }
+  .list-empty { font-size: 14px; color: var(--muted-fg); }
+  .list-card { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; display: flex; align-items: center; gap: 12px; transition: all 150ms; cursor: pointer; }
+  .list-card:hover { border-color: var(--fg-muted); }
+  .list-card + .list-card { margin-top: 8px; }
+  .list-card-icon { width: 38px; height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--muted); color: var(--muted-fg); }
+  .list-card-body { flex: 1; min-width: 0; }
+  .list-card-name { font-size: 15px; font-weight: 500; }
+  .list-card-meta { font-size: 14px; color: var(--muted-fg); margin-top: 2px; }
+  .list-card-status { font-size: 14px; color: var(--success); display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+  /* ── Page: Session (chat) ── */
+  .chat-page { display: none; height: 100%; flex-direction: column; }
+  .chat-page.active { display: flex; }
+  .chat-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .chat-back { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--muted-fg); transition: all 150ms; }
+  .chat-back:hover { color: var(--fg); background: var(--muted); }
+  .chat-title { font-size: 15px; font-weight: 500; flex: 1; }
+  .chat-body { flex: 1; overflow-y: auto; padding: 24px 20px; }
+  .chat-messages { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .msg { display: flex; gap: 12px; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--muted-fg); }
+  .msg-avatar.agent { background: var(--accent); color: #fff; font-size: 12px; }
+  .msg-content { font-size: 14px; line-height: 1.6; color: var(--fg); max-width: 560px; }
+  .msg-content code { font-family: var(--mono); font-size: 13px; background: var(--muted); padding: 2px 5px; border-radius: 4px; }
+  .chat-input-area { padding: 16px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .chat-input-wrap { max-width: 680px; margin: 0 auto; display: flex; gap: 8px; }
+  .chat-input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 14px; background: var(--bg); color: var(--fg); outline: none; transition: border-color 150ms; }
+  .chat-input:focus { border-color: var(--accent); }
+  .chat-input::placeholder { color: var(--muted-fg); opacity: 0.6; }
+
+  /* ── Page: Artifact viewer ── */
+  .artifact-page { display: none; height: 100%; flex-direction: column; }
+  .artifact-page.active { display: flex; }
+  .artifact-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .artifact-title { font-size: 15px; font-weight: 500; flex: 1; }
+  .artifact-body { flex: 1; overflow-y: auto; padding: 32px 24px; }
+  .artifact-preview { max-width: 720px; margin: 0 auto; }
+  .artifact-preview h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+  .artifact-preview p { font-size: 14px; color: var(--fg-secondary); line-height: 1.7; margin-bottom: 16px; }
+  .artifact-preview .img-placeholder { width: 100%; height: 200px; border-radius: 12px; background: linear-gradient(135deg, var(--muted), var(--surface-raised)); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--muted-fg); font-size: 14px; margin-bottom: 16px; }
+
+  /* ── Page: Settings ── */
+  .settings-content { max-width: 640px; margin: 0 auto; padding: 24px 5% 40px; }
+  .settings-title { font-size: 24px; font-weight: 600; letter-spacing: -0.4px; margin-bottom: 8px; }
+  .settings-sub { font-size: 14px; color: var(--muted-fg); margin-bottom: 32px; }
+  .settings-section { margin-bottom: 32px; }
+  .settings-section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
+  .settings-row-label { font-size: 14px; }
+  .settings-row-value { font-size: 14px; color: var(--muted-fg); }
+  .toggle { width: 36px; height: 20px; border-radius: 10px; background: var(--border); position: relative; transition: background 200ms; cursor: pointer; }
+  .toggle.on { background: var(--accent); }
+  .toggle::after { content: ''; width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: transform 200ms; }
+  .toggle.on::after { transform: translateX(16px); }
+
+  /* ── Home-specific ── */
+  .home-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  .home-title { font-size: 28px; font-weight: 600; letter-spacing: -0.65px; }
+  .range-btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); padding: 6px 12px; font-size: 14px; color: var(--muted-fg); transition: all 150ms; }
+  .range-btn:hover { color: var(--fg); border-color: var(--fg-muted); }
+  .sections { display: flex; flex-direction: column; gap: 24px; }
+  .blocked-section { border-radius: 16px; border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 5%, transparent), var(--card)); padding: 24px; }
+  .grad-section { border-radius: 16px; border: 1px solid var(--border); background: linear-gradient(135deg, color-mix(in srgb, var(--muted) 60%, transparent), var(--card)); padding: 24px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .section-title .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .section-title .count { font-size: 14px; font-weight: 400; color: var(--muted-fg); }
+
+  /* ── Cards ── */
+  .card { display: flex; align-items: flex-start; gap: 12px; min-height: 76px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+  .card-icon { width: 38px; height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--muted); color: var(--muted-fg); }
+  .card-body { min-width: 0; flex: 1; }
+  .card-title { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .card-sub { margin-top: 4px; font-size: 14px; color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub.danger { color: var(--danger); }
+  .card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 14px; font-weight: 500; transition: all 150ms; white-space: nowrap; }
+  .btn-primary { background: var(--fg); color: var(--bg); }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-outline { border: 1px solid var(--border); background: transparent; color: var(--fg); }
+  .btn-outline:hover { background: var(--muted); }
+  .btn-danger { border: 1px solid var(--danger); background: transparent; color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-light); }
+  .btn-icon { padding: 6px; }
+
+  /* ── Approval cards ── */
+  .approval-card { border-radius: 8px; border: 1px solid var(--border); background: var(--card); padding: 12px 16px; }
+  .approval-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .approval-text { min-width: 0; flex: 1; }
+  .approval-agent { font-size: 16px; }
+  .approval-agent .ctx { font-size: 14px; color: var(--muted-fg); font-weight: 400; margin-left: 8px; }
+  .approval-request { font-family: var(--mono); font-size: 14px; color: var(--muted-fg); margin-top: 2px; }
+
+  /* ── Working dots ── */
+  .working-dots { display: inline-flex; gap: 3px; align-items: center; }
+  .working-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s infinite; }
+  .working-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .working-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+  /* ── Resource grid ── */
+  .resource-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 768px) { .resource-grid { grid-template-columns: 1fr; } }
+  .resource-card { border-radius: 16px; border: 1px solid var(--border); background: linear-gradient(135deg, color-mix(in srgb, var(--muted) 60%, transparent), var(--card)); padding: 24px; display: flex; flex-direction: column; }
+  .resource-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; min-height: 32px; }
+  .resource-label { font-size: 14px; color: var(--muted-fg); }
+  .resource-link { font-size: 14px; font-weight: 500; color: var(--accent); }
+  .resource-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; margin-bottom: 20px; line-height: 1; }
+  .period-tabs { display: flex; gap: 2px; border-radius: 8px; background: var(--muted); padding: 2px; }
+  .period-tab { padding: 4px 6px; border-radius: 6px; font-size: 14px; color: var(--muted-fg); transition: all 150ms; }
+  .period-tab.active { background: var(--card); color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .spend-rows { display: flex; flex-direction: column; gap: 12px; }
+  .spend-row-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .spend-row-name { font-size: 14px; color: var(--muted-fg); }
+  .spend-row-cost { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted-fg); }
+  .spend-bar { height: 12px; border-radius: 999px; background: var(--accent); transition: width 300ms; }
+  .meter { display: flex; gap: 2px; margin-bottom: 20px; }
+  .meter-cell { height: 12px; flex: 1; transition: all 150ms; outline: none; }
+  .meter-cell:first-child { border-radius: 999px 0 0 999px; }
+  .meter-cell:last-child { border-radius: 0 999px 999px 0; }
+  .meter-cell.running { background: var(--success); }
+  .meter-cell.awake { background: var(--accent); }
+  .meter-cell.available { border: 1px solid var(--muted-fg); opacity: 0.25; background: transparent; }
+  .meter-cell.highlighted { height: 16px; margin-top: -2px; filter: brightness(1.1); }
+  .meter-cell.dimmed { opacity: 0.2; }
+  .legend { display: flex; flex-direction: column; gap: 8px; }
+  .legend-row { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; border-radius: 4px; transition: opacity 150ms; }
+  .legend-row.dimmed { opacity: 0.3; }
+  .legend-left { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted-fg); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-dot.running { background: var(--success); }
+  .legend-dot.awake { background: var(--accent); }
+  .legend-dot.available { border: 1px solid var(--muted-fg); opacity: 0.5; }
+  .legend-right { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted-fg); }
+
+  /* ── Stacked cards ── */
+  .stacked-wrapper { position: relative; margin-bottom: 20px; }
+  .stacked-behind-2 { position: absolute; bottom: -12px; left: 12px; right: 12px; height: 12px; border-radius: 0 0 8px 8px; border: 1px solid var(--border); border-top: 0; background: color-mix(in srgb, var(--card) 40%, transparent); }
+  .stacked-behind-1 { position: absolute; bottom: -6px; left: 6px; right: 6px; height: 12px; border-radius: 0 0 8px 8px; border: 1px solid var(--border); border-top: 0; background: color-mix(in srgb, var(--card) 70%, transparent); }
+  .stacked-front { position: relative; z-index: 1; }
+  .more-btn { font-size: 14px; color: var(--muted-fg); transition: color 150ms; }
+  .more-btn:hover { color: var(--fg); }
+  .card-list { display: flex; flex-direction: column; gap: 12px; }
+
+  /* ── Dropdowns ── */
+  .filter-wrap { position: relative; }
+  .filter-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; color: var(--muted-fg); transition: color 150ms; }
+  .filter-btn:hover { color: var(--fg); }
+  .filter-btn.open svg { transform: rotate(180deg); }
+  .filter-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; border-radius: 6px; border: 1px solid var(--border); background: var(--card); box-shadow: 0 4px 12px rgba(0,0,0,0.12); padding: 4px 0; min-width: 120px; display: none; }
+  .filter-menu.open { display: block; }
+  .filter-option { width: 100%; text-align: left; padding: 6px 12px; font-size: 14px; color: var(--muted-fg); transition: all 150ms; }
+  .filter-option:hover { color: var(--fg); background: color-mix(in srgb, var(--muted) 50%, transparent); }
+  .filter-option.active { color: var(--fg); font-weight: 500; }
+  .overflow-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; border-radius: 6px; border: 1px solid var(--border); background: var(--card); box-shadow: 0 4px 12px rgba(0,0,0,0.12); padding: 4px 0; min-width: 180px; display: none; }
+  .overflow-menu.open { display: block; }
+  .overflow-option { width: 100%; text-align: left; padding: 8px 12px; font-size: 14px; color: var(--fg); transition: all 150ms; display: flex; align-items: center; gap: 8px; }
+  .overflow-option:hover { background: var(--muted); }
+  .overflow-option.danger { color: var(--danger); }
+  .hidden { display: none !important; }
+</style>
+
+<div class="shell">
+  <!-- ═══ SIDEBAR ═══ -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <button class="brand-text" onclick="showPage('home')" title="DAM">DAM</button>
+      <button class="collapse-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" title="Collapse">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4L8 8l4 4M4 2v12"/></svg>
+      </button>
+      <button class="expand-trigger" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" title="Expand">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M4 6h24v2H4zM4 15h24v2H4zM4 24h24v2H4z"/></svg>
+      </button>
+    </div>
+    <div class="nav-items">
+      <button class="nav-item active" id="nav-home" onclick="showPage('home')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M16 2L2 14h4v14h8V18h4v10h8V14h4z"/></svg>
+        <span class="label">Home</span>
+        <span class="badge-inline" id="badge-count">3</span>
+      </button>
+      <button class="nav-item" id="nav-agents" onclick="showPage('agents')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M28 6H4a2 2 0 00-2 2v16a2 2 0 002 2h24a2 2 0 002-2V8a2 2 0 00-2-2zM4 24V8h24v16z"/></svg>
+        <span class="label">Coding agents</span>
+      </button>
+      <button class="nav-item" id="nav-experiments" onclick="showPage('experiments')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-4v8.15l7.1 12.44A2 2 0 0123.36 30H8.64a2 2 0 01-1.74-2.99L14 14.15V6h-4V2zm-2 2h-8v2h8zm-6 4v8.54L7.1 28h17.8L18 16.54V8z"/></svg>
+        <span class="label">Experiments</span>
+      </button>
+      <button class="nav-item" id="nav-kb" onclick="showPage('kb')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M24 4H8a2 2 0 00-2 2v20a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 22H8V6h16z"/><path d="M10 10h12v2H10zM10 16h8v2h-8z"/></svg>
+        <span class="label">Knowledge bases</span>
+      </button>
+    </div>
+    <div class="nav-spacer" onclick="document.getElementById('sidebar').classList.contains('collapsed') && document.getElementById('sidebar').classList.remove('collapsed')"></div>
+    <div class="nav-bottom">
+      <button class="nav-item" id="nav-artifacts" onclick="showPage('artifacts')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg>
+        <span class="label">Artifacts</span>
+      </button>
+      <button class="nav-item" id="nav-settings" onclick="showPage('settings')">
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor"><path d="M27 16.76v-1.53l1.92-1.68A2 2 0 0029.3 11l-2.36-4a2 2 0 00-1.73-1 2 2 0 00-.64.1l-2.43.82a11.35 11.35 0 00-1.31-.75l-.51-2.52a2 2 0 00-2-1.61h-4.68a2 2 0 00-2 1.61l-.51 2.52a11.48 11.48 0 00-1.32.75l-2.38-.86A2 2 0 006.79 6a2 2 0 00-1.73 1L2.7 11a2 2 0 00.41 2.51L5 15.24v1.53l-1.89 1.68A2 2 0 002.7 21l2.36 4a2 2 0 001.73 1 2 2 0 00.64-.1l2.43-.82a11.35 11.35 0 001.31.75l.51 2.52a2 2 0 002 1.61h4.72a2 2 0 002-1.61l.51-2.52a11.48 11.48 0 001.32-.75l2.42.82a2 2 0 00.64.1 2 2 0 001.73-1l2.28-4a2 2 0 00-.41-2.51zM16 21a5 5 0 115-5 5 5 0 01-5 5z"/></svg>
+        <span class="label">Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ═══ MAIN AREA ═══ -->
+  <div class="main">
+
+    <!-- PAGE: HOME -->
+    <div class="page active" id="page-home">
+      <div class="scroll-area">
+        <div class="content">
+          <div class="home-header">
+            <h1 class="home-title">Home</h1>
+            <div class="filter-wrap">
+              <button class="range-btn" onclick="toggleMenu('range-menu')">
+                <span id="range-label">Since last visit</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 11L3 6h10z"/></svg>
+              </button>
+              <div class="filter-menu" id="range-menu">
+                <button class="filter-option active" onclick="selectRange(this,'Since last visit')">Since last visit</button>
+                <button class="filter-option" onclick="selectRange(this,'Last hour')">Last hour</button>
+                <button class="filter-option" onclick="selectRange(this,'Last 4 hours')">Last 4 hours</button>
+                <button class="filter-option" onclick="selectRange(this,'Last 12 hours')">Last 12 hours</button>
+                <button class="filter-option" onclick="selectRange(this,'Last 24 hours')">Last 24 hours</button>
+                <button class="filter-option" onclick="selectRange(this,'Last 7 days')">Last 7 days</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sections">
+            <!-- BLOCKED -->
+            <section class="blocked-section" id="blocked-section">
+              <div class="section-head">
+                <h2 class="section-title"><span class="dot" style="background:var(--danger)"></span><span>Blocked <span class="count" id="blocked-count">(3)</span></span></h2>
+                <div class="filter-wrap">
+                  <button class="filter-btn" onclick="toggleMenu('blocked-filter')">All types <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 11L3 6h10z"/></svg></button>
+                  <div class="filter-menu" id="blocked-filter">
+                    <button class="filter-option active" onclick="selectFilter(this,'blocked-filter')">All types</button>
+                    <button class="filter-option" onclick="selectFilter(this,'blocked-filter')">Network</button>
+                    <button class="filter-option" onclick="selectFilter(this,'blocked-filter')">Tool</button>
+                  </div>
+                </div>
+              </div>
+              <div id="blocked-stacked">
+                <div class="stacked-wrapper">
+                  <div class="stacked-behind-2"></div>
+                  <div class="stacked-behind-1"></div>
+                  <div class="stacked-front">
+                    <div class="approval-card"><div class="approval-inner"><div class="approval-text"><p class="approval-agent">brand-asset-generator<span class="ctx">wants to access</span></p><p class="approval-request">GET api.figma.com</p></div><div class="card-actions"><button class="btn btn-primary" onclick="dismissApproval(this)">Allow</button><div class="filter-wrap"><button class="btn btn-outline btn-icon" onclick="toggleMenu('ov1')"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg></button><div class="overflow-menu" id="ov1"><button class="overflow-option" onclick="dismissApproval(this)">Allow permanently</button><button class="overflow-option" onclick="dismissApproval(this)">Allow all of api.figma.com</button><button class="overflow-option" onclick="dismissApproval(this)">Deny this request</button><button class="overflow-option danger" onclick="dismissApproval(this)">Deny permanently</button></div></div></div></div></div>
+                  </div>
+                </div>
+                <button class="more-btn" onclick="expandSection('blocked')">+2 more blocked</button>
+              </div>
+              <div id="blocked-expanded" class="hidden">
+                <div class="card-list">
+                  <div class="approval-card"><div class="approval-inner"><div class="approval-text"><p class="approval-agent">brand-asset-generator<span class="ctx">wants to access</span></p><p class="approval-request">GET api.figma.com</p></div><div class="card-actions"><button class="btn btn-primary" onclick="dismissApproval(this)">Allow</button><div class="filter-wrap"><button class="btn btn-outline btn-icon" onclick="toggleMenu('ov1b')"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg></button><div class="overflow-menu" id="ov1b"><button class="overflow-option" onclick="dismissApproval(this)">Allow permanently</button><button class="overflow-option" onclick="dismissApproval(this)">Deny this request</button><button class="overflow-option danger" onclick="dismissApproval(this)">Deny permanently</button></div></div></div></div></div>
+                  <div class="approval-card"><div class="approval-inner"><div class="approval-text"><p class="approval-agent">frontend-agent<span class="ctx">wants to use</span></p><p class="approval-request">bash_execute</p></div><div class="card-actions"><button class="btn btn-primary" onclick="dismissApproval(this)">Allow</button><div class="filter-wrap"><button class="btn btn-outline btn-icon" onclick="toggleMenu('ov2')"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg></button><div class="overflow-menu" id="ov2"><button class="overflow-option" onclick="dismissApproval(this)">Allow permanently</button><button class="overflow-option" onclick="dismissApproval(this)">Deny this request</button><button class="overflow-option danger" onclick="dismissApproval(this)">Deny permanently</button></div></div></div></div></div>
+                  <div class="approval-card"><div class="approval-inner"><div class="approval-text"><p class="approval-agent">photo-retouching<span class="ctx">wants to access</span></p><p class="approval-request">POST storage.googleapis.com</p></div><div class="card-actions"><button class="btn btn-primary" onclick="dismissApproval(this)">Allow</button><div class="filter-wrap"><button class="btn btn-outline btn-icon" onclick="toggleMenu('ov3')"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg></button><div class="overflow-menu" id="ov3"><button class="overflow-option" onclick="dismissApproval(this)">Allow permanently</button><button class="overflow-option" onclick="dismissApproval(this)">Allow all of storage.googleapis.com</button><button class="overflow-option" onclick="dismissApproval(this)">Deny this request</button><button class="overflow-option danger" onclick="dismissApproval(this)">Deny permanently</button></div></div></div></div></div>
+                </div>
+                <button class="more-btn" style="margin-top:12px" onclick="collapseSection('blocked')">Collapse</button>
+              </div>
+            </section>
+
+            <!-- RESOURCES -->
+            <div class="resource-grid">
+              <div class="resource-card">
+                <div class="resource-header"><span class="resource-label">Spend</span>
+                  <div class="period-tabs" id="spend-tabs"><button class="period-tab" onclick="setSpend(0)">1d</button><button class="period-tab" onclick="setSpend(1)">1w</button><button class="period-tab active" onclick="setSpend(2)">1m</button><button class="period-tab" onclick="setSpend(3)">1y</button></div>
+                </div>
+                <p class="resource-value" id="spend-total">$31.57</p>
+                <div class="spend-rows" id="spend-rows">
+                  <div><div class="spend-row-label"><span class="spend-row-name">frontend-agent</span><span class="spend-row-cost">$12.47</span></div><div class="spend-bar" style="width:100%"></div></div>
+                  <div><div class="spend-row-label"><span class="spend-row-name">brand-asset-generator</span><span class="spend-row-cost">$8.23</span></div><div class="spend-bar" style="width:66%"></div></div>
+                  <div><div class="spend-row-label"><span class="spend-row-name">backend-refactor</span><span class="spend-row-cost">$5.91</span></div><div class="spend-bar" style="width:47%"></div></div>
+                </div>
+              </div>
+              <div class="resource-card">
+                <div class="resource-header"><span class="resource-label">Compute resources</span><span class="resource-link">Request more</span></div>
+                <p class="resource-value">4/8 CPU</p>
+                <div class="meter" id="meter">
+                  <button class="meter-cell running" data-agent="a1" data-state="running"></button>
+                  <button class="meter-cell running" data-agent="a1" data-state="running"></button>
+                  <button class="meter-cell running" data-agent="a2" data-state="running"></button>
+                  <button class="meter-cell awake" data-agent="a3" data-state="awake"></button>
+                  <button class="meter-cell available" data-state="available"></button>
+                  <button class="meter-cell available" data-state="available"></button>
+                  <button class="meter-cell available" data-state="available"></button>
+                  <button class="meter-cell available" data-state="available"></button>
+                </div>
+                <div class="legend">
+                  <div class="legend-row" data-ls="running" onmouseenter="hlState('running')" onmouseleave="clrHl()"><span class="legend-left"><span class="legend-dot running"></span>Running</span><span class="legend-right">2 agents · 3 CPU</span></div>
+                  <div class="legend-row" data-ls="awake" onmouseenter="hlState('awake')" onmouseleave="clrHl()"><span class="legend-left"><span class="legend-dot awake"></span>Awake</span><span class="legend-right">1 agent · 1 CPU</span></div>
+                  <div class="legend-row" data-ls="available" onmouseenter="hlState('available')" onmouseleave="clrHl()"><span class="legend-left"><span class="legend-dot available"></span>Available</span><span class="legend-right">4 CPU · 4 Gi</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- READY FOR YOU -->
+            <section class="grad-section">
+              <div class="section-head">
+                <h2 class="section-title"><span>Ready for you <span class="count">(6)</span></span></h2>
+                <div class="filter-wrap"><button class="filter-btn" onclick="toggleMenu('ready-filter')">All types <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 11L3 6h10z"/></svg></button><div class="filter-menu" id="ready-filter"><button class="filter-option active" onclick="selectFilter(this,'ready-filter')">All types</button><button class="filter-option" onclick="selectFilter(this,'ready-filter')">Sessions</button><button class="filter-option" onclick="selectFilter(this,'ready-filter')">Experiments</button><button class="filter-option" onclick="selectFilter(this,'ready-filter')">Schedules</button></div></div>
+              </div>
+              <div id="ready-stacked">
+                <div class="card-list">
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 2H6a2 2 0 00-2 2v20a2 2 0 002 2h4v4l6-4h10a2 2 0 002-2V4a2 2 0 00-2-2zm0 22H15.17L10 27.17V24H6V4h20z"/></svg></div><div class="card-body"><div class="card-title">Refactor auth middleware</div><div class="card-sub">backend-refactor · 45m ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openSession('Refactor auth middleware','backend-refactor')">View session</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="card-body"><div class="card-title">Spring campaign hero images</div><div class="card-sub">brand-asset-generator · 2h ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openArtifact('Spring campaign hero images','brand-asset-generator')">View artifact</button></div></div>
+                </div>
+                <div class="stacked-wrapper" style="margin-top:12px">
+                  <div class="stacked-behind-2"></div><div class="stacked-behind-1"></div>
+                  <div class="stacked-front"><div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1012 12A12 12 0 0016 4zm0 22a10 10 0 1110-10 10 10 0 01-10 10z"/><path d="M15 8h2v8h-2zM15 18h2v2h-2z"/></svg></div><div class="card-body"><div class="card-title">Daily brand audit</div><div class="card-sub">brand-asset-generator · 6h ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openSession('Daily brand audit','brand-asset-generator')">View results</button></div></div></div>
+                </div>
+                <button class="more-btn" style="margin-top:12px" onclick="expandSection('ready')">+3 more ready</button>
+              </div>
+              <div id="ready-expanded" class="hidden">
+                <div class="card-list">
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 2H6a2 2 0 00-2 2v20a2 2 0 002 2h4v4l6-4h10a2 2 0 002-2V4a2 2 0 00-2-2zm0 22H15.17L10 27.17V24H6V4h20z"/></svg></div><div class="card-body"><div class="card-title">Refactor auth middleware</div><div class="card-sub">backend-refactor · 45m ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openSession('Refactor auth middleware','backend-refactor')">View session</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="card-body"><div class="card-title">Spring campaign hero images</div><div class="card-sub">brand-asset-generator · 2h ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openArtifact('Spring campaign hero images','brand-asset-generator')">View artifact</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1012 12A12 12 0 0016 4zm0 22a10 10 0 1110-10 10 10 0 01-10 10z"/><path d="M15 8h2v8h-2zM15 18h2v2h-2z"/></svg></div><div class="card-body"><div class="card-title">Daily brand audit</div><div class="card-sub">brand-asset-generator · 6h ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openSession('Daily brand audit','brand-asset-generator')">View results</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="card-body"><div class="card-title">Nightly performance report</div><div class="card-sub">reporting-agent · 8h ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openArtifact('Nightly performance report','reporting-agent')">View artifact</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-4v8.15l7.1 12.44A2 2 0 0123.36 30H8.64a2 2 0 01-1.74-2.99L14 14.15V6h-4V2zm-2 2h-8v2h8zm-6 4v8.54L7.1 28h17.8L18 16.54V8z"/></svg></div><div class="card-body"><div class="card-title">Spring palette — warm vs cool tones</div><div class="card-sub">5 runs completed</div></div><div class="card-actions"><button class="btn btn-outline" onclick="showPage('experiments')">View results</button></div></div>
+                  <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1012 12A12 12 0 0016 4zm0 22a10 10 0 1110-10 10 10 0 01-10 10z"/><path d="M15 8h2v8h-2zM15 18h2v2h-2z"/></svg></div><div class="card-body"><div class="card-title">Nightly test suite</div><div class="card-sub">Every day at 2:00 AM · next in 14h</div><div class="card-sub danger">Last run: failed — agent exceeded timeout after 45m</div></div><div class="card-actions"><button class="btn btn-outline" onclick="showPage('agents')">Edit schedule</button></div></div>
+                </div>
+                <button class="more-btn" style="margin-top:12px" onclick="collapseSection('ready')">Collapse</button>
+              </div>
+            </section>
+
+            <!-- RUNNING NOW -->
+            <section class="grad-section">
+              <div class="section-head">
+                <h2 class="section-title"><span>Running now <span class="count">(3)</span></span></h2>
+                <div class="filter-wrap"><button class="filter-btn" onclick="toggleMenu('running-filter')">All types <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 11L3 6h10z"/></svg></button><div class="filter-menu" id="running-filter"><button class="filter-option active" onclick="selectFilter(this,'running-filter')">All types</button><button class="filter-option" onclick="selectFilter(this,'running-filter')">Sessions</button><button class="filter-option" onclick="selectFilter(this,'running-filter')">Experiments</button><button class="filter-option" onclick="selectFilter(this,'running-filter')">Schedules</button></div></div>
+              </div>
+              <div class="card-list">
+                <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 2H6a2 2 0 00-2 2v20a2 2 0 002 2h4v4l6-4h10a2 2 0 002-2V4a2 2 0 00-2-2zm0 22H15.17L10 27.17V24H6V4h20z"/></svg></div><div class="card-body"><div class="card-title">Implement dark mode toggle <span class="working-dots"><span></span><span></span><span></span></span></div><div class="card-sub">frontend-agent · 12m ago</div></div><div class="card-actions"><button class="btn btn-outline" onclick="openSession('Implement dark mode toggle','frontend-agent')">View session</button><button class="btn btn-danger" onclick="stopCard(this)">Stop</button></div></div>
+                <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-4v8.15l7.1 12.44A2 2 0 0123.36 30H8.64a2 2 0 01-1.74-2.99L14 14.15V6h-4V2zm-2 2h-8v2h8zm-6 4v8.54L7.1 28h17.8L18 16.54V8z"/></svg></div><div class="card-body"><div class="card-title">Spring palette — warm vs cool tones</div><div class="card-sub">3 invocations running</div></div><div class="card-actions"><button class="btn btn-outline" onclick="showPage('experiments')">Open</button><button class="btn btn-danger" onclick="stopCard(this)">Stop</button></div></div>
+                <div class="card"><div class="card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M16 4a12 12 0 1012 12A12 12 0 0016 4zm0 22a10 10 0 1110-10 10 10 0 01-10 10z"/><path d="M15 8h2v8h-2zM15 18h2v2h-2z"/></svg></div><div class="card-body"><div class="card-title">Daily brand audit</div><div class="card-sub">Every weekday at 9:00 AM · next in 3h</div></div><div class="card-actions"><button class="btn btn-outline" onclick="showPage('agents')">Edit schedule</button></div></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: AGENTS -->
+    <div class="page" id="page-agents">
+      <div class="scroll-area">
+        <div class="list-page-content">
+          <h1 class="list-page-title">Coding agents</h1>
+          <div class="list-card" onclick="openSession('Implement dark mode toggle','frontend-agent')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M28 6H4a2 2 0 00-2 2v16a2 2 0 002 2h24a2 2 0 002-2V8a2 2 0 00-2-2zM4 24V8h24v16z"/></svg></div><div class="list-card-body"><div class="list-card-name">frontend-agent</div><div class="list-card-meta">Claude Code · 1 CPU</div></div><div class="list-card-status"><span class="status-dot"></span>Running</div></div>
+          <div class="list-card" onclick="openSession('Refactor auth middleware','backend-refactor')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M28 6H4a2 2 0 00-2 2v16a2 2 0 002 2h24a2 2 0 002-2V8a2 2 0 00-2-2zM4 24V8h24v16z"/></svg></div><div class="list-card-body"><div class="list-card-name">backend-refactor</div><div class="list-card-meta">Claude Code · 2 CPU</div></div><div class="list-card-status" style="color:var(--muted-fg)">Hibernated</div></div>
+          <div class="list-card" onclick="openSession('Spring campaign hero images','brand-asset-generator')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M28 6H4a2 2 0 00-2 2v16a2 2 0 002 2h24a2 2 0 002-2V8a2 2 0 00-2-2zM4 24V8h24v16z"/></svg></div><div class="list-card-body"><div class="list-card-name">brand-asset-generator</div><div class="list-card-meta">Claude Code · 2 CPU</div></div><div class="list-card-status"><span class="status-dot"></span>Running</div></div>
+          <div class="list-card" onclick="openSession('Photo edits batch','photo-retouching')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M28 6H4a2 2 0 00-2 2v16a2 2 0 002 2h24a2 2 0 002-2V8a2 2 0 00-2-2zM4 24V8h24v16z"/></svg></div><div class="list-card-body"><div class="list-card-name">photo-retouching</div><div class="list-card-meta">Claude Code · 1 CPU</div></div><div class="list-card-status" style="color:var(--accent)">Awake</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: EXPERIMENTS -->
+    <div class="page" id="page-experiments">
+      <div class="scroll-area">
+        <div class="list-page-content">
+          <h1 class="list-page-title">Experiments</h1>
+          <div class="list-card" onclick="openSession('Spring palette results','color-palette-testing')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-4v8.15l7.1 12.44A2 2 0 0123.36 30H8.64a2 2 0 01-1.74-2.99L14 14.15V6h-4V2zm-2 2h-8v2h8zm-6 4v8.54L7.1 28h17.8L18 16.54V8z"/></svg></div><div class="list-card-body"><div class="list-card-name">Spring palette — warm vs cool tones</div><div class="list-card-meta">color-palette-testing · 3 invocations</div></div><div class="list-card-status"><span class="status-dot"></span>Running</div></div>
+          <div class="list-card"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-4v8.15l7.1 12.44A2 2 0 0123.36 30H8.64a2 2 0 01-1.74-2.99L14 14.15V6h-4V2zm-2 2h-8v2h8zm-6 4v8.54L7.1 28h17.8L18 16.54V8z"/></svg></div><div class="list-card-body"><div class="list-card-name">Copy tone A/B — formal vs casual</div><div class="list-card-meta">copywriting-agent · 8 runs</div></div><div class="list-card-status" style="color:var(--muted-fg)">Completed</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: KB -->
+    <div class="page" id="page-kb">
+      <div class="scroll-area">
+        <div class="list-page-content">
+          <h1 class="list-page-title">Knowledge bases</h1>
+          <div class="list-card" onclick="openSession('Platform docs wiki','platform-docs')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 4H8a2 2 0 00-2 2v20a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 22H8V6h16z"/><path d="M10 10h12v2H10zM10 16h8v2h-8z"/></svg></div><div class="list-card-body"><div class="list-card-name">Platform docs</div><div class="list-card-meta">12 sources · Updated 2h ago</div></div><div class="list-card-status" style="color:var(--muted-fg)">Active</div></div>
+          <div class="list-card" onclick="openSession('Research notes wiki','research-notes')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M24 4H8a2 2 0 00-2 2v20a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 22H8V6h16z"/><path d="M10 10h12v2H10zM10 16h8v2h-8z"/></svg></div><div class="list-card-body"><div class="list-card-name">Research notes</div><div class="list-card-meta">4 sources · Updated 1d ago</div></div><div class="list-card-status" style="color:var(--muted-fg)">Active</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: ARTIFACTS -->
+    <div class="page" id="page-artifacts">
+      <div class="scroll-area">
+        <div class="list-page-content">
+          <h1 class="list-page-title">Artifacts</h1>
+          <div class="list-card" onclick="openArtifact('Spring campaign hero images','brand-asset-generator')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="list-card-body"><div class="list-card-name">Spring campaign hero images</div><div class="list-card-meta">brand-asset-generator · 2h ago</div></div></div>
+          <div class="list-card" onclick="openArtifact('Nightly performance report','reporting-agent')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="list-card-body"><div class="list-card-name">Nightly performance report</div><div class="list-card-meta">reporting-agent · 8h ago</div></div></div>
+          <div class="list-card" onclick="openArtifact('Brand guidelines PDF','brand-asset-generator')"><div class="list-card-icon"><svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor"><path d="M26 4H6a2 2 0 00-2 2v4a2 2 0 002 2h2v14a2 2 0 002 2h12a2 2 0 002-2V12h2a2 2 0 002-2V6a2 2 0 00-2-2zm-4 22H10V12h12zm4-16H6V6h20z"/></svg></div><div class="list-card-body"><div class="list-card-name">Brand guidelines PDF</div><div class="list-card-meta">brand-asset-generator · 3d ago</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: SETTINGS -->
+    <div class="page" id="page-settings">
+      <div class="scroll-area">
+        <div class="settings-content">
+          <h1 class="settings-title">Settings</h1>
+          <p class="settings-sub">Manage your account and preferences.</p>
+          <div class="settings-section">
+            <h2 class="settings-section-title">Account</h2>
+            <div class="settings-row"><span class="settings-row-label">Email</span><span class="settings-row-value">jamie@example.com</span></div>
+            <div class="settings-row"><span class="settings-row-label">Plan</span><span class="settings-row-value">Team · 8 CPU</span></div>
+          </div>
+          <div class="settings-section">
+            <h2 class="settings-section-title">Appearance</h2>
+            <div class="settings-row"><span class="settings-row-label">Dark mode</span><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+            <div class="settings-row"><span class="settings-row-label">Compact cards</span><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
+          </div>
+          <div class="settings-section">
+            <h2 class="settings-section-title">Notifications</h2>
+            <div class="settings-row"><span class="settings-row-label">Email on approval timeout</span><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+            <div class="settings-row"><span class="settings-row-label">Slack blocked alerts</span><button class="toggle on" onclick="this.classList.toggle('on')"></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: SESSION (CHAT) -->
+    <div class="page" id="page-session">
+      <div class="chat-header">
+        <button class="chat-back" onclick="goBack()"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg></button>
+        <span class="chat-title" id="session-title">Session</span>
+        <button class="btn btn-outline" style="font-size:14px">Configure</button>
+      </div>
+      <div class="chat-body">
+        <div class="chat-messages" id="chat-messages"></div>
+      </div>
+      <div class="chat-input-area">
+        <div class="chat-input-wrap">
+          <input class="chat-input" placeholder="Send a message..." id="chat-input" onkeydown="if(event.key==='Enter')sendMsg()">
+          <button class="btn btn-primary" onclick="sendMsg()">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: ARTIFACT -->
+    <div class="page" id="page-artifact">
+      <div class="artifact-header">
+        <button class="chat-back" onclick="goBack()"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg></button>
+        <span class="artifact-title" id="artifact-title">Artifact</span>
+        <button class="btn btn-outline" style="font-size:14px">Download</button>
+      </div>
+      <div class="artifact-body">
+        <div class="artifact-preview" id="artifact-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let history = [];
+let currentPage = 'home';
+
+function showPage(page) {
+  if (currentPage !== page) history.push(currentPage);
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById('page-' + page);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const nav = document.getElementById('nav-' + page);
+  if (nav) nav.classList.add('active');
+}
+
+function goBack() {
+  const prev = history.pop() || 'home';
+  currentPage = prev;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + prev).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const nav = document.getElementById('nav-' + prev);
+  if (nav) nav.classList.add('active');
+}
+
+function openSession(title, agent) {
+  history.push(currentPage);
+  currentPage = 'session';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-session').classList.add('active');
+  document.getElementById('session-title').textContent = title;
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML = `
+    <div class="msg"><div class="msg-avatar agent">A</div><div class="msg-content">Starting work on <strong>${title}</strong>. Let me look at the codebase and figure out the best approach.</div></div>
+    <div class="msg"><div class="msg-avatar agent">A</div><div class="msg-content">I've identified the relevant files. Working on the implementation now — I'll update you when I have something to show.</div></div>
+    <div class="msg"><div class="msg-avatar agent">A</div><div class="msg-content">Done. I've made the changes across 3 files. Here's a summary:<br><br>• Updated <code>src/theme.ts</code> with the new token system<br>• Added toggle component in <code>src/components/ThemeToggle.tsx</code><br>• Wired it into the settings page<br><br>Ready for your review.</div></div>
+  `;
+}
+
+function openArtifact(title, agent) {
+  history.push(currentPage);
+  currentPage = 'artifact';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-artifact').classList.add('active');
+  document.getElementById('artifact-title').textContent = title;
+  document.getElementById('artifact-content').innerHTML = `
+    <h2>${title}</h2>
+    <p>Created by <strong>${agent}</strong></p>
+    <div class="img-placeholder">Preview content</div>
+    <p>This artifact was generated automatically by the agent. It contains the output of the most recent run, including all assets and metadata.</p>
+    <p style="color:var(--muted-fg)">Last updated 2 hours ago · Version 3 · 4.2 KB</p>
+  `;
+}
+
+function sendMsg() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML += `<div class="msg" style="justify-content:flex-end"><div class="msg-content" style="background:var(--accent);color:#fff;border-radius:12px;padding:8px 14px">${text}</div></div>`;
+  setTimeout(() => {
+    msgs.innerHTML += `<div class="msg"><div class="msg-avatar agent">A</div><div class="msg-content">Got it. Let me work on that.</div></div>`;
+    msgs.parentElement.scrollTop = msgs.parentElement.scrollHeight;
+  }, 800);
+  msgs.parentElement.scrollTop = msgs.parentElement.scrollHeight;
+}
+
+// ── Menus ──
+function toggleMenu(menuId) {
+  const menu = document.getElementById(menuId);
+  const wasOpen = menu.classList.contains('open');
+  closeMenus();
+  if (!wasOpen) menu.classList.add('open');
+}
+function closeMenus() { document.querySelectorAll('.filter-menu,.overflow-menu').forEach(m => m.classList.remove('open')); }
+document.addEventListener('click', e => { if (!e.target.closest('.filter-wrap') && !e.target.closest('.range-btn') && !e.target.closest('.filter-btn')) closeMenus(); });
+function selectRange(btn, label) { document.getElementById('range-label').textContent = label; btn.closest('.filter-menu').querySelectorAll('.filter-option').forEach(o => o.classList.remove('active')); btn.classList.add('active'); closeMenus(); }
+function selectFilter(btn, menuId) { document.getElementById(menuId).querySelectorAll('.filter-option').forEach(o => o.classList.remove('active')); btn.classList.add('active'); closeMenus(); }
+
+// ── Approval dismiss ──
+function dismissApproval(btn) { const c = btn.closest('.approval-card'); c.style.transition = 'all 300ms'; c.style.opacity = '0'; c.style.height = '0'; c.style.padding = '0'; c.style.margin = '0'; c.style.border = '0'; c.style.overflow = 'hidden'; closeMenus(); }
+
+// ── Stacked expand/collapse ──
+function expandSection(id) { document.getElementById(id+'-stacked').classList.add('hidden'); document.getElementById(id+'-expanded').classList.remove('hidden'); }
+function collapseSection(id) { document.getElementById(id+'-expanded').classList.add('hidden'); document.getElementById(id+'-stacked').classList.remove('hidden'); }
+
+// ── Stop card ──
+function stopCard(btn) { const card = btn.closest('.card'); const sub = card.querySelector('.card-sub'); const dots = card.querySelector('.working-dots'); if(dots) dots.remove(); sub.textContent = 'Stopped'; sub.style.color = 'var(--success)'; card.querySelector('.card-actions').innerHTML = '<button class="btn btn-outline" onclick="openSession(\'Stopped session\',\'agent\')">View session</button>'; }
+
+// ── Spend ──
+const SD = [
+  { total:'$4.82', s:[{n:'frontend-agent',c:2.10},{n:'brand-asset-generator',c:1.64},{n:'backend-refactor',c:1.08}]},
+  { total:'$18.43', s:[{n:'frontend-agent',c:8.12},{n:'brand-asset-generator',c:5.91},{n:'backend-refactor',c:4.40}]},
+  { total:'$31.57', s:[{n:'frontend-agent',c:12.47},{n:'brand-asset-generator',c:8.23},{n:'backend-refactor',c:5.91}]},
+  { total:'$284.19', s:[{n:'frontend-agent',c:112.30},{n:'brand-asset-generator',c:89.47},{n:'backend-refactor',c:52.42}]},
+];
+function setSpend(i) { const t=document.getElementById('spend-tabs').children; for(let x of t)x.classList.remove('active'); t[i].classList.add('active'); const d=SD[i]; document.getElementById('spend-total').textContent=d.total; const mx=d.s[0].c; document.getElementById('spend-rows').innerHTML=d.s.map(s=>`<div><div class="spend-row-label"><span class="spend-row-name">${s.n}</span><span class="spend-row-cost">$${s.c.toFixed(2)}</span></div><div class="spend-bar" style="width:${(s.c/mx*100).toFixed(0)}%"></div></div>`).join(''); }
+
+// ── Compute meter ──
+function hlState(st) { document.querySelectorAll('.meter-cell').forEach(c=>{c.dataset.state===st?(c.classList.add('highlighted'),c.classList.remove('dimmed')):(c.classList.remove('highlighted'),c.classList.add('dimmed'))}); document.querySelectorAll('.legend-row').forEach(r=>{r.dataset.ls===st?r.classList.remove('dimmed'):r.classList.add('dimmed')}); }
+function clrHl() { document.querySelectorAll('.meter-cell').forEach(c=>{c.classList.remove('highlighted','dimmed')}); document.querySelectorAll('.legend-row').forEach(r=>r.classList.remove('dimmed')); }
+document.querySelectorAll('.meter-cell').forEach(cell => {
+  cell.addEventListener('mouseenter', () => { const a=cell.dataset.agent, st=cell.dataset.state; document.querySelectorAll('.meter-cell').forEach(c=>{ if(a&&c.dataset.agent===a||!a&&c.dataset.state===st){c.classList.add('highlighted');c.classList.remove('dimmed')} else{c.classList.remove('highlighted');c.classList.add('dimmed')} }); });
+  cell.addEventListener('mouseleave', clrHl);
+});
+</script>
