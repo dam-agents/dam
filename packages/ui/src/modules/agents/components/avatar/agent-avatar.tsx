@@ -1,8 +1,7 @@
 import { cn } from "@/lib/utils";
 
-import { useAgentAvatars } from "../../hooks/use-agent-avatars.js";
 import type { AgentDisplayState } from "../../utils/agent-resolver.js";
-import { LazyRobotHead } from "./lazy-robot-head.js";
+import { CharAvatar } from "../char-avatar.js";
 
 export function isAsleep(state: AgentDisplayState | undefined): boolean {
   return state === "hibernated" || state === "hibernating";
@@ -12,6 +11,7 @@ export const STOPPED_AVATAR_CLASS = "grayscale";
 
 interface Props {
   name: string;
+  agentId?: string;
   size?: number;
   sleeping?: boolean;
   stopped?: boolean;
@@ -20,19 +20,28 @@ interface Props {
 
 export function AgentAvatar({
   name,
-  size,
+  agentId,
+  size = 24,
   sleeping = false,
   stopped = false,
   className,
 }: Props) {
-  const enabled = useAgentAvatars();
-  if (!enabled) return null;
+  const state = sleeping || stopped ? "hibernated" : "running";
   return (
-    <LazyRobotHead
-      name={name}
-      size={size}
-      sleeping={sleeping || stopped}
-      className={cn(stopped && STOPPED_AVATAR_CLASS, className)}
-    />
+    <span
+      className={cn(
+        "inline-flex shrink-0",
+        stopped && STOPPED_AVATAR_CLASS,
+        className,
+      )}
+      style={{ width: size, height: size }}
+    >
+      <CharAvatar
+        agentId={agentId ?? name}
+        state={state}
+        idle={stopped && !sleeping}
+        className="size-full"
+      />
+    </span>
   );
 }

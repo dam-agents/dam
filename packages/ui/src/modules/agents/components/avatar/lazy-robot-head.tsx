@@ -1,42 +1,30 @@
-import { Component, lazy, type ReactNode, Suspense } from "react";
-
 import { cn } from "@/lib/utils";
 
-import type { RobotHeadProps } from "./robot-head.js";
+import { CharAvatar } from "../char-avatar.js";
 
-const RobotHead = lazy(() =>
-  import("./robot-head.js").then((m) => ({ default: m.RobotHead })),
-);
-
-class AvatarBoundary extends Component<
-  { fallback: ReactNode; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
+export interface RobotHeadProps {
+  name: string;
+  size?: number;
+  sleeping?: boolean;
+  className?: string;
 }
 
-export function LazyRobotHead(props: RobotHeadProps) {
-  const size = props.size ?? 24;
-  const placeholder = (
-    <span
-      aria-hidden
-      className={cn("inline-block shrink-0", props.className)}
-      style={{ width: size, height: size }}
-    />
-  );
+export function LazyRobotHead({
+  name,
+  size = 24,
+  sleeping = false,
+  className,
+}: RobotHeadProps) {
   return (
-    <AvatarBoundary fallback={placeholder}>
-      <Suspense fallback={placeholder}>
-        <RobotHead {...props} />
-      </Suspense>
-    </AvatarBoundary>
+    <span
+      className={cn("inline-flex shrink-0", className)}
+      style={{ width: size, height: size }}
+    >
+      <CharAvatar
+        agentId={name}
+        state={sleeping ? "hibernated" : "running"}
+        className="size-full"
+      />
+    </span>
   );
 }
