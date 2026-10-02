@@ -33,6 +33,8 @@ import {
 import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { getLogger } from "../../../core/logger.js";
 
+const PIN_CONFLICT_RETRIES = 4;
+
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -330,15 +332,22 @@ export function createAgentsRepository(
     },
 
     async setInvocationPin(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) return false;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          resourceVersion: obj.metadata?.resourceVersion,
-          annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
-        },
-      });
-      return true;
+      for (let attempt = 0; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY])
+          return false;
+        try {
+          await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: {
+              resourceVersion: obj.metadata?.resourceVersion,
+              annotations: { [INVOCATIONS_ACTIVE_KEY]: "true" },
+            },
+          });
+          return true;
+        } catch (e) {
+          if (!isConflict(e) || attempt >= PIN_CONFLICT_RETRIES) throw e;
+        }
+      }
     },
 
     async readInvocationPin(id) {

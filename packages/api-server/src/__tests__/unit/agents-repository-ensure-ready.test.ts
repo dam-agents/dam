@@ -471,6 +471,58 @@ describe("setInvocationPin", () => {
     expect(patches).toEqual([]);
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBeUndefined();
   });
+
+  // TEST_SCENARIO: a sibling spawn pinned the Driver first; this spawn still writes, because the reconcile's release is conditional on the Driver's version and only a write makes a spawn landing in between fail it.
+  it("writes the pin again when the Driver is already pinned", async () => {
+    const { repo, store, patches } = recordingHarness("");
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(patches).toHaveLength(1);
+  });
+
+  function conflicting(times: number) {
+    const obj = agentObj("a1", READY);
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    let left = times;
+    const patches: unknown[] = [];
+    const racing: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        if (left-- > 0) {
+          throw Object.assign(new Error("409 Conflict"), { code: 409 });
+        }
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      racing,
+      createLiveAgentStateCache(racing),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: the Driver changed between the read and the write, by a controller status update or a sibling's pin; the spawn reads it again and writes again instead of failing.
+  it("reads again and retries a write that lost to a concurrent change", async () => {
+    const { repo, store, patches } = conflicting(2);
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(patches).toHaveLength(3);
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("true");
+  });
+
+  // TEST_SCENARIO: a Driver that keeps changing under the write is not pinned silently; the spawn fails so it leaves no Invocation behind.
+  it("fails once the write keeps losing", async () => {
+    const { repo, patches } = conflicting(99);
+
+    await expect(repo.setInvocationPin("a1")).rejects.toThrow("409");
+
+    expect(patches).toHaveLength(5);
+  });
 });
 
 describe("requestPause settle", () => {
