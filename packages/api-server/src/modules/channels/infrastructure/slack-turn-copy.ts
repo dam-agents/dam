@@ -75,7 +75,8 @@ function rosterSentences(
     "conversation. A mention that starts with an agent's name reaches that " +
     `agent, so a mention starting with ${self} reaches you. ${bare} When a ` +
     "message would be better answered by one of the others, hand it to them " +
-    `with ${TOOL}hand_off_to_agent rather than answering outside what you know.`
+    `with ${TOOL}hand_off_to_agent rather than answering outside what you ` +
+    "know. Pass it the same threadTs you would reply with."
   );
 }
 

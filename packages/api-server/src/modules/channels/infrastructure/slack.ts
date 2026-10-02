@@ -771,6 +771,7 @@ export interface SlackWorker {
   ): Promise<{ ok: true } | { error: string }>;
   handOffTurn(
     instanceName: string,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
@@ -1229,10 +1230,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string,
     kind: "reply" | "react",
   ): { ref: TurnRef } | { ambiguous: true } | { none: true } {
-    const candidates = [
-      ...(inFlightTurns.get(instanceName) ?? []),
-      ...lingeringFor(instanceName),
-    ];
+    const candidates = liveTurnRefs(instanceName);
     if (candidates.length === 0) return { none: true };
     const target = (ref: TurnRef) =>
       kind === "reply"
@@ -1240,6 +1238,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : `${ref.channel} ${ref.eventTs}`;
     const targets = new Set(candidates.map(target));
     return targets.size === 1 ? { ref: candidates[0]! } : { ambiguous: true };
+  }
+
+  function liveTurnRefs(instanceName: string): TurnRef[] {
+    return [
+      ...(inFlightTurns.get(instanceName) ?? []),
+      ...lingeringFor(instanceName),
+    ];
   }
 
   function findTurnRef(
@@ -4223,39 +4228,45 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
-    async handOffTurn(instanceName: string, targetName: string, note?: string) {
+    async handOffTurn(
+      instanceName: string,
+      threadTs: string,
+      targetName: string,
+      note?: string,
+    ) {
       if (!gateway) return { error: "Slack is not connected." };
-      const turn = resolveTurn(instanceName, "reply");
-      if ("none" in turn)
+      const refs = liveTurnRefs(instanceName).filter(
+        (candidate) => candidate.threadTs === threadTs,
+      );
+      if (refs.length === 0)
         return {
           error:
-            "You have no Slack turn in flight, so there is nothing to hand off.",
+            `No turn of yours is answering thread "${threadTs}", so there is ` +
+            "nothing there to hand off. Pass the threadTs shown in this " +
+            "turn's instructions.",
         };
-      if ("ambiguous" in turn)
-        return {
-          error:
-            "You are answering more than one Slack message right now, so I " +
-            "cannot tell which to hand off. Answer them with reply instead.",
-        };
-      const ref = turn.ref;
-      if (ref.forwarded)
+      if (refs.some((ref) => ref.forwarded))
         return {
           error:
             "This message was already handed to you by another agent, so it " +
             "cannot be handed on again. Answer it, or say why you can't.",
         };
-      if (ref.handedOff)
+      if (refs.some((ref) => ref.handedOff))
         return {
           error:
             "You already handed this message to another agent — it cannot be " +
             "handed on twice.",
         };
-      if (!ref.text)
+      const handed = refs.filter((ref): ref is TurnRef & { text: string } =>
+        Boolean(ref.text),
+      );
+      if (handed.length === 0)
         return {
           error:
             "This turn carries no message text to hand over. Answer it " +
             "yourself, or reply explaining who should.",
         };
+      const ref = handed.at(-1)!;
 
       const roster = await resolveRoster(ref.channel);
       const { matches } = matchRosterName(roster, targetName);
@@ -4286,10 +4297,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         };
 
       const self = await resolveAgentName(instanceName);
-      ref.handedOff = true;
-      ref.declined = true;
+      for (const each of refs) {
+        each.handedOff = true;
+        each.declined = true;
+      }
 
-      const droppedAttachments = ref.hadAttachments === true;
+      const droppedAttachments = refs.some(
+        (each) => each.hadAttachments === true,
+      );
       const handedNote = [
         ...(note ? [`${self} handed this to you: ${note}`] : []),
         ...(droppedAttachments
@@ -4298,22 +4313,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ]
           : []),
       ];
-      const handedText = handedNote.length
-        ? `${ref.text ?? ""}\n\n[${handedNote.join(". ")}]`
-        : (ref.text ?? "");
+      const handedSuffix = handedNote.length
+        ? `\n\n[${handedNote.join(". ")}]`
+        : "";
 
       void relaySharedTurn({
         channel: ref.channel,
         teamId: ref.teamId,
         threadTs: ref.threadTs,
-        messages: [
-          {
-            text: handedText,
-            eventTs: ref.eventTs,
-            slackUserId: ref.slackUserId ?? "",
-            inThread: ref.hasThread === true,
-          },
-        ],
+        messages: handed.map((each) => ({
+          text: each === ref ? `${each.text}${handedSuffix}` : each.text,
+          eventTs: each.eventTs,
+          slackUserId: each.slackUserId ?? "",
+          inThread: each.hasThread === true,
+        })),
         slackUserId: ref.slackUserId ?? "",
         instanceName: target.instanceName,
         owner: target.owner,
@@ -4373,10 +4386,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               "instructions, so the turn recorded as silent is the one you " +
               "are ending.",
           };
-      } else {
-        const resolved = resolveTurn(instanceName, "reply");
-        if ("ambiguous" in resolved) return { error: AMBIGUOUS_THREAD_ERROR };
-        if ("ref" in resolved) ref = resolved.ref;
+      } else if (liveTurnRefs(instanceName).length > 0) {
+        return {
+          error:
+            "Pass the threadTs shown in this turn's instructions, so the " +
+            "turn recorded as silent is the one you are ending.",
+        };
       }
       if (!ref) return { ok: true as const };
       ref.declined = true;
