@@ -109,6 +109,7 @@ export {
   harnessConfigChoice,
   harnessConfigCatalog,
   harnessConfigCurrent,
+  fileFormat,
   mergeMode,
   eventReportInput,
   initializationEventPayload,

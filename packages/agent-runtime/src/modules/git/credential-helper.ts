@@ -11,6 +11,7 @@ import {
 } from "../../core/run-once.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
+const GH_ENTERPRISE_TOKEN_ENV = "GH_ENTERPRISE_TOKEN";
 const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 const GH_HOSTS_FILE_PATH = "$HOME/.config/gh/hosts.yml";
 const SETUP_TIMEOUT_MS = 10_000;
@@ -26,7 +27,9 @@ function ghCredentialFingerprint(
   const relevant = contributions.filter(
     (c) =>
       (c.kind === "env" &&
-        (c.name === GH_TOKEN_ENV || c.name === GH_AVAILABLE_ENV)) ||
+        (c.name === GH_TOKEN_ENV ||
+          c.name === GH_ENTERPRISE_TOKEN_ENV ||
+          c.name === GH_AVAILABLE_ENV)) ||
       (c.kind === "file" && c.path === GH_HOSTS_FILE_PATH),
   );
   return relevant.length === 0 ? "" : JSON.stringify(relevant);

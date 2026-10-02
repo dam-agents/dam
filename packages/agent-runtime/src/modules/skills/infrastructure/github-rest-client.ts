@@ -51,10 +51,7 @@ export interface PullRequestState {
 
 export interface GithubFetchOpts {
   withAuth?: boolean;
-  token?: () => string;
 }
-
-const defaultToken = (): string => process.env.GH_TOKEN ?? "dummy-placeholder";
 
 function repoPath(host: DetectedOwnerRepo): string {
   return `/repos/${encodeURIComponent(host.owner)}/${encodeURIComponent(host.repo)}`;
@@ -117,18 +114,18 @@ export interface GitHubRestClient {
   ) => Promise<Result<PullRequest, SkillsDomainError>>;
 }
 
-export function createGitHubRestClient(
-  clientOpts: { token?: () => string } = {},
-): GitHubRestClient {
-  const token = clientOpts.token ?? defaultToken;
+export function createGitHubRestClient(clientOpts: {
+  token: () => string;
+}): GitHubRestClient {
+  const { token } = clientOpts;
   const json = <T>(
     method: "GET" | "POST",
     endpoint: string,
     body?: unknown,
     opts: GithubFetchOpts = {},
-  ) => ghJson<T>(method, endpoint, body, { ...opts, token });
+  ) => ghJson<T>(method, endpoint, token, body, opts);
   const bytes = (method: "GET", endpoint: string, opts: GithubFetchOpts = {}) =>
-    ghBytes(method, endpoint, { ...opts, token });
+    ghBytes(method, endpoint, token, opts);
   return {
     async getRepo(host) {
       const r = await json<{ default_branch: string }>("GET", repoPath(host));
@@ -258,6 +255,7 @@ function ghHeaders(
 async function ghJson<T>(
   method: "GET" | "POST",
   endpoint: string,
+  token: () => string,
   body?: unknown,
   opts: GithubFetchOpts = {},
 ): Promise<Result<T, SkillsDomainError>> {
@@ -265,11 +263,7 @@ async function ghJson<T>(
   try {
     const res = await fetch(`${GITHUB_API}${endpoint}`, {
       method,
-      headers: ghHeaders(
-        withAuth,
-        body !== undefined,
-        opts.token ?? defaultToken,
-      ),
+      headers: ghHeaders(withAuth, body !== undefined, token),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const text = await res.text();
@@ -291,13 +285,14 @@ async function ghJson<T>(
 async function ghBytes(
   method: "GET",
   endpoint: string,
+  token: () => string,
   opts: GithubFetchOpts = {},
 ): Promise<Result<Uint8Array, SkillsDomainError>> {
   const withAuth = opts.withAuth ?? true;
   try {
     const res = await fetch(`${GITHUB_API}${endpoint}`, {
       method,
-      headers: ghHeaders(withAuth, false, opts.token ?? defaultToken),
+      headers: ghHeaders(withAuth, false, token),
     });
     if (!res.ok) {
       let parsed: unknown = null;

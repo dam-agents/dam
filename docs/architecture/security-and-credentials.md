@@ -532,12 +532,12 @@ scope covers it. Where a scope is claimed twice, the [per-Connection
 address](connections.md#addressing-a-connection) picks one, by either
 carrier. A Lua step ahead of every other filter on a Connection chain
 reads the address — the path prefix, or the token placeholder in a
-claimed header (bare, behind a scheme or a vendor prefix, or as a Basic
-password) or query parameter — and marks the request with its
+claimed header or query parameter — and marks the request with its
 Connection. An injector skips when the marker names a rival on its
-header; on an Agent requiring addresses, unless it names its own
-Connection, so the request keeps its credential. The prefix and marker
-are dropped on the way upstream. A request naming no Connection on a
+header over an overlapping scope; on an Agent requiring addresses,
+unless it names its own Connection, so the request keeps its
+credential. The prefix and marker are dropped on the way upstream. A
+request naming no Connection on a
 contested scope is refused by that same step, not served from whichever
 credential sorted first. The gate reads the path with the prefix
 removed, so egress rules and approvals keep naming real paths.

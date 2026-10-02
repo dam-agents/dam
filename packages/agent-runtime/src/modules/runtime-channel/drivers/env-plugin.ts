@@ -4,6 +4,7 @@ import type { EnvStateStore } from "../infrastructure/env-state-store.js";
 
 const IMPL_NAME = "env";
 const GH_TOKEN_ENV = "GH_TOKEN";
+const GH_ENTERPRISE_TOKEN_ENV = "GH_ENTERPRISE_TOKEN";
 const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 const KUBECONFIG_ENV = "KUBECONFIG";
 
@@ -40,7 +41,9 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
           }
         }
         env[GH_AVAILABLE_ENV] =
-          Object.hasOwn(env, GH_TOKEN_ENV) || env[GH_AVAILABLE_ENV] === "true"
+          Object.hasOwn(env, GH_TOKEN_ENV) ||
+          Object.hasOwn(env, GH_ENTERPRISE_TOKEN_ENV) ||
+          env[GH_AVAILABLE_ENV] === "true"
             ? "true"
             : "false";
 

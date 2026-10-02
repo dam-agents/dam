@@ -26,6 +26,7 @@ func (c envoyHostChain) RivalsOf(cred envoyCredential) []string {
 	if cred.ConnectionID == "" {
 		return nil
 	}
+	scope := injectionScope(cred.PathPattern)
 	seen := map[string]bool{}
 	var out []string
 	for _, other := range c.Credentials {
@@ -33,6 +34,9 @@ func (c envoyHostChain) RivalsOf(cred envoyCredential) []string {
 			continue
 		}
 		if !strings.EqualFold(other.HeaderName, cred.HeaderName) {
+			continue
+		}
+		if !scopesOverlap(scope, injectionScope(other.PathPattern)) {
 			continue
 		}
 		seen[other.ConnectionID] = true

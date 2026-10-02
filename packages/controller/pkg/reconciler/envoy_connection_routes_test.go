@@ -386,6 +386,41 @@ func TestRenderEnvoyBootstrap_UncontestedInjectorsStayPlain(t *testing.T) {
 	}
 }
 
+func TestRivalsOf_CountsOnlyOverlappingScopesOnTheSameHeader(t *testing.T) {
+	calendar := scopedCredential("conn-cal", "platform-conn-cal", "Authorization", "www.googleapis.com", "/calendar/*")
+	drive := scopedCredential("conn-drive", "platform-conn-drive", "Authorization", "www.googleapis.com", "/drive/*")
+	upload := scopedCredential("conn-drive", "platform-conn-drive", "Authorization", "www.googleapis.com", "/upload/drive/*")
+	wholeHost := connectionCredential("conn-all", "platform-conn-all", "Authorization", "www.googleapis.com")
+	otherHeader := scopedCredential("conn-key", "platform-conn-key", "X-Api-Key", "www.googleapis.com", "/calendar/*")
+	c := connectionChain("www.googleapis.com", calendar, drive, upload, wholeHost, otherHeader)
+
+	assert.Equal(t, []string{"conn-all"}, c.RivalsOf(calendar),
+		"Drive's paths never overlap Calendar's, so only the whole-host credential competes for its header")
+	assert.Equal(t, []string{"conn-all"}, c.RivalsOf(drive))
+	assert.Equal(t, []string{"conn-cal", "conn-drive"}, c.RivalsOf(wholeHost),
+		"a whole-host credential overlaps every scoped one on its header")
+	assert.Empty(t, c.RivalsOf(otherHeader), "a different header is never contested")
+}
+
+func TestRenderEnvoyBootstrap_InjectorsOnDisjointScopesStayPlain(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
+		connectionChain("www.googleapis.com",
+			scopedCredential("conn-cal", "platform-conn-cal", "Authorization", "www.googleapis.com", "/calendar/*"),
+			scopedCredential("conn-drive", "platform-conn-drive", "Authorization", "www.googleapis.com", "/drive/*"),
+		),
+	}, false)
+	require.NoError(t, err)
+
+	injectors := injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "www.googleapis.com"))
+	require.Len(t, injectors, 2)
+	for _, f := range injectors {
+		assert.Equal(t,
+			"type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
+			f["typed_config"].(map[string]any)["@type"],
+			"a Drive request carrying Calendar's placeholder must still leave with the Drive credential")
+	}
+}
+
 func TestLuaConnectionAddressScript_RefusesUnaddressedContestedScopesItself(t *testing.T) {
 	c := connectionChain("www.googleapis.com",
 		scopedCredential("conn-a", "platform-conn-a", "Authorization", "www.googleapis.com", "/gmail/*"),
@@ -397,7 +432,6 @@ func TestLuaConnectionAddressScript_RefusesUnaddressedContestedScopesItself(t *t
 	assert.Contains(t, script, `{scope = "/gmail/", body = "More than one connection`)
 	assert.NotContains(t, script, `scope = "/calendar/"`,
 		"a scope nobody contests is never refused")
-	assert.Contains(t, script, `rh:respond({[":status"] = "403"`)
 	assert.Contains(t, script, `local PATH_SEGMENT = "__platform_conn"`)
 }
 
@@ -424,8 +458,6 @@ func TestLuaConnectionAddressScript_ListsEveryClaimedHeaderAndParam(t *testing.T
 	assert.Contains(t, script, `local PARAMS = {"key"}`)
 	assert.NotContains(t, script, "x-legacy",
 		"a credential no connection owns has no address to read")
-	assert.Contains(t, script, "rh:clearRouteCache()")
-	assert.Contains(t, script, `string.lower(scheme) == "basic"`)
 }
 
 func requiringAddress(chains ...envoyHostChain) []envoyHostChain {

@@ -17,6 +17,7 @@ export interface FileDesired {
   mergeMode: MergeMode;
   content: unknown;
   keyPath?: string;
+  keys?: string[];
   delete?: boolean;
 }
 
@@ -57,6 +58,10 @@ export async function applyFiles(
     }
 
     const existed = existsSync(target);
+    if (!existed && fragments.every((f) => f.delete)) {
+      ctx.log(`[file-ops] ${target}: nothing to remove, not present`);
+      continue;
+    }
     let existing = existed ? readFileSync(target, "utf8") : "";
     if (existing && needsParse(fragments)) {
       const parseErr = probeParse(fragments[0]!.format, existing);
@@ -146,6 +151,7 @@ function mergeKeyTargeted(
   for (const f of fragments) {
     if (f.delete) {
       if (f.keyPath) deleteNested(next, f.keyPath.split("."));
+      for (const key of f.keys ?? []) delete next[key];
     } else if (f.keyPath) {
       setNested(next, f.keyPath.split("."), f.content);
     } else if (f.content && typeof f.content === "object") {
@@ -179,9 +185,12 @@ function mergeSectionMarker(
   }
   while (out.length > 0 && out[out.length - 1]!.trim() === "") out.pop();
 
-  const blocks = fragments.map((f) =>
-    serializeFile(format, f.content).trimEnd(),
-  );
+  const blocks = fragments
+    .filter((f) => !f.delete)
+    .map((f) => serializeFile(format, f.content).trimEnd());
+  if (blocks.length === 0) {
+    return out.length === 0 ? "" : out.join("\n") + "\n";
+  }
   const block = blocks.join("\n");
   return [...out, "", startMarker, block, endMarker, ""].join("\n");
 }

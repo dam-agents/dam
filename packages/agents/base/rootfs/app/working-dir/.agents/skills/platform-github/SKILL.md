@@ -4,7 +4,7 @@ description: >
    Use before running `gh` or `git` against GitHub inside a Platform agent pod, and whenever GitHub answers 403 or 404 for a repository, organisation or user you expected to reach. Covers how GitHub credentials work here (the network gateway injects them, so there is no token to find or paste), how to see which GitHub accounts this agent holds (`gh auth status`), how to act as a different one (`gh auth switch`, or `gh auth token --user` for a single command), and what the gateway's "names no account" refusal means.
 ---
 
-You are running inside a Platform agent pod. GitHub credentials never reach you: the network gateway injects the real token on the way out. What you hold, in `GH_TOKEN`, in gh's hosts file and in anything `gh auth token` prints, is a placeholder such as `platform:conn:<id>`. It names an account, and it is safe to pass around inside the pod.
+You are running inside a Platform agent pod. GitHub credentials never reach you: the network gateway injects the real token on the way out. What you hold, in `GH_TOKEN` or `GH_ENTERPRISE_TOKEN`, in gh's hosts file and in anything `gh auth token` prints, is a placeholder such as `platform:conn:<id>`. It names an account, and it is safe to pass around inside the pod.
 
 ## Hard rules
 
@@ -22,6 +22,7 @@ It lists every GitHub account granted to this agent, named after the platform Co
 ## Act as another account
 
 - `gh auth switch --user <account>` switches gh. `git` follows automatically through gh's credential helper, so clones, fetches and pushes act as the switched account too. With exactly two accounts, `gh auth switch` alone toggles.
+- Switching changes which account authenticates, not the name and email on your commits: `user.name` and `user.email` stay the default account's, and a default account that signed in with a token has none. To commit as the switched account, pass its details explicitly, for example `git -c user.name="<name>" -c user.email="<email>" commit`; `gh api user` shows them for the account you switched to.
 - For one command without switching:
 
   ```
@@ -29,9 +30,9 @@ It lists every GitHub account granted to this agent, named after the platform Co
   curl -H "Authorization: token $(gh auth token --user <account>)" https://api.github.com/user
   ```
 
-  On a GitHub Enterprise Server host (`GH_HOST` is set to it), gh ignores `GH_TOKEN`; use `GH_ENTERPRISE_TOKEN="$(gh auth token --hostname "$GH_HOST" --user <account>)"` instead, and send the curl header to `api.$GH_HOST`.
+  On a GitHub Enterprise Server host (`GH_HOST` is set to it), your credential is `GH_ENTERPRISE_TOKEN`, and gh treats that host as its default. When you also hold github.com accounts, name the host with `--hostname` on `gh auth token` and `gh auth switch`, and send the curl header to `api.$GH_HOST`.
 
-- A state push from the platform (a grant change, or the user choosing a different default) resets the active account to the default. Switch again if you need the other one.
+- Every state push from the platform resets the active account to the default. A push follows any change to this agent's grants, default account, env, skills or name, including changes you make yourself. Switch again if you need the other one, and check `gh auth status` right before you push.
 
 ## When GitHub answers 403 or 404
 

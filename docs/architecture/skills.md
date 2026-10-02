@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-09-25
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -60,7 +60,7 @@ flowchart LR
   rt-skills <--> pvc
 ```
 
-The api-server scans **public** GitHub catalogs directly (no credentials needed) and falls back to agent-runtime for everything else. agent-runtime is the only component that talks to GitHub with credentials, and it does so without holding any: the request leaves the agent pod through the paired gateway pod, where Envoy injects the owner's GitHub token from a K8s Secret on the wire ([security-and-credentials](security-and-credentials.md)).
+The api-server scans **public** GitHub catalogs directly (no credentials needed) and falls back to agent-runtime for everything else. agent-runtime is the only component that talks to GitHub with credentials, and it does so without holding any: the request leaves the agent pod through the paired gateway pod, where Envoy injects the GitHub token of the account the Agent acts as — the active one when it holds several ([connections](connections.md#addressing-a-connection)) — from a K8s Secret on the wire ([security-and-credentials](security-and-credentials.md)).
 
 ## Concepts
 

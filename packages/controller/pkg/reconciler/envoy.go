@@ -142,6 +142,10 @@ func scopeCovers(scope, route string) bool {
 	return strings.HasPrefix(route, scope)
 }
 
+func scopesOverlap(a, b string) bool {
+	return scopeCovers(a, b) || scopeCovers(b, a)
+}
+
 func (c envoyHostChain) PathScopes() []string {
 	seen := map[string]bool{"/": true}
 	scopes := []string{"/"}
