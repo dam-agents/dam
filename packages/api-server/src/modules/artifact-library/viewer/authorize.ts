@@ -30,3 +30,11 @@ export function parseVersion(raw: string | undefined): number | undefined {
   const v = Number.parseInt(raw, 10);
   return Number.isInteger(v) && v >= 1 ? v : undefined;
 }
+
+export function namesCurrentVersion(
+  artifact: ArtifactRow,
+  raw: string | undefined,
+): boolean {
+  const requested = parseVersion(raw);
+  return requested === undefined || requested === artifact.version;
+}

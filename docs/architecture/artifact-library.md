@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-25
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -13,7 +13,9 @@ sandbox's Agent when a person promotes a workspace file (or to the user, for
 manual uploads) — and outlives both the sandbox and the agent that produced
 it.
 Publishing a new revision keeps the same identity and share link and appends
-to a per-artifact **version history** viewers can flip through. The history
+to a per-artifact **version history** the owner can flip through in the app;
+the share link itself only ever serves the current version
+([sharing model](#sharing-model)). The history
 holds every version including the current one — creation writes the first row,
 each revision writes its own — and a version records the session that
 produced it when one is known, which is how the Home feed shows an artifact on
@@ -163,6 +165,14 @@ two that have one, so switching between them never changes the link.
   inside it — restricted ones never appear there, since the page itself has no
   viewer; a folder with nothing public is indistinguishable from a nonexistent
   one.
+- A share link serves **only the current version** — the page, the framed
+  content and the source download alike, for public and restricted links.
+  The page offers no version navigation and frames the current version
+  whatever a visitor asks for; a frame or byte address naming any other
+  version answers "not found". A share link is a publishing surface, not a
+  revision log: an owner who removes something in a revision has removed it
+  from everyone holding the link. The history stays with the owner, in the
+  app.
 - Each successful share-page render increments a per-artifact **view count**,
   surfaced in-app as a cheap reach signal.
 
@@ -211,8 +221,8 @@ switches. Every restricted response is marked private and uncacheable so no
 shared cache replays it to the next visitor.
 
 **The artifact frame.** A share page is two documents from two origins. The
-outer page, on the share host, is platform chrome (title banner, version
-navigation, source download); the inner document is the user content, loaded
+outer page, on the share host, is platform chrome (title banner and source
+download); the inner document is the user content, loaded
 from the content host in an iframe. The browser's same-origin rule is the
 boundary: artifact code runs as the content origin, so it can neither read the
 share session cookie nor call the share host as the signed-in viewer. The
@@ -223,8 +233,8 @@ serves raw bytes under a sandbox directive so a document opened directly
 cannot run either.
 
 The content host cannot see the share session, so a restricted frame carries
-a **render token**: minted by the share page for exactly one artifact and
-version after the viewer passed, with a short expiry, redeemed by the
+a **render token**: minted by the share page for exactly one artifact and its
+current version after the viewer passed, with a short expiry, redeemed by the
 content host on the document and on its raw bytes. It is a short-lived,
 single-purpose bearer grant — not a session and not an identity; anyone
 holding it can replay it until expiry, after which a pasted frame address
