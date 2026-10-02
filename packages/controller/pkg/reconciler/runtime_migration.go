@@ -680,7 +680,7 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 	case jobConditionTrue(job, batchv1.JobFailed):
 		detail, permanent := r.copyJobFailure(ctx, job)
 		if permanent {
-			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("the home cannot be copied as it is, so copying it again cannot help: make the agent's home smaller and retry, or abort and give the agent more storage before migrating again (%s)", detail))
+			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("the home cannot be copied as it is, so copying it again cannot help: change what this names and retry, or abort and give the agent more storage first (%s)", detail))
 		}
 		why := "copying the home directory failed"
 		if detail != "" {

@@ -67,6 +67,8 @@ export type {
   AbortRuntimeMigrationResult,
   RetryRuntimeMigrationError,
   RetryRuntimeMigrationResult,
+  WakeAgentError,
+  WakeAgentResult,
   RuntimeMigration,
   RuntimeMigrationPlan,
   RuntimeMigrationRefusal,

@@ -1273,9 +1273,13 @@ export function createAgentsService(deps: {
     },
 
     async wake(id) {
-      if (!(await ownsOrDeny(id, "agent.wake"))) return null;
+      if (!(await ownsOrDeny(id, "agent.wake")))
+        return err({ type: "AgentNotFound" });
+      const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
+      if (hold !== "none")
+        return err({ type: "RuntimeMigrating", failed: hold === "failed" });
       const infra = await deps.repo.wake(id);
-      if (!infra) return null;
+      if (!infra) return err({ type: "AgentNotFound" });
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1284,7 +1288,7 @@ export function createAgentsService(deps: {
         result: "success",
       });
       emit({ type: EventType.AgentWoken, agentId: id });
-      return project(infra);
+      return ok(await project(infra));
     },
 
     async retryWorkspace(id, kind) {
