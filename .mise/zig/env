@@ -1,5 +1,5 @@
-# Sourced by mise into every task of the repository, through `_.source` in
-# .mise/config.toml. Cargo links build scripts, proc macros and tests with a C
+# Sourced by mise into every task of the repository on Linux, through
+# `_.source` in .mise/config.linux.toml. Cargo links build scripts, proc macros and tests with a C
 # linker, and the cc crate (ring, aws-lc, zstd, sqlite) compiles C and archives
 # it. On Linux both go through the zig mise installs for the repository, via
 # the wrappers beside this file; zig carries its own libc headers, so the
