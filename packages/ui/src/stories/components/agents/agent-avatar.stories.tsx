@@ -1,30 +1,78 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
+import {
+  CHAR_COLORS,
+  CHAR_NAMES,
+  CharAvatar,
+} from "../../../modules/agents/components/char-avatar.js";
 import { AgentAvatar } from "../../../modules/agents/components/avatar/agent-avatar.js";
-import { AGENTS } from "../../backend/fixtures/agents";
 
 const meta = {
-  title: "Components/Agents/AgentAvatar",
+  title: "Components/Agents/Agent Avatars",
   component: AgentAvatar,
   parameters: { layout: "centered" },
-  args: { name: AGENTS[0]!.name, size: 64 },
 } satisfies Meta<typeof AgentAvatar>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Awake: Story = {};
-export const Sleeping: Story = { args: { sleeping: true } };
-export const Stopped: Story = { args: { stopped: true } };
-export const Large: Story = { args: { size: 128 } };
+export const AllCharacters: Story = {
+  name: "Running (hover to gesture)",
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="group flex flex-col items-center gap-3">
+          <div className="size-12 flex items-center justify-center">
+            <CharAvatar
+              name={name}
+              state="running"
+              colors={CHAR_COLORS[name]}
+              className="size-full"
+            />
+          </div>
+          <span className="text-sm text-muted-foreground">{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
 
-export const EveryFixtureAgent: Story = {
-  render: (args) => (
-    <div className="flex items-end gap-6">
-      {AGENTS.map((a) => (
-        <div key={a.id} className="flex flex-col items-center gap-2">
-          <AgentAvatar {...args} name={a.name} />
-          <span className="text-sm text-muted-foreground">{a.name}</span>
+export const AllIdle: Story = {
+  name: "Idle (hover to gesture)",
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="group flex flex-col items-center gap-3">
+          <div className="size-12 flex items-center justify-center">
+            <CharAvatar
+              name={name}
+              state="running"
+              idle
+              colors={CHAR_COLORS[name]}
+              className="size-full"
+            />
+          </div>
+          <span className="text-sm text-muted-foreground">{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
+
+export const AllHibernating: Story = {
+  name: "Hibernating (hover to gesture)",
+  render: () => (
+    <div className="flex flex-wrap gap-8">
+      {CHAR_NAMES.map((name) => (
+        <div key={name} className="group flex flex-col items-center gap-3">
+          <div className="size-12 flex items-center justify-center">
+            <CharAvatar
+              name={name}
+              state="hibernated"
+              className="size-full"
+            />
+          </div>
+          <span className="text-sm text-muted-foreground">{name}</span>
         </div>
       ))}
     </div>
