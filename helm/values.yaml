@@ -256,6 +256,17 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # true = runners may give the node's virtualization extensions to the
+    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
+    # so that guest can run KVM itself — e.g. a vm agent that hosts its own
+    # vm-backend install. Every other machine boots without them. A runner
+    # nests only where the node's KVM allows it, which is the kernel default
+    # (kvm_intel and kvm_amd `nested=1`) and needs a module reload to change,
+    # so this value is the install's switch. A nesting guest reaches the host
+    # kernel's nested-virtualization code, which has had guest-to-host
+    # escapes. Changing this value rolls every runner, which reboots its
+    # owner's machines; an Agent changing its ask restarts only its own.
+    nestedVirtualization: false
     # Machines are processes of their runner, so any change to the runner pod
     # — a new `image`, or a controller release that renders the pod
     # differently — reboots every machine that owner has. The controller rolls

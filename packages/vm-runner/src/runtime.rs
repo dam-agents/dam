@@ -25,6 +25,10 @@ pub trait Runtime: Send + Sync {
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner gives the machines that ask for it the node's virtualization extensions: its install lets it, and the node's KVM allows it. A runtime that cannot nest says no, and a machine that asks boots without them.
+    fn nests(&self) -> bool {
+        false
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.

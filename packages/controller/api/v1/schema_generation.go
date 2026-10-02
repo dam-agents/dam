@@ -41,7 +41,10 @@ const (
 	// Agent gen 15: requireConnectionAddress added to AgentSpec — the agent's
 	// gateway injects a Connection's credential only into a request that names
 	// that Connection (#4246).
-	AgentSchemaGeneration = 15
+	// Agent gen 16: nestedVirtualization added to the vm backend — the agent's
+	// machine alone gets the node's virtualization extensions, where the
+	// install and the node allow it; an older CRD would prune the ask.
+	AgentSchemaGeneration = 16
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

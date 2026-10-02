@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -27,9 +27,26 @@ pub struct Smolvm {
     runtime: EmbeddedRuntime,
     db: SmolvmDb,
     proc_root: PathBuf,
+    nested: bool,
 }
 
 const USER: &str = "root";
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the node's KVM lets a guest run KVM itself, read from the `nested` parameter of kvm_intel or kvm_amd — the same files libkrun's krun_check_nested_virt reads, so a runner the install lets nest asks for it exactly when smolvm would grant it, and on a node that cannot nest boots its machines as before instead of refusing them. A runner pod sees the node's kernel under /sys.
+fn host_nests(sys_root: &Path) -> bool {
+    ["kvm_intel", "kvm_amd"].iter().any(|module| {
+        std::fs::read_to_string(
+            sys_root
+                .join("module")
+                .join(module)
+                .join("parameters/nested"),
+        )
+        .is_ok_and(|value| {
+            let value = value.trim();
+            value == "1" || value.eq_ignore_ascii_case("y")
+        })
+    })
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: where smolvm's gateway forwards a guest's DNS when the spec names no resolver. The gateway answers every guest query on port 53, whatever address it was sent to, by relaying it from the runner's own network, and its egress allowlist never gates that relay — so with smolvm's default, the runner's resolver, a guest that holds nothing but its gateway's address could still tunnel data out through DNS. The relay therefore goes only to the paired gateway's own resolver, which answers every name with the gateway's address and forwards nothing, or, with none named, nowhere. No address is safe to relay to for that: a pod's loopback has nothing on port 53, but a Mac's often runs a resolver of its own there. So a machine with no resolver named gets an empty list of names it may resolve, which smolvm still reads as a filter: its gateway answers every query itself — its own name with its address, anything else NXDOMAIN — and relays none. The record's resolver is set to this address all the same, so the record reads as relaying nowhere too.
 const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
@@ -38,11 +55,18 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
 impl Smolvm {
-    pub fn open() -> anyhow::Result<Self> {
+    pub fn open(allow_nesting: bool) -> anyhow::Result<Self> {
+        let nested = allow_nesting && host_nests(Path::new("/sys"));
+        tracing::info!(
+            allow_nesting,
+            nested,
+            "nested virtualization for this runner's machines"
+        );
         Ok(Self {
             runtime: EmbeddedRuntime::new().context("opening the smolvm runtime")?,
             db: SmolvmDb::open().context("opening the smolvm database")?,
             proc_root: PathBuf::from("/proc"),
+            nested,
         })
     }
 
@@ -99,7 +123,11 @@ impl Runtime for Smolvm {
             }
             record_gateway_host_port(id, machine.spec)?;
             let resolver = guest_resolver(machine.spec)?;
-            self.db.update_vm(id, |r| guest_dns(r, resolver))?;
+            let nested = machine.spec.nested_virtualization && self.nested;
+            self.db.update_vm(id, |r| {
+                guest_dns(r, resolver);
+                r.nested_virt = Some(nested);
+            })?;
             Ok(())
         })
     }
@@ -167,6 +195,7 @@ impl Runtime for Smolvm {
                     r.storage_gb = Some(gib);
                 }
                 r.allowed_cidrs = allowed_cidrs;
+                r.nested_virt = Some(desired.nested_virtualization && self.nested);
                 guest_dns(r, resolver);
                 match relaunch {
                     Some((image, workload)) => {
@@ -183,7 +212,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -191,8 +220,10 @@ impl Runtime for Smolvm {
             clear_for_start(id, &self.proc_root, &dir, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
-        self.db
-            .update_vm(id, |r| guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK)))?;
+        self.db.update_vm(id, |r| {
+            guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
+            r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
+        })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
             kill_orphans(&self.proc_root, &dir);
@@ -227,6 +258,10 @@ impl Runtime for Smolvm {
 
     fn console_tail(&self, id: &str) -> String {
         console::machine_tail(&vm_data_dir(id))
+    }
+
+    fn nests(&self) -> bool {
+        self.nested
     }
 }
 
@@ -455,7 +490,7 @@ mod tests {
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
         fs::create_dir_all(&share).unwrap();
         fs::create_dir_all(&tree).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = spec();
         let launch = launch();
 
@@ -523,7 +558,7 @@ mod tests {
         let home = Home::new("loopback");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let looped = MachineSpec {
             allow_cidrs: Vec::new(),
             gateway_host_port: 30100,
@@ -570,13 +605,94 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: the runner nests guests only on a node whose KVM module allows it. kvm_intel reports `Y`, kvm_amd `1`, and either is enough; `N`, `0` or no KVM module at all means no nesting, so a node that cannot nest boots its machines as before.
+    #[test]
+    fn nesting_follows_the_nodes_kvm_module() {
+        let dir = crate::testdir::TempDir::new("sys");
+        let param = |module: &str, value: &str| {
+            let params = dir.path().join("module").join(module).join("parameters");
+            fs::create_dir_all(&params).unwrap();
+            fs::write(params.join("nested"), value).unwrap();
+        };
+        assert!(!host_nests(dir.path()));
+        param("kvm_intel", "N\n");
+        assert!(!host_nests(dir.path()));
+        param("kvm_amd", "0\n");
+        assert!(!host_nests(dir.path()));
+        param("kvm_amd", "1\n");
+        assert!(host_nests(dir.path()));
+        param("kvm_amd", "0\n");
+        param("kvm_intel", "Y\n");
+        assert!(host_nests(dir.path()));
+    }
+
+    fn nested(smolvm: &Smolvm, id: &str) -> Option<bool> {
+        smolvm.record(id).unwrap().unwrap().nested_virt
+    }
+
+    // TEST_SCENARIO: nesting is per machine. Two machines share a runner that nests, and only the one whose spec asks for it is recorded to boot with the node's virtualization extensions; an update that stops asking takes them away and one that asks again gives them back. A start keeps what the record holds only while the runner still nests, so a runner the install stops letting nest never boots a guest with them, whatever its spec asked.
+    #[test]
+    fn only_the_machine_that_asks_nests_and_only_while_the_runner_does() {
+        let home = Home::new("nested");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let mut smolvm = Smolvm::open(false).unwrap();
+        smolvm.nested = true;
+        let plain = MachineSpec {
+            gateway_host_port: 30100,
+            ..spec()
+        };
+        let nesting = MachineSpec {
+            nested_virtualization: true,
+            ..plain.clone()
+        };
+        let launch = launch();
+        for (id, spec, port) in [("m1", &nesting, 32000), ("m2", &plain, 32001)] {
+            smolvm
+                .create(
+                    id,
+                    &Machine {
+                        spec,
+                        image: "quay.io/x/vm:1",
+                        host_port: port,
+                        share: &share,
+                        launch: &launch,
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(nested(&smolvm, "m1"), Some(true));
+        assert_eq!(nested(&smolvm, "m2"), Some(false));
+
+        for (desired, applied, want) in [(&plain, &nesting, false), (&nesting, &plain, true)] {
+            smolvm
+                .update(
+                    "m1",
+                    &Update {
+                        desired,
+                        applied: Some(applied),
+                        image: None,
+                    },
+                )
+                .unwrap();
+            assert_eq!(nested(&smolvm, "m1"), Some(want));
+        }
+
+        let _ = smolvm.start("m1");
+        assert_eq!(nested(&smolvm, "m1"), Some(true));
+        smolvm.nested = false;
+        let _ = smolvm.start("m1");
+        assert_eq!(nested(&smolvm, "m1"), Some(false));
+        assert!(!smolvm.nests());
+    }
+
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.
     #[test]
     fn every_start_without_a_resolver_resolves_no_guest_name() {
         let home = Home::new("dns");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
@@ -620,7 +736,7 @@ mod tests {
         let home = Home::new("resolver");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let named = MachineSpec {
             guest_resolver: "10.96.0.7".into(),
             ..spec()
@@ -695,7 +811,7 @@ mod tests {
         let home = Home::new("raw");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -747,7 +863,7 @@ mod tests {
             &home.path.join(".smolvm/storage-template.ext4"),
             b"TEMPLATE",
         );
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = spec();
         let launch = launch();
         for id in ["used", "fresh"] {
@@ -786,7 +902,7 @@ mod tests {
         let home = Home::new("update");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let applied = spec();
         let launch = launch();
         smolvm
@@ -842,7 +958,7 @@ mod tests {
         let home = Home::new("grow-unknown");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let created = spec();
         let launch = launch();
         smolvm
@@ -891,7 +1007,7 @@ mod tests {
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
         let home = Home::new("redact");
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let mut spec = spec();
         spec.env.insert("TOKEN".into(), "hunter22".into());
         spec.cpus = 0;
@@ -920,7 +1036,7 @@ mod tests {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -980,7 +1096,7 @@ mod tests {
         let home = Home::new("unconfirmed");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1038,7 +1154,7 @@ mod tests {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         smolvm.delete("never-created").unwrap();
 
         let spec = spec();
@@ -1071,7 +1187,7 @@ mod tests {
         for dir in [&share, &old_tree, &new_tree] {
             fs::create_dir_all(dir).unwrap();
         }
-        let smolvm = Smolvm::open().unwrap();
+        let smolvm = Smolvm::open(false).unwrap();
         let old = spec();
         let old_launch = launch();
         smolvm

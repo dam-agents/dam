@@ -399,7 +399,7 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason)
 }
 
-func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string) error {
+func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
 	name := agent.Name
 	gen := agent.Generation
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
@@ -418,6 +418,9 @@ func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.A
 		if restartsObserved {
 			s.AgentPodRestarts = agentRestarts
 			s.AgentPodRestartReason = agentRestartReason
+		}
+		for _, mutate := range also {
+			mutate(s)
 		}
 		s.ObservedGeneration = gen
 	})

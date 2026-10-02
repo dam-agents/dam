@@ -157,9 +157,18 @@ type Backend struct {
 	VM *VMBackend `json:"vm,omitempty"`
 }
 
-// VMBackend is deliberately empty for now — scratch sizing and placement are
-// chart-level policy (config.VM); it exists so future vm-only props have a home.
-type VMBackend struct{}
+// VMBackend carries the props only a vm-backend agent has. Scratch sizing and
+// placement are chart-level policy (config.VM).
+type VMBackend struct {
+	// NestedVirtualization asks for this agent's machine to get the node's
+	// virtualization extensions, so the guest can run KVM itself. It takes
+	// effect only on an install with virtualization.runner.nestedVirtualization
+	// and a node whose KVM allows nesting; the NestedVirtualization condition
+	// says whether it did. Other machines on the same runner are unaffected.
+	// Changing it restarts the agent's machine.
+	// +optional
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
+}
 
 // IsVM reports whether the spec selects the vm backend.
 func (s *AgentSpec) IsVM() bool {
@@ -190,6 +199,9 @@ const (
 	// False with ReasonRuntimeMigrationFailed once it gave up. The api-server
 	// switches the Backend when the reason is ReasonRuntimeMigrationVerified.
 	ConditionRuntimeMigrating = "RuntimeMigrating"
+	// ConditionNestedVirtualization is present only on an Agent that asks for
+	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
+	ConditionNestedVirtualization = "NestedVirtualization"
 )
 
 // Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
@@ -312,7 +324,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=15
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=16
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

@@ -62,6 +62,9 @@ struct Args {
     memory_mib: i64,
     #[arg(long = "reserve-mib", default_value_t = 512)]
     reserve_mib: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
+    #[arg(long = "nested-virtualization")]
+    nested_virtualization: bool,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
@@ -239,7 +242,8 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 }
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
-    let runtime = Arc::new(tokio::task::spawn_blocking(Smolvm::open).await??);
+    let nested = args.nested_virtualization;
+    let runtime = Arc::new(tokio::task::spawn_blocking(move || Smolvm::open(nested)).await??);
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
@@ -441,7 +445,21 @@ mod tests {
 
     // UNIT_BOUNDARY_DESCRIPTION: the args the controller renders into the runner's Deployment, as the controller's own test records them. Kubernetes expands `$(NAME)` from the container's environment before the runner sees an arg. The controller uses one such reference, the pod's memory limit, and it is given a value here; any other reference fails, so a new one gets a stated value rather than reaching the parser unexpanded.
     fn controller_args() -> Vec<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/runner-args.json");
+        contract_args(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/contract/runner-args.json"
+        ))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the args the controller adds on an install that lets machines nest, as the controller's own test records them. They are left off every other install, so turning nesting on rolls the runners and turning it on nowhere rolls none.
+    fn nested_args() -> Vec<String> {
+        contract_args(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/contract/runner-args-nested.json"
+        ))
+    }
+
+    fn contract_args(path: &str) -> Vec<String> {
         let args: Vec<String> = serde_json::from_str(
             &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
         )
@@ -458,10 +476,16 @@ mod tests {
             .collect()
     }
 
-    fn pod_argv() -> Vec<String> {
+    fn base_argv() -> Vec<String> {
         let mut argv = vec!["vm-runner".to_string()];
         argv.extend(entrypoint_args());
         argv.extend(controller_args());
+        argv
+    }
+
+    fn pod_argv() -> Vec<String> {
+        let mut argv = base_argv();
+        argv.extend(nested_args());
         argv
     }
 
@@ -472,6 +496,16 @@ mod tests {
         let args = Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
+        assert!(args.nested_virtualization);
+    }
+
+    // TEST_SCENARIO: an install that does not set `virtualization.runner.nestedVirtualization` renders the runner without the nesting args. The runner must still start from that argv, and must then not nest, whatever the node allows: nesting is the kernel's default, so a runner that nested on its own would expose every guest on a stock node to the host's nested-virtualization code.
+    #[test]
+    fn a_runner_the_install_does_not_let_nest_does_not() {
+        let argv = base_argv();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(!args.nested_virtualization);
     }
 
     // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.

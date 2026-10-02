@@ -37,6 +37,7 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
+    nests: AtomicBool,
 }
 
 impl Fake {
@@ -54,6 +55,10 @@ impl Fake {
 }
 
 impl Runtime for Fake {
+    fn nests(&self) -> bool {
+        self.nests.load(Ordering::SeqCst)
+    }
+
     fn state(&self, id: &str) -> anyhow::Result<State> {
         assert!(
             !self.panic_on_state.load(Ordering::SeqCst),
@@ -361,6 +366,7 @@ fn spec(running: bool) -> MachineSpec {
         pull_auths: Vec::new(),
         migration: None,
         expect_seed: None,
+        nested_virtualization: false,
     }
 }
 
@@ -628,6 +634,28 @@ async fn a_changed_shape_restarts_the_machine_in_place() {
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
     );
+}
+
+// TEST_SCENARIO: the status says a machine nests only when its spec asks for it and its runner grants it, so the controller can tell the owner who asked whether they got it. A machine on the same runner that does not ask never reads as nested.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_reads_as_nested_only_when_it_asks_and_its_runner_nests() {
+    let h = Harness::new("nested");
+    h.server
+        .put(
+            "m1",
+            MachineSpec {
+                nested_virtualization: true,
+                ..spec(true)
+            },
+        )
+        .unwrap();
+    h.server.put("m2", spec(true)).unwrap();
+    assert!(!h.settle("m1").await.nested);
+    assert!(!h.settle("m2").await.nested);
+
+    h.fake.nests.store(true, Ordering::SeqCst);
+    assert!(h.server.status("m1").nested);
+    assert!(!h.server.status("m2").nested);
 }
 
 // TEST_SCENARIO: a guest that answers its health endpoint is up, even while the start call that booted it has not returned. The controller would otherwise spend those seconds telling a person their agent was not ready.

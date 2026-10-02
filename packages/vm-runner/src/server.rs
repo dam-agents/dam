@@ -1439,6 +1439,7 @@ impl Server {
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
+            status.nested = spec.nested_virtualization && self.runtime.nests();
         }
         if state == State::Unknown && status.message.is_empty() {
             status.message = seen.and_then(|seen| seen.error).unwrap_or_default();

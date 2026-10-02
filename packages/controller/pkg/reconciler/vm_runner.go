@@ -648,7 +648,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Name:            vmRunnerComponent,
 						Image:           spec.Image,
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
-						Args: []string{
+						Args: append([]string{
 							fmt.Sprintf("--listen=:%d", vmRunnerPort),
 							fmt.Sprintf("--port-min=%d", vmRunnerPortMin),
 							fmt.Sprintf("--port-max=%d", vmRunnerPortMax),
@@ -662,7 +662,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						},
+						}, nestedRunnerArgs(spec)...),
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
@@ -823,4 +823,12 @@ func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) 
 		return msg
 	}
 	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the args that let a runner give its machines the node's virtualization extensions. Nesting is the kernel's default on Intel and AMD and turning it off takes a module reload, so the install chooses it with virtualization.runner.nestedVirtualization. An install that does not gets no extra args, so its runner pods, and the machines they host, stay as they were.
+func nestedRunnerArgs(spec config.VMRunnerSpec) []string {
+	if !spec.NestedVirtualization {
+		return nil
+	}
+	return []string{"--nested-virtualization"}
 }
