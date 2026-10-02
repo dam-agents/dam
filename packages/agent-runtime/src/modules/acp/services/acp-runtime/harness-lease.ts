@@ -14,6 +14,7 @@ export interface HarnessLease {
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
   requestRecycle(): void;
+  cancelRecycleRequest(): void;
   maybeRecycle(): void;
   shutdown(): void;
 }
@@ -38,7 +39,8 @@ export interface HarnessLeaseDeps {
  * to precede the first spawn), and takes the process back when the env or the
  * harness's own config changes, or when a caller reports the process
  * unresponsive: right away when idle, after work drains when busy, or after a
- * grace period when forced. Every way the process goes down runs the same
+ * grace period when forced. A caller that hears from the process again calls
+ * its own request off, and a recycle owed for env or config still stands. Every way the process goes down runs the same
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
  * between the paths. A crash is final for the pod; a recycle respawns on the
@@ -62,6 +64,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let pendingRecycle:
     "config-recycle" | "env-recycle" | "harness-unresponsive" | null = null;
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
+  let supersededRecycle: {
+    reason: "config-recycle" | "env-recycle" | null;
+    forced: boolean;
+  } | null = null;
 
   function releaseWaiters(): void {
     if (warmTimer) {
@@ -122,6 +128,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
   function resetPendingRecycle(): void {
     pendingRecycle = null;
+    supersededRecycle = null;
     if (forceTimer) {
       clearTimeout(forceTimer);
       forceTimer = null;
@@ -224,6 +231,12 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     requestRecycle() {
       if (!agent) return;
+      if (pendingRecycle !== "harness-unresponsive") {
+        supersededRecycle = {
+          reason: pendingRecycle,
+          forced: forceTimer !== null,
+        };
+      }
       pendingRecycle = "harness-unresponsive";
       if (!deps.busy()) {
         recycle();
@@ -234,6 +247,23 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
           `${deps.envForceRecycleMs}ms`,
       );
       if (!forceTimer) forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+    },
+
+    cancelRecycleRequest() {
+      if (pendingRecycle !== "harness-unresponsive" || !supersededRecycle)
+        return;
+      const restored = supersededRecycle;
+      supersededRecycle = null;
+      pendingRecycle = restored.reason;
+      if (!restored.forced && forceTimer) {
+        clearTimeout(forceTimer);
+        forceTimer = null;
+      }
+      deps.log(
+        restored.reason
+          ? `harness answered again; recycle stays owed for ${restored.reason}`
+          : "harness answered again; recycle called off",
+      );
     },
 
     maybeRecycle() {
