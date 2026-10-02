@@ -85,9 +85,7 @@ export function buildReauthCommand(deps: {
             `error: '${match.name}' uses ${match.authKind} auth, which has no login flow\n`,
           );
           process.stderr.write(
-            match.authKind === "sigv4"
-              ? "hint: replacing HMAC keys is not supported yet\n"
-              : `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
+            `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }

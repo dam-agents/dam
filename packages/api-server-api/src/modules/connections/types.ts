@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
-import type { ConnectionCreateInput } from "./schemas.js";
+import type {
+  ConnectionCreateInput,
+  ConnectionSigv4KeyPair,
+} from "./schemas.js";
 
 export const connectionCategory = z.enum(["app", "mcp", "other"]);
 export type ConnectionCategory = z.infer<typeof connectionCategory>;
@@ -294,7 +297,10 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
-  update(id: string, value: string): Promise<void>;
+  update(
+    id: string,
+    credential: string | ConnectionSigv4KeyPair,
+  ): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 

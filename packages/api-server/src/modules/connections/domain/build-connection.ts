@@ -18,6 +18,7 @@ import {
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
   S3_CREDENTIALS_SECRET_FIELD,
+  buildS3CredentialsFile,
   UPSTREAM_CA_SECRET_FIELD,
 } from "./connection-sds.js";
 import {
@@ -650,12 +651,10 @@ function buildSigv4(
   ];
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
-  const credentialsFile = [
-    "[default]",
-    `aws_access_key_id = ${input.accessKeyId}`,
-    `aws_secret_access_key = ${input.secretAccessKey}`,
-    "",
-  ].join("\n");
+  const credentialsFile = buildS3CredentialsFile(
+    input.accessKeyId,
+    input.secretAccessKey,
+  );
 
   return {
     auth: {

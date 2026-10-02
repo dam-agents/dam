@@ -7,6 +7,18 @@ export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
 export const S3_CREDENTIALS_SECRET_FIELD = "aws-credentials";
 
+export function buildS3CredentialsFile(
+  accessKeyId: string,
+  secretAccessKey: string,
+): string {
+  return [
+    "[default]",
+    `aws_access_key_id = ${accessKeyId}`,
+    `aws_secret_access_key = ${secretAccessKey}`,
+    "",
+  ].join("\n");
+}
+
 export function sdsFileKeyForHost(host: string): string {
   const slug = Buffer.from(host, "utf8").toString("base64url");
   return `host-${slug}.sds.yaml`;

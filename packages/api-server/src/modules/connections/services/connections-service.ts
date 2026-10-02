@@ -8,6 +8,7 @@ import {
   type AgentConnections,
   type Connection,
   type ConnectionCreateInput,
+  type ConnectionSigv4KeyPair,
   type ConnectionsService,
   type ConnectionTemplateView,
   type ConnectionView,
@@ -47,11 +48,17 @@ import {
 } from "../domain/refresh-failure-marker.js";
 import {
   buildConnectionSdsFields,
+  buildS3CredentialsFile,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  S3_CREDENTIALS_SECRET_FIELD,
 } from "../domain/connection-sds.js";
 import type { S3CredentialProbe } from "../domain/s3-credential-probe.js";
-import { parseS3Endpoint, S3InputError } from "../domain/s3-endpoint.js";
+import {
+  assertKeyText,
+  parseS3Endpoint,
+  S3InputError,
+} from "../domain/s3-endpoint.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -246,6 +253,45 @@ export function createConnectionsService(deps: {
     await deps.secretStore.putFields(auth.valueRef, {
       value,
       ...buildConnectionSdsFields(conn.contributions, value),
+    });
+  }
+
+  async function rotateSigv4Keys(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
+    keys: ConnectionSigv4KeyPair,
+  ): Promise<void> {
+    const endpoint = conn.inputs["endpoint"];
+    if (typeof endpoint !== "string") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection has no stored endpoint to check the keys against.",
+      });
+    }
+    try {
+      assertKeyText("The access key ID", keys.accessKeyId);
+      assertKeyText("The secret access key", keys.secretAccessKey);
+    } catch (err) {
+      if (err instanceof S3InputError) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+      }
+      throw err;
+    }
+    const bucket = conn.inputs["bucket"];
+    await verifyS3Keys({
+      endpoint,
+      region: auth.region,
+      ...(typeof bucket === "string" ? { bucket } : {}),
+      ...keys,
+    });
+    await deps.secretStore.putFields(auth.credentialsFileRef, {
+      accessKeyId: keys.accessKeyId,
+      secretAccessKey: keys.secretAccessKey,
+      [S3_CREDENTIALS_SECRET_FIELD]: buildS3CredentialsFile(
+        keys.accessKeyId,
+        keys.secretAccessKey,
+      ),
     });
   }
 
@@ -475,9 +521,13 @@ export function createConnectionsService(deps: {
     return true;
   }
 
-  async function verifyS3Keys(
-    input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
-  ): Promise<void> {
+  async function verifyS3Keys(input: {
+    endpoint: string;
+    region: string;
+    bucket?: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+  }): Promise<void> {
     const bucket = input.bucket?.trim();
     const outcome = await deps.s3CredentialProbe.verify({
       endpoint: parseS3Endpoint(input.endpoint).origin,
@@ -604,9 +654,29 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
-    async update(id: string, value: string): Promise<void> {
+    async update(
+      id: string,
+      credential: string | ConnectionSigv4KeyPair,
+    ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+
+      if (conn.auth.kind === "sigv4") {
+        if (typeof credential === "string") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "An S3-compatible storage connection takes an access key ID and a secret access key.",
+          });
+        }
+        await rotateSigv4Keys(conn, conn.auth, credential);
+      } else if (typeof credential !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This connection takes a single credential value.",
+        });
+      }
+      const value = typeof credential === "string" ? credential : "";
 
       switch (conn.auth.kind) {
         case "header":
@@ -622,11 +692,7 @@ export function createConnectionsService(deps: {
           await rotateOAuthClientSecret(conn, conn.auth, value);
           break;
         case "sigv4":
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "Updating the HMAC keys of an S3-compatible storage connection is not supported yet.",
-          });
+          break;
         case "none":
           throw new TRPCError({
             code: "BAD_REQUEST",

@@ -96,7 +96,13 @@ const TEMPLATE_FIELD_HINTS: Record<string, Record<string, ReactNode>> = {
 
 const CREDENTIAL_COPY: Record<
   Exclude<ConnectionAuthKind, "none">,
-  { action: string; label: string; hint: string; multiline?: boolean }
+  {
+    action: string;
+    label: string;
+    hint: string;
+    multiline?: boolean;
+    accessKeyIdLabel?: string;
+  }
 > = {
   oauth: {
     action: "Update client secret",
@@ -116,7 +122,8 @@ const CREDENTIAL_COPY: Record<
   sigv4: {
     action: "Update HMAC keys",
     label: "New secret access key",
-    hint: "Replaces the HMAC key pair this connection signs requests with.",
+    accessKeyIdLabel: "New access key ID",
+    hint: "Replaces the HMAC key pair the gateway signs requests with. Both values change together. Verified against the endpoint before it is stored, and the agent needs no restart.",
   },
   "github-app": {
     action: "Update private key",
