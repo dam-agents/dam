@@ -1,4 +1,5 @@
 import { Renew } from "@carbon/icons-react";
+import type { KitUpdatePending } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -34,20 +35,24 @@ function KitUpdateBarContent({
   const agent = useAgentsList().find((a) => a.id === agentId);
   const kitName = useKitName(agent?.starterKit ?? null, true);
   const [cardOpen, setCardOpen] = useState(false);
-  const [openWhenReady, setOpenWhenReady] = useState(false);
+  const [startedUpdate, setStartedUpdate] = useState<KitUpdatePending | null>(
+    null,
+  );
   const start = useStartKitUpdate();
   const skip = useSkipKitUpdate();
-  const sessionId = useKitUpdateSessionId(agentId, pending);
+  const sessionId = useKitUpdateSessionId(agentId, startedUpdate ?? pending);
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   useEffect(() => {
-    if (!openWhenReady || !sessionId) return;
-    setOpenWhenReady(false);
+    if (!startedUpdate || !sessionId) return;
+    setStartedUpdate(null);
     openAgentSession(agentId, sessionId);
-  }, [openWhenReady, sessionId, agentId, openAgentSession]);
+  }, [startedUpdate, sessionId, agentId, openAgentSession]);
 
   const startUpdate = () =>
-    start.mutate(agentId, { onSuccess: () => setOpenWhenReady(true) });
+    start.mutate(agentId, {
+      onSuccess: (status) => setStartedUpdate(status.pending),
+    });
 
   return (
     <div className="px-4 md:px-8" data-testid="kit-update-bar">
