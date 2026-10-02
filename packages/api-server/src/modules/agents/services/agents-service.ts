@@ -570,6 +570,7 @@ export function createAgentsService(deps: {
     {
       agentId: string;
       owner: string;
+      teamId: string;
       ambient: boolean;
       isDefault: boolean;
     }[]
@@ -746,10 +747,15 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
+    const existing = (await deps.findSlackBindings(slackChannelId)).find(
+      (b) => b.agentId === id,
+    );
+
+    const settledWorkspace = knownWorkspace ?? existing?.teamId;
     const workspace =
-      knownWorkspace === undefined
+      settledWorkspace === undefined
         ? await deps.resolveSlackWorkspace(slackChannelId)
-        : ({ kind: "resolved", teamId: knownWorkspace } as const);
+        : ({ kind: "resolved", teamId: settledWorkspace } as const);
     if (workspace.kind === "unreachable") {
       return err({ type: "WorkspaceUnreachable" as const });
     }
@@ -759,10 +765,6 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved") {
       return err({ type: "WorkspaceUnresolved" as const });
     }
-
-    const existing = (await deps.findSlackBindings(slackChannelId)).find(
-      (b) => b.agentId === id,
-    );
 
     const requestedAmbient = ambient === true;
 

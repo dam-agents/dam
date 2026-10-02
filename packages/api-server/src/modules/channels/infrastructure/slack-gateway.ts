@@ -36,6 +36,7 @@ export interface SlackSlashCommand {
   text: string;
   userId: string;
   channelId: string;
+  channelName?: string;
   teamId: SlackWorkspace;
   triggerId: string;
 }
