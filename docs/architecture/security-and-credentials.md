@@ -257,6 +257,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   connection's hosts. The stored client secret is replaceable in place when it
   rotates upstream — the api-server mints with the new one before writing it, so
   a wrong secret is rejected rather than stored.
+- **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret stores the access key ID and secret key, checked against the endpoint at connect and at rotation. The pair never leaves the gateway: the gateway signs requests with it instead of injecting it ([credential gateway](credential-gateway.md)), and the Agent holds only placeholders.
 - **GitHub personal access tokens** — a PAT is one **`github-pat`
   Connection** whose template re-bakes, from the bare PAT, every GitHub
   host injection it needs into a single per-Connection Secret — `Bearer`

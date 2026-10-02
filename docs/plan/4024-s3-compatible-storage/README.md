@@ -85,7 +85,7 @@ uploads, rclone and minio-go config, private-network endpoints the cluster canno
 | 04 ✅ | [AWS profiles on the agent](./04-aws-profiles.md) | Addressing for `egress-sign`, profiles + `AWS_PROFILE`, ini parser fix, `platform-s3` skill | 02 |
 | 05 ✅ | [Rotate the key pair](./05-rotate-key-pair.md) | Update contract with both keys, service, dialog, CLI | 02 |
 | 06 ✅ | [e2e: signing and passthrough](./06-e2e-signing.md) | Smoke spec against httpbingo | 03, 04 |
-| 07 | [Architecture docs](./07-architecture-docs.md) | connections page, gateway page, glossary | 01, 03, 04, 05 |
+| 07 ✅ | [Architecture docs](./07-architecture-docs.md) | connections page, gateway page, glossary | 01, 03, 04, 05 |
 
 ```mermaid
 flowchart LR
