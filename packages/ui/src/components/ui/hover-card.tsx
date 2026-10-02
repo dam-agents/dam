@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   FLOATING_PANEL,
   FloatingPanelTail,
+  TAIL_CORNER_CLEARANCE,
 } from "@/components/ui/floating-panel";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ function HoverCardContent({
       <HoverCardPrimitive.Content
         sideOffset={sideOffset}
         collisionPadding={8}
+        arrowPadding={TAIL_CORNER_CLEARANCE}
         className={cn(FLOATING_PANEL, className)}
         {...props}
       >
