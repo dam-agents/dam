@@ -49,8 +49,11 @@ export interface ChannelReaction {
   conversationId?: string;
 }
 
-export type ChannelSendResult =
-  { ok: true; attachmentError?: string } | { error: string };
+const sendResultSchema = z.union([
+  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
+  z.object({ error: z.string() }),
+]);
+export type ChannelSendResult = z.infer<typeof sendResultSchema>;
 
 export interface ChannelUser {
   id: string;
@@ -254,10 +257,6 @@ const TRANSPORT_RETRY_MS = 60_000;
 
 const okOrErrorSchema = z.union([
   z.object({ ok: z.literal(true) }),
-  z.object({ error: z.string() }),
-]);
-const sendResultSchema = z.union([
-  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
   z.object({ error: z.string() }),
 ]);
 const channelUserSchema = z.object({

@@ -43,6 +43,7 @@ import type {
   ChannelAttachment,
   ChannelReaction,
   ChannelReply,
+  ChannelSendResult,
   ChannelUser,
   MessageReactionsResult,
   PostMessageOptions,
@@ -758,11 +759,8 @@ export interface SlackWorker {
     instanceName: string,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
-  reply(
-    instanceName: string,
-    reply: ChannelReply,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
+  reply(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
   react(
     instanceName: string,
     reaction: ChannelReaction,
