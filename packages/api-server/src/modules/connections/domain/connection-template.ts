@@ -11,6 +11,7 @@ export type ConnectionTemplate =
   | ClientCredentialsConnectionTemplate
   | GitHubAppConnectionTemplate
   | HeaderConnectionTemplate
+  | Sigv4ConnectionTemplate
   | NoneConnectionTemplate;
 
 export interface ConnectionFamily {
@@ -79,6 +80,10 @@ export interface HeaderConnectionTemplate extends TemplateCommon {
   headerName?: string;
   valueFormat?: string;
   configInputs?: ConfigInputSpec[];
+}
+
+export interface Sigv4ConnectionTemplate extends TemplateCommon {
+  authKind: "sigv4";
 }
 
 export interface NoneConnectionTemplate extends TemplateCommon {
@@ -337,6 +342,35 @@ function inputsFor(
       }
       return out;
     }
+    case "sigv4":
+      return [
+        {
+          name: "endpoint",
+          state: "required",
+          label: "Endpoint URL",
+          hint: "The https:// URL of the S3 endpoint, e.g. https://s3.us-south.cloud-object-storage.appdomain.cloud. It must be a DNS name, not an IP address.",
+          pattern: "https://.+",
+          patternHint: "Must start with https://",
+        },
+        {
+          name: "region",
+          state: "overridable",
+          presetValue: "us-east-1",
+          label: "Region",
+          hint: "The signing region. IBM COS accepts any value.",
+        },
+        {
+          name: "bucket",
+          state: "optional",
+          label: "Bucket",
+          hint: "Limits the agent to this bucket.",
+        },
+        { ...required("accessKeyId"), label: "Access key ID" },
+        {
+          ...required("secretAccessKey", { secret: true }),
+          label: "Secret access key",
+        },
+      ];
     case "none":
       return t.category === "mcp"
         ? [

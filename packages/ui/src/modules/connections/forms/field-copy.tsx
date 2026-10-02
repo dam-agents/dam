@@ -22,6 +22,11 @@ const FIELD_LABELS: Record<string, string> = {
   permissions: "Limit to permissions",
   envName: "Environment variable",
   caData: "Server CA certificate",
+  endpoint: "Endpoint URL",
+  region: "Region",
+  bucket: "Bucket",
+  accessKeyId: "Access key ID",
+  secretAccessKey: "Secret access key",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -43,6 +48,11 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   permissions: "contents:read metadata:read",
   envName: "MY_API_KEY",
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
+  endpoint: "https://s3.us-south.cloud-object-storage.appdomain.cloud",
+  region: "us-east-1",
+  bucket: "my-bucket",
+  accessKeyId: "HMAC access key ID",
+  secretAccessKey: "•••••",
 };
 
 const GHE_HOST_HINT = "The hostname of your GitHub Enterprise instance";
@@ -102,6 +112,11 @@ const CREDENTIAL_COPY: Record<
     action: "Update client secret",
     label: "New client secret",
     hint: "Verified by minting a token before it is stored — a wrong secret is rejected.",
+  },
+  sigv4: {
+    action: "Update HMAC keys",
+    label: "New secret access key",
+    hint: "Replaces the HMAC key pair this connection signs requests with.",
   },
   "github-app": {
     action: "Update private key",

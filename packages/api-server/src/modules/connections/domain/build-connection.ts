@@ -17,8 +17,14 @@ import {
 import {
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
+  S3_CREDENTIALS_SECRET_FIELD,
   UPSTREAM_CA_SECRET_FIELD,
 } from "./connection-sds.js";
+import {
+  assertBucketName,
+  assertKeyText,
+  parseS3Endpoint,
+} from "./s3-endpoint.js";
 import { parseGitHubAppScope } from "./github-app-scope.js";
 import {
   buildKubernetesContributions,
@@ -81,6 +87,12 @@ export async function buildConnection(
     case "header":
       return buildHeader(
         template as Extract<ConnectionTemplate, { authKind: "header" }>,
+        input,
+        mintSecretRef,
+      );
+    case "sigv4":
+      return buildSigv4(
+        template as Extract<ConnectionTemplate, { authKind: "sigv4" }>,
         input,
         mintSecretRef,
       );
@@ -197,6 +209,7 @@ function substituteHostInContribution(
   switch (c.kind) {
     case "egress-allow":
     case "egress-inject":
+    case "egress-sign":
       return {
         ...c,
         host: c.host.replace(/\{host\}/g, host),
@@ -382,7 +395,9 @@ async function buildClientCredentials(
 
   const hasHostContrib = contributions.some(
     (c) =>
-      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      (c.kind === "egress-allow" ||
+        c.kind === "egress-inject" ||
+        c.kind === "egress-sign") &&
       c.host === host,
   );
   if (!hasHostContrib) {
@@ -543,7 +558,9 @@ function buildHeader(
 
   const hasHostContrib = contributions.some(
     (c) =>
-      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      (c.kind === "egress-allow" ||
+        c.kind === "egress-inject" ||
+        c.kind === "egress-sign") &&
       c.host === host,
   );
   if (!hasHostContrib) {
@@ -596,6 +613,67 @@ function buildHeader(
           value: input.value,
           ...(caPem ? { [UPSTREAM_CA_SECRET_FIELD]: caPem } : {}),
           ...sdsFields,
+        },
+      ],
+    ]),
+  };
+}
+
+function buildSigv4(
+  template: Extract<ConnectionTemplate, { authKind: "sigv4" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const { host, port } = parseS3Endpoint(input.endpoint);
+  const region = input.region.trim();
+  assertKeyText("The region", region);
+  assertKeyText("The access key ID", input.accessKeyId);
+  assertKeyText("The secret access key", input.secretAccessKey);
+  const bucket = input.bucket?.trim();
+  if (bucket) assertBucketName(bucket);
+
+  const sign = {
+    kind: "egress-sign" as const,
+    host,
+    ...(port ? { port } : {}),
+    region,
+    service: "s3" as const,
+  };
+  const contributions: Contribution[] = [
+    ...template.contributions,
+    ...(bucket
+      ? [
+          { ...sign, pathPattern: `/${bucket}` },
+          { ...sign, pathPattern: `/${bucket}/*` },
+        ]
+      : [sign]),
+  ];
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const credentialsFile = [
+    "[default]",
+    `aws_access_key_id = ${input.accessKeyId}`,
+    `aws_secret_access_key = ${input.secretAccessKey}`,
+    "",
+  ].join("\n");
+
+  return {
+    auth: {
+      kind: "sigv4",
+      accessKeyIdRef: { ...secretPath, field: "accessKeyId" },
+      secretAccessKeyRef: { ...secretPath, field: "secretAccessKey" },
+      credentialsFileRef: { ...secretPath, field: S3_CREDENTIALS_SECRET_FIELD },
+      region,
+      service: "s3",
+    },
+    contributions,
+    secrets: new Map([
+      [
+        secretPath.path,
+        {
+          accessKeyId: input.accessKeyId,
+          secretAccessKey: input.secretAccessKey,
+          [S3_CREDENTIALS_SECRET_FIELD]: credentialsFile,
         },
       ],
     ]),

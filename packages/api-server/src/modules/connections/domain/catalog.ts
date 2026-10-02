@@ -18,6 +18,7 @@ import type {
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
+  Sigv4ConnectionTemplate,
 } from "./connection-template.js";
 import {
   CUSTOM_HEADER_FAMILY,
@@ -776,6 +777,18 @@ function githubEnterpriseApp(
   };
 }
 
+const S3_COMPATIBLE: Sigv4ConnectionTemplate = {
+  id: "s3-compatible",
+  name: "S3-compatible storage",
+  category: "app",
+  isCustom: false,
+  description:
+    "Object storage over S3 (IBM COS, AWS S3, MinIO, Ceph) with HMAC keys. The agent can do whatever these keys allow, so use a read-only key for read-only access.",
+  iconSlug: "key",
+  authKind: "sigv4",
+  contributions: [],
+};
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   family: CUSTOM_HEADER_FAMILY,
@@ -883,6 +896,7 @@ export function buildCatalog(
     githubEnterprisePat(creds.githubEnterprise),
     githubEnterpriseApp(creds.githubEnterprise),
     KUBERNETES,
+    S3_COMPATIBLE,
     spotify(creds.spotify),
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),

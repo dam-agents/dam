@@ -9,7 +9,10 @@ import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
-const SECRET_LABELS: Record<Exclude<ConnectionAuthKind, "none">, string> = {
+const SECRET_LABELS: Record<
+  Exclude<ConnectionAuthKind, "none" | "sigv4">,
+  string
+> = {
   header: "New credential value",
   "client-credentials": "New client secret",
   "github-app": "New private key (PEM)",
@@ -74,6 +77,13 @@ export function buildUpdateCommand(deps: {
         if (match.authKind === "none") {
           process.stderr.write(
             `error: '${match.name}' stores no credential to update\n`,
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+
+        if (match.authKind === "sigv4") {
+          process.stderr.write(
+            `error: updating the HMAC keys of '${match.name}' is not supported yet\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }

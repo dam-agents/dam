@@ -121,6 +121,7 @@ function makeService(
     oauthEngine: engine,
     githubAppEngine: createGitHubAppEngine(),
     oauthCallbackUrl: "https://cb.example/oauth/callback",
+    s3CredentialProbe: { verify: async () => "ok" },
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,

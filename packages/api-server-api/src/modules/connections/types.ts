@@ -80,6 +80,15 @@ export const headerAuth = z.object({
   valueFormat: z.string().min(1),
 });
 
+export const sigv4Auth = z.object({
+  kind: z.literal("sigv4"),
+  accessKeyIdRef: secretRef,
+  secretAccessKeyRef: secretRef,
+  credentialsFileRef: secretRef,
+  region: z.string().min(1),
+  service: z.literal("s3"),
+});
+
 export const noneAuth = z.object({
   kind: z.literal("none"),
 });
@@ -89,6 +98,7 @@ export const authConfig = z.discriminatedUnion("kind", [
   clientCredentialsAuth,
   githubAppAuth,
   headerAuth,
+  sigv4Auth,
   noneAuth,
 ]);
 export type AuthConfig = z.infer<typeof authConfig>;
@@ -118,6 +128,7 @@ export const authKind = z.enum([
   "client-credentials",
   "github-app",
   "header",
+  "sigv4",
   "none",
 ]);
 export type AuthKind = z.infer<typeof authKind>;

@@ -47,6 +47,11 @@ interface ConnectOpts {
   envName?: string;
   value?: string;
   caData?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
   config?: string[];
   server?: string;
   json?: boolean;
@@ -122,6 +127,26 @@ export function buildConnectCommand(deps: {
     .option(
       "--ca-data <data>",
       "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
+    )
+    .option(
+      "--endpoint <url>",
+      "input: S3 endpoint URL, https:// only (S3-compatible storage)",
+    )
+    .option(
+      "--region <region>",
+      "input: signing region (S3-compatible storage; default us-east-1)",
+    )
+    .option(
+      "--bucket <name>",
+      "input: limit the agent to this bucket (S3-compatible storage)",
+    )
+    .option(
+      "--access-key-id <id>",
+      "input: HMAC access key ID (S3-compatible storage)",
+    )
+    .option(
+      "--secret-access-key <key>",
+      "input: HMAC secret access key (S3-compatible storage)",
     )
     .option(
       "-c, --config <key=value>",
@@ -531,6 +556,33 @@ function buildPayload(
         value,
       };
     }
+    case "sigv4": {
+      const endpoint = v("endpoint");
+      const accessKeyId = v("accessKeyId");
+      const secretAccessKey = v("secretAccessKey");
+      const region =
+        v("region") ??
+        template.inputs.find((i) => i.name === "region")?.presetValue;
+      if (!endpoint) return { error: "the endpoint is required (--endpoint)" };
+      if (!region) return { error: "the region is required (--region)" };
+      if (!accessKeyId) {
+        return { error: "the access key ID is required (--access-key-id)" };
+      }
+      if (!secretAccessKey) {
+        return {
+          error: "the secret access key is required (--secret-access-key)",
+        };
+      }
+      return {
+        ...common,
+        authKind: "sigv4",
+        endpoint,
+        region,
+        ...(v("bucket") ? { bucket: v("bucket")! } : {}),
+        accessKeyId,
+        secretAccessKey,
+      };
+    }
     case "none":
       return {
         ...common,
@@ -669,6 +721,11 @@ const FIELD_LABELS: Record<string, string> = {
   privateKey: "GitHub App private key (PEM)",
   envName: "Env var name",
   caData: "Cluster CA certificate",
+  endpoint: "Endpoint URL",
+  region: "Region",
+  bucket: "Bucket",
+  accessKeyId: "Access key ID",
+  secretAccessKey: "Secret access key",
 };
 
 function labelFor(key: string): string {

@@ -100,6 +100,7 @@ function setup(initialGrants: string[] = []) {
     oauthEngine: unused(),
     githubAppEngine: unused(),
     oauthCallbackUrl: "https://example.com/callback",
+    s3CredentialProbe: { verify: async () => "ok" },
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,

@@ -21,6 +21,7 @@ import {
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import { createAwsS3CredentialProbe } from "./infrastructure/aws-s3-credential-probe.js";
 import {
   createOAuthRefreshLoop,
   type OAuthRefreshLoop,
@@ -135,6 +136,7 @@ export function composeConnectionsForOwner(opts: {
     oauthFlow,
     oauthEngine: opts.oauthEngine,
     githubAppEngine: opts.githubAppEngine,
+    s3CredentialProbe: createAwsS3CredentialProbe(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,

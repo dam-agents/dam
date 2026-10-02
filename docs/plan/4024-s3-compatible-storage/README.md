@@ -80,7 +80,7 @@ uploads, rclone and minio-go config, private-network endpoints the cluster canno
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | [Split the credential gateway page](./01-split-gateway-page.md) | Docs only: move the gateway mechanics to their own page so the security page is under its cap | — |
-| 02 | [`sigv4` Connection: contract, template, create](./02-sigv4-connection.md) | Auth kind, `egress-sign` kind, template, Secret, egress rules, create-time validation, all exhaustive switches | — |
+| 02 ✅ | [`sigv4` Connection: contract, template, create](./02-sigv4-connection.md) | Auth kind, `egress-sign` kind, template, Secret, egress rules, create-time validation, all exhaustive switches | — |
 | 03 | [Gateway signing step](./03-gateway-signing.md) | Controller: signing filter, STREAMING guard, `Credential=` address parsing, always gated; early IBM check | 02 |
 | 04 | [AWS profiles on the agent](./04-aws-profiles.md) | Addressing for `egress-sign`, profiles + `AWS_PROFILE`, ini parser fix, `platform-s3` skill | 02 |
 | 05 | [Rotate the key pair](./05-rotate-key-pair.md) | Update contract with both keys, service, dialog, CLI | 02 |
