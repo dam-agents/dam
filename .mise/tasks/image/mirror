@@ -39,7 +39,7 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # subchart image pins) and .mise/tasks/cluster/install (the operator images).
 MIRRORS="
 mirror.gcr.io/otel/opentelemetry-collector-contrib:0.161.0
-mirror.gcr.io/hyperdx/hyperdx:2.35.0
+mirror.gcr.io/hyperdx/hyperdx:2.39.1
 mirror.gcr.io/clickhouse/clickhouse-server:26.8-alpine
 mirror.gcr.io/clickhouse/clickhouse-keeper:26.8-alpine
 mirror.gcr.io/library/busybox:1.38.0
