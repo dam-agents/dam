@@ -87,7 +87,7 @@ export function MockStateBar() {
               {
                 key: "home" as const,
                 label: "Home",
-                desc: "Activity feed or welcome empty state.",
+                desc: "Agent list or welcome empty state.",
               },
               {
                 key: "agent-new" as const,

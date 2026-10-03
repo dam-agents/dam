@@ -1,5 +1,6 @@
 import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
 
+import { stateDotClass } from "@/components/status-indicator.js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { useCharacterUnlocks } from "../lib/character-unlocks.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -22,7 +24,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { BeeAvatar } from "./bee-avatar.js";
+import { AgentAvatar, CHAR_NAMES, hashIndex } from "./char-avatar.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 
 interface Props {
@@ -90,6 +92,30 @@ function AgentStateBadge({ state }: { state: AgentDisplayState }) {
   return <Badge variant="muted">{state}</Badge>;
 }
 
+function CardAvatar({
+  agentId,
+  state,
+}: {
+  agentId: string;
+  state: AgentDisplayState;
+}) {
+  const unlocks = useCharacterUnlocks();
+  const charName = CHAR_NAMES[hashIndex(agentId, CHAR_NAMES.length)];
+  if (!unlocks.unlocked.has(charName)) {
+    return (
+      <span
+        className={cn(
+          "mt-1 size-3 shrink-0 rounded-full",
+          stateDotClass[state],
+        )}
+      />
+    );
+  }
+  return (
+    <AgentAvatar agentId={agentId} state={state} className="size-10 shrink-0" />
+  );
+}
+
 export function AgentRow({
   agent,
   display,
@@ -114,7 +140,7 @@ export function AgentRow({
       )}
     >
       <div className="flex items-start gap-4 p-5">
-        <BeeAvatar agentId={agent.id} state={display.state} />
+        <CardAvatar agentId={agent.id} state={display.state} />
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">

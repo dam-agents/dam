@@ -2,7 +2,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
-const stateLabel: Record<AgentDisplayState, string> = {
+export const stateLabel: Record<AgentDisplayState, string> = {
   running: "Working",
   running_always_on: "Working",
   starting: "Working",

@@ -3,14 +3,17 @@ import {
   Add,
   Bot,
   type CarbonIconType,
+  Checkmark,
   ChevronLeft,
   ChevronRight,
   Cube,
+  Filter,
   Folders,
   Help,
   Home,
   NewTab,
   OverflowMenuVertical,
+  Reset,
   Settings,
   Time,
   TrashCan,
@@ -22,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -29,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Popover,
+  PopoverClose,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
@@ -42,13 +47,21 @@ import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
-import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
-import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
+import {
+  AgentAvatar,
+  CHAR_NAMES,
+  hashIndex,
+} from "../modules/agents/components/char-avatar.js";
+import { useCharacterUnlocks } from "../modules/agents/lib/character-unlocks.js";
+import {
+  type AgentDisplayState,
+  resolveAgentDisplay,
+} from "../modules/agents/utils/agent-resolver.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
 import { useStore } from "../store.js";
-import type { AgentView } from "../types.js";
+import { stateDotClass, stateLabel } from "./status-indicator.js";
 
 const SIDEBAR_ACTIVITY_PAGE = 5;
 const AGENT_SESSION_PAGE = 5;
@@ -62,24 +75,38 @@ interface Destination {
   iconClassName?: string;
 }
 
+function SidebarAvatar({
+  agentId,
+  state,
+}: {
+  agentId: string;
+  state: AgentDisplayState;
+}) {
+  const unlocks = useCharacterUnlocks();
+  const charName = CHAR_NAMES[hashIndex(agentId, CHAR_NAMES.length)];
+  if (!unlocks.unlocked.has(charName)) {
+    return (
+      <span
+        className={cn("size-2 shrink-0 rounded-full", stateDotClass[state])}
+      />
+    );
+  }
+  return (
+    <AgentAvatar agentId={agentId} state={state} className="size-5 shrink-0" />
+  );
+}
+
 export function IconRail({
   hideMobileBar = false,
-  expanded,
-  agentsOverride,
-  showActivity = true,
 }: {
   hideMobileBar?: boolean;
-  expanded?: boolean;
-  agentsOverride?: AgentView[];
-  showActivity?: boolean;
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
-  const storeExpanded = useStore((s) => s.sidebarExpanded);
-  const expandedNav = expanded ?? storeExpanded;
+  const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   const sandboxes: Destination = {
@@ -92,9 +119,9 @@ export function IconRail({
   const starterKits: Destination = {
     label: "Starter Kits",
     icon: Cube,
-    active: view === "packs",
+    active: view === "presets",
     badge: 0,
-    navigate: () => setView("packs"),
+    navigate: () => setView("presets"),
   };
 
   const artifacts: Destination = {
@@ -112,8 +139,7 @@ export function IconRail({
     navigate: () => navigateToSettings(),
   };
 
-  const listedAgents = useAgentsList();
-  const agents = agentsOverride ?? listedAgents;
+  const agents = useAgentsList();
   const restartingAgents = useStore((s) => s.restartingAgents);
   const pausingAgents = useStore((s) => s.pausingAgents);
   const restartingIds = useMemo(
@@ -138,8 +164,13 @@ export function IconRail({
   }, [notifAgents]);
 
   const [activityCount, setActivityCount] = useState(SIDEBAR_ACTIVITY_PAGE);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
+    defaultActivityFilter,
+  );
   const [showAllAgents, setShowAllAgents] = useState(false);
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [expandedAgentIds, setExpandedAgentIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [agentSessionCounts, setAgentSessionCounts] = useState<
     Record<string, number>
@@ -153,6 +184,8 @@ export function IconRail({
   const agentSentinelRef = useRef<HTMLDivElement>(null);
   const activitySentinelRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
+  const hasActivity = feedItems.length > 0;
+  const hasUnreadActivity = feedItems.some((item) => item.type === "unread");
   const [agentsStuck, setAgentsStuck] = useState(false);
   const [activityStuck, setActivityStuck] = useState(false);
 
@@ -174,7 +207,7 @@ export function IconRail({
     if (activitySentinelRef.current)
       observer.observe(activitySentinelRef.current);
     return () => observer.disconnect();
-  }, [expandedNav]);
+  }, [expandedNav, hasActivity]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -190,7 +223,7 @@ export function IconRail({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [expandedNav]);
+  }, [expandedNav, hasActivity]);
 
   const activeAgents = useMemo(
     () =>
@@ -220,8 +253,13 @@ export function IconRail({
     return map;
   }, [feedItems]);
 
-  const visibleActivity = feedItems.slice(0, activityCount);
-  const hasMoreActivity = activityCount < feedItems.length;
+  const globalFilteredFeed = useMemo(
+    () =>
+      feedItems.filter((item) => matchesActivityFilter(item, activityFilter)),
+    [feedItems, activityFilter],
+  );
+  const visibleActivity = globalFilteredFeed.slice(0, activityCount);
+  const hasMoreActivity = activityCount < globalFilteredFeed.length;
 
   const handleOpen = useCallback(
     (item: NotificationItem) => {
@@ -231,7 +269,7 @@ export function IconRail({
         item.type === "read"
       ) {
         setActiveSessionId(item.session.sessionId);
-        setExpandedAgentId(item.agentId);
+        setExpandedAgentIds((prev) => new Set(prev).add(item.agentId));
         openAgentSession(item.agentId, item.session.sessionId);
       }
     },
@@ -311,7 +349,7 @@ export function IconRail({
                 <div ref={agentSentinelRef} className="h-0" />
                 <div
                   className={cn(
-                    "sticky top-0 z-10 mb-3 flex items-center justify-between bg-card px-5 pb-2 pt-3 transition-[border-color]",
+                    "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
                     agentsStuck
                       ? "border-b border-[#dde1e6] dark:border-white/10"
                       : "border-b border-transparent",
@@ -330,13 +368,13 @@ export function IconRail({
                   </Tooltip>
                 </div>
                 <div className="flex flex-col gap-px px-2">
-                  {visibleAgents.map((agent) => {
+                  {visibleAgents.map((agent, agentIndex) => {
                     const display = resolveAgentDisplay(
                       agent,
                       restartingIds,
                       pausingIds,
                     );
-                    const isExpanded = expandedAgentId === agent.id;
+                    const isExpanded = expandedAgentIds.has(agent.id);
                     const agentSessions = sessionsByAgent.get(agent.id) ?? [];
                     const sessionLimit =
                       agentSessionCounts[agent.id] ?? AGENT_SESSION_PAGE;
@@ -345,54 +383,74 @@ export function IconRail({
                       sessionLimit,
                     );
                     const hasMoreSessions = sessionLimit < agentSessions.length;
+                    const hasUnread = agentSessions.some(
+                      (s) => s.type === "unread",
+                    );
+                    const isSelected =
+                      isExpanded ||
+                      (!!activeSessionId &&
+                        agentSessions.some(
+                          (s) =>
+                            (s.type === "running" ||
+                              s.type === "unread" ||
+                              s.type === "read") &&
+                            s.session.sessionId === activeSessionId,
+                        ));
 
                     return (
                       <div key={agent.id}>
                         <div
                           role="button"
                           tabIndex={0}
-                          onClick={() =>
-                            setExpandedAgentId((prev) =>
-                              prev === agent.id ? null : agent.id,
-                            )
-                          }
+                          onClick={() => {
+                            setExpandedAgentIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(agent.id)) next.delete(agent.id);
+                              else next.add(agent.id);
+                              return next;
+                            });
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              setExpandedAgentId((prev) =>
-                                prev === agent.id ? null : agent.id,
-                              );
+                              setExpandedAgentIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(agent.id)) next.delete(agent.id);
+                                else next.add(agent.id);
+                                return next;
+                              });
                             }
                           }}
                           className={cn(
-                            "group group/agent relative flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
-                            (isExpanded ||
-                              (activeSessionId &&
-                                agentSessions.some(
-                                  (s) =>
-                                    (s.type === "running" ||
-                                      s.type === "unread" ||
-                                      s.type === "read") &&
-                                    s.session.sessionId === activeSessionId,
-                                ))) &&
-                              "bg-muted",
+                            "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
+                            isSelected && "bg-muted",
                           )}
                         >
-                          <AgentAvatar
+                          <SidebarAvatar
                             agentId={agent.id}
                             state={display.state}
-                            className="size-8"
                           />
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                             {agent.name}
                           </span>
-                          <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100">
+                          {hasUnread && !isSelected && (
+                            <span
+                              aria-label="Unread sessions"
+                              className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
+                            />
+                          )}
+                          <span
+                            className={cn(
+                              "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
+                              isSelected ? "opacity-100" : "opacity-0",
+                            )}
+                          >
                             <Tooltip content="New chat" side="right">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  selectAgent(agent.id);
+                                  navigateToAgentLanding(agent.id);
                                 }}
                                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
                                 aria-label={`New chat with ${agent.name}`}
@@ -400,48 +458,7 @@ export function IconRail({
                                 <NewTab size={16} />
                               </button>
                             </Tooltip>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  onClick={(e) => e.stopPropagation()}
-                                  aria-label="More actions"
-                                >
-                                  <OverflowMenuVertical size={16} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {display.powerAction === "start" ? (
-                                  <DropdownMenuItem>
-                                    {display.state === "over_budget"
-                                      ? "Start"
-                                      : "Wake"}
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem
-                                    disabled={display.powerAction === null}
-                                  >
-                                    Restart
-                                  </DropdownMenuItem>
-                                )}
-                                {display.state === "running" && (
-                                  <>
-                                    <DropdownMenuItem>
-                                      Pause — wakes on next use
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem>
-                                      Stop — until started again
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem tone="danger">
-                                  <TrashCan size={13} /> Delete agent
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <AgentOverflowMenu display={display} />
                           </span>
                         </div>
                         {isExpanded && visibleSessions.length > 0 && (
@@ -481,7 +498,7 @@ export function IconRail({
                                     }
                                   }}
                                   className={cn(
-                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-[52px] pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
+                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-10 pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
                                     hasSession &&
                                       activeSessionId === item.session.sessionId
                                       ? "bg-muted"
@@ -493,14 +510,14 @@ export function IconRail({
                                       {title}
                                     </span>
                                     {isRunning && (
-                                      <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px]">
+                                      <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/agentsession:invisible">
                                         <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
                                         <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
                                         <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
                                       </span>
                                     )}
                                     {isUnread && !isRunning && (
-                                      <span className="ml-auto size-2 shrink-0 rounded-full bg-accent" />
+                                      <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/agentsession:invisible" />
                                     )}
                                   </span>
                                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -558,7 +575,7 @@ export function IconRail({
                                       AGENT_SESSION_PAGE,
                                   }))
                                 }
-                                className="w-full py-1 pl-[52px] pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                                className="w-full py-1 pl-10 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                               >
                                 View more
                               </button>
@@ -573,7 +590,7 @@ export function IconRail({
                   <button
                     type="button"
                     onClick={() => setShowAllAgents((v) => !v)}
-                    className="mt-1 px-5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="mt-1 block px-5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {showAllAgents
                       ? "Show less"
@@ -583,21 +600,33 @@ export function IconRail({
               </div>
             )}
 
-            {showActivity && visibleActivity.length > 0 && (
+            {hasActivity && (
               <div className="mt-6 pb-4">
                 <div ref={activitySentinelRef} className="h-0" />
-                <SectionLabel
+                <div
                   className={cn(
-                    "sticky top-0 z-10 mb-3 block bg-card px-5 pb-2 pt-3 transition-[border-color]",
+                    "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
                     activityStuck
                       ? "border-b border-[#dde1e6] dark:border-white/10"
                       : "border-b border-transparent",
                   )}
                 >
-                  Activity
-                </SectionLabel>
-                <div className="flex flex-col gap-px px-2">
-                  {visibleActivity.map((item) => {
+                  <SectionLabel>Activity</SectionLabel>
+                  <ActivityFilterMenu
+                    value={activityFilter}
+                    onChange={(f) => {
+                      setActivityFilter(f);
+                      setActivityCount(SIDEBAR_ACTIVITY_PAGE);
+                    }}
+                  />
+                </div>
+                {visibleActivity.length === 0 && (
+                  <p className="px-5 py-2 text-sm text-muted-foreground">
+                    No matching activity
+                  </p>
+                )}
+                <div key="list" className="flex flex-col gap-px px-2">
+                  {visibleActivity.map((item, activityIndex) => {
                     const isRunning = item.type === "running";
                     const isUnread = item.type === "unread";
                     const hasSession =
@@ -612,7 +641,7 @@ export function IconRail({
                     const isSlack = hasSession && !!item.session.threadTs;
                     const isSchedule = hasSession && !!item.session.scheduleId;
                     const slackChannel = isSlack
-                      ? ((item.session as unknown as Record<string, unknown>)
+                      ? ((item.session as Record<string, unknown>)
                           .slackChannel as string | undefined)
                       : undefined;
                     return (
@@ -657,8 +686,7 @@ export function IconRail({
                         </span>
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <span className="min-w-0 truncate">
-                            {agent}
-                            {meta && ` · ${meta}`}
+                            {`${agent}${meta ? ` · ${meta}` : ""}`}
                           </span>
                           {isSlack && (
                             <>
@@ -741,8 +769,20 @@ export function IconRail({
                     align="start"
                     className="w-[280px] max-h-[400px] overflow-y-auto p-0"
                   >
-                    <div className="px-3 pb-1.5 pt-3">
+                    <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
                       <SectionLabel>Agents</SectionLabel>
+                      <PopoverClose asChild>
+                        <Tooltip content="Create agent" side="right">
+                          <button
+                            type="button"
+                            onClick={() => setView("agent-new")}
+                            aria-label="Create agent"
+                            className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            <Add size={16} />
+                          </button>
+                        </Tooltip>
+                      </PopoverClose>
                     </div>
                     <div className="flex flex-col gap-px px-1 pb-2">
                       {visibleAgents.map((agent) => {
@@ -755,13 +795,12 @@ export function IconRail({
                           <button
                             key={agent.id}
                             type="button"
-                            onClick={() => selectAgent(agent.id)}
-                            className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                            onClick={() => navigateToAgentLanding(agent.id)}
+                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
                           >
-                            <AgentAvatar
+                            <SidebarAvatar
                               agentId={agent.id}
                               state={display.state}
-                              className="size-8"
                             />
                             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                               {agent.name}
@@ -773,7 +812,7 @@ export function IconRail({
                         <button
                           type="button"
                           onClick={() => setShowAllAgents(true)}
-                          className="w-full px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                          className="px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                         >
                           See all ({agents.length - activeAgents.length}{" "}
                           hibernating)
@@ -787,10 +826,15 @@ export function IconRail({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        aria-label="Activity"
-                        className="flex h-[34px] w-full items-center justify-center rounded-lg text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label={
+                          hasUnreadActivity ? "Activity, unread" : "Activity"
+                        }
+                        className="relative flex h-[34px] w-full items-center justify-center rounded-lg text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                       >
                         <Activity size={16} />
+                        {hasUnreadActivity && (
+                          <span className="absolute top-1.5 right-2.5 size-2 rounded-full border-[1.5px] border-card bg-accent" />
+                        )}
                       </button>
                     </PopoverTrigger>
                   </Tooltip>
@@ -799,11 +843,15 @@ export function IconRail({
                     align="start"
                     className="w-[280px] max-h-[400px] overflow-y-auto p-0"
                   >
-                    <div className="px-3 pb-1.5 pt-3">
+                    <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
                       <SectionLabel>Activity</SectionLabel>
+                      <ActivityFilterMenu
+                        value={activityFilter}
+                        onChange={setActivityFilter}
+                      />
                     </div>
                     <div className="flex flex-col gap-px px-1 pb-2">
-                      {feedItems.slice(0, 20).map((item) => {
+                      {globalFilteredFeed.slice(0, 20).map((item) => {
                         const hasSession =
                           item.type === "running" ||
                           item.type === "unread" ||
@@ -846,9 +894,11 @@ export function IconRail({
                           </button>
                         );
                       })}
-                      {feedItems.length === 0 && (
+                      {globalFilteredFeed.length === 0 && (
                         <div className="px-2 py-3 text-center text-sm text-muted-foreground">
-                          No recent activity
+                          {feedItems.length === 0
+                            ? "No recent activity"
+                            : "No matching activity"}
                         </div>
                       )}
                     </div>
@@ -1007,5 +1057,243 @@ function IconWithBadge({
         </Badge>
       )}
     </span>
+  );
+}
+
+type ChannelType = "chat" | "slack" | "telegram" | "schedule" | "terminal";
+
+const CHANNEL_TYPES: readonly ChannelType[] = [
+  "chat",
+  "slack",
+  "telegram",
+  "schedule",
+  "terminal",
+];
+
+const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
+  chat: "Chat",
+  slack: "Slack",
+  telegram: "Telegram",
+  schedule: "Schedule",
+  terminal: "Terminal",
+};
+
+type StateFilter = "any" | "attention" | "in-progress" | "unread";
+
+const STATE_FILTERS: readonly StateFilter[] = [
+  "any",
+  "attention",
+  "in-progress",
+  "unread",
+];
+
+const STATE_FILTER_LABELS: Record<StateFilter, string> = {
+  any: "All",
+  attention: "Needs attention",
+  "in-progress": "In progress",
+  unread: "Unread",
+};
+
+interface ActivityFilter {
+  channelTypes: ReadonlySet<ChannelType>;
+  state: StateFilter;
+}
+
+function defaultActivityFilter(): ActivityFilter {
+  return { channelTypes: new Set(CHANNEL_TYPES), state: "any" };
+}
+
+function isActivityFiltered(filter: ActivityFilter): boolean {
+  return (
+    filter.channelTypes.size < CHANNEL_TYPES.length || filter.state !== "any"
+  );
+}
+
+function channelTypeFor(item: NotificationItem): ChannelType {
+  if (item.type === "approval-tool" || item.type === "approval-network")
+    return "chat";
+  if (!("session" in item)) return "chat";
+  const { session } = item;
+  if (session.scheduleId || session.type === "schedule_cron") return "schedule";
+  if (session.mode === "terminal") return "terminal";
+  if (session.type === "channel_slack") return "slack";
+  if (session.type === "channel_telegram") return "telegram";
+  return "chat";
+}
+
+function matchesActivityFilter(
+  item: NotificationItem,
+  filter: ActivityFilter,
+): boolean {
+  if (!filter.channelTypes.has(channelTypeFor(item))) return false;
+  switch (filter.state) {
+    case "any":
+      return true;
+    case "attention":
+      return item.type === "approval-tool" || item.type === "approval-network";
+    case "in-progress":
+      return item.type === "running";
+    case "unread":
+      return item.type === "unread";
+  }
+}
+
+const FILTER_GROUP_LABEL =
+  "px-3 pt-2 pb-1 text-sm font-medium text-muted-foreground";
+
+function ActivityFilterMenu({
+  value,
+  onChange,
+  agentOptions,
+  agentId,
+  onAgentChange,
+}: {
+  value: ActivityFilter;
+  onChange: (value: ActivityFilter) => void;
+  agentOptions?: { id: string; name: string }[];
+  agentId?: string | null;
+  onAgentChange?: (id: string | null) => void;
+}) {
+  const active = isActivityFiltered(value) || !!agentId;
+  const toggleType = (type: ChannelType) => {
+    const next = new Set(value.channelTypes);
+    if (next.has(type)) next.delete(type);
+    else next.add(type);
+    onChange({ ...value, channelTypes: next });
+  };
+  return (
+    <DropdownMenu>
+      <Tooltip content="Filter activity" side="right">
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={
+              active ? "Filter activity, filtered" : "Filter activity"
+            }
+            className={cn(
+              "flex size-6 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
+              active
+                ? "bg-muted text-foreground"
+                : "bg-background text-muted-foreground",
+            )}
+          >
+            <Filter size={16} />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[80vh] w-[400px] overflow-y-auto p-0"
+      >
+        {agentOptions && onAgentChange && (
+          <div className="border-b border-border p-1">
+            <p className={FILTER_GROUP_LABEL}>Agent</p>
+            {[{ id: null, name: "All agents" }, ...agentOptions].map((a) => (
+              <DropdownMenuItem
+                key={a.id ?? "all"}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  onAgentChange(a.id);
+                }}
+              >
+                <span className="flex w-4 justify-center">
+                  {(agentId ?? null) === a.id && <Checkmark size={16} />}
+                </span>
+                <span className="truncate">{a.name}</span>
+              </DropdownMenuItem>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-2">
+          <div className="p-1">
+            <p className={FILTER_GROUP_LABEL}>Type</p>
+            {CHANNEL_TYPES.map((type) => (
+              <DropdownMenuCheckboxItem
+                key={type}
+                checked={value.channelTypes.has(type)}
+                onCheckedChange={() => toggleType(type)}
+                onSelect={(event) => event.preventDefault()}
+              >
+                {CHANNEL_TYPE_LABELS[type]}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </div>
+          <div className="border-l border-border p-1">
+            <p className={FILTER_GROUP_LABEL}>Status</p>
+            {STATE_FILTERS.map((state) => (
+              <DropdownMenuItem
+                key={state}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  onChange({ ...value, state });
+                }}
+              >
+                <span className="flex w-4 justify-center">
+                  {value.state === state && <Checkmark size={16} />}
+                </span>
+                {STATE_FILTER_LABELS[state]}
+              </DropdownMenuItem>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-border px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            {active ? "Filters on" : "Showing everything"}
+          </span>
+          <button
+            type="button"
+            disabled={!active}
+            onClick={() => {
+              onChange(defaultActivityFilter());
+              onAgentChange?.(null);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-accent transition-colors hover:bg-muted disabled:pointer-events-none disabled:text-muted-foreground/50"
+          >
+            <Reset size={16} /> Reset to default
+          </button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+type AgentDisplay = ReturnType<typeof resolveAgentDisplay>;
+
+function AgentOverflowMenu({ display }: { display: AgentDisplay }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={(e) => e.stopPropagation()}
+          aria-label="More actions"
+        >
+          <OverflowMenuVertical size={16} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {display.powerAction === "start" ? (
+          <DropdownMenuItem>
+            {display.state === "over_budget" ? "Start" : "Wake"}
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem disabled={display.powerAction === null}>
+            Restart
+          </DropdownMenuItem>
+        )}
+        {display.state === "running" && (
+          <>
+            <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
+            <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem tone="danger">
+          <TrashCan size={13} /> Delete agent
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
