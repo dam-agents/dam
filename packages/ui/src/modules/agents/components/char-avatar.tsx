@@ -6,6 +6,7 @@ import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { type BeeColors, hashIndex, injectBeeStyles } from "./bee-avatar.js";
 
 export type { BeeColors };
+export { hashIndex };
 
 const LENS_EYES: [number, number, number][] = [
   [1100, 900, 340],
