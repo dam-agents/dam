@@ -1,11 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { AppAtRoute } from "../app-at-route";
+import { withExpandedSidebar } from "./_shell";
 
 const meta = {
   title: "Pages/Settings",
   component: AppAtRoute,
   args: { path: "/settings" },
+  decorators: [withExpandedSidebar],
 } satisfies Meta<typeof AppAtRoute>;
 
 export default meta;

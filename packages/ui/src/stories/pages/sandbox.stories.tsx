@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { AppAtRoute } from "../app-at-route";
 import { IDS } from "../backend/scenario";
+import { withExpandedSidebar } from "./_shell";
 
 const base = `/sandboxes/${IDS.codingAgent}`;
 
@@ -9,6 +10,7 @@ const meta = {
   title: "Pages/Sandbox",
   component: AppAtRoute,
   args: { path: base },
+  decorators: [withExpandedSidebar],
 } satisfies Meta<typeof AppAtRoute>;
 
 export default meta;
