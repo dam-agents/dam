@@ -346,6 +346,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
+    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
     return true;
   }
 
