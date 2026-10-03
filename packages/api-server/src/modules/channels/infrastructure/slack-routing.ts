@@ -91,3 +91,26 @@ export function routeMention(
 
   return { target: longest, addressedByName: true, ambiguousName: null };
 }
+
+const OPENING_QUOTE = /["“”„]/;
+
+const CLOSING_QUOTE = /["“”]\s*$/;
+
+export interface WhisperRequest {
+  name: string;
+  message: string | null;
+}
+
+export function parseWhisperRequest(text: string): WhisperRequest {
+  const trimmed = text.trim();
+  const open = OPENING_QUOTE.exec(trimmed);
+  if (!open) return { name: trimmed, message: null };
+  const message = trimmed
+    .slice(open.index + 1)
+    .replace(CLOSING_QUOTE, "")
+    .trim();
+  return {
+    name: trimmed.slice(0, open.index).trim(),
+    message: message || null,
+  };
+}
