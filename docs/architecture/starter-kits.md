@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-01
+Last verified: 2026-10-02
 
 ## Overview
 
@@ -8,7 +8,7 @@ A **Starter Kit** is a proven way of working applied to a *new* Agent: the conne
 
 Kits are **files in git, never rows in the cluster**. A kit is a `kit.yaml` at the root of the repository that holds it — for an agent definition such as Code Guardian, the definition repository *is* the kit. The platform reads **several named Kit Catalogs** through one reader, in a fixed order: the **built-in catalog** (`platform`), whose files ship inside the chart under `helm/starter-kits/` and are mounted into the api-server as a directory, so it is versioned with the release and, for the kits it carries as files, needs no network; and any number of external catalogs, each a git repository on a readable host holding a `catalog.yaml` index of kits pinned to refs. A kit is addressed as `<catalog>/<kit>`, so two catalogs may ship a kit of the same id without one hiding the other. The api-server keeps only a **resolved snapshot** of each catalog in Postgres (`starter_kit_catalog_entries`), rewritten by the refresh job and rebuildable from the catalogs at any time; an Agent remembers only `<catalog>/<kit>@<version>`.
 
-This is the V1 cut: a snapshot at create. Nothing tracks the kit's source afterwards, there is no backup and no automatic update. The increments that follow — a read-only definition, work-dir backups, and a detect-and-update path — are each additive to this page.
+An Agent is a snapshot of its kit at create, plus a user-started **Kit Update** that brings a newer definition into it ([below](#kit-update)). There is no backup and no automatic update; a read-only definition and work-dir backups remain later increments, each additive to this page.
 
 ```mermaid
 flowchart LR
@@ -71,6 +71,18 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 The catalog has two entry points, answering the placement question in #447 with *both*: a **Starter kits** destination in the rail with the full catalog and setup pages, and a **browse button on Home**, beside the other entry points. It opens the catalog as a modal over the page — the same Browse Kits modal the setup page's Change button opens — and a pick goes straight to that kit's setup. Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into. The widget renders nothing when the install has no catalog.
 
 **Kit Onboarding** is the briefing the onboarding event carries — **visible** in the session where the knowledge-base bootstrap is hidden. That one sends a bare slash command, a mechanical trigger with nothing to read; a kit sends a briefing the user needs, because the agent's first act is to ask them for what only they can supply, and the answers only make sense against what the platform already set up. The prompt is **platform-composed from the kit and the Agent's state, read when the turn is composed** rather than snapshotted at create: the definition repository and the commit it is checked out at, each connection requirement with whether it is required or suggested *and whether it is actually connected right now*, the Agent's real schedules and which are disabled, the bound channel — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction. What onboarding asks for is `ONBOARDING.md`'s to say; the platform declares nothing about it. Reading live matters because the user can change any of it between create and the first turn: disable a schedule, drop a connection, or simply never grant a suggested one. A connection the user has since deleted reads as not connected rather than failing the prompt. Every kit ships `ONBOARDING.md` beside `kit.yaml`; the platform has seeded the definition into the work directory before the session opens, so the briefing points at the checkout rather than asking for a clone.
+
+## Kit Update
+
+An Agent created from a kit with a seed carries a **Seed Stamp** beside its Kit Version: the seed's repository, branch and commit, because the seed commit otherwise lives only in the runtime's seed event and may sit in a different repository than the Kit Version. An Agent stamped before the Seed Stamp existed derives one only when that is unambiguous — a self-seeded kit whose seed names no ref — and is otherwise never offered an update.
+
+**Detection is on read, never a job.** Reading the owner's update statuses resolves each stamped branch's head through the ref advertisement the catalog refresh uses, behind a per-replica stale-while-revalidate cache. The seed always sits on a host the install may read, so detection never wakes an agent. An update is offered when the head differs from the stamp, not while onboarding is pending, and not for a head the owner chose to **skip** — the skip names one commit, so the offer returns with the next. The catalog is not consulted: a catalog that pins the kit behind the branch head still lets an Agent see the newer definition.
+
+**What changed** is read lazily for the button's hover card: the definition's own `VERSION` and `CHANGELOG.md` at both ends of the range, or, for a repository without a changelog, the compare API's commit list, cached for good because a pair of commits never changes.
+
+**Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail. Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state. The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them. What they decide for later updates is kept inside the checkout's git directory, outside history. The agent creates schedules and installs skills with its own tools and offers the user the connections and env it cannot set; the definition's own migration steps run after the checkout moves. The platform applies nothing itself, so the invariant below holds.
+
+**Completion is the agent's word.** While an update is pending the agent's MCP session carries a tool that reports it done for the targeted commit — moving the Seed Stamp there even when every change was declined — and one that withdraws it. Both clear the pending mark and raise the agents hint, so an open UI drops the button at once. An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 
 ## Invariants
 

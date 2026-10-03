@@ -17,6 +17,7 @@ import {
   createStarterKitsService,
   type LoadedKit,
 } from "../../modules/starter-kits/services/starter-kits-service.js";
+import type { KitUpstream } from "../../modules/starter-kits/infrastructure/kit-upstream.js";
 
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import {
@@ -25,6 +26,18 @@ import {
   EventType,
   type StarterKitApplied,
 } from "../../events.js";
+
+const NO_UPSTREAM: KitUpstream = {
+  head: async () => ({ status: "unreachable" }),
+  changes: async () => {
+    throw new Error("not read in these tests");
+  },
+};
+const NO_MARKS = {
+  begin: async () => {},
+  end: async () => {},
+  skip: async () => {},
+};
 
 function kit(overrides: Partial<ResolvedStarterKit> = {}): ResolvedStarterKit {
   return starterKitSchema.parse({
@@ -151,6 +164,9 @@ function makeHarness(
       async get() {
         return agent;
       },
+      async list() {
+        return agent ? [agent] : [];
+      },
       async connectSlack(agentId, channel, ambient) {
         calls.slack.push({ agentId, channel, ambient });
         return { agent: fakeAgent(agentId), alreadyConnected: false } as never;
@@ -228,6 +244,8 @@ function makeHarness(
         calls.egressRules.push({ agentId, hosts: rules.map((r) => r.host) });
       },
     },
+    kitUpstream: NO_UPSTREAM,
+    kitUpdateMarks: NO_MARKS,
     runtimeMutator: {
       async bump(agentId, events) {
         calls.bumped.push({ agentId, events });
@@ -612,6 +630,7 @@ describe("starter kits: apply", () => {
           calls.deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => {
           throw new Error("nope");
         },
@@ -641,6 +660,8 @@ describe("starter kits: apply", () => {
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -729,6 +750,7 @@ describe("starter kits: apply", () => {
           deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => ({}) as never,
       },
       schedules: {
@@ -756,6 +778,8 @@ describe("starter kits: apply", () => {
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -830,6 +854,7 @@ describe("starter kits: onboarding turn", () => {
           calls.deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => {
           throw new Error("unreachable");
         },
@@ -854,6 +879,8 @@ describe("starter kits: onboarding turn", () => {
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
       egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => {
           throw new Error("outbox down");

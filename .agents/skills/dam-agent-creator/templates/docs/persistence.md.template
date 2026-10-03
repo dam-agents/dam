@@ -60,7 +60,13 @@ versioning (the weekly audit only *reports* drift); acting happens **in the dire
 session only**: an operator-requested update or version check, and always before any
 self-modification (self-modification.md §8).
 
-**Check:**
+**Updating the checkout is the platform's Kit Update.** The platform detects a newer
+commit on the definition's branch, shows the operator an **Update** button, and opens a
+session whose briefing says exactly how to move the checkout: the operator picks which
+upstream changes to take, their local changes are set aside and put back (never
+committed, never pushed), and every conflict is theirs to decide. Follow that briefing
+for the git half; never `git reset`, `git clean` or commit local changes on your own.
+Outside such a session, a version check only reports:
 
 ```bash
 git -C /home/agent fetch -q origin main
@@ -70,21 +76,8 @@ head -1 /home/agent/work/VERSION 2>/dev/null                        # adopted
 ```
 
 Checked-out < latest → **tell the operator the agent is not up to date** (state both
-versions); update only when they ask, never silently, then migrate in the same session.
-Adopted ≠ checked-out → migrate now. All equal → report "up to date".
-
-Update a clean checkout by **fast-forward** — it reaches the same commit without
-discarding anything, so it also passes an auto-mode guard that refuses destructive
-commands:
-
-```bash
-git -C /home/agent status --porcelain          # must be empty; otherwise stop and ask
-git -C /home/agent merge --ff-only origin/main \
-  || git -C /home/agent reset --hard origin/main   # only when the checkout diverged
-```
-
-The fallback is for a diverged checkout (a platform reset, an abandoned local commit) —
-it discards, so surface that it was needed. **Never `git clean`.**
+versions) and point them at the **Update** button. Adopted ≠ checked-out → migrate now.
+All equal → report "up to date".
 
 **Migration** (`from` = adopted, `to` = checked-out):
 

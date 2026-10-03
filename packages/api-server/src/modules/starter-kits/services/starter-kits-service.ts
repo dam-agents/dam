@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type {
+  ResolvedStarterKit,
   StarterKit,
   TemplateHarness,
   Agent,
@@ -38,6 +39,9 @@ import {
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
+import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
+import { seedStampAtApply } from "../domain/seed-stamp.js";
+import type { KitUpstream } from "../infrastructure/kit-upstream.js";
 
 export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
 
@@ -49,7 +53,10 @@ export interface StarterKitsRepository {
 export interface StarterKitsServiceDeps {
   owner: string;
   repo: StarterKitsRepository;
-  agents: Pick<AgentsService, "create" | "delete" | "get" | "connectSlack">;
+  agents: Pick<
+    AgentsService,
+    "create" | "delete" | "get" | "list" | "connectSlack"
+  >;
   schedules: Pick<
     SchedulesService,
     "createCron" | "createRRule" | "toggle" | "list"
@@ -72,6 +79,15 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
+  kitUpstream: KitUpstream;
+  kitUpdateMarks: KitUpdateMarks;
+}
+
+function withSeedStamp(
+  seed: ResolvedStarterKit["seed"],
+): Pick<AgentCreateInput, "starterKitSeed"> {
+  const stamp = seed ? seedStampAtApply(seed) : undefined;
+  return stamp ? { starterKitSeed: stamp } : {};
 }
 
 function toView(loaded: LoadedKit): StarterKitView {
@@ -224,7 +240,28 @@ export function createStarterKitsService(
   const runnableHere = (loaded: LoadedKit): boolean =>
     loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
 
+  const kitUpdates = createKitUpdates({
+    owner: deps.owner,
+    repo: deps.repo,
+    upstream: deps.kitUpstream,
+    marks: deps.kitUpdateMarks,
+    agents: deps.agents,
+    schedules: deps.schedules,
+    grantedTemplates: async (agentId) =>
+      grantedTemplates(
+        (await deps.connections.getAgentConnections(agentId)).connections.map(
+          (c) => c.connectionId,
+        ),
+        "skip",
+      ),
+    familyTitles,
+    wakeAgent: deps.wakeAgent,
+    runtimeMutator: deps.runtimeMutator,
+  });
+
   return {
+    ...kitUpdates,
+
     async list() {
       return (await deps.repo.list()).filter(runnableHere).map(toView);
     },
@@ -273,6 +310,7 @@ export function createStarterKitsService(
           : {}),
         ...createInputFromSetup(kit),
         ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
+        ...withSeedStamp(kit.seed),
         connectionIds: input.connectionIds,
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
