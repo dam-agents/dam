@@ -21,6 +21,8 @@ import {
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import { createAwsS3CredentialProbe } from "./infrastructure/aws-s3-credential-probe.js";
+import { createE2eS3CredentialProbe } from "./infrastructure/e2e-s3-credential-probe.js";
 import {
   createOAuthRefreshLoop,
   type OAuthRefreshLoop,
@@ -94,6 +96,7 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
+  e2eEnabled?: boolean;
 }): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -135,6 +138,9 @@ export function composeConnectionsForOwner(opts: {
     oauthFlow,
     oauthEngine: opts.oauthEngine,
     githubAppEngine: opts.githubAppEngine,
+    s3CredentialProbe: opts.e2eEnabled
+      ? createE2eS3CredentialProbe()
+      : createAwsS3CredentialProbe(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,

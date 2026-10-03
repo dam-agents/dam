@@ -35,6 +35,7 @@ export function useConnectionMaintenance() {
         };
       case "header":
       case "client-credentials":
+      case "sigv4":
         return { onUpdateCredential: () => openUpdate(connection) };
       case "github-app":
         return {

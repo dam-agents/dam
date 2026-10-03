@@ -8,12 +8,13 @@ import {
   type AgentConnections,
   type Connection,
   type ConnectionCreateInput,
+  type ConnectionSigv4KeyPair,
   type ConnectionsService,
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
   type SecretRef,
-  githubHostOf,
+  preferenceGroupOf,
   unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -47,9 +48,17 @@ import {
 } from "../domain/refresh-failure-marker.js";
 import {
   buildConnectionSdsFields,
+  buildS3CredentialsFile,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  S3_CREDENTIALS_SECRET_FIELD,
 } from "../domain/connection-sds.js";
+import type { S3CredentialProbe } from "../domain/s3-credential-probe.js";
+import {
+  assertKeyText,
+  parseS3Endpoint,
+  S3InputError,
+} from "../domain/s3-endpoint.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -103,6 +112,7 @@ export function createConnectionsService(deps: {
   oauthFlow: OAuthFlowService;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
+  s3CredentialProbe: S3CredentialProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -126,8 +136,11 @@ export function createConnectionsService(deps: {
           c,
         ): c is Extract<
           Connection["contributions"][number],
-          { kind: "egress-allow" | "egress-inject" }
-        > => c.kind === "egress-allow" || c.kind === "egress-inject",
+          { kind: "egress-allow" | "egress-inject" | "egress-sign" }
+        > =>
+          c.kind === "egress-allow" ||
+          c.kind === "egress-inject" ||
+          c.kind === "egress-sign",
       )
       .map((c) => c.host);
     const presetAppSlug =
@@ -240,6 +253,45 @@ export function createConnectionsService(deps: {
     await deps.secretStore.putFields(auth.valueRef, {
       value,
       ...buildConnectionSdsFields(conn.contributions, value),
+    });
+  }
+
+  async function rotateSigv4Keys(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
+    keys: ConnectionSigv4KeyPair,
+  ): Promise<void> {
+    const endpoint = conn.inputs["endpoint"];
+    if (typeof endpoint !== "string") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection has no stored endpoint to check the keys against.",
+      });
+    }
+    try {
+      assertKeyText("The access key ID", keys.accessKeyId);
+      assertKeyText("The secret access key", keys.secretAccessKey);
+    } catch (err) {
+      if (err instanceof S3InputError) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+      }
+      throw err;
+    }
+    const bucket = conn.inputs["bucket"];
+    await verifyS3Keys({
+      endpoint,
+      region: auth.region,
+      ...(typeof bucket === "string" ? { bucket } : {}),
+      ...keys,
+    });
+    await deps.secretStore.putFields(auth.credentialsFileRef, {
+      accessKeyId: keys.accessKeyId,
+      secretAccessKey: keys.secretAccessKey,
+      [S3_CREDENTIALS_SECRET_FIELD]: buildS3CredentialsFile(
+        keys.accessKeyId,
+        keys.secretAccessKey,
+      ),
     });
   }
 
@@ -469,6 +521,30 @@ export function createConnectionsService(deps: {
     return true;
   }
 
+  async function verifyS3Keys(input: {
+    endpoint: string;
+    region: string;
+    bucket?: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+  }): Promise<void> {
+    const bucket = input.bucket?.trim();
+    const outcome = await deps.s3CredentialProbe.verify({
+      endpoint: parseS3Endpoint(input.endpoint).origin,
+      region: input.region.trim(),
+      ...(bucket ? { bucket } : {}),
+      accessKeyId: input.accessKeyId,
+      secretAccessKey: input.secretAccessKey,
+    });
+    if (outcome === "ok") return;
+    const message = {
+      refused: "The endpoint refused these keys.",
+      unreachable: "Could not reach the endpoint.",
+      "no-such-bucket": `The endpoint has no bucket named "${bucket}" for these keys.`,
+    }[outcome];
+    throw new TRPCError({ code: "BAD_REQUEST", message });
+  }
+
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -578,9 +654,29 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
-    async update(id: string, value: string): Promise<void> {
+    async update(
+      id: string,
+      credential: string | ConnectionSigv4KeyPair,
+    ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+
+      if (conn.auth.kind === "sigv4") {
+        if (typeof credential === "string") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "An S3-compatible storage connection takes an access key ID and a secret access key.",
+          });
+        }
+        await rotateSigv4Keys(conn, conn.auth, credential);
+      } else if (typeof credential !== "string") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This connection takes a single credential value.",
+        });
+      }
+      const value = typeof credential === "string" ? credential : "";
 
       switch (conn.auth.kind) {
         case "header":
@@ -594,6 +690,8 @@ export function createConnectionsService(deps: {
           break;
         case "oauth":
           await rotateOAuthClientSecret(conn, conn.auth, value);
+          break;
+        case "sigv4":
           break;
         case "none":
           throw new TRPCError({
@@ -636,6 +734,9 @@ export function createConnectionsService(deps: {
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
+          break;
+        case "sigv4":
+          paths.add(conn.auth.credentialsFileRef.path);
           break;
         case "none":
           break;
@@ -805,13 +906,13 @@ export function createConnectionsService(deps: {
             message: "connection is not granted to this agent",
           });
         }
-        const host = githubHostOf(conn.contributions);
+        const group = preferenceGroupOf(conn.contributions);
         const siblings = granted
           .filter(
             (c) =>
               c.id !== connectionId &&
-              host !== undefined &&
-              githubHostOf(c.contributions) === host,
+              group !== undefined &&
+              preferenceGroupOf(c.contributions) === group,
           )
           .map((c) => c.id);
         await deps.repo.setPreferred(agentId, connectionId, siblings);
@@ -822,7 +923,7 @@ export function createConnectionsService(deps: {
           agentId,
           target: connectionId,
           result: "success",
-          detail: { host, cleared: siblings },
+          detail: { group, cleared: siblings },
         });
         const owned = await deps.repo.listByOwner(deps.ownerId);
         await deps.fanOut.apply({
@@ -891,13 +992,25 @@ export function createConnectionsService(deps: {
         }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
-      const built = await buildConnection(
-        template,
-        effectiveInput,
-        (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
-        deps.oauthCallbackUrl,
-        deps.brandName,
-      );
+      let built: Awaited<ReturnType<typeof buildConnection>>;
+      try {
+        built = await buildConnection(
+          template,
+          effectiveInput,
+          (purpose) =>
+            deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
+          deps.oauthCallbackUrl,
+          deps.brandName,
+        );
+      } catch (err) {
+        if (err instanceof S3InputError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        throw err;
+      }
+      if (effectiveInput.authKind === "sigv4") {
+        await verifyS3Keys(effectiveInput);
+      }
 
       const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
       const contributions = built.contributions.map((c): Contribution =>
@@ -1292,7 +1405,13 @@ function stripSecretsFromInputs(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = ["value", "clientSecret", "privateKey"];
+  const SECRET_KEYS = [
+    "value",
+    "clientSecret",
+    "privateKey",
+    "accessKeyId",
+    "secretAccessKey",
+  ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (SECRET_KEYS.includes(k)) continue;
@@ -1311,6 +1430,7 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
     case "github-app":
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
+    case "sigv4":
       return "active";
     case "none":
       return "active";
@@ -1336,6 +1456,8 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;
+    case "sigv4":
+      return auth.credentialsFileRef.path;
     case "none":
       return null;
   }

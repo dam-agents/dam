@@ -126,6 +126,7 @@ function makeService(
     }),
     githubAppEngine,
     oauthCallbackUrl: "https://cb.example/oauth/callback",
+    s3CredentialProbe: { verify: async () => "ok" },
     brandName: "Test",
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
       lockKeys.push(key);

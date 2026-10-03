@@ -99,6 +99,24 @@ export function createFilePlugin(): Plugin {
         }
 
         const desired = new Map<string, FileDesired[] | null>(fragments);
+        for (const [path, list] of fragments) {
+          const record = written[path];
+          if (record?.mergeMode !== "key-targeted") continue;
+          const stale = record.keys.filter(
+            (key) => !next[path]!.keys.includes(key),
+          );
+          if (stale.length === 0) continue;
+          desired.set(path, [
+            {
+              format: record.format,
+              mergeMode: record.mergeMode,
+              content: undefined,
+              delete: true,
+              keys: stale,
+            },
+            ...list,
+          ]);
+        }
         for (const [path, record] of Object.entries(written)) {
           if (desired.has(path)) continue;
           const removal = removalOf(record);

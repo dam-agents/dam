@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1811,4 +1812,115 @@ func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing
 	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
 	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&otherCA, secrets, hosts, false))
 	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
+}
+
+const signingHostsAnnotation = `[
+	{"host":"s3.example.com","pathPattern":"/bkt","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+	{"host":"s3.example.com","pathPattern":"/bkt/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+]`
+
+func signingSecret(name, connection, credentialsKey string) corev1.Secret {
+	s := ownerSecret(name, "connection", connection)
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = signingHostsAnnotation
+	s.Data = map[string][]byte{
+		"accessKeyId":     []byte("AKIA"),
+		"secretAccessKey": []byte("secret"),
+	}
+	if credentialsKey != "" {
+		s.Data[credentialsKey] = []byte("[default]\naws_access_key_id = AKIA\naws_secret_access_key = secret\n")
+	}
+	return s
+}
+
+func filterIndex(filters []map[string]any, prefix string) int {
+	return slices.IndexFunc(filters, func(f map[string]any) bool {
+		name, _ := f["name"].(string)
+		return strings.HasPrefix(name, prefix)
+	})
+}
+
+// TEST_SCENARIO: Bob grants an S3 Connection, so the gateway must sign his requests after any header injector and before the request leaves, and it must do so once for the bucket's two path entries.
+func TestRenderEnvoyBootstrap_SigningSecretRendersGuardAndSignerBeforeForwardProxy(t *testing.T) {
+	signing := signingSecret("platform-conn-s3", "conn-s3", "aws-credentials")
+	injected := ownerSecret("platform-conn-gh", "connection", "conn-gh")
+	delete(injected.Annotations, envoyHostPatternAnn)
+	injected.Annotations[envoyInjectionHostsAnn] = `[{"host":"s3.example.com","headerName":"X-Other"}]`
+	injected = withHostSDS(injected, "s3.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{injected, signing}, nil)
+	require.Len(t, chains, 1)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.com")
+	injector := filterIndex(filters, "credential_injector_")
+	guard := filterIndex(filters, "streaming_guard_")
+	signer := filterIndex(filters, "aws_request_signing_")
+	forward := filterIndex(filters, "envoy.filters.http.dynamic_forward_proxy")
+	require.GreaterOrEqual(t, injector, 0)
+	require.GreaterOrEqual(t, guard, 0)
+	require.GreaterOrEqual(t, signer, 0)
+	assert.Less(t, injector, guard)
+	assert.Less(t, guard, signer)
+	assert.Less(t, signer, forward)
+	assert.Equal(t, signer, slices.IndexFunc(filters, func(f map[string]any) bool {
+		return strings.HasPrefix(f["name"].(string), "aws_request_signing_")
+	}), "one signer per Connection, not one per path entry")
+	assert.Equal(t, 1, strings.Count(got, "use_unsigned_payload: true"))
+
+	assertInjectsOnlyWhenAddressed(t, filters[guard], "conn-s3")
+	assertInjectsOnlyWhenAddressed(t, filters[signer], "conn-s3")
+	inner := filters[signer]["typed_config"].(map[string]any)["extension_config"].(map[string]any)
+	assert.Equal(t, "envoy.filters.http.aws_request_signing", inner["name"])
+	cfg := inner["typed_config"].(map[string]any)
+	assert.Equal(t, "s3", cfg["service_name"])
+	assert.Equal(t, "us-south", cfg["region"])
+	assert.Equal(t, "s3.example.com", cfg["host_rewrite"])
+	assert.Equal(t, true, cfg["use_unsigned_payload"])
+	assert.Equal(t, []any{map[string]any{"exact": connectionAddressHeader}}, cfg["match_excluded_headers"])
+	provider := cfg["credential_provider"].(map[string]any)
+	assert.Equal(t, true, provider["custom_credential_provider_chain"], "no env, IMDS or container fallback")
+	file := provider["credentials_file_provider"].(map[string]any)
+	assert.Equal(t, "default", file["profile"])
+	source := file["credentials_data_source"].(map[string]any)
+	assert.Equal(t, "/etc/envoy/credentials/cred-platform-conn-s3/aws-credentials", source["filename"])
+	assert.Equal(t, map[string]any{"path": "/etc/envoy/credentials/cred-platform-conn-s3"}, source["watched_directory"])
+
+	assert.Contains(t, got, "STREAMING-")
+	assert.Contains(t, got, "when_required")
+}
+
+func TestChainsFromSecrets_SigningMissingCredentialsKeyDegradesToAllowOnly(t *testing.T) {
+	chains := chainsFromSecrets([]corev1.Secret{signingSecret("platform-conn-s3", "conn-s3", "")}, nil)
+	require.Len(t, chains, 1)
+	assert.Equal(t, "s3.example.com", chains[0].Host)
+	assert.False(t, chains[0].Credentialed(),
+		"a missing credentials file must degrade to allow-only, not render an unbootable signer")
+}
+
+func TestChainsFromSecrets_SigningTraversalCredentialsKeyIgnored(t *testing.T) {
+	s := signingSecret("platform-conn-s3", "conn-s3", "../../tls/tls.key")
+	s.Annotations[envoyInjectionHostsAnn] = `[{"host":"s3.example.com","signing":{"region":"us-south","service":"s3","credentialsKey":"../../tls/tls.key"}}]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].Credentialed(),
+		"a credentials key with path separators must not escape the Secret mount")
+}
+
+func TestEnvoySecretsRev_SigningCredentialsKeyRollsOnlyWhenAddedOrRemoved(t *testing.T) {
+	without := signingSecret("platform-conn-s3", "conn-s3", "")
+	with := signingSecret("platform-conn-s3", "conn-s3", "aws-credentials")
+	rotated := signingSecret("platform-conn-s3", "conn-s3", "aws-credentials")
+	rotated.Data["aws-credentials"] = []byte("[default]\naws_access_key_id = NEW\naws_secret_access_key = new\n")
+
+	assert.NotEqual(t,
+		envoySecretsRev([]corev1.Secret{without}, nil),
+		envoySecretsRev([]corev1.Secret{with}, nil),
+		"adding the credentials key must roll the gateway")
+	assert.Equal(t,
+		envoySecretsRev([]corev1.Secret{with}, nil),
+		envoySecretsRev([]corev1.Secret{rotated}, nil),
+		"rotating the credentials file contents must not roll the gateway")
 }

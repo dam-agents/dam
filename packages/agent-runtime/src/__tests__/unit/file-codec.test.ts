@@ -36,9 +36,13 @@ describe("file-codec", () => {
     expect(() => parseFile("yaml", "a: 1\n---\nb: 2\n")).toThrow();
   });
 
-  it("treats text/ini as opaque strings on parse", () => {
+  it("treats text as an opaque string and parses ini into tables", () => {
     expect(parseFile("text", "hello")).toBe("hello");
-    expect(parseFile("ini", "a=b")).toBe("a=b");
+    expect(parseFile("ini", "a=b")).toEqual({ a: "b" });
+    const aws = {
+      "profile x y": { region: "r", s3: { addressing_style: "path" } },
+    };
+    expect(parseFile("ini", serializeFile("ini", aws))).toEqual(aws);
   });
 
   it("throws on malformed json/toml (so callers can probe)", () => {

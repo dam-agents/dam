@@ -208,7 +208,9 @@ export function connectionKindSubtitle(
   const host = connection.host ?? connection.hosts[0];
   if (
     host &&
-    (connection.category === "mcp" || connection.authKind === "header")
+    (connection.category === "mcp" ||
+      connection.authKind === "header" ||
+      connection.authKind === "sigv4")
   )
     return host;
   return template?.name ?? connection.templateId;

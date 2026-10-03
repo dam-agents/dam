@@ -62,6 +62,7 @@ function ConnectionUpdateCredentialDialog({
   onClose: () => void;
 }) {
   const [value, setValue] = useState("");
+  const [accessKeyId, setAccessKeyId] = useState("");
   const update = useUpdateConnection({ silent: true });
 
   const copy = credentialCopyFor(connection.authKind);
@@ -74,9 +75,23 @@ function ConnectionUpdateCredentialDialog({
         ? update.error.message
         : "Couldn't update the credential. Please try again.";
 
+  const isKeyPair = copy.accessKeyIdLabel !== undefined;
+  const ready =
+    value.trim().length > 0 && (!isKeyPair || accessKeyId.trim().length > 0);
+
   const submit = async () => {
     try {
-      await update.mutateAsync({ id: connection.id, value: value.trim() });
+      await update.mutateAsync(
+        isKeyPair
+          ? {
+              id: connection.id,
+              sigv4: {
+                accessKeyId: accessKeyId.trim(),
+                secretAccessKey: value.trim(),
+              },
+            }
+          : { id: connection.id, value: value.trim() },
+      );
       onClose();
     } catch {}
   };
@@ -90,6 +105,15 @@ function ConnectionUpdateCredentialDialog({
         closeTestId="update-credential-close"
       />
       <DialogBody className="flex flex-col gap-4">
+        {copy.accessKeyIdLabel ? (
+          <LabeledInput
+            label={copy.accessKeyIdLabel}
+            testId="update-credential-access-key-id"
+            value={accessKeyId}
+            onChange={setAccessKeyId}
+            autoFocus
+          />
+        ) : null}
         <LabeledInput
           label={copy.label}
           testId="update-credential-value"
@@ -102,7 +126,7 @@ function ConnectionUpdateCredentialDialog({
           value={value}
           onChange={setValue}
           error={fieldError}
-          autoFocus
+          autoFocus={!isKeyPair}
         />
       </DialogBody>
       <DialogFooter>
@@ -110,7 +134,7 @@ function ConnectionUpdateCredentialDialog({
           Cancel
         </Button>
         <Button
-          disabled={value.trim().length === 0 || update.isPending}
+          disabled={!ready || update.isPending}
           onClick={() => void submit()}
           data-testid="update-credential-submit"
         >

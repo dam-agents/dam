@@ -5,6 +5,20 @@ export const CONNECTION_TOKEN_PLACEHOLDER = DEFAULT_ENV_PLACEHOLDER;
 
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
+export const S3_CREDENTIALS_SECRET_FIELD = "aws-credentials";
+
+export function buildS3CredentialsFile(
+  accessKeyId: string,
+  secretAccessKey: string,
+): string {
+  return [
+    "[default]",
+    `aws_access_key_id = ${accessKeyId}`,
+    `aws_secret_access_key = ${secretAccessKey}`,
+    "",
+  ].join("\n");
+}
+
 export function sdsFileKeyForHost(host: string): string {
   const slug = Buffer.from(host, "utf8").toString("base64url");
   return `host-${slug}.sds.yaml`;
@@ -78,9 +92,26 @@ export function connectionSecretAnnotations(
       sdsKey: sdsFileKeyForInjection(c),
     }));
 
+  const signingHosts = contributions
+    .filter(
+      (c): c is Extract<Contribution, { kind: "egress-sign" }> =>
+        c.kind === "egress-sign",
+    )
+    .map((c) => ({
+      host: c.host,
+      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
+      ...(c.port ? { port: c.port } : {}),
+      signing: {
+        region: c.region,
+        service: c.service,
+        credentialsKey: S3_CREDENTIALS_SECRET_FIELD,
+      },
+    }));
+
+  const entries = [...injectionHosts, ...signingHosts];
   const out: Record<string, string> = {};
-  if (injectionHosts.length > 0) {
-    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
+  if (entries.length > 0) {
+    out["agent-platform.ai/injection-hosts"] = JSON.stringify(entries);
   }
   return out;
 }

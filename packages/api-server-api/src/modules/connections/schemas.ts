@@ -6,10 +6,25 @@ export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
 
-export const connectionUpdateInputSchema = z.object({
-  id: z.string().min(1),
-  value: z.string().min(1),
+export const connectionSigv4KeyPairSchema = z.object({
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
 });
+
+export type ConnectionSigv4KeyPair = z.infer<
+  typeof connectionSigv4KeyPairSchema
+>;
+
+export const connectionUpdateInputSchema = z.union([
+  z.object({
+    id: z.string().min(1),
+    value: z.string().min(1),
+  }),
+  z.object({
+    id: z.string().min(1),
+    sigv4: connectionSigv4KeyPairSchema,
+  }),
+]);
 
 export const connectionStartOAuthInputSchema = z.object({
   connectionId: z.string().min(1),
@@ -83,6 +98,16 @@ const headerCreateInput = z.object({
   configInputs: z.record(z.string(), z.string()).optional(),
   value: z.string().min(1),
   caData: z.string().optional(),
+});
+
+const sigv4CreateInput = z.object({
+  ...commonFields,
+  authKind: z.literal("sigv4"),
+  endpoint: z.string().min(1),
+  region: z.string().min(1),
+  bucket: z.string().min(1).optional(),
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
 });
 
 const clientCredentialsCreateInput = z.object({
@@ -160,6 +185,7 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   clientCredentialsCreateInput,
   githubAppCreateInput,
   headerCreateInput,
+  sigv4CreateInput,
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;

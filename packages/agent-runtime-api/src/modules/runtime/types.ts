@@ -4,6 +4,7 @@ export const contributionKind = z.enum([
   "env",
   "egress-allow",
   "egress-inject",
+  "egress-sign",
   "file",
   "mcp-entry",
   "skill-ref",
@@ -92,6 +93,15 @@ export const egressInjectContribution = z.object({
   upstreamCa: z.boolean().optional(),
 });
 
+export const egressSignContribution = z.object({
+  kind: z.literal("egress-sign"),
+  host: z.string().min(1),
+  port: egressPort,
+  pathPattern: z.string().optional(),
+  region: z.string().min(1),
+  service: z.literal("s3"),
+});
+
 export const fileContribution = z.object({
   kind: z.literal("file"),
   path: z.string().min(1),
@@ -119,6 +129,7 @@ export const contribution = z.discriminatedUnion("kind", [
   envContribution,
   egressAllowContribution,
   egressInjectContribution,
+  egressSignContribution,
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,
