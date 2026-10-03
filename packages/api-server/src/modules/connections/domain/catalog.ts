@@ -6,6 +6,9 @@ import {
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
+  bedrockEnvMappings,
+  BEDROCK_REGION_PATTERN,
+  BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
   BOB_HOST,
@@ -235,6 +238,36 @@ const BOB: HeaderConnectionTemplate = {
       label: "Mode",
       hint: `Default mode for new sessions. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
+    },
+  ],
+};
+
+const BEDROCK: HeaderConnectionTemplate = {
+  id: BEDROCK_TEMPLATE_ID,
+  name: "AWS Bedrock",
+  category: "app",
+  isCustom: false,
+  description:
+    "Models hosted in AWS Bedrock, authenticated with a Bedrock API key.",
+  iconSlug: "bedrock",
+  authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: envContributions(bedrockEnvMappings()),
+  configInputs: [
+    {
+      inputName: "region",
+      envName: "AWS_REGION",
+      label: "Region",
+      hint: "The AWS region the key's models are served from, e.g. us-east-1.",
+      pattern: BEDROCK_REGION_PATTERN,
+      patternHint: "an AWS region, e.g. us-east-1",
+    },
+    {
+      inputName: "model",
+      envName: "AWS_BEDROCK_MODEL",
+      label: "Model",
+      hint: "Optional. Empty lets agents start on one of the region's inference profiles. A model set here must be an inference-profile ID, e.g. eu.anthropic.claude-sonnet-4-6.",
     },
   ],
 };
@@ -875,6 +908,7 @@ export function buildCatalog(
     OPENAI,
     IBM_LITELLM,
     BOB,
+    BEDROCK,
     MODAL,
     github(creds.github),
     GITHUB_PAT,

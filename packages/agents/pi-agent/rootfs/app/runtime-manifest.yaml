@@ -35,15 +35,28 @@ drivers:
               name: "High"
             - value: xhigh
               name: "Extra High"
-    # Both name an OpenAI-compatible endpoint the agent was pointed at — it
-    # fronts no provider of its own, so either justifies a seeded model.
+    # Sources in priority order; the first whose variable is set answers.
+    # A Bedrock connection names the region's control-plane endpoint, which
+    # lists the inference profiles invocable from that region; it comes first
+    # because pi-dynamic-providers makes Bedrock the default provider whenever
+    # a Bedrock connection is present. The OpenAI-compatible variables name an
+    # endpoint the agent was pointed at — it fronts no provider of its own, so
+    # either justifies a seeded model.
     modelDiscovery:
-      urlEnv:
-        - OPENAI_PROXY_URL
-        - OPENAI_BASE_URL
-      redirectEnv:
-        - OPENAI_PROXY_URL
-        - OPENAI_BASE_URL
-      pinEnv:
-        - OPENAI_PROXY_MODEL
-        - OPENAI_MODEL
+      - urlEnv:
+          - AWS_ENDPOINT_URL_BEDROCK
+        redirectEnv:
+          - AWS_ENDPOINT_URL_BEDROCK
+        pinEnv:
+          - AWS_BEDROCK_MODEL
+        path: "/inference-profiles?maxResults=1000"
+        shape: bedrock-inference-profiles
+      - urlEnv:
+          - OPENAI_PROXY_URL
+          - OPENAI_BASE_URL
+        redirectEnv:
+          - OPENAI_PROXY_URL
+          - OPENAI_BASE_URL
+        pinEnv:
+          - OPENAI_PROXY_MODEL
+          - OPENAI_MODEL

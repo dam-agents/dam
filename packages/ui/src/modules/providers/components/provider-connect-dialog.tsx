@@ -1,13 +1,19 @@
 import type { ConnectionCreateInput } from "api-server-api";
 
 import { Modal } from "../../../components/modal.js";
-import type { BobModelPins, ProviderPresetType } from "../../../types.js";
+import {
+  BEDROCK_TEMPLATE_ID,
+  type BedrockPins,
+  type BobModelPins,
+  type ProviderPresetType,
+} from "../../../types.js";
 import {
   useCreateConnection,
   useUpdateConnection,
 } from "../../connections/api/mutations.js";
 import { AnthropicForm } from "./anthropic/form.js";
 import { type Mode, MODES } from "./anthropic/modes.js";
+import { BedrockForm } from "./bedrock/form.js";
 import { BobForm } from "./bob/form.js";
 import { IbmLitellmForm } from "./ibm-litellm/form.js";
 import { OpenAIForm } from "./openai/form.js";
@@ -116,6 +122,24 @@ export function ProviderConnectDialog({
             }
           />
         )}
+        {provider === "bedrock" && (
+          <BedrockForm
+            variant={variant}
+            onCancel={onClose}
+            onSave={({ value, pins }) =>
+              persist({
+                value,
+                createInput: {
+                  templateId: BEDROCK_TEMPLATE_ID,
+                  name: BEDROCK_TEMPLATE_ID,
+                  authKind: "header",
+                  value,
+                  configInputs: bedrockConfigInputs(pins),
+                },
+              })
+            }
+          />
+        )}
         {provider === "ibm-litellm" && (
           <IbmLitellmForm
             variant={variant}
@@ -136,6 +160,12 @@ export function ProviderConnectDialog({
       </div>
     </Modal>
   );
+}
+
+function bedrockConfigInputs(pins: BedrockPins): Record<string, string> {
+  return pins.model
+    ? { region: pins.region, model: pins.model }
+    : { region: pins.region };
 }
 
 function bobConfigInputs(pins: BobModelPins): Record<string, string> {

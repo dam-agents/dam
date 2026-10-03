@@ -119,6 +119,7 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { modelDisplayName } from "../lib/session-model.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
@@ -235,6 +236,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     stopAgent,
+    chooseSessionModel,
     busy,
     loadingSession,
     connectionState,
@@ -253,6 +255,15 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+  const storedSessionModel = useStore((s) => s.sessionModel);
+  const sessionModel =
+    sessionId && storedSessionModel?.sessionId === sessionId
+      ? storedSessionModel
+      : null;
+  const indicatorModel = sessionModel
+    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
+        ?.name ?? modelDisplayName(sessionModel.current))
+    : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -842,11 +853,21 @@ export function ChatView() {
                   onSend={sendPrompt}
                   onStop={stopAgent}
                 />
-                {!hasPendingPermission && harnessCurrent?.model && (
+                {!hasPendingPermission && indicatorModel && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
                       <ModelIndicator
-                        model={harnessCurrent.model}
+                        model={indicatorModel}
+                        sessionChoices={
+                          sessionModel
+                            ? {
+                                current: sessionModel.current,
+                                choices: sessionModel.choices,
+                                onChoose: (value) =>
+                                  void chooseSessionModel(value),
+                              }
+                            : undefined
+                        }
                         subject={surfaceCopy.modelSubject}
                         settings={
                           surfaceCopy.modelSettings
