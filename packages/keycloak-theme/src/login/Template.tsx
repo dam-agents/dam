@@ -62,8 +62,8 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
               className={cn(
                 "mt-6 max-w-[var(--width-login-col)] rounded-md border px-3 py-2 text-sm",
                 message.type === "error"
-                  ? "border-red-200 bg-red-50 text-red-800"
-                  : "border-blue-200 bg-blue-50 text-blue-800",
+                  ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+                  : "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
               )}
               dangerouslySetInnerHTML={{
                 __html: kcSanitize(message.summary),
