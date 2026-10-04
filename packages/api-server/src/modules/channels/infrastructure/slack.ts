@@ -228,6 +228,12 @@ function isDirectMessageId(channelId: string): boolean {
   return channelId.startsWith("D");
 }
 
+function isGroupDirectMessageName(channelName: string | undefined): boolean {
+  return channelName?.startsWith("mpdm-") ?? false;
+}
+
+const MEMBERSHIP_CHECK_BUDGET_MS = 1_500;
+
 export type FetchedImage = {
   block: ContentBlock;
   meta: { name: string; size: number };
@@ -2707,6 +2713,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       : `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.${alreadyHere}`;
   }
 
+  async function botIsAbsentFromGroupDm(
+    command: SlackSlashCommand,
+  ): Promise<boolean> {
+    if (!gateway || !isGroupDirectMessageName(command.channelName))
+      return false;
+    const asked = gateway.getConversationInfo(
+      command.channelId,
+      command.teamId,
+    );
+    const timedOut = new Promise<"unknown">((resolve) =>
+      setTimeout(() => resolve("unknown"), MEMBERSHIP_CHECK_BUDGET_MS).unref(),
+    );
+    const answer = await Promise.race([
+      asked.then(
+        (info) => (info ? "present" : "absent"),
+        () => "unknown" as const,
+      ),
+      timedOut,
+    ]);
+    return answer === "absent";
+  }
+
+  function groupDmUnreachableCopy(): string {
+    return (
+      `I can't be added to this group DM: Slack only lets an app into a group DM that was started with it. ` +
+      `Start a new group DM that includes @${brand.name}, or move this conversation to a private channel and invite me there, then run \`/${brandShort} bind\` again.`
+    );
+  }
+
   async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
     if (!gateway || !event.inviter) return;
     await gateway.postEphemeral({
@@ -2808,6 +2843,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await ack({ text: "Account unlinked." });
       })
       .with("bind", async () => {
+        if (await botIsAbsentFromGroupDm(command)) {
+          getLogger().info(
+            { channelId: command.channelId, teamId: command.teamId },
+            "slack.bind.refused_group_dm_without_bot",
+          );
+          await ack({ text: groupDmUnreachableCopy() });
+          return;
+        }
         await ack({
           text: await mintBindInvitation(
             command.userId,

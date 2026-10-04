@@ -17,6 +17,7 @@ export const SLACK_INSTALL_BOT_SCOPES = [
   "reactions:read",
   "channels:read",
   "groups:read",
+  "mpim:read",
   "im:write",
   "users:read",
   "users:read.email",
