@@ -180,6 +180,12 @@ export type PlanRuntimeMigrationResult =
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
+export type WakeAgentError =
+  { type: "AgentNotFound" } | { type: "RuntimeMigrating"; failed: boolean };
+
+export type WakeAgentResult =
+  { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
+
 export type AbortRuntimeMigrationError =
   | { type: "AgentNotFound" }
   | { type: "NoRuntimeMigration" }
@@ -255,7 +261,7 @@ export interface AgentsService {
   update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
-  wake: (id: string) => Promise<Agent | null>;
+  wake: (id: string) => Promise<WakeAgentResult>;
   stop: (id: string) => Promise<Agent | null>;
   retryWorkspace: (
     id: string,

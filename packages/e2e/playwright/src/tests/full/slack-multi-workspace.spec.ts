@@ -10,6 +10,7 @@ const agentName = "e2e-slack-workspaces";
 const secondTeamId = "T-E2E-SECOND";
 const channelInSecond = "C-E2E-WS-SECOND";
 const channelInOriginal = "C-E2E-WS-ORIGINAL";
+const unseenChannel = "C-E2E-WS-UNSEEN";
 const strangerSlackUserId = "U-E2E-WS-STRANGER";
 
 const ts = "1700000950.000100";
@@ -141,5 +142,20 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
 
     const record = await outboundFor(api, channelInOriginal);
     expect(record).toMatchObject({ teamId: "" });
+  });
+
+  await test.step("changing a binding no workspace can see does not ask Slack again (#4292)", async () => {
+    await expect(
+      api.agents.connectSlack.mutate({
+        id: agentId,
+        slackChannelId: unseenChannel,
+      }),
+    ).rejects.toThrow(/No connected Slack workspace can see/);
+
+    await api.agents.connectSlack.mutate({
+      id: agentId,
+      slackChannelId: channelInOriginal,
+      ambient: true,
+    });
   });
 });

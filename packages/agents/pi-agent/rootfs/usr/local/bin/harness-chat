@@ -1,2 +1,2 @@
 #!/bin/sh
-exec pi-acp "$@"
+PI_PLATFORM_REPORT_ERRORS=1 exec pi-acp "$@"

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import {
+  BEDROCK_TEMPLATE_ID,
   SHARED_KB_TEMPLATE_ID,
   type ConnectionAuthConfig,
   type ConnectionCreateInput,
@@ -7,7 +8,10 @@ import {
   type SecretRef,
 } from "api-server-api";
 import { parseShareString, tokenHeaderName } from "../../kb-shares/index.js";
-import type { ConnectionTemplate } from "./connection-template.js";
+import type {
+  ConfigInputSpec,
+  ConnectionTemplate,
+} from "./connection-template.js";
 import {
   discoverIssuerFromResourceHost,
   discoverIssuerMetadata,
@@ -507,12 +511,67 @@ function buildGitHubApp(
   };
 }
 
+function validConfigInput(spec: ConfigInputSpec, value: string): string {
+  if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(value)) {
+    throw new Error(`${spec.label}: "${value}" is not valid`);
+  }
+  if (spec.enumValues && !spec.enumValues.includes(value)) {
+    throw new Error(
+      `${spec.label}: must be one of ${spec.enumValues.join(", ")}`,
+    );
+  }
+  return value;
+}
+
+function bedrockRegionOf(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+): string {
+  const spec = template.configInputs?.find((c) => c.inputName === "region");
+  const region = input.configInputs?.region?.trim();
+  if (!spec || !region) throw new Error(`${spec?.label ?? "Region"}: required`);
+  return validConfigInput(spec, region);
+}
+
+const BEDROCK_CONTROL_URL_ENV = "AWS_ENDPOINT_URL_BEDROCK";
+
+function bedrockRuntimeHost(region: string): string {
+  return `bedrock-runtime.${region}.amazonaws.com`;
+}
+
+function bedrockControlHost(region: string): string {
+  return `bedrock.${region}.amazonaws.com`;
+}
+
+function bedrockControlContributions(
+  region: string,
+  headerName: string,
+  valueFormat: string,
+): Contribution[] {
+  const host = bedrockControlHost(region);
+  return [
+    { kind: "egress-inject", host, headerName, valueFormat },
+    {
+      kind: "env",
+      name: BEDROCK_CONTROL_URL_ENV,
+      placeholder: `https://${host}`,
+    },
+  ];
+}
+
 function buildHeader(
   template: Extract<ConnectionTemplate, { authKind: "header" }>,
   input: Extract<ConnectionCreateInput, { authKind: "header" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
-  const rawHost = input.host ?? template.host;
+  const bedrockRegion =
+    template.id === BEDROCK_TEMPLATE_ID
+      ? bedrockRegionOf(template, input)
+      : undefined;
+  const rawHost =
+    input.host ??
+    template.host ??
+    (bedrockRegion ? bedrockRuntimeHost(bedrockRegion) : undefined);
   const headerName = input.headerName ?? template.headerName;
   const valueFormat = input.valueFormat ?? template.valueFormat ?? "{value}";
   if (!rawHost) throw new Error(`template ${template.id}: missing host`);
@@ -539,6 +598,12 @@ function buildHeader(
 
   if (template.id === "github-enterprise-pat") {
     contributions.push(...githubEnterpriseHostContributions(host, port));
+  }
+
+  if (bedrockRegion) {
+    contributions.push(
+      ...bedrockControlContributions(bedrockRegion, headerName, valueFormat),
+    );
   }
 
   const hasHostContrib = contributions.some(
@@ -568,15 +633,11 @@ function buildHeader(
   for (const spec of template.configInputs ?? []) {
     const value = input.configInputs?.[spec.inputName]?.trim();
     if (!value) continue;
-    if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(value)) {
-      throw new Error(`${spec.label}: "${value}" is not valid`);
-    }
-    if (spec.enumValues && !spec.enumValues.includes(value)) {
-      throw new Error(
-        `${spec.label}: must be one of ${spec.enumValues.join(", ")}`,
-      );
-    }
-    contributions.push({ kind: "env", name: spec.envName, placeholder: value });
+    contributions.push({
+      kind: "env",
+      name: spec.envName,
+      placeholder: validConfigInput(spec, value),
+    });
   }
 
   const sdsFields = buildConnectionSdsFields(contributions, input.value);

@@ -305,6 +305,7 @@ export function createBoltSlackGateway(
             text: command.text,
             userId: command.user_id,
             channelId: command.channel_id,
+            channelName: command.channel_name,
             teamId: command.team_id ?? NO_WORKSPACE,
             triggerId: command.trigger_id,
           },
@@ -777,9 +778,10 @@ export function createBoltSlackGateway(
           channel: channelId,
         });
         if (!info.channel) return null;
+        const isDirectMessage = !!info.channel.is_im || !!info.channel.is_mpim;
         return {
-          isMember: !!info.channel.is_member,
-          isDirectMessage: !!info.channel.is_im || !!info.channel.is_mpim,
+          isMember: isDirectMessage || !!info.channel.is_member,
+          isDirectMessage,
           name: info.channel.name ?? null,
         };
       } catch (err) {

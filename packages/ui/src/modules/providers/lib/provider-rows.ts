@@ -27,6 +27,11 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     type: "openai",
     description: "GPT-family models for Codex and OpenAI-compatible agents.",
   },
+  {
+    type: "bedrock",
+    description:
+      "Models your organization hosts in AWS Bedrock, for Claude Code and Pi agents.",
+  },
 ];
 
 export function offeredProviderRows(

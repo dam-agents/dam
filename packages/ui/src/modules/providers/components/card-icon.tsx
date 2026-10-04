@@ -1,3 +1,5 @@
+import { Cloud } from "@carbon/icons-react";
+
 import {
   AnthropicIcon,
   BobIcon,
@@ -36,6 +38,11 @@ const STYLES: Record<
     bg: "",
     iconClass: "w-full h-full",
   },
+  bedrock: {
+    Icon: Cloud,
+    bg: "bg-foreground",
+    iconClass: "w-5 h-5 text-background",
+  },
 };
 
 const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
@@ -49,6 +56,7 @@ const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
   openai: "!w-8 !h-8",
   "ibm-litellm": "!text-[40px]",
   bob: "",
+  bedrock: "!w-8 !h-8",
 };
 
 export function CardIcon({

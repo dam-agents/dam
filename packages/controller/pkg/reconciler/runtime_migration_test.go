@@ -616,8 +616,23 @@ func TestAFailedHomeCopySaysWhyItsLastAttemptFailed(t *testing.T) {
 		migrationCondition(reloaded(t, r, agent)).Message)
 }
 
-// TEST_SCENARIO: a home the machine's disk cannot hold is refused the same way by every attempt, so the first refusal fails the migration at once, with what the user can do ahead of the runner's own words, instead of spending attempts ten minutes apart.
+// TEST_SCENARIO: a home the machine's disk cannot hold, or one past the copy's walk limits, is refused the same way by every attempt, so the first refusal fails the migration at once, with what the user can do ahead of the runner's own words, instead of spending attempts ten minutes apart. The limit the home passed survives the message's cut even when the path it stopped at is too long to show.
 func TestAHomeThatCannotFitFailsTheMigrationAtOnce(t *testing.T) {
+	for name, tc := range map[string]struct{ message, names string }{
+		"too large": {
+			message: "Error: the runner refused the seed: 413 Payload Too Large: the seed is larger than machine my-agent's 1073741824 byte disk\n",
+			names:   "1073741824 byte disk",
+		},
+		"too deep": {
+			message: "Error: archiving the seed: the home is more than 256 directories deep, deeper than a seed may go; the walk stopped at " + strings.Repeat("d/", 257) + "d\n",
+			names:   "more than 256 directories deep",
+		},
+	} {
+		t.Run(name, func(t *testing.T) { testAHomeThatCannotFit(t, tc.message, tc.names) })
+	}
+}
+
+func testAHomeThatCannotFit(t *testing.T, message, names string) {
 	ctx := context.Background()
 	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
 	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
@@ -637,7 +652,7 @@ func TestAHomeThatCannotFitFailsTheMigrationAtOnce(t *testing.T) {
 			Name: "seed",
 			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
 				ExitCode: vmrunner.SeedExitPermanent,
-				Message:  "Error: the runner refused the seed: 413 Payload Too Large: the seed is larger than machine my-agent's 1073741824 byte disk\n",
+				Message:  message,
 			}},
 		}}},
 	}, metav1.CreateOptions{})
@@ -648,8 +663,8 @@ func TestAHomeThatCannotFitFailsTheMigrationAtOnce(t *testing.T) {
 	agent = reloaded(t, r, agent)
 	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationFailed)
 	assert.Equal(t, int32(1), agent.Status.RuntimeMigrationAttempts)
-	assert.Contains(t, c.Message, "make the agent's home smaller and retry")
-	assert.Contains(t, c.Message, "1073741824 byte disk")
+	assert.Contains(t, c.Message, "change what this names and retry")
+	assert.Contains(t, c.Message, names)
 	assert.Empty(t, seedCapabilityNow(t, r), "a failed migration leaves no capability behind")
 }
 

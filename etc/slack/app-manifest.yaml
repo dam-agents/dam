@@ -69,6 +69,10 @@ oauth_config:
       # membership before posting, and open direct messages.
       - channels:read
       - groups:read
+      # Whether the bot is in a group DM (conversations.info). Slack never adds
+      # an app to an existing group DM, so a bind there is refused when the bot
+      # is not in it.
+      - mpim:read
       - im:write
       # Resolving the user ids the agent sees in a conversation to the people
       # behind them (users.info). Both optional: a workspace without users:read
