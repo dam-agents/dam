@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-01
+Last verified: 2026-10-04
 
 ## Overview
 
@@ -236,16 +236,28 @@ and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a
 Connection serves one region; it also lands in `AWS_REGION`. The key is
 injected on the region's control-plane host too,
 `bedrock.<region>.amazonaws.com`, which the Connection names in
-`AWS_ENDPOINT_URL_BEDROCK`: that is where the harness-config driver lists
-the region's inference profiles
-([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)),
-so the Config panel offers only IDs Bedrock can invoke there and an
-unpinned agent is seeded one. An optional model input becomes the
-provider's model pin. The Connection also asks the
-harness's Bedrock client for HTTP/1.1, which every credential chain speaks
-by default. IAM access keys and assumed roles are not accepted: Bedrock
+`AWS_ENDPOINT_URL_BEDROCK`: that is where the region's inference profiles
+are listed, so an agent is offered only models Bedrock can invoke there.
+An optional model input becomes the provider's model pin. The Connection
+also asks the harness's Bedrock client for HTTP/1.1, which every credential
+chain speaks by default. IAM access keys and assumed roles are not accepted: Bedrock
 requires those to sign each request with SigV4, and the gateway injects a
 credential rather than signing one.
+
+Two harnesses run on it, and both take Bedrock over any Anthropic- or
+OpenAI-shaped provider the agent also holds. **Pi**'s harness-config driver
+lists the profiles itself, so the Config panel offers their IDs and an
+unpinned agent is seeded one
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+**Claude Code** has Bedrock built in; its image switches it on whenever the
+key placeholder is present, and leaves model choice to Claude Code itself.
+At start it lists the region's profiles and resolves each of its model
+tiers — the choices its Config panel offers — to the profile carrying the
+region's prefix, and it falls back to an earlier version, or from Opus to
+Sonnet, when the account cannot invoke the default. The platform pins no
+tier, because a pinned tier loses that fallback. The pin becomes the
+default for a new session only, so a panel pick outranks it, and Claude
+Code ignores it when the account cannot invoke it.
 
 ### Custom Header credential
 
