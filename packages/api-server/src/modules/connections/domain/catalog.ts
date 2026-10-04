@@ -267,7 +267,7 @@ const BEDROCK: HeaderConnectionTemplate = {
       inputName: "model",
       envName: "AWS_BEDROCK_MODEL",
       label: "Model",
-      hint: "Optional. Empty lets agents start on one of the region's inference profiles. A model set here must be an inference-profile ID, e.g. eu.anthropic.claude-sonnet-4-6.",
+      hint: "Optional. Empty lets agents start on one of the region's inference profiles. A model set here must be an inference-profile ID, e.g. us.anthropic.claude-sonnet-4-6.",
     },
   ],
 };
