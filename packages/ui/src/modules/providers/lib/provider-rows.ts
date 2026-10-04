@@ -30,7 +30,7 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "bedrock",
     description:
-      "Models your organization hosts in AWS Bedrock, for Pi agents.",
+      "Models your organization hosts in AWS Bedrock, for Claude Code and Pi agents.",
   },
 ];
 

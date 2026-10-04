@@ -1892,7 +1892,7 @@ controller:
 harnessTemplates:
   claude-code:
     enabled: true
-    providers: [ibm-litellm, anthropic]
+    providers: [ibm-litellm, anthropic, bedrock]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
