@@ -12,6 +12,7 @@ import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import {
   classifyResumeError,
+  extractErrorMessage,
   resumeFailureKind,
   type SessionFailureKind,
   type SessionListing,
@@ -234,7 +235,7 @@ export function useAcpSession(
       } catch (err) {
         emitToast({
           kind: "error",
-          message: `Couldn't switch this session's model: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Couldn't switch this session's model: ${extractErrorMessage(err)}`,
         });
       }
     },
