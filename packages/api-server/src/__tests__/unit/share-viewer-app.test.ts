@@ -48,7 +48,6 @@ function fakeViewer(
     resolveFolder: () =>
       Promise.resolve({ state: "not-found" } as FolderResolution),
     canView: () => Promise.resolve("deny"),
-    meta: () => Promise.resolve({ contentType: "text/html", sizeBytes: 40 }),
     content: () =>
       Promise.resolve({
         content: Buffer.from("<h1>hello</h1><script>alert(1)</script>"),
@@ -63,7 +62,6 @@ function fakeViewer(
         contentType: "text/html",
         sizeBytes: 40,
       }),
-    versionCount: () => Promise.resolve(1),
     recordView: () => {},
     ...overrides,
   };
@@ -114,14 +112,12 @@ function contentAppWith(viewer: ShareViewerService) {
 
 describe("share viewer app", () => {
   it("frames a public artifact from the content origin, never inline", async () => {
-    const app = appWith(
-      publicViewer({ versionCount: () => Promise.resolve(3) }),
-    );
-    const res = await app.request("/a/slug-a?v=2");
+    const app = appWith(publicViewer());
+    const res = await app.request("/a/slug-a");
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("sandbox=");
-    expect(html).toContain('src="https://content.example.com/a/slug-a?v=2"');
+    expect(html).toContain('src="https://content.example.com/a/slug-a?v=1"');
     expect(html).not.toContain("srcdoc=");
     expect(html).not.toContain("<h1>hello</h1>");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -129,12 +125,29 @@ describe("share viewer app", () => {
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
   });
 
-  it("falls back to the current version when the requested one does not exist", async () => {
+  /**
+   * TEST_SCENARIO: A share link is a publishing surface, not a revision log.
+   * Whatever version a visitor asks for, the page frames the current one and
+   * offers no way back through the history, so content the owner removed in a
+   * revision is gone from the link.
+   */
+  it("frames only the current version, whatever version the visitor asks for", async () => {
     const app = appWith(
-      publicViewer({ versionCount: () => Promise.resolve(1) }),
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({ version: 3 }),
+          } satisfies SharedResolution),
+      }),
     );
-    const html = await (await app.request("/a/slug-a?v=7")).text();
-    expect(html).toContain('src="https://content.example.com/a/slug-a?v=1"');
+    for (const path of ["/a/slug-a?v=1", "/a/slug-a?v=7", "/a/slug-a"]) {
+      const html = await (await app.request(path)).text();
+      expect(html).toContain('src="https://content.example.com/a/slug-a?v=3"');
+      expect(html).toContain('href="/a/slug-a/raw?v=3&download=1"');
+      expect(html).not.toContain("Older version");
+      expect(html).not.toContain("?v=2");
+    }
   });
 
   it("404s a private/unknown slug and 410s an expired one", async () => {
@@ -164,7 +177,6 @@ describe("share viewer app", () => {
             state: "ok",
             artifact: artifactRow({ kind: "binary", contentType: "image/png" }),
           } satisfies SharedResolution),
-        meta: () => Promise.resolve({ contentType: "image/png", sizeBytes: 1 }),
         contentStream: () =>
           Promise.resolve({
             stream: new Blob([Buffer.from([0x89])]).stream(),
@@ -237,7 +249,6 @@ describe("content app", () => {
             state: "ok",
             artifact: artifactRow({ kind: "binary", contentType: "image/png" }),
           } satisfies SharedResolution),
-        meta: () => Promise.resolve({ contentType: "image/png", sizeBytes: 1 }),
       }),
     );
     const html = await (await app.request("/a/slug-a?v=1")).text();
@@ -253,9 +264,7 @@ describe("content app", () => {
             state: "ok",
             artifact: artifactRow({ sizeBytes: big }),
           } satisfies SharedResolution),
-        meta: () =>
-          Promise.resolve({ contentType: "text/html", sizeBytes: big }),
-        content: (_a, _v, maxBytes) =>
+        content: (_a, maxBytes) =>
           maxBytes !== undefined && big > maxBytes
             ? Promise.resolve(null)
             : Promise.reject(new Error("should have been size-capped")),
@@ -276,6 +285,31 @@ describe("content app", () => {
     expect(raw.headers.get("Content-Security-Policy")).toBe(
       "sandbox; frame-ancestors https://share.example.com",
     );
+  });
+
+  /**
+   * TEST_SCENARIO: The frame and its bytes are addressed by version so a
+   * browser never reuses a stale copy, but only the current version answers. A
+   * past version's address, whether pasted or left in an open page, is not
+   * found and never falls through to other bytes.
+   */
+  it("answers 404 for a past version's document and bytes", async () => {
+    const app = contentAppWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({ version: 3 }),
+          } satisfies SharedResolution),
+      }),
+    );
+    for (const path of ["/a/slug-a?v=2", "/a/slug-a/raw?v=1"]) {
+      const res = await app.request(path);
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("<h1>hello</h1>");
+    }
+    expect((await app.request("/a/slug-a?v=3")).status).toBe(200);
+    expect((await app.request("/a/slug-a/raw?v=3")).status).toBe(200);
   });
 
   it("answers plain 404 text for a private slug and for every non-content path", async () => {
@@ -536,7 +570,6 @@ describe("restricted artifacts on the content host", () => {
         state: "restricted",
         artifact: restricted,
       } satisfies SharedResolution),
-    meta: () => Promise.resolve({ contentType: "image/png", sizeBytes: 1 }),
     contentStream: () =>
       Promise.resolve({
         stream: new Blob([Buffer.from([0x89])]).stream(),
@@ -567,8 +600,8 @@ describe("restricted artifacts on the content host", () => {
   /**
    * TEST_SCENARIO: A token minted by the share host opens the inner document,
    * and the document must pass the same token on to its own raw request so the
-   * image inside the frame loads. The token is bound to one artifact and one
-   * version, and dies after 60 seconds.
+   * image inside the frame loads. The token is bound to one artifact and its
+   * current version, and dies after 60 seconds.
    */
   it("serves with a valid token, threads it into the inner raw URL, and expires it", async () => {
     const app = contentAppWith(viewer);
@@ -584,7 +617,8 @@ describe("restricted artifacts on the content host", () => {
     expect(raw.status).toBe(200);
     expect(raw.headers.get("Cache-Control")).toBe("private, no-store");
 
-    expect((await app.request(`/a/slug-a?v=2&t=${token}`)).status).toBe(401);
+    const stale = await renderTokens.mint(restricted.id, 2);
+    expect((await app.request(`/a/slug-a?v=1&t=${stale}`)).status).toBe(401);
     const other = await renderTokens.mint("other", 1);
     expect((await app.request(`/a/slug-a?v=1&t=${other}`)).status).toBe(401);
 
