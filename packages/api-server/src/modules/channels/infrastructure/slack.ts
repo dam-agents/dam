@@ -4702,9 +4702,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       note?: string,
     ) {
       if (!gateway) return { error: "Slack is not connected." };
-      const refs = liveTurnRefs(instanceName).filter(
-        (candidate) => candidate.threadTs === threadTs,
+      const inThread = (candidate: TurnRef) => candidate.threadTs === threadTs;
+      const inFlight = [...(inFlightTurns.get(instanceName) ?? [])].filter(
+        inThread,
       );
+      const refs = inFlight.length
+        ? inFlight
+        : lingeringFor(instanceName).filter(inThread);
       if (refs.length === 0)
         return {
           error:
