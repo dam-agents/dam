@@ -46,7 +46,7 @@ sequenceDiagram
 
 ## The agent opens a page
 
-An agent shows the user a page with one command its image ships, `platform-browser open <address>`, taught by a `platform-browser` skill. It points the shared session at the address — an open panel shows it at once — and prints a link in the `platform://browser` scheme for the agent to paste into its reply. The chat renders that link as a button, as it renders an artifact link; clicking it opens the panel and navigates there. The button is inert where the panel is not offered. Nothing about the link is trusted: it carries only an address, which must be http or https, and the click is the user's.
+An agent shows the user a page with one command its image ships, `platform-browser open <address>`, taught by a `platform-browser` skill. It points the shared session at the address — an open panel shows it at once — and prints a link in the `platform://browser` scheme for the agent to paste into its reply. Any other subcommand is an agent-browser command on that session, so the agent acts in the user's browser while the user watches; closing it is refused, since the panel is attached to it. The chat renders that link as a button, as it renders an artifact link; clicking it opens the panel and navigates there. The button is inert where the panel is not offered. Nothing about the link is trusted: it carries only an address, which must be http or https, and the click is the user's.
 
 ## Sign-ins and lifetime
 

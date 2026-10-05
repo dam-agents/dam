@@ -8,15 +8,43 @@ const SESSION = "preview";
 const PROFILE = join(homedir(), ".local/share/platform/browser-preview");
 const LINK_PREFIX = "platform://browser?url=";
 
+const BROWSER = ["--session", SESSION, "--profile", PROFILE];
+
 const usage = () => {
   process.stderr.write(
-    "usage: platform-browser open <address>   e.g. platform-browser open localhost:4444\n",
+    [
+      "usage: platform-browser open <address>     show the user a page; prints a button for your reply",
+      "       platform-browser <agent-browser command> [args...]   act in the user's browser",
+      "       e.g. platform-browser snapshot -i   platform-browser click @e3",
+      "",
+    ].join("\n"),
   );
   process.exit(2);
 };
 
-const [command, address, ...rest] = process.argv.slice(2);
-if (command !== "open" || !address || rest.length > 0) usage();
+const args = process.argv.slice(2);
+const [command, address, ...rest] = args;
+if (!command || command === "--help" || command === "-h") usage();
+
+if (command === "close") {
+  process.stderr.write(
+    "platform-browser: not closing — the user's browser panel is attached to this browser\n",
+  );
+  process.exit(2);
+}
+
+if (command !== "open") {
+  const passed = spawnSync("agent-browser", [...BROWSER, ...args], {
+    stdio: "inherit",
+  });
+  if (passed.error) {
+    process.stderr.write(`platform-browser: ${passed.error.message}\n`);
+    process.exit(127);
+  }
+  process.exit(passed.status ?? 1);
+}
+
+if (!address || rest.length > 0) usage();
 
 const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(address)
   ? address
@@ -35,7 +63,7 @@ if (url.protocol !== "http:" && url.protocol !== "https:") {
 
 const opened = spawnSync(
   "agent-browser",
-  ["--session", SESSION, "--profile", PROFILE, "open", url.href],
+  [...BROWSER, "open", url.href],
   { stdio: ["ignore", "ignore", "inherit"] },
 );
 if (opened.error || opened.status !== 0) {
