@@ -85,6 +85,16 @@ const headerCreateInput = z.object({
   caData: z.string().optional(),
 });
 
+const sigv4CreateInput = z.object({
+  ...commonFields,
+  authKind: z.literal("sigv4"),
+  endpoint: z.string().min(1),
+  region: z.string().min(1).optional(),
+  bucket: z.string().min(1).optional(),
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
+});
+
 const clientCredentialsCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("client-credentials"),
@@ -160,6 +170,7 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   clientCredentialsCreateInput,
   githubAppCreateInput,
   headerCreateInput,
+  sigv4CreateInput,
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;

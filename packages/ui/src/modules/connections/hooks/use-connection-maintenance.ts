@@ -41,6 +41,7 @@ export function useConnectionMaintenance() {
           onUpdateCredential: () => openUpdate(connection),
           onEditScope: () => openEditScope(connection),
         };
+      case "sigv4":
       case "none":
         return undefined;
     }

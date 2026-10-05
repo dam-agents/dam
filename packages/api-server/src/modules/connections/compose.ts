@@ -13,6 +13,8 @@ import {
   createGitHubAppEngine,
   type GitHubAppEngine,
 } from "./infrastructure/github-app-engine.js";
+import { createS3CredentialProbe } from "./infrastructure/s3-credential-probe.js";
+import type { S3CredentialProbe } from "./domain/s3-credential-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import { createConnectionsService } from "./services/connections-service.js";
@@ -38,6 +40,7 @@ export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
+  s3CredentialProbe: S3CredentialProbe;
   refreshLoop: OAuthRefreshLoop;
   accountLabelBackfill: AccountLabelBackfill;
 }
@@ -63,6 +66,7 @@ export function composeConnectionsAtBoot(
     pendingStore: opts.pendingFlowStore,
   });
   const githubAppEngine = createGitHubAppEngine();
+  const s3CredentialProbe = createS3CredentialProbe();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
     engine: oauthEngine,
@@ -82,6 +86,7 @@ export function composeConnectionsAtBoot(
     templates,
     oauthEngine,
     githubAppEngine,
+    s3CredentialProbe,
     refreshLoop,
     accountLabelBackfill,
   };
@@ -104,6 +109,7 @@ export function composeConnectionsForOwner(opts: {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
+  s3CredentialProbe: S3CredentialProbe;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
@@ -152,6 +158,7 @@ export function composeConnectionsForOwner(opts: {
     oauthFlow,
     oauthEngine: opts.oauthEngine,
     githubAppEngine: opts.githubAppEngine,
+    s3CredentialProbe: opts.s3CredentialProbe,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,

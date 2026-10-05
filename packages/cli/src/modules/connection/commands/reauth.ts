@@ -85,7 +85,9 @@ export function buildReauthCommand(deps: {
             `error: '${match.name}' uses ${match.authKind} auth, which has no login flow\n`,
           );
           process.stderr.write(
-            `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
+            match.authKind === "sigv4"
+              ? "hint: replacing its keys is not supported yet — delete it and connect again\n"
+              : `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }

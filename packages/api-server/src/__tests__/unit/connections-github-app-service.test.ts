@@ -125,6 +125,11 @@ function makeService(
       now: () => NOW_MS,
     }),
     githubAppEngine,
+    s3CredentialProbe: {
+      probe: async () => {
+        throw new Error("Unexpected dependency: s3CredentialProbe");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {

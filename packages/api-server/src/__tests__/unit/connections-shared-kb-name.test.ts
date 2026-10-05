@@ -149,6 +149,11 @@ function makeService(
       pendingStore: createMemoryTtlStore(600_000),
     }),
     githubAppEngine: createGitHubAppEngine(),
+    s3CredentialProbe: {
+      probe: async () => {
+        throw new Error("Unexpected dependency: s3CredentialProbe");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
