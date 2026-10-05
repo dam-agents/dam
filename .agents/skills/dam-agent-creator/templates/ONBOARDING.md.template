@@ -251,7 +251,8 @@ pattern from CLAUDE.md's run-types table:
 > <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
 > nothing_to_do, report its logs in one line and end the run. Otherwise follow
 > CLAUDE.md → "<run section>": read docs/<file>.md, <the run's action summary>, and
-> commit & push work/ at the end when $GITHUB_REPO_WORK is set.
+> back up work/ at the end with `bash "$HOME/scripts/work-backup.sh" persist` when
+> $GITHUB_REPO_WORK is set.
 
 ## Step 6 — Record the version, write the sentinel, verify, release, report
 

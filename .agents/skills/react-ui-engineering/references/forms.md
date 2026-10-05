@@ -1,37 +1,18 @@
 # Forms
 
-**Read when:** building any form, adding fields to an existing form, validating user input, deciding between controlled `useState` and React Hook Form.
+**Read when:** building a form, adding fields, validating input, choosing between controlled `useState` and React Hook Form.
 
-## When to reach for React Hook Form + Zod
+## When to use React Hook Form + Zod
 
-**[HIGH]** Use React Hook Form + Zod when **any** of these is true:
+**[HIGH]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill. Below that (a 1–2 field input, search box, inline edit), controlled `useState` is fine.
 
-- **≥ 3 fields.**
-- **Cross-field validation** (e.g., `confirmPassword === password`, or "at least one of these three is required").
-- **Multi-step flow** (wizard, tabs that must share validation state).
-- **Dirty-tracking needed** (disable "Save" unless something changed; warn on navigate-away with unsaved changes).
-- **Schema reuse** — the same shape is used for submit, for parsing an API response, and for pre-filling edit forms.
+Stack: Zod defines the schema and the values type (`z.infer`), RHF owns register/state/validation/submit, `zodResolver` (`@hookform/resolvers/zod`) joins them.
 
-Below the threshold (a 1–2 field input, a search box, an inline edit), controlled `useState` is fine. Don't bring RHF + Zod for a single textbox.
+## Schema and setup
 
-## The default stack
+**[HIGH] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape. It lives in the module (`modules/<domain>/api/schemas.ts` or `types.ts`).
 
 ```ts
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-```
-
-- **Zod** defines the schema; the form's values type is `z.infer<typeof schema>`.
-- **RHF** manages register/state/validation/submit.
-- **`zodResolver`** glues them.
-
-## Schema + values type
-
-**[HIGH] Schema is the source of truth.** Values type is inferred.
-
-```ts
-// src/modules/agents/api/schemas.ts (or types.ts)
 export const createAgentSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
@@ -42,40 +23,25 @@ export const createAgentSchema = z.object({
 export type CreateAgentValues = z.infer<typeof createAgentSchema>;
 ```
 
-When the schema is consumed by both the form and an API call (e.g., the mutation input), reuse it — don't redeclare the shape.
-
-## Form setup
-
 ```tsx
 const form = useForm<CreateAgentValues>({
   resolver: zodResolver(createAgentSchema),
-  defaultValues: {
-    name: "",
-    description: "",
-    model: "sonnet",
-    systemPrompt: "",
-    required: false,
-  },
+  defaultValues: { name: "", description: "", model: "sonnet", systemPrompt: "", required: false },
   mode: "onBlur",
 });
-
-const createAgent = useCreateAgent({ onSuccess: () => closeDialog() });
-
-const onSubmit = form.handleSubmit(async (values) => {
-  await createAgent.mutateAsync(values);
-});
+const createAgent = useCreateAgent({ onSuccess: closeDialog });
+const onSubmit = form.handleSubmit((values) => createAgent.mutateAsync(values));
 ```
 
-- **`defaultValues`** always set explicitly; never rely on `undefined` → first render renders uncontrolled inputs and RHF yells.
-- **`mode: "onBlur"`** is a good default — validate when the user leaves a field, not on every keystroke.
-- **Submit goes via a mutation.** Don't `fetch` inside the submit handler.
+- Always set `defaultValues` explicitly; `undefined` renders uncontrolled inputs on first render and RHF warns.
+- `mode: "onBlur"` is a good default: validate on leaving a field, not every keystroke.
+- Submit through a mutation, never `fetch` in the handler.
 
 ## Field components
 
-**[HIGH] Build a `FormField` wrapper for the common fields** (text, textarea, select, checkbox). It standardizes label + input + error rendering and takes most of the boilerplate out of every form.
+**[HIGH] Wrap common fields (text, textarea, select, checkbox) in `FormField` components** that standardize label + input + error, in `src/components/form/`:
 
 ```tsx
-// src/components/form/form-text-field.tsx
 interface Props {
   name: string;
   label: string;
@@ -93,88 +59,58 @@ export function FormTextField({ name, label, control, rules, placeholder, autoFo
       render={({ field, fieldState }) => (
         <div className="flex flex-col gap-1">
           <label htmlFor={name} className="text-sm font-medium">{label}</label>
-          <input
-            {...field}
-            id={name}
-            placeholder={placeholder}
-            autoFocus={autoFocus}
-            className={cn("input", fieldState.invalid && "input-error")}
-          />
+          <input {...field} id={name} placeholder={placeholder} autoFocus={autoFocus}
+            className={cn("input", fieldState.invalid && "input-error")} />
           {fieldState.error && <span className="text-xs text-danger">{fieldState.error.message}</span>}
         </div>
       )}
     />
   );
 }
-```
 
-In the form:
-```tsx
 <FormTextField control={form.control} name="name" label="Name" autoFocus />
 ```
 
-**[MODERATE]** Prefer `Controller` for anything that isn't a plain input (selects, custom components, date pickers). Use `register` for plain `<input>` / `<textarea>`. Don't mix both for the same field.
+**[MODERATE]** `Controller` for anything but plain inputs (selects, custom components, date pickers); `register` for plain `<input>`/`<textarea>`; never both on one field.
 
-## Validation: schema vs UI
+## Validation
 
-**[HIGH]** Put **data-shape validation** in the Zod schema (`min(1)`, `max(500)`, `email()`, `enum(...)`). Put **UX-only validation** in the component's `rules` or local logic (e.g., "cannot submit while async check is pending"). The schema is shared with the server; UX rules are client-only.
+**[HIGH]** Data-shape validation (`min(1)`, `max(500)`, `email()`, `enum(...)`) goes in the Zod schema, which is shared with the server; UX-only validation ("can't submit while an async check is pending") goes in `rules` or component logic.
 
-## Cross-field validation
-
-Use Zod's `.refine()` or `.superRefine()`:
+Cross-field: `.refine()` / `.superRefine()`, with `path` telling RHF which field shows the error.
 
 ```ts
 export const schema = z.object({
   password: z.string().min(8),
   confirmPassword: z.string(),
-}).refine((v) => v.password === v.confirmPassword, {
-  message: "Passwords must match",
-  path: ["confirmPassword"],
-});
+}).refine((v) => v.password === v.confirmPassword, { message: "Passwords must match", path: ["confirmPassword"] });
 ```
 
-Path tells RHF where to attach the error so the right field lights up.
+Async ("is this name taken?"): a debounced TQ query keyed on the value, plus `form.trigger(fieldName)` or `form.setError`. Check on blur or submit; don't block typing.
 
-## Dirty-tracking
+## Dirty-tracking and reset
 
-RHF gives you `formState.isDirty` and per-field `dirtyFields`. Use these to:
+Use `formState.isDirty` / `dirtyFields`: `disabled={!form.formState.isDirty || createAgent.isPending}`, and intercept route changes while dirty. Never hand-roll it with refs and deep-compares. After a successful submit, close the dialog (unmounting the form) or `form.reset(newDefaults)` if staying on the page.
 
-- Disable the Save button: `disabled={!form.formState.isDirty || createAgent.isPending}`.
-- Warn on navigate-away: intercept route change when `isDirty` is true.
+## Server errors
 
-Don't reinvent dirty-tracking with refs and deep-compare of initial vs current values. RHF makes this free.
-
-## Resetting the form
-
-On successful submit, either close the dialog (so the form unmounts) or `form.reset(newDefaults)` if you're staying on the page. Don't leave stale values in a persistent form.
-
-## Async validation
-
-For validation that requires a server round-trip (e.g., "is this username taken?"), use a debounced TQ query keyed on the field value plus `form.trigger(fieldName)` or a manual error via `form.setError`. Don't block submit while typing — check on blur or submit.
-
-## Submit errors from the server
-
-When the mutation fails with a field-level error (e.g., "Name already exists"), surface it via `form.setError`:
+Field-level failures ("Name already exists") go onto fields via `form.setError`; global failures (500, network) are toasted by the mutation's `meta.errorToast`, never duplicated in the form.
 
 ```ts
 await createAgent.mutateAsync(values, {
   onError: (err) => {
-    const fieldErrors = extractFieldErrors(err);
-    Object.entries(fieldErrors).forEach(([name, message]) => {
-      form.setError(name as keyof CreateAgentValues, { type: "server", message });
-    });
+    Object.entries(extractFieldErrors(err)).forEach(([name, message]) =>
+      form.setError(name as keyof CreateAgentValues, { type: "server", message }));
   },
 });
 ```
 
-Global failure (500, network) gets a toast via `meta.errorToast` on the mutation — don't duplicate it into the form.
-
 ## Anti-patterns
 
-- **`useState` mega-form** (14 fields in useState) — convert to RHF + Zod.
-- **Manual dirty-tracking** with refs/initial-state copies — use `formState.isDirty`.
-- **Fetching inside the submit handler** — use a mutation.
-- **Validation duplicated in Zod and in the component** — move shape validation to the schema, UX to the component.
-- **No `defaultValues`** — sets inputs to uncontrolled on first render.
-- **Mixing `register` and `Controller` on the same field** — pick one.
-- **Form-level error UI that doesn't use `formState.errors`** — you're fighting RHF.
+- A `useState` mega-form (14 fields) → RHF + Zod.
+- Manual dirty-tracking with refs or initial-state copies → `formState.isDirty`.
+- Fetching in the submit handler → mutation.
+- Validation duplicated in Zod and the component → shape in schema, UX in component.
+- Missing `defaultValues`.
+- `register` and `Controller` on the same field.
+- Error UI that bypasses `formState.errors`.

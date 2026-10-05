@@ -1,45 +1,26 @@
 # Module Boundaries
 
-Bounded contexts must stay loosely coupled. No module may import another module's internals (services, entities, infrastructure). The only cross-module imports allowed are event types and type guards from a module's `index.ts`.
+Bounded contexts stay loosely coupled: no module imports another's internals (services, entities, infrastructure). The only allowed cross-module imports are event types and type guards from a module's `index.ts`. Modules communicate exclusively through **domain events**: records of something meaningful that happened, named in past tense in business language (`OrderPlaced`, `UserRegistered`, `PaymentCompleted`).
 
-Modules communicate exclusively through **domain events** — records of something meaningful that happened in the domain, named in past tense using business language: `OrderPlaced`, `UserRegistered`, `PaymentCompleted`.
+## Events
 
-## Event Ownership
-
-Events are defined in the **publishing module's** domain layer:
-
-```
-modules/orders/domain/events/OrderPlaced.ts
-```
-
-The publishing module is the single source of truth for the event's shape.
-
-## Event Structure
+Defined in the **publishing module's** domain layer (`modules/orders/domain/events/OrderPlaced.ts`), the single source of truth for the shape. Every event has a `type` discriminant and a type guard:
 
 ```typescript
-// modules/orders/domain/events/OrderPlaced.ts
 type OrderPlaced = {
   type: 'OrderPlaced';
   orderId: string;
   items: ReadonlyArray<OrderItem>;
 };
 
-const isOrderPlaced = (event: DomainEvent): event is OrderPlaced =>
-  event.type === 'OrderPlaced';
+const isOrderPlaced = (event: DomainEvent): event is OrderPlaced => event.type === 'OrderPlaced';
 ```
 
-Every event has a `type` discriminant and a corresponding type guard.
+## Event bus
 
-## Event Bus
-
-The event bus is the runtime mechanism for publishing and subscribing to domain events. It lives outside any specific module — typically in a shared `events.ts` at the server package root.
-
-### Event Registry
-
-All event types are registered in a central enum and union type:
+Lives outside any module, typically `events.ts` at the server package root, with every event registered in a central enum and union:
 
 ```typescript
-// events.ts
 export enum EventType {
   OrderPlaced = "OrderPlaced",
   OrderCancelled = "OrderCancelled",
@@ -49,9 +30,7 @@ export enum EventType {
 export type DomainEvent = OrderPlaced | OrderCancelled | PaymentCompleted;
 ```
 
-### Publishing
-
-Services emit events after successful state changes:
+Services emit after successful state changes:
 
 ```typescript
 import { emit } from '../../events.js';
@@ -63,55 +42,22 @@ async create(input) {
 }
 ```
 
-### Subscribing
-
-Subscribers filter the event stream by type. Use a reactive library (e.g., RxJS) or a simple EventEmitter — the mechanism is flexible, the pattern is fixed:
+Subscribers filter by type; the mechanism (RxJS, EventEmitter) is flexible, the pattern fixed. `ofType` narrows the event for full type safety. A subscriber imports only the event type and guard from the publisher's `index.ts`, knowing its shape and nothing else.
 
 ```typescript
 import { events$, ofType } from '../../events.js';
 import { type OrderPlaced } from '../orders/index.js';
 
-events$().pipe(
-  ofType<OrderPlaced>(EventType.OrderPlaced),
-).subscribe((event) => {
-  // React to the event
-});
+events$().pipe(ofType<OrderPlaced>(EventType.OrderPlaced)).subscribe((event) => { /* react */ });
 ```
 
-The `ofType` operator narrows the event type, giving subscribers full type safety.
+## Sagas (process managers)
 
-## Sagas (Process Managers)
-
-Sagas are long-running event handlers that react to domain events and perform side effects — typically cross-module cleanup, coordination, or integration with external systems. They bridge the event stream to infrastructure actions.
-
-### Structure
-
-Sagas live in a `sagas/` directory within the module that owns the reaction:
-
-```
-modules/orders/
-  sagas/
-    inventory-reservation.ts
-    notification.ts
-```
-
-Sagas that coordinate across multiple modules or don't belong to a single bounded context may live outside modules — for example in a dedicated `workers` package or a top-level `sagas/` directory:
-
-```
-packages/workers/src/
-  saga.ts
-  order-lifecycle.ts
-```
-
-### Pattern
-
-A saga subscribes to one or more event types and performs side effects:
+Long-running handlers that react to domain events with side effects (cross-module cleanup, coordination, external integration), bridging the event stream to infrastructure actions. They live in `sagas/` of the module that owns the reaction (`modules/orders/sagas/inventory-reservation.ts`); sagas spanning several modules or no single context may live outside modules (a `workers` package such as `packages/workers/src/order-lifecycle.ts`, or a top-level `sagas/`).
 
 ```typescript
 // modules/shipping/sagas/order-fulfillment.ts
-export function startOrderFulfillmentSaga(deps: {
-  shippingService: ShippingService;
-}): Subscription {
+export function startOrderFulfillmentSaga(deps: { shippingService: ShippingService }): Subscription {
   return events$().pipe(
     ofType<OrderPlaced>(EventType.OrderPlaced),
     mergeMap(async (event) => {
@@ -121,34 +67,15 @@ export function startOrderFulfillmentSaga(deps: {
 }
 ```
 
-### Saga Rules
+Rules: sagas own side effects (I/O, infrastructure cleanup, external calls); return a subscription handle for teardown on shutdown; receive dependencies by injection (same factory pattern as services); are resilient (log and continue, never crash the process); start at boot from the composition root or server setup.
 
-- Sagas handle **side effects** — I/O, infrastructure cleanup, external system calls.
-- A saga returns a subscription handle so it can be torn down on shutdown.
-- Sagas receive dependencies via injection (same factory pattern as services).
-- Error handling within sagas should be resilient — log and continue, don't crash the process.
-- Sagas are started at application boot, typically from the composition root or server setup.
-
-### When to Use Sagas vs. Services
-
-| Use a **service** when... | Use a **saga** when... |
+| Use a **service** when… | Use a **saga** when… |
 |---|---|
-| The operation is part of the primary request/response flow | The operation is a reaction to something that already happened |
-| The caller needs the result | The result is fire-and-forget |
-| The logic belongs to one bounded context | The reaction crosses bounded contexts |
+| part of the primary request/response flow | reacting to something that already happened |
+| the caller needs the result | fire-and-forget |
+| the logic belongs to one bounded context | the reaction crosses contexts |
 
-## Subscribing
-
-A subscribing module imports only the event type and type guard from the publisher's `index.ts`:
-
-```typescript
-// modules/shipping/services/onOrderPlaced.ts
-import { type OrderPlaced, isOrderPlaced } from '../../orders/index.js';
-```
-
-The subscriber knows about the event shape but nothing else about the publishing module's internals.
-
-## Dependency Direction
+## Dependency direction
 
 ```
 orders  ──emits──▶  OrderPlaced
@@ -156,13 +83,9 @@ orders  ──emits──▶  OrderPlaced
 shipping ──subscribes────┘
 ```
 
-- The publishing module (`orders`) knows nothing about its subscribers.
-- The subscribing module (`shipping`) depends on the event type from `orders/index.ts`.
-- This is a one-way dependency on a stable contract (the event shape), not on implementation details.
+The publisher knows nothing about subscribers; the subscriber depends one way on a stable contract (the event shape from `orders/index.ts`), not on implementation.
 
-## What Is Not Allowed
+## Forbidden
 
-- Importing a service from another module (`import { createUser } from '../identity/services/...'`)
-- Importing a domain entity from another module (`import { User } from '../identity/domain/...'`)
-- Importing a repository from another module (`import { UsersRepository } from '../identity/infrastructure/...'`)
-- Any import that bypasses `index.ts`
+- Importing another module's service (`'../identity/services/...'`), domain entity (`'../identity/domain/...'`) or repository (`'../identity/infrastructure/...'`).
+- Any import that bypasses `index.ts`.
