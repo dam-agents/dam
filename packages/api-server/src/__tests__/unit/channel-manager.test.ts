@@ -187,10 +187,11 @@ describe("channel-manager user lookup", () => {
 
     await manager.describeUsers("agent-1", ChannelType.Slack, ["U1", "U2"]);
 
-    expect(slackWorker.describeUsers).toHaveBeenCalledWith("agent-1", [
-      "U1",
-      "U2",
-    ]);
+    expect(slackWorker.describeUsers).toHaveBeenCalledWith(
+      "agent-1",
+      ["U1", "U2"],
+      undefined,
+    );
 
     await manager.stopAll();
   });

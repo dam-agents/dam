@@ -142,6 +142,7 @@ interface Worker {
   describeUsers?(
     instanceName: string,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions?(
     instanceName: string,
@@ -198,6 +199,7 @@ export interface ChannelManager {
     instanceName: string,
     channelType: ChannelType,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions(
     instanceName: string,
@@ -518,13 +520,14 @@ export function createChannelManager(deps: {
       instanceName: string,
       channelType: ChannelType,
       userIds: string[],
+      conversationId?: string,
     ) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker?.describeUsers)
         return Promise.resolve({
           error: `user lookup not supported on ${channelType}`,
         });
-      return worker.describeUsers(instanceName, userIds);
+      return worker.describeUsers(instanceName, userIds, conversationId);
     },
     describeMessageReactions: (
       instanceName: string,
@@ -696,11 +699,17 @@ export function createChannelManager(deps: {
       );
     },
 
-    describeUsers(instanceName, channelType, userIds) {
+    describeUsers(instanceName, channelType, userIds, conversationId) {
       return dispatchResult(
         "describeUsers",
-        [instanceName, channelType, userIds],
-        () => localHandlers.describeUsers(instanceName, channelType, userIds),
+        [instanceName, channelType, userIds, conversationId],
+        () =>
+          localHandlers.describeUsers(
+            instanceName,
+            channelType,
+            userIds,
+            conversationId,
+          ),
       );
     },
 
