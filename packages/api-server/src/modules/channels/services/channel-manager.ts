@@ -135,12 +135,14 @@ interface Worker {
   ): Promise<{ ok: true } | { error: string }>;
   handOffTurn?(
     instanceName: string,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
   describeUsers?(
     instanceName: string,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions?(
     instanceName: string,
@@ -189,6 +191,7 @@ export interface ChannelManager {
   handOffTurn(
     instanceName: string,
     channelType: ChannelType,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
@@ -196,6 +199,7 @@ export interface ChannelManager {
     instanceName: string,
     channelType: ChannelType,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions(
     instanceName: string,
@@ -501,6 +505,7 @@ export function createChannelManager(deps: {
     handOffTurn: (
       instanceName: string,
       channelType: ChannelType,
+      threadTs: string,
       targetName: string,
       note?: string,
     ) => {
@@ -509,19 +514,20 @@ export function createChannelManager(deps: {
         return Promise.resolve({
           error: `handing a turn to another agent is not supported on ${channelType}`,
         });
-      return worker.handOffTurn(instanceName, targetName, note);
+      return worker.handOffTurn(instanceName, threadTs, targetName, note);
     },
     describeUsers: (
       instanceName: string,
       channelType: ChannelType,
       userIds: string[],
+      conversationId?: string,
     ) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker?.describeUsers)
         return Promise.resolve({
           error: `user lookup not supported on ${channelType}`,
         });
-      return worker.describeUsers(instanceName, userIds);
+      return worker.describeUsers(instanceName, userIds, conversationId);
     },
     describeMessageReactions: (
       instanceName: string,
@@ -678,25 +684,32 @@ export function createChannelManager(deps: {
       );
     },
 
-    handOffTurn(instanceName, channelType, targetName, note) {
+    handOffTurn(instanceName, channelType, threadTs, targetName, note) {
       return dispatchResult(
         "handOffTurn",
-        [instanceName, channelType, targetName, note],
+        [instanceName, channelType, threadTs, targetName, note],
         () =>
           localHandlers.handOffTurn(
             instanceName,
             channelType,
+            threadTs,
             targetName,
             note,
           ),
       );
     },
 
-    describeUsers(instanceName, channelType, userIds) {
+    describeUsers(instanceName, channelType, userIds, conversationId) {
       return dispatchResult(
         "describeUsers",
-        [instanceName, channelType, userIds],
-        () => localHandlers.describeUsers(instanceName, channelType, userIds),
+        [instanceName, channelType, userIds, conversationId],
+        () =>
+          localHandlers.describeUsers(
+            instanceName,
+            channelType,
+            userIds,
+            conversationId,
+          ),
       );
     },
 

@@ -12,7 +12,6 @@ import {
   allowed,
   denied,
   isRestricted,
-  parseVersion,
   PRIVATE_NO_STORE,
   type Authorized,
 } from "./authorize.js";
@@ -120,12 +119,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     if (!authorized.ok) return authorized.response;
 
     const artifact = authorized.artifact;
-    const versionCount = await viewer.versionCount(artifact.id);
-    const requested = parseVersion(c.req.query("v"));
-    const version =
-      requested !== undefined && requested <= versionCount
-        ? requested
-        : artifact.version;
+    const version = artifact.version;
 
     const contentUrl = new URL(`${contentBase}/a/${encodeURIComponent(slug)}`);
     contentUrl.searchParams.set("v", String(version));
@@ -144,7 +138,6 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         contentUrl: contentUrl.href,
         slug,
         version,
-        versionCount,
         downloadName: artifact.fileName,
       }),
     );

@@ -6,10 +6,14 @@ import {
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
+  bedrockEnvMappings,
+  BEDROCK_REGION_PATTERN,
+  BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
   BOB_HOST,
   SHARED_KB_TEMPLATE_ID,
+  S3_COMPATIBLE_TEMPLATE_ID,
 } from "api-server-api";
 import type {
   ClientCredentialsConnectionTemplate,
@@ -18,6 +22,7 @@ import type {
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
+  Sigv4ConnectionTemplate,
 } from "./connection-template.js";
 import {
   CUSTOM_HEADER_FAMILY,
@@ -28,6 +33,7 @@ import {
   MODAL_FAMILY,
 } from "./families.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
+import { DEFAULT_S3_SIGNING_REGION } from "./s3-contributions.js";
 
 function envContributions(mappings: EnvMapping[]): Contribution[] {
   return mappings.map((m) => ({
@@ -237,6 +243,49 @@ const BOB: HeaderConnectionTemplate = {
       enumValues: BOB_CHAT_MODES,
     },
   ],
+};
+
+const BEDROCK: HeaderConnectionTemplate = {
+  id: BEDROCK_TEMPLATE_ID,
+  name: "AWS Bedrock",
+  category: "app",
+  isCustom: false,
+  description:
+    "Models hosted in AWS Bedrock, authenticated with a Bedrock API key.",
+  iconSlug: "bedrock",
+  authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: envContributions(bedrockEnvMappings()),
+  configInputs: [
+    {
+      inputName: "region",
+      envName: "AWS_REGION",
+      label: "Region",
+      hint: "The AWS region the key's models are served from, e.g. us-east-1.",
+      pattern: BEDROCK_REGION_PATTERN,
+      patternHint: "an AWS region, e.g. us-east-1",
+    },
+    {
+      inputName: "model",
+      envName: "AWS_BEDROCK_MODEL",
+      label: "Model",
+      hint: "Optional. Empty lets agents start on one of the region's inference profiles. A model set here must be an inference-profile ID, e.g. us.anthropic.claude-sonnet-4-6.",
+    },
+  ],
+};
+
+const S3_COMPATIBLE: Sigv4ConnectionTemplate = {
+  id: S3_COMPATIBLE_TEMPLATE_ID,
+  name: "Object Storage",
+  category: "app",
+  isCustom: false,
+  description:
+    "Any S3-compatible bucket: AWS S3, Cloudflare R2, IBM Cloud Object Storage, MinIO, Ceph. Connects with HMAC keys. The agent can do anything the keys allow, so use read-only keys for read-only access.",
+  iconSlug: "key",
+  authKind: "sigv4",
+  region: DEFAULT_S3_SIGNING_REGION,
+  contributions: [],
 };
 
 const MODAL_HOST = "api.modal.com";
@@ -875,6 +924,8 @@ export function buildCatalog(
     OPENAI,
     IBM_LITELLM,
     BOB,
+    BEDROCK,
+    S3_COMPATIBLE,
     MODAL,
     github(creds.github),
     GITHUB_PAT,

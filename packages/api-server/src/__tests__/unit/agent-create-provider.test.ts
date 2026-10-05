@@ -65,6 +65,7 @@ function setup(rows: Connection[] = [provider]) {
     oauthFlow: unused(),
     oauthEngine: unused(),
     githubAppEngine: unused(),
+    s3CredentialProbe: unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),

@@ -158,7 +158,7 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
   }[];
 
   return rows
-    .map((r) => parseRow(r))
+    .map((r) => parseConnectionRow(r))
     .filter((c): c is Connection => c !== null);
 }
 
@@ -167,7 +167,13 @@ async function recordBackoff(
   backoff: { failures: number; nextAttempt: number },
   deps: { db: Db },
 ): Promise<void> {
-  if (conn.auth.kind === "header" || conn.auth.kind === "none") return;
+  if (
+    conn.auth.kind === "header" ||
+    conn.auth.kind === "sigv4" ||
+    conn.auth.kind === "none"
+  ) {
+    return;
+  }
   const auth = conn.auth;
   try {
     await deps.db
@@ -205,6 +211,7 @@ function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
     case "github-app":
       return true;
     case "header":
+    case "sigv4":
     case "none":
       return false;
   }
@@ -217,7 +224,13 @@ async function markRefreshFailure(
   nowMs: number,
   log: (msg: string) => void,
 ): Promise<boolean> {
-  if (conn.auth.kind === "header" || conn.auth.kind === "none") return false;
+  if (
+    conn.auth.kind === "header" ||
+    conn.auth.kind === "sigv4" ||
+    conn.auth.kind === "none"
+  ) {
+    return false;
+  }
   const auth = conn.auth;
   let markedRows: number;
   try {
@@ -269,7 +282,7 @@ async function markRefreshFailure(
   return true;
 }
 
-function parseRow(row: {
+export function parseConnectionRow(row: {
   id: string;
   owner: string;
   templateId: string;
@@ -458,5 +471,5 @@ async function readConnection(db: Db, id: string): Promise<Connection | null> {
     auth: unknown;
     contributions: unknown;
   }[];
-  return rows[0] ? parseRow(rows[0]) : null;
+  return rows[0] ? parseConnectionRow(rows[0]) : null;
 }

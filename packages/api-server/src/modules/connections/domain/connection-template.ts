@@ -11,6 +11,7 @@ export type ConnectionTemplate =
   | ClientCredentialsConnectionTemplate
   | GitHubAppConnectionTemplate
   | HeaderConnectionTemplate
+  | Sigv4ConnectionTemplate
   | NoneConnectionTemplate;
 
 export interface ConnectionFamily {
@@ -79,6 +80,11 @@ export interface HeaderConnectionTemplate extends TemplateCommon {
   headerName?: string;
   valueFormat?: string;
   configInputs?: ConfigInputSpec[];
+}
+
+export interface Sigv4ConnectionTemplate extends TemplateCommon {
+  authKind: "sigv4";
+  region?: string;
 }
 
 export interface NoneConnectionTemplate extends TemplateCommon {
@@ -337,6 +343,42 @@ function inputsFor(
       }
       return out;
     }
+    case "sigv4":
+      return [
+        {
+          name: "endpoint",
+          state: "required",
+          label: "Endpoint URL",
+          hint: "The service's HTTPS endpoint, host only — e.g. https://s3.us-south.cloud-object-storage.appdomain.cloud.",
+          pattern: "^https://[^\\s/?#]+/?$",
+          patternHint: "an https:// URL with no path",
+        },
+        {
+          name: "region",
+          state: "overridable",
+          ...(t.region !== undefined ? { presetValue: t.region } : {}),
+          label: "Signing region",
+          hint: "The region requests are signed for. AWS needs the bucket's region; IBM COS accepts any value.",
+        },
+        {
+          name: "bucket",
+          state: "optional",
+          label: "Bucket",
+          hint: "Limits the agent to this bucket. Leave blank to allow every bucket the keys can reach.",
+        },
+        {
+          name: "accessKeyId",
+          state: "required",
+          secret: true,
+          label: "Access key ID",
+        },
+        {
+          name: "secretAccessKey",
+          state: "required",
+          secret: true,
+          label: "Secret access key",
+        },
+      ];
     case "none":
       return t.category === "mcp"
         ? [

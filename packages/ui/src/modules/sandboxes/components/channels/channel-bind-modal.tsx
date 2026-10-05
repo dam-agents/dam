@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { getBrand } from "../../../../brand.js";
 import { useCopy } from "../../../../hooks/use-copy.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
+import { useSlackInstallRequestUrl } from "../../../links/api/queries.js";
+import { SlackInstallRequest } from "../../../slack/components/slack-install-request.js";
 import { useTelegramBot } from "../../../telegram/api/queries.js";
 
 export type BindMessenger = "slack" | "telegram";
@@ -69,6 +71,7 @@ export function ChannelBindModal({
   onClose: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const installRequestUrl = useSlackInstallRequestUrl();
   const messenger = messengers[stepIndex] ?? messengers[0];
   if (!messenger) return null;
 
@@ -92,7 +95,15 @@ export function ChannelBindModal({
       <DialogBody>
         <MessengerInstructions messenger={messenger} />
       </DialogBody>
-      <div className="flex justify-end gap-2 px-5 pb-5 md:px-6 md:pb-6">
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-3 px-5 pb-5 md:px-6 md:pb-6">
+        {messenger === "slack" && installRequestUrl && (
+          <div className="mr-auto">
+            <SlackInstallRequest
+              href={installRequestUrl}
+              workspaceLabel="Slack workspace"
+            />
+          </div>
+        )}
         {stepIndex > 0 && (
           <Button variant="ghost" onClick={() => setStepIndex(stepIndex - 1)}>
             Back

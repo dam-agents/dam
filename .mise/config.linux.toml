@@ -1,7 +1,0 @@
-# Rust's C toolchain on Linux is the zig in config.toml, so a machine needs none
-# of its own; see .mise/zig/env. Loaded on Linux only, by .miserc.toml's
-# auto_env. On macOS cargo uses Apple's command line tools, and sourcing the
-# file there would run bash through config.macos.toml's conda bash shim, which
-# is mise itself and sources the file again without end.
-[env]
-_.source = "{{config_root}}/.mise/zig/env"

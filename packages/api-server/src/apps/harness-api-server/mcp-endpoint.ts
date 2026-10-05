@@ -38,6 +38,7 @@ import {
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
+import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { OnboardingStep } from "api-server-api";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
@@ -131,6 +132,10 @@ export interface McpSessionDeps {
       steps: { id: string; label: string }[],
     ) => Promise<OnboardingStep[]>;
     complete: (agentId: string, id: string) => Promise<OnboardingStep[]>;
+  } | null;
+  kitUpdate: {
+    report: (agentId: string, commit: string) => Promise<void>;
+    cancel: (agentId: string) => Promise<void>;
   } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
@@ -355,12 +360,19 @@ export function createMcpSession(
         .describe(
           'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "A conversation in the people's workspace: one this agent is connected to, or one you are answering. Omit to use the conversation you're answering.",
+        ),
     },
-    async ({ channel, userIds }) => {
+    async ({ channel, userIds, chatId }) => {
       const result = await deps.channelManager.describeUsers(
         agentId,
         channel,
         userIds,
+        chatId,
       );
       const audit = channelAudit(channel);
       if ("error" in result) {
@@ -633,11 +645,17 @@ export function createMcpSession(
         .describe(
           "Short note to the receiving agent on why you are handing it over. Shown to that agent, not posted in the channel.",
         ),
+      threadTs: z
+        .string()
+        .describe(
+          "The thread this turn is answering, as shown in its turn instructions: the same threadTs you would reply with.",
+        ),
     },
-    async ({ agent, note }) => {
+    async ({ agent, note, threadTs }) => {
       const result = await deps.channelManager.handOffTurn(
         agentId,
         ChannelType.Slack,
+        threadTs,
         agent,
         note,
       );
@@ -672,7 +690,7 @@ export function createMcpSession(
         .string()
         .optional()
         .describe(
-          "The thread this turn is answering, as shown in its turn instructions. Required when you are handling more than one message at once, so the right turn is the one recorded as silent.",
+          "On a Slack turn, always pass the thread it is answering, as shown in its turn instructions: the same threadTs you would reply with. Omit it on a Telegram turn.",
         ),
     },
     async ({ threadTs }) => {
@@ -807,6 +825,32 @@ export function createMcpSession(
           "Failed to complete the onboarding step",
           () => checklist.complete(agentId, id),
           renderChecklist,
+        ),
+    );
+  }
+
+  if (deps.kitUpdate) {
+    const kitUpdate = deps.kitUpdate;
+    server.tool(
+      "report_kit_updated",
+      "Call this once a Kit Update the user started is finished: the definition checkout is at the commit the update targets and the user is done deciding. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
+      { commit: z.string().regex(/^[0-9a-f]{40}$/i) },
+      ({ commit }) =>
+        textTool(
+          "Failed to report the kit update",
+          () => kitUpdate.report(agentId, commit),
+          () => `Kit update to ${commit} recorded.`,
+        ),
+    );
+    server.tool(
+      "cancel_kit_update",
+      "Call this when the user wants to stop a Kit Update without finishing it. The agent stays on the commit it was on and the user can start the update again later.",
+      {},
+      () =>
+        textTool(
+          "Failed to cancel the kit update",
+          () => kitUpdate.cancel(agentId),
+          () => "Kit update cancelled.",
         ),
     );
   }
@@ -1022,6 +1066,7 @@ export interface MountMcpDeps {
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
+  kitUpdateReporter: KitUpdateReporter;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
@@ -1083,6 +1128,13 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
               deps.onboardingChecklist.set(id, verified.owner, steps),
             complete: (id, stepId) =>
               deps.onboardingChecklist.complete(id, verified.owner, stepId),
+          }
+        : null,
+      kitUpdate: verified.kitUpdatePending
+        ? {
+            report: (id, commit) =>
+              deps.kitUpdateReporter.report(id, verified.owner, commit),
+            cancel: (id) => deps.kitUpdateReporter.cancel(id, verified.owner),
           }
         : null,
       artifactLibrary,

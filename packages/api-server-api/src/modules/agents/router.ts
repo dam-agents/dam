@@ -104,9 +104,16 @@ export const agentsRouter = t.router({
   wake: manageAgentsProcedure
     .input(agentWakeInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.wake(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
+      const res = await ctx.agents.wake(input.id);
+      if (res.ok) return toAgentView(res.value);
+      if (res.error.type === "AgentNotFound")
+        throw new TRPCError({ code: "NOT_FOUND" });
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: res.error.failed
+          ? "This agent's move to the new runtime failed; retry or abort the move to wake it"
+          : "This agent is moving to the new runtime and wakes once the move is done",
+      });
     }),
 
   stop: manageAgentsProcedure

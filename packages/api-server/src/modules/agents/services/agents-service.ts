@@ -43,6 +43,7 @@ import {
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
+  ANN_STARTER_KIT_SEED,
 } from "../infrastructure/labels.js";
 import {
   executeAbortRuntimeMigration,
@@ -570,6 +571,7 @@ export function createAgentsService(deps: {
     {
       agentId: string;
       owner: string;
+      teamId: string;
       ambient: boolean;
       isDefault: boolean;
     }[]
@@ -746,10 +748,15 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
+    const existing = (await deps.findSlackBindings(slackChannelId)).find(
+      (b) => b.agentId === id,
+    );
+
+    const settledWorkspace = knownWorkspace ?? existing?.teamId;
     const workspace =
-      knownWorkspace === undefined
+      settledWorkspace === undefined
         ? await deps.resolveSlackWorkspace(slackChannelId)
-        : ({ kind: "resolved", teamId: knownWorkspace } as const);
+        : ({ kind: "resolved", teamId: settledWorkspace } as const);
     if (workspace.kind === "unreachable") {
       return err({ type: "WorkspaceUnreachable" as const });
     }
@@ -759,10 +766,6 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved") {
       return err({ type: "WorkspaceUnresolved" as const });
     }
-
-    const existing = (await deps.findSlackBindings(slackChannelId)).find(
-      (b) => b.agentId === id,
-    );
 
     const requestedAmbient = ambient === true;
 
@@ -1034,6 +1037,10 @@ export function createAgentsService(deps: {
         createAnnotations[ANN_KB_SHARE_ROOTS] = input.kbShareRoots.join(",");
       if (input.starterKit)
         createAnnotations[ANN_STARTER_KIT] = input.starterKit;
+      if (input.starterKitSeed)
+        createAnnotations[ANN_STARTER_KIT_SEED] = JSON.stringify(
+          input.starterKitSeed,
+        );
 
       let infra: InfraAgent;
       try {
@@ -1273,9 +1280,13 @@ export function createAgentsService(deps: {
     },
 
     async wake(id) {
-      if (!(await ownsOrDeny(id, "agent.wake"))) return null;
+      if (!(await ownsOrDeny(id, "agent.wake")))
+        return err({ type: "AgentNotFound" });
+      const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
+      if (hold !== "none")
+        return err({ type: "RuntimeMigrating", failed: hold === "failed" });
       const infra = await deps.repo.wake(id);
-      if (!infra) return null;
+      if (!infra) return err({ type: "AgentNotFound" });
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1284,7 +1295,7 @@ export function createAgentsService(deps: {
         result: "success",
       });
       emit({ type: EventType.AgentWoken, agentId: id });
-      return project(infra);
+      return ok(await project(infra));
     },
 
     async retryWorkspace(id, kind) {

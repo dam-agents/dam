@@ -6,6 +6,7 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
 import {
@@ -61,13 +62,22 @@ export function GrantedConnectionsPanel({
     <>
       <GrantRivalryCallout granted={granted} className="mb-3" />
       {grants && onPreferConnection && (
-        <GitHubAccountsCallout
-          granted={granted}
-          grants={grants}
-          onPrefer={onPreferConnection}
-          pending={preferPending}
-          className="mb-3"
-        />
+        <>
+          <GitHubAccountsCallout
+            granted={granted}
+            grants={grants}
+            onPrefer={onPreferConnection}
+            pending={preferPending}
+            className="mb-3"
+          />
+          <AwsProfilesCallout
+            granted={granted}
+            grants={grants}
+            onPrefer={onPreferConnection}
+            pending={preferPending}
+            className="mb-3"
+          />
+        </>
       )}
     </>
   );

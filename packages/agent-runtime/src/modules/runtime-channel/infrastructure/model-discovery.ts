@@ -1,7 +1,32 @@
 import type { HarnessConfigChoice } from "agent-runtime-api";
-import type { ModelDiscoverySpec } from "../manifest.js";
+import type { ModelDiscoverySources, ModelDiscoverySpec } from "../manifest.js";
 
 type ModelListShape = NonNullable<ModelDiscoverySpec["shape"]>;
+
+export interface DiscoverySource {
+  spec: ModelDiscoverySpec;
+  via: string;
+  base: string;
+}
+
+function discoverySources(
+  sources: ModelDiscoverySources | undefined,
+): readonly ModelDiscoverySpec[] {
+  if (sources === undefined) return [];
+  return Array.isArray(sources) ? sources : [sources];
+}
+
+export function selectDiscoverySource(
+  sources: ModelDiscoverySources | undefined,
+  env: Record<string, string>,
+): DiscoverySource | null {
+  for (const spec of discoverySources(sources)) {
+    const via = spec.urlEnv.find((name) => !!env[name]?.trim());
+    const base = via ? env[via]?.trim() : undefined;
+    if (via && base) return { spec, via, base };
+  }
+  return null;
+}
 
 export type ModelDiscoveryOutcome =
   | { status: "not-configured" }
@@ -9,7 +34,7 @@ export type ModelDiscoveryOutcome =
   | { status: "unavailable" };
 
 export type ModelDiscovery = (
-  spec: ModelDiscoverySpec | undefined,
+  spec: ModelDiscoverySources | undefined,
   env: Record<string, string>,
 ) => Promise<ModelDiscoveryOutcome>;
 
@@ -37,19 +62,31 @@ function liteLlmModelName(entry: Record<string, unknown>): string | null {
   return typeof name === "string" && name.length > 0 ? name : null;
 }
 
-const modelIdReaders: Record<
+function activeInferenceProfileId(
+  entry: Record<string, unknown>,
+): string | null {
+  if (entry.status !== "ACTIVE") return null;
+  const id = entry.inferenceProfileId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+const listReaders: Record<
   ModelListShape,
-  (entry: Record<string, unknown>) => string | null
+  { listKey: string; id: (entry: Record<string, unknown>) => string | null }
 > = {
-  "litellm-model-info": liteLlmModelName,
-  "openai-models": openAiModelId,
+  "litellm-model-info": { listKey: "data", id: liteLlmModelName },
+  "openai-models": { listKey: "data", id: openAiModelId },
+  "bedrock-inference-profiles": {
+    listKey: "inferenceProfileSummaries",
+    id: activeInferenceProfileId,
+  },
 };
 
 function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as Record<string, unknown>;
-  const id = modelIdReaders[shape](record);
-  return id && !/embedding/i.test(id) ? id : null;
+  const id = listReaders[shape].id(record);
+  return id && !/embed/i.test(id) ? id : null;
 }
 
 export function createModelDiscovery(deps: {
@@ -57,11 +94,13 @@ export function createModelDiscovery(deps: {
   fetchImpl?: typeof globalThis.fetch;
 }): ModelDiscovery {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
-  return async (spec, env) => {
-    if (!spec) return { status: "not-configured" };
-    const via = spec.urlEnv.find((name) => !!env[name]?.trim());
-    const base = via ? env[via]?.trim() : undefined;
-    if (!via || !base) return { status: "unavailable" };
+  return async (sources, env) => {
+    if (discoverySources(sources).length === 0) {
+      return { status: "not-configured" };
+    }
+    const selected = selectDiscoverySource(sources, env);
+    if (!selected) return { status: "unavailable" };
+    const { spec, via, base } = selected;
 
     const shape = spec.shape ?? "openai-models";
     const url = discoveryUrl(spec, base);
@@ -76,8 +115,9 @@ export function createModelDiscovery(deps: {
           deps.log(`[harness-config] model discovery ${url} → ${res.status}`);
           return { status: "unavailable" };
         }
-        const body = (await res.json()) as { data?: unknown };
-        const data = Array.isArray(body.data) ? body.data : null;
+        const body = (await res.json()) as Record<string, unknown>;
+        const list = body[listReaders[shape].listKey];
+        const data = Array.isArray(list) ? list : null;
         if (!data) return { status: "unavailable" };
         const ids = [
           ...new Set(

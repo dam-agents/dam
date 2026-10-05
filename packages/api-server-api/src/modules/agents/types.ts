@@ -2,7 +2,11 @@ import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
-import type { OnboardingStep } from "../starter-kits/types.js";
+import type {
+  KitUpdatePending,
+  OnboardingStep,
+  SeedStamp,
+} from "../starter-kits/types.js";
 import type {
   agentCreateInputSchema,
   agentKindSchema,
@@ -104,6 +108,9 @@ export interface Agent {
   kbShareRoots?: string[];
   starterKit?: string;
   starterKitOnboarded?: string;
+  starterKitSeed?: SeedStamp;
+  kitUpdatePending?: KitUpdatePending;
+  kitUpdateSkipped?: string;
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
 }
@@ -112,6 +119,7 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   starterKit?: string;
+  starterKitSeed?: SeedStamp;
   id?: string;
   telemetryAttributionId?: string;
 };
@@ -171,6 +179,12 @@ export type PlanRuntimeMigrationResult =
 
 export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
+
+export type WakeAgentError =
+  { type: "AgentNotFound" } | { type: "RuntimeMigrating"; failed: boolean };
+
+export type WakeAgentResult =
+  { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
 
 export type AbortRuntimeMigrationError =
   | { type: "AgentNotFound" }
@@ -247,7 +261,7 @@ export interface AgentsService {
   update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
-  wake: (id: string) => Promise<Agent | null>;
+  wake: (id: string) => Promise<WakeAgentResult>;
   stop: (id: string) => Promise<Agent | null>;
   retryWorkspace: (
     id: string,

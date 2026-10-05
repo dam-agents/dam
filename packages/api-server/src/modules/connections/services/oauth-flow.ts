@@ -23,6 +23,7 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
+import { recordAccountLabel } from "./account-label.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -189,6 +190,7 @@ export function createOAuthFlowService(deps: {
       if (template?.id === "github") {
         await applyGitHubIdentity(conn, tokens.accessToken, deps);
       }
+      await recordAccountLabel(conn, tokens.accessToken, deps);
 
       return {
         connectionId: pending.ctx.connectionId,

@@ -1,5 +1,6 @@
 {
   "quietStartup": true,
+  "tuiMode": "regular",
   "defaultThinkingLevel": "medium",
   "packages": [
     "npm:@zhafron/pi-memory"

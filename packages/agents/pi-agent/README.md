@@ -17,16 +17,17 @@ Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/se
 
 ```
 usr/local/bin/
-  harness-chat           ← chat-mode entrypoint (pi-acp)
-  harness-terminal       ← terminal-mode entrypoint (pi)
+  harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
+  harness-terminal       ← terminal-mode entrypoint (pi-platform)
+  pi-platform            ← runs pi with the platform's extensions loaded from the image
+usr/local/share/pi-platform/extensions/pi-dynamic-providers/
+  index.ts               ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
 app/
   runtime-manifest.yaml  ← runtime driver config
   working-dir/           ← seeds /home/agent/ on first boot
     .pi/agent/
       settings.json      ← pi config (→ ~/.pi/agent/)
       auth.json          ← placeholder credentials
-      extensions/pi-dynamic-providers/
-        index.ts         ← auto-discovered by pi on startup; registers any of {rits, openai-proxy} whose env vars are set
     work/
       .pi/
         APPEND_SYSTEM.md ← appended to the system prompt (project-scoped)
@@ -84,6 +85,10 @@ Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blo
 
 > When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) so each credential matches only its own sub-path.
 
+#### Provider errors in the chat
+
+pi-acp ends a turn whose model request failed as a clean, empty `end_turn` and drops Pi's error (upstream [svkozak/pi-acp#135](https://github.com/svkozak/pi-acp/issues/135)), so a refused model, an expired key or a throttled request would read as silence. pi-acp does forward extension notifications into the chat, so `pi-dynamic-providers` reports a run that ends in error as `Model request failed: <error>` through one — after Pi's own retries, so a call that recovers stays quiet. Only chat sessions get it (`harness-chat` sets `PI_PLATFORM_REPORT_ERRORS=1`); the terminal shows Pi's own error. Drop that handler once pi-acp propagates the error itself.
+
 #### Other providers (env vars from pi-mono; Platform integration not validated end-to-end)
 
 These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files). The env vars below are what pi-mono reads; whether they compose cleanly with the Envoy sidecar's wire-level header rewrite hasn't been verified for each — confirm before relying on them in production.
@@ -91,7 +96,7 @@ These providers have additional configuration shapes (per-resource URLs, AWS cre
 | Provider | pi `provider` id | Auth env vars | Notes |
 |---|---|---|---|
 | Azure OpenAI Responses | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
-| Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. AWS SigV4 is computed in-pod against the secret access key, so a generic-secret header rewrite would break the signature — likely needs the real credential mounted, not sidecar-injected. Untested. |
+| Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
 | Google Vertex AI | `google-vertex` | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested. |
 | GitHub Copilot | `github-copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret. |
 | OpenAI Codex (ChatGPT) | (Codex Responses) | OAuth via `/login` — no env var | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production. |
@@ -128,7 +133,7 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
-The [`pi-dynamic-providers`](rootfs/app/working-dir/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix. `pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|

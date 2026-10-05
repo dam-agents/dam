@@ -11,6 +11,7 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
@@ -197,6 +198,8 @@ import {
   createGitCatalogSource,
   createGitHosts,
   createGitRefResolver,
+  createKitUpstream,
+  createKitUpdateReporter,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
@@ -356,6 +359,8 @@ export async function bootstrap() {
     host: config.githubEnterpriseHost,
     token: config.githubEnterpriseToken,
   });
+  const kitRefs = createGitRefResolver(kitGitHosts);
+  const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
       config.starterKitsCatalogs,
@@ -378,7 +383,7 @@ export async function bootstrap() {
       ];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(kitGitHosts),
+    refs: kitRefs,
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
@@ -588,6 +593,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
@@ -637,6 +643,7 @@ export async function bootstrap() {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
+      s3CredentialProbe: connectionsBoot.s3CredentialProbe,
       secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
@@ -651,6 +658,16 @@ export async function bootstrap() {
     .catch((err) => {
       getLogger().error(
         `periodic job oauth-refresh registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
+  await periodicJobs
+    .register("connection-account-label-backfill", 3_600_000, () =>
+      connectionsBoot.accountLabelBackfill.tickOnce(),
+    )
+    .catch((err) => {
+      getLogger().error(
+        `periodic job connection-account-label-backfill registration failed: ${formatError(err)}`,
       );
       process.exit(1);
     });
@@ -1465,6 +1482,7 @@ export async function bootstrap() {
     connectionsBoot,
     templatesRepo,
     starterKitsRepo: resolvedCatalog,
+    kitUpstream,
     reposService,
     apiKeysModule,
     satellitesBoot,
@@ -1520,6 +1538,10 @@ export async function bootstrap() {
         markAgentOnboarded: (id, at) =>
           agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
       })(agentId, owner),
+    kitUpdateReporter: createKitUpdateReporter({
+      agentsFor: harnessAgentsServiceFor,
+      marks: createKitUpdateMarks(agentsRepo),
+    }),
     onboardingChecklist: {
       set: (
         agentId: string,

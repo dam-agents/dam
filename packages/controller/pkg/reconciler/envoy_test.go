@@ -1812,3 +1812,256 @@ func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing
 	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&otherCA, secrets, hosts, false))
 	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
 }
+
+func signingSecret(name, connection, host string) corev1.Secret {
+	s := ownerSecret(name, "connection", connection)
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"` + host + `","pathPattern":"/bucket","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"` + host + `","pathPattern":"/bucket?*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"` + host + `","pathPattern":"/bucket/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+	s.Data = map[string][]byte{
+		"access_key_id":     []byte("AKIAEXAMPLE"),
+		"secret_access_key": []byte("not-a-real-secret"),
+		"aws-credentials":   []byte("[default]\naws_access_key_id = AKIAEXAMPLE\naws_secret_access_key = not-a-real-secret\n"),
+	}
+	return s
+}
+
+func TestChainsFromSecrets_SigningEntriesOnOneHostCollapseIntoOneSigner(t *testing.T) {
+	chains := chainsFromSecrets([]corev1.Secret{signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")}, nil)
+	require.Len(t, chains, 1)
+	c := chains[0]
+	assert.True(t, c.Credentialed(), "a signing chain pins its upstream like an injecting one")
+	assert.Empty(t, c.Credentials, "a signer injects no header value, so it is not a credential injector")
+	require.Len(t, c.Signers, 1, "the bucket's path scopes share one key pair, so one signer covers the host")
+	signer := c.Signers[0]
+	assert.Equal(t, "conn-cos", signer.ConnectionID)
+	assert.Equal(t, "cred-platform-conn-cos", signer.VolumeName)
+	assert.Equal(t, "aws-credentials", signer.CredentialsKey)
+	assert.Equal(t, "us-south", signer.Region)
+	assert.Equal(t, "s3", signer.Service)
+	assert.Equal(t, []string{"/bucket", "/bucket?*", "/bucket/*"}, signer.PathPatterns,
+		"the collapsed entries' path scopes bound the signer, so a sibling connection's wider egress rules cannot lend its keys to another bucket")
+	assert.False(t, signer.HostWide())
+	assert.Equal(t, []string{"conn-cos"}, c.ConnectionIDs())
+	assert.Equal(t, []string{"/"}, c.ScopesOf("conn-cos"), "a signer answers to its address on the whole host")
+	assert.Equal(t, []string{"/"}, c.PathScopes(), "signing scopes cut no routes: the signing guard bounds the step on the path it sees")
+}
+
+func TestChainsFromSecrets_SigningEntryWithoutPathPatternSignsTheWholeHost(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.Nil(t, chains[0].Signers[0].PathPatterns, "a connection without a bucket keeps signing the whole host")
+	assert.True(t, chains[0].Signers[0].HostWide())
+}
+
+func TestChainsFromSecrets_AHostWideSigningEntryWidensTheSignerPastItsBucketEntries(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","pathPattern":"/bucket/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/bucket","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.True(t, chains[0].Signers[0].HostWide(), "one entry on the whole host means the egress rules admit every path, so the guard bounds nothing")
+}
+
+func TestChainsFromSecrets_TwoSignersOnOneHostKeepTheirOwnScopes(t *testing.T) {
+	scratch := signingSecret("platform-conn-scratch", "conn-scratch", "s3.example.cloud")
+	scratch.Annotations[envoyInjectionHostsAnn] = strings.ReplaceAll(scratch.Annotations[envoyInjectionHostsAnn], "/bucket", "/scratch")
+	wide := signingSecret("platform-conn-wide", "conn-wide", "s3.example.cloud")
+	wide.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{scratch, wide}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 2)
+	assert.Equal(t, []string{"/scratch", "/scratch?*", "/scratch/*"}, chains[0].Signers[0].PathPatterns)
+	assert.Nil(t, chains[0].Signers[1].PathPatterns,
+		"the wide connection's egress rules admit /prod on the host, but only its own signer may sign there")
+}
+
+func TestLuaGlobPattern_MatchesTheEgressRulePatternLiterally(t *testing.T) {
+	assert.Equal(t, "^/bucket$", luaGlobPattern("/bucket"))
+	assert.Equal(t, "^/bucket%?.*$", luaGlobPattern("/bucket?*"), "the ? before the query is literal, as in the egress rule")
+	assert.Equal(t, "^/bucket/.*$", luaGlobPattern("/bucket/*"), "/bucket/* does not cover /bucketx or /bucket")
+	assert.Equal(t, "^/my%.data%-set/.*$", luaGlobPattern("/my.data-set/*"), "dots and dashes in a bucket name are literal")
+	assert.Equal(t, "^/__platform_conn/[%w%._~%-]+(/.*)$", luaAddressedPathPattern(),
+		"a path-prefixed address is stripped before matching, as ext_authz strips it before the egress rule")
+}
+
+func TestChainsFromSecrets_SigningMissingCredentialsKeyDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(s.Data, "aws-credentials")
+	warnings := captureWarnings(t)
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.Equal(t, "s3.example.cloud", chains[0].Host)
+	assert.False(t, chains[0].Credentialed(),
+		"a missing credentials file is a fatal Envoy boot error, so the host must degrade to allow-only")
+	assert.Contains(t, warningMessages(*warnings), "connection Secret missing credentials data key; rendering host allow-only (no request signing)")
+}
+
+func TestChainsFromSecrets_TraversalCredentialsKeyDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"../../tls/tls.key"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].Credentialed(),
+		"a credentialsKey with path separators must not escape the Secret mount")
+}
+
+func TestChainsFromSecrets_SigningEntryWithoutRegionDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].Credentialed())
+}
+
+func TestEnvoySecretsRev_CredentialsKeyRollsExistingPodsButRotationDoesNot(t *testing.T) {
+	missing := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(missing.Data, "aws-credentials")
+	healed := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	rotated := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	rotated.Data["aws-credentials"] = []byte("[default]\naws_access_key_id = AKIAROTATED\naws_secret_access_key = also-not-real\n")
+
+	assert.NotEqual(t,
+		envoySecretsRev([]corev1.Secret{missing}, nil),
+		envoySecretsRev([]corev1.Secret{healed}, nil),
+		"the credentials file appearing must roll the gateway, like an SDS key")
+	assert.Equal(t,
+		envoySecretsRev([]corev1.Secret{healed}, nil),
+		envoySecretsRev([]corev1.Secret{rotated}, nil),
+		"new key contents are picked up through the watched directory, so rotation must not roll the gateway")
+}
+
+func signingFilter(t *testing.T, filters []map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, f := range filters {
+		if f["name"] == name {
+			return f
+		}
+	}
+	require.FailNow(t, "no http filter named "+name)
+	return nil
+}
+
+func innerFilterConfig(t *testing.T, filter map[string]any) map[string]any {
+	t.Helper()
+	cfg := filter["typed_config"].(map[string]any)
+	require.Equal(t, extensionWithMatcherType, cfg["@type"])
+	return cfg["extension_config"].(map[string]any)["typed_config"].(map[string]any)
+}
+
+// TEST_SCENARIO: A sigv4 Connection with a bucket is granted. The gateway must sign only requests that name the Connection, sign the upstream authority it will forward to, leave its own marker header out of the signature, and read the keys from the mounted credentials file alone.
+func TestRenderEnvoyBootstrap_SigningSecretRendersGuardAndSignerBeforeTheForwardProxy(t *testing.T) {
+	chains := chainsFromSecrets([]corev1.Secret{
+		signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud"),
+	}, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+	signer := chains[0].Signers[0]
+
+	names := httpFilterNamesForHost(t, doc, "s3.example.cloud")
+	assert.Equal(t, []string{
+		"connection_address",
+		"envoy.filters.http.ext_authz",
+		signer.GuardFilterName(),
+		signer.FilterName(),
+		"envoy.filters.http.dynamic_forward_proxy",
+		"envoy.filters.http.router",
+	}, names)
+
+	filters := httpFiltersForHost(t, doc, "s3.example.cloud")
+	guard := signingFilter(t, filters, signer.GuardFilterName())
+	assertInjectsOnlyWhenAddressed(t, guard, "conn-cos")
+	guardCfg := innerFilterConfig(t, guard)
+	assert.Equal(t, luaFilterType, guardCfg["@type"])
+	script := guardCfg["default_source_code"].(map[string]any)["inline_string"].(string)
+	assert.Contains(t, script, `local PREFIX = "STREAMING-"`)
+	assert.Contains(t, script, `[":status"] = "400"`)
+	assert.Contains(t, script, "request_checksum_calculation = when_required")
+	assert.Contains(t, script, `local PATTERNS = {"^/bucket$", "^/bucket%?.*$", "^/bucket/.*$"}`,
+		"the guard matches the bucket's three egress-rule patterns on the path as sent, so /bucketx and /prod/x are outside")
+	assert.Contains(t, script, `[":status"] = "403"`)
+	assert.Contains(t, script, `rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, SCOPE_BODY)`)
+	assert.Contains(t, script, "The storage connection conn-cos is limited to /bucket, /bucket?*, /bucket/* on s3.example.cloud")
+	assert.Less(t, strings.Index(script, `"403"`), strings.Index(script, `"400"`),
+		"a request outside the bucket is refused before its body shape is looked at")
+
+	signing := signingFilter(t, filters, signer.FilterName())
+	assertInjectsOnlyWhenAddressed(t, signing, "conn-cos")
+	cfg := innerFilterConfig(t, signing)
+	assert.Equal(t, "type.googleapis.com/envoy.extensions.filters.http.aws_request_signing.v3.AwsRequestSigning", cfg["@type"])
+	assert.Equal(t, "s3", cfg["service_name"])
+	assert.Equal(t, "us-south", cfg["region"])
+	assert.Equal(t, "s3.example.cloud", cfg["host_rewrite"],
+		"the router's host_rewrite_literal runs after the filters, so the signer rewrites the authority itself")
+	assert.Equal(t, true, cfg["use_unsigned_payload"])
+	assert.Equal(t, []any{map[string]any{"exact": connectionAddressHeader}}, cfg["match_excluded_headers"],
+		"the marker is removed by the vhost after signing, so it must not be in the signed headers")
+	provider := cfg["credential_provider"].(map[string]any)
+	assert.Equal(t, true, provider["custom_credential_provider_chain"],
+		"no fallback to environment or instance metadata credentials")
+	file := provider["credentials_file_provider"].(map[string]any)
+	assert.Equal(t, "default", file["profile"])
+	source := file["credentials_data_source"].(map[string]any)
+	assert.Equal(t, "/etc/envoy/credentials/cred-platform-conn-cos/aws-credentials", source["filename"])
+	assert.Equal(t, map[string]any{"path": "/etc/envoy/credentials/cred-platform-conn-cos"}, source["watched_directory"])
+	assert.NotContains(t, got, "AKIAEXAMPLE", "the key material stays in the mounted file, never in the bootstrap")
+
+	assert.Contains(t, got, "host_rewrite_literal: s3.example.cloud")
+	assert.NotNil(t, clusterNamed(t, doc, chains[0].UpstreamCluster), "a signing chain forwards to a pinned upstream cluster")
+}
+
+func TestRenderEnvoyBootstrap_SigningChainOnANonDefaultPortSignsTheAuthorityWithPort(t *testing.T) {
+	s := signingSecret("platform-conn-minio", "conn-minio", "minio.example.internal")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"minio.example.internal","port":9000,"signing":{"region":"us-east-1","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+
+	cfg := innerFilterConfig(t, signingFilter(t,
+		httpFiltersForHost(t, mustParseBootstrap(t, got), "minio.example.internal"),
+		chains[0].Signers[0].FilterName()))
+	assert.Equal(t, "minio.example.internal:9000", cfg["host_rewrite"])
+	assert.Contains(t, got, "host_rewrite_literal: minio.example.internal:9000")
+}
+
+func TestRenderEnvoyBootstrap_SigningSecretMissingKeyStillBoots(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(s.Data, "aws-credentials")
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chainsFromSecrets([]corev1.Secret{s}, nil), false)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "aws_request_signing")
+	assert.NotContains(t, got, "connection_address")
+	assert.Equal(t, []string{
+		"envoy.filters.http.ext_authz",
+		"envoy.filters.http.dynamic_forward_proxy",
+		"envoy.filters.http.router",
+	}, httpFilterNamesForHost(t, mustParseBootstrap(t, got), "s3.example.cloud"))
+}

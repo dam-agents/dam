@@ -366,6 +366,7 @@ export function loadConfig(): Config {
     },
     links: {
       computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
+      slackInstallRequest: process.env.LINKS_SLACK_INSTALL_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

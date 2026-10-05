@@ -159,7 +159,7 @@ impl Walk<'_> {
                     return Err(io::Error::new(
                         io::ErrorKind::QuotaExceeded,
                         format!(
-                            "{} is more than {depth} directories deep, deeper than a seed may go",
+                            "the home is more than {depth} directories deep, deeper than a seed may go; the walk stopped at {}",
                             named.display()
                         ),
                     ));
@@ -690,7 +690,7 @@ mod tests {
                     depth: 2,
                     ..Limits::default()
                 },
-                "directories deep",
+                "the home is more than 2 directories deep",
             ),
             (
                 Limits {

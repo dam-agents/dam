@@ -1,4 +1,5 @@
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
+export type ProviderPresetType =
+  "anthropic" | "ibm-litellm" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -37,6 +38,25 @@ export function openaiEnvMappings(): EnvMapping[] {
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: "https://api.openai.com/v1" },
   ];
+}
+
+export const BEDROCK_TEMPLATE_ID = "bedrock";
+
+export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
+
+export function bedrockEnvMappings(): EnvMapping[] {
+  return [
+    {
+      envName: "AWS_BEARER_TOKEN_BEDROCK",
+      placeholder: DEFAULT_ENV_PLACEHOLDER,
+    },
+    { envName: "AWS_BEDROCK_FORCE_HTTP1", placeholder: "1" },
+  ];
+}
+
+export interface BedrockPins {
+  region: string;
+  model?: string;
 }
 
 export interface BobModelPins {
@@ -128,6 +148,13 @@ export const PROVIDERS = {
     displayName: "Bob Shell",
     modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
   },
+  bedrock: {
+    id: "bedrock",
+    displayName: "AWS Bedrock",
+    modes: [
+      { key: "api-key", label: "API Key", templateId: BEDROCK_TEMPLATE_ID },
+    ],
+  },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 
 export const PROVIDER_PRESET_TYPES = Object.keys(
@@ -151,6 +178,8 @@ export const PROVIDER_TEMPLATE_IDS: ReadonlySet<string> = new Set(
 );
 
 export const SHARED_KB_TEMPLATE_ID = "shared-knowledge-base";
+
+export const S3_COMPATIBLE_TEMPLATE_ID = "s3-compatible";
 
 export function providerTypeForTemplateId(
   templateId: string,

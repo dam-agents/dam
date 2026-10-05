@@ -15,6 +15,7 @@ import type {
   AgentsRepository,
   RuntimeProgressPort,
 } from "../../modules/agents/index.js";
+import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
@@ -85,6 +86,7 @@ export interface HarnessApiServerAppDeps {
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
+  kitUpdateReporter: KitUpdateReporter;
   runtimeProgress: RuntimeProgressPort;
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
@@ -110,6 +112,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connectionsServiceFor,
     markOnboardingComplete,
     onboardingChecklist,
+    kitUpdateReporter,
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
@@ -219,6 +222,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).schedules,
     markOnboardingComplete,
     onboardingChecklist,
+    kitUpdateReporter,
     artifactLibraryFor: mcpArtifactLibraryFor,
     invocationsServiceFor,
     kbShareOpsFor,

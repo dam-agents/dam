@@ -13,6 +13,7 @@ export const PLATFORM_SKILLS: ReadonlyMap<string, PlatformSkillFeature> =
     ["dam-invoke", { id: "invocations", label: "Invocations" }],
     ["platform-models", { id: "connections", label: "Model providers" }],
     ["platform-github", { id: "connections", label: "GitHub accounts" }],
+    ["platform-s3", { id: "connections", label: "Object Storage" }],
   ] satisfies [string, PlatformSkillFeature][]);
 
 export function platformSkillFeature(

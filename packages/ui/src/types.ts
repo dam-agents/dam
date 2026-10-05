@@ -237,9 +237,16 @@ export interface Schedule {
 }
 
 export type {
+  BedrockPins,
   BobModelPins,
   EgressPreset,
   EnvVar,
   ProviderPresetType,
 } from "api-server-api";
-export { BOB_CHAT_MODES, isValidEnvName, PROVIDERS } from "api-server-api";
+export {
+  BEDROCK_REGION_PATTERN,
+  BEDROCK_TEMPLATE_ID,
+  BOB_CHAT_MODES,
+  isValidEnvName,
+  PROVIDERS,
+} from "api-server-api";

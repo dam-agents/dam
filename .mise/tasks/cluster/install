@@ -290,7 +290,7 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.31.0"
+ISTIO_VERSION="1.31.1"
 # Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
 # and is being retired. --force-update repoints an `istio` repo a machine
 # already has registered at the old URL.

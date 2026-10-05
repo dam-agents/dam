@@ -47,7 +47,10 @@ import type { MetricsReader } from "../../modules/metrics/index.js";
 import type { TelemetryReader } from "../../modules/telemetry/index.js";
 import type { SessionDirectory } from "../../modules/session-directory/index.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
-import type { StarterKitsRepository } from "../../modules/starter-kits/index.js";
+import type {
+  KitUpstream,
+  StarterKitsRepository,
+} from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
 import type { Config } from "../../config.js";
 import type { createAuth, SurfaceAttribution } from "./admission/auth.js";
@@ -111,6 +114,7 @@ export interface ApiServerDeps {
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
   starterKitsRepo: StarterKitsRepository;
+  kitUpstream: KitUpstream;
   reposService: ReposService;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;

@@ -12,6 +12,8 @@ import type {
   starterKitScheduleOverrideSchema,
   starterKitScheduleSchema,
   starterKitSchema,
+  seedStampSchema,
+  kitUpdatePendingSchema,
 } from "./schemas.js";
 
 export type StarterKitConnectionRequirement = z.infer<
@@ -49,11 +51,50 @@ export interface StarterKitApplyResult {
   skillsError: string | null;
 }
 
+export type SeedStamp = z.infer<typeof seedStampSchema>;
+export type KitUpdatePending = z.infer<typeof kitUpdatePendingSchema>;
+
+export type KitUpdateState =
+  | "up-to-date"
+  | "available"
+  | "pending"
+  | "skipped"
+  | "onboarding"
+  | "unreachable";
+
+export interface KitUpdateStatus {
+  agentId: string;
+  state: KitUpdateState;
+  current: string;
+  latest: string | null;
+  pending: KitUpdatePending | null;
+}
+
+export interface KitUpdateCommit {
+  sha: string;
+  subject: string;
+}
+
+export interface KitUpdateChanges {
+  from: string;
+  to: string;
+  compareUrl: string;
+  versionFrom: string | null;
+  versionTo: string | null;
+  changelog: string | null;
+  commits: KitUpdateCommit[] | null;
+  totalCommits: number | null;
+}
+
 export interface StarterKitsService {
   list: () => Promise<StarterKitView[]>;
   get: (catalog: string, id: string) => Promise<StarterKitView | null>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
   markOnboarded: (agentId: string) => Promise<void>;
+  updates: () => Promise<KitUpdateStatus[]>;
+  updateChanges: (agentId: string) => Promise<KitUpdateChanges | null>;
+  startUpdate: (agentId: string) => Promise<KitUpdateStatus>;
+  skipUpdate: (agentId: string) => Promise<KitUpdateStatus>;
 }
 
 export function requirementAccepts(

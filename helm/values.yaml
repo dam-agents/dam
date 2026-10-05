@@ -58,6 +58,10 @@ links:
   # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
   # default, which is install-specific and slated for removal — set this.
   computeRequest: ""
+  # Where "Request it" on the Slack setup surfaces points — the form people
+  # use to ask for the Slack app in a workspace that does not have it yet.
+  # Complete URL. Empty string hides that line; there is no bundled default.
+  slackInstallRequest: ""
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -1852,7 +1856,7 @@ controller:
 # built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
-# (any of anthropic, ibm-litellm, openai, bob) — which env the harness inside
+# (any of anthropic, ibm-litellm, openai, bob, bedrock) — which env the harness inside
 # reads. Create flows narrow the provider picker to it; omit it to offer every
 # provider. Validated when templates load.
 # `harness` names the harness family running inside the image — which CLI the
@@ -1892,7 +1896,7 @@ controller:
 harnessTemplates:
   claude-code:
     enabled: true
-    providers: [ibm-litellm, anthropic]
+    providers: [ibm-litellm, anthropic, bedrock]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1919,7 +1923,7 @@ harnessTemplates:
 
   pi-agent:
     enabled: true
-    providers: [ibm-litellm, anthropic, openai]
+    providers: [ibm-litellm, anthropic, openai, bedrock]
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
     harness: pi

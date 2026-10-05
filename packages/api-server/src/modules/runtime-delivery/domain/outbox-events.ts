@@ -42,3 +42,10 @@ export const initializationEvent = (
   at: Date,
 ): OutboxEvent =>
   workspaceEvent("initialization", "initialization", agentId, { task }, at);
+
+export const kitUpdateEvent = (
+  agentId: string,
+  task: string,
+  at: Date,
+): OutboxEvent =>
+  workspaceEvent("initialization", "kit-update", agentId, { task }, at);

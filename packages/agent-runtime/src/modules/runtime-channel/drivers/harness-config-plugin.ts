@@ -12,9 +12,10 @@ import {
   getNested,
   type FileDesired,
 } from "../infrastructure/file-ops.js";
-import type {
-  ModelDiscovery,
-  ModelDiscoveryOutcome,
+import {
+  selectDiscoverySource,
+  type ModelDiscovery,
+  type ModelDiscoveryOutcome,
 } from "../infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
@@ -125,21 +126,21 @@ export function createHarnessConfigPlugin(deps: {
   };
 
   const seedModel = async (): Promise<boolean> => {
-    const spec = binding?.modelDiscovery;
-    if (!binding || !spec || !binding.keys.model) return false;
+    if (!binding?.modelDiscovery || !binding.keys.model) return false;
     const current = readCurrentValues(binding, agentHome, log);
     if (current.model) return false;
 
     const env = envReader.current();
-    const pinned = spec.pinEnv?.find((name) => !!env[name]?.trim());
+    const source = selectDiscoverySource(binding.modelDiscovery, env);
+    const pinned = source?.spec.pinEnv?.find((name) => !!env[name]?.trim());
     if (pinned) {
       log(`[harness-config] no model seeded: ${pinned} pins one already`);
       return false;
     }
 
-    const outcome = await discoverModels(spec, env);
+    const outcome = await discoverModels(binding.modelDiscovery, env);
     if (outcome.status !== "observed") return false;
-    if (!spec.redirectEnv?.includes(outcome.via)) {
+    if (!source?.spec.redirectEnv?.includes(outcome.via)) {
       log(
         `[harness-config] no model seeded: ${outcome.via} supplies the harness's own endpoint`,
       );

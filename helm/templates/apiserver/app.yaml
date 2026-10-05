@@ -540,6 +540,10 @@ spec:
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
             {{- end }}
+            {{- if .Values.links.slackInstallRequest }}
+            - name: LINKS_SLACK_INSTALL_REQUEST
+              value: {{ .Values.links.slackInstallRequest | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # The api-server's own operational telemetry (request traces,
             # per-procedure metrics, logs) exports OTLP straight to the

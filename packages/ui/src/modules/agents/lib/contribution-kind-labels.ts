@@ -4,6 +4,7 @@ const CONTRIBUTION_KIND_LABELS: Record<ContributionKind, string> = {
   env: "environment variables",
   "egress-allow": "network access",
   "egress-inject": "network credentials",
+  "egress-sign": "signed network access",
   file: "files",
   "mcp-entry": "MCP servers",
   "skill-ref": "skills",

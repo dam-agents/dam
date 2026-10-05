@@ -36,6 +36,7 @@ export interface SlackSlashCommand {
   text: string;
   userId: string;
   channelId: string;
+  channelName?: string;
   teamId: SlackWorkspace;
   triggerId: string;
 }
@@ -159,7 +160,10 @@ export interface SlackPostEphemeral {
   user: string;
   threadTs?: string;
   text: string;
+  blocks?: SlackBlock[];
   teamId: SlackWorkspace;
+  username?: string;
+  iconUrl?: string;
 }
 
 export interface SlackUpload {

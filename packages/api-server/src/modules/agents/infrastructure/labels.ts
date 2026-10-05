@@ -42,6 +42,9 @@ export const ANN_KB_SHARE_ROOTS = "agent-platform.ai/kb-share-roots";
 export const ANN_STARTER_KIT = "agent-platform.ai/starter-kit";
 export const ANN_STARTER_KIT_ONBOARDED =
   "agent-platform.ai/starter-kit-onboarded";
+export const ANN_STARTER_KIT_SEED = "agent-platform.ai/starter-kit-seed";
+export const ANN_KIT_UPDATE_PENDING = "agent-platform.ai/kit-update-pending";
+export const ANN_KIT_UPDATE_SKIPPED = "agent-platform.ai/kit-update-skipped";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
 
