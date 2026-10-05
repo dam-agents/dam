@@ -809,6 +809,7 @@ export interface SlackWorker {
   describeUsers(
     instanceName: string,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions(
     instanceName: string,
@@ -832,10 +833,27 @@ export interface SlackOAuthPending {
   createdAt: number;
 }
 
+type TurnWorkspace = (conversationId?: string) => SlackWorkspace | undefined;
+
+function workspaceOf(
+  bound: SlackBoundConversation[],
+  conversationId: string | undefined,
+  turnWorkspace: TurnWorkspace,
+): SlackWorkspace | undefined {
+  const workspaces = new Set(bound.map((c) => c.teamId));
+  if (workspaces.size === 1) return [...workspaces][0];
+  if (!conversationId) return turnWorkspace();
+  return (
+    bound.find((c) => c.id === conversationId)?.teamId ??
+    turnWorkspace(conversationId)
+  );
+}
+
 async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
+  turnWorkspace: TurnWorkspace,
   refuseOutsideOwnerReach: (
     conversationId: string,
     teamId: SlackWorkspace,
@@ -855,8 +873,8 @@ async function resolveOutboundTarget(
     return { id: boundTarget.id, teamId: boundTarget.teamId };
   }
 
-  const workspaces = [...new Set(bound.map((c) => c.teamId))];
-  if (workspaces.length !== 1) {
+  const teamId = workspaceOf(bound, conversationId, turnWorkspace);
+  if (teamId === undefined) {
     return {
       error:
         `${conversationId} is not one of this agent's conversations, and the ` +
@@ -864,7 +882,6 @@ async function resolveOutboundTarget(
         `conversation in the workspace it belongs to`,
     };
   }
-  const teamId = workspaces[0]!;
 
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
     try {
@@ -1297,6 +1314,24 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return undefined;
   }
 
+  function turnWorkspace(instanceName: string): TurnWorkspace {
+    return (conversationId) => {
+      if (conversationId) {
+        return findTurnRef(
+          instanceName,
+          (ref) => ref.channel === conversationId,
+        )?.teamId;
+      }
+      const workspaces = new Set(
+        [
+          ...(inFlightTurns.get(instanceName) ?? []),
+          ...lingeringFor(instanceName),
+        ].map((ref) => ref.teamId),
+      );
+      return workspaces.size === 1 ? [...workspaces][0] : undefined;
+    };
+  }
+
   function noteEngagedTurn(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
@@ -1318,14 +1353,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     { user: SlackUserInfo | null; expiresAt: number }
   >();
 
-  function cacheUser(id: string, user: SlackUserInfo | null) {
+  function cacheUser(key: string, user: SlackUserInfo | null) {
     const now = Date.now();
     if (userCache.size > 500) {
       for (const [key, entry] of userCache) {
         if (entry.expiresAt <= now) userCache.delete(key);
       }
     }
-    userCache.set(id, { user, expiresAt: now + USER_CACHE_TTL_MS });
+    userCache.set(key, { user, expiresAt: now + USER_CACHE_TTL_MS });
   }
 
   const conversationNameCache = new Map<
@@ -4636,6 +4671,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         conversationId,
+        turnWorkspace(instanceName),
         (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
       );
       if ("error" in target) {
@@ -4925,6 +4961,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               gw,
               boundChannelIds,
               args.conversationId ?? turn?.channel,
+              turnWorkspace(instanceName),
               async (id, teamId) =>
                 id === turn?.channel
                   ? null
@@ -5010,6 +5047,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         args.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
         async (id, teamId) =>
           id === turnChannel
             ? null
@@ -5034,23 +5072,34 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
-    async describeUsers(instanceName: string, userIds: string[]) {
+    async describeUsers(
+      instanceName: string,
+      userIds: string[],
+      conversationId?: string,
+    ) {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (bound.length === 0) return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      const workspaces = [...new Set(bound.map((c) => c.teamId))];
-      if (workspaces.length !== 1) {
+      const workspace = workspaceOf(
+        bound,
+        conversationId,
+        turnWorkspace(instanceName),
+      );
+      if (workspace === undefined) {
         return {
-          error:
-            "this agent is connected to more than one Slack workspace, and a " +
-            "user id only means something inside one — ask from a conversation " +
-            "in the workspace the person belongs to",
+          error: conversationId
+            ? `${conversationId} does not say which workspace to look in: pass ` +
+              "a conversation this agent is connected to, or the one you are " +
+              "answering, in the person's workspace"
+            : "this agent is connected to more than one Slack workspace, and a " +
+              "user id only means something inside one: pass chatId for a " +
+              "conversation this agent is connected to, or the one you are " +
+              "answering, in the person's workspace",
         };
       }
-      const workspace = workspaces[0]!;
 
       const seen = new Set<string>();
       const requested: { raw: string; id: string | null }[] = [];
@@ -5077,7 +5126,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             };
           }
           const notFound = { id, error: "no such user in this workspace" };
-          const cached = userCache.get(id);
+          const cached = userCache.get(`${workspace}/${id}`);
           if (cached && cached.expiresAt > Date.now()) {
             return cached.user ? { ...cached.user } : notFound;
           }
@@ -5090,7 +5139,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           } finally {
             release();
           }
-          cacheUser(id, info);
+          cacheUser(`${workspace}/${id}`, info);
           return info ? { ...info } : notFound;
         }),
       );
@@ -5165,6 +5214,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         gw,
         boundChannelIds,
         query.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
         async (id, teamId) =>
           id === turnChannel
             ? null

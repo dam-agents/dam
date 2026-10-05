@@ -355,12 +355,19 @@ export function createMcpSession(
         .describe(
           'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "A conversation in the people's workspace: one this agent is connected to, or one you are answering. Omit to use the conversation you're answering.",
+        ),
     },
-    async ({ channel, userIds }) => {
+    async ({ channel, userIds, chatId }) => {
       const result = await deps.channelManager.describeUsers(
         agentId,
         channel,
         userIds,
+        chatId,
       );
       const audit = channelAudit(channel);
       if ("error" in result) {
