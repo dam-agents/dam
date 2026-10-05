@@ -70,7 +70,7 @@ A Driver usually waits on its sub-agents from a script, and the signals that kee
 
 ## Sub-agent tools
 
-The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, and the setup — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer. Scripts stay the path for orchestration logic — loops, wide fan-outs, scoring.
+The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer. Scripts stay the path for orchestration logic — loops, wide fan-outs, scoring.
 
 **Waiting is a long poll, bounded under the request timeout.** await_subagents returns as soon as any listed Invocation is terminal, or after four minutes with the ones still running, and the agent calls it again. The bound sits under Node's 300-second request timeout, which the harness server does not override, as the [satellite](satellites.md) wait does; no harness's own tool timeout is raised. The Driver keeps the ids; the platform tracks nothing per call, a finished id asked again answers again, and an id that is not one of the caller's own Invocations answers as unknown.
 

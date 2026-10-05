@@ -42,7 +42,10 @@ mean your harness's own.
    runs on *your* model provider.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`,
    `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any
-   setup option from the table below. It returns the sub-agent id at once.
+   setup option from the table below and, to pick the model, `model`, `mode`
+   and `configOptions` as in "Choose the model per spawn". Never pick a model
+   through `env`: the platform then records no harness config and runs none of
+   its checks. It returns the sub-agent id at once.
 3. **Wait.** Call `await_subagents` with the ids. It returns as soon as one
    finishes, or after about four minutes, with what is done, failed and still
    running; call it again with the running ids. You may also end your turn

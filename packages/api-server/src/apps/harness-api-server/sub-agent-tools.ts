@@ -95,7 +95,51 @@ const spawnInput = {
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
   ),
+  model: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Model the sub-agent runs, as the agent's Config panel names it: on claude-code fable, opus, sonnet, haiku or claude/<provider model>; on codex, pi and bob a name from the provider's model list. Default: the harness's default model. The platform does not check the value, and a wrong one can hang the sub-agent until its deadline, so try a new name with a short ttlMs.",
+    ),
+  mode: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Harness mode, as the Config panel names it. Leave unset unless you know the harness: a mode that asks for approvals stalls an unattended sub-agent. claude-code on haiku needs bypassPermissions, or its report_result waits for an approval until the deadline.",
+    ),
+  configOptions: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe(
+      "Harness config options as {name: value}: effort on claude-code (low to xhigh; haiku takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
+    ),
 };
+
+function withHarnessConfig<T extends object>(
+  rest: T & {
+    model?: string;
+    mode?: string;
+    configOptions?: Record<string, string>;
+  },
+): object {
+  const { model, mode, configOptions, ...body } = rest;
+  const options =
+    configOptions && Object.keys(configOptions).length > 0
+      ? configOptions
+      : undefined;
+  if (model === undefined && mode === undefined && options === undefined)
+    return body;
+  return {
+    ...body,
+    harnessConfig: {
+      ...(model !== undefined ? { model } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(options !== undefined ? { configOptions: options } : {}),
+    },
+  };
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The part of a stated need the request itself can
@@ -195,7 +239,9 @@ export function registerSubAgentTools(
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
       const { needs, ...rest } = args;
-      const parsed = spawnInvocationRequestSchema.safeParse(rest);
+      const parsed = spawnInvocationRequestSchema.safeParse(
+        withHarnessConfig(rest),
+      );
       if (!parsed.success) {
         return errorResult(
           `spawn_subagent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
