@@ -94,6 +94,8 @@ import type {
   SlackAck,
   SlackBlock,
   SlackBotJoinedChannelEvent,
+  SlackConversationInfo,
+  SlackConversationLookup,
   SlackConversationRef,
   SlackLabelledConversation,
   SlackWorkspace,
@@ -908,14 +910,18 @@ async function resolveOutboundTarget(
   if (conversationId.startsWith("D")) {
     return { id: conversationId, teamId };
   }
-  let info: { isMember: boolean; isDirectMessage: boolean } | null;
+  let lookup: SlackConversationLookup;
   try {
-    info = await gateway.getConversationInfo(conversationId, teamId);
+    lookup = await gateway.getConversationInfo(conversationId, teamId);
   } catch (err) {
     return {
       error: `could not resolve conversation ${conversationId}: ${formatError(err)}`,
     };
   }
+  const info = match(lookup)
+    .with({ kind: "found" }, (found) => found)
+    .with({ kind: "not-found" }, { kind: "no-credential" }, () => null)
+    .exhaustive();
   if (!info) {
     return {
       error: `conversation ${conversationId} not found — if it is a private channel, the bot must be invited to it first (/invite)`,
@@ -1443,9 +1449,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (pending) return pending;
     const lookup = (async (): Promise<SlackConversationLabel | null> => {
       const release = await conversationInfoSemaphore.acquire();
-      let info: Awaited<ReturnType<SlackGateway["getConversationInfo"]>>;
+      let lookup: SlackConversationLookup;
       try {
-        info = await gw.getConversationInfo(ref.channelId, ref.teamId);
+        lookup = await gw.getConversationInfo(ref.channelId, ref.teamId);
       } catch (err) {
         process.stderr.write(
           `[slack] conversations.info failed for ${ref.channelId}: ${formatError(err)}\n`,
@@ -1454,31 +1460,40 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       } finally {
         release();
       }
-      let label: SlackConversationLabel | null;
-      if (!info) {
-        label = { kind: "gone" };
-      } else if (info.isGroupDirectMessage) {
-        label = {
-          kind: "group-direct-message",
-          members: groupDirectMessageMembers(info.name),
-        };
-      } else if (info.isDirectMessage) {
-        label = {
-          kind: "direct-message",
-          with: await directMessagePartner(
-            gw,
-            ref.teamId,
-            info.directMessageUser,
-          ),
-        };
-      } else {
-        label = info.name ? { kind: "channel", name: info.name } : null;
-      }
+      const label = await match(lookup)
+        .with({ kind: "found" }, (info) => labelOf(gw, ref, info))
+        .with({ kind: "not-found" }, () => ({ kind: "gone" }) as const)
+        .with({ kind: "no-credential" }, () => null)
+        .exhaustive();
       cacheConversationLabel(key, label);
       return label;
     })().finally(() => conversationLabelInFlight.delete(key));
     conversationLabelInFlight.set(key, lookup);
     return lookup;
+  }
+
+  async function labelOf(
+    gw: SlackGateway,
+    ref: SlackConversationRef,
+    info: SlackConversationInfo,
+  ): Promise<SlackConversationLabel | null> {
+    if (info.isGroupDirectMessage) {
+      return {
+        kind: "group-direct-message",
+        members: groupDirectMessageMembers(info.name),
+      };
+    }
+    if (info.isDirectMessage) {
+      return {
+        kind: "direct-message",
+        with: await directMessagePartner(
+          gw,
+          ref.teamId,
+          info.directMessageUser,
+        ),
+      };
+    }
+    return info.name ? { kind: "channel", name: info.name } : null;
   }
 
   const AMBIGUOUS_THREAD_ERROR =
@@ -2917,7 +2932,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
     const answer = await Promise.race([
       asked.then(
-        (info) => (info ? "present" : "absent"),
+        (lookup) =>
+          match(lookup)
+            .with({ kind: "found" }, () => "present" as const)
+            .with(
+              { kind: "not-found" },
+              { kind: "no-credential" },
+              () => "absent" as const,
+            )
+            .exhaustive(),
         () => "unknown" as const,
       ),
       timedOut,
@@ -4661,9 +4684,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ): Promise<SlackConversationStanding> {
       const gw = await ensureGateway();
       if (!gw) throw new Error("slack gateway is not connected here");
-      const info = await gw.getConversationInfo(slackChannelId, teamId);
-      if (!info) return "unknown";
-      return info.isMember ? "member" : "known";
+      const lookup = await gw.getConversationInfo(slackChannelId, teamId);
+      return match(lookup)
+        .with({ kind: "found" }, (info) =>
+          info.isMember ? ("member" as const) : ("known" as const),
+        )
+        .with(
+          { kind: "not-found" },
+          { kind: "no-credential" },
+          () => "unknown" as const,
+        )
+        .exhaustive();
     },
 
     async listConversations(instanceName: string) {

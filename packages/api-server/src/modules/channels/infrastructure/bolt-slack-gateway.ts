@@ -4,6 +4,7 @@ import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
 import { foldThreadPages } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
+  SlackConversationLookup,
   SlackGateway,
   SlackGatewayHandlers,
   SlackImageFile,
@@ -781,18 +782,22 @@ export function createBoltSlackGateway(
       return channels;
     },
 
-    async getConversationInfo(channelId: string, teamId: SlackWorkspace) {
-      if (!app) return null;
+    async getConversationInfo(
+      channelId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackConversationLookup> {
+      if (!app) return { kind: "no-credential" };
       const token = await tokenFor(teamId);
-      if (!token) return null;
+      if (!token) return { kind: "no-credential" };
       try {
         const info = await app.client.conversations.info({
           token,
           channel: channelId,
         });
-        if (!info.channel) return null;
+        if (!info.channel) return { kind: "not-found" };
         const isDirectMessage = !!info.channel.is_im || !!info.channel.is_mpim;
         return {
+          kind: "found",
           isMember: isDirectMessage || !!info.channel.is_member,
           isDirectMessage,
           isGroupDirectMessage: !!info.channel.is_mpim,
@@ -800,7 +805,8 @@ export function createBoltSlackGateway(
           directMessageUser: directMessageUserOf(info.channel),
         };
       } catch (err) {
-        if (formatError(err).includes("channel_not_found")) return null;
+        if (formatError(err).includes("channel_not_found"))
+          return { kind: "not-found" };
         throw err;
       }
     },

@@ -214,6 +214,19 @@ export interface SlackChannelInfo {
   name: string;
 }
 
+export interface SlackConversationInfo {
+  isMember: boolean;
+  isDirectMessage: boolean;
+  isGroupDirectMessage: boolean;
+  name: string | null;
+  directMessageUser: string | null;
+}
+
+export type SlackConversationLookup =
+  | ({ kind: "found" } & SlackConversationInfo)
+  | { kind: "not-found" }
+  | { kind: "no-credential" };
+
 export interface SlackConversationRef {
   channelId: string;
   teamId: SlackWorkspace;
@@ -329,13 +342,7 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{
-    isMember: boolean;
-    isDirectMessage: boolean;
-    isGroupDirectMessage: boolean;
-    name: string | null;
-    directMessageUser: string | null;
-  } | null>;
+  ): Promise<SlackConversationLookup>;
   listSharedChannels(userId: string, teamId: SlackWorkspace): Promise<string[]>;
   getUserInfo(
     userId: string,
