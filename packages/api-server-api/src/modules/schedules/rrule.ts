@@ -1,12 +1,7 @@
 /// <reference lib="esnext.temporal" />
-import * as rruleModule from "rrule";
-import type { Weekday } from "rrule";
 import { RRuleTemporal } from "rrule-temporal";
+import { toText } from "rrule-temporal/totext";
 import type { QuietWindow } from "./types.js";
-
-const rrulePkg = (Reflect.get(rruleModule, "default") ??
-  rruleModule) as typeof rruleModule;
-const { Frequency, RRule } = rrulePkg;
 
 export type FrequencyPreset =
   | { kind: "minutely"; interval: number; days: number[] }
@@ -16,64 +11,59 @@ export type FrequencyPreset =
 
 export const ALL_DAYS: number[] = [1, 2, 3, 4, 5, 6, 7];
 
-const ISO_TO_RRULE_WEEKDAY: Record<number, Weekday> = {
-  1: RRule.MO,
-  2: RRule.TU,
-  3: RRule.WE,
-  4: RRule.TH,
-  5: RRule.FR,
-  6: RRule.SA,
-  7: RRule.SU,
-};
+const ISO_TO_BYDAY = ["", "MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 export function buildRRule(preset: FrequencyPreset): string {
   if (preset.kind === "custom") {
     return stripRRulePrefix(preset.rrule.trim());
   }
-  const opts = toOptions(preset);
-  return stripRRulePrefix(new RRule(opts).toString());
+  const rule = new RRuleTemporal({
+    ...toOptions(preset),
+    dtstart: anchoredAt("UTC"),
+  });
+  return stripRRulePrefix(rule.toString());
 }
 
 function toOptions(preset: Exclude<FrequencyPreset, { kind: "custom" }>) {
-  const byweekday = daysFilterToByWeekday(preset.days);
+  const byDay = daysFilterToByDay(preset.days);
   switch (preset.kind) {
     case "minutely":
-      return {
-        freq: Frequency.MINUTELY,
-        interval: preset.interval,
-        ...byweekday,
-      };
+      return { freq: "MINUTELY" as const, interval: preset.interval, ...byDay };
     case "hourly":
-      return {
-        freq: Frequency.HOURLY,
-        interval: preset.interval,
-        ...byweekday,
-      };
+      return { freq: "HOURLY" as const, interval: preset.interval, ...byDay };
     case "daily":
       return {
-        freq: Frequency.DAILY,
-        byhour: [preset.hour],
-        byminute: [preset.minute],
-        bysecond: [0],
-        ...byweekday,
+        freq: "DAILY" as const,
+        byHour: [preset.hour],
+        byMinute: [preset.minute],
+        bySecond: [0],
+        ...byDay,
       };
   }
 }
 
-function daysFilterToByWeekday(days: number[]): { byweekday?: Weekday[] } {
+function daysFilterToByDay(days: number[]): { byDay?: string[] } {
   if (days.length === 0 || days.length === ALL_DAYS.length) return {};
-  const mapped = days.map((d) => ISO_TO_RRULE_WEEKDAY[d]).filter(Boolean);
-  return mapped.length > 0 ? { byweekday: mapped } : {};
+  const mapped = days.map((d) => ISO_TO_BYDAY[d]).filter(Boolean);
+  return mapped.length > 0 ? { byDay: mapped } : {};
 }
 
 function stripRRulePrefix(s: string): string {
-  return s.replace(/^RRULE:/, "");
+  return s.replace(/^DTSTART[^\n]*\n/, "").replace(/^RRULE:/, "");
+}
+
+function parseRRule(rruleBody: string): RRuleTemporal {
+  return new RRuleTemporal({
+    rruleString: withUtcUntil(rruleBody, "UTC"),
+    dtstart: anchoredAt("UTC"),
+  });
 }
 
 export function rruleToText(rruleBody: string): string {
   try {
-    const rule = RRule.fromString(rruleBody);
-    return rule.toText();
+    return toText(parseRRule(rruleBody), undefined, {
+      excludeTzAbbreviation: true,
+    });
   } catch {
     return rruleBody;
   }
@@ -81,30 +71,28 @@ export function rruleToText(rruleBody: string): string {
 
 export function detectPreset(rruleBody: string): FrequencyPreset {
   try {
-    const options = RRule.parseString(rruleBody);
-    const days = byweekdayToIso(options.byweekday) ?? [...ALL_DAYS];
-    const interval =
-      typeof options.interval === "number" ? options.interval : 1;
-
-    const hours = toNumArray(options.byhour);
-    const minutes = toNumArray(options.byminute);
+    const options = parseRRule(rruleBody).options();
+    const days = byDayToIso(options.byDay) ?? [...ALL_DAYS];
+    const interval = options.interval ?? 1;
+    const hours = options.byHour ?? [];
+    const minutes = options.byMinute ?? [];
 
     if (
-      options.freq === Frequency.MINUTELY &&
+      options.freq === "MINUTELY" &&
       hours.length === 0 &&
       minutes.length === 0
     ) {
       return { kind: "minutely", interval, days };
     }
     if (
-      options.freq === Frequency.HOURLY &&
+      options.freq === "HOURLY" &&
       hours.length === 0 &&
       minutes.length === 0
     ) {
       return { kind: "hourly", interval, days };
     }
     if (
-      (options.freq === Frequency.DAILY || options.freq === Frequency.WEEKLY) &&
+      (options.freq === "DAILY" || options.freq === "WEEKLY") &&
       hours.length === 1 &&
       minutes.length === 1
     ) {
@@ -114,23 +102,11 @@ export function detectPreset(rruleBody: string): FrequencyPreset {
   return { kind: "custom", rrule: rruleBody };
 }
 
-function toNumArray(v: unknown): number[] {
-  if (v == null) return [];
-  if (Array.isArray(v))
-    return v.filter((x): x is number => typeof x === "number");
-  return typeof v === "number" ? [v] : [];
-}
-
-function byweekdayToIso(byweekday: unknown): number[] | null {
-  if (!Array.isArray(byweekday) || byweekday.length === 0) return null;
-  const mapped: number[] = [];
-  for (const bw of byweekday) {
-    const n =
-      typeof bw === "number" ? bw : (bw as { weekday?: number }).weekday;
-    if (typeof n !== "number") continue;
-    mapped.push(n + 1);
-  }
-  mapped.sort((a, b) => a - b);
+function byDayToIso(byDay: string[] | undefined): number[] | null {
+  const mapped = (byDay ?? [])
+    .map((d) => ISO_TO_BYDAY.indexOf(d.slice(-2)))
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b);
   return mapped.length > 0 ? mapped : null;
 }
 
@@ -143,6 +119,10 @@ export function detectTimezone(): string {
 }
 
 const RRULE_ANCHOR = { year: 2001, month: 1, day: 1 };
+
+function anchoredAt(timeZone: string): Temporal.ZonedDateTime {
+  return Temporal.ZonedDateTime.from({ ...RRULE_ANCHOR, timeZone });
+}
 const MAX_PERIODS = 1500;
 const MAX_CANDIDATES = 10_000;
 const QUIET_SKIP_LIMIT = 64;
@@ -175,10 +155,7 @@ export function nextVisibleOccurrence(
   const enabled = windows.filter((w) => w.enabled);
   const rule = new RRuleTemporal({
     rruleString: withUtcUntil(rruleBody, timezone),
-    dtstart: Temporal.ZonedDateTime.from({
-      ...RRULE_ANCHOR,
-      timeZone: timezone,
-    }),
+    dtstart: anchoredAt(timezone),
     maxIterations: MAX_PERIODS,
     maxCandidateEvaluations: MAX_CANDIDATES,
   });
@@ -239,8 +216,8 @@ function firstWallTimeAfter(
 export function rruleProblem(rruleBody: string): string | null {
   if (rruleBody.length > MAX_RRULE_LENGTH)
     return `an rrule longer than ${MAX_RRULE_LENGTH} characters is not supported`;
-  const options = RRule.parseString(rruleBody);
-  if (options.freq === Frequency.SECONDLY)
+  const options = parseRRule(rruleBody).options();
+  if (options.freq === "SECONDLY")
     return "FREQ=SECONDLY is not supported, schedules run at minute granularity";
   if (options.count != null)
     return "COUNT is not supported, a schedule has no start date to count from";

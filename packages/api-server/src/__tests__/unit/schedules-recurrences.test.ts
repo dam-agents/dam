@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { hasVisibleOccurrence } from "api-server-api";
+import {
+  buildRRule,
+  detectPreset,
+  hasVisibleOccurrence,
+  rruleToText,
+} from "api-server-api";
 import type { ScheduleSpec } from "api-server-api";
 import {
   nextFire,
@@ -399,5 +404,55 @@ describe("triggerExpiry", () => {
     expect(triggerExpiry(firedAt, next, 900).toISOString()).toBe(
       "2026-09-02T10:15:30.000Z",
     );
+  });
+});
+
+describe("rrule presets", () => {
+  const weekdays = [1, 2, 3, 4, 5];
+
+  it("builds the same rule bodies as stored schedules use", () => {
+    expect(buildRRule({ kind: "minutely", interval: 15, days: [] })).toBe(
+      "FREQ=MINUTELY;INTERVAL=15",
+    );
+    expect(buildRRule({ kind: "hourly", interval: 2, days: [1, 3] })).toBe(
+      "FREQ=HOURLY;INTERVAL=2;BYDAY=MO,WE",
+    );
+    expect(
+      buildRRule({ kind: "daily", hour: 9, minute: 30, days: weekdays }),
+    ).toBe("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0;BYDAY=MO,TU,WE,TH,FR");
+  });
+
+  it("reads a built rule back as the preset it came from", () => {
+    const daily = {
+      kind: "daily",
+      hour: 9,
+      minute: 30,
+      days: weekdays,
+    } as const;
+    expect(detectPreset(buildRRule(daily))).toEqual(daily);
+    const hourly = { kind: "hourly", interval: 2, days: [1, 3] } as const;
+    expect(detectPreset(buildRRule(hourly))).toEqual(hourly);
+  });
+
+  it("reads a rule no preset expresses as custom", () => {
+    expect(detectPreset("FREQ=MONTHLY;BYMONTHDAY=1")).toEqual({
+      kind: "custom",
+      rrule: "FREQ=MONTHLY;BYMONTHDAY=1",
+    });
+  });
+
+  it("describes the minutes and the days of a rule", () => {
+    expect(rruleToText("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0")).toBe(
+      "every day at 9:30 AM",
+    );
+    expect(rruleToText("FREQ=HOURLY;INTERVAL=2;BYDAY=MO,WE")).toBe(
+      "every 2 hours on Monday and Wednesday",
+    );
+  });
+
+  it("describes a rule with a floating UNTIL", () => {
+    expect(
+      rruleToText("FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20271231T000000"),
+    ).not.toBe("FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20271231T000000");
   });
 });
