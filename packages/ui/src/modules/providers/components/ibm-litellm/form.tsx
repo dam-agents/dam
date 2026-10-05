@@ -38,12 +38,12 @@ const LITELLM_PROVIDERS = {
 } as const;
 
 export function IbmLitellmForm({
-  provider = "ibm-litellm",
+  provider,
   variant,
   onSave,
   onCancel,
 }: {
-  provider?: keyof typeof LITELLM_PROVIDERS;
+  provider: keyof typeof LITELLM_PROVIDERS;
   variant: "wizard" | "edit";
   onSave: (input: { value: string }) => Promise<void>;
   onCancel?: () => void;
