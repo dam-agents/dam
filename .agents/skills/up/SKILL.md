@@ -44,6 +44,7 @@ If the word fits neither, ask with AskUserQuestion. Do not ask which dependencie
   - Mirrored images: `.mise/tasks/image/mirror` and their pins in `helm/values.yaml` or `.mise/tasks/cluster/install`.
   - mise: `min_version` in `.mise/config.toml` and `version:` in `.github/actions/setup-mise/action.yml`.
   - Go: mise `go` and the `toolchain` line in `packages/controller/go.mod`. Raise its `go` directive only when a dependency requires it.
+  - k3s and Gateway API: `GATEWAY_API_VERSION` in `.mise/tasks/cluster/install` is exactly the bundle k3s's `gateway-api-crd` chart ships for `INSTALL_K3S_VERSION`, never newer (the comment above the pin says why).
 - **Always through mise**: `mise run` for tasks, `mise x -- <tool>` for a one-off command. Never call a tool directly.
 - **Never skip or disable a test** to make a bump pass.
 
