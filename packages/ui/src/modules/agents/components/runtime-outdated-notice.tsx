@@ -7,6 +7,7 @@ export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
   const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
   const update = agent?.templateUpdate ?? null;
+  if (!agent || !update) return null;
 
   return (
     <div
@@ -14,17 +15,15 @@ export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
       className="flex items-center gap-2 border-b border-border/50 px-4 py-2 text-xs text-muted-foreground"
     >
       <span className="flex-1">
-        Live updates need a newer agent runtime — showing polled data.
-        {update ? "" : " No runtime update is available yet."}
+        This agent’s version is too old for live updates, so the session list
+        and files can take a few seconds to update.
       </span>
-      {agent && update && (
-        <UpdateAvailableAction
-          agent={agent}
-          onUpdate={() => void updateOne(agent)}
-          pending={updatingId === agent.id}
-          busy={updatingAll}
-        />
-      )}
+      <UpdateAvailableAction
+        agent={agent}
+        onUpdate={() => void updateOne(agent)}
+        pending={updatingId === agent.id}
+        busy={updatingAll}
+      />
     </div>
   );
 }
