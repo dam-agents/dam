@@ -75,15 +75,35 @@ function chunk(ws: WebSocket, sessionId: string, text: string): void {
 function serviceFor(relay: FakeRelay): {
   service: RunService;
   printed: () => string;
+  errors: string[];
 } {
   const out: string[] = [];
+  const errors: string[] = [];
   const service = createRunService({
     bootstrap: () =>
       Promise.resolve(ok({ host: relay.host, token: "t", agentId: "agent-1" })),
     out: (text) => out.push(text),
-    errOut: () => {},
+    errOut: (text) => errors.push(text),
   });
-  return { service, printed: () => out.join("") };
+  return { service, printed: () => out.join(""), errors };
+}
+
+function egressPrompt(ws: WebSocket, approvalId: string): void {
+  ws.send(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: approvalId,
+      method: "session/request_permission",
+      params: {
+        sessionId: `_egress:${approvalId}`,
+        options: [],
+        toolCall: {
+          title: "GET api.example.com/v1",
+          rawInput: { approvalId },
+        },
+      },
+    }),
+  );
 }
 
 describe("run service", () => {
@@ -123,6 +143,39 @@ describe("run service", () => {
       ok({ kind: "completed", sessionId: "sess-1", stopReason: "end_turn" }),
     );
     expect(printed()).toBe("hello world");
+  });
+
+  /**
+   * TEST_SCENARIO: A client that retries a held request gets the egress prompt of
+   * the same approval once per retry (#4327). The run must print the stall
+   * line for that approval once, not once per retry.
+   */
+  it("prints one stall line per approval however often its prompt repeats", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt") {
+        egressPrompt(ws, "appr-1");
+        egressPrompt(ws, "appr-1");
+        egressPrompt(ws, "appr-2");
+        egressPrompt(ws, "appr-1");
+        setTimeout(() => reply(ws, frame.id, { stopReason: "end_turn" }), 50);
+      }
+    });
+    const { service, errors } = serviceFor(relay);
+
+    await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      timeoutSeconds: 10,
+    });
+
+    expect(errors).toEqual([
+      "run stalled on a permission request (GET api.example.com/v1) — resolve with: dam approval approve appr-1",
+      "run stalled on a permission request (GET api.example.com/v1) — resolve with: dam approval approve appr-2",
+    ]);
   });
 
   /**
