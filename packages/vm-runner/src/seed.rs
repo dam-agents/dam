@@ -91,6 +91,21 @@ const RUNTIME_ENV: &str = ".platform/runtime-env.json";
 const CONTAINER_CACHE: &str = ".cache";
 const CONTAINER_CACHE_TARGET: &str = "/tmp/agent-cache";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runtime's state file, carried without its record of the last desired state it applied. That record holds only beside the env file the seed leaves out, so a machine that kept it would tell the platform at its first hello that nothing is missing, and an agent image whose runtime predates that check would start its harness with no provider. The runs of events already handled stay, so none runs twice. A file too large or not the object the runtime writes is left out, and the runtime starts it afresh.
+const RUNTIME_STATE: &str = ".platform/runtime-state.json";
+const RUNTIME_STATE_MAX: u64 = 1 << 20;
+
+fn runtime_state_without_cursor(from: &Path) -> Option<Vec<u8>> {
+    if fs::metadata(from).ok()?.len() > RUNTIME_STATE_MAX {
+        return None;
+    }
+    let mut state: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&fs::read(from).ok()?).ok()?;
+    state.insert("lastAppliedVersion".into(), 0.into());
+    state.insert("lastAppliedHash".into(), serde_json::Value::Null);
+    serde_json::to_vec(&state).ok()
+}
+
 fn container_only(name: &Path, from: &Path, info: &fs::Metadata) -> bool {
     if name == Path::new(RUNTIME_ENV) {
         return true;
@@ -195,6 +210,16 @@ impl Walk<'_> {
             builder.append_link(&mut header, name, fs::read_link(from)?)?;
         } else if kind.is_dir() {
             builder.append_data(&mut header, name, io::empty())?;
+        } else if kind.is_file() && name == Path::new(RUNTIME_STATE) {
+            match runtime_state_without_cursor(from) {
+                Some(state) => {
+                    header.set_size(state.len() as u64);
+                    builder.append_data(&mut header, name, state.as_slice())?;
+                }
+                None => {
+                    tracing::warn!(path = %name.display(), "leaving out a runtime state the walk could not read")
+                }
+            }
         } else if kind.is_file() {
             self.file(builder, header, from, name, info)?;
         } else {
@@ -719,6 +744,30 @@ mod tests {
             );
         }
         assert!(seed_with(home.path(), &Options::default()).is_ok());
+    }
+
+    // TEST_SCENARIO: a migrated machine whose runtime kept the container's applied-state cursor would be pushed nothing at its first hello and start its harness with no provider, so the seed carries the runtime's state with the cursor cleared and its event runs kept, and leaves out a state file it cannot read.
+    #[test]
+    fn the_runtime_state_is_carried_without_its_cursor() {
+        let carried = |state: &[u8]| {
+            let home = TempDir::new("seed-runtime-state");
+            fs::create_dir(home.path().join(".platform")).unwrap();
+            fs::write(home.path().join(RUNTIME_STATE), state).unwrap();
+            let found = entries(&write_tar(home.path(), Vec::new()).unwrap());
+            found
+                .iter()
+                .find(|(name, ..)| name == RUNTIME_STATE)
+                .map(|(.., body)| serde_json::from_slice::<serde_json::Value>(body).unwrap())
+        };
+        assert_eq!(
+            carried(
+                br#"{"lastAppliedVersion":7,"lastAppliedHash":"abc","eventRuns":{"sched-1":100}}"#
+            ),
+            Some(
+                serde_json::json!({"lastAppliedVersion":0,"lastAppliedHash":null,"eventRuns":{"sched-1":100}})
+            )
+        );
+        assert_eq!(carried(b"not json"), None);
     }
 
     // TEST_SCENARIO: what only the container used stays behind: the runtime's env file, which the platform pushes again, and the container's `~/.cache` link to its pod-local /tmp, which a machine would empty on every boot. The rest of `.platform`, a `.cache` that is a directory, and a `.cache` link the agent pointed somewhere else are the agent's own and are carried.
