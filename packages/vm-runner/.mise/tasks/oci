@@ -22,7 +22,7 @@ fi
 
 # platform-init links statically against glibc's static archive, which zig
 # cannot provide, so the image builds with the system's C toolchain rather than
-# the zig the repository's .mise/zig/env selects for checks and tests.
+# the zig .mise/config.toml's [env] selects for checks and tests.
 t="$(uname -m)_unknown_linux_gnu"
 unset "CC_$t" "AR_$t" "CARGO_TARGET_$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')_LINKER"
 

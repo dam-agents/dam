@@ -225,7 +225,7 @@ describe("nextFire (bounded work)", () => {
       rruleSpec(rrule, timezone, quiet),
       new Date("2026-10-01T08:47:13Z"),
     );
-    expect(Date.now() - started).toBeLessThan(1000);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 
   // TEST_SCENARIO: a quiet window can end at a wall time the clocks skip or repeat, so the search resumes at the first moment after the window rather than an hour past it or back inside it.

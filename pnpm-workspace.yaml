@@ -10,18 +10,21 @@ minimumReleaseAgeExclude:
   # ignoring the INTERVAL cadence, which 2.2.6 gets wrong for pinned schedules.
   # Drop this entry once it is older than 7 days (2026-10-02).
   - "rrule-temporal@2.2.7"
-  # The pi-agent image pins @earendil-works/pi-coding-agent 0.99.2 (2026-09-30)
+  # The pi-agent image pins @earendil-works/pi-coding-agent 1.0.2 (2026-10-04)
   # and the pi-dynamic-providers extension type-checks against the same
   # version; the fork publishes all its packages in lockstep. Drop these once
-  # the release ages past the floor (2026-10-07).
-  - "@earendil-works/chord@0.99.2"
-  - "@earendil-works/pi-agent-core@0.99.2"
-  - "@earendil-works/pi-ai@0.99.2"
-  - "@earendil-works/pi-codemode@0.99.2"
-  - "@earendil-works/pi-coding-agent@0.99.2"
-  - "@earendil-works/pi-mcp@0.99.2"
-  - "@earendil-works/pi-telemetry@0.99.2"
-  - "@earendil-works/pi-tui@0.99.2"
+  # the release ages past the floor (2026-10-11).
+  - "@earendil-works/chord@1.0.2"
+  - "@earendil-works/pi-agent-core@1.0.2"
+  - "@earendil-works/pi-ai@1.0.2"
+  - "@earendil-works/pi-codemode@1.0.2"
+  - "@earendil-works/pi-coding-agent@1.0.2"
+  - "@earendil-works/pi-mcp@1.0.2"
+  - "@earendil-works/pi-telemetry@1.0.2"
+  - "@earendil-works/pi-tui@1.0.2"
+  # @earendil-works/pi-ai 1.0.2 pins @anthropic-ai/sdk 0.129.0 (2026-09-28).
+  # Drop this once it ages past the floor (2026-10-05).
+  - "@anthropic-ai/sdk@0.129.0"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -55,10 +58,10 @@ allowBuilds:
   sharp: true
 overrides:
   "@hono/node-server@<2.0.10": "2.0.12"
-  # ip-address <10.5.1 carries a security advisory. It is transitive only
+  # ip-address <10.7.1 carries security advisories. It is transitive only
   # (express-rate-limit, socks), and both accept ^10, so the override keeps
   # them satisfied while Dependabot cannot bump a transitive dep on its own.
-  "ip-address@<10.5.1": "10.5.1"
+  "ip-address@<10.7.1": "10.7.2"
   "esbuild@<0.25.0": "0.25.12"
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
   "serialize-javascript@<7.0.5": "7.0.5"

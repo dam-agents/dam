@@ -1,5 +1,5 @@
 [tools]
-"npm:@earendil-works/pi-coding-agent" = "0.99.2"
+"npm:@earendil-works/pi-coding-agent" = "1.0.2"
 "npm:pi-acp" = "0.0.33"
 
 [oci.env]
