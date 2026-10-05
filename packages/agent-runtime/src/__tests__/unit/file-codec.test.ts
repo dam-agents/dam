@@ -36,9 +36,33 @@ describe("file-codec", () => {
     expect(() => parseFile("yaml", "a: 1\n---\nb: 2\n")).toThrow();
   });
 
-  it("treats text/ini as opaque strings on parse", () => {
+  it("treats text as an opaque string on parse", () => {
     expect(parseFile("text", "hello")).toBe("hello");
-    expect(parseFile("ini", "a=b")).toBe("a=b");
+  });
+
+  /** TEST_SCENARIO: An AWS config names its sections `profile <name>` and
+   * nests the s3 block as indented continuation lines under `s3 =`. A
+   * key-targeted merge parses the file before it adds a section, so both
+   * shapes must survive a parse and serialize round-trip byte for byte, or
+   * every apply rewrites the file. */
+  it("round-trips ini sections, spaced section names and continuation lines", () => {
+    const value = {
+      top: "1",
+      "profile my conn": {
+        region: "us-east-1",
+        s3: "\n  addressing_style = path",
+      },
+    };
+    const serialized = serializeFile("ini", value);
+    expect(parseFile("ini", serialized)).toEqual(value);
+    expect(serializeFile("ini", parseFile("ini", serialized))).toBe(serialized);
+  });
+
+  it("parses a hand-written ini, dropping comments and spacing", () => {
+    expect(
+      parseFile("ini", "# mine\n[default]\naws_access_key_id = AKIA ; x\n"),
+    ).toEqual({ default: { aws_access_key_id: "AKIA ; x" } });
+    expect(parseFile("ini", "")).toEqual({});
   });
 
   it("throws on malformed json/toml (so callers can probe)", () => {

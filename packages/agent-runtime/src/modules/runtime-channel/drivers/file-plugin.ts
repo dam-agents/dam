@@ -40,6 +40,16 @@ function topLevelKeys(content: unknown): string[] {
   return Object.keys(content as Record<string, unknown>);
 }
 
+function staleKeysOf(previous: WrittenPath, current: WrittenPath): string[] {
+  if (
+    previous.mergeMode !== "key-targeted" ||
+    current.mergeMode !== "key-targeted"
+  ) {
+    return [];
+  }
+  return previous.keys.filter((key) => !current.keys.includes(key));
+}
+
 function removalOf(record: WrittenPath): FileDesired[] | null | "keep" {
   const strip: FileDesired = {
     format: record.format,
@@ -100,7 +110,23 @@ export function createFilePlugin(): Plugin {
 
         const desired = new Map<string, FileDesired[] | null>(fragments);
         for (const [path, record] of Object.entries(written)) {
-          if (desired.has(path)) continue;
+          const kept = next[path];
+          if (kept) {
+            const stale = staleKeysOf(record, kept);
+            if (stale.length > 0) {
+              desired.set(path, [
+                {
+                  format: record.format,
+                  mergeMode: record.mergeMode,
+                  content: undefined,
+                  delete: true,
+                  keys: stale,
+                },
+                ...(fragments.get(path) ?? []),
+              ]);
+            }
+            continue;
+          }
           const removal = removalOf(record);
           if (removal === "keep") {
             ctx.log(

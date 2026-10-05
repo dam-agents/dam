@@ -15,6 +15,7 @@ import {
   RESERVED_MCP_SERVER_NAMES,
   SHARED_KB_TEMPLATE_ID,
   applyConnectionEgressAddressing,
+  composeAwsProfiles,
   composeGitHubAccounts,
   type Contribution,
   type ContributionKind,
@@ -161,7 +162,13 @@ async function readGrantedContributions(
       contributions: applyConnectionEgressAddressing(row.id, parsed),
     });
   }
-  return { contributions: composeGitHubAccounts(sources), templateIds };
+  return {
+    contributions: [
+      ...composeGitHubAccounts(sources),
+      ...composeAwsProfiles(sources),
+    ],
+    templateIds,
+  };
 }
 
 async function readSkillRefContributions(
