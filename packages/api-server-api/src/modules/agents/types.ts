@@ -25,11 +25,17 @@ export interface Channel {
   type: ChannelType;
 }
 
+export type SlackConversationLabel =
+  | { kind: "channel"; name: string }
+  | { kind: "direct-message"; with: string | null }
+  | { kind: "group-direct-message"; members: string[] }
+  | { kind: "gone" };
+
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   teamId?: string;
-  name?: string;
+  label?: SlackConversationLabel;
   ambient?: boolean;
   default?: boolean;
 }

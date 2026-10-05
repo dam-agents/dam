@@ -77,6 +77,7 @@ describe("spawn size admission over the route", () => {
   test("maps SizeNeverFitsError to a 400 with the figures", async () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
+      agents: { get: async () => null },
       k8s: {
         getCustomObject: async (plural: string, id: string) =>
           plural === AGENTS_PLURAL && id === "driver-1"
@@ -136,6 +137,7 @@ describe("budget visibility over the route", () => {
   const makeApp = () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
+      agents: { get: async () => null },
       k8s: {
         getCustomObject: async (plural: string, id: string) =>
           plural === AGENTS_PLURAL && id === "driver-1"

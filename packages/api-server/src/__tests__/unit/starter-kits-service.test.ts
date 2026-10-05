@@ -113,6 +113,7 @@ function makeHarness(
     preferred: boolean;
   }[] = [],
   virtualizationEnabled = true,
+  pinnedKit = "",
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -256,6 +257,7 @@ function makeHarness(
       },
     },
     virtualizationEnabled,
+    pinnedKit,
   });
   return { service, calls };
 }
@@ -1156,6 +1158,23 @@ describe("starter kits: egress preset", () => {
     expect(calls.egressRules).toEqual([
       { agentId: "agent-1", hosts: ["api.example.com"] },
     ]);
+  });
+});
+
+describe("starter kits: pinned kit", () => {
+  // TEST_SCENARIO: the pin names a kit as <catalog>/<kit>, so the same id in another catalog is not pinned.
+  it("flags only the kit the install pins", async () => {
+    const pinned = makeHarness(
+      LOADED,
+      null,
+      [],
+      true,
+      "platform/code-reviewer",
+    );
+    expect((await pinned.service.list())[0]?.pinned).toBe(true);
+
+    const other = makeHarness(LOADED, null, [], true, "curated/code-reviewer");
+    expect((await other.service.list())[0]?.pinned).toBe(false);
   });
 });
 

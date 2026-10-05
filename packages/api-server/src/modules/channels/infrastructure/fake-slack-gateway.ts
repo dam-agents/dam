@@ -393,11 +393,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       );
       return channel
         ? {
+            kind: "found",
             isMember: channel.botIsMember,
             isDirectMessage: false,
+            isGroupDirectMessage: false,
             name: channel.name,
+            directMessageUser: null,
           }
-        : null;
+        : { kind: "not-found" };
     },
 
     async listSharedChannels(userId, teamId) {

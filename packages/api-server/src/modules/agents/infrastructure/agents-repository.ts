@@ -79,6 +79,7 @@ export interface AgentsRepository {
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
   wakeIfHibernated(id: string): Promise<AgentActivityStamp | null>;
+  wakeUnlessStopped(id: string): Promise<boolean>;
   restoreActivityIfUnchanged(
     id: string,
     stamp: AgentActivityStamp,
@@ -411,6 +412,25 @@ export function createAgentsRepository(
         previous: obj.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
         written,
       };
+    },
+
+    async wakeUnlessStopped(id) {
+      for (let attempt = 0; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        if (!obj || obj.metadata?.annotations?.[STOP_REQUESTED_KEY])
+          return false;
+        try {
+          await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: {
+              resourceVersion: obj.metadata?.resourceVersion,
+              annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
+            },
+          });
+          return true;
+        } catch (e) {
+          if (!isConflict(e) || attempt >= PIN_CONFLICT_RETRIES) throw e;
+        }
+      }
     },
 
     async restoreActivityIfUnchanged(id, stamp) {

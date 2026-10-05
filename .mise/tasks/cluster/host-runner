@@ -24,16 +24,15 @@ if [ ! -x "$release/smolvm-bin" ]; then
   rm "$tarball"
   mv "$release.new" "$release"
 fi
-# The runner expands its disk templates with zstd and gives the storage one a
-# journal with tune2fs, and smolvm formats a disk it has no template for with
-# mkfs.ext4; a Mac has none of them. The k3s VM does, so they are expanded
-# there and carried back as a sparse tar, which keeps their holes: each is a
-# few MiB on disk for tens of GiB of size. An expanded template beside its
-# packed one is what the runner links as it is.
+# The runner expands its disk templates with zstd, and smolvm formats a disk
+# it has no template for with mkfs.ext4; a Mac has neither. The k3s VM does,
+# so they are expanded there and carried back as a sparse tar, which keeps
+# their holes: each is a few MiB on disk for tens of GiB of size. An expanded
+# template beside its packed one is what the runner links as it is.
 if [ ! -f "$release/storage-template.ext4" ]; then
   echo "Expanding the disk templates in $LIMA_INSTANCE..."
   limactl copy "$release/storage-template.ext4.zst" "$release/overlay-template.ext4.zst" "$LIMA_INSTANCE:/tmp/"
-  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done && tune2fs -O has_journal storage-template.ext4 >/dev/null'
+  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done'
   limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
 fi
 

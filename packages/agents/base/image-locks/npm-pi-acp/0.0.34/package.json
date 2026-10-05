@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.5.0"
+    "pi-acp": "0.0.34"
   }
 }

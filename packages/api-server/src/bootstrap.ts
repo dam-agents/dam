@@ -205,6 +205,7 @@ import {
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
+  composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
@@ -387,6 +388,7 @@ export async function bootstrap() {
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
+    pinnedKit: config.starterKitsPinned,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
         name: skill.name,
@@ -1392,6 +1394,23 @@ export async function bootstrap() {
   );
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
+  );
+  const subAgentOutcomes = composeSubAgentOutcomeDelivery({
+    db,
+    bump: (agentId, events) =>
+      runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeUnlessStopped: (agentId) => agentsRepo.wakeUnlessStopped(agentId),
+    log: (msg) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  });
+  await periodicJobs.register("sub-agent-outcome-delivery", 10_000, () =>
+    subAgentOutcomes.deliver(),
+  );
+  await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
+    subAgentOutcomes.retry(),
   );
 
   const agentSweep = createAgentSweep({

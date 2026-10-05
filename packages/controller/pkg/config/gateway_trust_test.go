@@ -134,6 +134,11 @@ func TestLoadFromEnv_GatewayUpstreamExtraCAs(t *testing.T) {
 	assert.Empty(t, cfg.GatewayUpstreamTrustBundle, "no extra CAs leaves the gateway on its own image's roots")
 	assert.Empty(t, cfg.ExtraTrustedCAs, "and gives agents nothing beyond their gateway's CA")
 
+	roots := filepath.Join(t.TempDir(), "ca-certificates.crt")
+	require.NoError(t, os.WriteFile(roots, []byte(newTestCA(t, "public").pem), 0o644))
+	defer func(path string) { systemCABundle = path }(systemCABundle)
+	systemCABundle = roots
+
 	ca := newTestCA(t, "extra")
 	withCA := map[string]string{"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS": ca.pem}
 	for k, v := range base {

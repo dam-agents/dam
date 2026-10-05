@@ -7,6 +7,7 @@ import type {
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createDelegationControl } from "./services/delegation-control.js";
+import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
@@ -37,6 +38,11 @@ import {
 import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { ReadHarnessConfigSupport } from "./domain/harness-config-refusal.js";
+import {
+  createSubAgentOutcomeDelivery,
+  createSubAgentOutcomeWakeRetry,
+  type SubAgentOutcomeDeliveryDeps,
+} from "./services/outcome-delivery.js";
 
 function composeReaper(
   repo: InvocationsRepository,
@@ -121,6 +127,31 @@ export function composeInvocationLivenessSweep(opts: {
     hasAgent: opts.hasAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
     batchSize: opts.batchSize,
+  });
+}
+
+export function composeSubAgentOutcomeDelivery(
+  opts: Omit<SubAgentOutcomeDeliveryDeps, "repo"> & { db: Db },
+): { deliver: () => Promise<number>; retry: () => Promise<number> } {
+  const deps = { ...opts, repo: createSubAgentOutcomesRepository(opts.db) };
+  return {
+    deliver: createSubAgentOutcomeDelivery(deps),
+    retry: createSubAgentOutcomeWakeRetry(deps),
+  };
+}
+
+export interface SubAgentAwaitMarks {
+  markAwaited(ids: string[], until: Date): Promise<void>;
+  markCollected(ids: string[]): Promise<void>;
+}
+
+export function composeSubAgentAwaitMarks(
+  db: Db,
+): (driverAgentId: string) => SubAgentAwaitMarks {
+  const repo = createSubAgentOutcomesRepository(db);
+  return (driverAgentId) => ({
+    markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
+    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
   });
 }
 

@@ -79,6 +79,7 @@ export type {
   ListTelegramChatsResult,
   UnbindTelegramChatResult,
   SlackChannel,
+  SlackConversationLabel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
@@ -264,6 +265,7 @@ export {
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
+  curveBenderEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
@@ -272,6 +274,7 @@ export {
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
+  CURVE_BENDER_HOST,
   BOB_HOST,
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,

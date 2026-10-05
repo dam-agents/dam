@@ -156,8 +156,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             conversationId: slackChannelId,
           }),
       },
-      resolveSlackChannelNames: (refs) =>
-        channelManager.resolveSlackConversationNames(refs),
+      resolveSlackConversationLabels: (refs) =>
+        channelManager.resolveSlackConversationLabels(refs),
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
@@ -242,6 +242,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
+      pinnedKit: config.starterKitsPinned,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
