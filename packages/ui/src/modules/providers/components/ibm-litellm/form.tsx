@@ -29,13 +29,21 @@ const ibmLitellmCredentialSchema = z
 
 type FormValues = z.infer<typeof ibmLitellmCredentialSchema>;
 
+const LITELLM_PROVIDERS = {
+  "ibm-litellm": {
+    description: IBM_LITELLM_DESCRIPTION,
+    keyGuideUrl: KEY_GUIDE_URL,
+  },
+  "curve-bender": { description: CURVE_BENDER_DESCRIPTION, keyGuideUrl: null },
+} as const;
+
 export function IbmLitellmForm({
   provider = "ibm-litellm",
   variant,
   onSave,
   onCancel,
 }: {
-  provider?: "ibm-litellm" | "curve-bender";
+  provider?: keyof typeof LITELLM_PROVIDERS;
   variant: "wizard" | "edit";
   onSave: (input: { value: string }) => Promise<void>;
   onCancel?: () => void;
@@ -47,6 +55,7 @@ export function IbmLitellmForm({
   });
   const { isSubmitting, isValid } = formState;
 
+  const { description, keyGuideUrl } = LITELLM_PROVIDERS[provider];
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
 
@@ -59,18 +68,14 @@ export function IbmLitellmForm({
       provider={provider}
       title={PROVIDERS[provider].displayName}
       description={
-        isEdit
-          ? "Paste a new token to replace the existing one."
-          : provider === "ibm-litellm"
-            ? IBM_LITELLM_DESCRIPTION
-            : CURVE_BENDER_DESCRIPTION
+        isEdit ? "Paste a new token to replace the existing one." : description
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      {provider === "ibm-litellm" && (
+      {keyGuideUrl && (
         <a
-          href={KEY_GUIDE_URL}
+          href={keyGuideUrl}
           {...externalLinkProps}
           className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
         >
