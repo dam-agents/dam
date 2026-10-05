@@ -50,6 +50,9 @@ export function packToSetupDefaults(
       customRRule: s.demoValue ?? "",
       quietHours: [],
       enabled: true,
+      recommendation: {
+        summary: s.description ?? "Adjust the schedule to fit your workflow",
+      },
     }));
   }
 

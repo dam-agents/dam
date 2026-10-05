@@ -195,10 +195,6 @@ function getRecommendation(draft: ScheduleDraft): PresetRecommendation {
   if (ext.recommendation) return ext.recommendation;
   return {
     summary: ext.hint ?? "Adjust the schedule to fit your workflow",
-    fields: {
-      time: "Before your first meeting of the day",
-      days: "Workdays, when your team is active",
-    },
   };
 }
 
