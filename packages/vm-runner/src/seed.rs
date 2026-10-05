@@ -623,11 +623,7 @@ mod tests {
         for name in [".", "repo"] {
             let header = &named(&found, name).2;
             assert_eq!(header.uid().unwrap(), 4242, "{name}");
-            if mine.gid() == mine.uid() {
-                assert_eq!(header.gid().unwrap(), 4242, "{name}");
-            } else {
-                assert_eq!(header.gid().unwrap(), u64::from(mine.gid()), "{name}");
-            }
+            assert_eq!(header.gid().unwrap(), 4242, "{name}");
         }
         if other_owner {
             let header = &named(&found, "theirs").2;
