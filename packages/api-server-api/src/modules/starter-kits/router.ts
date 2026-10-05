@@ -6,6 +6,7 @@ import {
 } from "../../auth-procedures.js";
 import { toAgentView } from "../agents/view.js";
 import {
+  kitUpdateAgentInputSchema,
   starterKitApplyInputSchema,
   starterKitGetInputSchema,
 } from "./schemas.js";
@@ -27,4 +28,18 @@ export const starterKitsRouter = t.router({
       const result = await ctx.starterKits.apply(input);
       return { ...result, agent: toAgentView(result.agent) };
     }),
+
+  updates: readAgentProcedure.query(({ ctx }) => ctx.starterKits.updates()),
+
+  updateChanges: readAgentProcedure
+    .input(kitUpdateAgentInputSchema)
+    .query(({ ctx, input }) => ctx.starterKits.updateChanges(input.agentId)),
+
+  startUpdate: manageAgentsProcedure
+    .input(kitUpdateAgentInputSchema)
+    .mutation(({ ctx, input }) => ctx.starterKits.startUpdate(input.agentId)),
+
+  skipUpdate: manageAgentsProcedure
+    .input(kitUpdateAgentInputSchema)
+    .mutation(({ ctx, input }) => ctx.starterKits.skipUpdate(input.agentId)),
 });

@@ -43,6 +43,7 @@ import {
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
+  ANN_STARTER_KIT_SEED,
 } from "../infrastructure/labels.js";
 import {
   executeAbortRuntimeMigration,
@@ -1036,6 +1037,10 @@ export function createAgentsService(deps: {
         createAnnotations[ANN_KB_SHARE_ROOTS] = input.kbShareRoots.join(",");
       if (input.starterKit)
         createAnnotations[ANN_STARTER_KIT] = input.starterKit;
+      if (input.starterKitSeed)
+        createAnnotations[ANN_STARTER_KIT_SEED] = JSON.stringify(
+          input.starterKitSeed,
+        );
 
       let infra: InfraAgent;
       try {

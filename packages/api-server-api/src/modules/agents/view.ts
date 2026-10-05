@@ -45,6 +45,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     runtimeMigratable: agent.runtimeMigratable ?? false,
     starterKit: agent.starterKit ?? null,
     starterKitOnboarded: agent.starterKitOnboarded ?? null,
+    kitUpdatePending: agent.kitUpdatePending ?? null,
     ...(agent.onboardingSteps
       ? { onboardingSteps: agent.onboardingSteps }
       : {}),

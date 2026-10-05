@@ -5,6 +5,7 @@ import {
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
+import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
@@ -80,6 +81,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     agentsRepo,
     templatesRepo,
     starterKitsRepo,
+    kitUpstream,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -236,6 +238,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
+      kitUpstream,
+      kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>

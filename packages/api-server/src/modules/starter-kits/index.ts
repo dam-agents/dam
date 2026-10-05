@@ -30,3 +30,11 @@ export {
   createOnboardingChecklistRepository,
   type OnboardingChecklistRepository,
 } from "./infrastructure/onboarding-checklist-repository.js";
+export {
+  createKitUpstream,
+  type KitUpstream,
+} from "./infrastructure/kit-upstream.js";
+export {
+  createKitUpdateReporter,
+  type KitUpdateReporter,
+} from "./services/kit-update-reporter.js";

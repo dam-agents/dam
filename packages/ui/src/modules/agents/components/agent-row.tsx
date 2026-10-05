@@ -24,6 +24,7 @@ import {
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
+import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
 import {
   agentKindBadge,
@@ -156,6 +157,7 @@ export function AgentRow({
             </Badge>
           )}
           <OnboardingTag agent={agent} />
+          <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>

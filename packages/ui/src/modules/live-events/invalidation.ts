@@ -12,6 +12,7 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   approvals: () => [approvalsKeys.all, egressRulesKeys.all],
   agents: () => [
     agentsKeys.root,
+    trpc.starterKits.updates.queryKey(),
     trpc.budgets.pathKey(),
     trpc.harnessConfig.pathKey(),
   ],

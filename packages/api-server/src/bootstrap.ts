@@ -11,6 +11,7 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
@@ -197,6 +198,8 @@ import {
   createGitCatalogSource,
   createGitHosts,
   createGitRefResolver,
+  createKitUpstream,
+  createKitUpdateReporter,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
@@ -356,6 +359,8 @@ export async function bootstrap() {
     host: config.githubEnterpriseHost,
     token: config.githubEnterpriseToken,
   });
+  const kitRefs = createGitRefResolver(kitGitHosts);
+  const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
       config.starterKitsCatalogs,
@@ -378,7 +383,7 @@ export async function bootstrap() {
       ];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(kitGitHosts),
+    refs: kitRefs,
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
@@ -1464,6 +1469,7 @@ export async function bootstrap() {
     connectionsBoot,
     templatesRepo,
     starterKitsRepo: resolvedCatalog,
+    kitUpstream,
     reposService,
     apiKeysModule,
     satellitesBoot,
@@ -1519,6 +1525,10 @@ export async function bootstrap() {
         markAgentOnboarded: (id, at) =>
           agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
       })(agentId, owner),
+    kitUpdateReporter: createKitUpdateReporter({
+      agentsFor: harnessAgentsServiceFor,
+      marks: createKitUpdateMarks(agentsRepo),
+    }),
     onboardingChecklist: {
       set: (
         agentId: string,
