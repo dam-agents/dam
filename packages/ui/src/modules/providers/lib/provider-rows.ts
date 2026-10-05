@@ -8,10 +8,17 @@ interface ProviderRowDef {
 export const IBM_LITELLM_DESCRIPTION =
   "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
 
+export const CURVE_BENDER_DESCRIPTION =
+  "LiteLLM proxy fronting open models hosted on RITS — GLM and Nemotron.";
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,
+  },
+  {
+    type: "curve-bender",
+    description: CURVE_BENDER_DESCRIPTION,
   },
   {
     type: "bob",

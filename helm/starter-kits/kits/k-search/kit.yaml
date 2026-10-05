@@ -11,7 +11,7 @@ docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/k-search/RE
 onboarding: false
 image:
   ref: quay.io/dam-agents/k-search # @ci-pin k-search-image-tag
-  providers: [ibm-litellm, openai]
+  providers: [ibm-litellm, curve-bender, openai]
 resources:
   cpu: "2"
   memory: 4Gi

@@ -10,38 +10,53 @@ import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 
+const LITELLM_STYLE = {
+  Icon: LiteLLMIcon,
+  bg: "bg-muted",
+  iconClass: "text-2xl leading-none",
+  lgIconClass: "!text-[40px]",
+  smIconClass: "!text-base",
+};
+
 const STYLES: Record<
   ProviderPresetType,
   {
     Icon: React.ComponentType<{ className?: string }>;
     bg: string;
     iconClass: string;
+    lgIconClass: string;
+    smIconClass: string;
   }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
     bg: "bg-foreground",
     iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
   },
   openai: {
     Icon: OpenAIIcon,
     bg: "bg-foreground",
     iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
   },
-  "ibm-litellm": {
-    Icon: LiteLLMIcon,
-    bg: "bg-muted",
-    iconClass: "text-2xl leading-none",
-  },
+  "ibm-litellm": LITELLM_STYLE,
+  "curve-bender": LITELLM_STYLE,
   bob: {
     Icon: BobIcon,
     bg: "",
     iconClass: "w-full h-full",
+    lgIconClass: "",
+    smIconClass: "",
   },
   bedrock: {
     Icon: Cloud,
     bg: "bg-foreground",
     iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
   },
 };
 
@@ -49,14 +64,6 @@ const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
   lg: "w-[68px] h-[68px]",
   md: "w-[38px] h-[38px]",
   sm: "w-7 h-7",
-};
-
-const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
-  anthropic: "!w-8 !h-8",
-  openai: "!w-8 !h-8",
-  "ibm-litellm": "!text-[40px]",
-  bob: "",
-  bedrock: "!w-8 !h-8",
 };
 
 export function CardIcon({
@@ -79,10 +86,8 @@ export function CardIcon({
       <Icon
         className={cn(
           style.iconClass,
-          size === "lg" && LARGE_ICON_CLASS[provider],
-          size === "sm" &&
-            provider !== "bob" &&
-            (provider === "ibm-litellm" ? "!text-base" : "!w-3.5 !h-3.5"),
+          size === "lg" && style.lgIconClass,
+          size === "sm" && style.smIconClass,
         )}
       />
     </div>

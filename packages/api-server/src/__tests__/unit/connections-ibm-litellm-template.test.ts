@@ -10,13 +10,13 @@ function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
 }
 
-async function buildIbmLitellm() {
-  const template = buildCatalog().find((t) => t.id === "ibm-litellm");
-  if (!template) throw new Error("ibm-litellm template missing from catalog");
+async function buildIbmLitellm(templateId = "ibm-litellm") {
+  const template = buildCatalog().find((t) => t.id === templateId);
+  if (!template) throw new Error(`${templateId} template missing from catalog`);
   return buildConnection(
     template,
     {
-      templateId: "ibm-litellm",
+      templateId,
       name: "litellm",
       authKind: "header",
       value: "sk-real-token",
@@ -63,5 +63,43 @@ describe("ibm-litellm connection template", () => {
         pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
       }),
     );
+  });
+});
+
+describe("curve-bender connection template", () => {
+  // TEST_SCENARIO: Curve Bender is an alternative LiteLLM proxy, so every harness base URL and the credential injection must point at its host, never at the ETE proxy it stands in for.
+  it("points every harness and the injection at the Curve Bender host", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+    const host = "litellm.cb.ete.res.ibm.com";
+
+    for (const name of [
+      "ANTHROPIC_BASE_URL",
+      "OPENAI_BASE_URL",
+      "OPENAI_PROXY_URL",
+      "BOB_GATEWAY_URL",
+    ]) {
+      expect(envOf(contributions, name)).toMatchObject({
+        placeholder: `https://${host}`,
+      });
+    }
+    expect(
+      JSON.parse(
+        connectionSecretAnnotations(contributions)[
+          "agent-platform.ai/injection-hosts"
+        ],
+      ),
+    ).toEqual([expect.objectContaining({ host })]);
+  });
+
+  // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the smallest one served — otherwise it drops their thinking and compacts too late.
+  it("tells Pi the endpoint serves reasoning models with a 262k context", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+
+    expect(envOf(contributions, "OPENAI_PROXY_REASONING")).toMatchObject({
+      placeholder: "1",
+    });
+    expect(envOf(contributions, "OPENAI_PROXY_CONTEXT_WINDOW")).toMatchObject({
+      placeholder: "262144",
+    });
   });
 });

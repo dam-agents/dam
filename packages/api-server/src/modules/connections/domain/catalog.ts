@@ -4,6 +4,7 @@ import {
   type EnvMapping,
   BOB_INFERENCE_PREFIX_REWRITE,
   ibmLitellmEnvMappings,
+  curveBenderEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
@@ -11,6 +12,7 @@ import {
   BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
+  CURVE_BENDER_HOST,
   BOB_HOST,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
@@ -172,6 +174,29 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
     {
       kind: "egress-inject",
       host: IBM_LITELLM_HOST,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+      pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
+    },
+  ],
+};
+
+const CURVE_BENDER: HeaderConnectionTemplate = {
+  id: "curve-bender",
+  name: "Curve Bender",
+  category: "app",
+  isCustom: false,
+  description: "LiteLLM proxy fronting open models hosted on RITS.",
+  iconSlug: "ibm",
+  authKind: "header",
+  host: CURVE_BENDER_HOST,
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [
+    ...envContributions(curveBenderEnvMappings()),
+    {
+      kind: "egress-inject",
+      host: CURVE_BENDER_HOST,
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
       pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
@@ -923,6 +948,7 @@ export function buildCatalog(
     ANTHROPIC_OAUTH,
     OPENAI,
     IBM_LITELLM,
+    CURVE_BENDER,
     BOB,
     BEDROCK,
     S3_COMPATIBLE,

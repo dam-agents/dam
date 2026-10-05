@@ -1856,7 +1856,7 @@ controller:
 # built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
-# (any of anthropic, ibm-litellm, openai, bob, bedrock) — which env the harness inside
+# (any of anthropic, ibm-litellm, curve-bender, openai, bob, bedrock) — which env the harness inside
 # reads. Create flows narrow the provider picker to it; omit it to offer every
 # provider. Validated when templates load.
 # `harness` names the harness family running inside the image — which CLI the
@@ -1896,7 +1896,7 @@ controller:
 harnessTemplates:
   claude-code:
     enabled: true
-    providers: [ibm-litellm, anthropic, bedrock]
+    providers: [ibm-litellm, curve-bender, anthropic, bedrock]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1910,7 +1910,7 @@ harnessTemplates:
 
   codex:
     enabled: true
-    providers: [ibm-litellm, openai]
+    providers: [ibm-litellm, curve-bender, openai]
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
     releaseNotesUrl: "https://github.com/openai/codex/releases"
@@ -1923,7 +1923,7 @@ harnessTemplates:
 
   pi-agent:
     enabled: true
-    providers: [ibm-litellm, anthropic, openai, bedrock]
+    providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
     harness: pi
@@ -1935,7 +1935,7 @@ harnessTemplates:
 
   bob:
     enabled: true
-    providers: [ibm-litellm, bob]
+    providers: [ibm-litellm, curve-bender, bob]
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
