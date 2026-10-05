@@ -135,6 +135,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "satellite-outcome" },
     defaultOn: true,
   },
+  "sub-agent-outcome": {
+    binding: { impl: "sub-agent-outcome" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([

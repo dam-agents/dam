@@ -26,6 +26,7 @@ import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import {
   createInitializationPlugin,
+  createSubAgentOutcomePlugin,
   createSatelliteOutcomePlugin,
 } from "./drivers/session-event-plugins.js";
 import {
@@ -43,7 +44,10 @@ import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
 } from "./session-directory-report.js";
-import type { TriggerSessionDriver } from "../acp/index.js";
+import type {
+  TriggerSessionDriver,
+  SubAgentSessionStore,
+} from "../acp/index.js";
 
 const SESSION_DIRECTORY_DEBOUNCE_MS = 1_000;
 
@@ -67,6 +71,7 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  subAgentSessions: SubAgentSessionStore;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
@@ -118,6 +123,12 @@ export async function composeRuntimeChannel(
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
+  );
+  registry.register(
+    createSubAgentOutcomePlugin({
+      driver: opts.triggerDriver,
+      sessions: opts.subAgentSessions,
+    }),
   );
 
   const harnessConfigRaw = resolved["harness-config"];

@@ -10,6 +10,7 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
   const spawned: Array<Record<string, unknown>> = [];
   const app = new Hono();
   mountInvocationRoutes(app, {
+    agents: { get: async () => null },
     k8s: {
       getCustomObject: async (plural: string, id: string) =>
         plural === AGENTS_PLURAL && id === "driver-1"

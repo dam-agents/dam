@@ -11,6 +11,10 @@ import type {
 } from "../../../types.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
+import {
+  awaitChipTitle,
+  isAwaitSubAgentsChip,
+} from "../../invocations/lib/sub-agent-chips.js";
 import { ActivityBlock } from "./activity-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
@@ -18,11 +22,10 @@ import { ToolChip } from "./tool-chip.js";
 
 function ToolPart({ chip }: { chip: ToolChipPart }) {
   const spawns = useOwnedSpawns(chip);
-  return spawns ? (
-    <DelegationBlock chip={chip} spawns={spawns} />
-  ) : (
-    <ToolChip chip={chip} />
-  );
+  if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
+  if (isAwaitSubAgentsChip(chip))
+    return <ToolChip chip={{ ...chip, title: awaitChipTitle(chip) }} />;
+  return <ToolChip chip={chip} />;
 }
 
 function HistoryBlock({ text }: { text: string }) {

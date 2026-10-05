@@ -1,21 +1,67 @@
 ---
-name: dam-invoke
-description: Spawn sub-agents (Invocations) on DAM and get back a schema-validated result. Use when asked to spawn a sub-agent or a throwaway agent, fan work out to fresh agents, or run a make/test/eval step in isolation and expect a typed result (a number, a verdict, an object). Provides a driver SDK in Python (driver_sdk) and JS (driver-sdk.mjs) — spawn / list_images / list_connections / budget.
-allowed-tools: Bash(python3 *), Bash(node *), Write
+name: spawn-subagent
+description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result. Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result. Its first step decides whether your harness's own subagent is enough. For one hand-off use the spawn_subagent and await_subagents tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
-# DAM invoke
+# Spawn a sub-agent
 
-The platform can spawn a **sub-agent** (an *Invocation*): a fresh agent that runs
-one prompt to completion, reports one result, and is then deleted. You (the
-driver) create it, hand it a prompt plus the result shape you expect, and get
-the validated result back. It runs unattended and cannot ask you anything.
+The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox
+that runs one prompt to completion, reports one result, and is then removed.
+You (the driver) hand it a prompt plus the result shape you expect, and get the
+validated result back. It runs unattended and cannot ask you anything.
 
-Use this to fan work out: a "make" step that produces something, a "test" or
-"eval" step that judges it, or any task you want run in isolation with a typed
-answer.
+## Step 1 — Decide: your harness's own subagent, or a platform sub-agent
 
-## The SDK
+Do this first, every time. Your harness's own subagent tool runs in this
+sandbox, starts in seconds and costs no extra compute. A platform sub-agent
+starts a new sandbox — tens of seconds to minutes before it runs, with compute
+counted against the budget. Go through the needs below. **If none applies,
+stop here and use your harness's own subagent tool.** If one applies, carry on
+and name it in `needs` when you spawn:
+
+- `different-harness` — it must run on another harness;
+- `own-setup` — its own repository to clone, an install command, env or skills;
+- `more-resources` — more CPU, memory or disk than this sandbox, or a microVM
+  for a container runtime or a cluster;
+- `isolation` — the work must not be able to touch this workspace;
+- `parallel` — heavy parallel work beyond what this sandbox can run;
+- `checked-result` — a result the platform checks against a schema.
+
+The platform refuses a need the request does not bear out: `different-harness`
+on your own harness, `own-setup` without seed, install, env or skills,
+`more-resources` without resources or a vm backend. "The user said sub-agent"
+is not a need: unless they named the platform, a harness or a sandbox, they
+mean your harness's own.
+
+## Hand off one task: the tools
+
+1. **Choose what it runs on — do not guess.** Call `list_harnesses` and
+   `list_connections` and show the human what is available. If it is not
+   obvious which to use, **ask them**. The model needs nothing: the sub-agent
+   runs on *your* model provider.
+2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`,
+   `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any
+   setup option from the table below and, to pick the model, `model`, `mode`
+   and `configOptions` as in "Choose the model per spawn". Never pick a model
+   through `env`: the platform then records no harness config and runs none of
+   its checks. It returns the sub-agent id at once.
+3. **Wait.** Call `await_subagents` with the ids. It returns as soon as one
+   finishes, or after about four minutes, with what is done, failed and still
+   running; call it again with the running ids. You may also end your turn
+   instead: a sub-agent that finishes while nothing waits on it is delivered
+   back into this session as a new turn.
+
+Several independent tasks: call `spawn_subagent` once per task, then wait on all
+the ids together.
+
+## Orchestration: a script
+
+Use a script when the delegation has logic of its own — loops, a wide fan-out,
+scoring one agent's output with another. The options below mean the same in
+both: the tools take them as camelCase JSON (`ttlMs`, `env` as `[{name, value}]`).
+
+### The SDK
 
 The same SDK ships in two languages, both dependency-free and self-configuring
 from the pod (no URL or token to pass):
@@ -32,7 +78,7 @@ camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
    available. If it is not obvious which to use, **ask them**.
 2. **What it runs on** — `harness="claude-code"` (or `codex`, `pi`, `bob`; each
    `list_images()` entry names its `harness`). The sub-agent runs on that
-   harness's template. `image="<full ref>"` runs a custom image instead, with
+   harness's default image and size. `image="<full ref>"` runs a custom image instead, with
    `harness` saying which harness is inside it; prefer `seed` and `install`
    below over building an image.
 3. **Model** — the sub-agent runs on *your* model provider; a harness that
@@ -90,11 +136,11 @@ result = d.spawn(
 | `seed` | Repository cloned into the workspace: `url`, optional `ref` or `commit`, `into` (`"work"` default or `"home"`). Pin `commit` to the commit you are running from, so it runs the same code. |
 | `install` | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image. |
 | `env` | Environment variables (Python: a dict; JS: `[{ name, value }]`). |
-| `resources` | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's template. |
+| `resources` | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's defaults. |
 | `backend` | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside. |
 | `skills` | External skills to install: `[{"source": <skill source url>, "name": ...}]`. |
 | `connections` | Connection ids to grant, a subset of your own. |
-| `image` | A custom image to run instead of the harness's template. |
+| `image` | A custom image to run instead of the harness's default one. |
 | `label` | Names the sub-agent in your script's log lines. |
 | `ttl_ms` | Deadline, ~1 min..6 h, default ~60 min. See below. |
 

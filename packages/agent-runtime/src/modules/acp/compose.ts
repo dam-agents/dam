@@ -42,6 +42,10 @@ import {
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
+import {
+  createSubAgentSessionStore,
+  type SubAgentSessionStore,
+} from "./infrastructure/sub-agent-session-store.js";
 
 export interface ComposeAcpOptions {
   command: string[];
@@ -91,6 +95,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: SessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  subAgentSessions: SubAgentSessionStore;
 } {
   const sessionChanges = createSessionChanges();
   const sessionMetadata = notifyingSessionMetadataStore(
@@ -106,6 +111,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     () => new Date().toISOString(),
   );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
+  const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
   const historyProvider = historyProviderOf(opts);
   const runtime = createAcpRuntime({
     undeliveredPrompts,
@@ -122,6 +128,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
     onArtifactTouch: opts.onArtifactTouch,
+    onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
+      subAgentSessions.record(sessionId, subAgentIds),
     ...(historyProvider ? { historyProvider } : {}),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
@@ -154,5 +162,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    subAgentSessions,
   };
 }

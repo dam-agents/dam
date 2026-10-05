@@ -414,6 +414,13 @@
       "when": 1790843100252,
       "tag": "0058_invocation_harness_config",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791189757317,
+      "tag": "0059_sub_agent_outcome_delivery",
+      "breakpoints": true
     }
   ]
 }
