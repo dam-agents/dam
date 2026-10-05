@@ -180,3 +180,15 @@ export function addressUrl(raw: string): string | null {
     ? address
     : `http://${address}`;
 }
+
+const VIEWPORT_MIN = 200;
+const VIEWPORT_MAX = 4096;
+
+export function viewportFor(
+  width: number,
+  height: number,
+): { width: number; height: number } {
+  const side = (v: number) =>
+    Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, Math.round(v)));
+  return { width: side(width), height: side(height) };
+}

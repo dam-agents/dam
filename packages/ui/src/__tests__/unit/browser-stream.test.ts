@@ -10,6 +10,7 @@ import {
   keyboardInput,
   mouseButton,
   parseStreamMessage,
+  viewportFor,
 } from "../../modules/browser/lib/stream.js";
 
 const noMods = {
@@ -166,5 +167,14 @@ describe("createLatencyMeter", () => {
 describe("jpegBytes", () => {
   test("decodes a frame's base64 payload to its bytes", () => {
     expect([...jpegBytes("/9j/")]).toEqual([0xff, 0xd8, 0xff]);
+  });
+});
+
+describe("viewportFor", () => {
+  // TEST_SCENARIO: the sandbox browser's viewport follows the panel, so the page lays out at the size the user sees it and frames fill the panel one to one. Fractional CSS sizes round to whole pixels, and a collapsed or huge panel stays within what the runtime accepts.
+  test("rounds the panel size and keeps it within bounds", () => {
+    expect(viewportFor(812.4, 633.6)).toEqual({ width: 812, height: 634 });
+    expect(viewportFor(0, 50)).toEqual({ width: 200, height: 200 });
+    expect(viewportFor(9000, 700)).toEqual({ width: 4096, height: 700 });
   });
 });

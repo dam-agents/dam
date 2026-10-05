@@ -35,7 +35,7 @@ sequenceDiagram
 ```
 
 - **The relay** is one more agent relay beside chat, terminal and SSH, with the same admission ([cli](cli.md)) and one more gate: an agent whose gateway injects credentials into unnamed requests is refused. The user may open any web address — a loopback dev server, or an external page to sign in — so with ambient injection the user would be browsing as the agent's accounts. With named connections only, unaddressed browser traffic carries no credential of the agent's.
-- **agent-runtime** drives the image's agent-browser tool rather than Chromium directly: agent-browser already streams a session's viewport and accepts input over a local WebSocket. agent-runtime pipes that stream and handles the panel's own control messages — navigate, reload, clear browser data — as agent-browser commands. Only http and https addresses open. A reconnect without an address reattaches without reloading the page.
+- **agent-runtime** drives the image's agent-browser tool rather than Chromium directly: agent-browser already streams a session's viewport and accepts input over a local WebSocket. agent-runtime pipes that stream and handles the panel's own control messages — navigate, reload, clear browser data — as agent-browser commands. Only http and https addresses open. The panel sends its size, and the browser's viewport follows it, so the page lays out at the size the user sees. A reconnect without an address reattaches without reloading the page.
 - **The session is shared with the agent.** The panel always shows agent-browser's `preview` session, so the agent can look at and drive what the user sees, and the user can watch the agent test its own work. The base image's agent instructions name that session, the one exception to an agent keeping a browser session of its own.
 
 ## Sign-ins and lifetime
@@ -50,4 +50,4 @@ agent-runtime closes the browser ten minutes after the last viewer leaves. It do
 
 - A page can still name one of the agent's connections on purpose — through its path prefix or token placeholder — and have its credential injected, as the agent's own code can. That needs the connection's id and is accepted, not guarded.
 - Only images that ship agent-browser and its Chromium can serve the panel.
-- Back and forward, opening in a new tab, clipboard, file transfer, fitting the viewport to the panel and sharing beyond the owner are not built.
+- Back and forward, opening in a new tab, clipboard, file transfer and sharing beyond the owner are not built.

@@ -6,11 +6,13 @@ import {
   type FrameMetadata,
   jpegBytes,
   parseStreamMessage,
+  viewportFor,
 } from "../lib/stream.js";
 
 const LIVE_FPS = 30;
 const HIDDEN_FPS = 1;
 const STATS_INTERVAL_MS = 500;
+const RESIZE_DEBOUNCE_MS = 250;
 const CLEARED_CLOSE_CODE = 1012;
 
 export type BrowserStreamState = "connecting" | "live" | "disconnected";
@@ -65,6 +67,21 @@ export function useBrowserStream(
       }
     };
 
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const sendViewport = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      send({
+        type: "resize",
+        ...viewportFor(canvas.clientWidth, canvas.clientHeight),
+      });
+    };
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sendViewport, RESIZE_DEBOUNCE_MS);
+    });
+    if (canvasRef.current) resizeObserver.observe(canvasRef.current);
+
     const onVisibility = () =>
       send({
         type: "config",
@@ -82,7 +99,9 @@ export function useBrowserStream(
       );
       wsRef.current = ws;
       ws.onopen = () => {
-        if (!cancelled) setState("live");
+        if (cancelled) return;
+        setState("live");
+        sendViewport();
       };
       ws.onmessage = (e: MessageEvent<string>) => {
         const msg = parseStreamMessage(e.data);
@@ -121,6 +140,8 @@ export function useBrowserStream(
     return () => {
       cancelled = true;
       clearInterval(statsTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       ws?.close();
       wsRef.current = null;

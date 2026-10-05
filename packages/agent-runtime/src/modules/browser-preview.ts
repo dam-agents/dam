@@ -7,11 +7,19 @@ export const PREVIEW_SESSION = "preview";
 export const PREVIEW_IDLE_CLOSE_MS = 10 * 60_000;
 
 const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
+const VIEWPORT_MIN = 200;
+const VIEWPORT_MAX = 4096;
+
+const viewportSide = (v: unknown): v is number =>
+  Number.isInteger(v) &&
+  (v as number) >= VIEWPORT_MIN &&
+  (v as number) <= VIEWPORT_MAX;
 
 export type PreviewControl =
   | { type: "navigate"; url: string }
   | { type: "reload" }
-  | { type: "clear_data" };
+  | { type: "clear_data" }
+  | { type: "resize"; width: number; height: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
@@ -41,9 +49,11 @@ export function parseControl(data: string): PreviewControl | null {
     return null;
   }
   if (typeof msg !== "object" || msg === null) return null;
-  const { type, url } = msg as { type?: unknown; url?: unknown };
+  const { type, url, width, height } = msg as Record<string, unknown>;
   if (type === "reload" || type === "clear_data") return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
+  if (type === "resize" && viewportSide(width) && viewportSide(height))
+    return { type, width, height };
   return null;
 }
 
@@ -102,6 +112,13 @@ export function createBrowserPreview(deps: {
       await deps.run(["open", url]);
     } else if (msg.type === "reload") {
       await deps.run(["reload"]);
+    } else if (msg.type === "resize") {
+      await deps.run([
+        "set",
+        "viewport",
+        String(msg.width),
+        String(msg.height),
+      ]);
     } else {
       await deps.run(["close"]).catch(() => "");
       await rm(deps.profileDir, { recursive: true, force: true });
