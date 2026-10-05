@@ -2,8 +2,10 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  addressUrl,
   createLatencyMeter,
   devicePoint,
+  heldButton,
   jpegBytes,
   keyboardInput,
   mouseButton,
@@ -34,6 +36,29 @@ describe("mouseButton", () => {
     expect(mouseButton(1)).toBe("middle");
     expect(mouseButton(2)).toBe("right");
     expect(mouseButton(3)).toBe("none");
+  });
+});
+
+describe("heldButton", () => {
+  // TEST_SCENARIO: a move event names no button of its own, only the held ones as a bitmask; a drag must reach the page as a move with its button held, or text selection and drag-and-drop break.
+  test("names the held button during a drag", () => {
+    expect(heldButton(0)).toBe("none");
+    expect(heldButton(1)).toBe("left");
+    expect(heldButton(2)).toBe("right");
+    expect(heldButton(4)).toBe("middle");
+  });
+});
+
+describe("addressUrl", () => {
+  // TEST_SCENARIO: a user types a dev server the way they would in a browser — `localhost:3000`, which a URL parser reads as the scheme `localhost:`. Anything without `<scheme>://` gets http, so it opens instead of being refused as a non-web address.
+  test("adds http to an address without a scheme", () => {
+    expect(addressUrl("localhost:3000")).toBe("http://localhost:3000");
+    expect(addressUrl(" 127.0.0.1:4444/x ")).toBe("http://127.0.0.1:4444/x");
+    expect(addressUrl("example.com")).toBe("http://example.com");
+    expect(addressUrl("https://github.com/login")).toBe(
+      "https://github.com/login",
+    );
+    expect(addressUrl("   ")).toBeNull();
   });
 });
 

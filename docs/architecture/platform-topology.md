@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-01
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -63,6 +63,7 @@ The per-agent pod that runs the ACP WebSocket server and spawns the underlying a
 - Accept ACP WebSocket connections (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport. Available only on images that ship `sshd`.
+- Accept browser-panel WebSocket connections on `/api/browser` (relayed from the api-server): agent-runtime pipes the viewport stream of agent-browser's shared `preview` session and runs the panel's navigate, reload and clear-data requests ([browser-panel](browser-panel.md)).
 - Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers. See [runtime delivery](runtime-delivery.md).
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker on the agent volume, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion. A scheduled or running flush reports the pod busy so hibernation waits ([knowledge bases](knowledge-bases.md)).
 - Expose a scoped tRPC router — in-pod file operations, the composed session list, and the watch subscriptions behind the live panels — over HTTP and WebSocket: the UI reaches it through the api-server's WebSocket relay, non-browser callers through the HTTP proxy, and a channel worker dials this pod directly to place an inbound attachment in the workspace ([channel-turns](channel-turns.md)).

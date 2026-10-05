@@ -25,7 +25,9 @@ import {
 import { useStore } from "../../../store.js";
 import { useBrowserStream } from "../hooks/use-browser-stream.js";
 import {
+  addressUrl,
   devicePoint,
+  heldButton,
   keyboardInput,
   modifiers,
   mouseButton,
@@ -56,9 +58,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const raw = address.trim();
-    if (!raw) return;
-    stream.navigate(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `http://${raw}`);
+    const url = addressUrl(address);
+    if (!url) return;
+    stream.navigate(url);
     setEditing(false);
     canvasRef.current?.focus();
   };
@@ -72,11 +74,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     if (ok) stream.clearData();
   };
 
-  const pointer = (
-    e:
-      | React.PointerEvent<HTMLCanvasElement>
-      | React.WheelEvent<HTMLCanvasElement>,
-  ) => {
+  const pointer = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const device = stream.device();
     if (!device) return null;
     return devicePoint(
@@ -92,7 +90,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
 
   const sendMouse = (
     eventType: "mousePressed" | "mouseReleased" | "mouseMoved",
-    e: React.PointerEvent<HTMLCanvasElement>,
+    e: React.MouseEvent<HTMLCanvasElement>,
   ) => {
     const at = pointer(e);
     if (!at) return;
@@ -102,10 +100,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         eventType,
         ...at,
         button:
-          eventType === "mouseMoved" && e.buttons === 0
-            ? "none"
+          eventType === "mouseMoved"
+            ? heldButton(e.buttons)
             : mouseButton(e.button),
-        clickCount: eventType === "mouseMoved" ? 0 : 1,
+        clickCount: eventType === "mouseMoved" ? 0 : e.detail,
         modifiers: modifiers(e),
       },
       eventType === "mousePressed",
@@ -214,9 +212,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           onPointerDown={(e) => {
             e.currentTarget.focus();
             e.currentTarget.setPointerCapture(e.pointerId);
-            sendMouse("mousePressed", e);
           }}
-          onPointerUp={(e) => sendMouse("mouseReleased", e)}
+          onMouseDown={(e) => sendMouse("mousePressed", e)}
+          onMouseUp={(e) => sendMouse("mouseReleased", e)}
           onPointerMove={(e) => sendMouse("mouseMoved", e)}
           onWheel={(e) => {
             const at = pointer(e);

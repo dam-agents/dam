@@ -76,6 +76,13 @@ export function mouseButton(button: number): MouseButton {
   return MOUSE_BUTTONS[button] ?? "none";
 }
 
+export function heldButton(buttons: number): MouseButton {
+  if (buttons & 1) return "left";
+  if (buttons & 2) return "right";
+  if (buttons & 4) return "middle";
+  return "none";
+}
+
 export function modifiers(e: {
   altKey: boolean;
   ctrlKey: boolean;
@@ -162,4 +169,12 @@ export function createLatencyMeter(): LatencyMeter {
 
 export function jpegBytes(base64: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+export function addressUrl(raw: string): string | null {
+  const address = raw.trim();
+  if (!address) return null;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(address)
+    ? address
+    : `http://${address}`;
 }
