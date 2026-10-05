@@ -143,7 +143,11 @@ export function applyConnectionEgressAddressing(
   connectionId: string,
   contributions: Contribution[],
 ): Contribution[] {
-  if (!contributions.some((c) => c.kind === "egress-inject")) {
+  if (
+    !contributions.some(
+      (c) => c.kind === "egress-inject" || c.kind === "egress-sign",
+    )
+  ) {
     return contributions;
   }
   const hosts = injectedHosts(contributions);

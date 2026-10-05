@@ -13,7 +13,7 @@ import {
   type ConnectionView,
   type Contribution,
   type SecretRef,
-  githubHostOf,
+  preferenceGroupOf,
   unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -853,13 +853,13 @@ export function createConnectionsService(deps: {
             message: "connection is not granted to this agent",
           });
         }
-        const host = githubHostOf(conn.contributions);
+        const group = preferenceGroupOf(conn.contributions);
         const siblings = granted
           .filter(
             (c) =>
               c.id !== connectionId &&
-              host !== undefined &&
-              githubHostOf(c.contributions) === host,
+              group !== undefined &&
+              preferenceGroupOf(c.contributions) === group,
           )
           .map((c) => c.id);
         await deps.repo.setPreferred(agentId, connectionId, siblings);
@@ -870,7 +870,7 @@ export function createConnectionsService(deps: {
           agentId,
           target: connectionId,
           result: "success",
-          detail: { host, cleared: siblings },
+          detail: { group, cleared: siblings },
         });
         const owned = await deps.repo.listByOwner(deps.ownerId);
         await deps.fanOut.apply({
