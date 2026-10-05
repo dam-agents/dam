@@ -430,6 +430,14 @@ parses the Agent ID from the gRPC `:authority`, looks up the matching
 egress rule, and either allows the request, denies it, or holds it open
 while the user makes a verdict on Home.
 
+A held request is one pending approval, and identical requests — same
+host, method and path, as a retrying client sends — join it rather than
+filing their own. Each one that joins raises the approval's in-session
+prompt again, to every session attached at that moment, and logs its own
+`egress.hold`: the session that saw the first prompt may be long gone,
+and a request waiting on a prompt nobody can see would stall the agent
+silently for the whole hold window.
+
 At most three rules speak for a host — itself, its `*.parent` wildcard,
 and the bare `*` — most specific first; a wildcard covers the one label
 its SNI chain and SAN do.
