@@ -5,21 +5,28 @@ import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 
 export const PREVIEW_SESSION = "preview";
 export const PREVIEW_IDLE_CLOSE_MS = 10 * 60_000;
+export const PREVIEW_STREAM_QUALITY = "90";
 
 const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
+
+const SCALE_MIN = 1;
+const SCALE_MAX = 3;
 
 const viewportSide = (v: unknown): v is number =>
   Number.isInteger(v) &&
   (v as number) >= VIEWPORT_MIN &&
   (v as number) <= VIEWPORT_MAX;
 
+const viewportScale = (v: unknown): v is number =>
+  typeof v === "number" && v >= SCALE_MIN && v <= SCALE_MAX;
+
 export type PreviewControl =
   | { type: "navigate"; url: string }
   | { type: "reload" }
   | { type: "clear_data" }
-  | { type: "resize"; width: number; height: number };
+  | { type: "resize"; width: number; height: number; scale: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
@@ -49,12 +56,30 @@ export function parseControl(data: string): PreviewControl | null {
     return null;
   }
   if (typeof msg !== "object" || msg === null) return null;
-  const { type, url, width, height } = msg as Record<string, unknown>;
+  const { type, url, width, height, scale } = msg as Record<string, unknown>;
   if (type === "reload" || type === "clear_data") return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
-  if (type === "resize" && viewportSide(width) && viewportSide(height))
-    return { type, width, height };
+  if (type === "resize" && viewportSide(width) && viewportSide(height)) {
+    if (scale === undefined) return { type, width, height, scale: 1 };
+    return viewportScale(scale) ? { type, width, height, scale } : null;
+  }
   return null;
+}
+
+export function binaryFrame(raw: string): Buffer | null {
+  let msg: unknown;
+  try {
+    msg = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof msg !== "object" || msg === null) return null;
+  const { type, data, ...header } = msg as Record<string, unknown>;
+  if (type !== "frame" || typeof data !== "string") return null;
+  const head = Buffer.from(JSON.stringify(header));
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(head.byteLength);
+  return Buffer.concat([length, head, Buffer.from(data, "base64")]);
 }
 
 export function agentBrowserCommand(
@@ -66,7 +91,13 @@ export function agentBrowserCommand(
       execFile(
         "agent-browser",
         ["--session", PREVIEW_SESSION, "--profile", profileDir, ...args],
-        { env: mergedSpawnEnv(envReader), timeout: 60_000 },
+        {
+          env: {
+            ...mergedSpawnEnv(envReader),
+            AGENT_BROWSER_STREAM_QUALITY: PREVIEW_STREAM_QUALITY,
+          },
+          timeout: 60_000,
+        },
         (err, stdout, stderr) =>
           err
             ? reject(new Error(stderr.trim() || err.message))
@@ -118,6 +149,7 @@ export function createBrowserPreview(deps: {
         "viewport",
         String(msg.width),
         String(msg.height),
+        String(msg.scale),
       ]);
     } else {
       await deps.run(["close"]).catch(() => "");
@@ -183,9 +215,11 @@ export function createBrowserPreview(deps: {
         us.on("open", () => {
           for (const [d, b] of pending.splice(0)) us.send(d, { binary: b });
         });
-        us.on("message", (d, isBinary) => {
-          if (client.readyState === WebSocket.OPEN)
-            client.send(d, { binary: isBinary });
+        us.on("message", (d: Buffer, isBinary) => {
+          if (client.readyState !== WebSocket.OPEN) return;
+          const frame = isBinary ? null : binaryFrame(d.toString());
+          if (frame) client.send(frame, { binary: true });
+          else client.send(d, { binary: isBinary });
         });
         us.on("close", () => {
           if (client.readyState === WebSocket.OPEN)

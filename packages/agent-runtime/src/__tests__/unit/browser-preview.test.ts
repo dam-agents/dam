@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+  binaryFrame,
   createBrowserPreview,
   parseControl,
   previewUrl,
@@ -66,8 +67,10 @@ async function host(preview: BrowserPreview) {
   return async (query: string) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/?${query}`);
     closers.push(() => ws.terminate());
-    const messages: string[] = [];
-    ws.on("message", (d) => messages.push(d.toString()));
+    const messages: (string | Buffer)[] = [];
+    ws.on("message", (d: Buffer, isBinary) =>
+      messages.push(isBinary ? d : d.toString()),
+    );
     await new Promise<void>((res, rej) => {
       ws.once("open", () => res());
       ws.once("error", rej);
@@ -119,7 +122,14 @@ describe("parseControl", () => {
       type: "resize",
       width: 900,
       height: 640,
+      scale: 1,
     });
+    expect(
+      parseControl('{"type":"resize","width":900,"height":640,"scale":2}'),
+    ).toEqual({ type: "resize", width: 900, height: 640, scale: 2 });
+    expect(
+      parseControl('{"type":"resize","width":900,"height":640,"scale":8}'),
+    ).toBeNull();
     expect(
       parseControl('{"type":"resize","width":10,"height":640}'),
     ).toBeNull();
@@ -132,8 +142,30 @@ describe("parseControl", () => {
   });
 });
 
+describe("binaryFrame", () => {
+  // TEST_SCENARIO: agent-browser sends each frame as JSON with the JPEG in base64, a third larger than the image. The runtime re-sends it as one binary message — a 4-byte header length, the JSON header without the image, then the raw JPEG — so the user's browser neither downloads the base64 nor decodes it. Anything that is not a frame is left alone.
+  it("packs a frame as length, header and raw JPEG", () => {
+    const packed = binaryFrame(
+      JSON.stringify({
+        type: "frame",
+        seq: 7,
+        data: Buffer.from([0xff, 0xd8, 0xff]).toString("base64"),
+        metadata: { deviceWidth: 10, deviceHeight: 5 },
+      }),
+    )!;
+    const headLength = packed.readUInt32BE(0);
+    expect(JSON.parse(packed.subarray(4, 4 + headLength).toString())).toEqual({
+      seq: 7,
+      metadata: { deviceWidth: 10, deviceHeight: 5 },
+    });
+    expect([...packed.subarray(4 + headLength)]).toEqual([0xff, 0xd8, 0xff]);
+    expect(binaryFrame('{"type":"url","url":"http://a/"}')).toBeNull();
+    expect(binaryFrame("{")).toBeNull();
+  });
+});
+
 describe("browser preview", () => {
-  // TEST_SCENARIO: A panel opens on an address. The session is opened there, the panel's frame-rate setting reaches the stream server, frames flow to the panel and the panel's input flows to the browser.
+  // TEST_SCENARIO: A panel opens on an address. The session is opened there, the panel's frame-rate setting reaches the stream server, frames flow to the panel as binary messages and the panel's input flows to the browser.
   it("opens the address and pipes frames and input", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
@@ -147,7 +179,7 @@ describe("browser preview", () => {
     await until(() => messages.length > 0);
 
     expect(calls[0]).toEqual(["open", "http://127.0.0.1:5173/"]);
-    expect(JSON.parse(messages[0]!)).toMatchObject({ type: "frame", seq: 1 });
+    expect(Buffer.isBuffer(messages[0])).toBe(true);
     expect(stream.urls[0]).toBe("/?maxFps=10");
 
     ws.send(JSON.stringify({ type: "input_mouse", eventType: "mousePressed" }));
@@ -182,15 +214,17 @@ describe("browser preview", () => {
 
     ws.send(JSON.stringify({ type: "navigate", url: "https://example.com" }));
     ws.send(JSON.stringify({ type: "reload" }));
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 640 }));
+    ws.send(
+      JSON.stringify({ type: "resize", width: 900, height: 640, scale: 2 }),
+    );
     ws.send(JSON.stringify({ type: "navigate", url: "file:///etc/passwd" }));
     await until(() => messages.length > 1 && calls.length >= 4);
 
     expect(calls).toContainEqual(["open", "https://example.com/"]);
     expect(calls).toContainEqual(["reload"]);
-    expect(calls).toContainEqual(["set", "viewport", "900", "640"]);
+    expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
-    expect(JSON.parse(messages.at(-1)!)).toMatchObject({
+    expect(JSON.parse(messages.at(-1) as string)).toMatchObject({
       type: "preview_error",
     });
     expect(stream.received).toEqual([]);

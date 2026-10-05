@@ -6,9 +6,9 @@ import {
   createLatencyMeter,
   devicePoint,
   heldButton,
-  jpegBytes,
   keyboardInput,
   mouseButton,
+  parseBinaryFrame,
   parseStreamMessage,
   viewportFor,
 } from "../../modules/browser/lib/stream.js";
@@ -116,26 +116,14 @@ describe("keyboardInput", () => {
 });
 
 describe("parseStreamMessage", () => {
-  test("reads frames, url updates and errors, and ignores the rest", () => {
-    expect(
-      parseStreamMessage(
-        JSON.stringify({
-          type: "frame",
-          seq: 3,
-          data: "AA",
-          metadata: { deviceWidth: 10, deviceHeight: 5, timestamp: 1 },
-        }),
-      ),
-    ).toEqual({
-      type: "frame",
-      seq: 3,
-      data: "AA",
-      metadata: { deviceWidth: 10, deviceHeight: 5 },
-    });
+  test("reads url updates and errors, and ignores the rest", () => {
     expect(parseStreamMessage('{"type":"url","url":"http://a/"}')).toEqual({
       type: "url",
       url: "http://a/",
     });
+    expect(
+      parseStreamMessage('{"type":"preview_error","message":"no"}'),
+    ).toEqual({ type: "preview_error", message: "no" });
     expect(parseStreamMessage('{"type":"frame","data":"AA"}')).toBeNull();
     expect(parseStreamMessage('{"type":"status"}')).toBeNull();
     expect(parseStreamMessage("{")).toBeNull();
@@ -148,33 +136,66 @@ describe("createLatencyMeter", () => {
     const meter = createLatencyMeter();
     meter.input(1_000);
     meter.input(1_010);
-    meter.frame(1_080);
+    meter.frame(1_080, 1_024);
     meter.input(2_000);
-    meter.frame(2_120);
+    meter.frame(2_120, 1_024);
     meter.input(3_000);
-    meter.frame(9_000);
+    meter.frame(9_000, 1_024);
     expect(meter.stats(9_000).roundTripMs).toBe(120);
   });
 
-  test("counts frames in the last second", () => {
+  test("counts frames and their bytes in the last second", () => {
     const meter = createLatencyMeter();
-    for (const t of [0, 100, 600, 1_200, 1_300]) meter.frame(t);
+    for (const t of [0, 100, 600, 1_200, 1_300]) meter.frame(t, 2_048);
     expect(meter.stats(1_300).fps).toBe(3);
+    expect(meter.stats(1_300).kbPerSec).toBe(6);
     expect(meter.stats(5_000).roundTripMs).toBeNull();
   });
 });
 
-describe("jpegBytes", () => {
-  test("decodes a frame's base64 payload to its bytes", () => {
-    expect([...jpegBytes("/9j/")]).toEqual([0xff, 0xd8, 0xff]);
+describe("parseBinaryFrame", () => {
+  // TEST_SCENARIO: the runtime sends each frame as one binary message — a 4-byte header length, a JSON header with the sequence number and viewport size, then the raw JPEG. The panel needs the sequence number to acknowledge the frame and the viewport size to map clicks; a truncated or malformed message is dropped, not drawn.
+  test("splits header and JPEG, and rejects malformed messages", async () => {
+    const head = new TextEncoder().encode(
+      JSON.stringify({
+        seq: 4,
+        metadata: { deviceWidth: 800, deviceHeight: 600 },
+      }),
+    );
+    const buf = new Uint8Array(4 + head.byteLength + 3);
+    new DataView(buf.buffer).setUint32(0, head.byteLength);
+    buf.set(head, 4);
+    buf.set([0xff, 0xd8, 0xff], 4 + head.byteLength);
+
+    const frame = parseBinaryFrame(buf.buffer)!;
+    expect(frame.seq).toBe(4);
+    expect(frame.metadata).toEqual({ deviceWidth: 800, deviceHeight: 600 });
+    expect([...new Uint8Array(await frame.jpeg.arrayBuffer())]).toEqual([
+      0xff, 0xd8, 0xff,
+    ]);
+    expect(frame.jpeg.type).toBe("image/jpeg");
+    expect(parseBinaryFrame(new ArrayBuffer(2))).toBeNull();
+    expect(parseBinaryFrame(buf.buffer.slice(0, 6))).toBeNull();
   });
 });
 
 describe("viewportFor", () => {
-  // TEST_SCENARIO: the sandbox browser's viewport follows the panel, so the page lays out at the size the user sees it and frames fill the panel one to one. Fractional CSS sizes round to whole pixels, and a collapsed or huge panel stays within what the runtime accepts.
-  test("rounds the panel size and keeps it within bounds", () => {
-    expect(viewportFor(812.4, 633.6)).toEqual({ width: 812, height: 634 });
-    expect(viewportFor(0, 50)).toEqual({ width: 200, height: 200 });
-    expect(viewportFor(9000, 700)).toEqual({ width: 4096, height: 700 });
+  // TEST_SCENARIO: the sandbox browser's viewport follows the panel, so the page lays out at the size the user sees it and frames fill the panel one to one. Fractional CSS sizes round to whole pixels, the screen's pixel ratio becomes the viewport's scale so text renders at the display's real resolution, and a collapsed or huge panel or an extreme ratio stays within what the runtime accepts.
+  test("rounds the panel size, carries the pixel ratio, and keeps both within bounds", () => {
+    expect(viewportFor(812.4, 633.6, 1)).toEqual({
+      width: 812,
+      height: 634,
+      scale: 1,
+    });
+    expect(viewportFor(0, 50, 2)).toEqual({
+      width: 200,
+      height: 200,
+      scale: 2,
+    });
+    expect(viewportFor(9000, 700, 5)).toEqual({
+      width: 4096,
+      height: 700,
+      scale: 3,
+    });
   });
 });

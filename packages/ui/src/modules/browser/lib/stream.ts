@@ -4,9 +4,7 @@ export interface FrameMetadata {
 }
 
 export type StreamMessage =
-  | { type: "frame"; seq: number; data: string; metadata: FrameMetadata }
-  | { type: "url"; url: string }
-  | { type: "preview_error"; message: string };
+  { type: "url"; url: string } | { type: "preview_error"; message: string };
 
 export interface Box {
   left: number;
@@ -32,23 +30,6 @@ export function parseStreamMessage(raw: string): StreamMessage | null {
   }
   if (typeof msg !== "object" || msg === null) return null;
   const m = msg as Record<string, unknown>;
-  if (m.type === "frame" && typeof m.data === "string") {
-    const meta = m.metadata as Partial<FrameMetadata> | undefined;
-    if (
-      typeof meta?.deviceWidth !== "number" ||
-      typeof meta.deviceHeight !== "number"
-    )
-      return null;
-    return {
-      type: "frame",
-      seq: typeof m.seq === "number" ? m.seq : 0,
-      data: m.data,
-      metadata: {
-        deviceWidth: meta.deviceWidth,
-        deviceHeight: meta.deviceHeight,
-      },
-    };
-  }
   if (m.type === "url" && typeof m.url === "string")
     return { type: "url", url: m.url };
   if (m.type === "preview_error" && typeof m.message === "string")
@@ -135,22 +116,25 @@ const UNANSWERED_INPUT_MS = 2_000;
 
 export interface LatencyMeter {
   input(now: number): void;
-  frame(now: number): void;
-  stats(now: number): { roundTripMs: number | null; fps: number };
+  frame(now: number, bytes: number): void;
+  stats(now: number): {
+    roundTripMs: number | null;
+    fps: number;
+    kbPerSec: number;
+  };
 }
 
 export function createLatencyMeter(): LatencyMeter {
   let pendingInputAt: number | null = null;
   const roundTrips: number[] = [];
-  const frameTimes: number[] = [];
+  const frames: { at: number; bytes: number }[] = [];
   return {
     input(now) {
       pendingInputAt ??= now;
     },
-    frame(now) {
-      frameTimes.push(now);
-      while (frameTimes.length > 0 && now - frameTimes[0]! > 1_000)
-        frameTimes.shift();
+    frame(now, bytes) {
+      frames.push({ at: now, bytes });
+      while (frames.length > 0 && now - frames[0]!.at > 1_000) frames.shift();
       if (pendingInputAt === null) return;
       const roundTrip = now - pendingInputAt;
       pendingInputAt = null;
@@ -159,18 +143,18 @@ export function createLatencyMeter(): LatencyMeter {
       if (roundTrips.length > SAMPLE_WINDOW) roundTrips.shift();
     },
     stats(now) {
+      const recent = frames.filter((f) => now - f.at <= 1_000);
       const sorted = [...roundTrips].sort((a, b) => a - b);
       return {
         roundTripMs:
           sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)]! : null,
-        fps: frameTimes.filter((t) => now - t <= 1_000).length,
+        fps: recent.length,
+        kbPerSec: Math.round(
+          recent.reduce((sum, f) => sum + f.bytes, 0) / 1024,
+        ),
       };
     },
   };
-}
-
-export function jpegBytes(base64: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 }
 
 export function addressUrl(raw: string): string | null {
@@ -184,11 +168,54 @@ export function addressUrl(raw: string): string | null {
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
+const SCALE_MIN = 1;
+const SCALE_MAX = 3;
+
 export function viewportFor(
   width: number,
   height: number,
-): { width: number; height: number } {
+  pixelRatio: number,
+): { width: number; height: number; scale: number } {
   const side = (v: number) =>
     Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, Math.round(v)));
-  return { width: side(width), height: side(height) };
+  const scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, pixelRatio || 1));
+  return { width: side(width), height: side(height), scale };
+}
+
+export interface BinaryFrame {
+  seq: number;
+  metadata: FrameMetadata;
+  jpeg: Blob;
+}
+
+export function parseBinaryFrame(buffer: ArrayBuffer): BinaryFrame | null {
+  if (buffer.byteLength < 4) return null;
+  const headLength = new DataView(buffer).getUint32(0);
+  if (4 + headLength > buffer.byteLength) return null;
+  let head: unknown;
+  try {
+    head = JSON.parse(
+      new TextDecoder().decode(new Uint8Array(buffer, 4, headLength)),
+    );
+  } catch {
+    return null;
+  }
+  const { seq, metadata } = (head ?? {}) as {
+    seq?: unknown;
+    metadata?: Partial<FrameMetadata>;
+  };
+  if (
+    typeof seq !== "number" ||
+    typeof metadata?.deviceWidth !== "number" ||
+    typeof metadata.deviceHeight !== "number"
+  )
+    return null;
+  return {
+    seq,
+    metadata: {
+      deviceWidth: metadata.deviceWidth,
+      deviceHeight: metadata.deviceHeight,
+    },
+    jpeg: new Blob([buffer.slice(4 + headLength)], { type: "image/jpeg" }),
+  };
 }

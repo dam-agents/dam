@@ -14,7 +14,13 @@ Whatever an agent serves is untrusted: the agent runs arbitrary code and can be 
 
 It also removes the framing problems: nothing is framed, so an app that forbids framing (the platform's own UI) renders, and an app's sign-in redirects stay inside the sandbox, where its own identity provider is reachable on loopback.
 
-The cost is fidelity: frames are compressed images, and each input takes one round trip before its effect shows. The panel measures that round trip on the user's clock — input to the next frame — and shows it with the frame rate.
+The cost is fidelity: frames are compressed images, and each input takes one round trip before its effect shows. The panel measures that round trip on the user's clock — input to the next frame — and shows it with the frame rate and the stream's bandwidth.
+
+## The stream
+
+- **Sharpness.** The viewport follows the panel's size and the screen's pixel ratio, so a frame is drawn one to one at the display's real resolution; frames are JPEG at a quality chosen for legible text. A still page sends nothing; motion is where the bandwidth goes.
+- **Flow control.** The panel acknowledges each frame once it is drawn, and the stream sends the next only then, always the newest. A slow link or a busy browser drops frames rather than queueing them, so latency stays flat instead of growing behind a backlog.
+- **Wire shape.** agent-browser sends frames as JSON with the image in base64; agent-runtime re-sends each as one binary message, a small header and the raw JPEG, so the user's browser neither downloads the base64 nor decodes it. Pointer moves are coalesced to one per display frame on the way in.
 
 ## The path
 

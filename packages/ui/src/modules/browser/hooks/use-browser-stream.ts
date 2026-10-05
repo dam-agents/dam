@@ -4,7 +4,7 @@ import { getAccessToken } from "../../../auth.js";
 import {
   createLatencyMeter,
   type FrameMetadata,
-  jpegBytes,
+  parseBinaryFrame,
   parseStreamMessage,
   viewportFor,
 } from "../lib/stream.js";
@@ -20,6 +20,7 @@ export type BrowserStreamState = "connecting" | "live" | "disconnected";
 export interface BrowserStats {
   roundTripMs: number | null;
   fps: number;
+  kbPerSec: number;
 }
 
 export function useBrowserStream(
@@ -35,6 +36,7 @@ export function useBrowserStream(
   const [stats, setStats] = useState<BrowserStats>({
     roundTripMs: null,
     fps: 0,
+    kbPerSec: 0,
   });
   const [connectKey, setConnectKey] = useState(0);
 
@@ -48,23 +50,17 @@ export function useBrowserStream(
   useEffect(() => {
     let cancelled = false;
     let ws: WebSocket | null = null;
-    let drawing = false;
-    let nextFrame: string | null = null;
 
-    const draw = async () => {
+    const draw = async (jpeg: Blob) => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
-      while (nextFrame !== null && canvas && ctx) {
-        const data = nextFrame;
-        nextFrame = null;
-        const blob = new Blob([jpegBytes(data)], { type: "image/jpeg" });
-        const bitmap = await createImageBitmap(blob);
-        if (cancelled) return bitmap.close();
-        if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
-        if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
-        ctx.drawImage(bitmap, 0, 0);
-        bitmap.close();
-      }
+      if (!canvas || !ctx) return;
+      const bitmap = await createImageBitmap(jpeg);
+      if (cancelled) return bitmap.close();
+      if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+      if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
     };
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,7 +69,11 @@ export function useBrowserStream(
       if (!canvas) return;
       send({
         type: "resize",
-        ...viewportFor(canvas.clientWidth, canvas.clientHeight),
+        ...viewportFor(
+          canvas.clientWidth,
+          canvas.clientHeight,
+          window.devicePixelRatio,
+        ),
       });
     };
     const resizeObserver = new ResizeObserver(() => {
@@ -95,28 +95,29 @@ export function useBrowserStream(
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
       const maxFps = document.hidden ? HIDDEN_FPS : LIVE_FPS;
       ws = new WebSocket(
-        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}&maxFps=${maxFps}`,
+        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}&maxFps=${maxFps}&pacing=ack`,
       );
+      ws.binaryType = "arraybuffer";
       wsRef.current = ws;
       ws.onopen = () => {
         if (cancelled) return;
         setState("live");
         sendViewport();
       };
-      ws.onmessage = (e: MessageEvent<string>) => {
+      ws.onmessage = (e: MessageEvent<string | ArrayBuffer>) => {
+        if (e.data instanceof ArrayBuffer) {
+          const frame = parseBinaryFrame(e.data);
+          if (!frame) return;
+          meterRef.current.frame(performance.now(), frame.jpeg.size);
+          deviceRef.current = frame.metadata;
+          void draw(frame.jpeg).finally(() =>
+            send({ type: "ack", seq: frame.seq }),
+          );
+          return;
+        }
         const msg = parseStreamMessage(e.data);
         if (!msg) return;
-        if (msg.type === "frame") {
-          meterRef.current.frame(performance.now());
-          deviceRef.current = msg.metadata;
-          nextFrame = msg.data;
-          if (!drawing) {
-            drawing = true;
-            void draw().finally(() => {
-              drawing = false;
-            });
-          }
-        } else if (msg.type === "url") {
+        if (msg.type === "url") {
           setPageUrl(msg.url);
         } else {
           setError(msg.message);

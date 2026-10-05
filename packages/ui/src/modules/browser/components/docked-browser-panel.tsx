@@ -46,6 +46,15 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const pendingMove = useRef<object | null>(null);
+  const moveFrame = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+    },
+    [],
+  );
   const stream = useBrowserStream(agentId, canvasRef);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -90,26 +99,48 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     );
   };
 
-  const sendMouse = (
+  const mouseMessage = (
     eventType: "mousePressed" | "mouseReleased" | "mouseMoved",
     e: React.MouseEvent<HTMLCanvasElement>,
   ) => {
     const at = pointer(e);
-    if (!at) return;
-    stream.send(
-      {
-        type: "input_mouse",
-        eventType,
-        ...at,
-        button:
-          eventType === "mouseMoved"
-            ? heldButton(e.buttons)
-            : mouseButton(e.button),
-        clickCount: eventType === "mouseMoved" ? 0 : e.detail,
-        modifiers: modifiers(e),
-      },
-      eventType === "mousePressed",
-    );
+    if (!at) return null;
+    return {
+      type: "input_mouse",
+      eventType,
+      ...at,
+      button:
+        eventType === "mouseMoved"
+          ? heldButton(e.buttons)
+          : mouseButton(e.button),
+      clickCount: eventType === "mouseMoved" ? 0 : e.detail,
+      modifiers: modifiers(e),
+    };
+  };
+
+  const flushMove = () => {
+    if (pendingMove.current) stream.send(pendingMove.current);
+    pendingMove.current = null;
+  };
+
+  const queueMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const msg = mouseMessage("mouseMoved", e);
+    if (!msg) return;
+    pendingMove.current = msg;
+    moveFrame.current ??= requestAnimationFrame(() => {
+      moveFrame.current = null;
+      flushMove();
+    });
+  };
+
+  const sendMouse = (
+    eventType: "mousePressed" | "mouseReleased",
+    e: React.MouseEvent<HTMLCanvasElement>,
+  ) => {
+    const msg = mouseMessage(eventType, e);
+    if (!msg) return;
+    flushMove();
+    stream.send(msg, eventType === "mousePressed");
   };
 
   return (
@@ -169,13 +200,15 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </span>
         <span
           className="shrink-0 tabular-nums"
-          title="Time from your click or key to the next frame, and frames per second"
+          title="Time from your click or key to the next frame, frames per second, and stream bandwidth"
         >
           {stream.stats.roundTripMs === null
             ? "–"
             : `${stream.stats.roundTripMs} ms`}
           {" · "}
           {stream.stats.fps} fps
+          {" · "}
+          {stream.stats.kbPerSec} KB/s
         </span>
       </div>
 
@@ -218,7 +251,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           }}
           onMouseDown={(e) => sendMouse("mousePressed", e)}
           onMouseUp={(e) => sendMouse("mouseReleased", e)}
-          onPointerMove={(e) => sendMouse("mouseMoved", e)}
+          onPointerMove={queueMove}
           onWheel={(e) => {
             const at = pointer(e);
             if (!at) return;
