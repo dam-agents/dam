@@ -50,6 +50,14 @@ import {
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../domain/connection-sds.js";
+import {
+  parseS3Endpoint,
+  s3EndpointOrigin,
+} from "../domain/s3-contributions.js";
+import type {
+  S3CredentialProbe,
+  S3CredentialProbeFailure,
+} from "../domain/s3-credential-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -103,6 +111,7 @@ export function createConnectionsService(deps: {
   oauthFlow: OAuthFlowService;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
+  s3CredentialProbe: S3CredentialProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -120,16 +129,17 @@ export function createConnectionsService(deps: {
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
-    const hosts = conn.contributions
-      .filter(
-        (
-          c,
-        ): c is Extract<
-          Connection["contributions"][number],
-          { kind: "egress-allow" | "egress-inject" }
-        > => c.kind === "egress-allow" || c.kind === "egress-inject",
-      )
-      .map((c) => c.host);
+    const hosts = [
+      ...new Set(
+        conn.contributions.flatMap((c) =>
+          c.kind === "egress-allow" ||
+          c.kind === "egress-inject" ||
+          c.kind === "egress-sign"
+            ? [c.host]
+            : [],
+        ),
+      ),
+    ];
     const presetAppSlug =
       conn.auth.kind === "oauth" &&
       template?.authKind === "oauth" &&
@@ -469,6 +479,35 @@ export function createConnectionsService(deps: {
     return true;
   }
 
+  async function assertS3KeysAccepted(
+    input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
+    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
+    target: string,
+  ): Promise<void> {
+    const bucket = input.bucket?.trim();
+    const outcome = await deps.s3CredentialProbe.probe({
+      endpoint: s3EndpointOrigin(parseS3Endpoint(input.endpoint)),
+      region: auth.region,
+      ...(bucket ? { bucket } : {}),
+      accessKeyId: input.accessKeyId.trim(),
+      secretAccessKey: input.secretAccessKey.trim(),
+    });
+    if (outcome.ok) return;
+    securityLog("warn", "connection.s3_probe_failed", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target,
+      result: "failure",
+      reason: outcome.reason,
+      detail: { probe: outcome.detail },
+    });
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: s3ProbeFailureMessage(outcome.reason, outcome.detail, bucket),
+    });
+  }
+
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -595,6 +634,12 @@ export function createConnectionsService(deps: {
         case "oauth":
           await rotateOAuthClientSecret(conn, conn.auth, value);
           break;
+        case "sigv4":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Updating the keys of an S3-compatible storage connection is not supported yet — delete it and connect again.",
+          });
         case "none":
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -636,6 +681,9 @@ export function createConnectionsService(deps: {
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
+          break;
+        case "sigv4":
+          paths.add(conn.auth.accessKeyIdRef.path);
           break;
         case "none":
           break;
@@ -975,6 +1023,10 @@ export function createConnectionsService(deps: {
         });
       }
 
+      if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
+        await assertS3KeysAccepted(effectiveInput, auth, id);
+      }
+
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
@@ -1292,7 +1344,13 @@ function stripSecretsFromInputs(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = ["value", "clientSecret", "privateKey"];
+  const SECRET_KEYS = [
+    "value",
+    "clientSecret",
+    "privateKey",
+    "accessKeyId",
+    "secretAccessKey",
+  ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (SECRET_KEYS.includes(k)) continue;
@@ -1311,6 +1369,8 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
     case "github-app":
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
+      return "active";
+    case "sigv4":
       return "active";
     case "none":
       return "active";
@@ -1336,7 +1396,33 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;
+    case "sigv4":
+      return auth.accessKeyIdRef.path;
     case "none":
       return null;
+  }
+}
+
+function s3ProbeFailureMessage(
+  reason: S3CredentialProbeFailure,
+  detail: string,
+  bucket: string | undefined,
+): string {
+  switch (reason) {
+    case "refused":
+      return (
+        `The endpoint refused these keys (${detail}). Check the access key ID and secret access key` +
+        (bucket
+          ? ` and that the key may reach bucket "${bucket}".`
+          : ", or name a bucket the key may reach.")
+      );
+    case "no-such-bucket":
+      return bucket
+        ? `The endpoint has no bucket named "${bucket}" that these keys can see (${detail}).`
+        : `The endpoint answered that nothing is there (${detail}) — check the endpoint URL.`;
+    case "unreachable":
+      return `Could not reach the endpoint (${detail}). Check the URL, and that the platform can reach it.`;
+    case "failed":
+      return `The endpoint did not accept the check request (${detail}).`;
   }
 }

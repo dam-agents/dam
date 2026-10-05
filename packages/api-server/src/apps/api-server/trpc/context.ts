@@ -104,6 +104,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
+      s3CredentialProbe: connectionsBoot.s3CredentialProbe,
       secretStore,
       runtimeMutator,
       agentsRepo,

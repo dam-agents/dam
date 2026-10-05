@@ -120,6 +120,11 @@ function makeService(
     oauthFlow,
     oauthEngine: engine,
     githubAppEngine: createGitHubAppEngine(),
+    s3CredentialProbe: {
+      probe: async () => {
+        throw new Error("Unexpected dependency: s3CredentialProbe");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),

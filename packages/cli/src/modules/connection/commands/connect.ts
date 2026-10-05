@@ -47,6 +47,11 @@ interface ConnectOpts {
   envName?: string;
   value?: string;
   caData?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
   config?: string[];
   server?: string;
   json?: boolean;
@@ -124,6 +129,26 @@ export function buildConnectCommand(deps: {
       "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
     )
     .option(
+      "--endpoint <url>",
+      "input: S3-compatible endpoint URL, https:// and host only (S3-compatible storage)",
+    )
+    .option(
+      "--region <region>",
+      "input: signing region (S3-compatible storage; IBM COS accepts any value)",
+    )
+    .option(
+      "--bucket <name>",
+      "input: limit the agent to this bucket (S3-compatible storage)",
+    )
+    .option(
+      "--access-key-id <id>",
+      "input: HMAC access key ID (S3-compatible storage)",
+    )
+    .option(
+      "--secret-access-key <key>",
+      "input: HMAC secret access key (S3-compatible storage)",
+    )
+    .option(
       "-c, --config <key=value>",
       "set an optional template config input (e.g. -c model=premium-shell), repeatable",
       (val: string, prev: string[]) => [...prev, val],
@@ -157,6 +182,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
         '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=agent\n" +
+        "  dam connection connect s3-compatible --endpoint https://s3.us-south.cloud-object-storage.appdomain.cloud \\\n" +
+        "      --bucket my-bucket --access-key-id … --secret-access-key …\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
@@ -531,6 +558,30 @@ function buildPayload(
         value,
       };
     }
+    case "sigv4": {
+      const endpoint = v("endpoint");
+      const accessKeyId = v("accessKeyId");
+      const secretAccessKey = v("secretAccessKey");
+      if (!endpoint)
+        return { error: "the endpoint URL is required (--endpoint)" };
+      if (!accessKeyId) {
+        return { error: "the access key ID is required (--access-key-id)" };
+      }
+      if (!secretAccessKey) {
+        return {
+          error: "the secret access key is required (--secret-access-key)",
+        };
+      }
+      return {
+        ...common,
+        authKind: "sigv4",
+        endpoint,
+        ...(v("region") ? { region: v("region")! } : {}),
+        ...(v("bucket") ? { bucket: v("bucket")! } : {}),
+        accessKeyId,
+        secretAccessKey,
+      };
+    }
     case "none":
       return {
         ...common,
@@ -669,6 +720,11 @@ const FIELD_LABELS: Record<string, string> = {
   privateKey: "GitHub App private key (PEM)",
   envName: "Env var name",
   caData: "Cluster CA certificate",
+  endpoint: "Endpoint URL",
+  region: "Signing region",
+  bucket: "Bucket",
+  accessKeyId: "Access key ID",
+  secretAccessKey: "Secret access key",
 };
 
 function labelFor(key: string): string {

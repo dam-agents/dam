@@ -276,6 +276,7 @@ export {
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
+  S3_COMPATIBLE_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
 } from "./modules/connections/providers.js";

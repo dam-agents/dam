@@ -22,6 +22,7 @@ export interface CapabilityFilterResult {
 const HOST_RAIL_KINDS = new Set<ContributionKind>([
   "egress-allow",
   "egress-inject",
+  "egress-sign",
 ]);
 
 export function filterByCapabilities(
