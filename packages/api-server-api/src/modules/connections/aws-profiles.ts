@@ -38,8 +38,9 @@ export function signingTargetOf(
 export function awsProfileSlug(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .split(/[^a-z0-9_]+/)
+    .filter((part) => part !== "")
+    .join("-");
 }
 
 function profileNames(members: readonly AwsProfileSource[]): string[] {
