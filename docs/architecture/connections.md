@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-04
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -66,6 +66,8 @@ A **client-credentials** connection resolves the token endpoint from the authori
 A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
 
 A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there. The user token and its refresh token stay at rest; what injects is a scoped token GitHub derives from the user token, authorized by the app's client secret, and re-derived after every refresh, at re-consent, and when the subset is edited. GitHub rotates the refresh token on each use, so the new one is stored before the derivation — a subset GitHub refuses parks the Connection as expired without costing it the ability to renew, and never falls back to injecting the unscoped token. A narrowed token still never does more than the user could. The subset is chosen after sign-in, against the installations and repositories the user token itself reaches, since before consent there is nothing to read.
+
+A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed. The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else. The answer is a platform-derived fact on the Connection, never a user input. A lookup that fails costs nothing but the label. Connections made before this existed are labelled by a background sweep that tries each one once per api-server process, so a credential the provider refuses is not retried in a loop.
 
 Connect and disconnect raise domain events, recorded as [Activity Events](usage-tracking.md). A connect fires wherever the Connection actually reaches its connected state — at creation for the modes that complete synchronously, and at the authorization callback for OAuth, which is the only mode that cannot finish in one step. Emitting at both points would double-count OAuth; emitting only at the callback leaves every other mode invisible. A connection abandoned before that state raises neither event, so removals cannot outnumber connects. The event names the provider, not just the grant, because the Connection record is destroyed on disconnect and a grant identifier alone would die with it.
 

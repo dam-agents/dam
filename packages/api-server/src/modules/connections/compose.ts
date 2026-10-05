@@ -25,6 +25,10 @@ import {
   createOAuthRefreshLoop,
   type OAuthRefreshLoop,
 } from "./services/oauth-refresh.js";
+import {
+  createAccountLabelBackfill,
+  type AccountLabelBackfill,
+} from "./services/account-label.js";
 import type { SecretStore } from "../secret-store/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
@@ -35,6 +39,7 @@ export interface ConnectionsBootCompose {
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   refreshLoop: OAuthRefreshLoop;
+  accountLabelBackfill: AccountLabelBackfill;
 }
 
 export interface ComposeConnectionsAtBootOpts {
@@ -67,7 +72,19 @@ export function composeConnectionsAtBoot(
     connectionLock: createXactLock(opts.db),
   });
 
-  return { templates, oauthEngine, githubAppEngine, refreshLoop };
+  const accountLabelBackfill = createAccountLabelBackfill({
+    db: opts.db,
+    templates,
+    secretStore: opts.secretStore,
+  });
+
+  return {
+    templates,
+    oauthEngine,
+    githubAppEngine,
+    refreshLoop,
+    accountLabelBackfill,
+  };
 }
 
 export function createConnectionGrantsCleanupHook(

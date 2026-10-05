@@ -3,6 +3,7 @@ import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
@@ -101,6 +102,18 @@ export function CatalogConnectionRow({
           </Button>
         )}
       </div>
+      {connection.accountLabel && (
+        <p
+          className={cn(
+            "mt-0.5 truncate text-xs text-muted-foreground",
+            iconSlug && "pl-6",
+          )}
+          title={connection.accountLabel}
+          data-testid={`catalog-connection-account-${connection.id}`}
+        >
+          Acts as {connection.accountLabel}
+        </p>
+      )}
     </div>
   );
 }
