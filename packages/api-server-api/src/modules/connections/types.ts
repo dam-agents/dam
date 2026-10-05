@@ -134,6 +134,7 @@ export const connectionView = z.object({
   connectedAt: z.string().optional(),
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
+  accountLabel: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
   hasClientSecret: z.boolean().optional(),
   githubAppScope: z

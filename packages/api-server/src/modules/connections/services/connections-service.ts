@@ -66,6 +66,8 @@ import {
 } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
+import { recordAccountLabel } from "./account-label.js";
+import { accountLabelOf } from "../domain/account-label.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -120,6 +122,7 @@ export function createConnectionsService(deps: {
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
+    const accountLabel = accountLabelOf(conn);
     const hosts = conn.contributions
       .filter(
         (
@@ -181,6 +184,7 @@ export function createConnectionsService(deps: {
       authKind: conn.auth.kind,
       contributions: conn.contributions,
       hosts,
+      ...(accountLabel ? { accountLabel } : {}),
       ...oauthExtras,
     };
   }
@@ -241,6 +245,7 @@ export function createConnectionsService(deps: {
       value,
       ...buildConnectionSdsFields(conn.contributions, value),
     });
+    await recordAccountLabel(conn, value, deps);
   }
 
   async function rotateClientSecret(
@@ -995,16 +1000,17 @@ export function createConnectionsService(deps: {
         );
       }
 
+      const record: Connection = {
+        id,
+        ownerId: deps.ownerId,
+        templateId: template.id,
+        name: connectionName,
+        inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
+        auth,
+        contributions,
+      };
       try {
-        await deps.repo.insert({
-          id,
-          ownerId: deps.ownerId,
-          templateId: template.id,
-          name: connectionName,
-          inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
-          auth,
-          contributions,
-        });
+        await deps.repo.insert(record);
       } catch (err) {
         if (secretPath) {
           await deps.secretStore.delete({ path: secretPath }).catch(() => {});
@@ -1036,6 +1042,13 @@ export function createConnectionsService(deps: {
           templateId: template.id,
           kind: template.category === "mcp" ? "mcp" : "oauth_app",
         });
+      }
+      const headerValue =
+        auth.kind === "header" && secretPath
+          ? built.secrets.get(secretPath)?.["value"]
+          : undefined;
+      if (headerValue) {
+        await recordAccountLabel(record, headerValue, deps);
       }
       return id;
     },

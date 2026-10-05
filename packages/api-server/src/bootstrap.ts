@@ -658,6 +658,16 @@ export async function bootstrap() {
       );
       process.exit(1);
     });
+  await periodicJobs
+    .register("connection-account-label-backfill", 3_600_000, () =>
+      connectionsBoot.accountLabelBackfill.tickOnce(),
+    )
+    .catch((err) => {
+      getLogger().error(
+        `periodic job connection-account-label-backfill registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
 
   const { service: termsService, isAcceptedPort: isTermsAccepted } =
     composeTermsModule({

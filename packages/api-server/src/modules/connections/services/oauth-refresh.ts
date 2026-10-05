@@ -158,7 +158,7 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
   }[];
 
   return rows
-    .map((r) => parseRow(r))
+    .map((r) => parseConnectionRow(r))
     .filter((c): c is Connection => c !== null);
 }
 
@@ -269,7 +269,7 @@ async function markRefreshFailure(
   return true;
 }
 
-function parseRow(row: {
+export function parseConnectionRow(row: {
   id: string;
   owner: string;
   templateId: string;
@@ -458,5 +458,5 @@ async function readConnection(db: Db, id: string): Promise<Connection | null> {
     auth: unknown;
     contributions: unknown;
   }[];
-  return rows[0] ? parseRow(rows[0]) : null;
+  return rows[0] ? parseConnectionRow(rows[0]) : null;
 }
