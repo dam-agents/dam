@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
 
 export function useStarterKits(enabled = true) {
@@ -33,10 +34,15 @@ export function useKitUpdate(agentId: string | null) {
   return agentId ? data?.find((u) => u.agentId === agentId) : undefined;
 }
 
-export function useKitUpdateChanges(agentId: string, enabled: boolean) {
+export function useKitUpdateChanges(
+  agentId: string,
+  target: string | null,
+  enabled: boolean,
+) {
   return useQuery({
-    ...trpc.starterKits.updateChanges.queryOptions({ agentId }),
-    enabled,
+    queryKey: [...trpc.starterKits.updateChanges.queryKey({ agentId }), target],
+    queryFn: () => api.starterKits.updateChanges.query({ agentId }),
+    enabled: enabled && target !== null,
     staleTime: Infinity,
   });
 }

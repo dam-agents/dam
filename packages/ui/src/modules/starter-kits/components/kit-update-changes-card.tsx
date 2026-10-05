@@ -5,13 +5,25 @@ import { shortKitVersion } from "../lib/setup.js";
 
 export function KitUpdateChangesCard({
   agentId,
+  target,
   open,
 }: {
   agentId: string;
+  target: string | null;
   open: boolean;
 }) {
-  const { data: changes, isLoading } = useKitUpdateChanges(agentId, open);
+  const {
+    data: changes,
+    isLoading,
+    isError,
+  } = useKitUpdateChanges(agentId, target, open);
 
+  if (isError)
+    return (
+      <p className="text-muted-foreground">
+        Couldn't load the changes. Try again in a moment.
+      </p>
+    );
   if (isLoading)
     return <p className="text-muted-foreground">Loading changes…</p>;
   if (!changes)

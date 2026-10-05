@@ -22,15 +22,23 @@ export function KitUpdateBar({ agentId }: { agentId: string | null }) {
   const update = useKitUpdate(agentId);
   if (!agentId || !update) return null;
   if (update.state !== "available" && update.state !== "pending") return null;
-  return <KitUpdateBarContent agentId={agentId} pending={update.pending} />;
+  return (
+    <KitUpdateBarContent
+      agentId={agentId}
+      pending={update.pending}
+      target={update.pending?.targetCommit ?? update.latest}
+    />
+  );
 }
 
 function KitUpdateBarContent({
   agentId,
   pending,
+  target,
 }: {
   agentId: string;
-  pending: NonNullable<ReturnType<typeof useKitUpdate>>["pending"];
+  pending: KitUpdatePending | null;
+  target: string | null;
 }) {
   const agent = useAgentsList().find((a) => a.id === agentId);
   const kitName = useKitName(agent?.starterKit ?? null, true);
@@ -110,7 +118,11 @@ function KitUpdateBarContent({
                 align="end"
                 className="w-[520px] max-w-[calc(100vw-2rem)] text-sm"
               >
-                <KitUpdateChangesCard agentId={agentId} open={cardOpen} />
+                <KitUpdateChangesCard
+                  agentId={agentId}
+                  target={target}
+                  open={cardOpen}
+                />
               </HoverCardContent>
             </HoverCard>
           </div>
