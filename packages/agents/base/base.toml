@@ -54,7 +54,9 @@ PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
 # apt-get on a machine never waits on a prompt nobody can answer.
 DEBIAN_FRONTEND = "noninteractive"
-# The one Chromium both use; containers have no user namespaces for its sandbox.
+# The one Chromium both use; containers have no user namespaces for its sandbox,
+# and a container's /dev/shm is 64 MB, which a heavy page overflows and crashes
+# the renderer on, so Chromium keeps its shared memory in /tmp instead.
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
-AGENT_BROWSER_ARGS = "--no-sandbox"
+AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage"
 AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"
