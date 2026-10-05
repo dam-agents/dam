@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   createLatencyMeter,
   devicePoint,
+  jpegBytes,
   keyboardInput,
   mouseButton,
   parseStreamMessage,
@@ -134,5 +135,11 @@ describe("createLatencyMeter", () => {
     for (const t of [0, 100, 600, 1_200, 1_300]) meter.frame(t);
     expect(meter.stats(1_300).fps).toBe(3);
     expect(meter.stats(5_000).roundTripMs).toBeNull();
+  });
+});
+
+describe("jpegBytes", () => {
+  test("decodes a frame's base64 payload to its bytes", () => {
+    expect([...jpegBytes("/9j/")]).toEqual([0xff, 0xd8, 0xff]);
   });
 });

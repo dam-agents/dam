@@ -4,6 +4,7 @@ import { getAccessToken } from "../../../auth.js";
 import {
   createLatencyMeter,
   type FrameMetadata,
+  jpegBytes,
   parseStreamMessage,
 } from "../lib/stream.js";
 
@@ -54,9 +55,7 @@ export function useBrowserStream(
       while (nextFrame !== null && canvas && ctx) {
         const data = nextFrame;
         nextFrame = null;
-        const blob = await fetch(`data:image/jpeg;base64,${data}`).then((r) =>
-          r.blob(),
-        );
+        const blob = new Blob([jpegBytes(data)], { type: "image/jpeg" });
         const bitmap = await createImageBitmap(blob);
         if (cancelled) return bitmap.close();
         if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
