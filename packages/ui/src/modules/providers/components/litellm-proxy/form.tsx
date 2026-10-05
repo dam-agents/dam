@@ -15,7 +15,7 @@ import {
 } from "../../lib/provider-rows.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 
-const ibmLitellmCredentialSchema = z
+const liteLlmProxyCredentialSchema = z
   .object({ value: z.string() })
   .superRefine((data, ctx) => {
     if (stripWhitespace(data.value).length === 0) {
@@ -27,7 +27,7 @@ const ibmLitellmCredentialSchema = z
     }
   });
 
-type FormValues = z.infer<typeof ibmLitellmCredentialSchema>;
+type FormValues = z.infer<typeof liteLlmProxyCredentialSchema>;
 
 const LITELLM_PROVIDERS = {
   "ibm-litellm": {
@@ -37,7 +37,7 @@ const LITELLM_PROVIDERS = {
   "curve-bender": { description: CURVE_BENDER_DESCRIPTION, keyGuideUrl: null },
 } as const;
 
-export function IbmLitellmForm({
+export function LiteLlmProxyForm({
   provider,
   variant,
   onSave,
@@ -49,7 +49,7 @@ export function IbmLitellmForm({
   onCancel?: () => void;
 }) {
   const { register, handleSubmit, formState } = useForm<FormValues>({
-    resolver: zodResolver(ibmLitellmCredentialSchema),
+    resolver: zodResolver(liteLlmProxyCredentialSchema),
     mode: "onChange",
     defaultValues: { value: "" },
   });
