@@ -2,7 +2,13 @@ export type UsageSurface = "ui" | "cli" | "other" | "slack" | "telegram";
 
 export type UsageOutcome = "success" | "failure";
 
-export type RelayKind = "acp" | "terminal" | "ssh" | "trpc" | "other";
+export type RelayKind =
+  | "acp"
+  | "terminal"
+  | "ssh"
+  | "browser"
+  | "trpc"
+  | "other";
 
 export type ConnectionChangeAction = "added" | "removed";
 
@@ -20,6 +26,7 @@ const RELAY_KINDS = new Map<string, RelayKind>([
   ["acp", "acp"],
   ["terminal", "terminal"],
   ["ssh", "ssh"],
+  ["browser", "browser"],
   ["trpc", "trpc"],
   ["other", "other"],
 ]);

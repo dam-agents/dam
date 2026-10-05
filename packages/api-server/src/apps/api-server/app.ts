@@ -16,6 +16,10 @@ import { createAgentTrpcRelay } from "./agent-proxies/agent-trpc-relay.js";
 import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
+import {
+  createBrowserRelay,
+  requiresConnectionAddress,
+} from "./agent-proxies/browser-relay.js";
 import { createTerminalRelay } from "./agent-proxies/terminal-relay.js";
 import {
   createRelayAdmission,
@@ -146,6 +150,11 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.sessionPresence,
   );
+  const browserRelay = createBrowserRelay(
+    config.namespace,
+    deps.agentsRepo,
+    deps.sessionPresence,
+  );
   const agentTrpcRelay = createAgentTrpcRelay(
     config.namespace,
     deps.agentsRepo,
@@ -162,6 +171,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+      "/api/agents/:id/browser": relayRoute(
+        relayAdmission,
+        browserRelay,
+        "browser",
+        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+      ),
       "/api/agents/:id/trpc-ws": relayRoute(
         relayAdmission,
         agentTrpcRelay,
@@ -177,6 +192,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
       acpRelay.close();
       terminalRelay.close();
       sshRelay.close();
+      browserRelay.close();
     },
   };
 }
