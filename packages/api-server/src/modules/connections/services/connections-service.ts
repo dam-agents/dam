@@ -1480,7 +1480,7 @@ function keyPairOf(credential: ConnectionCredentialUpdate): Sigv4KeyPair {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
-        "An S3-compatible storage connection takes an access key ID and a secret access key.",
+        "An Object Storage connection takes an access key ID and a secret access key.",
     });
   }
   return credential;

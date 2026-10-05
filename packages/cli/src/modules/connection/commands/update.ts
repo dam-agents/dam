@@ -49,12 +49,12 @@ export function buildUpdateCommand(deps: {
     )
     .option(
       "--access-key-id <id>",
-      "the new access key ID of an S3-compatible storage connection " +
+      "the new access key ID of an Object Storage connection " +
         "(prompts if omitted)",
     )
     .option(
       "--secret-access-key <key>",
-      "the new secret access key of an S3-compatible storage connection " +
+      "the new secret access key of an Object Storage connection " +
         "(prompts securely if omitted)",
     )
     .option(
@@ -71,7 +71,7 @@ export function buildUpdateCommand(deps: {
         "  dam connection update my-bucket --access-key-id … --secret-access-key …\n" +
         "\nA multi-line secret (a PEM private key) can't be typed at the\n" +
         "prompt — pass it with --value, as in the third example.\n" +
-        "\nAn S3-compatible storage connection rotates both HMAC keys at once:\n" +
+        "\nAn Object Storage connection rotates both HMAC keys at once:\n" +
         "pass --access-key-id and --secret-access-key, or answer the prompts.\n" +
         "The new pair is verified against the endpoint before it is stored.\n" +
         "\nOn an OAuth connection this rotates its *client secret* (only when the\n" +

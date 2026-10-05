@@ -277,11 +277,11 @@ const BEDROCK: HeaderConnectionTemplate = {
 
 const S3_COMPATIBLE: Sigv4ConnectionTemplate = {
   id: S3_COMPATIBLE_TEMPLATE_ID,
-  name: "S3-compatible storage",
+  name: "Object Storage",
   category: "app",
   isCustom: false,
   description:
-    "A bucket on IBM Cloud Object Storage, AWS S3, MinIO or Ceph, reached with HMAC keys the gateway signs with. The agent can do whatever these keys allow, so use a read-only key for read-only access.",
+    "Any S3-compatible bucket: AWS S3, Cloudflare R2, IBM Cloud Object Storage, MinIO, Ceph. Connects with HMAC keys. The agent can do anything the keys allow, so use read-only keys for read-only access.",
   iconSlug: "key",
   authKind: "sigv4",
   region: DEFAULT_S3_SIGNING_REGION,

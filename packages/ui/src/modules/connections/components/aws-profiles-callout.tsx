@@ -50,7 +50,7 @@ export function AwsProfilesCallout({
       data-testid="aws-profiles-callout"
     >
       <p>
-        For S3-compatible storage this agent uses{" "}
+        For Object Storage this agent uses{" "}
         <strong>{active?.connectionName}</strong> unless it names another
         profile with <code>--profile</code>.
       </p>

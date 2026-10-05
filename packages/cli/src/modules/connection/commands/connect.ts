@@ -130,23 +130,23 @@ export function buildConnectCommand(deps: {
     )
     .option(
       "--endpoint <url>",
-      "input: S3-compatible endpoint URL, https:// and host only (S3-compatible storage)",
+      "input: S3-compatible endpoint URL, https:// and host only (Object Storage)",
     )
     .option(
       "--region <region>",
-      "input: signing region (S3-compatible storage; IBM COS accepts any value)",
+      "input: signing region (Object Storage; IBM COS accepts any value)",
     )
     .option(
       "--bucket <name>",
-      "input: limit the agent to this bucket (S3-compatible storage)",
+      "input: limit the agent to this bucket (Object Storage)",
     )
     .option(
       "--access-key-id <id>",
-      "input: HMAC access key ID (S3-compatible storage)",
+      "input: HMAC access key ID (Object Storage)",
     )
     .option(
       "--secret-access-key <key>",
-      "input: HMAC secret access key (S3-compatible storage)",
+      "input: HMAC secret access key (Object Storage)",
     )
     .option(
       "-c, --config <key=value>",

@@ -264,7 +264,8 @@ Code ignores it when the account cannot invoke it.
 
 ### App preset: S3-compatible storage
 
-A bucket on IBM Cloud Object Storage, AWS S3, MinIO or Ceph, reached with
+Shown to users as **Object Storage**. A bucket on AWS S3, Cloudflare R2,
+IBM Cloud Object Storage, MinIO or Ceph, reached with
 an **HMAC key pair** the user pastes at connect time together with the
 HTTPS endpoint, a signing region (AWS needs the bucket's; IBM COS accepts
 any) and, optionally, one bucket. S3 authenticates with SigV4 — the
