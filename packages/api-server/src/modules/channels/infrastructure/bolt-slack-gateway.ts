@@ -63,6 +63,13 @@ function slackRefusal(err: unknown): string | null {
   return typeof data?.error === "string" ? data.error : null;
 }
 
+function directMessageUserOf(
+  channel: object & { is_im?: boolean },
+): string | null {
+  if (!channel.is_im || !("user" in channel)) return null;
+  return typeof channel.user === "string" ? channel.user : null;
+}
+
 function toSlackMessage(m: {
   ts?: string;
   user?: string;
@@ -788,7 +795,9 @@ export function createBoltSlackGateway(
         return {
           isMember: isDirectMessage || !!info.channel.is_member,
           isDirectMessage,
+          isGroupDirectMessage: !!info.channel.is_mpim,
           name: info.channel.name ?? null,
+          directMessageUser: directMessageUserOf(info.channel),
         };
       } catch (err) {
         if (formatError(err).includes("channel_not_found")) return null;

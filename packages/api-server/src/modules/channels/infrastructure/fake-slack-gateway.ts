@@ -395,7 +395,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ? {
             isMember: channel.botIsMember,
             isDirectMessage: false,
+            isGroupDirectMessage: false,
             name: channel.name,
+            directMessageUser: null,
           }
         : null;
     },

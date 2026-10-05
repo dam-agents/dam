@@ -86,7 +86,7 @@ export function composeAgentsModule(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
-  resolveSlackChannelNames?: AgentsServiceDeps["resolveSlackChannelNames"];
+  resolveSlackConversationLabels?: AgentsServiceDeps["resolveSlackConversationLabels"];
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;
@@ -137,7 +137,7 @@ export function composeAgentsModule(deps: {
       resolveSlackWorkspace: deps.resolveSlackWorkspace,
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
-      resolveSlackChannelNames: deps.resolveSlackChannelNames,
+      resolveSlackConversationLabels: deps.resolveSlackConversationLabels,
     }),
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),

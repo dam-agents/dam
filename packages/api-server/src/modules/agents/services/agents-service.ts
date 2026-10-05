@@ -6,6 +6,7 @@ import {
   type AgentUpdateInput,
   type EnvVar,
   type ChannelConfig,
+  type SlackConversationLabel,
   type ContributionKind,
   type DriverFailure,
   type WorkspaceFailure,
@@ -302,7 +303,7 @@ function slackConversationKey(ref: SlackConversationRef): string {
   return `${ref.teamId}/${ref.channelId}`;
 }
 
-const SLACK_NAME_BUDGET_MS = 2_000;
+const SLACK_LABEL_BUDGET_MS = 2_000;
 
 function withinBudget<T>(
   work: Promise<T>,
@@ -578,9 +579,11 @@ export function createAgentsService(deps: {
   >;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
-  resolveSlackChannelNames?: (
+  resolveSlackConversationLabels?: (
     refs: SlackConversationRef[],
-  ) => Promise<(SlackConversationRef & { name: string | null })[]>;
+  ) => Promise<
+    (SlackConversationRef & { label: SlackConversationLabel | null })[]
+  >;
 }): AgentsService {
   const runtimeMigrationContext: RuntimeMigrationContext = {
     virtualizationEnabled: deps.virtualizationEnabled === true,
@@ -625,43 +628,46 @@ export function createAgentsService(deps: {
     }
   }
 
-  async function slackChannelNames(
+  async function slackConversationLabels(
     channelLists: ChannelConfig[][],
-  ): Promise<Map<string, string | null>> {
-    const names = new Map<string, string | null>();
-    if (!deps.resolveSlackChannelNames) return names;
+  ): Promise<Map<string, SlackConversationLabel | null>> {
+    const labels = new Map<string, SlackConversationLabel | null>();
+    if (!deps.resolveSlackConversationLabels) return labels;
     const refs = new Map<string, SlackConversationRef>();
     for (const channel of channelLists.flat()) {
       if (channel.type !== ChannelType.Slack) continue;
       const ref = slackConversationRef(channel);
       refs.set(slackConversationKey(ref), ref);
     }
-    if (refs.size === 0) return names;
+    if (refs.size === 0) return labels;
     const resolved = await withinBudget(
-      deps.resolveSlackChannelNames([...refs.values()]),
-      SLACK_NAME_BUDGET_MS,
+      deps.resolveSlackConversationLabels([...refs.values()]),
+      SLACK_LABEL_BUDGET_MS,
     );
     for (const entry of resolved ?? []) {
-      names.set(slackConversationKey(entry), entry.name);
+      labels.set(slackConversationKey(entry), entry.label);
     }
-    return names;
+    return labels;
   }
 
-  async function namedChannelsOf(agentId: string): Promise<ChannelConfig[]> {
+  async function labelledChannelsOf(agentId: string): Promise<ChannelConfig[]> {
     const channels = await deps.listChannelsByAgent(agentId);
-    return withChannelNames(channels, await slackChannelNames([channels]));
+    return withConversationLabels(
+      channels,
+      await slackConversationLabels([channels]),
+    );
   }
 
-  function withChannelNames(
+  function withConversationLabels(
     channels: ChannelConfig[],
-    names: Map<string, string | null>,
+    labels: Map<string, SlackConversationLabel | null>,
   ): ChannelConfig[] {
     return channels.map((channel) => {
       if (channel.type !== ChannelType.Slack) return channel;
-      const name = names.get(
+      const label = labels.get(
         slackConversationKey(slackConversationRef(channel)),
       );
-      return name ? { ...channel, name } : channel;
+      return label ? { ...channel, label } : channel;
     });
   }
 
@@ -679,7 +685,7 @@ export function createAgentsService(deps: {
   ): Promise<ReturnType<typeof assembleAgent>> {
     const [channels, status, userEnv, templateUpdate, checklists] =
       await Promise.all([
-        namedChannelsOf(infra.id),
+        labelledChannelsOf(infra.id),
         safeStatus(infra.id),
         deps.agentEnvRepo.list(infra.id),
         templateUpdateFor(infra),
@@ -828,15 +834,15 @@ export function createAgentsService(deps: {
     }
 
     const boundChannels = txResult.value.channels;
-    const [status, channelNames, templateUpdate] = await Promise.all([
+    const [status, channelLabels, templateUpdate] = await Promise.all([
       safeStatus(id),
-      slackChannelNames([boundChannels]),
+      slackConversationLabels([boundChannels]),
       templateUpdateFor(infra),
     ]);
     return ok(
       assembleAgent(
         infra,
-        withChannelNames(boundChannels, channelNames),
+        withConversationLabels(boundChannels, channelLabels),
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
@@ -872,13 +878,13 @@ export function createAgentsService(deps: {
         }
       }
 
-      const [failuresMap, envMap, channelNames, checklistMap] =
+      const [failuresMap, envMap, channelLabels, checklistMap] =
         await Promise.all([
           deps.contributionsProgress
             .statusMany([...infraIds])
             .catch(() => new Map<string, ContributionsStatus>()),
           deps.agentEnvRepo.listMany([...infraIds]),
-          slackChannelNames([...channelMap.values()]),
+          slackConversationLabels([...channelMap.values()]),
           deps.onboardingChecklists.readMany([...infraIds]),
         ]);
 
@@ -900,7 +906,7 @@ export function createAgentsService(deps: {
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
-          withChannelNames(channelMap.get(infra.id) ?? [], channelNames),
+          withConversationLabels(channelMap.get(infra.id) ?? [], channelLabels),
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
@@ -1491,13 +1497,13 @@ export function createAgentsService(deps: {
         slackChannelId: flow.slackChannelId,
         ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
       };
-      const names = await slackChannelNames([[channel]]);
-      const name = names.get(
+      const labels = await slackConversationLabels([[channel]]);
+      const label = labels.get(
         slackConversationKey(slackConversationRef(channel)),
       );
       return {
         slackChannelId: flow.slackChannelId,
-        ...(name ? { name } : {}),
+        ...(label?.kind === "channel" ? { name: label.name } : {}),
       };
     },
 

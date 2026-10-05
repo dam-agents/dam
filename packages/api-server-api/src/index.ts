@@ -79,6 +79,7 @@ export type {
   ListTelegramChatsResult,
   UnbindTelegramChatResult,
   SlackChannel,
+  SlackConversationLabel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
