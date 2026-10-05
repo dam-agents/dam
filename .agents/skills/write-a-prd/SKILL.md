@@ -5,38 +5,11 @@ description: >
   Use when user wants to write a PRD, create a product requirements document, or plan a new feature. Always present the PRD for user approval before submitting.
 ---
 
-This skill will be invoked when the user wants to create a PRD. You may skip steps if you don't consider them necessary, but you MUST NEVER skip the user approval step before submitting to GitHub.
+Skip any step you don't need, except the user's approval before anything reaches GitHub.
 
-1. Ask the user for a long, detailed description of the problem they want to solve and any potential ideas for solutions.
-
-2. Explore the repo to verify their assertions and understand the current state of the codebase.
-
-3. Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one by one.
-
-4. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
-
-A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
-
-Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
-
-5. Once you have complete understanding of the problem and solution, use the template below to write the PRD. Present the full PRD to the user and explicitly ask for their approval before proceeding.
-
-6. Only after the user has explicitly approved the PRD, submit it as a GitHub issue. NEVER create the GitHub issue without user approval.
-
-<prd-template>
-## Problem Statement
-
-The problem that the user is facing, from the user's perpective. 
-
-## Solution 
-
-The solution to the problem, from user's perspective.
-
-## User Stories
-- As a [type of user], I want [some goal] so that [some reason].
-
-## Implementation Decisions
-
-Implementation decisions should not be overly prescriptive, we want those decisions to be durable.
-
-</prd-template>
+1. Ask the user for a long, detailed description of the problem and any solution ideas.
+2. Explore the repo to verify their assertions and learn the current state.
+3. Interview the user relentlessly about every aspect of the plan until you share an understanding, walking each branch of the design tree and resolving dependencies between decisions one by one.
+4. Sketch the major modules to build or modify, looking for deep modules (much functionality behind a simple, testable, rarely-changing interface) that can be tested in isolation. Confirm the modules match the user's expectations, and which ones they want tests for.
+5. Write the PRD as a **feature** issue from the feature template in [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md): problem and goal from the user's perspective, user stories, and the implementation decisions under **Proposed solution** with their reasoning, kept durable rather than prescriptive. Present it in full and ask for approval.
+6. Once approved, file it with the `file-issue` skill (dedupe, attribution, final approval, filing).

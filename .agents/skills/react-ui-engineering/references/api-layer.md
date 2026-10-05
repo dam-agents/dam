@@ -1,58 +1,54 @@
 # API layer
 
-**Read when:** writing a fetch call, setting up tRPC, adding error handling, organizing API modules, validating responses, consuming a new endpoint.
+**Read when:** writing a fetch call, setting up tRPC, error handling, organizing API modules, validating responses, consuming a new endpoint.
 
 ## Principles
 
-**[CRITICAL] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch`, or tRPC procs directly. They import a query/mutation hook from their module's `api/` folder. The fetcher layer knows about URLs, auth, parsing, and typed errors; the UI knows about hooks returning `{ data, isLoading, error, mutate }`.
+**[CRITICAL] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch` or tRPC procedures; they import a query/mutation hook from their module's `api/`. The fetcher layer knows URLs, auth, parsing and typed errors; the UI knows hooks returning `{ data, isLoading, error, mutate }`.
 
-**[HIGH] Every non-tRPC response is Zod-validated** before reaching application code. tRPC already gives you end-to-end types; raw `fetch` does not — Zod is the safety net.
+**[HIGH] Every non-tRPC response is Zod-validated** before reaching application code; tRPC is typed end to end, raw `fetch` is not.
 
 ## Layers
 
 ```
 UI component
     ↓ imports
-Query/mutation hook  (modules/{domain}/api/queries|mutations/*)
+Query/mutation hook  (modules/{domain}/api/)
     ↓ calls
-Fetcher              (modules/{domain}/api/index.ts — for non-tRPC)
-                     (or trpc.{domain}.{proc}.useQuery — for tRPC)
+Fetcher              (modules/{domain}/api/ — non-tRPC)
+                     (trpc.{domain}.{proc}.queryOptions() — tRPC)
     ↓ uses
-Root client          (src/api/trpc.ts, src/api/auth-fetch.ts)
+Root client          (src/api.ts, src/trpc.ts, src/auth.ts → authFetch)
 ```
 
-Each layer has one concern. Crossing a layer in either direction is a smell.
+One concern per layer; crossing one in either direction is a smell.
 
 ## Root clients
 
-```ts
-// src/api/trpc.ts
-export const trpc = createTRPCReact<AppRouter>();
+The only places that make raw calls:
 
-// src/api/auth-fetch.ts
-export async function authFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
-  const token = await getAuthToken();
+```ts
+// src/api.ts
+export const api = createTRPCClient<AppRouter>({ links: [wsLink({ client: wsClient })] });
+
+// src/trpc.ts
+export const trpc = createTRPCOptionsProxy<AppRouter>({ client: api, queryClient });
+
+// src/auth.ts
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const token = await getAccessToken();
   const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Authorization", `Bearer ${token}`);
   return fetch(input, { ...init, headers });
 }
-
-// src/api/query-client.ts — see references/async-data.md for full config
-export function buildQueryClient() { ... }
 ```
 
-These are the only places that know how to make a raw HTTP call in the app.
+`src/query-client.ts` holds the QueryClient (`references/async-data.md`).
 
 ## Fetcher functions (non-tRPC)
 
-Each domain's `api/index.ts` exports typed, Zod-validated fetchers:
-
 ```ts
-// src/modules/connections/api/index.ts
-import { z } from "zod";
-import { authFetch } from "#/api/auth-fetch";
-import { ApiError } from "#/api/errors";
-
+// src/modules/connections/api/oauth.ts
 const oauthStartResponseSchema = z.object({ redirectUrl: z.string().url() });
 
 export async function startOauth(connectorId: string) {
@@ -62,32 +58,23 @@ export async function startOauth(connectorId: string) {
 }
 
 export async function disconnectMcp(connectionId: string) {
-  const res = await authFetch(`/api/mcp/connections/${encodeURIComponent(connectionId)}`, {
-    method: "DELETE",
-  });
+  const res = await authFetch(`/api/mcp/connections/${encodeURIComponent(connectionId)}`, { method: "DELETE" });
   if (!res.ok) throw await ApiError.fromResponse(res);
 }
 ```
 
-Notes:
-- **One exported function per endpoint.**
-- **Inputs are typed parameters.** Don't accept `any` or an untyped record.
-- **Responses are Zod-parsed** at the edge. If it's a 204 No Content, no parser needed; otherwise, schema.
-- **URL construction encodes user-supplied values** (`encodeURIComponent`). Never string-concatenate user input into paths.
-- **On non-OK responses, throw `ApiError`.** Don't return an error object — callers can't tell success from failure.
+- One exported function per endpoint, with typed parameters (no `any` or untyped records).
+- Zod-parse every response at the edge; only a 204 needs no schema.
+- `encodeURIComponent` every user-supplied URL value; never concatenate raw input into paths.
+- Throw on non-OK; a returned error object can't be told apart from success.
 
 ## Errors
 
-**[HIGH]** A typed error hierarchy. Minimum:
+**[HIGH]** Use a typed error hierarchy; at minimum:
 
 ```ts
-// src/api/errors.ts
 export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: unknown,
-    message?: string,
-  ) {
+  constructor(public readonly status: number, public readonly body: unknown, message?: string) {
     super(message ?? `Request failed with ${status}`);
   }
   static async fromResponse(res: Response) {
@@ -99,61 +86,35 @@ export class ApiError extends Error {
 export function isUnauthorized(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 401;
 }
-
-export function getErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  if (err instanceof Error) return err.message;
-  return "An unexpected error occurred.";
-}
-
-export function getErrorTitle(err: unknown): string | undefined {
-  if (err instanceof ApiError && err.status === 403) return "Permission denied";
-  if (err instanceof ApiError && err.status === 404) return "Not found";
-  if (isUnauthorized(err)) return "Session expired";
-  return undefined;
-}
 ```
 
-These three helpers (`isUnauthorized`, `getErrorMessage`, `getErrorTitle`) are what the MutationCache / QueryCache centralized error handlers use. See `references/async-data.md` for the QueryClient config.
-
-### Extending for domain errors
-
-If a module has structured errors worth distinguishing (e.g., "agent creation failed because of quota"), extend `ApiError`:
-
-```ts
-export class QuotaExceededError extends ApiError { ... }
-```
-
-Throw from the fetcher when the response body matches. Consumers can now `err instanceof QuotaExceededError`.
+Messages for toasts and inline errors come from `getErrorMessage(err, fallback?)` in `src/lib/errors.ts`, which the QueryClient's central error handlers use; status-specific titles (403 "Permission denied", 404 "Not found", 401 "Session expired") belong in one `getErrorTitle(err)` beside it, not at call sites. Distinguish domain errors worth branching on by extending `ApiError` (`class QuotaExceededError extends ApiError`), thrown from the fetcher when the body matches, so consumers can `instanceof`.
 
 ## tRPC
 
-With `@trpc/react-query`, the tRPC layer collapses — procs become hooks directly:
+The tRPC layer collapses into query/mutation options:
 
 ```ts
-const agents = trpc.agents.list.useQuery();
-const createAgent = trpc.agents.create.useMutation({
-  meta: { invalidates: [agentKeys.list()], errorToast: { title: "Couldn't create agent" } },
+const agents = useQuery(trpc.agents.list.queryOptions());
+const createAgent = useMutation({
+  ...trpc.agents.create.mutationOptions(),
+  meta: { invalidates: [trpc.agents.list.queryKey()], errorToast: "Couldn't create agent" },
 });
 ```
 
-For error handling: tRPC throws `TRPCClientError`, which has a `shape` field and a `data` with status info. Extract a helper:
+tRPC throws `TRPCClientError`, carrying `shape` and `data` (with status info). Branch on it with a helper, and route its message through `getErrorMessage` so the app doesn't care whether an error came from tRPC or `fetch`:
 
 ```ts
-// src/api/trpc-errors.ts
 export function isTrpcUnauthorized(err: unknown): boolean {
   return err instanceof TRPCClientError && err.data?.httpStatus === 401;
 }
 ```
 
-Normalize into the common `getErrorMessage` / `getErrorTitle` helpers so the rest of the app doesn't care whether the error came from tRPC or raw fetch.
-
 ## Per-instance clients
 
-When you need per-scope tRPC clients (e.g., one client per runtime instance or authenticated tenant), use a scoped provider:
+For per-scope tRPC clients (one per runtime instance or tenant), provide them through a scoped context:
 
 ```tsx
-// src/modules/instances/contexts/instance-trpc.tsx
 const InstanceTrpcContext = createContext<InstanceTrpc | null>(null);
 
 export function InstanceTrpcProvider({ instanceId, children }: Props) {
@@ -168,30 +129,18 @@ export function useInstanceTrpc() {
 }
 ```
 
-Wrap the scoped subtree in the provider; consumers use `useInstanceTrpc()` and its `.useQuery()` / `.useMutation()` on procs.
+Consumers call `useInstanceTrpc()` and pass its `queryOptions()` / `mutationOptions()` to `useQuery` / `useMutation`.
 
 ## Migrating a fetch-site
 
-Typical legacy shape: a component with `useEffect` + `useState` doing its own fetch, plus ad-hoc error handling.
-
-Target shape:
-- All server calls behind `useXxx` hooks in `modules/{domain}/api/`.
-- Raw `fetch` is confined to `src/api/auth-fetch.ts` and to non-tRPC fetcher functions.
-- Errors flow through `ApiError` + `getErrorMessage` + the MutationCache handler.
-
-Concrete step when you touch a fetch-site:
-1. Identify the domain it belongs to.
-2. Create (or extend) `src/modules/{domain}/api/index.ts` with a typed fetcher.
-3. Create a query or mutation hook under `api/queries/` or `api/mutations/`.
-4. Replace the component's `useEffect` + `useState` with the hook.
+Target: every server call behind a `useXxx` hook in `modules/{domain}/api/`; raw `fetch` only in `src/auth.ts` and non-tRPC fetchers; errors flow through typed errors, `getErrorMessage` and the central handlers. When you touch a component doing `useEffect` + `useState` fetching: find its domain, add a typed fetcher (or use the tRPC procedure), add a query/mutation hook, replace the effect with the hook.
 
 ## Anti-patterns
 
-- **`fetch` inside a component** — move to a fetcher + hook.
-- **`authFetch` inside a component** — same.
-- **Untyped / unvalidated JSON** — run it through Zod.
-- **Returning an error object instead of throwing** — callers can't branch correctly; throw.
-- **Catching and swallowing errors** — unless you truly mean to, `catch {}` is a bug. Let the QueryClient handle it via `onError`.
-- **String-interpolating user input into URLs** — `encodeURIComponent` or use a structured client.
-- **Per-call `try/catch` + `showToast`** — centralize in `meta.errorToast`.
-- **Custom retry/cache logic in a store slice** — TQ owns this.
+- `fetch` or `authFetch` in a component → fetcher + hook.
+- Unvalidated JSON → Zod.
+- Returning an error object → throw.
+- `catch {}` swallowing errors → let the QueryClient's `onError` handle it.
+- User input interpolated into URLs → `encodeURIComponent` or a structured client.
+- Per-call `try/catch` + toast → `meta.errorToast`.
+- Retry/cache logic in a store slice → TQ owns it.
