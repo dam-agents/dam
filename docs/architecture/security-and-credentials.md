@@ -433,8 +433,8 @@ while the user makes a verdict on Home.
 A held request is one pending approval, and identical requests — same
 host, method and path, as a retrying client sends — join it rather than
 filing their own. Each one that joins raises the approval's in-session
-prompt again, to every session attached at that moment, and logs its own
-`egress.hold`: the session that saw the first prompt may be long gone,
+prompt again, to every session attached at that moment, and records its
+own hold in the security log: the session that saw the first prompt may be long gone,
 and a request waiting on a prompt nobody can see would stall the agent
 silently for the whole hold window.
 
