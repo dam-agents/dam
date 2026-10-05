@@ -310,6 +310,15 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   replaces the live one; a subset the installation cannot cover fails the edit
   rather than parking the Connection at its next renewal. Nothing else moves,
   and because the token is read gateway-side the change needs no pod roll.
+- **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret
+  stores the access key ID and secret access key, plus a credentials file
+  baked from them that the gateway's signing step reads. S3 authenticates
+  by signing each request with the secret key, so there is no value to
+  inject: the agent holds a placeholder key ID that names the Connection,
+  and the gateway re-signs its requests with the real pair
+  ([credential-gateway](credential-gateway.md#request-signing)). The pair
+  is proven against the endpoint before it is stored and again at every
+  rotation, and never leaves the gateway pod.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
@@ -326,7 +335,8 @@ private repos works without a credential helper), and the raw-content
 host as a bearer token again.
 
 The Secret also carries the SDS documents Envoy reads, one per injection
-step.
+step — or, for a storage Connection, the credentials file its signing
+step reads.
 
 ## Image pull credentials
 
@@ -396,14 +406,16 @@ must be treated as high-value. The statement audit is best-effort, not enforced
 
 Upstream credentials exist only gateway-side: the controller mounts the
 owner's Secrets into the paired gateway pod, and Envoy there adds each
-credential to the agent's outbound requests on the wire, so the agent pod
-holds placeholders and never Secret bytes. A credentialed host is pinned
+credential to the agent's outbound requests on the wire — injected into a
+header or query parameter, or, for S3-compatible storage, by re-signing
+the request with keys the agent never holds — so the agent pod holds
+placeholders and never Secret bytes. A credentialed host is pinned
 to its upstream, so a request cannot carry a credential to a destination
 of the agent's choosing — the route-confusion exfiltration path is
 structurally closed. The mechanics — L7 promotion, per-host chains,
-injection steps, path rewriting, addressing between Connections, and how
-a bad Secret degrades rather than wedges the gateway — live on
-[credential-gateway](credential-gateway.md).
+injection steps, request signing, path rewriting, addressing between
+Connections, and how a bad Secret degrades rather than wedges the
+gateway — live on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 

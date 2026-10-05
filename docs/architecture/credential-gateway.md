@@ -7,10 +7,12 @@ Last verified: 2026-10-05
 The credential gateway is the Envoy proxy in each Agent's paired gateway
 pod: every HTTPS request the agent makes exits through it, and for the
 hosts the agent's Connections cover it adds the real credential on the
-wire, from Secrets mounted on the gateway pod only. This page owns the
-mechanics of that path — how a host gets an intercepting chain, how
-credentials are injected, and what keeps the gateway bootable when a
-Secret goes bad. The trust model it enforces — who holds credentials, the
+wire — injected into a header or query parameter, or, for S3-compatible
+storage, by signing the request with keys the agent never holds — from
+Secrets mounted on the gateway pod only. This page owns the mechanics of
+that path — how a host gets an intercepting chain, how credentials are
+injected, how requests are signed, and what keeps the gateway bootable
+when a Secret goes bad. The trust model it enforces — who holds credentials, the
 pod and mesh boundaries, and the ext_authz HITL gate every forwarded
 request passes — lives on
 [security-and-credentials](security-and-credentials.md).
@@ -154,9 +156,9 @@ well as host: a route per scope carries only the injectors whose own
 scope covers it. Where a scope is claimed twice, the [per-Connection
 address](connections.md#addressing-a-connection) picks one, by either
 carrier. A Lua step ahead of every other filter on a Connection chain
-reads the address — the path prefix, or the token placeholder in a
-claimed header or query parameter — and marks the request with its
-Connection. An injector skips when the marker names a rival on its
+reads the address — the path prefix, the token placeholder in a
+claimed header or query parameter, or the access key ID of a SigV4
+credential (below) — and marks the request with its Connection. An injector skips when the marker names a rival on its
 header over an overlapping scope; on an Agent requiring addresses,
 unless it names its own Connection, so the request keeps its
 credential. The prefix and marker are dropped on the way upstream. A
@@ -164,3 +166,65 @@ request naming no Connection on a
 contested scope is refused by that same step, not served from whichever
 credential sorted first. The gate reads the path with the prefix
 removed, so egress rules and approvals keep naming real paths.
+
+## Request signing
+
+S3-compatible storage (IBM Cloud Object Storage, AWS S3, MinIO, Ceph)
+authenticates with SigV4: the client signs each request with its secret
+key, and the key itself never travels. There is no header value the
+gateway could swap in, so for a Connection holding an HMAC key pair the
+gateway **re-signs the request** instead of injecting into it. The agent
+holds a placeholder key pair — the Connection's token placeholder as the
+access key ID, a dummy secret ([connections](connections.md#addressing-a-connection))
+— and the real pair exists only in the per-Connection Secret, mounted on
+the gateway pod as a credentials file. On the wire, a request that names
+the Connection leaves with the real key ID, a fresh signature and an
+unsigned payload; a request on the same host naming any other key passes
+byte-for-byte untouched.
+
+On the host's L7 chain a **signing step** sits after the injectors and
+before the forwarding filters, one per Connection with keys for that
+host. It reads the pair from the mounted file only — no fallback to the
+environment, instance metadata or container credentials — and signs the
+request as the upstream will see it: the authority is the upstream host
+itself (with its port when not 443), the address marker is left out of
+the signed headers, and the payload is declared unsigned, so the
+signature covers the request line and headers and the body passes
+through unread. Signing the upstream authority inside the step is what
+makes path-prefix addressing unsupported for these Connections — the
+prefix is stripped after the signature is computed, so the token
+placeholder is their only address.
+
+Both the step and its guard (below) run only for a request naming the
+Connection — the address step reads the access key ID out of a SigV4
+`Authorization` header as it reads a placeholder out of any other claimed
+header — and that gate holds whatever the Agent's require-addresses
+setting says. Everything else on the host passes as it came: a request
+carrying a foreign key, an unsigned one, and the platform's own presigned
+artifact links, which can share an endpoint with a user's bucket. Signers
+never contest a host: two storage Connections on one endpoint, or a
+signer beside a header injector, cut no refusal route and disable
+nothing, since each signs only the requests that name it. A signing
+Connection's path scopes bound its egress rules, not the step.
+
+The signed body has to be plain. A client that streams an upload as
+signed `aws-chunked` with a trailing checksum has produced a signature the
+gateway cannot reproduce, so a guard ahead of the signing step refuses
+such a request with a readable 400 saying the egress gateway, not the
+storage service, refused it, that it re-signs requests and cannot re-sign
+a streaming upload, and which client setting turns streaming off. The
+profiles the platform writes already carry that setting
+([connections](connections.md#app-preset-s3-compatible-storage)), so the
+refusal reaches only a client that overrode them, as its own message
+rather than a signature mismatch from upstream.
+
+Rotation needs no roll: the signing step watches the mounted credentials
+file, and a key pair rewritten in place by the Connections context — after
+it has re-proven the new keys against the endpoint — is in use within
+about a minute, the kubelet's Secret refresh, with the agent's
+placeholders untouched. Adding or removing the credentials file is a
+configuration change and rolls the gateway, as an SDS key appearing or
+vanishing does. A credentials file the descriptor names but the Secret
+lacks, or a signing entry without its region or service, degrades the host
+to allow-only with a warning rather than rendering an unbootable
+gateway — the same answer a missing SDS file gets.
