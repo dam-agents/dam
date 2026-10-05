@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../../lib/agents.js";
+import { openAgentChat, waitForAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
@@ -9,6 +9,7 @@ const host = "postman-echo.com";
 const allowedUrl = `https://${host}/status/204`;
 const uncoveredUrl = `https://${host}/get`;
 const stillGatedUrl = `https://${host}/headers`;
+const chatAnsweredPath = "/ip";
 
 async function fetchStatus(
   api: ApiClient,
@@ -109,5 +110,58 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
     ).toBe(false);
 
     expect(await fetchStatus(api, agentId, stillGatedUrl)).not.toBe(200);
+  });
+});
+
+test("a waiting network approval shows in the open conversation, retries included", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+
+  const token = await getAccessToken();
+  const api = createApiClient(token);
+  const agentId = await waitForAgentRunning(api, agentName);
+  const url = `https://${host}${chatAnsweredPath}`;
+
+  const waitingFor = async (path: string) =>
+    (await api.approvals.listForInstance.query({ agentId })).filter(
+      (a) =>
+        a.status === "pending" &&
+        a.payload.kind === "ext_authz" &&
+        a.payload.path === path,
+    );
+
+  for (const earlier of await api.approvals.listForInstance.query({
+    agentId,
+  })) {
+    if (earlier.status === "pending")
+      await api.approvals.dismiss.mutate({ id: earlier.id });
+  }
+
+  const first = fetchStatus(api, agentId, url);
+  await expect
+    .poll(async () => (await waitingFor(chatAnsweredPath)).length, {
+      timeout: 60_000,
+      message: "the request was not held for approval",
+    })
+    .toBe(1);
+  const retry = fetchStatus(api, agentId, url);
+
+  await test.step("a conversation opened after the hold shows the prompt", async () => {
+    await openAgentChat(page, agentName, agentId);
+    const prompt = page
+      .getByTestId("chat-egress-approval")
+      .filter({ hasText: `GET ${host}${chatAnsweredPath}` });
+    await expect(prompt).toBeVisible({ timeout: 30_000 });
+    expect(await waitingFor(chatAnsweredPath)).toHaveLength(1);
+
+    await prompt.getByRole("button", { name: "Allow once" }).click();
+    await expect(prompt).toBeHidden({ timeout: 30_000 });
+  });
+
+  await test.step("answering in the chat releases the waiting requests", async () => {
+    expect(await first).toBe(200);
+    expect(await retry).toBe(200);
+    expect(await waitingFor(chatAnsweredPath)).toHaveLength(0);
   });
 });
