@@ -19,6 +19,7 @@
 #   mise run image:resolve -- list-workloads            -> the claude-code-derived workload components
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
+#   mise run image:resolve -- list-third-party           -> every third-party image ref the chart runs (security.yml scans them too)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- tar-path <component>       -> where its :oci task writes its image tar
 #   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
@@ -65,6 +66,20 @@ IMAGES="controller ui api-server keycloak vm-runner"
 # names its image directly and its tag has to be pinned the same way a
 # Template's is.
 PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
+
+# Every non-empty `image`/`*Image` string and repository+tag/digest pair in the
+# chart values, plus the mirror's copies. Our own images have no tag there.
+# Ceiling: images only cluster:install deploys (the dev cluster's add-ons) are
+# not listed.
+third_party() {
+  {
+    yq -r '.. | select(tag == "!!map") | (
+      (to_entries[] | select((.key | test("(^i|I)mage$")) and (.value | tag) == "!!str" and .value != "") | .value),
+      (select((.repository // "") != "" and (.tag // "") != "") | .repository + ":" + .tag),
+      (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml
+    sed -n '/^MIRRORS="/,/^"$/{/:/s|.*/|'"$IMAGE_PREFIX"'/|p;}' .mise/tasks/image/mirror
+  } | sort -u
+}
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -198,6 +213,10 @@ self_check() {
   has "$(effective_paths vm-runner)" packages/vm-runner
   has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner
+  has "$(third_party)" mirror.gcr.io/envoyproxy/envoy:
+  has "$(third_party)" ghcr.io/squat/generic-device-plugin@sha256:
+  has "$(third_party)" "$IMAGE_PREFIX/clickhouse-operator:"
+  case "$(third_party)" in *"$IMAGE_PREFIX/controller"*) echo "FAIL: own image in third_party" >&2; f=1 ;; esac
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
   has "$(effective_paths k-search)" packages/agents/claude-code
@@ -241,8 +260,9 @@ case "${1:-}" in
   list-workloads) echo $WORKLOADS ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
+  list-third-party) third_party ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac
