@@ -746,9 +746,6 @@ importers:
       dev-config:
         specifier: workspace:*
         version: link:../dev-config
-      playwright:
-        specifier: ^1.63.0
-        version: 1.63.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
