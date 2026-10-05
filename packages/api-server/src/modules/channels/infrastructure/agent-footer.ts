@@ -139,24 +139,26 @@ function replyRange(first: number, last: number): string {
 
 export function threadWindowMarker(window: {
   threadTs: string;
-  repliesBefore: number;
-  first: number;
-  last: number;
+  hasEarlier: boolean;
   cursor: string | null;
-}): string {
-  const shown = `Below: ${replyRange(window.first, window.last)}.`;
-  if (window.repliesBefore === 0) return `[${shown}]`;
+  shown: { repliesBefore: number; first: number; last: number } | null;
+}): string | null {
+  const { shown } = window;
   const reach =
     window.cursor === null
-      ? "."
+      ? ""
       : `; read them with ${OUTBOUND_TOOL_PREFIX}read_thread, threadTs ` +
-        `"${window.threadTs}", cursor "${window.cursor}".`;
-  return `[Not shown: ${replyRange(1, window.repliesBefore)}${reach} ${shown}]`;
+        `"${window.threadTs}", cursor "${window.cursor}"`;
+  const parts = [
+    ...(window.hasEarlier
+      ? [
+          `Not shown: ${shown && shown.repliesBefore > 0 ? replyRange(1, shown.repliesBefore) : "earlier replies"}${reach}.`,
+        ]
+      : []),
+    ...(shown ? [`Below: ${replyRange(shown.first, shown.last)}.`] : []),
+  ];
+  return parts.length > 0 ? `[${parts.join(" ")}]` : null;
 }
-
-export const THREAD_NEWEST_UNREAD =
-  "[Newer replies are not shown: this thread is longer than one read " +
-  "reaches, so the last line above is not its end.]";
 
 export function historyLegend(
   canLookupUsers: boolean,
