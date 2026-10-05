@@ -124,14 +124,10 @@ describe("parseControl", () => {
       type: "resize",
       width: 900,
       height: 640,
-      scale: 1,
     });
     expect(
       parseControl('{"type":"resize","width":900,"height":640,"scale":2}'),
-    ).toEqual({ type: "resize", width: 900, height: 640, scale: 2 });
-    expect(
-      parseControl('{"type":"resize","width":900,"height":640,"scale":8}'),
-    ).toBeNull();
+    ).toEqual({ type: "resize", width: 900, height: 640 });
     expect(
       parseControl('{"type":"resize","width":10,"height":640}'),
     ).toBeNull();
@@ -204,7 +200,7 @@ describe("browser preview", () => {
     expect(calls).toEqual([["stream", "status", "--json"]]);
   });
 
-  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
+  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is always set at scale 1, whatever the panel sends, so a screenshot pixel is a CSS pixel for the agent's mouse commands, independent of the user's zoom. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
   it("handles control messages itself", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
@@ -228,7 +224,7 @@ describe("browser preview", () => {
     expect(calls).toContainEqual(["reload"]);
     expect(calls).toContainEqual(["back"]);
     expect(calls).toContainEqual(["forward"]);
-    expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
+    expect(calls).toContainEqual(["set", "viewport", "900", "640", "1"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
     expect(JSON.parse(messages.at(-1) as string)).toMatchObject({
       type: "preview_error",

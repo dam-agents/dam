@@ -11,16 +11,10 @@ const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
-const SCALE_MIN = 1;
-const SCALE_MAX = 3;
-
 const viewportSide = (v: unknown): v is number =>
   Number.isInteger(v) &&
   (v as number) >= VIEWPORT_MIN &&
   (v as number) <= VIEWPORT_MAX;
-
-const viewportScale = (v: unknown): v is number =>
-  typeof v === "number" && v >= SCALE_MIN && v <= SCALE_MAX;
 
 export type PreviewControl =
   | { type: "navigate"; url: string }
@@ -28,7 +22,7 @@ export type PreviewControl =
   | { type: "back" }
   | { type: "forward" }
   | { type: "clear_data" }
-  | { type: "resize"; width: number; height: number; scale: number };
+  | { type: "resize"; width: number; height: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
@@ -58,7 +52,7 @@ export function parseControl(data: string): PreviewControl | null {
     return null;
   }
   if (typeof msg !== "object" || msg === null) return null;
-  const { type, url, width, height, scale } = msg as Record<string, unknown>;
+  const { type, url, width, height } = msg as Record<string, unknown>;
   if (
     type === "reload" ||
     type === "back" ||
@@ -67,10 +61,8 @@ export function parseControl(data: string): PreviewControl | null {
   )
     return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
-  if (type === "resize" && viewportSide(width) && viewportSide(height)) {
-    if (scale === undefined) return { type, width, height, scale: 1 };
-    return viewportScale(scale) ? { type, width, height, scale } : null;
-  }
+  if (type === "resize" && viewportSide(width) && viewportSide(height))
+    return { type, width, height };
   return null;
 }
 
@@ -161,7 +153,7 @@ export function createBrowserPreview(deps: {
         "viewport",
         String(msg.width),
         String(msg.height),
-        String(msg.scale),
+        "1",
       ]);
     } else {
       await deps.run(["close"]).catch(() => "");

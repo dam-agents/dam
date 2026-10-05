@@ -84,11 +84,7 @@ export function useBrowserStream(
       if (!canvas) return;
       send({
         type: "resize",
-        ...viewportFor(
-          canvas.clientWidth,
-          canvas.clientHeight,
-          window.devicePixelRatio,
-        ),
+        ...viewportFor(canvas.clientWidth, canvas.clientHeight),
       });
     };
     const resizeObserver = new ResizeObserver(() => {

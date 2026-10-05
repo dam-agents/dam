@@ -170,18 +170,13 @@ export function addressUrl(raw: string): string | null {
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
-const SCALE_MIN = 1;
-const SCALE_MAX = 3;
-
 export function viewportFor(
   width: number,
   height: number,
-  pixelRatio: number,
-): { width: number; height: number; scale: number } {
+): { width: number; height: number } {
   const side = (v: number) =>
     Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, Math.round(v)));
-  const scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, pixelRatio || 1));
-  return { width: side(width), height: side(height), scale };
+  return { width: side(width), height: side(height) };
 }
 
 export interface BinaryFrame {
