@@ -535,22 +535,20 @@ CERT_MANAGER_PID=$!
 
 # 2b. Install Istio ambient + Gateway-API CRDs (required).
 # Istio 1.29.x is the floor for ambient L7 with locked-down waypoint HCM; the
-# Kubernetes 1.36 that k3s runs needs Istio 1.30 or later.
+# Kubernetes 1.37 that k3s runs needs Istio 1.31 or later.
 # Pinned: Gateway API standard channel, at exactly the bundle k3s's own
-# `traefik-crd` chart ships (v1.5.1 in k3s v1.36.4, Traefik chart v40). That
-# chart owns these CRDs too and rewrites them to its bundle whenever its job
-# runs. Since v1.5 the bundle also installs the cluster-scoped safe-upgrades
+# `gateway-api-crd` chart ships (v1.6.1 in k3s v1.37.0). That chart owns these
+# CRDs too (it takes ownership of ones applied without Helm metadata, like
+# ours) and rewrites them to its bundle whenever its job runs. Since v1.5 the
+# bundle also installs the cluster-scoped safe-upgrades
 # ValidatingAdmissionPolicy and its binding, which deny any CRD older than the
-# policy's floor (v1.5.0 here) and experimental over standard CRDs. So a newer
-# pin does not stick either: v1.6.0's policy denies the rewrite down to v1.5.1,
-# the `traefik-crd` job fails, and Traefik never installs. Traefik v40's own
-# install also checks for the v1 BackendTLSPolicy, ListenerSet, ReferenceGrant
-# and TLSRoute kinds, which the old v1.2.0 pin lacked. Move this pin with k3s.
-# The waypoint below needs only Gateway v1; Istio 1.31 wants v1.5.0+ for TLSRoute
-# and v1.6.0+ for TCPRoute, neither of which the platform uses. Server-side
+# policy's floor (v1.6.0 here) and experimental over standard CRDs. So a newer
+# pin does not stick either: a newer policy denies the rewrite down to the
+# k3s bundle, the `gateway-api-crd` job fails, and the CRDs stay unmanaged.
+# Move this pin with k3s. The waypoint below needs only Gateway v1. Server-side
 # apply: the HTTPRoute CRD comes within a few KiB of the limit on client-side
 # apply's last-applied annotation.
-GATEWAY_API_VERSION="v1.5.1"
+GATEWAY_API_VERSION="v1.6.1"
 
 if ! kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
@@ -558,27 +556,6 @@ if ! kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
 else
   echo "Gateway API CRDs already installed"
 fi
-
-# k3s bundles Traefik (chart v40+), whose `traefik-crd` chart also ships the
-# Gateway API CRDs. We install those out-of-band above (for Istio) via plain
-# `kubectl apply`, so they carry no Helm ownership metadata — and the
-# `traefik-crd` Helm job then dies with "invalid ownership metadata" and
-# Traefik never installs, leaving nothing on the ingress port. Stamp the
-# ownership the `traefik-crd` release expects so it adopts them on its next
-# reconcile. Idempotent, and covers both install orders (whichever of the k3s
-# Traefik bootstrap vs. this CRD apply wins the race).
-echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
-# One call each for every CRD of the standard bundle: kubectl still stamps
-# the rest when one is missing.
-GATEWAY_CRDS=()
-for crd in backendtlspolicies gatewayclasses gateways grpcroutes httproutes listenersets referencegrants tlsroutes; do
-  GATEWAY_CRDS+=("$crd.gateway.networking.k8s.io")
-done
-kubectl label crd "${GATEWAY_CRDS[@]}" \
-  app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-kubectl annotate crd "${GATEWAY_CRDS[@]}" \
-  meta.helm.sh/release-name=traefik-crd meta.helm.sh/release-namespace=kube-system \
-  --overwrite >/dev/null 2>&1 || true
 
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 # Install-only path. Avoids helm upgrade conflicts with istiod, which
@@ -782,7 +759,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: watchdog
-              image: mirror.gcr.io/alpine/k8s:1.36.4
+              image: mirror.gcr.io/alpine/k8s:1.37.1
               command:
                 - sh
                 - -c
@@ -862,14 +839,31 @@ done
 # images stay upstream). The MongoDB operator
 # defaults to watching only its own namespace, so it must be pointed at the release ns
 # (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
+# The two operator charts install directly, not through the clickstack-operators umbrella
+# chart: its latest (1.1.0) pins them at 0.0.7 and 1.7.0, whose RBAC newer operator
+# images outgrow. The MongoDB image runs a patch past its chart (no 1.12.1 chart).
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
-  helm upgrade --install clickstack-operators clickstack/clickstack-operators \
-    --version 1.1.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
-    --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
-    --set clickhouse-operator.manager.image.tag=v0.0.7 \
-    --set mongodb-operator.registry.operator=quay.io/dam-agents \
-    --set mongodb-operator.operator.watchNamespace=default
+  # A cluster installed with the umbrella: its CRDs outlive the uninstall (resource-policy
+  # keep, crds/), so the CRs and their data survive, and --take-ownership adopts them.
+  if helm status clickstack-operators --namespace clickstack-operators >/dev/null 2>&1; then
+    helm uninstall clickstack-operators --namespace clickstack-operators --wait
+  fi
+  helm upgrade --install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+    --version 0.0.8 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
+    --take-ownership \
+    --set webhook.enabled=false \
+    --set certManager.enabled=false \
+    --set manager.image.repository=quay.io/dam-agents/clickhouse-operator \
+    --set manager.image.tag=v0.0.8
+  helm upgrade --install mongodb-operator mongodb-kubernetes \
+    --repo https://mongodb.github.io/helm-charts \
+    --version 1.12.0 --namespace clickstack-operators --wait --timeout 5m \
+    --take-ownership \
+    --set registry.operator=quay.io/dam-agents \
+    --set operator.version=1.12.1 \
+    --set operator.watchNamespace=default \
+    --set 'operator.watchedResources={mongodbcommunity}'
   kubectl wait --for=condition=Established --timeout=120s \
     crd/clickhouseclusters.clickhouse.com \
     crd/keeperclusters.clickhouse.com \

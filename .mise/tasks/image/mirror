@@ -43,8 +43,8 @@ mirror.gcr.io/hyperdx/hyperdx:2.39.1
 mirror.gcr.io/clickhouse/clickhouse-server:26.8-alpine
 mirror.gcr.io/clickhouse/clickhouse-keeper:26.8-alpine
 mirror.gcr.io/library/busybox:1.38.0
-ghcr.io/clickhouse/clickhouse-operator:v0.0.7
-quay.io/mongodb/mongodb-kubernetes:1.7.0
+ghcr.io/clickhouse/clickhouse-operator:v0.0.8
+quay.io/mongodb/mongodb-kubernetes:1.12.1
 "
 
 copied=0

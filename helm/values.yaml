@@ -657,7 +657,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.47
+  image: docker.io/chrislusf/seaweedfs:4.48
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
