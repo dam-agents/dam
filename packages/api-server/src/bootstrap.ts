@@ -592,6 +592,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,

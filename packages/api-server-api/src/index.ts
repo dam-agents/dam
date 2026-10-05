@@ -310,6 +310,7 @@ export {
   AWS_CREDENTIALS_FILE_PATH,
   AWS_PROFILE_ENV,
   awsProfiles,
+  awsProfileSlug,
   composeAwsProfiles,
   signingTargetOf,
 } from "./modules/connections/aws-profiles.js";
