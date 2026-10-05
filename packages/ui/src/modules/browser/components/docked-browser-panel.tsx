@@ -1,0 +1,265 @@
+import {
+  Close,
+  ErrorFilled,
+  Globe,
+  OverflowMenuVertical,
+  Renew,
+} from "@carbon/icons-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+
+import {
+  readPersistedFlag,
+  writePersistedFlag,
+} from "../../../lib/persisted-prefs.js";
+import { useStore } from "../../../store.js";
+import { useBrowserStream } from "../hooks/use-browser-stream.js";
+import {
+  devicePoint,
+  keyboardInput,
+  modifiers,
+  mouseButton,
+} from "../lib/stream.js";
+
+const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
+
+interface Props {
+  agentId: string;
+  agentName: string;
+}
+
+export function DockedBrowserPanel({ agentId, agentName }: Props) {
+  const close = useStore((s) => s.setOpenBrowser);
+  const showConfirm = useStore((s) => s.showConfirm);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stream = useBrowserStream(agentId, canvasRef);
+  const [address, setAddress] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [noticeSeen, setNoticeSeen] = useState(() =>
+    readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
+  );
+
+  useEffect(() => {
+    if (!editing)
+      setAddress(stream.pageUrl === "about:blank" ? "" : stream.pageUrl);
+  }, [stream.pageUrl, editing]);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const raw = address.trim();
+    if (!raw) return;
+    stream.navigate(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `http://${raw}`);
+    setEditing(false);
+    canvasRef.current?.focus();
+  };
+
+  const clearData = async () => {
+    const ok = await showConfirm(
+      "Sign-ins, cookies and site data stored in this agent's browser are deleted.",
+      "Clear browser data?",
+      { confirmLabel: "Clear" },
+    );
+    if (ok) stream.clearData();
+  };
+
+  const pointer = (
+    e:
+      | React.PointerEvent<HTMLCanvasElement>
+      | React.WheelEvent<HTMLCanvasElement>,
+  ) => {
+    const device = stream.device();
+    if (!device) return null;
+    return devicePoint(
+      e.clientX,
+      e.clientY,
+      e.currentTarget.getBoundingClientRect(),
+      {
+        width: device.deviceWidth,
+        height: device.deviceHeight,
+      },
+    );
+  };
+
+  const sendMouse = (
+    eventType: "mousePressed" | "mouseReleased" | "mouseMoved",
+    e: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
+    const at = pointer(e);
+    if (!at) return;
+    stream.send(
+      {
+        type: "input_mouse",
+        eventType,
+        ...at,
+        button:
+          eventType === "mouseMoved" && e.buttons === 0
+            ? "none"
+            : mouseButton(e.button),
+        clickCount: eventType === "mouseMoved" ? 0 : 1,
+        modifiers: modifiers(e),
+      },
+      eventType === "mousePressed",
+    );
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+        <span
+          aria-hidden
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
+        >
+          <Globe size={13} />
+        </span>
+        <form onSubmit={submit} className="min-w-0 flex-1">
+          <Input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            onFocus={() => setEditing(true)}
+            onBlur={() => setEditing(false)}
+            placeholder="localhost:3000"
+            aria-label="Address in the agent's browser"
+            className="h-8 font-mono text-xs"
+          />
+        </form>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Reload"
+          onClick={stream.reload}
+        >
+          <Renew size={16} />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Browser actions">
+              <OverflowMenuVertical size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
+              Clear browser data
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close"
+          onClick={() => close(null)}
+        >
+          <Close size={16} />
+        </Button>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">
+          Runs in {agentName}'s sandbox — not a page from this site
+        </span>
+        <span
+          className="shrink-0 tabular-nums"
+          title="Time from your click or key to the next frame, and frames per second"
+        >
+          {stream.stats.roundTripMs === null
+            ? "–"
+            : `${stream.stats.roundTripMs} ms`}
+          {" · "}
+          {stream.stats.fps} fps
+        </span>
+      </div>
+
+      {!noticeSeen && (
+        <Callout
+          tone="info"
+          size="sm"
+          className="m-3 mb-0 flex items-start gap-3 text-xs"
+        >
+          <span className="flex-1">
+            Sign-ins made here are stored in this agent, and the agent can use
+            them. Clear them any time from the browser menu.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              writePersistedFlag(SIGN_IN_NOTICE_KEY, true);
+              setNoticeSeen(true);
+            }}
+          >
+            Got it
+          </Button>
+        </Callout>
+      )}
+
+      {stream.error && (
+        <p className="px-4 pt-2 text-xs text-danger">{stream.error}</p>
+      )}
+
+      <div className="relative min-h-0 flex-1 bg-muted/30">
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          aria-label={`Browser in ${agentName}'s sandbox`}
+          className="h-full w-full object-contain outline-none"
+          onPointerDown={(e) => {
+            e.currentTarget.focus();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            sendMouse("mousePressed", e);
+          }}
+          onPointerUp={(e) => sendMouse("mouseReleased", e)}
+          onPointerMove={(e) => sendMouse("mouseMoved", e)}
+          onWheel={(e) => {
+            const at = pointer(e);
+            if (!at) return;
+            stream.send(
+              {
+                type: "input_mouse",
+                eventType: "mouseWheel",
+                ...at,
+                deltaX: e.deltaX,
+                deltaY: e.deltaY,
+              },
+              true,
+            );
+          }}
+          onKeyDown={(e) => {
+            e.preventDefault();
+            stream.send(keyboardInput("keyDown", e), true);
+          }}
+          onKeyUp={(e) => {
+            e.preventDefault();
+            stream.send(keyboardInput("keyUp", e));
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        />
+        {stream.state === "connecting" && (
+          <div className="absolute inset-0 flex items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">
+            <Spinner size={18} />
+            Starting the agent's browser…
+          </div>
+        )}
+        {stream.state === "disconnected" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 text-center">
+            <ErrorFilled size={24} className="text-danger" />
+            <p className="text-sm text-muted-foreground">
+              The connection to the agent's browser closed.
+            </p>
+            <Button variant="outline" onClick={stream.reconnect}>
+              Reconnect
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

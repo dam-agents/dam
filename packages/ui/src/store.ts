@@ -6,6 +6,10 @@ import {
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
 import {
+  type BrowserSlice,
+  createBrowserSlice,
+} from "./modules/browser/store.js";
+import {
   createFeaturesSlice,
   type FeaturesSlice,
 } from "./modules/features/store.js";
@@ -54,6 +58,7 @@ export type PlatformStore = DialogSlice &
   FilesSlice &
   ArtifactsSlice &
   InvocationsSlice &
+  BrowserSlice &
   FeaturesSlice &
   PermissionsSlice;
 
@@ -67,6 +72,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createInvocationsSlice(...a),
+  ...createBrowserSlice(...a),
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
 }));

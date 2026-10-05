@@ -50,6 +50,7 @@ export const createArtifactsSlice: StateCreator<
             openFilePath: null,
             openFileDirty: false,
             openDelegation: null,
+            openBrowserAgentId: null,
           }
         : {
             openArtifactId: id,

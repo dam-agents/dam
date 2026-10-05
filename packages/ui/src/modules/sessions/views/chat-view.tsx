@@ -76,6 +76,7 @@ import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -193,6 +194,10 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const openBrowserAgentId = useStore((s) =>
+    s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
+  );
+  const setOpenBrowser = useStore((s) => s.setOpenBrowser);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
@@ -271,7 +276,8 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const features = useFeatures().data;
+  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
   const delegationOwners = useDelegationOwners(messages);
   const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
@@ -497,6 +503,9 @@ export function ChatView() {
 
   const canShareKnowledge =
     agentView !== null && sharesKnowledgeBase(agentView);
+  const canOpenBrowser =
+    features?.["strict-connection-addressing"] === true &&
+    agentView?.requireConnectionAddress === true;
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -622,6 +631,13 @@ export function ChatView() {
                 {canShareKnowledge && (
                   <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
                     Share knowledge base
+                  </DropdownMenuItem>
+                )}
+                {canOpenBrowser && selectedAgent && (
+                  <DropdownMenuItem
+                    onSelect={() => setOpenBrowser(selectedAgent)}
+                  >
+                    Open browser
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onSelect={handleRestartSandbox}>
@@ -893,7 +909,10 @@ export function ChatView() {
         </div>
 
         {}
-        {(openDelegation || openFilePath || openArtifactId) && (
+        {(openDelegation ||
+          openFilePath ||
+          openArtifactId ||
+          (openBrowserAgentId && canOpenBrowser)) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -924,7 +943,13 @@ export function ChatView() {
                 "md:border-l md:border-border",
               )}
             >
-              {openDelegation ? (
+              {openBrowserAgentId && canOpenBrowser ? (
+                <DockedBrowserPanel
+                  key={openBrowserAgentId}
+                  agentId={openBrowserAgentId}
+                  agentName={selectedAgentName ?? openBrowserAgentId}
+                />
+              ) : openDelegation ? (
                 <DockedDelegationPanel
                   key={openDelegation.id}
                   driverAgentId={openDelegation.driverAgentId}
