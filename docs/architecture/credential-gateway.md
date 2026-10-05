@@ -204,15 +204,31 @@ carrying a foreign key, an unsigned one, and the platform's own presigned
 artifact links, which can share an endpoint with a user's bucket. Signers
 never contest a host: two storage Connections on one endpoint, or a
 signer beside a header injector, cut no refusal route and disable
-nothing, since each signs only the requests that name it. A signing
-Connection's path scopes bound its egress rules, not the step.
+nothing, since each signs only the requests that name it.
+
+Signing is bounded by the Connection's bucket. The egress rules are the
+Agent's, not the Connection's: a storage Connection limited to one bucket
+beside another on the same endpoint with none would see a request naming
+it on a sibling bucket admitted by the wider Connection's rules. So a
+**guard** ahead of each signing step carries its own Connection's path
+scopes — the same `/<bucket>`, `/<bucket>?…` and `/<bucket>/…` patterns
+its egress rules use — and refuses a request naming the Connection on any
+other path with a readable 403 that says the egress gateway, not the
+storage service, refused it, which paths the Connection is limited to,
+and that the request was not signed. It matches the path as sent, the
+way the egress rule does — no decoding, no dot-segment folding, the
+bucket as the whole first segment, so `/<bucket>x` is outside — after
+stripping a path-prefix address as the rule check does. A Connection
+without a bucket keeps signing the whole host, and the key's upstream
+role is the limit there.
 
 The signed body has to be plain. A client that streams an upload as
-signed `aws-chunked` with a trailing checksum has produced a signature the
-gateway cannot reproduce, so a guard ahead of the signing step refuses
-such a request with a readable 400 saying the egress gateway, not the
-storage service, refused it, that it re-signs requests and cannot re-sign
-a streaming upload, and which client setting turns streaming off. The
+`aws-chunked` — a `STREAMING-` content hash, signed or unsigned, with a
+trailing checksum — has produced a body the gateway cannot re-sign, so
+the same guard refuses such a request with a readable 400 saying the
+egress gateway, not the storage service, refused it, that it re-signs
+requests and cannot re-sign a streaming upload, and which client setting
+turns streaming off. The
 profiles the platform writes already carry that setting
 ([connections](connections.md#app-preset-s3-compatible-storage)), so the
 refusal reaches only a client that overrode them, as its own message

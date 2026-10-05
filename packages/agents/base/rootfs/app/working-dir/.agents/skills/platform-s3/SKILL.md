@@ -1,7 +1,7 @@
 ---
 name: platform-s3
 description: >
-  Use before reading or writing an S3-compatible bucket (IBM Cloud Object Storage, AWS S3, MinIO, Ceph) inside a Platform agent pod, and whenever an S3 request fails with a signature error or a 400 from the egress gateway. Covers how S3 keys work here (the gateway signs every request, so the keys you hold are placeholders), which buckets this agent holds (`grep '^\[' ~/.aws/credentials`), how to pick one (`AWS_PROFILE`, `--profile`), how to install a client on demand (`uv tool install awscli`, `uv pip install boto3`), what the gateway's STREAMING refusal means, and what does not work (presigned URLs, rclone, minio-go).
+  Use before reading or writing an S3-compatible bucket (IBM Cloud Object Storage, AWS S3, MinIO, Ceph) inside a Platform agent pod, and whenever an S3 request fails with a signature error or a 400 or 403 from the egress gateway. Covers how S3 keys work here (the gateway signs every request, so the keys you hold are placeholders), which buckets this agent holds (`grep '^\[' ~/.aws/credentials`), how to pick one (`AWS_PROFILE`, `--profile`), how to install a client on demand (`uv tool install awscli`, `uv pip install boto3`), what the gateway's STREAMING and out-of-bucket refusals mean, and what does not work (presigned URLs, rclone, minio-go).
 ---
 
 You are running inside a Platform agent pod. S3 keys never reach you: the network gateway re-signs every request with the real HMAC key pair on the way out. What you hold in `~/.aws/credentials` is a placeholder access key ID such as `platform:conn:<id>` and a dummy secret key. The placeholder names a Connection, and it is safe to pass around inside the pod.
@@ -42,6 +42,7 @@ Both read the profiles as they are. Always address buckets by name, never by sub
 ## When the gateway refuses a request
 
 - A 400 whose body says the gateway re-signs requests and cannot re-sign a streaming upload: the client sent an `aws-chunked` body with a trailing checksum, which cannot be re-signed. The profiles the platform writes already set `request_checksum_calculation = when_required`, which prevents it. You see this only when a client ignored the profile, usually because `AWS_REQUEST_CHECKSUM_CALCULATION`, a key env or a hand-built config overrides it. Remove the override; do not retry with other keys.
+- A 403 whose body says the storage connection is limited to a bucket: the request named a bucket outside the one the Connection was created for, and the gateway did not sign it. Use that bucket, or another profile whose Connection covers the path. The platform user chose the bucket; report it, do not work around it.
 - `SignatureDoesNotMatch` or `InvalidAccessKeyId` from the endpoint itself means the request never named a Connection the gateway could sign for. Send it through a platform profile with its placeholder as the access key ID.
 - `AccessDenied` is the key's own permission limit on the endpoint. The platform user chose the keys; report it, do not work around it.
 

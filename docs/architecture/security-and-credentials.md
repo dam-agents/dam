@@ -318,7 +318,8 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   and the gateway re-signs its requests with the real pair
   ([credential-gateway](credential-gateway.md#request-signing)). The pair
   is proven against the endpoint before it is stored and again at every
-  rotation, and never leaves the gateway pod.
+  rotation, and never reaches the agent pod: only the api-server, which
+  proves it, and the gateway, which signs with it, ever hold it.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per

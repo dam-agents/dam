@@ -392,7 +392,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	}
 	for _, signer := range c.Signers {
 		filters = append(filters,
-			skippedUnlessAddressed(streamingGuardHTTPFilter(signer), "envoy.filters.http.lua", signer.ConnectionID),
+			skippedUnlessAddressed(signingGuardHTTPFilter(c, signer), "envoy.filters.http.lua", signer.ConnectionID),
 			skippedUnlessAddressed(requestSigningHTTPFilter(p, c, signer), "envoy.filters.http.aws_request_signing", signer.ConnectionID),
 		)
 	}
@@ -400,12 +400,12 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	return filters
 }
 
-func streamingGuardHTTPFilter(signer envoySigner) ev {
+func signingGuardHTTPFilter(c envoyHostChain, signer envoySigner) ev {
 	return ev{
 		"name": signer.GuardFilterName(),
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
-			"default_source_code": ev{"inline_string": luaStreamingGuardScript},
+			"default_source_code": ev{"inline_string": luaSigningGuardScript(c, signer)},
 		},
 	}
 }
@@ -441,15 +441,74 @@ const streamingRefusedBody = "This request was refused by the egress gateway, no
 	"The gateway re-signs requests to this storage account with the account's own keys, and it cannot re-sign a streaming (aws-chunked) upload: the signature must cover a plain body.\n" +
 	"Set request_checksum_calculation = when_required in the client's AWS profile (or AWS_REQUEST_CHECKSUM_CALCULATION=when_required in its environment) and retry.\n"
 
-var luaStreamingGuardScript = fmt.Sprintf(`local PREFIX = %s
-local BODY = %s
+func outOfScopeRefusedBody(c envoyHostChain, signer envoySigner) string {
+	if signer.HostWide() {
+		return ""
+	}
+	return fmt.Sprintf(
+		"This request was refused by the egress gateway, not by the storage service.\n"+
+			"The storage connection %s is limited to %s on %s, and this request's path is outside that, so the gateway did not sign it with the connection's keys.\n"+
+			"Use the bucket this connection was created for, or send the request through the profile of a connection that covers this path.\n",
+		signer.ConnectionID, strings.Join(signer.PathPatterns, ", "), c.Host)
+}
+
+func luaPatternEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune("^$()%.[]*+-?", r) {
+			b.WriteByte('%')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func luaGlobPattern(glob string) string {
+	pieces := strings.Split(glob, "*")
+	for i, piece := range pieces {
+		pieces[i] = luaPatternEscape(piece)
+	}
+	return "^" + strings.Join(pieces, ".*") + "$"
+}
+
+func luaAddressedPathPattern() string {
+	return "^" + luaPatternEscape("/"+connectionEgressPathSegment+"/") + "[%w%._~%-]+(/.*)$"
+}
+
+func luaSigningGuardScript(c envoyHostChain, signer envoySigner) string {
+	patterns := make([]string, 0, len(signer.PathPatterns))
+	for _, p := range signer.PathPatterns {
+		patterns = append(patterns, luaGlobPattern(p))
+	}
+	return "local PATTERNS = " + luaStringList(patterns) + "\n" +
+		"local SCOPE_BODY = " + strconv.Quote(outOfScopeRefusedBody(c, signer)) + "\n" +
+		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
+		"local PREFIX = " + strconv.Quote(streamingPayloadPrefix) + "\n" +
+		"local BODY = " + strconv.Quote(streamingRefusedBody) + "\n" +
+		luaSigningGuardBody
+}
+
+const luaSigningGuardBody = `local function path_in_scope(path)
+  if #PATTERNS == 0 then return true end
+  local rest = string.match(path, ADDRESSED_PATH)
+  if rest ~= nil then path = rest end
+  for _, pattern in ipairs(PATTERNS) do
+    if string.find(path, pattern) ~= nil then return true end
+  end
+  return false
+end
 function envoy_on_request(rh)
-  local sha = rh:headers():get("x-amz-content-sha256")
+  local h = rh:headers()
+  if not path_in_scope(h:get(":path") or "/") then
+    rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, SCOPE_BODY)
+    return
+  end
+  local sha = h:get("x-amz-content-sha256")
   if sha ~= nil and string.sub(sha, 1, #PREFIX) == PREFIX then
     rh:respond({[":status"] = "400", ["content-type"] = "text/plain"}, BODY)
   end
 end
-`, strconv.Quote(streamingPayloadPrefix), strconv.Quote(streamingRefusedBody))
+`
 
 func buildChainForwardRoutes(c envoyHostChain) []any {
 	var routes []any

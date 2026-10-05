@@ -86,6 +86,7 @@ type envoySigner struct {
 	CredentialsKey string
 	Region         string
 	Service        string
+	PathPatterns   []string
 }
 
 func (s envoySigner) FilterName() string {
@@ -93,8 +94,10 @@ func (s envoySigner) FilterName() string {
 }
 
 func (s envoySigner) GuardFilterName() string {
-	return "streaming_guard_" + s.SecretName + "_" + shortHash(s.CredentialsKey)
+	return "signing_guard_" + s.SecretName + "_" + shortHash(s.CredentialsKey)
 }
+
+func (s envoySigner) HostWide() bool { return len(s.PathPatterns) == 0 }
 
 const awsCredentialsProfile = "default"
 
@@ -495,7 +498,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 				continue
 			}
 			seenSigner[key] = struct{}{}
-			out = append(out, hostCredential{host: e.Host, opts: opts, signer: signerFor(s, e)})
+			out = append(out, hostCredential{host: e.Host, opts: opts, signer: signerFor(s, entries, e)})
 			continue
 		}
 		header := e.HeaderName
@@ -544,7 +547,28 @@ func upstreamCAFile(s corev1.Secret, e connectionHostInjection) string {
 	return ""
 }
 
-func signerFor(s corev1.Secret, e connectionHostInjection) *envoySigner {
+func hostWidePathPattern(pathPattern string) bool {
+	p := strings.TrimSpace(pathPattern)
+	return p == "" || p == "*" || p == "/" || p == "/*"
+}
+
+func signerPathPatterns(entries []connectionHostInjection, host, credentialsKey string) []string {
+	var patterns []string
+	for _, e := range entries {
+		if e.Signing == nil || e.Host != host || e.Signing.CredentialsKey != credentialsKey {
+			continue
+		}
+		if hostWidePathPattern(e.PathPattern) {
+			return nil
+		}
+		if p := strings.TrimSpace(e.PathPattern); !slices.Contains(patterns, p) {
+			patterns = append(patterns, p)
+		}
+	}
+	return patterns
+}
+
+func signerFor(s corev1.Secret, entries []connectionHostInjection, e connectionHostInjection) *envoySigner {
 	key := e.Signing.CredentialsKey
 	switch {
 	case key == "" || unsafeDataKey(key):
@@ -567,6 +591,7 @@ func signerFor(s corev1.Secret, e connectionHostInjection) *envoySigner {
 		CredentialsKey: key,
 		Region:         e.Signing.Region,
 		Service:        e.Signing.Service,
+		PathPatterns:   signerPathPatterns(entries, e.Host, key),
 	}
 }
 
@@ -845,7 +870,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v19-request-signing"
+const envoyBootstrapTemplateRev = "v20-signing-path-scopes"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
