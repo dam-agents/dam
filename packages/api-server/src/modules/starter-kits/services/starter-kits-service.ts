@@ -40,6 +40,11 @@ import {
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
+import {
+  isPinnedKit,
+  parsePinnedKit,
+  type PinnedKitRef,
+} from "../domain/pinned-kit.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { KitUpstream } from "../infrastructure/kit-upstream.js";
 
@@ -91,14 +96,14 @@ function withSeedStamp(
   return stamp ? { starterKitSeed: stamp } : {};
 }
 
-function toView(loaded: LoadedKit, pinnedKit: string): StarterKitView {
+function toView(loaded: LoadedKit, pin: PinnedKitRef | null): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
-    pinned: `${loaded.catalog}/${loaded.kit.id}` === pinnedKit,
+    pinned: isPinnedKit(pin, loaded.catalog, loaded.kit.id),
   };
 }
 
@@ -239,6 +244,8 @@ export function createStarterKitsService(
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
 
+  const pin = parsePinnedKit(deps.pinnedKit ?? "");
+
   const runnableHere = (loaded: LoadedKit): boolean =>
     loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
 
@@ -267,14 +274,12 @@ export function createStarterKitsService(
     async list() {
       return (await deps.repo.list())
         .filter(runnableHere)
-        .map((loaded) => toView(loaded, deps.pinnedKit ?? ""));
+        .map((loaded) => toView(loaded, pin));
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded && runnableHere(loaded)
-        ? toView(loaded, deps.pinnedKit ?? "")
-        : null;
+      return loaded && runnableHere(loaded) ? toView(loaded, pin) : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {

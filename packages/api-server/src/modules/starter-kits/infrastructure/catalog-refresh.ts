@@ -7,6 +7,7 @@ import type {
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
+import { parsePinnedKit } from "../domain/pinned-kit.js";
 import { type CatalogSource, relPathEscapes } from "./catalog-source.js";
 import type { GitHosts } from "./git-hosts.js";
 import type { RefResolver } from "./git-ref-resolver.js";
@@ -256,8 +257,8 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
   }
 
   async function warnUnservedPin(pinnedKit: string): Promise<void> {
-    const [catalog = "", kitId = "", ...extra] = pinnedKit.split("/");
-    if (extra.length === 0 && (await deps.repo.get(catalog, kitId))) return;
+    const pin = parsePinnedKit(pinnedKit);
+    if (pin && (await deps.repo.get(pin.catalog, pin.kitId))) return;
     getLogger().warn(
       { pinnedKit },
       "starter kits: the pinned kit is not in any catalog; every card shows at the same size",
