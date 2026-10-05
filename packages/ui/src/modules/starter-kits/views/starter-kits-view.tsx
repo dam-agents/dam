@@ -17,8 +17,9 @@ import {
   KitIllustration,
   useKitFilter,
 } from "../components/kit-browser.js";
+import { splitPinned } from "../lib/catalog-cards.js";
 
-function FeaturedCard({
+function PinnedKitCard({
   kit,
   templates,
   templateById,
@@ -74,7 +75,7 @@ export function StarterKitsView() {
     category ?? "all",
     (next) => navigateToStarterKits(next === "all" ? undefined : next),
   );
-  const [featured, ...rest] = shown;
+  const { pinned, rest } = splitPinned(shown, { filter, query });
 
   return (
     <div>
@@ -131,14 +132,12 @@ export function StarterKitsView() {
             </p>
           ) : (
             <div className="flex flex-col gap-4">
-              {featured && (
-                <FeaturedCard
-                  kit={featured}
+              {pinned && (
+                <PinnedKitCard
+                  kit={pinned}
                   templates={templates.data ?? []}
                   templateById={templateById}
-                  onOpen={() =>
-                    navigateToStarterKit(featured.catalog, featured.id)
-                  }
+                  onOpen={() => navigateToStarterKit(pinned.catalog, pinned.id)}
                 />
               )}
               {rest.length > 0 && (
