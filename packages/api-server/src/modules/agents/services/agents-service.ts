@@ -18,7 +18,6 @@ import {
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type SessionBackgroundWork,
-  type TemplateSpec,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -473,7 +472,7 @@ export function executeTemplateUpgrade(deps: {
     if (expectedToImage !== undefined && expectedToImage !== tmpl.spec.image)
       return err({ type: "TemplateMoved" as const });
 
-    const update = templateImageUpdate(infra.spec, tmpl.spec);
+    const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
     if (!update) return ok(infra);
 
     const patched = await deps.patchSpec(id, {
@@ -684,7 +683,7 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec, tmpl.spec);
+    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
   }
 
   async function project(
@@ -898,18 +897,18 @@ export function createAgentsService(deps: {
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
       ];
-      const templateSpecs = new Map<string, TemplateSpec>();
+      const templateImages = new Map<string, string>();
       await Promise.all(
         templateIds.map(async (tid) => {
           const tmpl = await deps.readTemplateSpec(tid);
-          if (tmpl) templateSpecs.set(tid, tmpl.spec);
+          if (tmpl) templateImages.set(tid, tmpl.spec.image);
         }),
       );
 
       return infraAgents.map((infra) => {
         const status = failuresMap.get(infra.id);
-        const templateSpec = infra.templateId
-          ? templateSpecs.get(infra.templateId)
+        const templateImage = infra.templateId
+          ? templateImages.get(infra.templateId)
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
@@ -917,8 +916,8 @@ export function createAgentsService(deps: {
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
-          templateSpec
-            ? templateImageUpdate(infra.spec, templateSpec)
+          templateImage
+            ? templateImageUpdate(infra.spec.image, templateImage)
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],

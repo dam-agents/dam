@@ -24,6 +24,9 @@ const AgentContainerName = "agent"
 // UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. On the vm backend platform-init, which is Rust and runs inside the guest, bind-mounts the disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
 const agentHomeDir = "/home/agent"
 
+// UNIT_BOUNDARY_DESCRIPTION: where a container agent sees the node's harness tools, which a DaemonSet installs into a host directory. The default image bakes no tools and names this path as its mise system data dir. No baked image uses the path, so the controller mounts it read-only into every agent pod once the install sets the host directory.
+const agentHarnessToolsDir = "/opt/platform/harness-tools"
+
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
 		panic(fmt.Sprintf("port out of range: %d (must be 0..65535)", p))
@@ -154,6 +157,9 @@ func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.
 	for _, e := range defaults.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
+	if agentSpec.Harness != "" {
+		env = append(env, corev1.EnvVar{Name: "PLATFORM_HARNESS", Value: agentSpec.Harness})
+	}
 
 	var envFrom []corev1.EnvFromSource
 	if agentSpec.SecretRef != "" {
@@ -203,6 +209,13 @@ func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
+	if base.ToolsHostPath != "" {
+		dir := corev1.HostPathDirectoryOrCreate
+		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: base.ToolsHostPath, Type: &dir},
+		}})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: agentHarnessToolsDir, ReadOnly: true})
+	}
 
 	resourceReqs := corev1.ResourceRequirements{}
 	resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)

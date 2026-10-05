@@ -380,12 +380,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </>
       }
     >
-      {!kit && (
-        <VmRuntimeNotice
-          className="mb-8"
-          vmOnly={selectedTemplate?.backend === "vm"}
-        />
-      )}
+      {!kit && <VmRuntimeNotice className="mb-8" />}
 
       {!kit && (
         <section className="mb-8">

@@ -53,7 +53,6 @@ export const templateSpecSchema = z
     description: z.string().optional(),
     category: templateCategorySchema,
     harness: templateHarnessSchema.optional(),
-    backend: z.enum(["vm"]).optional(),
     providers: z
       .array(
         z.custom<ProviderPresetType>(

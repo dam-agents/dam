@@ -1,33 +1,12 @@
-import { Badge } from "@/components/ui/badge";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
-import { VM_BACKEND_LABEL } from "../../starter-kits/lib/catalog-cards.js";
 
-export function VmRuntimeNotice({
-  className,
-  vmOnly = false,
-}: {
-  className?: string;
-  vmOnly?: boolean;
-}) {
+export function VmRuntimeNotice({ className }: { className?: string }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const vmRuntime = useVmRuntime();
-  if (vmOnly)
-    return (
-      <Callout
-        tone="info"
-        inset
-        className={cn("text-sm text-foreground", className)}
-      >
-        <Badge variant="muted" size="sm" className="mr-2">
-          {VM_BACKEND_LABEL}
-        </Badge>
-        This harness always runs as a microVM.
-      </Callout>
-    );
   if (vmRuntime.unknown)
     return (
       <p className={cn("text-sm text-muted-foreground", className)}>

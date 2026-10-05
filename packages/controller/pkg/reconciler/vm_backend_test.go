@@ -316,8 +316,8 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
-		ToolsHostPath: "/var/lib/platform-tools",
 	}}
+	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
 	r.WithRequeue(t.Context(), requeued.add)
@@ -939,9 +939,9 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 
 // TEST_SCENARIO: a vm machine boots one image for every harness, and that harness's tools come from a node directory the chart's DaemonSet fills. The runner mounts it read-only, since the DaemonSet is its only writer, and is told where with --tools-dir. With no such directory the runner is told an empty --tools-dir and gets no host mount.
 func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
-	render := func(configure func(*config.VMRunnerSpec)) corev1.PodSpec {
+	render := func(configure func(*config.AgentBase)) corev1.PodSpec {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
-		configure(&r.config.VM.Runner)
+		configure(&r.config.AgentBase)
 		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
 			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
@@ -949,7 +949,7 @@ func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
 		return dep.Spec.Template.Spec
 	}
 
-	pod := render(func(*config.VMRunnerSpec) {})
+	pod := render(func(*config.AgentBase) {})
 	assert.Contains(t, pod.Containers[0].Args, "--tools-dir="+vmRunnerToolsPath)
 	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
 	dir := corev1.HostPathDirectoryOrCreate
@@ -957,7 +957,7 @@ func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
 		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
 	}})
 
-	pod = render(func(spec *config.VMRunnerSpec) { spec.ToolsHostPath = "" })
+	pod = render(func(base *config.AgentBase) { base.ToolsHostPath = "" })
 	assert.Contains(t, pod.Containers[0].Args, "--tools-dir=")
 	for _, v := range pod.Volumes {
 		assert.NotEqual(t, "harness-tools", v.Name)

@@ -311,9 +311,16 @@ build_mise() (
   [ "$1" != default ] || envs="${bare_harnesses// /,},default"
   stage_project ${envs//,/ }
   [ "$1" != default ] || stage_bare
+  # Where the image finds its tools: its own installs, or the default image's
+  # mounted harness tools.
+  tools_root=/usr/local/share/mise
+  [ "$1" != default ] || tools_root="$(sed -n 's/^PLATFORM_TOOLS_VOLUME = "\(.*\)"$/\1/p' "$agents/default/image.toml")"
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
+  # The data dir the agent's own `mise use -g` installs into, which the default
+  # image's packaged tools would otherwise have made.
+  [ "$1" != default ] || install -d "$b/usr/local/share/mise"
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist/js "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
@@ -358,12 +365,12 @@ build_mise() (
     mkdir -p build/opt/ms-playwright
     for d in "$work"/ms-playwright/*/; do
       d="${d%/}"
-      ln -s "../../usr/local/share/mise/ms-playwright/${d##*/}" "build/opt/ms-playwright/${d##*/}"
+      ln -s "$(realpath -m --relative-to=/opt/ms-playwright "$tools_root/ms-playwright/${d##*/}")" "build/opt/ms-playwright/${d##*/}"
     done
     # The tools' bin directories, which `mise oci` puts on PATH only for the
     # tools it packages; it overrides base's PATH.
     printf '[oci.env]\nPATH = "%s:%s"\n' \
-      "$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|/usr/local/share/mise/|" | paste -sd: -)" \
+      "$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|$tools_root/|" | paste -sd: -)" \
       "$(sed -n 's/^PATH = "\(.*\)"$/\1/p' mise/conf.d/base.toml)" > mise/conf.d/tools-path.toml
   else
     cp -a "$work/ms-playwright" build/opt/
@@ -376,7 +383,7 @@ build_mise() (
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   install -d build/usr/local/lib/docker/cli-plugins
   for p in buildx compose; do
-    ln -s "../../../share/mise/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")/docker-$p" \
+    ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
       "build/usr/local/lib/docker/cli-plugins/docker-$p"
   done
   # A workload's venv, at the /opt path its *_VENV names and as /opt/venv. A

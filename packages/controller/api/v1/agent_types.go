@@ -82,8 +82,8 @@ type AgentSpec struct {
 	Backend *Backend `json:"backend,omitempty"`
 
 	// Harness names the harness the agent image runs (claude-code, codex,
-	// pi, bob, mock). A vm machine boots one image for every harness and
-	// reads this as PLATFORM_HARNESS; empty leaves the image's own default.
+	// pi, bob, mock). One image serves every harness, and the agent reads
+	// this as PLATFORM_HARNESS; empty leaves the image's own default.
 	// +optional
 	Harness string `json:"harness,omitempty"`
 

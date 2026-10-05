@@ -106,7 +106,6 @@ export interface TemplateView {
   description?: string;
   category: "harness";
   harness?: TemplateHarness;
-  backend?: "vm";
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;

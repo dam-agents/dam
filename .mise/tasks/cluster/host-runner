@@ -74,7 +74,7 @@ images="$(host_runner_images)"
 # as on the node.
 tools="$(host_runner_volume tools)"
 echo "Waiting for the harness tools on the k3s node (the first install takes minutes)..."
-kubectl -n platform-agents rollout status daemonset/platform-vm-harness-tools --timeout=30m
+kubectl -n platform-agents rollout status daemonset/platform-harness-tools --timeout=30m
 rsync -rlpt --rsync-path="sudo rsync" -e "ssh -F $HOME/.lima/$LIMA_INSTANCE/ssh.config" \
   "lima-$LIMA_INSTANCE:/var/lib/platform-harness-tools/" "$tools/"
 

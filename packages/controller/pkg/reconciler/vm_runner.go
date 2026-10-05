@@ -630,12 +630,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
 	toolsDir := ""
-	if spec.ToolsHostPath != "" {
+	if r.config.AgentBase.ToolsHostPath != "" {
 		dir := corev1.HostPathDirectoryOrCreate
 		toolsDir = vmRunnerToolsPath
 		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
 		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: spec.ToolsHostPath, Type: &dir},
+			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
 		}})
 	}
 	dep := &appsv1.Deployment{

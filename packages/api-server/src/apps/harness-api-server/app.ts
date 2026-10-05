@@ -45,7 +45,6 @@ import { createConnectionsRepository } from "../../modules/connections/infrastru
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
-import { runnableTemplates } from "../../modules/templates/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
@@ -216,7 +215,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agents: { get: (id) => agentsRepo.get(id) },
     invocationsServiceFor,
     connectionsServiceFor,
-    templates: runnableTemplates(templatesRepo, config.virtualizationEnabled),
+    templates: templatesRepo,
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,

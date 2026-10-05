@@ -1,21 +1,25 @@
-{{- $v := .Values.virtualization }}
-{{- $tools := $v.harnessTools | default dict }}
-{{- if and $v.enabled $tools.hostPath }}
+{{- $tools := .Values.harnessTools }}
+{{- if $tools.hostPath }}
 {{- /*
 The per-node installer of the harnesses' tools: the only writer of the node
-directory `harnessTools.hostPath` names, which every runner on the node mounts
-read-only and shares, read-only, into each machine of the default image at
-mise's system data dir. That image bakes no tools; its init container here runs
-the image's own installer against the directory, so the image and the tools on
-the node agree on every version. Then the pod idles: a DaemonSet rather than a
-Job because it has to reach every node a runner may land on, including one that
-joins later, and a deploy that changes the image rolls it, which installs the
-new versions beside the old ones.
+directory `harnessTools.hostPath` names. Every container agent pod mounts that
+directory read-only, and every VM runner on the node shares it read-only into
+each machine of the default image. That image bakes no tools; its init
+container here runs the image's own installer against the directory, so the
+image and the tools on the node agree on every version. Then the pod idles: a
+DaemonSet rather than a Job because it has to reach every node an agent or a
+runner may land on, including one that joins later, and a deploy that changes
+the image rolls it, which installs the new versions beside the old ones.
 
-It runs in the agent namespace beside the runners and the image cache, on the
-runners' own nodeSelector and tolerations, and holds no cluster credential.
+It runs in the agent namespace and holds no cluster credential.
 */}}
-{{- $name := printf "%s-vm-harness-tools" (include "platform.fullname" .) }}
+{{- $name := printf "%s-harness-tools" (include "platform.fullname" .) }}
+{{- $v := .Values.virtualization }}
+{{- $tolerations := concat ($tools.tolerations | default list) (.Values.controller.agent.base.tolerations | default list) }}
+{{- if $v.enabled }}
+{{- $tolerations = concat $tolerations ($v.runner.tolerations | default list) }}
+{{- end }}
+{{- $image := printf "%s:%s" $tools.image.repository ($tools.image.tag | default $.Chart.AppVersion) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -23,7 +27,7 @@ metadata:
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: vm-harness-tools
+    app.kubernetes.io/component: harness-tools
 automountServiceAccountToken: false
 ---
 apiVersion: apps/v1
@@ -33,17 +37,17 @@ metadata:
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: vm-harness-tools
+    app.kubernetes.io/component: harness-tools
 spec:
   selector:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: vm-harness-tools
+      app.kubernetes.io/component: harness-tools
   template:
     metadata:
       labels:
         {{- include "platform.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: vm-harness-tools
+        app.kubernetes.io/component: harness-tools
         istio.io/dataplane-mode: none
     spec:
       enableServiceLinks: false
@@ -55,30 +59,30 @@ spec:
       answers without the cluster's DNS.
       */}}
       dnsPolicy: Default
-      {{- with $v.runner.nodeSelector }}
+      {{- with $tools.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $v.runner.tolerations }}
+      {{- with $tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
         - name: install
-          image: "{{ $tools.image.repository }}:{{ $tools.image.tag | default $.Chart.AppVersion }}"
+          image: {{ $image | quote }}
           imagePullPolicy: {{ $tools.image.pullPolicy | default "IfNotPresent" }}
           {{- /*
           The image's ENTRYPOINT prepares an agent; the installer needs none of
           it. Root, because the directory and every install in it are root's:
-          the runners and the guests only read them.
+          agents, runners and guests only read them.
           */}}
           command: ["install-harness-tools"]
           {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
           {{- /*
           As the image cache does: the directory the kubelet creates carries the
-          host's own label, which the confined runners may not read, so it is
-          labelled for containers at the plain s0 every runner can read, and
-          everything installed into it inherits that.
+          host's own label, which confined pods may not read, so it is labelled
+          for containers at the plain s0 every pod can read, and everything
+          installed into it inherits that.
           */}}
           args: ["system_u:object_r:container_file_t:s0"]
           {{- end }}
@@ -94,10 +98,10 @@ spec:
             {{- toYaml $tools.resources | nindent 12 }}
           volumeMounts:
             - name: harness-tools
-              mountPath: /usr/local/share/mise
+              mountPath: /opt/platform/harness-tools
       containers:
         - name: idle
-          image: "{{ $tools.image.repository }}:{{ $tools.image.tag | default $.Chart.AppVersion }}"
+          image: {{ $image | quote }}
           imagePullPolicy: {{ $tools.image.pullPolicy | default "IfNotPresent" }}
           command: ["sleep", "infinity"]
           securityContext:
@@ -116,12 +120,12 @@ spec:
           hostPath:
             path: {{ $tools.hostPath }}
             type: DirectoryOrCreate
-{{- with $v.runner.scc }}
+{{- with ($tools.scc | default $v.runner.scc) }}
 ---
 {{- /*
-The SCC an OpenShift install already names for runners that mount a host
-directory: this pod mounts one too and runs its installer as uid 0.
+An SCC that admits a hostPath and leaves the SELinux type to the pod: this
+pod mounts the node directory and runs its installer as uid 0 and spc_t.
 */}}
-{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-harness-tools" "scc" .) }}
+{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "harness-tools" "scc" .) }}
 {{- end }}
 {{- end }}

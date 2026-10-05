@@ -65,46 +65,20 @@ function harness(opts?: {
   return { run, patchSpec };
 }
 
-const spec = (image: string, backend?: "vm") => ({
-  name: "a",
-  image,
-  ...(backend ? { backend: { type: backend } } : {}),
-});
-
 describe("templateImageUpdate", () => {
   it("reports the image movement when the template moved on", () => {
-    expect(
-      templateImageUpdate(spec("repo:0.2.7"), templateSpec("repo:0.2.8")),
-    ).toEqual({
+    expect(templateImageUpdate("repo:0.2.7", "repo:0.2.8")).toEqual({
       fromImage: "repo:0.2.7",
       toImage: "repo:0.2.8",
     });
   });
 
   it("is absent when the agent is current", () => {
-    expect(
-      templateImageUpdate(spec("repo:0.2.8"), templateSpec("repo:0.2.8")),
-    ).toBeUndefined();
+    expect(templateImageUpdate("repo:0.2.8", "repo:0.2.8")).toBeUndefined();
   });
 
   it("is absent when the agent has no image captured", () => {
-    expect(
-      templateImageUpdate({ name: "a", image: "" }, templateSpec("repo:0.2.8")),
-    ).toBeUndefined();
-  });
-
-  // TEST_SCENARIO: a vm-only template ships a bare image whose tools only a microVM mounts. A container agent would not boot on it, so it is not offered the upgrade until it migrates to the vm backend; after that it is.
-  it("offers a vm-only template's image only to an agent already on the vm backend", () => {
-    const vmOnly = templateSpec("default:1", { backend: "vm" });
-    expect(
-      templateImageUpdate(spec("claude-code:0.2.7"), vmOnly),
-    ).toBeUndefined();
-    expect(
-      templateImageUpdate(spec("claude-code:0.2.7", "vm"), vmOnly),
-    ).toEqual({
-      fromImage: "claude-code:0.2.7",
-      toImage: "default:1",
-    });
+    expect(templateImageUpdate(undefined, "repo:0.2.8")).toBeUndefined();
   });
 });
 
@@ -120,7 +94,7 @@ describe("template upgrade flow", () => {
     );
   });
 
-  // TEST_SCENARIO: every vm-only template shares one image, so the image alone no longer says which harness runs. The upgrade must write the template's harness too, or an upgraded codex agent would boot as claude-code.
+  // TEST_SCENARIO: every harness template shares one image, so the image alone no longer says which harness runs. The upgrade must write the template's harness too, or an upgraded codex agent would boot as claude-code.
   it("writes the template's harness beside the new image", async () => {
     const h = harness({
       agent: infraAgent({
@@ -128,11 +102,10 @@ describe("template upgrade flow", () => {
         spec: {
           name: "my-agent",
           image: "quay.io/dam-agents/codex:0.2.7",
-          backend: { type: "vm" },
         },
       }),
       templateImage: "quay.io/dam-agents/default:1",
-      template: { backend: "vm", harness: "codex" },
+      template: { harness: "codex" },
     });
     await h.run("agent-1");
     expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {

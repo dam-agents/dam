@@ -25,11 +25,11 @@ metadata:
 data:
   {{- range $name, $tmpl := .Values.harnessTemplates }}
   {{- if and $tmpl $tmpl.enabled }}
-  {{- /* A template names a Backend only to require one: the bare image boots
-         only where its tools volume is mounted, on a machine. Any other value
-         would render a template that silently produces something else. */}}
-  {{- if and $tmpl.backend (ne $tmpl.backend "vm") }}
-  {{- fail (printf "harnessTemplates.%s: backend must be vm or unset, not %q." $name $tmpl.backend) }}
+  {{- /* The Backend is chosen per agent at create, not declared by a template.
+         An install carrying the old key would otherwise render a template that
+         silently produces container agents, so it is refused here instead. */}}
+  {{- if $tmpl.backend }}
+  {{- fail (printf "harnessTemplates.%s: backend is no longer a template field — the Backend is chosen per agent at create time. Remove it from your values." $name) }}
   {{- end }}
   {{- $home := "/home/agent" }}
   {{ $name }}.yaml: |
@@ -44,9 +44,6 @@ data:
     {{- end }}
     {{- with $tmpl.harness }}
     harness: {{ . | quote }}
-    {{- end }}
-    {{- with $tmpl.backend }}
-    backend: {{ . | quote }}
     {{- end }}
     {{- with $tmpl.providers }}
     providers:
