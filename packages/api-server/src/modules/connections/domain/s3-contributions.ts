@@ -99,14 +99,31 @@ export function buildS3Contributions(target: S3Target): Contribution[] {
   }));
 }
 
-export function awsCredentialsFile(
-  accessKeyId: string,
-  secretAccessKey: string,
-): string {
+export interface Sigv4KeyPair {
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
+export function sigv4KeyPair(raw: Sigv4KeyPair): Sigv4KeyPair {
+  return {
+    accessKeyId: singleLineKey("Access key ID", raw.accessKeyId),
+    secretAccessKey: singleLineKey("Secret access key", raw.secretAccessKey),
+  };
+}
+
+function singleLineKey(label: string, raw: string): string {
+  const value = raw.trim();
+  if (value === "" || /[\r\n]/.test(value)) {
+    throw new Error(`${label} must be one line of text.`);
+  }
+  return value;
+}
+
+export function awsCredentialsFile(keys: Sigv4KeyPair): string {
   return [
     "[default]",
-    `aws_access_key_id = ${accessKeyId}`,
-    `aws_secret_access_key = ${secretAccessKey}`,
+    `aws_access_key_id = ${keys.accessKeyId}`,
+    `aws_secret_access_key = ${keys.secretAccessKey}`,
     "",
   ].join("\n");
 }

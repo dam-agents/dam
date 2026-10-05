@@ -94,41 +94,50 @@ const TEMPLATE_FIELD_HINTS: Record<string, Record<string, ReactNode>> = {
   },
 };
 
+export type CredentialCopy = { action: string; hint: string } & (
+  | { fields: "value"; label: string; multiline?: boolean }
+  | { fields: "key-pair" }
+);
+
 const CREDENTIAL_COPY: Record<
   Exclude<ConnectionAuthKind, "none">,
-  { action: string; label: string; hint: string; multiline?: boolean }
+  CredentialCopy
 > = {
   oauth: {
+    fields: "value",
     action: "Update client secret",
     label: "New OAuth client secret",
     hint: "The secret of the OAuth app this connection authenticates through. If the stored refresh token still works the connection revives immediately; otherwise re-authenticate afterwards. Other connections using the same OAuth app keep their own copy — update each of them too.",
   },
   header: {
+    fields: "value",
     action: "Update credential",
     label: "New credential value",
     hint: "Replaces the value injected on this connection's hosts.",
   },
   "client-credentials": {
+    fields: "value",
     action: "Update client secret",
     label: "New client secret",
     hint: "Verified by minting a token before it is stored — a wrong secret is rejected.",
   },
   "github-app": {
+    fields: "value",
     action: "Update private key",
     label: "New private key",
     hint: "PEM from your GitHub App. Verified by minting an installation token before it is stored.",
     multiline: true,
   },
   sigv4: {
+    fields: "key-pair",
     action: "Update keys",
-    label: "New HMAC keys",
     hint: "A new access key ID and secret access key pair. Verified against the endpoint before it is stored.",
   },
 };
 
 export function credentialCopyFor(
   authKind: ConnectionAuthKind,
-): (typeof CREDENTIAL_COPY)[keyof typeof CREDENTIAL_COPY] | undefined {
+): CredentialCopy | undefined {
   return authKind === "none" ? undefined : CREDENTIAL_COPY[authKind];
 }
 

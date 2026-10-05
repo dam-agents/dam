@@ -8,12 +8,14 @@ import {
   type AgentConnections,
   type Connection,
   type ConnectionCreateInput,
+  type ConnectionCredentialUpdate,
   type ConnectionsService,
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
   type SecretRef,
   preferenceGroupOf,
+  signingTargetOf,
   unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -51,8 +53,11 @@ import {
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../domain/connection-sds.js";
 import {
+  awsCredentialsFile,
   parseS3Endpoint,
   s3EndpointOrigin,
+  type Sigv4KeyPair,
+  sigv4KeyPair,
 } from "../domain/s3-contributions.js";
 import type {
   S3CredentialProbe,
@@ -480,24 +485,23 @@ export function createConnectionsService(deps: {
   }
 
   async function assertS3KeysAccepted(
-    input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
-    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
-    target: string,
+    keys: Sigv4KeyPair,
+    target: { endpoint: string; region: string; bucket?: string },
+    connectionId: string,
   ): Promise<void> {
-    const bucket = input.bucket?.trim();
+    const bucket = target.bucket?.trim();
     const outcome = await deps.s3CredentialProbe.probe({
-      endpoint: s3EndpointOrigin(parseS3Endpoint(input.endpoint)),
-      region: auth.region,
+      endpoint: target.endpoint,
+      region: target.region,
       ...(bucket ? { bucket } : {}),
-      accessKeyId: input.accessKeyId.trim(),
-      secretAccessKey: input.secretAccessKey.trim(),
+      ...keys,
     });
     if (outcome.ok) return;
     securityLog("warn", "connection.s3_probe_failed", {
       category: "credential",
       actor: deps.ownerId,
       actorKind: "user",
-      target,
+      target: connectionId,
       result: "failure",
       reason: outcome.reason,
       detail: { probe: outcome.detail },
@@ -505,6 +509,36 @@ export function createConnectionsService(deps: {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: s3ProbeFailureMessage(outcome.reason, outcome.detail, bucket),
+    });
+  }
+
+  async function rotateSigv4Keys(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
+    rawKeys: Sigv4KeyPair,
+  ): Promise<void> {
+    const keys = await rejectIfInvalid(async () => sigv4KeyPair(rawKeys));
+    const signing = signingTargetOf(conn.contributions);
+    if (!signing) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `connection ${conn.id} has no signing target`,
+      });
+    }
+    const bucket = rememberedInput(conn, "bucket");
+    await assertS3KeysAccepted(
+      keys,
+      {
+        endpoint: s3EndpointOrigin(signing),
+        region: auth.region,
+        ...(bucket ? { bucket } : {}),
+      },
+      conn.id,
+    );
+    await deps.secretStore.putFields(auth.accessKeyIdRef, {
+      [auth.accessKeyIdRef.field]: keys.accessKeyId,
+      [auth.secretAccessKeyRef.field]: keys.secretAccessKey,
+      [auth.credentialsFileRef.field]: awsCredentialsFile(keys),
     });
   }
 
@@ -617,29 +651,33 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
-    async update(id: string, value: string): Promise<void> {
+    async update(
+      id: string,
+      credential: ConnectionCredentialUpdate,
+    ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
 
       switch (conn.auth.kind) {
         case "header":
-          await rotateHeaderValue(conn, conn.auth, value);
+          await rotateHeaderValue(conn, conn.auth, singleValueOf(credential));
           break;
         case "client-credentials":
-          await rotateClientSecret(conn, conn.auth, value);
+          await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
           break;
         case "github-app":
-          await rotatePrivateKey(conn, conn.auth, value);
+          await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
           break;
         case "oauth":
-          await rotateOAuthClientSecret(conn, conn.auth, value);
+          await rotateOAuthClientSecret(
+            conn,
+            conn.auth,
+            singleValueOf(credential),
+          );
           break;
         case "sigv4":
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "Updating the keys of an S3-compatible storage connection is not supported yet — delete it and connect again.",
-          });
+          await rotateSigv4Keys(conn, conn.auth, keyPairOf(credential));
+          break;
         case "none":
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -1024,7 +1062,17 @@ export function createConnectionsService(deps: {
       }
 
       if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
-        await assertS3KeysAccepted(effectiveInput, auth, id);
+        await assertS3KeysAccepted(
+          sigv4KeyPair(effectiveInput),
+          {
+            endpoint: s3EndpointOrigin(
+              parseS3Endpoint(effectiveInput.endpoint),
+            ),
+            region: auth.region,
+            ...(effectiveInput.bucket ? { bucket: effectiveInput.bucket } : {}),
+          },
+          id,
+        );
       }
 
       if (secretPath) {
@@ -1401,6 +1449,28 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
     case "none":
       return null;
   }
+}
+
+function singleValueOf(credential: ConnectionCredentialUpdate): string {
+  if (!("value" in credential)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "This connection stores a single credential value, not a key pair.",
+    });
+  }
+  return credential.value;
+}
+
+function keyPairOf(credential: ConnectionCredentialUpdate): Sigv4KeyPair {
+  if ("value" in credential) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "An S3-compatible storage connection takes an access key ID and a secret access key.",
+    });
+  }
+  return credential;
 }
 
 function s3ProbeFailureMessage(

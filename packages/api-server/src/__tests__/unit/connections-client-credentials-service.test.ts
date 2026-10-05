@@ -251,7 +251,7 @@ describe("client-credentials connection create", () => {
     });
 
     token = "tok-2";
-    await svc.update(id, "rotated");
+    await svc.update(id, { value: "rotated" });
 
     expect(tokenCalls[1].get("client_secret")).toBe("rotated");
     const fields = stored.get(SECRET_PATH)!;
@@ -282,7 +282,7 @@ describe("client-credentials connection create", () => {
     const authBefore = rows.get(id)!.auth;
 
     reject = true;
-    await expect(svc.update(id, "wrong")).rejects.toThrow(/401/);
+    await expect(svc.update(id, { value: "wrong" })).rejects.toThrow(/401/);
 
     const fields = stored.get(SECRET_PATH)!;
     expect(fields.client_secret).toBe("csecret");

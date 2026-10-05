@@ -39,6 +39,7 @@ import {
   parseS3Endpoint,
   S3_SERVICE,
   SECRET_ACCESS_KEY_SECRET_FIELD,
+  sigv4KeyPair,
   validBucketName,
 } from "./s3-contributions.js";
 
@@ -685,14 +686,6 @@ function buildHeader(
   };
 }
 
-function singleLineKey(label: string, raw: string): string {
-  const value = raw.trim();
-  if (value === "" || /[\r\n]/.test(value)) {
-    throw new Error(`${label} must be one line of text.`);
-  }
-  return value;
-}
-
 function buildSigv4(
   template: Extract<ConnectionTemplate, { authKind: "sigv4" }>,
   input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
@@ -702,11 +695,7 @@ function buildSigv4(
   const region =
     input.region?.trim() || template.region || DEFAULT_S3_SIGNING_REGION;
   const bucket = input.bucket ? validBucketName(input.bucket) : undefined;
-  const accessKeyId = singleLineKey("Access key ID", input.accessKeyId);
-  const secretAccessKey = singleLineKey(
-    "Secret access key",
-    input.secretAccessKey,
-  );
+  const keys = sigv4KeyPair(input);
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
   const contributions: Contribution[] = [
@@ -739,12 +728,9 @@ function buildSigv4(
       [
         secretPath.path,
         {
-          [ACCESS_KEY_ID_SECRET_FIELD]: accessKeyId,
-          [SECRET_ACCESS_KEY_SECRET_FIELD]: secretAccessKey,
-          [AWS_CREDENTIALS_SECRET_FIELD]: awsCredentialsFile(
-            accessKeyId,
-            secretAccessKey,
-          ),
+          [ACCESS_KEY_ID_SECRET_FIELD]: keys.accessKeyId,
+          [SECRET_ACCESS_KEY_SECRET_FIELD]: keys.secretAccessKey,
+          [AWS_CREDENTIALS_SECRET_FIELD]: awsCredentialsFile(keys),
         },
       ],
     ]),
