@@ -18,7 +18,7 @@ use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
     clear_for_start, discard_overlay, grown_storage, image_env_beside, kill_orphans, orphan_pids,
-    timed, updated_env, vmm_gone, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
+    timed, updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
     VMM_EXIT_WAIT,
 };
 
@@ -85,12 +85,13 @@ impl Smolvm {
             return Ok(());
         };
         let dir = vm_data_dir(id);
-        if orphan_pids(&self.proc_root, &dir).is_empty() {
+        let vmms = orphan_pids(&self.proc_root, &dir);
+        if vmms.is_empty() {
             return Err(refused.into());
         }
         tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
         kill_orphans(&self.proc_root, &dir);
-        vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT);
+        vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
     }
 }
@@ -145,10 +146,11 @@ impl Runtime for Smolvm {
             if record.actual_state() == RecordState::Running
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
-                let _ = self.runtime.stop_machine(id);
                 let dir = vm_data_dir(id);
+                let vmms = orphan_pids(&self.proc_root, &dir);
+                let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
-                vmm_gone(&self.proc_root, &dir, VMM_EXIT_WAIT);
+                vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
                 record = self.existing(id)?;
             }
             if !matches!(
@@ -216,8 +218,9 @@ impl Runtime for Smolvm {
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
+            let vmms = orphan_pids(&self.proc_root, &dir);
             let _ = self.runtime.stop_machine(id);
-            clear_for_start(id, &self.proc_root, &dir, VMM_EXIT_WAIT)
+            clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
         self.db.update_vm(id, |r| {
@@ -233,10 +236,12 @@ impl Runtime for Smolvm {
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
         terminate_workload(id);
+        let dir = vm_data_dir(id);
+        let vmms = orphan_pids(&self.proc_root, &dir);
         timed("stop", id, &[], || {
             self.ended(id, || self.runtime.stop_machine(id))
         })?;
-        discard_overlay(id, &self.proc_root, &vm_data_dir(id));
+        discard_overlay(id, &self.proc_root, &dir, vmms);
         Ok(())
     }
 
@@ -885,7 +890,7 @@ mod tests {
         fs::create_dir_all(&proc_root).unwrap();
 
         for id in ["used", "fresh"] {
-            clear_for_start(id, &proc_root, &vm_data_dir(id), VMM_EXIT_WAIT).unwrap();
+            clear_for_start(id, &proc_root, &vm_data_dir(id), Vec::new(), VMM_EXIT_WAIT).unwrap();
             StorageDisk::open_or_create_at(&storage_disk_path(id), 20)
                 .unwrap()
                 .ensure_formatted()

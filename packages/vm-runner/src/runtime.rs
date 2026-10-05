@@ -198,16 +198,33 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> Vec<i32> {
     pids
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits until no VMM holds the machine's directory, up to `limit`. A stop returns as soon as the guest is asked to go, and a start issued while the old VMM still holds the disks is refused in a way that looks like a machine that can never start. A machine that is really stopped answers at once.
-pub fn vmm_gone(proc_root: &Path, vm_dir: &Path, limit: Duration) -> bool {
+// UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, and smolvm counts a stop done once its main thread is a zombie, while its other threads still hold its disks and published ports until the last of them exits — so a VMM a stop already reached is only found through `seen`. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once.
+pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Duration) -> Vec<i32> {
     let deadline = Instant::now() + limit;
-    while !orphan_pids(proc_root, vm_dir).is_empty() {
-        if Instant::now() >= deadline {
-            return false;
+    loop {
+        seen.extend(orphan_pids(proc_root, vm_dir));
+        seen.sort_unstable();
+        seen.dedup();
+        seen.retain(|&pid| !exited(proc_root, pid));
+        if seen.is_empty() || Instant::now() >= deadline {
+            return seen;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a process has let go of everything once it is gone, or is a zombie with no thread left beside it. A zombie main thread alone is not enough: the threads it leaves share its open files and close them only when the last one exits.
+fn exited(proc_root: &Path, pid: i32) -> bool {
+    let dir = proc_root.join(pid.to_string());
+    let zombie = fs::read_to_string(dir.join("stat")).is_ok_and(|stat| {
+        matches!(
+            stat.rsplit_once(") ")
+                .and_then(|(_, fields)| fields.split_ascii_whitespace().next()),
+            Some("Z" | "X")
+        )
+    });
+    !dir.exists()
+        || (zombie && fs::read_dir(dir.join("task")).is_ok_and(|tasks| tasks.count() <= 1))
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
@@ -220,11 +237,11 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
-pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path) {
+pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path, vmms: Vec<i32>) {
     if !vm_dir.is_dir() {
         return;
     }
-    if !vmm_gone(proc_root, vm_dir, VMM_EXIT_WAIT) {
+    if !vmms_left(proc_root, vm_dir, vmms, VMM_EXIT_WAIT).is_empty() {
         tracing::warn!(
             machine = id,
             "machine still has a VMM holding its disks; leaving the root overlay in place"
@@ -282,24 +299,26 @@ pub fn clear_for_start(
     id: &str,
     proc_root: &Path,
     vm_dir: &Path,
+    vmms: Vec<i32>,
     wait: Duration,
 ) -> anyhow::Result<()> {
     if !vm_dir.is_dir() {
         return Ok(());
     }
-    if !vmm_gone(proc_root, vm_dir, wait) {
+    let left = vmms_left(proc_root, vm_dir, vmms, wait);
+    if !left.is_empty() {
         kill_orphans(proc_root, vm_dir);
-        if !vmm_gone(proc_root, vm_dir, KILLED_EXIT_WAIT) {
+        let left = vmms_left(proc_root, vm_dir, left, KILLED_EXIT_WAIT);
+        if !left.is_empty() {
             anyhow::bail!(
-                "machine '{id}': its previous VMM (pid {:?}) still holds the machine's disks after SIGKILL, likely stuck in the kernel; refusing to boot a second VMM on the same disk",
-                orphan_pids(proc_root, vm_dir)
+                "machine '{id}': its previous VMM (pid {left:?}) still holds the machine's disks after SIGKILL, likely stuck in the kernel; refusing to boot a second VMM on the same disk"
             );
         }
     }
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
-    discard_overlay(id, proc_root, vm_dir);
+    discard_overlay(id, proc_root, vm_dir, Vec::new());
     keep_formatted_storage(id, vm_dir)?;
     crate::console::clear_console(id, vm_dir);
     Ok(())
@@ -517,9 +536,15 @@ mod tests {
             ),
         );
 
-        let refused = clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50))
-            .unwrap_err()
-            .to_string();
+        let refused = clear_for_start(
+            "m1",
+            proc.path(),
+            vm.path(),
+            Vec::new(),
+            Duration::from_millis(50),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
             refused.contains("still holds the machine's disks after SIGKILL"),
             "{refused}"
@@ -530,7 +555,14 @@ mod tests {
         );
 
         fs::remove_dir_all(proc.path().join((i32::MAX - 7).to_string())).unwrap();
-        clear_for_start("m1", proc.path(), vm.path(), Duration::from_millis(50)).unwrap();
+        clear_for_start(
+            "m1",
+            proc.path(),
+            vm.path(),
+            Vec::new(),
+            Duration::from_millis(50),
+        )
+        .unwrap();
         assert!(!vm.path().join("vm.lock").exists());
     }
 
@@ -600,13 +632,41 @@ mod tests {
         );
 
         let started = Instant::now();
-        assert!(!vmm_gone(proc.path(), &dir, Duration::from_millis(150)));
+        assert_eq!(
+            vmms_left(proc.path(), &dir, Vec::new(), Duration::from_millis(150)),
+            vec![100]
+        );
         assert!(started.elapsed() >= Duration::from_millis(150));
 
         fs::remove_dir_all(proc.path().join("100")).unwrap();
         let started = Instant::now();
-        assert!(vmm_gone(proc.path(), &dir, Duration::from_secs(10)));
+        assert!(vmms_left(proc.path(), &dir, Vec::new(), Duration::from_secs(10)).is_empty());
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    // TEST_SCENARIO: a stopped VMM's command line goes blank while it is still exiting: first still running, then with its main thread a zombie while another thread still holds the machine's published port. A VMM seen before the stop is waited out through both, and counts as gone only once its last thread is.
+    #[test]
+    fn a_stopped_vmm_is_waited_out_until_its_last_thread_exits() {
+        let proc = TempDir::new("exiting");
+        let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
+        let vmm = proc.path().join("100");
+        process(&proc, 100, "");
+        fs::create_dir_all(vmm.join("task/100")).unwrap();
+        let wait = Duration::from_millis(60);
+
+        fs::write(vmm.join("stat"), "100 (VM:dam-platform) R 2 100").unwrap();
+        assert_eq!(vmms_left(proc.path(), &dir, vec![100], wait), vec![100]);
+
+        fs::write(vmm.join("stat"), "100 (VM:dam-platform) Z 2 100").unwrap();
+        fs::create_dir_all(vmm.join("task/101")).unwrap();
+        assert_eq!(vmms_left(proc.path(), &dir, vec![100], wait), vec![100]);
+        assert!(
+            vmms_left(proc.path(), &dir, Vec::new(), wait).is_empty(),
+            "a blank command line names no machine"
+        );
+
+        fs::remove_dir(vmm.join("task/101")).unwrap();
+        assert!(vmms_left(proc.path(), &dir, vec![100], wait).is_empty());
     }
 
     // TEST_SCENARIO: the root overlay is discarded in whichever form smolvm wrote it, and only once no VMM holds it. The storage disk, which is the agent's home, is never touched.
@@ -617,7 +677,7 @@ mod tests {
         for file in OVERLAY_FILES.iter().chain(&["storage.raw"]) {
             fs::write(vm.path().join(file), "x").unwrap();
         }
-        discard_overlay("m1", proc.path(), vm.path());
+        discard_overlay("m1", proc.path(), vm.path(), Vec::new());
         for file in OVERLAY_FILES {
             assert!(
                 !vm.path().join(file).exists(),

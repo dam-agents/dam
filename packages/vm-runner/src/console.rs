@@ -304,8 +304,14 @@ mod tests {
             "[t ERROR init_or_kernel] OPENAI_API_KEY=sk-live-withdrawn\n",
         )
         .unwrap();
-        crate::runtime::clear_for_start("m1", &proc_root, &vm_dir, crate::runtime::VMM_EXIT_WAIT)
-            .unwrap();
+        crate::runtime::clear_for_start(
+            "m1",
+            &proc_root,
+            &vm_dir,
+            Vec::new(),
+            crate::runtime::VMM_EXIT_WAIT,
+        )
+        .unwrap();
         assert_eq!(fs::read(&log).unwrap(), b"");
         assert_eq!(fs::read(&vmm).unwrap(), b"");
     }
