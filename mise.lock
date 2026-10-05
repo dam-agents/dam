@@ -302,6 +302,29 @@ url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_macOS_ar
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857200"
 provenance = "github-attestations"
 
+[[tools."github:Boshen/cargo-shear"]]
+version = "1.14.0"
+backend = "github:Boshen/cargo-shear"
+specifiers = ["latest"]
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-arm64"]
+checksum = "sha256:947d69177d812048452866d90b05d1bf95550f487522b922ebf0c0677a5698f8"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851818"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.linux-x64"]
+checksum = "sha256:1d7d860fdbd0d95857ff1f2643cc70d20c5d31236159ad51be7ce436eb3e5bf4"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851856"
+provenance = "github-attestations"
+
+[tools."github:Boshen/cargo-shear"."platforms.macos-arm64"]
+checksum = "sha256:e50b9375b1e93d2293c803819c118337f1e8fce519e4188a93bb0f5e08041ca3"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851820"
+provenance = "github-attestations"
+
 [[tools.go]]
 version = "1.27.1"
 backend = "core:go"
@@ -506,6 +529,12 @@ url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-darwin-arm64.tar.gz"
 version = "16.0.0"
 aube = { path = ".mise/locks/npm-json-schema-to-typescript/16.0.0", digest = "sha256:0146d352a9f44099dae3e1d5c74bbb7c8112160d7d6a8881376de3860098080b" }
 backend = "npm:json-schema-to-typescript"
+specifiers = ["latest"]
+
+[[tools."npm:knip"]]
+version = "6.38.0"
+aube = { path = ".mise/locks/npm-knip/6.38.0", digest = "sha256:ef2d603ef8e1e4acc7329fd2efa4349d508126c38a9af32f0cf9c78ee4b3783d" }
+backend = "npm:knip"
 specifiers = ["latest"]
 
 [[tools.pinact]]
