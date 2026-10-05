@@ -13,6 +13,7 @@ import { useDisconnectSlack } from "../../../agents/api/mutations.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import {
   findSlackChannels,
+  isSlackConversationGone,
   slackChannelLabel,
 } from "../../hooks/use-slack-channel-form.js";
 import { ChannelCard } from "./channel-card.js";
@@ -129,7 +130,13 @@ function SlackChannelRow({
           </Badge>
         )
       }
-      subtitle={channel.ambient ? "Ambient on" : "Ambient off"}
+      subtitle={
+        isSlackConversationGone(channel)
+          ? "No longer available in Slack. Disconnect to remove it."
+          : channel.ambient
+            ? "Ambient on"
+            : "Ambient off"
+      }
       actionsLabel={`Slack channel ${label} actions`}
       menuTestId="slack-channel-menu"
       actions={

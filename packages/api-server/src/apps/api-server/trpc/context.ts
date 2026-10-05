@@ -156,8 +156,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             conversationId: slackChannelId,
           }),
       },
-      resolveSlackChannelNames: (refs) =>
-        channelManager.resolveSlackConversationNames(refs),
+      resolveSlackConversationLabels: (refs) =>
+        channelManager.resolveSlackConversationLabels(refs),
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,

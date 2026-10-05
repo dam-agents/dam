@@ -1,3 +1,5 @@
+import type { SlackConversationLabel } from "api-server-api";
+
 export interface SlackImageFile {
   id: string;
   name: string;
@@ -212,13 +214,26 @@ export interface SlackChannelInfo {
   name: string;
 }
 
+export interface SlackConversationInfo {
+  isMember: boolean;
+  isDirectMessage: boolean;
+  isGroupDirectMessage: boolean;
+  name: string | null;
+  directMessageUser: string | null;
+}
+
+export type SlackConversationLookup =
+  | ({ kind: "found" } & SlackConversationInfo)
+  | { kind: "not-found" }
+  | { kind: "no-credential" };
+
 export interface SlackConversationRef {
   channelId: string;
   teamId: SlackWorkspace;
 }
 
-export interface SlackConversationName extends SlackConversationRef {
-  name: string | null;
+export interface SlackLabelledConversation extends SlackConversationRef {
+  label: SlackConversationLabel | null;
 }
 
 export interface SlackUserInfo {
@@ -327,11 +342,7 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{
-    isMember: boolean;
-    isDirectMessage: boolean;
-    name: string | null;
-  } | null>;
+  ): Promise<SlackConversationLookup>;
   listSharedChannels(userId: string, teamId: SlackWorkspace): Promise<string[]>;
   getUserInfo(
     userId: string,

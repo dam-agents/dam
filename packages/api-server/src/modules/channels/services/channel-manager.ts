@@ -11,8 +11,8 @@ import {
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type {
-  SlackConversationName,
   SlackConversationRef,
+  SlackLabelledConversation,
 } from "../infrastructure/slack-gateway.js";
 import type { SlackConversationStanding } from "./slack-workspace-probe.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
@@ -148,9 +148,9 @@ interface Worker {
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  resolveConversationNames?(
+  resolveConversationLabels?(
     refs: SlackConversationRef[],
-  ): Promise<SlackConversationName[]>;
+  ): Promise<SlackLabelledConversation[]>;
   readThread?(
     instanceName: string,
     query: ThreadQuery,
@@ -206,9 +206,9 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  resolveSlackConversationNames(
+  resolveSlackConversationLabels(
     refs: SlackConversationRef[],
-  ): Promise<SlackConversationName[]>;
+  ): Promise<SlackLabelledConversation[]>;
   slackConversationStanding(
     slackChannelId: string,
     teamId: string,
@@ -230,7 +230,7 @@ export const channelRpcRequestSchema = z.object({
     "handOffTurn",
     "describeUsers",
     "describeMessageReactions",
-    "resolveConversationNames",
+    "resolveConversationLabels",
     "slackConversationStanding",
     "readThread",
   ]),
@@ -243,6 +243,15 @@ const slackConversationRefSchema = z.object({
   channelId: z.string(),
   teamId: z.string(),
 });
+const slackConversationLabelSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("channel"), name: z.string() }),
+  z.object({ kind: z.literal("direct-message"), with: z.string().nullable() }),
+  z.object({
+    kind: z.literal("group-direct-message"),
+    members: z.array(z.string()),
+  }),
+  z.object({ kind: z.literal("gone") }),
+]);
 const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: forInstance,
   postMessage: forInstance.rest(z.unknown()),
@@ -252,7 +261,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
-  resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
+  resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
 };
@@ -307,8 +316,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
-  resolveConversationNames: z.array(
-    slackConversationRefSchema.extend({ name: z.string().nullable() }),
+  resolveConversationLabels: z.array(
+    slackConversationRefSchema.extend({
+      label: slackConversationLabelSchema.nullable(),
+    }),
   ),
   slackConversationStanding: z.enum(["member", "known", "unknown"]),
   readThread: z.union([
@@ -541,8 +552,8 @@ export function createChannelManager(deps: {
         });
       return worker.describeMessageReactions(instanceName, query);
     },
-    resolveConversationNames: (refs: SlackConversationRef[]) =>
-      slackWorker?.resolveConversationNames?.(refs) ?? Promise.resolve([]),
+    resolveConversationLabels: (refs: SlackConversationRef[]) =>
+      slackWorker?.resolveConversationLabels?.(refs) ?? Promise.resolve([]),
     slackConversationStanding: (
       slackChannelId: string,
       teamId: string,
@@ -713,9 +724,9 @@ export function createChannelManager(deps: {
       );
     },
 
-    resolveSlackConversationNames(refs) {
-      return dispatch("resolveConversationNames", [refs], () =>
-        localHandlers.resolveConversationNames(refs),
+    resolveSlackConversationLabels(refs) {
+      return dispatch("resolveConversationLabels", [refs], () =>
+        localHandlers.resolveConversationLabels(refs),
       ).catch(() => []);
     },
 
