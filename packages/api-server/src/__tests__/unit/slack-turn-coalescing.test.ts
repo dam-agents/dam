@@ -406,10 +406,11 @@ describe("slack addressed turns — coalescing", () => {
 
   /**
    * TEST_SCENARIO: Concurrent top-level turns are the normal case now, and
-   * no_reply_needed has to say which of them it is ending. Unnamed it cannot
-   * be resolved, and answering ok anyway would leave the turn looking
-   * unanswered — the delivery nudge would then push the agent into posting the
-   * very reply it decided to withhold.
+   * each runs in its own Session, so the agent cannot know another is in
+   * flight. no_reply_needed must name its turn every time on Slack. An unnamed
+   * call is refused, because answering ok would leave the turn looking
+   * unanswered, and the delivery nudge would then push the agent into posting
+   * the very reply it decided to withhold.
    */
   it("declines the turn it names while another is in flight", async () => {
     const h = harness({ steer: () => "injected" });
@@ -423,7 +424,7 @@ describe("slack addressed turns — coalescing", () => {
 
     const unnamed = await h.worker.declineTurn("agent-1");
     expect(unnamed).toMatchObject({
-      error: expect.stringContaining("more than one"),
+      error: expect.stringContaining("Pass the threadTs"),
     });
 
     expect(await h.worker.declineTurn("agent-1", "200.2")).toEqual({

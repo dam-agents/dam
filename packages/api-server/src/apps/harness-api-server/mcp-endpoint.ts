@@ -638,11 +638,17 @@ export function createMcpSession(
         .describe(
           "Short note to the receiving agent on why you are handing it over. Shown to that agent, not posted in the channel.",
         ),
+      threadTs: z
+        .string()
+        .describe(
+          "The thread this turn is answering, as shown in its turn instructions: the same threadTs you would reply with.",
+        ),
     },
-    async ({ agent, note }) => {
+    async ({ agent, note, threadTs }) => {
       const result = await deps.channelManager.handOffTurn(
         agentId,
         ChannelType.Slack,
+        threadTs,
         agent,
         note,
       );
@@ -677,7 +683,7 @@ export function createMcpSession(
         .string()
         .optional()
         .describe(
-          "The thread this turn is answering, as shown in its turn instructions. Required when you are handling more than one message at once, so the right turn is the one recorded as silent.",
+          "On a Slack turn, always pass the thread it is answering, as shown in its turn instructions: the same threadTs you would reply with. Omit it on a Telegram turn.",
         ),
     },
     async ({ threadTs }) => {

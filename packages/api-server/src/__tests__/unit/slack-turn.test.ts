@@ -1440,7 +1440,7 @@ describe("slack turn — network-access framing and attendance", () => {
 
     const h = harness({
       sendPrompt: async () => {
-        await h.worker.declineTurn("agent-1");
+        await h.worker.declineTurn("agent-1", "1.1");
         return "ok";
       },
     });

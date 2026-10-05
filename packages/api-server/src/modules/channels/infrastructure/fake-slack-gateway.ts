@@ -197,7 +197,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { iconUrl: args.iconUrl } : {}),
       });
-      return { ts: `${Math.floor(Date.now() / 1000)}.${nextPostTs++}` };
+      const ts = `${Math.floor(Date.now() / 1000)}.${nextPostTs++}`;
+      messagesByRef.set(`${args.channel}:${ts}`, {
+        ts,
+        text: args.text,
+        ...(botUserId ? { user: botUserId } : {}),
+        ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        ...(args.metadata ? { metadata: args.metadata } : {}),
+      });
+      return { ts };
     },
 
     async deleteMessage() {
