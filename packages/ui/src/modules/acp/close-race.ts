@@ -28,6 +28,12 @@ export function withCloseRace(
   const closedThrows = conn.closed.then(() => {
     throw new ConnectionClosedError(closeReason());
   });
+  const asCloseIfClosed = (e: unknown): never => {
+    if (conn.signal.aborted && !isConnectionClosed(e)) {
+      throw new ConnectionClosedError(closeReason());
+    }
+    throw e;
+  };
   const agent = new Proxy(conn.agent, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -36,7 +42,7 @@ export function withCloseRace(
       return (...args: unknown[]) => {
         const result = fn.apply(target, args);
         return result instanceof Promise
-          ? Promise.race([result, closedThrows])
+          ? Promise.race([result, closedThrows]).catch(asCloseIfClosed)
           : result;
       };
     },
