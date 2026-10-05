@@ -81,6 +81,12 @@ type AgentSpec struct {
 	// +optional
 	Backend *Backend `json:"backend,omitempty"`
 
+	// Harness names the harness the agent image runs (claude-code, codex,
+	// pi, bob, mock). A vm machine boots one image for every harness and
+	// reads this as PLATFORM_HARNESS; empty leaves the image's own default.
+	// +optional
+	Harness string `json:"harness,omitempty"`
+
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
 	// +optional
@@ -324,7 +330,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=16
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=17
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

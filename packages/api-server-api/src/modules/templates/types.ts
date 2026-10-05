@@ -35,6 +35,7 @@ export interface TemplateSpec {
   description?: string;
   category?: TemplateCategory;
   harness?: TemplateHarness;
+  backend?: "vm";
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;

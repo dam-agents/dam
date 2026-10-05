@@ -481,6 +481,40 @@ virtualization:
         memory: 128Mi
       limits:
         memory: 1Gi
+  # The harnesses' tools for the image every harness Template boots
+  # (quay.io/dam-agents/default), which bakes none: mise's system data dir with
+  # the tools of every harness and the common ones, kept in a directory on each
+  # node and mounted read-only into every runner there, which shares it
+  # read-only into each machine whose image asks for it. A DaemonSet on the
+  # runners' nodeSelector and tolerations fills it: its init container runs
+  # that same image's installer, so the tools and the image agree on every
+  # version, and then it idles. A deploy that changes the image rolls the
+  # DaemonSet and installs the new versions beside the old ones, in place, so
+  # a machine still booting an older image keeps its own. Nothing is pruned:
+  # each image's versions stay on the node until it is cleaned by hand.
+  #
+  # It is in the boot path: a runner scheduled on a node before the installer
+  # has finished boots the default image without its harness, which fails
+  # until the next start. The installer reaches the tools' download hosts
+  # (npm, GitHub, the language runtimes' and Playwright's CDNs) from the node.
+  #
+  # On OpenShift it needs `runner.scc`, as `imageCache.hostPath` does, and the
+  # installer labels the directory `container_file_t` at `s0` for the confined
+  # runners to read, running as `spc_t` to do so.
+  harnessTools:
+    hostPath: /var/lib/platform-harness-tools
+    image:
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
+      pullPolicy: IfNotPresent
+    # The installer's; the idling container that keeps the pod scheduled asks
+    # for almost nothing.
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
   # A device plugin of our own (squat's generic-device-plugin) advertising
   # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
@@ -1851,7 +1885,13 @@ controller:
 # (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time with the fixed
 # agent home, /home/agent.
-# Every entry is a harness image the platform delivers. Workload images
+# Every entry is a harness the platform delivers. The four built-in ones share
+# one image, quay.io/dam-agents/default, which bakes no tools: `harness` picks
+# the one it runs, and `backend: vm` makes the template create microVMs only,
+# since only a machine mounts the tools volume (`virtualization.harnessTools`).
+# Such a template is hidden while `virtualization.enabled` is off, and an
+# agent on the container Backend is not offered its upgrade until it migrates.
+# `backend` takes `vm` or nothing. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
@@ -1903,9 +1943,10 @@ harnessTemplates:
     telemetry: true
     harness: claude-code
     tags: ["Anthropic"]
+    backend: vm
     image:
-      repository: quay.io/dam-agents/claude-code
-      tag: "" # @ci-pin claude-code-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   codex:
@@ -1916,9 +1957,10 @@ harnessTemplates:
     releaseNotesUrl: "https://github.com/openai/codex/releases"
     harness: codex
     tags: ["OpenAI"]
+    backend: vm
     image:
-      repository: quay.io/dam-agents/codex
-      tag: "" # @ci-pin codex-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   pi-agent:
@@ -1928,9 +1970,10 @@ harnessTemplates:
     description: "Pi coding agent with multi-LLM support"
     harness: pi
     tags: ["Any provider"]
+    backend: vm
     image:
-      repository: quay.io/dam-agents/pi-agent
-      tag: "" # @ci-pin pi-agent-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   bob:
@@ -1944,9 +1987,10 @@ harnessTemplates:
     # writes, so it rides its own env rail — see docs/architecture/observability.md.
     telemetry: bob
     tags: ["Anthropic", "Mistral", "Granite"]
+    backend: vm
     image:
-      repository: quay.io/dam-agents/bob
-      tag: "" # @ci-pin bob-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.

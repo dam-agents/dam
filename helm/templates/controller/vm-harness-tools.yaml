@@ -1,0 +1,127 @@
+{{- $v := .Values.virtualization }}
+{{- $tools := $v.harnessTools | default dict }}
+{{- if and $v.enabled $tools.hostPath }}
+{{- /*
+The per-node installer of the harnesses' tools: the only writer of the node
+directory `harnessTools.hostPath` names, which every runner on the node mounts
+read-only and shares, read-only, into each machine of the default image at
+mise's system data dir. That image bakes no tools; its init container here runs
+the image's own installer against the directory, so the image and the tools on
+the node agree on every version. Then the pod idles: a DaemonSet rather than a
+Job because it has to reach every node a runner may land on, including one that
+joins later, and a deploy that changes the image rolls it, which installs the
+new versions beside the old ones.
+
+It runs in the agent namespace beside the runners and the image cache, on the
+runners' own nodeSelector and tolerations, and holds no cluster credential.
+*/}}
+{{- $name := printf "%s-vm-harness-tools" (include "platform.fullname" .) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-harness-tools
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-harness-tools
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-harness-tools
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vm-harness-tools
+        istio.io/dataplane-mode: none
+    spec:
+      enableServiceLinks: false
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      {{- /*
+      The tools' download hosts are public names, which the node's resolver
+      answers without the cluster's DNS.
+      */}}
+      dnsPolicy: Default
+      {{- with $v.runner.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.runner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: install
+          image: "{{ $tools.image.repository }}:{{ $tools.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $tools.image.pullPolicy | default "IfNotPresent" }}
+          {{- /*
+          The image's ENTRYPOINT prepares an agent; the installer needs none of
+          it. Root, because the directory and every install in it are root's:
+          the runners and the guests only read them.
+          */}}
+          command: ["install-harness-tools"]
+          {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+          {{- /*
+          As the image cache does: the directory the kubelet creates carries the
+          host's own label, which the confined runners may not read, so it is
+          labelled for containers at the plain s0 every runner can read, and
+          everything installed into it inherits that.
+          */}}
+          args: ["system_u:object_r:container_file_t:s0"]
+          {{- end }}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            seLinuxOptions:
+              type: spc_t
+              level: s0
+            {{- end }}
+          resources:
+            {{- toYaml $tools.resources | nindent 12 }}
+          volumeMounts:
+            - name: harness-tools
+              mountPath: /usr/local/share/mise
+      containers:
+        - name: idle
+          image: "{{ $tools.image.repository }}:{{ $tools.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $tools.image.pullPolicy | default "IfNotPresent" }}
+          command: ["sleep", "infinity"]
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 1m
+              memory: 8Mi
+            limits:
+              memory: 32Mi
+      volumes:
+        - name: harness-tools
+          hostPath:
+            path: {{ $tools.hostPath }}
+            type: DirectoryOrCreate
+{{- with $v.runner.scc }}
+---
+{{- /*
+The SCC an OpenShift install already names for runners that mount a host
+directory: this pod mounts one too and runs its installer as uid 0.
+*/}}
+{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-harness-tools" "scc" .) }}
+{{- end }}
+{{- end }}

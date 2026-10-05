@@ -50,6 +50,24 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.nodeSelector).toBeUndefined();
   });
 
+  // TEST_SCENARIO: a vm-only harness template points at one bare image whose tools only a microVM mounts, so it must assemble as a vm agent even when the caller did not ask, and carry its harness so the machine knows which one to run.
+  it("makes a vm-only template a microVM that names its harness, whatever the caller asked", () => {
+    const spec = assembleSpecFromTemplate(
+      "codex-1",
+      {
+        ...baseTemplate,
+        backend: "vm",
+        harness: "codex",
+        runtimeClassName: "kata",
+      },
+      { vm: false },
+      defaultLimits,
+    );
+    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.harness).toBe("codex");
+    expect(spec.runtimeClassName).toBeUndefined();
+  });
+
   // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the vm backend carries no storage block of its own and the mounts travel unchanged. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
   it("carries the template's mounts unchanged and invents no vm storage block", () => {
     const spec = assembleSpecFromTemplate(

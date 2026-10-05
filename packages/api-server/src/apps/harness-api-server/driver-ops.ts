@@ -31,9 +31,10 @@ export type SpawnOutcome =
 
 export interface DriverOpsDeps {
   agents: {
-    get(
-      id: string,
-    ): Promise<{ templateId?: string; spec: { image: string } } | null>;
+    get(id: string): Promise<{
+      templateId?: string;
+      spec: { image: string; harness?: string };
+    } | null>;
   };
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
@@ -178,6 +179,7 @@ function driverOps(
         deps.templates.list(),
       ]);
       if (!agent) return null;
+      if (agent.spec.harness) return agent.spec.harness;
       const template =
         templates.find((t) => t.id === agent.templateId) ??
         templates.find((t) => t.spec.image === agent.spec.image);

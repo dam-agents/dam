@@ -1,17 +1,25 @@
 # Agent images
 
-Last verified: 2026-10-01
+Last verified: 2026-10-05
 
-The container images an agent runs in: one per harness (Claude Code, Codex, pi, Bob), the workloads layered over Claude Code's, and the e2e mock. Every one carries the agent-runtime, its harness, and every tool the agent is given, baked in: nothing installs lazily, and no baked tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/), one directory per image, named after its component.
+The images an agent runs in: the **default image**, which every harness Template boots on the `vm` Backend, the workloads layered over Claude Code's, and the e2e mock. Each carries the agent-runtime and its harnesses. A workload and the mock bake every tool the agent is given; the default image bakes none and boots on the node's **harness tools** instead. Either way nothing installs lazily, and no tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob).
 
 ## One base, one environment per image
 
 Every image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) on Debian, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
 
-- **A harness image** is a mise config environment over the base: its own tools and env, and a `rootfs/` of its files at their image paths. Its files replace the base's where both ship one (harness scripts, runtime manifest).
+- **A harness** is a mise config environment over the base: its own tools and env, and a `rootfs/` of its files at their image paths. Its files replace the base's where both ship one (harness scripts, runtime manifest).
 - **A workload** is an environment over Claude Code's. Its Python package is a baked tool with its own venv, linked at a fixed path and named in an environment variable; the entrypoint and login shells put that venv first on `PATH`, so `python` is the workload's.
 - **k-search** runs from upstream source trees rather than a package: they are baked tools too, pinned by commit and checksum, patched by a postinstall and linked at a fixed path (`oci_link`).
 - **The e2e mock** is an environment too, kept beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/).
+
+## The default image and the harness tools
+
+The default image is every harness over the base at once, with none of their tools packaged. Each harness's entry points and runtime manifest sit under its name, and the agent's harness, named per Agent at create from its Template and handed to the machine in its environment, picks which one the agent-runtime loads and the harness scripts start. The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory, so the image fixes every version it runs without holding a byte of them.
+
+They are installed by that same image, once per node: a DaemonSet on the VM runners' nodes runs the image's installer into a node directory, mise's system data dir, and then idles, so a node that joins later gets the tools too. Each runner mounts the directory read-only and shares it read-only into every machine whose image asks for it, at the path the image names ([vm-runner](vm-runner.md)). A deploy with a new image rolls the DaemonSet, which installs the new versions **in place**, beside the old ones: a machine still booting an older image keeps the versions it names, and nothing is pruned. Playwright's browsers sit on the volume too, each image naming its own. Only a machine mounts the directory, so a Template on the default image requires the `vm` Backend: it is hidden while the install has no virtualization, and an Agent on the container Backend is not offered it as an upgrade until it migrates.
+
+The directory is in the boot path: a machine of the default image booted on a node before its installer has finished has no harness until its next start. On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
@@ -40,4 +48,4 @@ The seed is copied into a home once, when the home is new, because from then on 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
 - agent-browser and Playwright share one baked Chromium. agent-browser runs its headless shell, which calls none of Google's background services, and both trust the gateway's MITM CA through the NSS store the entrypoint fills in the home, since Chromium does not read the system bundle.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
-- aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image and last until the agent restarts. mise reads no config from the home, so a tool pin an older image persisted there is inert.
+- aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image and last until the agent restarts — except `mise use -g` on the default image, whose mise data dir is the read-only harness tools. mise reads no config from the home, so a tool pin an older image persisted there is inert.

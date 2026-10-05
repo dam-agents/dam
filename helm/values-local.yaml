@@ -84,6 +84,11 @@ virtualization:
       - 10.42.0.0/16
       - 10.43.0.0/16
       - 169.254.0.0/16
+  harnessTools:
+    image:
+      repository: platform-default
+      tag: latest
+      pullPolicy: Never
   devicePlugin:
     enabled: true
 
@@ -93,25 +98,25 @@ virtualization:
 harnessTemplates:
   claude-code:
     image:
-      repository: platform-claude-code
+      repository: platform-default
       tag: latest
 
   codex:
     enabled: false
     image:
-      repository: platform-codex
+      repository: platform-default
       tag: latest
 
   pi-agent:
     enabled: false
     image:
-      repository: platform-pi-agent
+      repository: platform-default
       tag: latest
 
   bob:
     enabled: false
     image:
-      repository: platform-bob
+      repository: platform-default
       tag: latest
 
   # Test fixture; not in the values.yaml catalog — the mock image is never

@@ -96,6 +96,7 @@ type VMRunnerSpec struct {
 	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
+	ToolsHostPath        string                        `json:"toolsHostPath,omitempty"`
 	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
 	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
 	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`

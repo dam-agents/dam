@@ -46,8 +46,11 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 # another tool there re-tags them too, which errs toward rebuilds.
 MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
-# harness agents; CI's `agents` build/merge matrix
-AGENTS="claude-code codex pi-agent bob"
+# agent images; CI's `agents` build/merge matrix. The default image carries
+# every harness, whose directories stay its sources and claude-code's the
+# workloads' base.
+AGENTS="default"
+HARNESSES="claude-code codex pi-agent bob"
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
@@ -62,7 +65,7 @@ PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
 IMAGES="controller ui api-server keycloak vm-runner"
 
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
-# the harnesses, keycloak, the vm-runner and every workload, since a starter kit
+# the default image, keycloak, the vm-runner and every workload, since a starter kit
 # names its image directly and its tag has to be pinned the same way a
 # Template's is.
 PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
@@ -114,6 +117,7 @@ own_paths() {
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
     keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
     claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -122,7 +126,7 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    controller|ui|api-server|keycloak|vm-runner|claude-code|codex|pi-agent|bob|mock) echo "" ;;
+    controller|ui|api-server|keycloak|vm-runner|default|claude-code|codex|pi-agent|bob|mock) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -198,6 +202,10 @@ self_check() {
   has "$(effective_paths claude-code)" packages/agent-runtime
   has "$(effective_paths claude-code)" .mise/config.toml
   has "$(effective_paths bob)" packages/agents/bob
+  chk "$(base_of default)" ""
+  has "$(effective_paths default)" packages/agents/default
+  has "$(effective_paths default)" packages/agents/pi-agent
+  has "$(effective_paths default)" packages/agents/base
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
   chk "$(base_of ui)" ""
@@ -231,7 +239,7 @@ self_check() {
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
   # git or a registry.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
-  has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
+  has "$out" 'agents=["default"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'source_shas={"controller":"'

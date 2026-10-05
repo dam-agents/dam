@@ -1,0 +1,10 @@
+# The image every harness Template boots on the vm Backend: base's environment
+# and the files of every harness, with no tool baked in. Base's tools and every
+# harness's are installed on each node, by this same image, into the directory
+# the vm runner mounts read-only at mise's system data dir, so the image and the
+# tools it runs agree on every version. The oci task stages it apart from the
+# other images (see `bare` there): the harnesses' tools become the image's
+# system config, their env joins its own.
+[oci.env]
+PLATFORM_HARNESS = "claude-code"
+PLATFORM_TOOLS_VOLUME = "/usr/local/share/mise"

@@ -31,6 +31,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: the node's harness tools — mise's system data dir that a per-node installer fills — mounted read-only; every machine whose image asks for them gets them read-only at the path it names. Empty shares none.
+    #[arg(long = "tools-dir", default_value = "")]
+    tools_dir: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
@@ -243,7 +246,10 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
-    let runtime = Arc::new(tokio::task::spawn_blocking(move || Smolvm::open(nested)).await??);
+    let tools = (!args.tools_dir.as_os_str().is_empty()).then(|| args.tools_dir.clone());
+    let runtime = Arc::new(
+        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
+    );
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
@@ -299,6 +305,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
+        tools_dir = %args.tools_dir.display(),
         platform_init = %args.platform_init.display(),
         platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,

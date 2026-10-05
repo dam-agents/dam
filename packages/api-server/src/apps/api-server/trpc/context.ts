@@ -7,6 +7,7 @@ import {
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
+import { runnableTemplates } from "../../../modules/templates/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import {
@@ -336,7 +337,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       : createDisabledTelemetryService();
 
     return {
-      templates: templatesRepo,
+      templates: runnableTemplates(templatesRepo, config.virtualizationEnabled),
       repos: reposService,
       agents,
       schedules,

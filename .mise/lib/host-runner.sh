@@ -10,17 +10,21 @@ export HOST_RUNNER_ADDRESS=192.168.5.2
 # which lima forwards onto the same loopback for the guests' gateways.
 export HOST_RUNNER_PORT_MIN=33000 HOST_RUNNER_PORT_MAX=33099
 
-# host_runner_images: attaches, creating it the first time, the case-sensitive
-# volume the runner's images live on, and prints its mount point. An image tree
-# holds names that differ only in case (xtables' libxt_DSCP.so and
-# libxt_dscp.so), which the Mac's default filesystem folds into one file.
-host_runner_images() {
-  local img="$HOST_RUNNER_DIR/images.sparsebundle" mnt="$HOST_RUNNER_DIR/images"
+# host_runner_volume <name>: attaches, creating it the first time, a
+# case-sensitive volume of the runner's, and prints its mount point. An image
+# tree, and the harness tools machines mount, hold names that differ only in
+# case (xtables' libxt_DSCP.so and libxt_dscp.so), which the Mac's default
+# filesystem folds into one file.
+host_runner_volume() {
+  local img="$HOST_RUNNER_DIR/$1.sparsebundle" mnt="$HOST_RUNNER_DIR/$1"
   mkdir -p "$HOST_RUNNER_DIR"
-  [ -d "$img" ] || hdiutil create -quiet -size 200g -type SPARSEBUNDLE -fs "Case-sensitive APFS" -volname platform-vm-images "$img"
+  [ -d "$img" ] || hdiutil create -quiet -size 200g -type SPARSEBUNDLE -fs "Case-sensitive APFS" -volname "platform-vm-$1" "$img"
   mount | grep -q " on $mnt (" || { mkdir -p "$mnt" && hdiutil attach -quiet -nobrowse -owners on -mountpoint "$mnt" "$img"; }
   echo "$mnt"
 }
+
+# host_runner_images: the volume the runner's images live on.
+host_runner_images() { host_runner_volume images; }
 
 # host_runner_stop: stops the runner, which stops its machines as a runner pod
 # does on termination; they start again once it is back.

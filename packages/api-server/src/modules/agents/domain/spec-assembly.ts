@@ -33,7 +33,7 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
+// UNIT_BOUNDARY_DESCRIPTION: the backend is a field a caller chooses independently of the image, unless the template declares the vm backend: its bare image gets its tools from a volume only a microVM mounts, so that template is a vm agent whatever the caller asked, and the create refusal for a microVM on an install without virtualization stays the gate. The template's harness is written to the spec, because one image serves every harness and the machine reads which one to run from it. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
@@ -45,9 +45,11 @@ export function assembleSpecFromTemplate(
   },
   defaultLimits: DefaultResourceLimits,
 ): Record<string, unknown> {
+  const vm = opts.vm || tmplSpec.backend === "vm";
   return {
     name,
     image: tmplSpec.image,
+    harness: tmplSpec.harness,
     description: opts.description ?? tmplSpec.description,
     mounts: tmplSpec.mounts,
     env: tmplSpec.env,
@@ -57,9 +59,9 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: opts.vm ? { type: "vm" } : undefined,
-    runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
-    nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
+    backend: vm ? { type: "vm" } : undefined,
+    runtimeClassName: vm ? undefined : tmplSpec.runtimeClassName,
+    nodeSelector: vm ? undefined : tmplSpec.nodeSelector,
   };
 }
 

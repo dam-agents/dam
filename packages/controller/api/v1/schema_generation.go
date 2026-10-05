@@ -44,7 +44,10 @@ const (
 	// Agent gen 16: nestedVirtualization added to the vm backend — the agent's
 	// machine alone gets the node's virtualization extensions, where the
 	// install and the node allow it; an older CRD would prune the ask.
-	AgentSchemaGeneration = 16
+	// Agent gen 17: harness added to AgentSpec — which harness the one vm
+	// image runs, read in the guest as PLATFORM_HARNESS; an older CRD would
+	// prune it.
+	AgentSchemaGeneration = 17
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

@@ -197,6 +197,9 @@ signal that this is an OpenShift cluster.
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
+{{- if and ($v.harnessTools | default dict).hostPath (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.harnessTools.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume every runner and the harness tools installer mount. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny). Without the tools, the harness Templates' default image cannot run." -}}
+{{- end -}}
 {{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}
 {{- end -}}

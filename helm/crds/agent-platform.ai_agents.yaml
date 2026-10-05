@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "16"
+    agent-platform.ai/crd-schema-generation: "17"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -142,6 +142,12 @@ spec:
                 items:
                   type: string
                 type: array
+              harness:
+                description: |-
+                  Harness names the harness the agent image runs (claude-code, codex,
+                  pi, bob, mock). A vm machine boots one image for every harness and
+                  reads this as PLATFORM_HARNESS; empty leaves the image's own default.
+                type: string
               hibernationTimeout:
                 description: 'HibernationTimeout overrides the chart-wide idle timeout
                   for this Agent: "0s" never hibernates, omitted inherits the default.

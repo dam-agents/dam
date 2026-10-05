@@ -87,6 +87,7 @@ isolate_mise() {
 
 stage_project() {
   isolate_mise
+  rm -rf "$MISE_SYSTEM_CONFIG_DIR"
 
   # In the repo every agent dir is a mise config root, so the stage renames
   # the fragments to names mise loads.
@@ -105,6 +106,42 @@ stage_project() {
     # pi's extension ships as source; node_modules holds its dev dependencies.
     tar -C "$d" --exclude=node_modules --exclude=.mise --exclude=./dist -cf - . | tar -C "$stage/$a" -xf -
   done
+}
+
+# The default image: every harness's files and env over base, with none of their
+# tools baked in. `mise oci` packages the project config's tools only, so the
+# tools move to the system config, which it leaves out, and into the image's own
+# /etc/mise with the lockfile, where its installer and the agent's mise read
+# them. Each harness's entry points and manifest move under its name, where the
+# image's dispatchers and the agent-runtime find the one PLATFORM_HARNESS names.
+bare_harnesses="claude-code codex pi-agent bob"
+
+# The tables of a mise config that hold tools, or (`other`) all the rest, less
+# the harness name the default image sets per agent.
+tables() {
+  awk -v want="$1" '/^\[/ { tools = /^\[tools[].]/ }
+    want == "tools" ? tools : !tools && !/^PLATFORM_HARNESS =/'
+}
+
+stage_bare() {
+  local a h f r etc="$stage/build/etc/mise"
+  mkdir -p "$etc/conf.d" "$MISE_SYSTEM_CONFIG_DIR"
+  for a in $bare_harnesses; do
+    h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
+    r="$stage/$a/rootfs"
+    install -d "$r/usr/local/lib/harness/$h" "$r/app/runtime-manifests"
+    mv "$r/usr/local/bin/harness-chat" "$r/usr/local/bin/harness-terminal" "$r/usr/local/lib/harness/$h/"
+    mv "$r/app/runtime-manifest.yaml" "$r/app/runtime-manifests/$h.yaml"
+  done
+  for f in "$stage/mise/conf.d/base.toml" "$stage"/mise/conf.d/harness.*.toml; do
+    a="$(basename "$f" .toml)"
+    [ "$a" != harness.default ] || continue
+    tables tools < "$f" > "$etc/conf.d/${a#harness.}.toml"
+    tables other < "$f" > "$f.other" && mv "$f.other" "$f"
+  done
+  cp "$stage/mise/mise.lock" "$etc/mise.lock"
+  [ ! -d "$stage/mise/.mise/locks" ] || { mkdir -p "$etc/.mise" && cp -R "$stage/mise/.mise/locks" "$etc/.mise/locks"; }
+  cp -R "$etc/." "$MISE_SYSTEM_CONFIG_DIR/"
 }
 
 # One lockfile for every image: mise lock only resolves, so any host can run it.
@@ -271,7 +308,9 @@ build_mise() (
   harness=$1 out="$oci_out/$1" envs=$1
   # A workload is an environment over claude-code's.
   case "$workloads" in *" $1 "*) envs="claude-code,$1" ;; esac
+  [ "$1" != default ] || envs="${bare_harnesses// /,},default"
   stage_project ${envs//,/ }
+  [ "$1" != default ] || stage_bare
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/share/ca-certificates
@@ -313,12 +352,27 @@ build_mise() (
   # Playwright's Chromium, which agent-browser finds through
   # PLAYWRIGHT_BROWSERS_PATH; the download is kept between builds.
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
-  cp -a "$work/ms-playwright" build/opt/
+  if [ "$harness" = default ]; then
+    # Its installer puts the same browsers on the volume, beside other
+    # Playwrights' own; the image names this one's.
+    mkdir -p build/opt/ms-playwright
+    for d in "$work"/ms-playwright/*/; do
+      d="${d%/}"
+      ln -s "../../usr/local/share/mise/ms-playwright/${d##*/}" "build/opt/ms-playwright/${d##*/}"
+    done
+    # The tools' bin directories, which `mise oci` puts on PATH only for the
+    # tools it packages; it overrides base's PATH.
+    printf '[oci.env]\nPATH = "%s:%s"\n' \
+      "$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|/usr/local/share/mise/|" | paste -sd: -)" \
+      "$(sed -n 's/^PATH = "\(.*\)"$/\1/p' mise/conf.d/base.toml)" > mise/conf.d/tools-path.toml
+  else
+    cp -a "$work/ms-playwright" build/opt/
+  fi
   # agent-browser runs the headless shell: full Chrome calls Google's services
   # at startup, which the gateway would hold for approval.
-  set -- build/opt/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
+  set -- "$work"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
   [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
-  ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/headless-shell
+  ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/headless-shell
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   install -d build/usr/local/lib/docker/cli-plugins
   for p in buildx compose; do

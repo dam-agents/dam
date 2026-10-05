@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadYamlDocument } from "../../../core/yaml-document.js";
-import type { Template, TemplateSpec } from "api-server-api";
+import type { Template, TemplateSpec, TemplatesService } from "api-server-api";
 import { templateSpecSchema } from "api-server-api";
 
 export interface TemplatesRepository {
@@ -24,6 +24,22 @@ export function createTemplatesRepository(dir: string): TemplatesRepository {
     async readSpec(id) {
       const tmpl = byId.get(id);
       return tmpl ? { spec: tmpl.spec } : null;
+    },
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the templates a user is offered on this install. A template that declares the vm backend boots a bare image whose tools only a microVM mounts, so on an install without virtualization it is left out of the list and reads as absent, like a vm Starter Kit. Create, upgrade and skills keep reading the full repository, so the create refusal for a microVM stays the one gate and an existing agent keeps its template's skill sources.
+export function runnableTemplates(
+  repo: TemplatesService,
+  virtualizationEnabled: boolean,
+): TemplatesService {
+  if (virtualizationEnabled) return repo;
+  const runnable = (t: Template) => t.spec.backend !== "vm";
+  return {
+    list: async () => (await repo.list()).filter(runnable),
+    get: async (id) => {
+      const t = await repo.get(id);
+      return t && runnable(t) ? t : null;
     },
   };
 }

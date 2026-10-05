@@ -59,7 +59,11 @@ export function CreateAgentInline({ onCreated }: Props) {
 
   return (
     <Card className="flex flex-col gap-4 p-4">
-      <VmRuntimeNotice />
+      <VmRuntimeNotice
+        vmOnly={
+          templates.find((t) => t.id === selectedTemplateId)?.backend === "vm"
+        }
+      />
 
       <FormField label="Name" labelInset>
         <Input

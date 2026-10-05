@@ -18,6 +18,7 @@ import {
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type SessionBackgroundWork,
+  type TemplateSpec,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -452,7 +453,10 @@ export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
   getAgent: (id: string) => Promise<InfraAgent | null>;
   readTemplateSpec: ReadTemplateSpec;
-  patchImage: (id: string, image: string) => Promise<InfraAgent | null>;
+  patchSpec: (
+    id: string,
+    patch: { image: string; harness?: string },
+  ) => Promise<InfraAgent | null>;
 }) {
   return async (
     id: string,
@@ -469,10 +473,13 @@ export function executeTemplateUpgrade(deps: {
     if (expectedToImage !== undefined && expectedToImage !== tmpl.spec.image)
       return err({ type: "TemplateMoved" as const });
 
-    const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    const update = templateImageUpdate(infra.spec, tmpl.spec);
     if (!update) return ok(infra);
 
-    const patched = await deps.patchImage(id, update.toImage);
+    const patched = await deps.patchSpec(id, {
+      image: update.toImage,
+      ...(tmpl.spec.harness ? { harness: tmpl.spec.harness } : {}),
+    });
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.upgrade", {
       category: "resource",
@@ -677,7 +684,7 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    return templateImageUpdate(infra.spec, tmpl.spec);
   }
 
   async function project(
@@ -891,18 +898,18 @@ export function createAgentsService(deps: {
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
       ];
-      const templateImages = new Map<string, string>();
+      const templateSpecs = new Map<string, TemplateSpec>();
       await Promise.all(
         templateIds.map(async (tid) => {
           const tmpl = await deps.readTemplateSpec(tid);
-          if (tmpl) templateImages.set(tid, tmpl.spec.image);
+          if (tmpl) templateSpecs.set(tid, tmpl.spec);
         }),
       );
 
       return infraAgents.map((infra) => {
         const status = failuresMap.get(infra.id);
-        const templateImage = infra.templateId
-          ? templateImages.get(infra.templateId)
+        const templateSpec = infra.templateId
+          ? templateSpecs.get(infra.templateId)
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
@@ -910,8 +917,8 @@ export function createAgentsService(deps: {
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
-          templateImage
-            ? templateImageUpdate(infra.spec.image, templateImage)
+          templateSpec
+            ? templateImageUpdate(infra.spec, templateSpec)
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
@@ -1364,8 +1371,8 @@ export function createAgentsService(deps: {
         owner: deps.owner,
         getAgent: (agentId) => deps.repo.get(agentId, deps.owner),
         readTemplateSpec: deps.readTemplateSpec,
-        patchImage: (agentId, image) =>
-          deps.repo.updateSpec(agentId, deps.owner, { image }),
+        patchSpec: (agentId, patch) =>
+          deps.repo.updateSpec(agentId, deps.owner, patch),
       })(id, expectedToImage);
       if (!result.ok) return result;
       emit({

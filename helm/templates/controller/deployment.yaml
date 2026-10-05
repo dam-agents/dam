@@ -87,6 +87,7 @@ spec:
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
+                  "toolsHostPath" ((.Values.virtualization.harnessTools | default dict).hostPath | default "")
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
                   "resources" $r.resources
                   "hostAddress" ($r.hostAddress | default "")
