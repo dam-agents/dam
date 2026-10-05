@@ -44,7 +44,7 @@ The `preview` session keeps a browser profile in the agent's home, so sign-ins s
 
 An open panel keeps the agent awake the way an open chat does: it counts towards the agent's open connections, not towards runtime work. Only the user's input stamps last activity; frames never do, so a forgotten panel does not refresh the idle clock by itself. A hidden tab drops the stream to one frame a second.
 
-agent-runtime closes the browser ten minutes after the last viewer leaves. It does not know whether the agent is still using the session in that window — agent-browser reports no last-use time — so an agent mid-way through its own browser work can lose the window; its next agent-browser command launches the session again, without the panel's profile. A running Chromium never keeps the agent awake on its own.
+agent-runtime closes the browser ten minutes after the last viewer leaves. It does not know whether the agent is still using the session in that window — agent-browser reports no last-use time — so an agent mid-way through its own browser work can lose the window; its next agent-browser command launches the session again, with the same profile, since the agent instructions name both. A running Chromium never keeps the agent awake on its own.
 
 ## Limits
 
