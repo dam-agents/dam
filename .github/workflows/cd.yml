@@ -923,10 +923,11 @@ jobs:
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
   security:
-    # After the merges, so the image scan reads this commit's tags. It runs
-    # even when a build failed: the lockfile scans still run, and the image
-    # scan is left out.
-    needs: [build-images, build-agents, build-workloads, merge-images, merge-agents, merge-workloads]
+    # After the merges, so the image scan reads this commit's tags, and after
+    # mirror-images, so it reads the mirrored copies of this commit's pins. It
+    # runs even when a build or the mirror failed: the lockfile scans still
+    # run, and the image scan is left out.
+    needs: [build-images, build-agents, build-workloads, merge-images, merge-agents, merge-workloads, mirror-images]
     if: ${{ github.ref == 'refs/heads/main' && !cancelled() }}
     permissions:
       contents: read
