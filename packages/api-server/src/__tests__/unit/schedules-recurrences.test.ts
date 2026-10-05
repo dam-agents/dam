@@ -422,6 +422,21 @@ describe("rrule presets", () => {
     ).toBe("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0;BYDAY=MO,TU,WE,TH,FR");
   });
 
+  it("builds a preset rule without Temporal, as a browser lacking it does", () => {
+    const temporal = Reflect.get(globalThis, "Temporal");
+    Reflect.deleteProperty(globalThis, "Temporal");
+    try {
+      expect(buildRRule({ kind: "minutely", interval: 1, days: [7] })).toBe(
+        "FREQ=MINUTELY;INTERVAL=1;BYDAY=SU",
+      );
+      expect(buildRRule({ kind: "daily", hour: 0, minute: 0, days: [] })).toBe(
+        "FREQ=DAILY;BYHOUR=0;BYMINUTE=0;BYSECOND=0",
+      );
+    } finally {
+      Reflect.set(globalThis, "Temporal", temporal);
+    }
+  });
+
   it("reads a built rule back as the preset it came from", () => {
     const daily: FrequencyPreset = {
       kind: "daily",

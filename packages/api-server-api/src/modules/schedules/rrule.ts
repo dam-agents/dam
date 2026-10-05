@@ -17,39 +17,27 @@ export function buildRRule(preset: FrequencyPreset): string {
   if (preset.kind === "custom") {
     return stripRRulePrefix(preset.rrule.trim());
   }
-  const rule = new RRuleTemporal({
-    ...toOptions(preset),
-    dtstart: anchoredAt("UTC"),
-  });
-  return stripRRulePrefix(rule.toString());
-}
-
-function toOptions(preset: Exclude<FrequencyPreset, { kind: "custom" }>) {
+  const parts =
+    preset.kind === "daily"
+      ? [
+          "FREQ=DAILY",
+          `BYHOUR=${preset.hour}`,
+          `BYMINUTE=${preset.minute}`,
+          "BYSECOND=0",
+        ]
+      : [`FREQ=${preset.kind.toUpperCase()}`, `INTERVAL=${preset.interval}`];
   const byDay = daysFilterToByDay(preset.days);
-  switch (preset.kind) {
-    case "minutely":
-      return { freq: "MINUTELY" as const, interval: preset.interval, ...byDay };
-    case "hourly":
-      return { freq: "HOURLY" as const, interval: preset.interval, ...byDay };
-    case "daily":
-      return {
-        freq: "DAILY" as const,
-        byHour: [preset.hour],
-        byMinute: [preset.minute],
-        bySecond: [0],
-        ...byDay,
-      };
-  }
+  return [...parts, ...(byDay ? [`BYDAY=${byDay}`] : [])].join(";");
 }
 
-function daysFilterToByDay(days: number[]): { byDay?: string[] } {
-  if (days.length === 0 || days.length === ALL_DAYS.length) return {};
+function daysFilterToByDay(days: number[]): string | null {
+  if (days.length === 0 || days.length === ALL_DAYS.length) return null;
   const mapped = days.map((d) => ISO_TO_BYDAY[d]).filter(Boolean);
-  return mapped.length > 0 ? { byDay: mapped } : {};
+  return mapped.length > 0 ? mapped.join(",") : null;
 }
 
 function stripRRulePrefix(s: string): string {
-  return s.replace(/^DTSTART[^\n]*\n/, "").replace(/^RRULE:/, "");
+  return s.replace(/^RRULE:/, "");
 }
 
 function parseRRule(rruleBody: string): RRuleTemporal {
