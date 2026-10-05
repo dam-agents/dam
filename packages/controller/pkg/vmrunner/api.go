@@ -79,7 +79,11 @@ type MachineStatus struct {
 	Ready     bool   `json:"ready"`
 	CPUs      int    `json:"cpus,omitempty"`
 	MemoryMiB int    `json:"memoryMiB,omitempty"`
-	Message   string `json:"message,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM
+	// UNIT_BOUNDARY_DESCRIPTION: holds, as the runner last measured it. Zero
+	// UNIT_BOUNDARY_DESCRIPTION: until measured, which counts as MemoryMiB.
+	UsedMiB int    `json:"usedMiB,omitempty"`
+	Message string `json:"message,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this
 	// UNIT_BOUNDARY_DESCRIPTION: status changes. WaitStatus hands it back as
 	// UNIT_BOUNDARY_DESCRIPTION: `since`, and the runner answers once it has

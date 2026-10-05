@@ -69,7 +69,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 			return runnerDemand{}, err
 		}
 		if running {
-			d.memoryMiB += r.machineMemoryMiB(&a.Spec)
+			d.memoryMiB += r.accountedMemoryMiB(a.Name, &a.Spec)
 		}
 	}
 	return d, nil
@@ -161,7 +161,7 @@ func (r *AgentReconciler) runnerClassExpands(ctx context.Context) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quantity) resource.Quantity {
-	want := *resource.NewQuantity(int64(demandMiB+reserveMiB)<<20, resource.BinarySI)
+	want := *resource.NewQuantity(int64(roundedMiB(demandMiB+reserveMiB))<<20, resource.BinarySI)
 	if want.Cmp(floor) < 0 {
 		want = floor
 	}

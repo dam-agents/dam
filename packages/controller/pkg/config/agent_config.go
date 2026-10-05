@@ -90,6 +90,7 @@ type VMRunnerSpec struct {
 	StorageClass         string                        `json:"storageClass,omitempty"`
 	Devices              map[string]string             `json:"devices,omitempty"`
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
+	HeadroomMiB          int                           `json:"headroomMiB,omitempty"`
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
