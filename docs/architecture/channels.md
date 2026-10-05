@@ -1,6 +1,8 @@
 # Channels
 
-Last verified: 2026-10-02
+Last verified: 2026-10-05
+
+Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
 ## Overview
 
