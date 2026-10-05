@@ -18,7 +18,8 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
 
 function liteLlmEnvMappings(
   host: string,
-  models: { proxy: string; openai: string },
+  openaiModel: string,
+  proxy: Record<string, string>,
 ): EnvMapping[] {
   const baseUrl = `https://${host}`;
   return [
@@ -26,28 +27,32 @@ function liteLlmEnvMappings(
     { envName: "ANTHROPIC_BASE_URL", placeholder: baseUrl },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "OPENAI_PROXY_URL", placeholder: baseUrl },
-    { envName: "OPENAI_PROXY_MODEL", placeholder: models.proxy },
-    { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
-    { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
+    ...Object.entries(proxy).map(([key, placeholder]) => ({
+      envName: `OPENAI_PROXY_${key}`,
+      placeholder,
+    })),
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: baseUrl },
-    { envName: "OPENAI_MODEL", placeholder: models.openai },
+    { envName: "OPENAI_MODEL", placeholder: openaiModel },
     { envName: "BOB_GATEWAY_URL", placeholder: baseUrl },
     { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
   ];
 }
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
-  return liteLlmEnvMappings(IBM_LITELLM_HOST, {
-    proxy: "aws/claude-opus-4-8",
-    openai: "gpt-5.5",
+  return liteLlmEnvMappings(IBM_LITELLM_HOST, "gpt-5.5", {
+    MODEL: "aws/claude-opus-4-8",
+    CONTEXT_WINDOW: "200000",
+    MAX_TOKENS: "8192",
   });
 }
 
 export function curveBenderEnvMappings(): EnvMapping[] {
-  return liteLlmEnvMappings(CURVE_BENDER_HOST, {
-    proxy: "rits/zai-org/glm-5-3",
-    openai: "rits/zai-org/glm-5-3",
+  return liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
+    MODEL: "rits/zai-org/glm-5-3",
+    CONTEXT_WINDOW: "262144",
+    MAX_TOKENS: "32768",
+    REASONING: "1",
   });
 }
 

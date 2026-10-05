@@ -90,4 +90,16 @@ describe("curve-bender connection template", () => {
       ),
     ).toEqual([expect.objectContaining({ host })]);
   });
+
+  // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the smallest one served — otherwise it drops their thinking and compacts too late.
+  it("tells Pi the endpoint serves reasoning models with a 262k context", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+
+    expect(envOf(contributions, "OPENAI_PROXY_REASONING")).toMatchObject({
+      placeholder: "1",
+    });
+    expect(envOf(contributions, "OPENAI_PROXY_CONTEXT_WINDOW")).toMatchObject({
+      placeholder: "262144",
+    });
+  });
 });
