@@ -278,9 +278,9 @@ gateway forwards plain HTTP without terminating it, so it could not sign
 there, and chains route on SNI, which clients do not send for an IP. The
 key's upstream role is the real permission limit, which is why the
 template suggests a read-only key for read-only access. A bucket, when
-given, narrows the egress rules to that bucket's paths on the endpoint;
-otherwise the whole host is allowed. The build emits `egress-sign` for the
-endpoint and nothing else.
+given, narrows the egress rules and the gateway's signing to that
+bucket's paths on the endpoint; otherwise the whole host is allowed. The
+build emits `egress-sign` for the endpoint and nothing else.
 
 What the agent gets comes from the grant: **AWS profiles**, one per
 storage Connection the Agent holds, named after the Connection. The

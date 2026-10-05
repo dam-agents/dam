@@ -1842,9 +1842,64 @@ func TestChainsFromSecrets_SigningEntriesOnOneHostCollapseIntoOneSigner(t *testi
 	assert.Equal(t, "aws-credentials", signer.CredentialsKey)
 	assert.Equal(t, "us-south", signer.Region)
 	assert.Equal(t, "s3", signer.Service)
+	assert.Equal(t, []string{"/bucket", "/bucket?*", "/bucket/*"}, signer.PathPatterns,
+		"the collapsed entries' path scopes bound the signer, so a sibling connection's wider egress rules cannot lend its keys to another bucket")
+	assert.False(t, signer.HostWide())
 	assert.Equal(t, []string{"conn-cos"}, c.ConnectionIDs())
 	assert.Equal(t, []string{"/"}, c.ScopesOf("conn-cos"), "a signer answers to its address on the whole host")
-	assert.Equal(t, []string{"/"}, c.PathScopes(), "signing scopes cut no routes: the egress rules bound the paths")
+	assert.Equal(t, []string{"/"}, c.PathScopes(), "signing scopes cut no routes: the signing guard bounds the step on the path it sees")
+}
+
+func TestChainsFromSecrets_SigningEntryWithoutPathPatternSignsTheWholeHost(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.Nil(t, chains[0].Signers[0].PathPatterns, "a connection without a bucket keeps signing the whole host")
+	assert.True(t, chains[0].Signers[0].HostWide())
+}
+
+func TestChainsFromSecrets_AHostWideSigningEntryWidensTheSignerPastItsBucketEntries(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","pathPattern":"/bucket/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/bucket","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.True(t, chains[0].Signers[0].HostWide(), "one entry on the whole host means the egress rules admit every path, so the guard bounds nothing")
+}
+
+func TestChainsFromSecrets_TwoSignersOnOneHostKeepTheirOwnScopes(t *testing.T) {
+	scratch := signingSecret("platform-conn-scratch", "conn-scratch", "s3.example.cloud")
+	scratch.Annotations[envoyInjectionHostsAnn] = strings.ReplaceAll(scratch.Annotations[envoyInjectionHostsAnn], "/bucket", "/scratch")
+	wide := signingSecret("platform-conn-wide", "conn-wide", "s3.example.cloud")
+	wide.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{scratch, wide}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 2)
+	assert.Equal(t, []string{"/scratch", "/scratch?*", "/scratch/*"}, chains[0].Signers[0].PathPatterns)
+	assert.Nil(t, chains[0].Signers[1].PathPatterns,
+		"the wide connection's egress rules admit /prod on the host, but only its own signer may sign there")
+}
+
+func TestLuaGlobPattern_MatchesTheEgressRulePatternLiterally(t *testing.T) {
+	assert.Equal(t, "^/bucket$", luaGlobPattern("/bucket"))
+	assert.Equal(t, "^/bucket%?.*$", luaGlobPattern("/bucket?*"), "the ? before the query is literal, as in the egress rule")
+	assert.Equal(t, "^/bucket/.*$", luaGlobPattern("/bucket/*"), "/bucket/* does not cover /bucketx or /bucket")
+	assert.Equal(t, "^/my%.data%-set/.*$", luaGlobPattern("/my.data-set/*"), "dots and dashes in a bucket name are literal")
+	assert.Equal(t, "^/__platform_conn/[%w%._~%-]+(/.*)$", luaAddressedPathPattern(),
+		"a path-prefixed address is stripped before matching, as ext_authz strips it before the egress rule")
 }
 
 func TestChainsFromSecrets_SigningMissingCredentialsKeyDegradesToAllowOnly(t *testing.T) {
@@ -1947,6 +2002,13 @@ func TestRenderEnvoyBootstrap_SigningSecretRendersGuardAndSignerBeforeTheForward
 	assert.Contains(t, script, `local PREFIX = "STREAMING-"`)
 	assert.Contains(t, script, `[":status"] = "400"`)
 	assert.Contains(t, script, "request_checksum_calculation = when_required")
+	assert.Contains(t, script, `local PATTERNS = {"^/bucket$", "^/bucket%?.*$", "^/bucket/.*$"}`,
+		"the guard matches the bucket's three egress-rule patterns on the path as sent, so /bucketx and /prod/x are outside")
+	assert.Contains(t, script, `[":status"] = "403"`)
+	assert.Contains(t, script, `rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, SCOPE_BODY)`)
+	assert.Contains(t, script, "The storage connection conn-cos is limited to /bucket, /bucket?*, /bucket/* on s3.example.cloud")
+	assert.Less(t, strings.Index(script, `"403"`), strings.Index(script, `"400"`),
+		"a request outside the bucket is refused before its body shape is looked at")
 
 	signing := signingFilter(t, filters, signer.FilterName())
 	assertInjectsOnlyWhenAddressed(t, signing, "conn-cos")
