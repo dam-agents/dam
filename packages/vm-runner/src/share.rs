@@ -206,7 +206,7 @@ impl SeedFile {
         }
         Ok(SeedResult {
             bytes: self.bytes,
-            sha256: format!("{:x}", self.hasher.clone().finalize()),
+            sha256: hex::encode(self.hasher.clone().finalize()),
         })
     }
 }

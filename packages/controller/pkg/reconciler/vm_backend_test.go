@@ -1505,6 +1505,23 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
 }
 
+// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for audit, which logs a call outside the allowlist rather than killing the VMM, until the runner's VMMs are shown to stay inside it.
+func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"],
+		"unset applies nothing, and enforce waits until audit finds no call outside the allowlist")
+}
+
 func envSecret(t *testing.T, r *AgentReconciler, name string, labels map[string]string) {
 	t.Helper()
 	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{

@@ -37,13 +37,6 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 - The `nous` package in a venv at `$NOUS_VENV`, a mise `pipx:` tool installed
   **straight from the public GitHub repo** at a pinned tag, with the `nous`
   CLI on `PATH`. No source vendoring.
-- A build-time patch ([`patch-campaign-schema.py`](./patch-campaign-schema.py))
-  that adds the `channels:` property to the installed `campaign.schema.yaml`.
-  Nous's runtime reads `campaign.channels` at every gate, but the v0.4.0 schema
-  omits the property while forbidding unknown top-level keys, so any campaign
-  using channels is rejected at pre-flight ([Nous issue #296](https://github.com/AI-native-Systems-Research/agentic-strategy-evolution/issues/296))
-  — which would break the channel bridge below. The patch is idempotent and
-  self-verifying; it no-ops once a Nous release ships the property.
 - `NOUS_ALLOW_AUTO_APPROVE=1` so `--auto-approve` runs are unconditional in this
   pod (the design/findings human gates auto-pass) — the only approval mode this
   pod runs in (see `AGENTS.md`).

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const systemCABundle = "/etc/ssl/certs/ca-certificates.crt"
+var systemCABundle = "/etc/ssl/certs/ca-certificates.crt"
 
 // UNIT_BOUNDARY_DESCRIPTION: the CAs an install names beyond the public roots — a TLS-inspecting proxy on the cluster's egress path, or the platform's own gateway when the platform runs inside one of its agents — as one PEM bundle. Each must be a certificate that parses, and nothing else may sit between them, because a bundle that silently dropped one would leave every gateway and agent failing TLS with no clue why.
 func ExtraTrustedCAs(extra string) (string, error) {

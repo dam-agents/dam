@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::command;
@@ -84,32 +83,18 @@ fn keep(packed: &Path, kept: &Path, cancel: &CancellationToken) -> anyhow::Resul
     Ok(at)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the directory is named for the content of the compressed template and, for the storage template, for the journal the expansion adds to it too. A copy an older runner kept without the journal therefore sits in another directory and is never taken for a journaled one; nor is it given a journal in place, because a qcow2 overlay an older runner made over it names that exact file as its backing.
+// UNIT_BOUNDARY_DESCRIPTION: the directory is named for the content of the compressed template, so a new release's template lands beside an old one rather than being taken for it.
 fn kept_path(packed: &Path, kept: &Path) -> anyhow::Result<PathBuf> {
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut fs::File::open(packed)?, &mut hasher)?;
+    let mut tally = crate::seed::Tally::new(std::io::sink());
+    std::io::copy(&mut fs::File::open(packed)?, &mut tally)?;
     let name = expanded(packed);
     let name = name
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("{} names no file", packed.display()))?;
-    let mut key = format!("{:x}", hasher.finalize());
-    if journaled(packed) {
-        key.push_str(JOURNALED_SUFFIX);
-    }
-    Ok(kept.join(key).join(name))
+    Ok(kept.join(tally.finish()?.1.sha256).join(name))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm formats its storage template without an ext4 journal, and every machine's storage disk is a copy of it. Without a journal a runner that is killed leaves every disk that was being written needing a full repair, and a repair that fails is where smolvm formats the disk and the agent's home with it. So the storage template is given a journal once, as it is expanded, before any machine is made from it. The root overlay's template is left as smolvm made it, because the runner discards that disk before every boot.
-const STORAGE_TEMPLATE: &str = "storage-template.ext4";
-const JOURNALED_SUFFIX: &str = "-journal";
-
-fn journaled(packed: &Path) -> bool {
-    expanded(packed)
-        .file_name()
-        .is_some_and(|name| name == STORAGE_TEMPLATE)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not zstd's default when it writes to a named file, and without it a 20 GiB template of holes is written out in full: measured at 20 GiB and 33 s against 672 KiB and 4 s. The expansion goes to a temporary name and is renamed over the target, so a machine created meanwhile never opens half a template, nor a storage template that has not been given its journal yet.
+// UNIT_BOUNDARY_DESCRIPTION: `--sparse` is not zstd's default when it writes to a named file, and without it a 20 GiB template of holes is written out in full: measured at 20 GiB and 33 s against 672 KiB and 4 s. The expansion goes to a temporary name and is renamed over the target, so a machine created meanwhile never opens half a template.
 fn expand(packed: &Path, target: &Path, cancel: &CancellationToken) -> anyhow::Result<()> {
     let staged = target.with_extension("ext4.warming");
     let result = command::output(
@@ -120,28 +105,11 @@ fn expand(packed: &Path, target: &Path, cancel: &CancellationToken) -> anyhow::R
         Instant::now() + WARM_TIMEOUT,
         cancel,
     )
-    .and_then(|_| {
-        if journaled(packed) {
-            add_journal(&staged, cancel)?;
-        }
-        Ok(())
-    })
-    .and_then(|()| fs::rename(&staged, target).map_err(Into::into));
+    .and_then(|_| fs::rename(&staged, target).map_err(Into::into));
     if result.is_err() {
         let _ = fs::remove_file(&staged);
     }
     result
-}
-
-fn add_journal(template: &Path, cancel: &CancellationToken) -> anyhow::Result<()> {
-    command::output(
-        Command::new("tune2fs")
-            .args(["-O", "has_journal"])
-            .arg(template),
-        Instant::now() + WARM_TIMEOUT,
-        cancel,
-    )?;
-    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: points `home/.smolvm/<template>` at each expanded template. That is the first place smolvm looks, and smolvm canonicalizes the link before it writes a template's path into a qcow2 overlay, so an overlay names the expanded file and not the link. Each link is made under a temporary name and renamed over the old one, so a machine created meanwhile sees either the old template or the new one, never none.
@@ -241,103 +209,6 @@ mod tests {
         assert_eq!(first.file_name().unwrap(), "storage-template.ext4");
         fs::write(&old, "release two").unwrap();
         assert_ne!(first, kept_path(&old, &kept).unwrap());
-    }
-
-    // TEST_SCENARIO: the kept storage template carries a journal an older runner's copy of the same release lacks, so it is kept under another name: taking the old copy would make journal-less disks, and journaling it in place would change the file an older qcow2 overlay names as its backing. The root overlay's template is kept as before.
-    #[test]
-    fn the_journaled_storage_template_is_kept_apart_from_an_older_copy() {
-        let install = TempDir::new("journal-key");
-        let kept = install.path().join("kept");
-        let storage = install.path().join("storage-template.ext4.zst");
-        let overlay = install.path().join("overlay-template.ext4.zst");
-        fs::write(&storage, "same bytes").unwrap();
-        fs::write(&overlay, "same bytes").unwrap();
-        let storage_dir = kept_path(&storage, &kept).unwrap();
-        let overlay_dir = kept_path(&overlay, &kept).unwrap();
-        assert!(storage_dir
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .ends_with(JOURNALED_SUFFIX));
-        assert!(!overlay_dir
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .ends_with(JOURNALED_SUFFIX));
-    }
-
-    // TEST_SCENARIO: smolvm ships its storage template without a journal, and every machine's storage disk is a copy of it. The expansion gives it one before it is renamed into place, so no machine is ever made from a journal-less template.
-    #[test]
-    fn the_storage_template_is_expanded_with_a_journal() {
-        if !["mkfs.ext4", "dumpe2fs", "tune2fs", "zstd"]
-            .iter()
-            .all(|tool| has_tool(tool))
-        {
-            return;
-        }
-        let install = TempDir::new("journal");
-        let raw = unjournaled(install.path());
-        let packed = install.path().join("storage-template.ext4.zst");
-        let zipped = Command::new("zstd")
-            .args(["-q", "-o"])
-            .arg(&packed)
-            .arg(&raw)
-            .output()
-            .unwrap();
-        assert!(zipped.status.success(), "{zipped:?}");
-        let home = TempDir::new("journal-home");
-        let kept = home.path().join(KEPT_DIR);
-
-        warm(
-            install.path(),
-            Some(&kept),
-            home.path(),
-            &CancellationToken::new(),
-        );
-
-        assert!(has_journal(
-            &home.path().join(".smolvm/storage-template.ext4")
-        ));
-    }
-
-    // TEST_SCENARIO: the step the expansion of the storage template adds, on its own, so it is covered where zstd is missing: a filesystem made the way smolvm makes its templates, without a journal, has one afterwards.
-    #[test]
-    fn a_template_without_a_journal_is_given_one() {
-        if !has_tool("mkfs.ext4") || !has_tool("dumpe2fs") || !has_tool("tune2fs") {
-            return;
-        }
-        let dir = TempDir::new("add-journal");
-        let template = unjournaled(dir.path());
-        assert!(!has_journal(&template));
-        add_journal(&template, &CancellationToken::new()).unwrap();
-        assert!(has_journal(&template));
-    }
-
-    fn has_tool(tool: &str) -> bool {
-        Command::new(tool).arg("-V").output().is_ok()
-    }
-
-    fn unjournaled(dir: &Path) -> PathBuf {
-        let raw = dir.join("raw.ext4");
-        let made = Command::new("mkfs.ext4")
-            .args(["-F", "-q", "-O", "^has_journal"])
-            .arg(&raw)
-            .arg("8M")
-            .output()
-            .unwrap();
-        assert!(made.status.success(), "{made:?}");
-        raw
-    }
-
-    fn has_journal(image: &Path) -> bool {
-        let dumped = Command::new("dumpe2fs")
-            .arg("-h")
-            .arg(image)
-            .output()
-            .unwrap();
-        String::from_utf8_lossy(&dumped.stdout)
-            .lines()
-            .any(|line| line.starts_with("Filesystem features:") && line.contains("has_journal"))
     }
 
     // TEST_SCENARIO: a pod whose claim already holds the kept copy links it where smolvm looks and expands nothing, so no compressor runs, and a link left pointing at nothing is replaced.

@@ -21,8 +21,9 @@ libc = "0.2"
 tar = { version = "0.4", default-features = false }
 # Hashes the seed as it is unpacked, so the home is restored only from the seed
 # the runner was told to expect. Pure Rust, and already in the lock by way of
-# the runner.
-sha2 = "0.10"
+# the runner, as is hex, which spells the digest.
+sha2 = "0.11"
+hex = "0.4"
 # platform-runc edits a container's OCI spec, which is JSON; the contract
 # fixture tests read it too. Already in the lock by way of the runner.
 serde_json = "1"
