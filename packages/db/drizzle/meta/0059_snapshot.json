@@ -1,5 +1,5 @@
 {
-  "id": "6bca04a0-117a-4f30-89e2-e07943c1ab8e",
+  "id": "9e7bc0fd-c34d-4f24-bbba-a26622a55713",
   "prevId": "ea3d80f7-13a8-47c3-a20a-283875390b74",
   "version": "7",
   "dialect": "postgresql",
@@ -1901,6 +1901,12 @@
         },
         "awaited_until": {
           "name": "awaited_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_until": {
+          "name": "claimed_until",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

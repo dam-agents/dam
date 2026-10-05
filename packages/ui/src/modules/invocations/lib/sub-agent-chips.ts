@@ -1,7 +1,7 @@
 import type { ToolChip } from "../../../types.js";
 
-const AWAIT_TOOL = "await_subagents";
-const SPAWN_TOOL = "spawn_subagent";
+const AWAIT_TOOL = /^(?:mcp__[\w-]+__)?await_subagents$/;
+const SPAWN_TOOL = /^(?:mcp__[\w-]+__)?spawn_subagent$/;
 
 interface AwaitResult {
   done?: unknown[];
@@ -11,11 +11,11 @@ interface AwaitResult {
 }
 
 export function isAwaitSubAgentsChip(chip: ToolChip): boolean {
-  return chip.title.includes(AWAIT_TOOL);
+  return AWAIT_TOOL.test(chip.title.trim());
 }
 
 export function isSpawnSubAgentChip(chip: ToolChip): boolean {
-  return chip.title.includes(SPAWN_TOOL);
+  return SPAWN_TOOL.test(chip.title.trim());
 }
 
 function parseResult(chip: ToolChip): AwaitResult | null {

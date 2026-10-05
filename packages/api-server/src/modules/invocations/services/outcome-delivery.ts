@@ -101,6 +101,7 @@ async function wake(
 
 async function deliverTo(
   deps: SubAgentOutcomeDeliveryDeps,
+  now: () => Date,
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<boolean> {
@@ -111,7 +112,7 @@ async function deliverTo(
   );
 
   const ids = told.map((r) => r.id);
-  const firedAt = (deps.now ?? (() => new Date()))().getTime();
+  const firedAt = now().getTime();
   try {
     await deps.bump(driverAgentId, [
       {
@@ -163,7 +164,7 @@ export function createSubAgentOutcomeDelivery(
     let turns = 0;
     for (const [driverAgentId, rows] of byDriver(claimed)) {
       try {
-        if (await deliverTo(deps, driverAgentId, rows)) turns++;
+        if (await deliverTo(deps, now, driverAgentId, rows)) turns++;
       } catch (err) {
         deps.log(
           `[sub-agents] the outcome sweep skipped ${driverAgentId}: ${String(err)}`,

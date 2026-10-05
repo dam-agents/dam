@@ -1,1 +1,0 @@
-ALTER TABLE "invocations" ADD COLUMN "claimed_until" timestamp with time zone;
