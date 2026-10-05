@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useStore } from "../../../store.js";
+import { IllustrationPartsSheet } from "../components/illustration-parts-sheet.js";
 import { PackBrowser } from "../components/pack-browser.js";
 import { PackDetailSheet } from "../components/pack-detail-sheet.js";
 import type { Pack } from "../data/packs.js";
@@ -12,6 +13,7 @@ export function PresetsView() {
   const setView = useStore((s) => s.setView);
   const setPendingPack = useStore((s) => s.setPendingPack);
   const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+  const [showIllustrationParts, setShowIllustrationParts] = useState(false);
 
   const handleCreateFromPack = (pack: Pack) => {
     setSelectedPack(null);
@@ -25,9 +27,18 @@ export function PresetsView() {
         title="Starter Kits"
         description="Each starter kit bundles a harness, skills, schedules, and connections into a ready-made agent configuration."
         actions={
-          <Button variant="outline" onClick={() => setView("agent-new")}>
-            Start from scratch
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowIllustrationParts(true)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Illustration parts
+            </button>
+            <Button variant="outline" onClick={() => setView("agent-new")}>
+              Start from scratch
+            </Button>
+          </div>
         }
       />
 
@@ -43,6 +54,12 @@ export function PresetsView() {
           setView("agent-new");
         }}
       />
+
+      {showIllustrationParts && (
+        <IllustrationPartsSheet
+          onClose={() => setShowIllustrationParts(false)}
+        />
+      )}
     </div>
   );
 }

@@ -496,25 +496,20 @@ function ScheduleColumnPreset({ pack }: { pack: Pack }) {
   const presetDrafts = useMemo<ScheduleDraft[]>(
     () =>
       scheduleSlots.map((s) => ({
-        name: s.label,
+        name: "Weekly audit",
         task: s.description,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         sessionMode: "fresh" as const,
         kind: "daily" as const,
         interval: "1",
-        time: "09:00",
-        days: [1, 2, 3, 4, 5],
+        time: "07:00",
+        days: [5],
         customRRule: s.demoValue ?? "",
         quietHours: [],
         enabled: true,
         recommendation: {
           summary:
-            "This schedule should run before your first meeting of the day so the agent can prepare context ahead of time",
-          fields: {
-            time: "Before your first meeting — try 30 min ahead",
-            days: "Workdays, when your team is active",
-            sessionMode: "Fresh recommended for daily prep tasks",
-          },
+            "Checks that the agent itself is working properly — its schedules, its memory, the reminders it has sent — and writes up a health report.",
         },
       })),
     [scheduleSlots],
@@ -708,11 +703,6 @@ function ConnectionsColumnPreset({ pack }: { pack: Pack }) {
                 iconSlug={iconSlugForSlot(slot)}
                 packName={pack.name}
                 onAdd={() => setCatalogOpen(slot.connectionTemplateId ?? true)}
-                onDismiss={() =>
-                  setDismissed(
-                    (prev) => new Set([...prev, `${slot.kind}-${slot.label}`]),
-                  )
-                }
               />
             ))}
           </div>

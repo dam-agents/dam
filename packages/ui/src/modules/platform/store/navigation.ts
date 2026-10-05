@@ -20,7 +20,9 @@ type ParameterlessView =
   | "setup-workbench"
   | "presets"
   | "schedules"
-  | "card-gallery";
+  | "card-gallery"
+  | "artifact-illustration-parts"
+  | "empty-state-illustrations";
 
 export interface NavigationSlice {
   view: View;

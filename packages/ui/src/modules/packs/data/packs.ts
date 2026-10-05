@@ -1,5 +1,6 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import {
+  Activity,
   Book,
   Box,
   Chat,
@@ -10,12 +11,14 @@ import {
   EventSchedule,
   FlashFilled,
   Idea,
+  Lightning,
   Link,
   MachineLearning,
   Microscope,
   Notebook,
   Security,
   Settings,
+  Terminal,
 } from "@carbon/icons-react";
 
 export const INGREDIENT_KINDS = [
@@ -66,6 +69,30 @@ export const PACK_CATEGORIES = [
 ] as const;
 
 export type PackCategory = (typeof PACK_CATEGORIES)[number];
+
+export interface CategoryStyle {
+  icon: CarbonIconType;
+  colorVar: string;
+}
+
+export const CATEGORY_STYLES: Record<PackCategory, CategoryStyle> = {
+  Software: { icon: Code, colorVar: "software" },
+  Productivity: { icon: Lightning, colorVar: "productivity" },
+  Knowledge: { icon: Book, colorVar: "knowledge" },
+  Research: { icon: Chemistry, colorVar: "research" },
+  Development: { icon: Terminal, colorVar: "development" },
+  Monitoring: { icon: Activity, colorVar: "monitoring" },
+};
+
+export function categoryColors(category: PackCategory) {
+  const v = CATEGORY_STYLES[category].colorVar;
+  return {
+    fg: `var(--c-cat-${v})`,
+    light: `var(--c-cat-${v}-light)`,
+    border: `var(--c-cat-${v}-border)`,
+    tag: `var(--c-cat-${v}-tag)`,
+  };
+}
 
 export interface Pack {
   id: string;

@@ -3,7 +3,6 @@ import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,9 +10,11 @@ import { formatBytes } from "@/lib/format-size";
 
 import { api } from "../../../api.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useStore } from "../../../store.js";
 import { useDeleteFolder, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
+import { ArtifactsEmptyIllustration } from "../components/artifacts-empty-illustration.js";
 import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
@@ -44,6 +45,7 @@ export function ArtifactsView() {
   const { data: folders = EMPTY_FOLDERS, isLoading: foldersLoading } =
     useArtifactFolders();
 
+  const setView = useStore((s) => s.setView);
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<ArtifactDialog | null>(null);
   const closeDialog = () => setDialog(null);
@@ -165,15 +167,40 @@ export function ArtifactsView() {
           }
         />
       ) : (
-        <Callout tone="muted" className="flex flex-col gap-4 py-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Artifacts
-          </h1>
-          <p className="max-w-[480px] text-[14px] text-foreground/80">
-            Artifacts from every agent collect here. Create an agent to get
-            started.
-          </p>
-        </Callout>
+        !loading && (
+          <div className="flex min-h-[calc(100vh-48px)] w-full items-center justify-center px-4 md:px-[5%]">
+            <div className="w-full max-w-[1200px]">
+              <div className="flex flex-col-reverse items-center gap-8 px-6 md:flex-row md:gap-12">
+                <div className="flex min-w-0 flex-1 flex-col gap-5">
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                    Artifacts
+                  </h1>
+                  <p className="max-w-[480px] text-[15px] leading-relaxed text-muted-foreground">
+                    Pages and files your agents create land here. Preview them,
+                    share them with a public link, or have an agent post them to
+                    Slack when they&rsquo;re ready.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDialog({ kind: "upload" })}
+                    >
+                      Upload artifact
+                    </Button>
+                    <Button onClick={() => setView("agent-new")}>
+                      Create Agent
+                    </Button>
+                  </div>
+                </div>
+                <div className="shrink-0">
+                  <div className="h-[280px] w-[420px] md:h-[420px] md:w-[630px]">
+                    <ArtifactsEmptyIllustration className="origin-top-left scale-[0.7] md:scale-[1.05]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
       {hasContent && (

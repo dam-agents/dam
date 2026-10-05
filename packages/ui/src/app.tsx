@@ -5,9 +5,11 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
+import { EmptyStateIllustrationsView } from "./mock/empty-state-illustrations-view.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
+import { ArtifactIllustrationPartsSheet } from "./modules/artifacts/components/artifact-illustration-parts-sheet.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -79,6 +81,20 @@ function MainApp() {
       });
     }
   }, []);
+
+  if (view === "artifact-illustration-parts")
+    return (
+      <ArtifactIllustrationPartsSheet
+        onClose={() => useStore.getState().setView("home")}
+      />
+    );
+
+  if (view === "empty-state-illustrations")
+    return (
+      <EmptyStateIllustrationsView
+        onClose={() => useStore.getState().setView("home")}
+      />
+    );
 
   if (view === "chat")
     return (

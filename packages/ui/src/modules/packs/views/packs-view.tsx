@@ -1,6 +1,7 @@
 import { Search } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
@@ -9,9 +10,10 @@ import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { IllustrationPartsSheet } from "../components/illustration-parts-sheet.js";
 import { PackDetailSheet } from "../components/pack-detail-sheet.js";
 import { PackIngredientSummary } from "../components/pack-ingredient-summary.js";
-import type { Pack, PackCategory } from "../data/packs.js";
+import { categoryColors, type Pack, type PackCategory } from "../data/packs.js";
 import { usePacks } from "../hooks/use-packs.js";
 import { createDemoAgent } from "../lib/create-demo-agent.js";
 import { seedDemoChat } from "../lib/seed-demo-chat.js";
@@ -36,6 +38,7 @@ export function PacksView() {
       : "All";
   const [search, setSearch] = useState("");
   const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+  const [showIllustrationParts, setShowIllustrationParts] = useState(false);
 
   const setView = useStore((s) => s.setView);
   const setPendingPack = useStore((s) => s.setPendingPack);
@@ -89,17 +92,26 @@ export function PacksView() {
         title="Starter Kits"
         description="Pre-configured agent setups you can apply in one click. Each starter kit bundles skills, schedules, and connections."
         actions={
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              placeholder="Search starter kits..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 w-56 pl-9"
-            />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowIllustrationParts(true)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Illustration parts
+            </button>
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                placeholder="Search starter kits..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 w-56 pl-9"
+              />
+            </div>
           </div>
         }
       />
@@ -131,7 +143,7 @@ export function PacksView() {
               : `No starter kits in ${activeCategory}`}
           </p>
         </div>
-      ) : isSearching ? (
+      ) : isSearching || activeCategory !== "All" ? (
         <PackGrid packs={filtered} onSelect={setSelectedPack} />
       ) : (
         <SpotlightLayout packs={filtered} onSelect={setSelectedPack} />
@@ -143,6 +155,12 @@ export function PacksView() {
         onCreateFromPack={handleCreateFromPack}
         onTryIt={handleTryIt}
       />
+
+      {showIllustrationParts && (
+        <IllustrationPartsSheet
+          onClose={() => setShowIllustrationParts(false)}
+        />
+      )}
     </>
   );
 }
@@ -156,37 +174,44 @@ function PackGrid({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {packs.map((pack) => {
-        const Icon = pack.icon;
-        return (
-          <button
-            key={pack.id}
-            type="button"
-            onClick={() => onSelect(pack)}
-            className={cn(
-              CARD_SURFACE,
-              CARD_HOVER,
-              "flex flex-col overflow-hidden text-left",
-            )}
-          >
-            <div className="flex h-36 w-full items-center justify-center bg-preset-light">
-              <Icon size={32} className="text-preset/40" />
-            </div>
-            <div className="flex flex-1 flex-col p-5">
-              <h4 className="text-base font-semibold text-foreground">
-                {pack.name}
-              </h4>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                {pack.tagline}
-              </p>
-              <div className="mt-4">
-                <PackIngredientSummary pack={pack} />
-              </div>
-            </div>
-          </button>
-        );
-      })}
+      {packs.map((pack) => (
+        <button
+          key={pack.id}
+          type="button"
+          onClick={() => onSelect(pack)}
+          className={cn(
+            CARD_SURFACE,
+            CARD_HOVER,
+            "flex flex-col overflow-hidden p-5 text-left",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <h4 className="text-base font-semibold text-foreground">
+              {pack.name}
+            </h4>
+            <CategoryChip category={pack.category} />
+          </div>
+          <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
+            {pack.tagline}
+          </p>
+          <div className="mt-4">
+            <PackIngredientSummary pack={pack} />
+          </div>
+        </button>
+      ))}
     </div>
+  );
+}
+
+function CategoryChip({ category }: { category: PackCategory }) {
+  const colors = categoryColors(category);
+  return (
+    <Badge
+      style={{ background: colors.light, color: colors.fg }}
+      className="border-transparent"
+    >
+      {category}
+    </Badge>
   );
 }
 
@@ -200,8 +225,6 @@ function SpotlightLayout({
   const [hero, ...rest] = packs;
   if (!hero) return null;
 
-  const HeroIcon = hero.icon;
-
   return (
     <div className="flex flex-col gap-4">
       <button
@@ -210,27 +233,20 @@ function SpotlightLayout({
         className={cn(
           CARD_SURFACE,
           CARD_HOVER,
-          "grid grid-cols-1 overflow-hidden text-left md:grid-cols-2",
+          "min-h-[280px] overflow-hidden p-8 text-left md:p-10",
         )}
       >
-        <div className="flex min-h-[280px] items-center justify-center bg-gradient-to-br from-preset-light to-card">
-          <HeroIcon size={48} className="text-preset/40" />
+        <div className="flex items-center gap-3">
+          <h3 className="text-2xl font-bold tracking-tight text-foreground">
+            {hero.name}
+          </h3>
+          <CategoryChip category={hero.category} />
         </div>
-        <div className="flex flex-col justify-center p-8 md:p-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-              <HeroIcon size={16} className="text-foreground" />
-            </div>
-            <h3 className="text-2xl font-bold tracking-tight text-foreground">
-              {hero.name}
-            </h3>
-          </div>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            {hero.tagline}
-          </p>
-          <div className="mt-5">
-            <PackIngredientSummary pack={hero} />
-          </div>
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          {hero.tagline}
+        </p>
+        <div className="mt-5">
+          <PackIngredientSummary pack={hero} />
         </div>
       </button>
 

@@ -1,10 +1,10 @@
 import {
+  Box,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
-  Cube,
+  Document,
   Folders,
-  Help,
   Home,
   Settings,
   Time,
@@ -48,7 +48,7 @@ export function IconRail({
   };
   const starterKits: Destination = {
     label: "Starter Kits",
-    icon: Cube,
+    icon: Box,
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
@@ -142,7 +142,7 @@ export function IconRail({
         <div className="mb-2 flex flex-col gap-px">
           <RailLink
             label="Documentation"
-            icon={Help}
+            icon={Document}
             href={DOCS_URL}
             expanded={expandedNav}
           />

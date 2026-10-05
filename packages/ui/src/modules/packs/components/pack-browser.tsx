@@ -1,12 +1,13 @@
 import { Close, Search } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-import type { Pack, PackCategory } from "../data/packs.js";
+import { categoryColors, type Pack, type PackCategory } from "../data/packs.js";
 import { usePacks } from "../hooks/use-packs.js";
 import { PackIngredientSummary } from "./pack-ingredient-summary.js";
 
@@ -108,7 +109,7 @@ export function PackBrowser({
                 : `No starter kits in ${activeCategory}`}
             </p>
           </div>
-        ) : isSearching ? (
+        ) : isSearching || activeCategory !== "All" ? (
           <PackGrid packs={filtered} onSelect={onSelect} />
         ) : (
           <SpotlightLayout
@@ -131,38 +132,45 @@ export function PackGrid({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {packs.map((pack) => {
-        const Icon = pack.icon;
-        return (
-          <button
-            key={pack.id}
-            type="button"
-            aria-label={pack.name}
-            onClick={() => onSelect(pack)}
-            className={cn(
-              CARD_SURFACE,
-              CARD_HOVER,
-              "flex flex-col overflow-hidden text-left",
-            )}
-          >
-            <div className="flex h-36 w-full items-center justify-center bg-preset-light">
-              <Icon size={32} className="text-preset/40" />
-            </div>
-            <div className="flex flex-1 flex-col p-5">
-              <h4 className="text-base font-semibold text-foreground">
-                {pack.name}
-              </h4>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                {pack.tagline}
-              </p>
-              <div className="mt-4">
-                <PackIngredientSummary pack={pack} />
-              </div>
-            </div>
-          </button>
-        );
-      })}
+      {packs.map((pack) => (
+        <button
+          key={pack.id}
+          type="button"
+          aria-label={pack.name}
+          onClick={() => onSelect(pack)}
+          className={cn(
+            CARD_SURFACE,
+            CARD_HOVER,
+            "flex flex-col overflow-hidden p-5 text-left",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <h4 className="text-base font-semibold text-foreground">
+              {pack.name}
+            </h4>
+            <CategoryChip category={pack.category} />
+          </div>
+          <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
+            {pack.tagline}
+          </p>
+          <div className="mt-4">
+            <PackIngredientSummary pack={pack} />
+          </div>
+        </button>
+      ))}
     </div>
+  );
+}
+
+function CategoryChip({ category }: { category: PackCategory }) {
+  const colors = categoryColors(category);
+  return (
+    <Badge
+      style={{ background: colors.light, color: colors.fg }}
+      className="border-transparent"
+    >
+      {category}
+    </Badge>
   );
 }
 
@@ -177,8 +185,6 @@ function SpotlightLayout({
 }) {
   const [hero, ...rest] = packs;
   if (!hero) return null;
-
-  const Icon = hero.icon;
 
   if (compact) {
     return (
@@ -197,27 +203,20 @@ function SpotlightLayout({
         className={cn(
           CARD_SURFACE,
           CARD_HOVER,
-          "grid grid-cols-1 overflow-hidden text-left md:grid-cols-2",
+          "min-h-[280px] overflow-hidden p-8 text-left md:p-10",
         )}
       >
-        <div className="flex min-h-[280px] items-center justify-center bg-gradient-to-br from-preset-light to-card">
-          <Icon size={48} className="text-preset/40" />
+        <div className="flex items-center gap-3">
+          <h3 className="text-2xl font-bold tracking-tight text-foreground">
+            {hero.name}
+          </h3>
+          <CategoryChip category={hero.category} />
         </div>
-        <div className="flex flex-col justify-center p-8 md:p-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-              <Icon size={16} className="text-foreground" />
-            </div>
-            <h3 className="text-2xl font-bold tracking-tight text-foreground">
-              {hero.name}
-            </h3>
-          </div>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            {hero.tagline}
-          </p>
-          <div className="mt-5">
-            <PackIngredientSummary pack={hero} />
-          </div>
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          {hero.tagline}
+        </p>
+        <div className="mt-5">
+          <PackIngredientSummary pack={hero} />
         </div>
       </button>
       {rest.length > 0 && <PackGrid packs={rest} onSelect={onSelect} />}

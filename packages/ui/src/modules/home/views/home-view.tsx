@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { getBrand } from "../../../brand.js";
@@ -82,13 +81,12 @@ export function HomeView() {
           description="Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
           actions={
             <>
-              <Button
-                variant="outline"
-                onClick={() => setBrowsePacksOpen(true)}
-              >
-                Browse starter kits
+              <Button variant="outline" onClick={createAgent}>
+                Create agent
               </Button>
-              <Button onClick={createAgent}>Create agent</Button>
+              <Button onClick={() => setBrowsePacksOpen(true)}>
+                Start from a kit
+              </Button>
             </>
           }
         />
@@ -156,21 +154,36 @@ function HomeEmptyState() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
-      <div className="anim-in">
-        <Callout tone="muted" className="flex flex-col gap-4 py-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Welcome to {brand.name}
-          </h1>
-          <p className="max-w-[480px] text-[14px] text-foreground/80">
-            {brand.name} runs agents in the cloud. Each one gets its own
-            isolated environment, with your credentials and tools already set
-            up.
-          </p>
-          <Button className="w-fit" onClick={() => setBrowsePacksOpen(true)}>
-            Create agent
-          </Button>
-        </Callout>
+    <div className="flex min-h-[calc(100vh-48px)] w-full items-center justify-center px-4 md:px-[5%]">
+      <div className="anim-in w-full max-w-[1200px]">
+        <div className="flex flex-col-reverse items-center gap-8 px-6 md:flex-row md:gap-12">
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Welcome to {brand.name}
+            </h1>
+            <p className="max-w-[480px] text-[15px] leading-relaxed text-muted-foreground">
+              With {brand.name}, you can deploy automated assistants that handle
+              tasks like reviewing PRs, summarizing tickets, and monitoring
+              builds in the cloud 24/7. Connect your tools, schedule runs, and
+              share securely with your team.
+            </p>
+            <div className="flex items-center gap-3 pt-1">
+              <Button variant="outline" onClick={createAgent}>
+                Create Agent
+              </Button>
+              <Button onClick={() => setBrowsePacksOpen(true)}>
+                Start from a Kit
+              </Button>
+            </div>
+          </div>
+          <div className="shrink-0">
+            <img
+              src="/illustrations/home-empty-state.svg"
+              alt=""
+              className="h-[280px] w-[420px] object-contain md:h-[420px] md:w-[630px]"
+            />
+          </div>
+        </div>
       </div>
 
       <BrowsePacksModal

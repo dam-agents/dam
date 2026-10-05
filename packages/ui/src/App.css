@@ -161,6 +161,34 @@
   --c-preset-light: #f6f2ff;
   --c-preset-border: #e8daff;
 
+  --c-cat-card-bg: rgba(242, 244, 248, 0.5);
+  --c-cat-card-icon: #c1c7cd;
+
+  --c-cat-software: #0f62fe;
+  --c-cat-software-light: #edf5ff;
+  --c-cat-software-border: #a6c8ff;
+  --c-cat-software-tag: #d0e2ff;
+  --c-cat-productivity: #8a3ffc;
+  --c-cat-productivity-light: #f6f2ff;
+  --c-cat-productivity-border: #d4bbff;
+  --c-cat-productivity-tag: #e8daff;
+  --c-cat-knowledge: #ba4e00;
+  --c-cat-knowledge-light: #fff2e8;
+  --c-cat-knowledge-border: #ffb784;
+  --c-cat-knowledge-tag: #ffd9be;
+  --c-cat-research: #198038;
+  --c-cat-research-light: #defbe6;
+  --c-cat-research-border: #6fdc8c;
+  --c-cat-research-tag: #a7f0ba;
+  --c-cat-development: #007d79;
+  --c-cat-development-light: #d9fbfb;
+  --c-cat-development-border: #009d9a;
+  --c-cat-development-tag: #9ef0f0;
+  --c-cat-monitoring: #b28600;
+  --c-cat-monitoring-light: #fcf4d6;
+  --c-cat-monitoring-border: #f1c21b;
+  --c-cat-monitoring-tag: #fddc69;
+
   /* shadcn tokens — mapped to brand palette above */
   --radius: 0.5rem;
   --background: #ffffff;
@@ -205,6 +233,34 @@
   --c-preset: #a78bfa;
   --c-preset-light: #1f1438;
   --c-preset-border: #6929c4;
+
+  --c-cat-card-bg: rgba(52, 58, 63, 0.5);
+  --c-cat-card-icon: #697077;
+
+  --c-cat-software: #4589ff;
+  --c-cat-software-light: #0f1f3a;
+  --c-cat-software-border: #0043ce;
+  --c-cat-software-tag: #001d6c;
+  --c-cat-productivity: #a78bfa;
+  --c-cat-productivity-light: #1f1438;
+  --c-cat-productivity-border: #6929c4;
+  --c-cat-productivity-tag: #31135e;
+  --c-cat-knowledge: #ff832b;
+  --c-cat-knowledge-light: #2a1300;
+  --c-cat-knowledge-border: #ba4e00;
+  --c-cat-knowledge-tag: #3e1a00;
+  --c-cat-research: #42be65;
+  --c-cat-research-light: #071908;
+  --c-cat-research-border: #044317;
+  --c-cat-research-tag: #0e2c15;
+  --c-cat-development: #08bdba;
+  --c-cat-development-light: #081a1a;
+  --c-cat-development-border: #005d5d;
+  --c-cat-development-tag: #0d2625;
+  --c-cat-monitoring: #f1c21b;
+  --c-cat-monitoring-light: #1c1500;
+  --c-cat-monitoring-border: #684e00;
+  --c-cat-monitoring-tag: #2e2100;
   color-scheme: dark;
 
   /* shadcn tokens — dark. Surface colors that are pure #ffffff in light

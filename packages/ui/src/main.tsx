@@ -45,6 +45,30 @@ async function main() {
       if (pack && agentId) {
         useStore.getState().initOnboarding(agentId, pack);
       }
+
+      const trpcKey = (proc: string) => {
+        const parts = proc.split(".");
+        return [parts, { input: undefined, type: "query" }];
+      };
+      const { budgetsReserved } = await import("./mock/data/budgets.js");
+      const { spendBreakdown } = await import("./mock/data/spend.js");
+      const { connectionTemplates } =
+        await import("./mock/data/connections.js");
+      queryClient.setQueryData(trpcKey("agents.list"), agents);
+      queryClient.setQueryData(
+        trpcKey("connections.listTemplates"),
+        connectionTemplates,
+      );
+      queryClient.setQueryData(trpcKey("budgets.reserved"), budgetsReserved);
+      queryClient.setQueryData(
+        trpcKey("metrics.spendBreakdown"),
+        spendBreakdown,
+      );
+      queryClient.setQueryData(trpcKey("links.all"), {
+        computeRequest: "#",
+        docs: "#",
+        status: "#",
+      });
     }
 
     await loadBrand().then(applyBrand);

@@ -25,7 +25,9 @@ import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
 /** Toggleable mock state — controlled by the floating MockToggle component. */
-export let mockEmpty = false;
+export let mockEmpty = new URLSearchParams(window.location.search).has(
+  "mock-empty",
+);
 export let mockFirstRun = false;
 
 const createdConnections: Array<Record<string, unknown>> = [];
@@ -183,6 +185,7 @@ function getFixtures(): Record<string, unknown> {
       configOptions: {},
       availableModels: null,
     },
+    "links.all": { computeRequest: "#", docs: "#", status: "#" },
   };
 }
 

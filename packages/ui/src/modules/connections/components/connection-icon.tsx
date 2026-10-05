@@ -3,6 +3,7 @@ import { BareMetalServer, Password } from "@carbon/icons-react";
 import { GithubIcon } from "@/components/brand-icons";
 
 const SVG_BY_SLUG = new Set([
+  "claude-code",
   "github-enterprise",
   "gmail",
   "google-admin",

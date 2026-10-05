@@ -36,7 +36,9 @@ export type Route =
   | { view: "setup-workbench" }
   | { view: "presets" }
   | { view: "schedules" }
-  | { view: "card-gallery" };
+  | { view: "card-gallery" }
+  | { view: "artifact-illustration-parts" }
+  | { view: "empty-state-illustrations" };
 
 export type View = Route["view"];
 
@@ -106,6 +108,10 @@ export function parseRoute(path: string): Route {
   if (path === "/schedules") return { view: "schedules" };
   if (path === "/setup-workbench") return { view: "setup-workbench" };
   if (path === "/card-gallery") return { view: "card-gallery" };
+  if (path === "/artifact-illustration-parts")
+    return { view: "artifact-illustration-parts" };
+  if (path === "/empty-state-illustrations")
+    return { view: "empty-state-illustrations" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -160,6 +166,10 @@ export function routeToPath(route: Route): string {
       return "/setup-workbench";
     case "card-gallery":
       return "/card-gallery";
+    case "artifact-illustration-parts":
+      return "/artifact-illustration-parts";
+    case "empty-state-illustrations":
+      return "/empty-state-illustrations";
     default: {
       const unhandled: never = route;
       return unhandled;

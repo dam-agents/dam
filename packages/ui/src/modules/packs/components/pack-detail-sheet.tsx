@@ -23,7 +23,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { formatCores, formatMiAsMemory } from "@/modules/budgets/lib/format";
 import { CardIcon } from "@/modules/providers/components/card-icon";
 
-import type { Pack, PackIngredientKind, PackSlot } from "../data/packs.js";
+import {
+  categoryColors,
+  type Pack,
+  type PackIngredientKind,
+  type PackSlot,
+} from "../data/packs.js";
 import { PackIngredientSummary } from "./pack-ingredient-summary.js";
 
 const SETUP_GROUP_LABELS: Partial<Record<PackIngredientKind, string>> = {
@@ -88,7 +93,13 @@ export function PackDetailSheet({
                   <h2 className="text-lg font-semibold text-foreground">
                     {pack.name}
                   </h2>
-                  <Badge variant="muted" size="sm">
+                  <Badge
+                    style={{
+                      background: categoryColors(pack.category).light,
+                      color: categoryColors(pack.category).fg,
+                    }}
+                    className="border-transparent"
+                  >
                     {pack.category}
                   </Badge>
                 </div>

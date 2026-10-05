@@ -9,7 +9,7 @@ import {
 } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { DialogActions, DialogBody, Modal } from "@/components/modal";
@@ -95,12 +95,6 @@ export function ScheduleSetupSection({
     onDraftsChange(next);
   };
 
-  const handleDraftChange = (index: number, values: ScheduleFormValues) => {
-    const next = [...drafts];
-    next[index] = { ...values, enabled: drafts[index]!.enabled ?? true };
-    onDraftsChange(next);
-  };
-
   if (drafts.length === 0) {
     return (
       <section className="mb-8">
@@ -158,7 +152,7 @@ export function ScheduleSetupSection({
                 key={index}
                 draft={draft}
                 recommendation={getRecommendation(draft)}
-                onDraftChange={(values) => handleDraftChange(index, values)}
+                onEdit={() => setModalState({ mode: "edit", index })}
                 onDelete={() => handleDelete(index)}
                 onToggle={() => handleToggle(index)}
               />
@@ -284,216 +278,18 @@ function CompactScheduleCard({
 function PresetScheduleCard({
   draft,
   recommendation,
-  onDraftChange,
+  onEdit,
   onDelete,
   onToggle,
 }: {
   draft: ScheduleDraft;
   recommendation: PresetRecommendation;
-  onDraftChange: (values: ScheduleFormValues) => void;
+  onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
 }) {
   const enabled = draft.enabled ?? true;
   const cadence = buildRRuleParts(draft);
-
-  const { control, register, watch } = useForm<ScheduleFormValues>({
-    resolver: zodResolver(scheduleFormSchema),
-    defaultValues: {
-      name: draft.name,
-      task: draft.task,
-      timezone: draft.timezone,
-      sessionMode: draft.sessionMode,
-      kind: draft.kind,
-      interval: draft.interval,
-      time: draft.time,
-      days: draft.days,
-      customRRule: draft.customRRule,
-      quietHours: draft.quietHours,
-    },
-  });
-
-  const values = watch();
-
-  useEffect(() => {
-    const sub = watch((formValues) => {
-      onDraftChange(formValues as ScheduleFormValues);
-    });
-    return () => sub.unsubscribe();
-  }, [watch, onDraftChange]);
-
-  const timeOptions = TIME_OPTIONS.some((o) => o.value === values.time)
-    ? TIME_OPTIONS
-    : [
-        { value: values.time, label: formatTime12(values.time) },
-        ...TIME_OPTIONS,
-      ];
-
-  const frequencyFields = (fieldHints?: PresetRecommendation["fields"]) => (
-    <>
-      <FieldRow label="Repeat" hint={fieldHints?.kind}>
-        <InlineSelect {...register("kind")}>
-          {RUN_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </InlineSelect>
-      </FieldRow>
-
-      {values.kind === "daily" && (
-        <FieldRow label="Time" hint={fieldHints?.time}>
-          <InlineSelect {...register("time")}>
-            {timeOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </InlineSelect>
-        </FieldRow>
-      )}
-
-      {(values.kind === "minutely" || values.kind === "hourly") && (
-        <FieldRow label="Interval">
-          <div className="flex items-center justify-end gap-1.5 text-[14px]">
-            <span className="text-muted-foreground">Every</span>
-            <Input
-              type="number"
-              min={1}
-              className="h-auto w-[48px] border-none bg-transparent p-0 text-right text-[14px] shadow-none focus:ring-0"
-              {...register("interval")}
-            />
-            <span className="text-muted-foreground">
-              {values.kind === "minutely" ? "min" : "hr"}
-            </span>
-          </div>
-        </FieldRow>
-      )}
-
-      {values.kind !== "custom" && (
-        <Controller
-          control={control}
-          name="days"
-          render={({ field }) => (
-            <FieldRow label="Days" hint={fieldHints?.days}>
-              <DayPicker value={field.value} onChange={field.onChange} />
-            </FieldRow>
-          )}
-        />
-      )}
-
-      {values.kind === "custom" && (
-        <FieldRow label="RRULE">
-          <Input
-            className="h-auto border-none bg-transparent p-0 text-right font-mono text-[14px] shadow-none focus:ring-0"
-            placeholder="FREQ=WEEKLY;BYDAY=MO,WE"
-            {...register("customRRule")}
-          />
-        </FieldRow>
-      )}
-
-      <FieldRow label="Timezone" hint={fieldHints?.timezone}>
-        <Controller
-          control={control}
-          name="timezone"
-          render={({ field }) => (
-            <SearchableSelect
-              value={field.value}
-              onChange={field.onChange}
-              options={TIMEZONE_OPTIONS}
-              placeholder="Select"
-              className="h-auto w-auto border-none bg-transparent px-0 text-right text-[14px] shadow-none"
-            />
-          )}
-        />
-      </FieldRow>
-    </>
-  );
-
-  const optionsFields = (fieldHints?: PresetRecommendation["fields"]) => (
-    <>
-      <FieldRow
-        label={
-          <span className="flex items-center gap-1.5">
-            Session type
-            <HintTooltip
-              content={SESSION_TOOLTIP}
-              label="About session types"
-              side="top"
-              className="text-muted-foreground"
-            >
-              <Information size={16} />
-            </HintTooltip>
-          </span>
-        }
-        hint={fieldHints?.sessionMode}
-      >
-        <Controller
-          control={control}
-          name="sessionMode"
-          render={({ field }) => (
-            <InlineSelect
-              value={field.value}
-              onChange={(e) =>
-                field.onChange(e.target.value as "fresh" | "continuous")
-              }
-            >
-              <option value="fresh">Fresh</option>
-              <option value="continuous">Continuous</option>
-            </InlineSelect>
-          )}
-        />
-      </FieldRow>
-
-      <QuietHoursRows control={control} register={register} />
-    </>
-  );
-
-  const cardHeader = (
-    <div className="flex items-center gap-4 px-4 py-3">
-      <div
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-lg",
-          enabled
-            ? "bg-preset-border/50 text-preset"
-            : "bg-muted text-muted-foreground",
-        )}
-      >
-        {enabled ? <Time size={16} /> : <Pause size={16} />}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-[15px] font-semibold text-foreground">
-            {draft.name || "Untitled schedule"}
-          </p>
-          <Badge variant="preset">Starter Kit</Badge>
-        </div>
-        {cadence.summary && (
-          <p className="truncate text-[14px] text-muted-foreground">
-            {cadence.summary}
-          </p>
-        )}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <Switch
-          checked={enabled}
-          onCheckedChange={onToggle}
-          label={enabled ? "Disable schedule" : "Enable schedule"}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onDelete}
-          aria-label="Remove schedule"
-        >
-          <Close size={16} />
-        </Button>
-      </div>
-    </div>
-  );
 
   return (
     <div
@@ -503,7 +299,47 @@ function PresetScheduleCard({
         "border-preset-border/50 bg-preset-light/50",
       )}
     >
-      {cardHeader}
+      <div className="flex items-center gap-4 px-4 py-3">
+        <div
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-lg",
+            enabled
+              ? "bg-preset-border/50 text-preset"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          {enabled ? <Time size={16} /> : <Pause size={16} />}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-semibold text-foreground">
+              {draft.name || "Untitled schedule"}
+            </p>
+            <Badge variant="preset">Starter Kit</Badge>
+          </div>
+          {cadence.summary && (
+            <p className="truncate text-[14px] text-muted-foreground">
+              {cadence.summary}
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch
+            checked={enabled}
+            onCheckedChange={onToggle}
+            label={enabled ? "Disable schedule" : "Enable schedule"}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEdit}
+          >
+            Edit
+          </Button>
+        </div>
+      </div>
 
       <div className="border-t border-preset-border/30 px-4 py-3">
         <div className="flex items-start gap-2.5 rounded-lg bg-preset-border/50 px-3 py-2.5">
@@ -512,14 +348,6 @@ function PresetScheduleCard({
             {recommendation.summary}
           </p>
         </div>
-      </div>
-
-      <div className="flex flex-col divide-y divide-preset-border/20 border-t border-preset-border/30">
-        {frequencyFields()}
-      </div>
-
-      <div className="flex flex-col divide-y divide-preset-border/20 border-t border-preset-border/30">
-        {optionsFields()}
       </div>
     </div>
   );

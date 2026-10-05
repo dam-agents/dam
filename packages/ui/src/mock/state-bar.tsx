@@ -128,9 +128,39 @@ function useReviewScreens(): ReviewScreen[] {
       },
     },
     {
+      label: "Home empty state",
+      note: "Welcome illustration with Browse Starter Kits and Create Agent.",
+      go: () => {
+        setMockEmpty(true);
+        queryClient.setQueryData(["agents", "list-with-channels"], {
+          list: [],
+          availableChannels: channelsAvailable,
+        });
+        setView("home");
+      },
+    },
+    {
       label: "New Agent card designs",
       note: "Agent card design — every state side by side.",
       go: () => setView("card-gallery"),
+    },
+    {
+      label: "Artifacts empty state",
+      note: "Illustration: artifact, public share link, agent posting to Slack.",
+      go: () => {
+        setMockEmpty(true);
+        setView("artifacts");
+      },
+    },
+    {
+      label: "Empty state illustrations",
+      note: "Proposed illustrations for Schedules, Connections, Skills, Channels, API keys.",
+      go: () => setView("empty-state-illustrations"),
+    },
+    {
+      label: "Artifact illustration parts",
+      note: "Schedule card, preview modal, share dialog, copy link, Slack post, badges.",
+      go: () => setView("artifact-illustration-parts"),
     },
   ];
 }
@@ -252,7 +282,11 @@ export function MockStateBar() {
                 (s.label === "Spend detail link" && view === "home") ||
                 (s.label === "Onboarding in chat UI" && view === "chat") ||
                 (s.label === "New Agent card designs" &&
-                  view === "card-gallery");
+                  view === "card-gallery") ||
+                (s.label === "Empty state illustrations" &&
+                  view === "empty-state-illustrations") ||
+                (s.label === "Artifact illustration parts" &&
+                  view === "artifact-illustration-parts");
               return (
                 <button
                   key={s.label}

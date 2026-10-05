@@ -4,7 +4,6 @@ import {
   Close,
   Cube,
   Information,
-  Launch,
   LogoGithub,
   TrashCan,
 } from "@carbon/icons-react";
@@ -17,6 +16,7 @@ import { Callout } from "@/components/ui/callout";
 import { Card, cardSelectionVariants } from "@/components/ui/card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Switch } from "@/components/ui/switch";
 import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
@@ -533,6 +533,7 @@ export function AgentSetupView() {
 
       <SkillsSetupSection
         presetSkills={skillSlots}
+        packName={pendingPack?.name}
         addedSources={addedSkillSources}
         onRemoveSource={(id) =>
           setAddedSkillSources((prev) => prev.filter((s) => s.id !== id))
@@ -776,32 +777,69 @@ export function ConnectedRecommendationCard({
   );
 }
 
-function SkillCard({ slot }: { slot: PackSlot }) {
+function PresetSkillsCard({
+  skills,
+  packName,
+}: {
+  skills: PackSlot[];
+  packName?: string;
+}) {
+  const [toggles, setToggles] = useState<Record<string, boolean>>({});
+  const isOn = (label: string) => toggles[label] ?? true;
+  const toggle = (label: string) =>
+    setToggles((prev) => ({ ...prev, [label]: !isOn(label) }));
+  const enabledCount = skills.filter((s) => isOn(s.label)).length;
+  const slug = packName?.toLowerCase().replace(/\s+/g, "-") ?? "starter-kit";
+
   return (
-    <Card className="flex items-center gap-4 border-preset-border/50 bg-preset-light/50 p-4">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-preset-border/50">
-        <Launch size={16} className="text-preset" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-foreground">{slot.label}</p>
-          <Badge variant="preset">Starter Kit</Badge>
+    <Card className="overflow-hidden border-preset-border/50 bg-preset-light/50">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-semibold text-foreground">
+              {slug}
+            </p>
+            <span className="shrink-0 text-sm text-muted-foreground">
+              {enabledCount} of {skills.length} on
+            </span>
+            <Badge variant="preset">Starter Kit</Badge>
+          </div>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            acme/{slug} · /skills
+          </p>
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {slot.description}
-        </p>
       </div>
+      {skills.map((slot) => (
+        <div
+          key={slot.label}
+          className={cn(
+            "flex items-center gap-3 border-t border-preset-border/30 px-4 py-2",
+            isOn(slot.label) && "bg-preset-light/30",
+          )}
+        >
+          <p className="min-w-0 flex-1 truncate text-[15px] font-medium text-foreground">
+            {slot.label.toLowerCase().replace(/\s+/g, "-")}
+          </p>
+          <Switch
+            checked={isOn(slot.label)}
+            onCheckedChange={() => toggle(slot.label)}
+            label={slot.label}
+          />
+        </div>
+      ))}
     </Card>
   );
 }
 
 export function SkillsSetupSection({
   presetSkills,
+  packName,
   addedSources,
   onRemoveSource,
   onOpenModal,
 }: {
   presetSkills: PackSlot[];
+  packName?: string;
   addedSources: SkillSource[];
   onRemoveSource: (id: string) => void;
   onOpenModal: () => void;
@@ -836,13 +874,13 @@ export function SkillsSetupSection({
         <SectionLabel>Skills</SectionLabel>
         <Button variant="outline" size="sm" onClick={onOpenModal}>
           <Add size={16} />
-          Add skill source
+          Add source
         </Button>
       </div>
       <Inset className="flex flex-col gap-3">
-        {presetSkills.map((slot) => (
-          <SkillCard key={slot.label} slot={slot} />
-        ))}
+        {presetSkills.length > 0 && (
+          <PresetSkillsCard skills={presetSkills} packName={packName} />
+        )}
         {addedSources.map((source) => (
           <Card key={source.id}>
             <div className="flex items-center gap-3 px-4 py-3">
