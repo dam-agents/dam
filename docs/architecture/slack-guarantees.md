@@ -243,7 +243,7 @@ Addressed turns get a plain-language notice for: unbound conversation, no defaul
 
 ## 5. Reach the owner may not expect
 
-One case: an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account. Nothing warns the owner. Open by default on Codex; on Claude Code only with `bypassPermissions` or an allow rule for the Connection's tools.
+One case: an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account. Nothing warns the owner. Open on Codex. On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
 
 Everything else (DM people, attach files, look people up, react) is within the owner's own reach.
 
