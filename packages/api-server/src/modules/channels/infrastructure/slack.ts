@@ -5091,10 +5091,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (workspace === undefined) {
         return {
           error: conversationId
-            ? `${conversationId} is not a conversation this agent knows: pass an id from describe_channel`
+            ? `${conversationId} does not say which workspace to look in: pass ` +
+              "a conversation this agent is connected to, or the one you are " +
+              "answering, in the person's workspace"
             : "this agent is connected to more than one Slack workspace, and a " +
               "user id only means something inside one: pass chatId for a " +
-              "conversation in the person's workspace (an id from describe_channel)",
+              "conversation this agent is connected to, or the one you are " +
+              "answering, in the person's workspace",
         };
       }
 

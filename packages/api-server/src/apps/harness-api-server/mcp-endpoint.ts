@@ -359,7 +359,7 @@ export function createMcpSession(
         .string()
         .optional()
         .describe(
-          "A conversation in the people's workspace: an id from describe_channel. Omit to use the conversation you're answering.",
+          "A conversation in the people's workspace: one this agent is connected to, or one you are answering. Omit to use the conversation you're answering.",
         ),
     },
     async ({ channel, userIds, chatId }) => {
