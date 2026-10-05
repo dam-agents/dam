@@ -24,10 +24,9 @@ describe("runtime-channel state store", () => {
   });
 
   const reopen = (envReady: boolean) =>
-    createStateStore(
-      createFileDocumentStoreBackend(home),
-      () => envReady,
-    ).read();
+    createStateStore(createFileDocumentStoreBackend(home), {
+      envReady: () => envReady,
+    }).read();
 
   // TEST_SCENARIO: a runtime migration carries the state file but not the env file; reporting the old version in hello would get no push, and the harness would start with no provider.
   it("forgets the applied version when the env file is missing, keeping event runs", () => {
