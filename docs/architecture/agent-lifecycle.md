@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-09-30
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -185,7 +185,7 @@ Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
 - **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while a session reports background work still running ([above](#session-inside-the-pod)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal. A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe. What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
-- **api-server (`active-session` annotation).** A refcount of open chat, terminal, and SSH connections — set on the first, cleared on the last. So a chat merely open in the UI keeps the Agent awake, exactly as an open terminal does. Since the probe is blind to SSH, an SSH session leans on this annotation, which alone suffices while the connection is open. A half-dead connection is reclaimed by a WS ping/pong, and pins orphaned by a dead replica are swept by a periodic reconcile over per-replica Redis presence keys (the keys expire by TTL when their replica stops refreshing them).
+- **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last. So a chat merely open in the UI keeps the Agent awake, as an open terminal does. Since the probe is blind to SSH, an SSH session leans on this annotation, which alone suffices while the connection is open. A half-dead connection is reclaimed by a WS ping/pong, and pins orphaned by a dead replica are swept by a periodic reconcile over per-replica Redis presence keys (the keys expire by TTL when their replica stops refreshing them).
 - **api-server (`last-activity` annotation).** The one traffic-driven signal, and the clock the idle timeout measures against. Bumped, debounced, by any relay or proxied call as bytes flow, by an explicit wake, and by the scheduler on a fire. One path also *lowers* it: a fire whose Precheck declines puts the pre-fire value back ([schedules](schedules.md#precheck)), so a frequent check cannot hold an Agent awake on the strength of occurrences that did no work.
 - **api-server (`invocations-active` annotation).** The [Invocation Pin](invocations.md#the-invocation-pin): the Agent drives a running Invocation.
 
