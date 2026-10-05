@@ -1,0 +1,51 @@
+#!/usr/bin/env node
+
+import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const SESSION = "preview";
+const PROFILE = join(homedir(), ".local/share/platform/browser-preview");
+const LINK_PREFIX = "platform://browser?url=";
+
+const usage = () => {
+  process.stderr.write(
+    "usage: platform-browser open <address>   e.g. platform-browser open localhost:4444\n",
+  );
+  process.exit(2);
+};
+
+const [command, address, ...rest] = process.argv.slice(2);
+if (command !== "open" || !address || rest.length > 0) usage();
+
+const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(address)
+  ? address
+  : `http://${address}`;
+let url;
+try {
+  url = new URL(withScheme);
+} catch {
+  process.stderr.write(`platform-browser: not a web address: ${address}\n`);
+  process.exit(2);
+}
+if (url.protocol !== "http:" && url.protocol !== "https:") {
+  process.stderr.write("platform-browser: only http and https addresses open\n");
+  process.exit(2);
+}
+
+const opened = spawnSync(
+  "agent-browser",
+  ["--session", SESSION, "--profile", PROFILE, "open", url.href],
+  { stdio: ["ignore", "ignore", "inherit"] },
+);
+if (opened.error || opened.status !== 0) {
+  process.stderr.write(
+    `platform-browser: the browser did not open ${url.href}${opened.error ? `: ${opened.error.message}` : ""}\n`,
+  );
+  process.exit(1);
+}
+
+const label = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+process.stdout.write(
+  `[Open ${label}](${LINK_PREFIX}${encodeURIComponent(url.href)})\n`,
+);

@@ -46,6 +46,8 @@ interface Props {
 export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const close = useStore((s) => s.setOpenBrowser);
   const showConfirm = useStore((s) => s.showConfirm);
+  const openRequestId = useStore((s) => s.browserOpenRequest?.id);
+  const takeOpenRequest = useStore((s) => s.takeBrowserOpenRequest);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
   const pendingMove = useRef<object | null>(null);
@@ -68,6 +70,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     if (!editing)
       setAddress(stream.pageUrl === "about:blank" ? "" : stream.pageUrl);
   }, [stream.pageUrl, editing]);
+
+  const { navigate } = stream;
+  useEffect(() => {
+    const request = takeOpenRequest();
+    if (request) navigate(request.url);
+  }, [openRequestId, takeOpenRequest, navigate]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();

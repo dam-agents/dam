@@ -42,6 +42,7 @@ export function useBrowserStream(
   });
   const [connectKey, setConnectKey] = useState(0);
   const failedAttemptsRef = useRef(0);
+  const pendingUrlRef = useRef<string | null>(null);
 
   const send = useCallback((msg: object, isInput = false) => {
     const ws = wsRef.current;
@@ -49,6 +50,16 @@ export function useBrowserStream(
     if (isInput) meterRef.current.input(performance.now());
     ws.send(JSON.stringify(msg));
   }, []);
+
+  const navigate = useCallback(
+    (url: string) => {
+      setError(null);
+      if (wsRef.current?.readyState === WebSocket.OPEN)
+        send({ type: "navigate", url }, true);
+      else pendingUrlRef.current = url;
+    },
+    [send],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +118,10 @@ export function useBrowserStream(
         if (cancelled) return;
         setState("live");
         sendViewport();
+        if (pendingUrlRef.current) {
+          send({ type: "navigate", url: pendingUrlRef.current }, true);
+          pendingUrlRef.current = null;
+        }
       };
       ws.onmessage = (e: MessageEvent<string | ArrayBuffer>) => {
         if (e.data instanceof ArrayBuffer) {
@@ -169,10 +184,7 @@ export function useBrowserStream(
     stats,
     device: () => deviceRef.current,
     send,
-    navigate: (url: string) => {
-      setError(null);
-      send({ type: "navigate", url }, true);
-    },
+    navigate,
     reload: () => send({ type: "reload" }, true),
     back: () => send({ type: "back" }, true),
     forward: () => send({ type: "forward" }, true),

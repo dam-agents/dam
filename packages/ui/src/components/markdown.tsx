@@ -15,9 +15,17 @@ import {
   ArtifactLinkChip,
   parseArtifactLink,
 } from "../modules/artifacts/components/artifact-link-chip.js";
+import { BrowserLinkChip } from "../modules/browser/components/browser-link-chip.js";
+import {
+  BROWSER_LINK_PREFIX,
+  parseBrowserLink,
+} from "../modules/browser/lib/browser-link.js";
 
-function allowArtifactLinks(url: string): string {
-  return url.startsWith(ARTIFACT_LINK_PREFIX) ? url : defaultUrlTransform(url);
+function allowPlatformLinks(url: string): string {
+  return url.startsWith(ARTIFACT_LINK_PREFIX) ||
+    url.startsWith(BROWSER_LINK_PREFIX)
+    ? url
+    : defaultUrlTransform(url);
 }
 
 const REMARK_PLUGINS = [remarkGfm];
@@ -81,6 +89,11 @@ export function Markdown({
     () => ({
       pre: MarkdownCodeBlock,
       a({ href, children }) {
+        const browserUrl = parseBrowserLink(href);
+        if (browserUrl) return <BrowserLinkChip url={browserUrl} />;
+        if (href?.startsWith(BROWSER_LINK_PREFIX)) {
+          return <span>{children}</span>;
+        }
         const artifactId = parseArtifactLink(href);
         if (artifactId) {
           return (
@@ -124,7 +137,7 @@ export function Markdown({
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}
         components={components}
-        urlTransform={allowArtifactLinks}
+        urlTransform={allowPlatformLinks}
       >
         {body}
       </ReactMarkdown>

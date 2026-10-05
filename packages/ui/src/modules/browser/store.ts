@@ -2,9 +2,16 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 
+export interface BrowserOpenRequest {
+  url: string;
+  id: number;
+}
+
 export interface BrowserSlice {
   openBrowserAgentId: string | null;
-  setOpenBrowser: (agentId: string | null) => void;
+  browserOpenRequest: BrowserOpenRequest | null;
+  setOpenBrowser: (agentId: string | null, url?: string) => void;
+  takeBrowserOpenRequest: () => BrowserOpenRequest | null;
 }
 
 export const createBrowserSlice: StateCreator<
@@ -12,13 +19,17 @@ export const createBrowserSlice: StateCreator<
   [],
   [],
   BrowserSlice
-> = (set) => ({
+> = (set, get) => ({
   openBrowserAgentId: null,
-  setOpenBrowser: (agentId) =>
-    set(
+  browserOpenRequest: null,
+  setOpenBrowser: (agentId, url) =>
+    set((state) =>
       agentId
         ? {
             openBrowserAgentId: agentId,
+            browserOpenRequest: url
+              ? { url, id: (state.browserOpenRequest?.id ?? 0) + 1 }
+              : state.browserOpenRequest,
             openFilePath: null,
             openFileDirty: false,
             openArtifactId: null,
@@ -27,4 +38,9 @@ export const createBrowserSlice: StateCreator<
           }
         : { openBrowserAgentId: null },
     ),
+  takeBrowserOpenRequest: () => {
+    const request = get().browserOpenRequest;
+    if (request) set({ browserOpenRequest: null });
+    return request;
+  },
 });
