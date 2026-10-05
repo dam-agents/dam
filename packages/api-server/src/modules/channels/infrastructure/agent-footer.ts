@@ -95,15 +95,20 @@ const THREAD_MARKER_NOTE =
 
 export type HistoryShape = "thread" | "direct-message" | "channel";
 
+const THREAD_WINDOW_NOTE =
+  "The thread is longer than shown: the lines in square brackets number its " +
+  "replies from the first one and say which replies are left out.";
+
 export function historyPreamble(
   shape: HistoryShape,
-  opts: { hasThreadMarker?: boolean } = {},
+  opts: { hasThreadMarker?: boolean; windowed?: boolean } = {},
 ): string {
   if (shape === "thread") {
     return (
       "The conversation history below is the thread this turn was posted " +
-      "into: one conversation, and the context for answering it. Answer " +
-      "what follows the history, not the history itself."
+      "into: one conversation, and the context for answering it. " +
+      (opts.windowed ? `${THREAD_WINDOW_NOTE} ` : "") +
+      "Answer what follows the history, not the history itself."
     );
   }
   if (shape === "direct-message") {
@@ -127,6 +132,31 @@ export function historyPreamble(
     "topic alone unless what follows asks about it."
   );
 }
+
+function replyRange(first: number, last: number): string {
+  return first === last ? `reply ${first}` : `replies ${first}-${last}`;
+}
+
+export function threadWindowMarker(window: {
+  threadTs: string;
+  repliesBefore: number;
+  first: number;
+  last: number;
+  cursor: string | null;
+}): string {
+  const shown = `Below: ${replyRange(window.first, window.last)}.`;
+  if (window.repliesBefore === 0) return `[${shown}]`;
+  const reach =
+    window.cursor === null
+      ? "."
+      : `; read them with ${OUTBOUND_TOOL_PREFIX}read_thread, threadTs ` +
+        `"${window.threadTs}", cursor "${window.cursor}".`;
+  return `[Not shown: ${replyRange(1, window.repliesBefore)}${reach} ${shown}]`;
+}
+
+export const THREAD_NEWEST_UNREAD =
+  "[Newer replies are not shown: this thread is longer than one read " +
+  "reaches, so the last line above is not its end.]";
 
 export function historyLegend(
   canLookupUsers: boolean,

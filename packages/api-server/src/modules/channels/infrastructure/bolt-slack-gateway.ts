@@ -563,6 +563,7 @@ export function createBoltSlackGateway(
       const nothing = {
         messages: [],
         opener: null,
+        repliesBefore: 0,
         hasEarlier: false,
         hasMore: false,
       };

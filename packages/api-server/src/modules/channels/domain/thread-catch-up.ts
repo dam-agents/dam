@@ -79,7 +79,7 @@ export interface TailFold<T> {
   window: T[];
   seen: Set<string>;
   opener: T | null;
-  trimmed: boolean;
+  repliesBefore: number;
   reachedBefore: boolean;
 }
 
@@ -91,9 +91,10 @@ export interface TailFold<T> {
  * backwards a window at a time. The message that opened the thread is kept
  * aside under `opener` whatever the window holds, because it frames every
  * other line and is the first thing a tail drops. Two flags carry what the
- * window alone cannot say: `trimmed`, that messages fell off its front, which
- * is the only thing telling a capped window apart from a thread that happened
- * to be that long; and `reachedBefore`, that this page already ran past the
+ * window alone cannot say: `repliesBefore`, how many replies fell off its
+ * front, which is the only thing telling a capped window apart from a thread
+ * that happened to be that long, and gives every reply in the window its
+ * position counted from the thread's first reply; and `reachedBefore`, that this page already ran past the
  * boundary, so the pages after it hold nothing a backward read wants and the
  * caller can stop asking the messenger for them.
  */
@@ -131,7 +132,9 @@ function foldTailPage<T extends { ts?: string }>(
     window: over > 0 ? next.slice(over) : next,
     seen,
     opener,
-    trimmed: state.trimmed || dropped.some((entry) => entry.ts !== args.opener),
+    repliesBefore:
+      state.repliesBefore +
+      dropped.filter((entry) => entry.ts !== args.opener).length,
     reachedBefore,
   };
 }
@@ -188,6 +191,7 @@ export async function foldThreadPages<T extends { ts?: string }, C>(
 ): Promise<{
   messages: T[];
   opener: T | null;
+  repliesBefore: number;
   hasEarlier: boolean;
   hasMore: boolean;
 }> {
@@ -195,7 +199,7 @@ export async function foldThreadPages<T extends { ts?: string }, C>(
     window: [],
     seen: new Set(),
     opener: null,
-    trimmed: false,
+    repliesBefore: 0,
     reachedBefore: false,
   };
   let from: C | undefined;
@@ -210,7 +214,8 @@ export async function foldThreadPages<T extends { ts?: string }, C>(
       return {
         messages: fold.window,
         opener: fold.opener,
-        hasEarlier: fold.trimmed,
+        repliesBefore: fold.repliesBefore,
+        hasEarlier: fold.repliesBefore > 0,
         hasMore: false,
       };
     from = read.next;
@@ -218,7 +223,8 @@ export async function foldThreadPages<T extends { ts?: string }, C>(
   return {
     messages: fold.window,
     opener: fold.opener,
-    hasEarlier: fold.trimmed,
+    repliesBefore: fold.repliesBefore,
+    hasEarlier: fold.repliesBefore > 0,
     hasMore: true,
   };
 }

@@ -106,10 +106,13 @@ export interface SlackChannelRead {
  * window and another read reaches them, `hasMore` that the walk gave up before
  * the thread's end and no further read recovers what it missed. Collapsing them
  * would send a reader back through a thread towards messages nothing fetched.
+ * `repliesBefore` counts the replies before the window, which gives each reply
+ * in it a position counted from the thread's first reply.
  */
 export interface SlackThreadWindow {
   messages: SlackMessage[];
   opener: SlackMessage | null;
+  repliesBefore: number;
   hasEarlier: boolean;
   hasMore: boolean;
 }

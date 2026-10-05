@@ -479,13 +479,13 @@ describe("what a later mention turn sees of a thread it was away from", () => {
   });
 
   /**
-   * TEST_SCENARIO: The first turn in a long thread reads a capped page too, so
-   * it is subject to the same rule as the catch-up: the boundary may only move
-   * as far as the read reached. A cold turn that jumps the boundary to its
-   * triggering message strands everything the thread already held beyond the
-   * cap, and the resumes after it never look that far back again.
+   * TEST_SCENARIO: The first turn in a long thread is handed the thread's end,
+   * so the newest replies reach it and its boundary moves past them. The resume
+   * after it must not hand those replies over again as missed. What the first
+   * turn left out is older than its window, so it is not missed either: the
+   * agent reaches it with read_thread.
    */
-  it("moves the boundary no further than a cold read reached", async () => {
+  it("hands a cold turn the thread's end and does not replay it on resume", async () => {
     const h = harness();
     await h.worker.start(SELF);
 
@@ -496,7 +496,7 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     }));
 
     h.gw.setHistory([
-      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
       ...filler,
       footered(PEER, "1.061", PEER_WORDS),
       { ts: "1.062", user: "U999", text: "<@U-BOT> Helper can you look" },
@@ -504,11 +504,14 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     await h.gw.fireMention(mention("1.062", "<@U-BOT> Helper can you look"));
 
     expect(h.prompts).toHaveLength(1);
-    expect(h.prompts[0]!.resumed).toBe(false);
-    expect(h.prompts[0]!.text).not.toContain(PEER_WORDS);
+    const first = h.prompts[0]!;
+    expect(first.resumed).toBe(false);
+    expect(first.text).toContain(OLD_WORDS);
+    expect(first.text).toContain(PEER_WORDS);
+    expect(first.text).toContain("Not shown: replies 1-12;");
 
     h.gw.setHistory([
-      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
       ...filler,
       footered(PEER, "1.061", PEER_WORDS),
       { ts: "1.062", user: "U999", text: "<@U-BOT> Helper can you look" },
@@ -519,8 +522,8 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     expect(h.prompts).toHaveLength(2);
     const second = h.prompts[1]!;
     expect(second.resumed).toBe(true);
-    expect(second.text).toContain(PEER_WORDS);
-    expect(second.text).toContain("Ops (another agent)");
+    expect(second.text).not.toContain(PEER_WORDS);
+    expect(second.text).not.toContain("chatter");
   });
 
   /**
