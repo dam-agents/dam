@@ -25,6 +25,8 @@ const viewportScale = (v: unknown): v is number =>
 export type PreviewControl =
   | { type: "navigate"; url: string }
   | { type: "reload" }
+  | { type: "back" }
+  | { type: "forward" }
   | { type: "clear_data" }
   | { type: "resize"; width: number; height: number; scale: number };
 
@@ -57,7 +59,13 @@ export function parseControl(data: string): PreviewControl | null {
   }
   if (typeof msg !== "object" || msg === null) return null;
   const { type, url, width, height, scale } = msg as Record<string, unknown>;
-  if (type === "reload" || type === "clear_data") return { type };
+  if (
+    type === "reload" ||
+    type === "back" ||
+    type === "forward" ||
+    type === "clear_data"
+  )
+    return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
   if (type === "resize" && viewportSide(width) && viewportSide(height)) {
     if (scale === undefined) return { type, width, height, scale: 1 };
@@ -141,8 +149,12 @@ export function createBrowserPreview(deps: {
       const url = previewUrl(msg.url);
       if (!url) return sendError(client, "Only http and https addresses open");
       await deps.run(["open", url]);
-    } else if (msg.type === "reload") {
-      await deps.run(["reload"]);
+    } else if (
+      msg.type === "reload" ||
+      msg.type === "back" ||
+      msg.type === "forward"
+    ) {
+      await deps.run([msg.type]);
     } else if (msg.type === "resize") {
       await deps.run([
         "set",

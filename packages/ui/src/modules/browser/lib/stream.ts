@@ -147,7 +147,9 @@ export function createLatencyMeter(): LatencyMeter {
       const sorted = [...roundTrips].sort((a, b) => a - b);
       return {
         roundTripMs:
-          sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)]! : null,
+          sorted.length > 0
+            ? Math.round(sorted[Math.floor(sorted.length / 2)]!)
+            : null,
         fps: recent.length,
         kbPerSec: Math.round(
           recent.reduce((sum, f) => sum + f.bytes, 0) / 1024,

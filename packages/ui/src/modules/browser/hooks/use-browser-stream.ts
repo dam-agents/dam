@@ -14,6 +14,8 @@ const HIDDEN_FPS = 1;
 const STATS_INTERVAL_MS = 500;
 const RESIZE_DEBOUNCE_MS = 250;
 const CLEARED_CLOSE_CODE = 1012;
+const RECONNECT_DELAY_MS = 1_000;
+const RECONNECT_ATTEMPTS = 3;
 
 export type BrowserStreamState = "connecting" | "live" | "disconnected";
 
@@ -39,6 +41,7 @@ export function useBrowserStream(
     kbPerSec: 0,
   });
   const [connectKey, setConnectKey] = useState(0);
+  const failedAttemptsRef = useRef(0);
 
   const send = useCallback((msg: object, isInput = false) => {
     const ws = wsRef.current;
@@ -64,6 +67,7 @@ export function useBrowserStream(
     };
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const sendViewport = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -108,6 +112,7 @@ export function useBrowserStream(
         if (e.data instanceof ArrayBuffer) {
           const frame = parseBinaryFrame(e.data);
           if (!frame) return;
+          failedAttemptsRef.current = 0;
           meterRef.current.frame(performance.now(), frame.jpeg.size);
           deviceRef.current = frame.metadata;
           void draw(frame.jpeg).finally(() =>
@@ -125,8 +130,15 @@ export function useBrowserStream(
       };
       ws.onclose = (e) => {
         if (cancelled) return;
-        if (e.code === CLEARED_CLOSE_CODE) setConnectKey((k) => k + 1);
-        else setState("disconnected");
+        if (e.code === CLEARED_CLOSE_CODE) return setConnectKey((k) => k + 1);
+        failedAttemptsRef.current += 1;
+        if (failedAttemptsRef.current > RECONNECT_ATTEMPTS)
+          return setState("disconnected");
+        setState("connecting");
+        reconnectTimer = setTimeout(
+          () => setConnectKey((k) => k + 1),
+          RECONNECT_DELAY_MS,
+        );
       };
       document.addEventListener("visibilitychange", onVisibility);
     })().catch(() => {
@@ -142,6 +154,7 @@ export function useBrowserStream(
       cancelled = true;
       clearInterval(statsTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       ws?.close();
@@ -161,7 +174,12 @@ export function useBrowserStream(
       send({ type: "navigate", url }, true);
     },
     reload: () => send({ type: "reload" }, true),
+    back: () => send({ type: "back" }, true),
+    forward: () => send({ type: "forward" }, true),
     clearData: () => send({ type: "clear_data" }),
-    reconnect: () => setConnectKey((k) => k + 1),
+    reconnect: () => {
+      failedAttemptsRef.current = 0;
+      setConnectKey((k) => k + 1);
+    },
   };
 }

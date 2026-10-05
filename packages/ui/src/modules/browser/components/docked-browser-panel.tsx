@@ -1,4 +1,6 @@
 import {
+  ArrowLeft,
+  ArrowRight,
   Close,
   ErrorFilled,
   Globe,
@@ -152,6 +154,22 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         >
           <Globe size={13} />
         </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Back"
+          onClick={stream.back}
+        >
+          <ArrowLeft size={16} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Forward"
+          onClick={stream.forward}
+        >
+          <ArrowRight size={16} />
+        </Button>
         <form onSubmit={submit} className="min-w-0 flex-1">
           <Input
             ref={addressRef}

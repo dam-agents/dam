@@ -142,6 +142,11 @@ describe("createLatencyMeter", () => {
     meter.input(3_000);
     meter.frame(9_000, 1_024);
     expect(meter.stats(9_000).roundTripMs).toBe(120);
+    meter.input(10_000);
+    meter.frame(10_120.6, 1_024);
+    meter.input(11_000);
+    meter.frame(11_130.4, 1_024);
+    expect(Number.isInteger(meter.stats(12_000).roundTripMs)).toBe(true);
   });
 
   test("counts frames and their bytes in the last second", () => {

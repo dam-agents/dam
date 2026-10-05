@@ -109,12 +109,14 @@ describe("previewUrl", () => {
 
 describe("parseControl", () => {
   // TEST_SCENARIO: Only the panel's own control messages are taken out of the stream; input events and anything malformed pass on to agent-browser untouched.
-  it("recognises navigate, reload, clear_data and a bounded resize only", () => {
+  it("recognises navigation, clear_data and a bounded resize only", () => {
     expect(parseControl('{"type":"navigate","url":"http://a"}')).toEqual({
       type: "navigate",
       url: "http://a",
     });
     expect(parseControl('{"type":"reload"}')).toEqual({ type: "reload" });
+    expect(parseControl('{"type":"back"}')).toEqual({ type: "back" });
+    expect(parseControl('{"type":"forward"}')).toEqual({ type: "forward" });
     expect(parseControl('{"type":"clear_data"}')).toEqual({
       type: "clear_data",
     });
@@ -202,7 +204,7 @@ describe("browser preview", () => {
     expect(calls).toEqual([["stream", "status", "--json"]]);
   });
 
-  // TEST_SCENARIO: The address bar sends navigate and reload, and the panel sends its size as resize, all as control messages. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
+  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
   it("handles control messages itself", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
@@ -214,14 +216,18 @@ describe("browser preview", () => {
 
     ws.send(JSON.stringify({ type: "navigate", url: "https://example.com" }));
     ws.send(JSON.stringify({ type: "reload" }));
+    ws.send(JSON.stringify({ type: "back" }));
+    ws.send(JSON.stringify({ type: "forward" }));
     ws.send(
       JSON.stringify({ type: "resize", width: 900, height: 640, scale: 2 }),
     );
     ws.send(JSON.stringify({ type: "navigate", url: "file:///etc/passwd" }));
-    await until(() => messages.length > 1 && calls.length >= 4);
+    await until(() => messages.length > 1 && calls.length >= 6);
 
     expect(calls).toContainEqual(["open", "https://example.com/"]);
     expect(calls).toContainEqual(["reload"]);
+    expect(calls).toContainEqual(["back"]);
+    expect(calls).toContainEqual(["forward"]);
     expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
     expect(JSON.parse(messages.at(-1) as string)).toMatchObject({
