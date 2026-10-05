@@ -45,7 +45,6 @@ allowBuilds:
   '@carbon/icons-react': false
   '@google/genai': true
   '@ibm/plex': false
-  argon2: true
   esbuild: true
   grpc-tools: true
   koffi: true
