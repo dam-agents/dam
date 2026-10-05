@@ -32,10 +32,14 @@ Apply the `/typescript-engineering` skill. Read the `hello` section and the inva
    recorded fingerprint to `runtimeStateSchema`, for example
    `bindingsFingerprint: z.string().nullable().catch(null).default(null)`. Add it to `initial`
    too. An old state file without the field must parse to `null`, never fail.
-3. **Reset at boot.** In `composeRuntimeChannel`
-   (`packages/agent-runtime/src/modules/runtime-channel/compose.ts`), after
-   `contributionBindings` is resolved, compute the fingerprint and read the state store. If the
-   recorded fingerprint differs (including `null`), write in one store write:
+3. **Reset at boot, in the state store.** Main's #4333 already drops the applied record in
+   `createStateStore` when the env file is missing. Extend that one rule, do not add a second
+   reset in `compose.ts` (agreed during implementation). `createStateStore` takes an options
+   object (`envReady`, `bindingsFingerprint`, `log`); update the call in the existing
+   `state-store.test.ts` to the new shape, add no test. In `composeRuntimeChannel`, resolve the
+   drivers before the store opens (pure reorder) and pass the fingerprint. On open, the record
+   stands only if the env file is there and the recorded fingerprint matches. Otherwise, in
+   one store write:
    - `lastAppliedVersion: 0` and `lastAppliedHash: null`. This is the existing "never applied"
      state. `hello` already sends `lastAppliedVersion || undefined`, so the api-server sees the
      agent as behind and enqueues a dispatch. The worker always pushes the current row
@@ -43,8 +47,9 @@ Apply the `/typescript-engineering` skill. Read the `hello` section and the inva
    - the new fingerprint.
    - `eventRuns` unchanged. Event dedupe must survive, or settled events fire again.
 
-   Log one line that names the old and new fingerprint prefixes, in the existing
-   `[runtime] …` style. Then the reset is visible in the pod log.
+   A fresh agent (cursor already 0) only records the fingerprint, with no log line. An agent
+   whose cursor was set logs one line in the existing `[runtime] …` style that names the
+   reason: the old and new fingerprint prefixes, or the missing env file.
    If the pod dies before the re-apply, the next boot sees a matching fingerprint but a cursor
    that is still 0. It is still behind, so the reset needs no second marker.
 4. **Accept the stale-guard gap.** Until the re-apply lands, the agent accepts a push of any
@@ -55,9 +60,11 @@ Apply the `/typescript-engineering` skill. Read the `hello` section and the inva
    bump `Last verified:`, and follow the
    [documentation guidelines](../../guidelines/documentation-guidelines.md). Say it
    semantically, not with field names:
-   - In the `hello` section: an agent whose image binds its contribution drivers differently
-     from the bindings it last applied with reports itself as never applied. So the first
-     boot after such an image change re-delivers and re-applies the full snapshot.
+   - In the `hello` section: an agent whose applied record no longer describes its disk
+     reports itself as never applied — its image binds its contribution drivers differently
+     from the bindings it last applied with, or its home lost the env file (main's #4333,
+     which the page does not describe yet). So the first boot after such a change re-delivers
+     and re-applies the full snapshot.
    - In the invariants bullet "State snapshots are idempotent…": a change to the image's
      contribution bindings also forces one full re-apply. That re-apply is safe because
      drivers tolerate repeated apply.

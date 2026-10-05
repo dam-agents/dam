@@ -89,7 +89,7 @@ Verified facts that the slices rely on:
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Pi reads the platform's MCP entries | `mcp-entry` override in Pi's manifest (`~/.pi/agent/mcp.json`, `exposure: direct`); Pi README | — |
+| 01 ✅ | Pi reads the platform's MCP entries | `mcp-entry` override in Pi's manifest (`~/.pi/agent/mcp.json`, `exposure: direct`); Pi README | — |
 | 02 | Re-apply the snapshot when the image's driver bindings change | Bindings fingerprint in the agent-runtime's runtime state; the cursor resets on mismatch; runtime-delivery page | 01 (only for its Pi smoke test) |
 
 ## Conventions & glossary

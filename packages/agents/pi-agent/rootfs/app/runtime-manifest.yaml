@@ -1,10 +1,26 @@
 # Pi-agent manifest. Built-in drivers are on by default; this declares only the
-# Pi-specific harness-config: model -> defaultModel, thinking level -> the ACP
-# "mode" (defaultThinkingLevel). Pi's models are connection-dependent, so they're
-# discovered at runtime (modelDiscovery) rather than listed statically.
+# Pi-specific mcp-entry and harness-config bindings. Other drivers keep the
+# defaults of the base manifest.
 manifestVersion: 1
 
 drivers:
+  # Pi reads MCP servers only from its own ~/.pi/agent/mcp.json, never from the
+  # $HOME/.mcp.json the built-in binding writes. The default `type` / `url` /
+  # `headers` shape is Pi's own. Pi's default exposure (`codemode`) hides MCP
+  # tools behind its scripting tool, so a sub-agent could not call
+  # report_result directly; `direct` declares them to the model like a built-in
+  # tool. Every entry gets it, user Connections included. The cost is context
+  # size, and Pi's first prompt waits up to 10 s for a `direct` server to
+  # connect.
+  mcp-entry:
+    path: "$HOME/.pi/agent/mcp.json"
+    keyPath: mcpServers
+    extraFields:
+      exposure: direct
+
+  # Model -> defaultModel, thinking level -> the ACP "mode"
+  # (defaultThinkingLevel). Pi's models are connection-dependent, so they're
+  # discovered at runtime (modelDiscovery) rather than listed statically.
   harness-config:
     file: "$HOME/.pi/agent/settings.json"
     keys:
