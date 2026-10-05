@@ -35,13 +35,13 @@ export function useConnectionMaintenance() {
         };
       case "header":
       case "client-credentials":
+      case "sigv4":
         return { onUpdateCredential: () => openUpdate(connection) };
       case "github-app":
         return {
           onUpdateCredential: () => openUpdate(connection),
           onEditScope: () => openEditScope(connection),
         };
-      case "sigv4":
       case "none":
         return undefined;
     }
