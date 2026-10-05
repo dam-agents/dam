@@ -23,8 +23,8 @@ export const CHARACTER_QUESTS: readonly CharacterQuest[] = [
   },
   {
     id: "connect-github",
-    title: "Connect GitHub",
-    help: "Go to Settings, then Connections. Choose GitHub and approve the repos your agents can use.",
+    title: "Create a connection",
+    help: "Go to Settings, then Connections. Add a connection so your agents can access external services.",
   },
   {
     id: "add-skill",
@@ -43,12 +43,12 @@ export const CHARACTER_QUESTS: readonly CharacterQuest[] = [
   },
   {
     id: "save-artifact",
-    title: "Save an artifact",
+    title: "Create an artifact",
     help: "When an agent makes a file you want to keep, save it from the chat. Saved files live in Artifacts in the sidebar.",
   },
   {
     id: "slack",
-    title: "Talk to an agent in Slack",
+    title: "Use your agent in Slack",
     help: "Connect Slack in Settings, then Channels. Add your agent to a channel and @mention it.",
   },
 ];
