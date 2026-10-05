@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-05
 
-What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer. What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
+What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer. What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md). Which of these outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
 ## Inbound — channel message to ACP session
 
