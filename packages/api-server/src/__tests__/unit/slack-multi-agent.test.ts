@@ -41,6 +41,7 @@ function harness(
     onPrompt?: (
       instanceName: string,
       worker: () => SlackWorker,
+      prompt: string,
     ) => Promise<void> | void;
     linkedSub?: string | null;
     bindings?: AgentSpec[];
@@ -60,16 +61,14 @@ function harness(
     steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt: unknown, sendOpts: SendPromptOpts) => {
-      prompts.push({
-        agent: instanceName,
-        text: typeof prompt === "string" ? prompt : JSON.stringify(prompt),
-      });
+      const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+      prompts.push({ agent: instanceName, text });
       if (!("resumeSessionId" in sendOpts) && sendOpts.platformMeta?.threadTs)
         threadKeys.push({
           agent: instanceName,
           key: sendOpts.platformMeta.threadTs,
         });
-      await hooks.onPrompt?.(instanceName, () => worker);
+      await hooks.onPrompt?.(instanceName, () => worker, text);
       return "answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -135,12 +134,12 @@ function harness(
     async start() {
       for (const spec of agentSpecs) await worker.start(spec.instanceName);
     },
-    async mention(text: string, threadTs?: string) {
+    async mention(text: string, threadTs?: string, ts = "111.1") {
       await this.start();
       await gw.fireMention({
         user: "U-HUMAN",
         channel: CHANNEL,
-        ts: "111.1",
+        ts,
         text,
         ...(threadTs ? { threadTs } : {}),
       });
@@ -469,6 +468,7 @@ describe("handing a turn to another connected agent", () => {
         if (agent === SCRIBE)
           await worker().handOffTurn(
             SCRIBE,
+            "111.1",
             "Reviewer",
             "this is a code question",
           );
@@ -488,7 +488,7 @@ describe("handing a turn to another connected agent", () => {
     const h = harness(both(), {
       onPrompt: async (agent, worker) => {
         if (agent === SCRIBE)
-          outcome = await worker().handOffTurn(SCRIBE, "Nobody");
+          outcome = await worker().handOffTurn(SCRIBE, "111.1", "Nobody");
       },
     });
     await h.mention("<@U-BOT> hello");
@@ -503,7 +503,7 @@ describe("handing a turn to another connected agent", () => {
     const h = harness(both(), {
       onPrompt: async (agent, worker) => {
         if (agent === SCRIBE)
-          outcome = await worker().handOffTurn(SCRIBE, "Scribe");
+          outcome = await worker().handOffTurn(SCRIBE, "111.1", "Scribe");
       },
     });
     await h.mention("<@U-BOT> hello");
@@ -521,9 +521,16 @@ describe("handing a turn to another connected agent", () => {
     const h = harness(both(), {
       onPrompt: async (agent, worker) => {
         if (agent === SCRIBE)
-          await worker().handOffTurn(SCRIBE, "Reviewer", "over to you");
+          await worker().handOffTurn(
+            SCRIBE,
+            "111.1",
+            "Reviewer",
+            "over to you",
+          );
         if (agent === REVIEWER)
-          outcomes.push(await worker().handOffTurn(REVIEWER, "Scribe"));
+          outcomes.push(
+            await worker().handOffTurn(REVIEWER, "111.1", "Scribe"),
+          );
       },
     });
     await h.mention("<@U-BOT> a question");
@@ -537,9 +544,69 @@ describe("handing a turn to another connected agent", () => {
   it("reports a hand-off with no turn in flight rather than throwing", async () => {
     const h = harness(both());
     await h.start();
-    expect(await h.worker.handOffTurn(SCRIBE, "Reviewer")).toMatchObject({
-      error: expect.stringContaining("no Slack turn in flight"),
+    expect(
+      await h.worker.handOffTurn(SCRIBE, "111.1", "Reviewer"),
+    ).toMatchObject({
+      error: expect.stringContaining(
+        'No turn of yours is answering thread "111.1"',
+      ),
     });
+  });
+
+  /**
+   * TEST_SCENARIO: the default agent is the router, so two top-level mentions
+   * in quick succession are its normal load. Each turn runs in its own
+   * Session, so each hand-off names its own thread, and each must carry only
+   * that thread's message to the peer.
+   */
+  it("hands off each of two turns in flight by the thread it names", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((r) => (releaseFirst = r));
+    const outcomes: Record<string, unknown> = {};
+    const h = harness(both(), {
+      onPrompt: async (agent, worker, prompt) => {
+        if (agent !== SCRIBE) return;
+        if (prompt.includes("first question")) {
+          await firstHeld;
+          outcomes.first = await worker().handOffTurn(
+            SCRIBE,
+            "300.1",
+            "Reviewer",
+          );
+        } else {
+          outcomes.wrong = await worker().handOffTurn(
+            SCRIBE,
+            "999.9",
+            "Reviewer",
+          );
+          outcomes.second = await worker().handOffTurn(
+            SCRIBE,
+            "400.1",
+            "Reviewer",
+          );
+        }
+      },
+    });
+    const first = h.mention("<@U-BOT> first question", undefined, "300.1");
+    await h.mention("<@U-BOT> second question", undefined, "400.1");
+    expect(outcomes.second).toMatchObject({ ok: true });
+    releaseFirst();
+    await first;
+    for (let i = 0; i < 8; i++) await tick();
+
+    expect(outcomes.wrong).toMatchObject({
+      error: expect.stringContaining('"999.9"'),
+    });
+    expect(outcomes.second).toMatchObject({ ok: true });
+    expect(outcomes.first).toMatchObject({ ok: true });
+    const handed = h.promptsFor(REVIEWER);
+    expect(handed).toHaveLength(2);
+    expect(handed.find((p) => p.includes("second question"))).not.toContain(
+      "first question",
+    );
+    expect(handed.find((p) => p.includes("first question"))).not.toContain(
+      "second question",
+    );
   });
 });
 
@@ -731,7 +798,8 @@ describe("handing off a read-along turn", () => {
       ],
       {
         onPrompt: async (agent, worker) => {
-          if (agent === SCRIBE) await worker().handOffTurn(SCRIBE, "Reviewer");
+          if (agent === SCRIBE)
+            await worker().handOffTurn(SCRIBE, "222.2", "Reviewer");
         },
       },
     );
@@ -756,8 +824,12 @@ describe("handing off a read-along turn", () => {
       {
         onPrompt: async (agent, worker) => {
           if (agent !== SCRIBE) return;
-          outcomes.push(await worker().handOffTurn(SCRIBE, "Reviewer"));
-          outcomes.push(await worker().handOffTurn(SCRIBE, "Reviewer"));
+          outcomes.push(
+            await worker().handOffTurn(SCRIBE, "111.1", "Reviewer"),
+          );
+          outcomes.push(
+            await worker().handOffTurn(SCRIBE, "111.1", "Reviewer"),
+          );
         },
       },
     );
@@ -784,7 +856,7 @@ describe("hand-off refusals and signals the review named", () => {
         termsAccepted: (sub) => sub !== OTHER_OWNER,
         onPrompt: async (agent, worker) => {
           if (agent === SCRIBE)
-            outcome = await worker().handOffTurn(SCRIBE, "Reviewer");
+            outcome = await worker().handOffTurn(SCRIBE, "111.1", "Reviewer");
         },
       },
     );
@@ -807,7 +879,7 @@ describe("hand-off refusals and signals the review named", () => {
       {
         onPrompt: async (agent, worker) => {
           if (agent === SCRIBE)
-            outcome = await worker().handOffTurn(SCRIBE, "Twin");
+            outcome = await worker().handOffTurn(SCRIBE, "111.1", "Twin");
         },
       },
     );

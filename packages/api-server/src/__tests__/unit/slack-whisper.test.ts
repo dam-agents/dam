@@ -297,7 +297,12 @@ describe("/dam whisper with a message", () => {
     const h = harness(team, {
       onPrompt: async (instanceName, worker) => {
         results.react = await worker.react(instanceName, { emoji: "eyes" });
-        results.handOff = await worker.handOffTurn(instanceName, "Scribe");
+        const threadTs = h.prompts.at(-1)!.key!.split(":").at(-1)!;
+        results.handOff = await worker.handOffTurn(
+          instanceName,
+          threadTs,
+          "Scribe",
+        );
         results.file = await worker.reply(instanceName, {
           text: "see attached",
           attachment: { data: Buffer.from("x"), filename: "a.txt" },
@@ -312,6 +317,9 @@ describe("/dam whisper with a message", () => {
 
     for (const result of Object.values(results))
       expect(result).toMatchObject({ error: expect.any(String) });
+    expect(results.handOff).toMatchObject({
+      error: expect.stringContaining("whispered to you privately"),
+    });
     expect(h.outbound().filter((r) => r.kind !== "ephemeral")).toEqual([]);
     expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER]);
   });
