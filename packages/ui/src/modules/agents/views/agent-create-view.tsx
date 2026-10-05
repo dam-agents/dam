@@ -277,12 +277,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     kit && bringsImage
       ? kit.image
       : (templates.data?.find((t) => t.id === form.templateId) ?? null);
-  const providerPolicy = kit
-    ? narrowPolicyToTemplate(
-        providerPolicyForKit(kit, setupProviderPolicy("starter-kit")),
-        providerSource,
-      )
-    : setupProviderPolicy("coding-agent");
+  const providerPolicy = narrowPolicyToTemplate(
+    kit
+      ? providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))
+      : setupProviderPolicy("coding-agent"),
+    providerSource,
+  );
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
 
   const plainDraft: CodingAgentSetupDraft = {

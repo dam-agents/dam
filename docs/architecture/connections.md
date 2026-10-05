@@ -242,8 +242,13 @@ smallest context window among them, so Pi compacts before the endpoint
 refuses a request. Their thinking is steered with the OpenAI-style
 reasoning effort; the endpoint ignores the switch GLM's own vendor API uses,
 so Pi's built-in description of GLM would be the wrong one here. Claude Code
-needs none of this, as it takes its models from the endpoint's list
-([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+takes its models from the endpoint's list
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model))
+but knows nothing of their size, so the Connection names the same window to
+it too; otherwise it assumes one of its own and compacts too late. Pi's
+stream from this endpoint can carry the end of the thinking and the start of
+the answer in one piece, which Pi alone would show as answer first, so the
+image's Pi extension hands it the thinking first.
 
 ### App preset: AWS Bedrock
 
