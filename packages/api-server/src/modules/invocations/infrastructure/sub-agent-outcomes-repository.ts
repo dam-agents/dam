@@ -14,8 +14,8 @@ export interface SubAgentOutcomesRepository {
   markAwaited(driverAgentId: string, ids: string[], until: Date): Promise<void>;
   markCollected(driverAgentId: string, ids: string[]): Promise<void>;
   claimUndelivered(limit: number, until: Date): Promise<InvocationRow[]>;
-  release(ids: string[]): Promise<void>;
-  markDelivered(ids: string[]): Promise<void>;
+  release(ids: string[], lease: Date): Promise<void>;
+  markDelivered(ids: string[], lease: Date): Promise<void>;
   markWoken(ids: string[]): Promise<void>;
   listDeliveredUnwoken(limit: number): Promise<InvocationRow[]>;
 }
@@ -96,7 +96,7 @@ export function createSubAgentOutcomesRepository(
       return rows.map(toRow);
     },
 
-    async release(ids) {
+    async release(ids, lease) {
       if (ids.length === 0) return;
       await db
         .update(invocationsTable)
@@ -104,12 +104,13 @@ export function createSubAgentOutcomesRepository(
         .where(
           and(
             inArray(invocationsTable.id, ids),
+            eq(invocationsTable.claimedUntil, lease),
             isNull(invocationsTable.deliveredAt),
           ),
         );
     },
 
-    async markDelivered(ids) {
+    async markDelivered(ids, lease) {
       if (ids.length === 0) return;
       await db
         .update(invocationsTable)
@@ -117,6 +118,7 @@ export function createSubAgentOutcomesRepository(
         .where(
           and(
             inArray(invocationsTable.id, ids),
+            eq(invocationsTable.claimedUntil, lease),
             isNull(invocationsTable.deliveredAt),
           ),
         );

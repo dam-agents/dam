@@ -59,6 +59,7 @@ function harness(opts: {
     [];
   const released: string[][] = [];
   const delivered: string[][] = [];
+  const leases: Date[] = [];
   const woken: string[][] = [];
   const wakes: string[] = [];
   const enqueued: string[] = [];
@@ -73,13 +74,15 @@ function harness(opts: {
         claims.push(until);
         return opts.claimed?.[call++] ?? [];
       },
-      release: async (ids) => {
+      release: async (ids, lease) => {
         if (ids.some((id) => opts.releaseFailsFor?.includes(id)))
           throw new Error("release boom");
         released.push(ids);
+        leases.push(lease);
       },
-      markDelivered: async (ids) => {
+      markDelivered: async (ids, lease) => {
         delivered.push(ids);
+        leases.push(lease);
       },
       markWoken: async (ids) => {
         woken.push(ids);
@@ -98,9 +101,10 @@ function harness(opts: {
     enqueue: async (agentId) => {
       enqueued.push(agentId);
     },
-    agentStopped: async (agentId) => opts.stopped?.includes(agentId) ?? false,
-    wakeAgent: async (agentId) => {
+    wakeUnlessStopped: async (agentId) => {
+      if (opts.stopped?.includes(agentId)) return false;
       wakes.push(agentId);
+      return true;
     },
     log: (msg) => {
       logs.push(msg);
@@ -117,6 +121,7 @@ function harness(opts: {
     wakes,
     enqueued,
     claims,
+    leases,
     logs,
   };
 }
@@ -156,10 +161,13 @@ describe("one turn per driver", () => {
     expect(h.bumps.map((b) => b.agentId)).toEqual(["agent-d1", "agent-d2"]);
   });
 
-  it("leases the claim for one lease from the current time", async () => {
-    const h = harness({ claimed: [[]] });
+  it("leases the claim for one lease from the current time, and every later write names it", async () => {
+    const h = harness({ claimed: [[row()]] });
     await h.deliver();
-    expect(h.claims).toEqual([new Date(NOW.getTime() + CLAIM_LEASE_MS)]);
+    const lease = new Date(NOW.getTime() + CLAIM_LEASE_MS);
+    expect(h.claims).toEqual([lease]);
+    expect(h.leases.length).toBeGreaterThan(0);
+    for (const l of h.leases) expect(l).toEqual(lease);
   });
 });
 
@@ -248,8 +256,7 @@ describe("the hourly retry", () => {
       },
       bump: async () => 0,
       enqueue: async () => {},
-      agentStopped: async () => false,
-      wakeAgent: async () => {
+      wakeUnlessStopped: async () => {
         throw new Error("over budget");
       },
       log: () => {},

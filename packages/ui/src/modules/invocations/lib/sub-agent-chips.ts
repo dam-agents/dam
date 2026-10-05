@@ -1,7 +1,7 @@
 import type { ToolChip } from "../../../types.js";
 
-const AWAIT_TOOL = /^(?:mcp__[\w-]+__)?await_subagents$/;
-const SPAWN_TOOL = /^(?:mcp__[\w-]+__)?spawn_subagent$/;
+const AWAIT_TOOL = /^(?:mcp__[\w-]+__|Tool: [\w-]+\/)?await_subagents$/;
+const SPAWN_TOOL = /^(?:mcp__[\w-]+__|Tool: [\w-]+\/)?spawn_subagent$/;
 
 interface AwaitResult {
   done?: unknown[];

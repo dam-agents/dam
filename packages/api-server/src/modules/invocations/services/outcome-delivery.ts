@@ -21,8 +21,7 @@ export interface SubAgentOutcomeDeliveryDeps {
     }[],
   ) => Promise<number>;
   enqueue: (agentId: string) => Promise<void>;
-  agentStopped: (agentId: string) => Promise<boolean>;
-  wakeAgent: (agentId: string) => Promise<unknown>;
+  wakeUnlessStopped: (agentId: string) => Promise<boolean>;
   log: (msg: string) => void;
   now?: () => Date;
 }
@@ -78,7 +77,9 @@ function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {
  * UNIT_BOUNDARY_DESCRIPTION: Wakes a Driver for turns already in its outbox,
  * unless the user stopped it: a stop wins, so the turn waits there for the
  * Driver's next deliberate wake, and the rows are marked woken either way so
- * the hourly retry does not wake it behind the user's back.
+ * the hourly retry does not wake it behind the user's back. The stop check
+ * and the wake are one conditional write on the Agent, so a stop landing in
+ * between is never erased.
  */
 async function wake(
   deps: SubAgentOutcomeDeliveryDeps,
@@ -86,13 +87,10 @@ async function wake(
   rows: InvocationRow[],
 ): Promise<void> {
   try {
-    if (await deps.agentStopped(driverAgentId)) {
+    if (!(await deps.wakeUnlessStopped(driverAgentId)))
       deps.log(
         `[sub-agents] ${driverAgentId} is stopped; its outcome turn waits for the next wake`,
       );
-    } else {
-      await deps.wakeAgent(driverAgentId);
-    }
     await deps.repo.markWoken(rows.map((r) => r.id));
   } catch (err) {
     deps.log(`[sub-agents] ${driverAgentId} did not wake: ${String(err)}`);
@@ -102,6 +100,7 @@ async function wake(
 async function deliverTo(
   deps: SubAgentOutcomeDeliveryDeps,
   now: () => Date,
+  lease: Date,
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<boolean> {
@@ -109,6 +108,7 @@ async function deliverTo(
   const toldIds = new Set(told.map((r) => r.id));
   await deps.repo.release(
     rows.filter((r) => !toldIds.has(r.id)).map((r) => r.id),
+    lease,
   );
 
   const ids = told.map((r) => r.id);
@@ -126,10 +126,10 @@ async function deliverTo(
     deps.log(
       `[sub-agents] could not write the outcome turn for ${driverAgentId}: ${String(err)}`,
     );
-    await deps.repo.release(ids);
+    await deps.repo.release(ids, lease);
     return false;
   }
-  await deps.repo.markDelivered(ids);
+  await deps.repo.markDelivered(ids, lease);
 
   try {
     await deps.enqueue(driverAgentId);
@@ -148,8 +148,10 @@ async function deliverTo(
  * them. Each tick leases such outcomes cluster-wide for one lease, writes one
  * sub-agent-outcome turn per Driver, marks them delivered only once the turn is
  * written, and wakes the Driver; outcomes past one turn's budget are released
- * for the next tick. A lease the server dies holding expires, so one outcome
- * owes at least one turn and loses none. Script spawns are never claimed:
+ * for the next tick. Every write after the claim names the lease, so a tick
+ * that outlives its lease cannot touch a row another tick holds. A lease the
+ * server dies holding expires, so one outcome owes at least one turn and
+ * loses none. Script spawns are never claimed:
  * their driver polls.
  */
 export function createSubAgentOutcomeDelivery(
@@ -157,14 +159,12 @@ export function createSubAgentOutcomeDelivery(
 ) {
   const now = deps.now ?? (() => new Date());
   return async (): Promise<number> => {
-    const claimed = await deps.repo.claimUndelivered(
-      CLAIM_BATCH,
-      new Date(now().getTime() + CLAIM_LEASE_MS),
-    );
+    const lease = new Date(now().getTime() + CLAIM_LEASE_MS);
+    const claimed = await deps.repo.claimUndelivered(CLAIM_BATCH, lease);
     let turns = 0;
     for (const [driverAgentId, rows] of byDriver(claimed)) {
       try {
-        if (await deliverTo(deps, now, driverAgentId, rows)) turns++;
+        if (await deliverTo(deps, now, lease, driverAgentId, rows)) turns++;
       } catch (err) {
         deps.log(
           `[sub-agents] the outcome sweep skipped ${driverAgentId}: ${String(err)}`,
