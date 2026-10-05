@@ -20,7 +20,7 @@ export const SUB_AGENT_WAIT_MS = 240_000;
 
 const POLL_MS = 2_000;
 
-const AWAIT_MARGIN_MS = 30_000;
+const LEASE_POLLS = 4;
 
 const MAX_AWAIT_IDS = 50;
 
@@ -181,10 +181,16 @@ function summarize(settled: Settled[]) {
 
 export function registerSubAgentTools(
   server: McpServer,
-  deps: { ops: DriverOps; awaits: SubAgentAwaitMarks; waitMs?: number },
+  deps: {
+    ops: DriverOps;
+    awaits: SubAgentAwaitMarks;
+    waitMs?: number;
+    pollMs?: number;
+  },
 ): void {
   const { ops, awaits } = deps;
   const waitMs = deps.waitMs ?? SUB_AGENT_WAIT_MS;
+  const pollMs = deps.pollMs ?? POLL_MS;
 
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
@@ -234,7 +240,12 @@ export function registerSubAgentTools(
       run(async () => {
         const unique = [...new Set(ids)];
         const deadline = Date.now() + waitMs;
-        await awaits.markAwaited(unique, new Date(deadline + AWAIT_MARGIN_MS));
+        const lease = () =>
+          awaits.markAwaited(
+            unique,
+            new Date(Date.now() + pollMs * LEASE_POLLS),
+          );
+        await lease();
         let settled = await readAll(ops, unique);
         while (
           !settled.some((s) => s.status === "done" || s.status === "failed") &&
@@ -243,16 +254,18 @@ export function registerSubAgentTools(
           !extra.signal.aborted
         ) {
           await sleep(
-            Math.min(POLL_MS, Math.max(deadline - Date.now(), 0)),
+            Math.min(pollMs, Math.max(deadline - Date.now(), 0)),
             extra.signal,
           );
+          await lease();
           settled = await readAll(ops, unique);
         }
         const summary = summarize(settled);
-        await awaits.markCollected([
-          ...summary.done.map((d) => d.id),
-          ...summary.failed.map((f) => f.id),
-        ]);
+        if (!extra.signal.aborted)
+          await awaits.markCollected([
+            ...summary.done.map((d) => d.id),
+            ...summary.failed.map((f) => f.id),
+          ]);
         return json(summary);
       }),
   );

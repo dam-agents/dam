@@ -1,4 +1,3 @@
-import type { SubAgentSessionStore } from "../acp/infrastructure/sub-agent-session-store.js";
 import { join } from "node:path";
 import { eventKind } from "agent-runtime-api";
 import type {
@@ -45,7 +44,10 @@ import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
 } from "./session-directory-report.js";
-import type { TriggerSessionDriver } from "../acp/index.js";
+import type {
+  TriggerSessionDriver,
+  SubAgentSessionStore,
+} from "../acp/index.js";
 
 const SESSION_DIRECTORY_DEBOUNCE_MS = 1_000;
 

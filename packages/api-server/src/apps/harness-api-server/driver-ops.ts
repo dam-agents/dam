@@ -7,7 +7,6 @@ import {
   type spawnInvocationRequestSchema,
   type TemplatesService,
 } from "api-server-api";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   concreteResources,
   type DefaultResourceLimits,

@@ -1388,6 +1388,8 @@ export async function bootstrap() {
       runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId) =>
       runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    agentStopped: async (agentId) =>
+      (await agentsRepo.get(agentId))?.stopRequested ?? false,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     log: (msg) => {
       process.stderr.write(`${msg}\n`);

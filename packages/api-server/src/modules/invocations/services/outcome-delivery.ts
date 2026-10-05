@@ -4,6 +4,7 @@ import type { SubAgentOutcomesRepository } from "../infrastructure/sub-agent-out
 
 const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CLAIM_BATCH = 100;
+export const CLAIM_LEASE_MS = 60_000;
 const MAX_OUTCOMES_PER_TURN = 20;
 const MAX_TURN_CHARS = 64 * 1024;
 const RETRY_BATCH = 200;
@@ -20,8 +21,10 @@ export interface SubAgentOutcomeDeliveryDeps {
     }[],
   ) => Promise<number>;
   enqueue: (agentId: string) => Promise<void>;
+  agentStopped: (agentId: string) => Promise<boolean>;
   wakeAgent: (agentId: string) => Promise<unknown>;
   log: (msg: string) => void;
+  now?: () => Date;
 }
 
 function describe(row: InvocationRow): string {
@@ -71,69 +74,101 @@ function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {
   return grouped;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Wakes a Driver for turns already in its outbox,
+ * unless the user stopped it: a stop wins, so the turn waits there for the
+ * Driver's next deliberate wake, and the rows are marked woken either way so
+ * the hourly retry does not wake it behind the user's back.
+ */
 async function wake(
   deps: SubAgentOutcomeDeliveryDeps,
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<void> {
   try {
-    await deps.wakeAgent(driverAgentId);
+    if (await deps.agentStopped(driverAgentId)) {
+      deps.log(
+        `[sub-agents] ${driverAgentId} is stopped; its outcome turn waits for the next wake`,
+      );
+    } else {
+      await deps.wakeAgent(driverAgentId);
+    }
     await deps.repo.markWoken(rows.map((r) => r.id));
   } catch (err) {
     deps.log(`[sub-agents] ${driverAgentId} did not wake: ${String(err)}`);
   }
 }
 
+async function deliverTo(
+  deps: SubAgentOutcomeDeliveryDeps,
+  driverAgentId: string,
+  rows: InvocationRow[],
+): Promise<boolean> {
+  const { told, task } = composeTurn(rows);
+  const toldIds = new Set(told.map((r) => r.id));
+  await deps.repo.release(
+    rows.filter((r) => !toldIds.has(r.id)).map((r) => r.id),
+  );
+
+  const ids = told.map((r) => r.id);
+  const firedAt = (deps.now ?? (() => new Date()))().getTime();
+  try {
+    await deps.bump(driverAgentId, [
+      {
+        id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
+        kind: "sub-agent-outcome",
+        payload: { task, ids },
+        expiresAt: new Date(firedAt + EVENT_TTL_MS),
+      },
+    ]);
+  } catch (err) {
+    deps.log(
+      `[sub-agents] could not write the outcome turn for ${driverAgentId}: ${String(err)}`,
+    );
+    await deps.repo.release(ids);
+    return false;
+  }
+  await deps.repo.markDelivered(ids);
+
+  try {
+    await deps.enqueue(driverAgentId);
+  } catch (err) {
+    deps.log(
+      `[sub-agents] ${driverAgentId} not enqueued; the outbox sweep will carry it: ${String(err)}`,
+    );
+  }
+  await wake(deps, driverAgentId, told);
+  return true;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Tells a Driver about sub-agents it spawned through
- * the spawn_subagent tool that finished while no await_subagents call covered them.
- * Each tick claims such outcomes cluster-wide, writes one sub-agent-outcome
- * turn per Driver and wakes it; outcomes past one turn's budget are released
- * for the next tick. A claimed outcome whose turn could not be written is
- * released, so one outcome owes exactly one turn. Script spawns are never
- * claimed: their driver polls.
+ * the spawn_subagent tool that finished while no await_subagents call covered
+ * them. Each tick leases such outcomes cluster-wide for one lease, writes one
+ * sub-agent-outcome turn per Driver, marks them delivered only once the turn is
+ * written, and wakes the Driver; outcomes past one turn's budget are released
+ * for the next tick. A lease the server dies holding expires, so one outcome
+ * owes at least one turn and loses none. Script spawns are never claimed:
+ * their driver polls.
  */
 export function createSubAgentOutcomeDelivery(
   deps: SubAgentOutcomeDeliveryDeps,
 ) {
+  const now = deps.now ?? (() => new Date());
   return async (): Promise<number> => {
-    const claimed = await deps.repo.claimUndelivered(CLAIM_BATCH);
+    const claimed = await deps.repo.claimUndelivered(
+      CLAIM_BATCH,
+      new Date(now().getTime() + CLAIM_LEASE_MS),
+    );
     let turns = 0;
     for (const [driverAgentId, rows] of byDriver(claimed)) {
-      const { told, task } = composeTurn(rows);
-      const toldIds = new Set(told.map((r) => r.id));
-      await deps.repo.release(
-        rows.filter((r) => !toldIds.has(r.id)).map((r) => r.id),
-      );
-
-      const ids = told.map((r) => r.id);
-      const firedAt = Date.now();
       try {
-        await deps.bump(driverAgentId, [
-          {
-            id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
-            kind: "sub-agent-outcome",
-            payload: { task, ids },
-            expiresAt: new Date(firedAt + EVENT_TTL_MS),
-          },
-        ]);
+        if (await deliverTo(deps, driverAgentId, rows)) turns++;
       } catch (err) {
         deps.log(
-          `[sub-agents] could not write the outcome turn for ${driverAgentId}: ${String(err)}`,
-        );
-        await deps.repo.release(ids);
-        continue;
-      }
-      turns++;
-
-      try {
-        await deps.enqueue(driverAgentId);
-      } catch (err) {
-        deps.log(
-          `[sub-agents] ${driverAgentId} not enqueued; the outbox sweep will carry it: ${String(err)}`,
+          `[sub-agents] the outcome sweep skipped ${driverAgentId}: ${String(err)}`,
         );
       }
-      await wake(deps, driverAgentId, told);
     }
     return turns;
   };

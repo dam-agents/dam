@@ -37,6 +37,7 @@ function plural(n: number, word: string): string {
 
 export function awaitChipTitle(chip: ToolChip): string {
   const result = parseResult(chip);
+  if (chip.status === "failed") return "Waiting on sub-agents failed";
   if (!result) return "Waiting on sub-agents…";
   const counts = [
     ["done", result.done?.length ?? 0],

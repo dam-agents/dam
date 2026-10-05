@@ -9,8 +9,10 @@ import {
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 
-import type { TriggerSessionDriver } from "../../acp/index.js";
-import type { SubAgentSessionStore } from "../../acp/infrastructure/sub-agent-session-store.js";
+import type {
+  SubAgentSessionStore,
+  TriggerSessionDriver,
+} from "../../acp/index.js";
 
 type SessionStart = Parameters<TriggerSessionDriver["start"]>[0];
 
