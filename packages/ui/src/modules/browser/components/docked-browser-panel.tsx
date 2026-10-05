@@ -27,6 +27,7 @@ import { useBrowserStream } from "../hooks/use-browser-stream.js";
 import {
   addressUrl,
   devicePoint,
+  FOCUS_RELEASE_KEY,
   heldButton,
   keyboardInput,
   modifiers,
@@ -44,6 +45,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const close = useStore((s) => s.setOpenBrowser);
   const showConfirm = useStore((s) => s.showConfirm);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
   const stream = useBrowserStream(agentId, canvasRef);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -121,6 +123,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </span>
         <form onSubmit={submit} className="min-w-0 flex-1">
           <Input
+            ref={addressRef}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             onFocus={() => setEditing(true)}
@@ -230,13 +233,16 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               true,
             );
           }}
+          aria-description={`${FOCUS_RELEASE_KEY} moves focus to the address`}
           onKeyDown={(e) => {
             e.preventDefault();
-            stream.send(keyboardInput("keyDown", e), true);
+            if (e.key === FOCUS_RELEASE_KEY) addressRef.current?.focus();
+            else stream.send(keyboardInput("keyDown", e), true);
           }}
           onKeyUp={(e) => {
             e.preventDefault();
-            stream.send(keyboardInput("keyUp", e));
+            if (e.key !== FOCUS_RELEASE_KEY)
+              stream.send(keyboardInput("keyUp", e));
           }}
           onContextMenu={(e) => e.preventDefault()}
         />

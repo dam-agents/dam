@@ -128,6 +128,8 @@ export function keyboardInput(
   };
 }
 
+export const FOCUS_RELEASE_KEY = "F6";
+
 const SAMPLE_WINDOW = 20;
 const UNANSWERED_INPUT_MS = 2_000;
 
