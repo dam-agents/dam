@@ -1,9 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
-import rrulePkg from "rrule";
 import { nextVisibleOccurrence, rruleProblem } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
-
-const { RRule } = rrulePkg;
 
 export function validateCron(expr: string): void {
   CronExpressionParser.parse(expr);
@@ -14,8 +11,6 @@ export function validateRRule(
   timezone: string,
   quietHours: QuietWindow[],
 ): void {
-  const rule = RRule.fromString(expr);
-  if (!rule) throw new Error(`invalid rrule: ${expr}`);
   const next = nextRRuleFire(expr, timezone, quietHours, new Date());
   if (next.kind === "stopped")
     throw new Error(`rrule is rejected, ${next.reason}: ${expr}`);
