@@ -1,7 +1,7 @@
 name: Security
 
-# Scans what a CI/CD run on main published, and the lockfiles it built from,
-# and keeps one summary issue open while any finding stands. cd.yml calls it
+# Scans what a CI/CD run on main published, the lockfiles it built from and
+# the third-party images the chart runs, and keeps one summary issue open while any finding stands. cd.yml calls it
 # once the run's images are merged: on every push to main and in the nightly
 # run, which rebuilds every image. The nightly run also checks the base image
 # pins. The github context is the calling run's. setup-mise is referenced as
@@ -35,7 +35,7 @@ jobs:
     name: base image pins
     # image:pack bases are pinned by digest in the root config's base_image_*
     # vars, so no rebuild picks up a base update by itself. The nightly run
-    # keeps one issue open while a pin is behind its tag; up-deps-sec bumps it
+    # keeps one issue open while a pin is behind its tag; `/up sec` bumps it
     # with image:bump-bases.
     if: ${{ github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
@@ -259,29 +259,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-  trivy-components:
-    name: image:resolve list-components
+  trivy-images:
+    name: image:resolve list-components, list-third-party
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      components: ${{ steps.list.outputs.components }}
+      images: ${{ steps.list.outputs.images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: yq
       - id: list
+        env:
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          components=$(.mise/tasks/image/resolve list-components | tr ' ' '\n' | jq -cR . | jq -cs .)
-          echo "Images to scan: $components"
-          echo "components=$components" >> "$GITHUB_OUTPUT"
+          images=$({
+            .mise/tasks/image/resolve list-components | tr ' ' '\n' | sed "s|.*|quay.io/dam-agents/&:${SHA}|"
+            .mise/tasks/image/resolve list-third-party
+          } | jq -cR . | jq -cs .)
+          echo "Images to scan: $images"
+          echo "images=$images" >> "$GITHUB_OUTPUT"
 
   container-scan:
-    name: trivy ${{ matrix.component }}
-    needs: [trivy-components]
+    name: trivy ${{ matrix.image }}
+    needs: [trivy-images]
     # Otherwise some of the commit's images carry no tag, and scanning the
     # rest would read as those images being clean. The summary issue then
-    # stays as it is.
+    # stays as it is. The third-party images wait for the next run too.
     if: inputs.images-published
     runs-on: ubuntu-latest
     permissions:
@@ -290,7 +298,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ fromJSON(needs.trivy-components.outputs.components) }}
+        image: ${{ fromJSON(needs.trivy-images.outputs.images) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -304,20 +312,23 @@ jobs:
       - name: Detect vulnerabilities
         id: scan
         env:
-          COMPONENT: ${{ matrix.component }}
+          IMAGE: ${{ matrix.image }}
           SHA: ${{ github.sha }}
-          IMAGE_PREFIX: quay.io/dam-agents
         run: |
           set -euo pipefail
-          echo "artifact=findings-trivy-${COMPONENT}" >> "$GITHUB_OUTPUT"
+          echo "artifact=findings-trivy-${IMAGE//[^A-Za-z0-9._-]/_}" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           # trivy.yaml at the repo root sets ignore-unfixed.
-          report=$(trivy image --quiet --format json "${IMAGE_PREFIX}/${COMPONENT}:${SHA}") || {
-            echo "::notice::Trivy scan skipped for ${COMPONENT} (no ${SHA} image — reused unchanged, or its build failed); see log"
+          report=$(trivy image --quiet --format json "$IMAGE") || {
+            if [[ "$IMAGE" != *":${SHA}" ]]; then
+              echo "::error::Trivy could not scan ${IMAGE}; see log"
+              exit 1
+            fi
+            echo "::notice::Trivy scan skipped for ${IMAGE} (reused unchanged, or its build failed); see log"
             exit 0
           }
           out=$(echo "$report" | jq '
-            ((.ArtifactName // "") | split("/") | last | split(":") | first) as $component
+            ((.ArtifactName // "") | split("/") | last | split("@") | first | split(":") | first) as $component
             | [ (.Results // [])[] | (.Vulnerabilities // [])[]
                 | { id: .VulnerabilityID,
                     url: (.PrimaryURL // ""),
@@ -328,7 +339,7 @@ jobs:
             | unique_by(.id + "|" + .pkg)
           ')
           printf '%s\n' "${out:-[]}" > findings.json
-          echo "::notice::Trivy (${COMPONENT}): $(jq length findings.json) finding(s)"
+          echo "::notice::Trivy (${IMAGE}): $(jq length findings.json) finding(s)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

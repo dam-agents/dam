@@ -17,3 +17,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 0
+  - package-ecosystem: cargo
+    directory: /packages/vm-runner
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: uv
+    directory: /packages/driver-sdk-py
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
