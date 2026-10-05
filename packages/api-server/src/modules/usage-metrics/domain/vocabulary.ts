@@ -3,12 +3,7 @@ export type UsageSurface = "ui" | "cli" | "other" | "slack" | "telegram";
 export type UsageOutcome = "success" | "failure";
 
 export type RelayKind =
-  | "acp"
-  | "terminal"
-  | "ssh"
-  | "browser"
-  | "trpc"
-  | "other";
+  "acp" | "terminal" | "ssh" | "browser" | "trpc" | "other";
 
 export type ConnectionChangeAction = "added" | "removed";
 

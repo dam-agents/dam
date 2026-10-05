@@ -58,7 +58,9 @@ export function agentBrowserCommand(
         ["--session", PREVIEW_SESSION, "--profile", profileDir, ...args],
         { env: mergedSpawnEnv(envReader), timeout: 60_000 },
         (err, stdout, stderr) =>
-          err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout),
+          err
+            ? reject(new Error(stderr.trim() || err.message))
+            : resolve(stdout),
       );
     });
 }

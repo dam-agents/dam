@@ -683,7 +683,10 @@ const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
 const trpcWss = new WebSocketServer({ noServer: true });
 const browserWss = new WebSocketServer({ noServer: true });
-const browserPreviewProfile = join(homeDir, ".local/share/platform/browser-preview");
+const browserPreviewProfile = join(
+  homeDir,
+  ".local/share/platform/browser-preview",
+);
 const browserPreview = createBrowserPreview({
   run: agentBrowserCommand(envStore, browserPreviewProfile),
   profileDir: browserPreviewProfile,

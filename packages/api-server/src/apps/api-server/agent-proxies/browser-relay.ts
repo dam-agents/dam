@@ -156,7 +156,8 @@ export function createBrowserRelay(
   return {
     handleUpgrade,
     close() {
-      for (const client of wss.clients) closeWs(client, 1001, "server shutting down");
+      for (const client of wss.clients)
+        closeWs(client, 1001, "server shutting down");
     },
   };
 }
