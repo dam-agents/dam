@@ -1,5 +1,5 @@
 import { ListChecked } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,8 @@ type UserMode = "first-time" | "returning";
 
 export function MockStateBar() {
   const [indexOpen, setIndexOpen] = useState(false);
-  const [userMode, setUserMode] = useState<UserMode>("first-time");
+  const [userMode, setUserMode] = useState<UserMode>("returning");
+  useEffect(() => { unlockAllCharacters(); }, []);
   const setView = useStore((s) => s.setView);
   const view = useStore((s) => s.view);
 
