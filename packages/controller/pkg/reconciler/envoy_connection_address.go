@@ -108,13 +108,19 @@ func buildConnectionAddressRoutes(c envoyHostChain, connectionID string) []any {
 func claimedHeaderNames(c envoyHostChain) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, cred := range c.Credentials {
-		name := strings.ToLower(cred.HeaderName)
-		if cred.ConnectionID == "" || name == "" || seen[name] {
-			continue
+	claim := func(connectionID, header string) {
+		name := strings.ToLower(header)
+		if connectionID == "" || name == "" || seen[name] {
+			return
 		}
 		seen[name] = true
 		out = append(out, name)
+	}
+	for _, cred := range c.Credentials {
+		claim(cred.ConnectionID, cred.HeaderName)
+	}
+	for _, signer := range c.Signers {
+		claim(signer.ConnectionID, "Authorization")
 	}
 	sort.Strings(out)
 	return out
@@ -198,6 +204,8 @@ local function urldecode(s)
 end
 local function address_in(value)
   if value == nil then return nil end
+  local sigv4_key_id = string.match(value, "^AWS4%-HMAC%-SHA256%s+.-Credential=([^/,%s]+)/")
+  if sigv4_key_id ~= nil then value = sigv4_key_id end
   local scheme, rest = string.match(value, "^(%a+)%s+(.+)$")
   if scheme ~= nil then
     if string.lower(scheme) == "basic" then

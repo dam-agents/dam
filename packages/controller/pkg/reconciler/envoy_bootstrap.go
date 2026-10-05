@@ -390,9 +390,66 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 			}, "envoy.filters.http.lua"))
 		}
 	}
+	for _, signer := range c.Signers {
+		filters = append(filters,
+			skippedUnlessAddressed(streamingGuardHTTPFilter(signer), "envoy.filters.http.lua", signer.ConnectionID),
+			skippedUnlessAddressed(requestSigningHTTPFilter(p, c, signer), "envoy.filters.http.aws_request_signing", signer.ConnectionID),
+		)
+	}
 	filters = append(filters, dynamicForwardProxyHTTPFilter(), routerHTTPFilter())
 	return filters
 }
+
+func streamingGuardHTTPFilter(signer envoySigner) ev {
+	return ev{
+		"name": signer.GuardFilterName(),
+		"typed_config": ev{
+			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
+			"default_source_code": ev{"inline_string": luaStreamingGuardScript},
+		},
+	}
+}
+
+func requestSigningHTTPFilter(p bootstrapParams, c envoyHostChain, signer envoySigner) ev {
+	volume := p.CredentialsRoot + "/" + signer.VolumeName
+	return ev{
+		"name": signer.FilterName(),
+		"typed_config": ev{
+			"@type":                  "type.googleapis.com/envoy.extensions.filters.http.aws_request_signing.v3.AwsRequestSigning",
+			"service_name":           signer.Service,
+			"region":                 signer.Region,
+			"host_rewrite":           c.HostRewrite(),
+			"use_unsigned_payload":   true,
+			"match_excluded_headers": []any{ev{"exact": connectionAddressHeader}},
+			"credential_provider": ev{
+				"custom_credential_provider_chain": true,
+				"credentials_file_provider": ev{
+					"credentials_data_source": ev{
+						"filename":          volume + "/" + signer.CredentialsKey,
+						"watched_directory": ev{"path": volume},
+					},
+					"profile": awsCredentialsProfile,
+				},
+			},
+		},
+	}
+}
+
+const streamingPayloadPrefix = "STREAMING-"
+
+const streamingRefusedBody = "This request was refused by the egress gateway, not by the storage service.\n" +
+	"The gateway re-signs requests to this storage account with the account's own keys, and it cannot re-sign a streaming (aws-chunked) upload: the signature must cover a plain body.\n" +
+	"Set request_checksum_calculation = when_required in the client's AWS profile (or AWS_REQUEST_CHECKSUM_CALCULATION=when_required in its environment) and retry.\n"
+
+var luaStreamingGuardScript = fmt.Sprintf(`local PREFIX = %s
+local BODY = %s
+function envoy_on_request(rh)
+  local sha = rh:headers():get("x-amz-content-sha256")
+  if sha ~= nil and string.sub(sha, 1, #PREFIX) == PREFIX then
+    rh:respond({[":status"] = "400", ["content-type"] = "text/plain"}, BODY)
+  end
+end
+`, strconv.Quote(streamingPayloadPrefix), strconv.Quote(streamingRefusedBody))
 
 func buildChainForwardRoutes(c envoyHostChain) []any {
 	var routes []any
