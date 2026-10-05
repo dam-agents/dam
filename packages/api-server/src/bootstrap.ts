@@ -592,6 +592,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
@@ -641,6 +642,7 @@ export async function bootstrap() {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
+      s3CredentialProbe: connectionsBoot.s3CredentialProbe,
       secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,

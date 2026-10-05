@@ -98,9 +98,7 @@ export const connectionsRouter = t.router({
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.connections.update(input.id, input.value),
-    ),
+    .mutation(({ ctx, input }) => ctx.connections.update(input.id, input)),
 
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)

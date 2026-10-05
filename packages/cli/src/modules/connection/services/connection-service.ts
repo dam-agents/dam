@@ -1,6 +1,7 @@
 import type {
   ClusterCaProbe,
   ConnectionCreateInput,
+  ConnectionCredentialUpdate,
   ConnectionTemplateView,
   ConnectionView,
 } from "api-server-api";
@@ -17,7 +18,10 @@ export interface ConnectionService {
   createConnection(
     input: ConnectionCreateInput,
   ): Promise<ConnResult<{ id: string }>>;
-  update(id: string, value: string): Promise<ConnResult<void>>;
+  update(
+    id: string,
+    credential: ConnectionCredentialUpdate,
+  ): Promise<ConnResult<void>>;
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
@@ -54,9 +58,9 @@ export function createConnectionService(deps: {
     async createConnection(input) {
       return trpcCall(() => deps.trpc.connections.create.mutate(input));
     },
-    async update(id, value) {
+    async update(id, credential) {
       return trpcCall(async () => {
-        await deps.trpc.connections.update.mutate({ id, value });
+        await deps.trpc.connections.update.mutate({ id, ...credential });
       });
     },
     async startOAuth(connectionId) {

@@ -276,6 +276,7 @@ export {
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
+  S3_COMPATIBLE_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
 } from "./modules/connections/providers.js";
@@ -304,6 +305,20 @@ export type {
   GitHubAccountGroup,
   GitHubAccountSource,
 } from "./modules/connections/github-accounts.js";
+export {
+  AWS_CONFIG_FILE_PATH,
+  AWS_CREDENTIALS_FILE_PATH,
+  AWS_PROFILE_ENV,
+  awsProfiles,
+  awsProfileSlug,
+  composeAwsProfiles,
+  signingTargetOf,
+} from "./modules/connections/aws-profiles.js";
+export type {
+  AwsProfile,
+  AwsProfileSource,
+} from "./modules/connections/aws-profiles.js";
+export { preferenceGroupOf } from "./modules/connections/preference-group.js";
 
 export type {
   CaseStudyStatus,
@@ -365,7 +380,10 @@ export type {
 } from "./modules/connections/types.js";
 export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
 export { connectionNameSchema } from "./modules/connections/schemas.js";
-export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
+export type {
+  ConnectionCreateInput,
+  ConnectionCredentialUpdate,
+} from "./modules/connections/schemas.js";
 
 export {
   SessionType,

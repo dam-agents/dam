@@ -109,6 +109,23 @@ export function buildCreatePayload(
         value,
       });
     }
+    case "sigv4": {
+      const endpoint = submitted("endpoint");
+      const accessKeyId = submitted("accessKeyId");
+      const secretAccessKey = submitted("secretAccessKey");
+      if (!endpoint) return { error: "Endpoint URL is required" };
+      if (!accessKeyId) return { error: "Access key ID is required" };
+      if (!secretAccessKey) return { error: "Secret access key is required" };
+      return compact({
+        ...common,
+        authKind: "sigv4" as const,
+        endpoint,
+        region: submitted("region"),
+        bucket: submitted("bucket"),
+        accessKeyId,
+        secretAccessKey,
+      });
+    }
     case "none":
       return compact({
         ...common,

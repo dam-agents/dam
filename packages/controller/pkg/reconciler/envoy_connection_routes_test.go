@@ -577,3 +577,120 @@ func TestLuaConnectionAddressScript_ReadsAnAddressBehindAVendorPrefix(t *testing
 		"a client that insists on a key prefix (as-, sk-) still names its connection: as-platform:conn:<id>")
 	assert.Contains(t, script, `#vendor <= 9`)
 }
+
+func signingConnection(connectionID, secretName string) envoySigner {
+	return envoySigner{
+		ConnectionID:   connectionID,
+		SecretName:     secretName,
+		VolumeName:     "cred-" + secretName,
+		CredentialsKey: "aws-credentials",
+		Region:         "us-south",
+		Service:        "s3",
+	}
+}
+
+func signingChain(host string, signers ...envoySigner) envoyHostChain {
+	c := connectionChain(host)
+	c.Signers = signers
+	return c
+}
+
+// TEST_SCENARIO: An Agent that does not require addresses still must not have the platform's own presigned artifact links, or any foreign request on the endpoint, re-signed with a user's keys. Both signing steps gate on the Connection's address whatever the Agent setting says.
+func TestRenderEnvoyBootstrap_SigningStepsGateOnTheAddressEvenWhenNotRequired(t *testing.T) {
+	signer := signingConnection("conn-cos", "platform-conn-cos")
+	chain := signingChain("s3.example.cloud", signer)
+	require.False(t, chain.RequireAddress)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{chain}, false)
+	require.NoError(t, err)
+
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.cloud")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, signer.GuardFilterName()), "conn-cos")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, signer.FilterName()), "conn-cos")
+	assert.Contains(t, got, `local HEADERS = {"authorization"}`,
+		"the address step reads the key ID out of the Authorization header")
+}
+
+func TestLuaConnectionAddressScript_ReadsAnAddressFromASigV4Credential(t *testing.T) {
+	script := luaConnectionAddressScript(signingChain("s3.example.cloud",
+		signingConnection("conn-cos", "platform-conn-cos"),
+	))
+	assert.Contains(t, script, `string.match(value, "^AWS4%-HMAC%-SHA256%s+.-Credential=([^/,%s]+)/")`,
+		"the access key ID in Credential=<key>/<date>/<region>/<service>/aws4_request is the placeholder")
+	assert.Contains(t, script, `local HEADERS = {"authorization"}`)
+}
+
+func TestBuildChainForwardRoutes_TwoSigningConnectionsOnOneHostAreNotRivals(t *testing.T) {
+	c := signingChain("s3.example.cloud",
+		signingConnection("conn-aaa", "platform-conn-aaa"),
+		signingConnection("conn-bbb", "platform-conn-bbb"),
+	)
+
+	assert.False(t, c.ContestedAt("/"), "signers only ever act on requests naming them, so nothing is ambiguous")
+	routes := buildChainForwardRoutes(c)
+	assert.Equal(t, []string{
+		"/__platform_conn/conn-aaa/", "/__platform_conn/conn-bbb/",
+		"/@conn-aaa", "/@conn-bbb",
+		"/",
+	}, routeMatchPrefixes(routes))
+	for _, r := range routes {
+		assert.NotContains(t, r.(ev), "direct_response")
+		assert.NotContains(t, r.(ev), "typed_per_filter_config", "a signer is gated by its address, never by the route")
+	}
+}
+
+func TestRenderEnvoyBootstrap_TwoSigningConnectionsOnOneHostRenderDistinctSteps(t *testing.T) {
+	a := signingConnection("conn-aaa", "platform-conn-aaa")
+	b := signingConnection("conn-bbb", "platform-conn-bbb")
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
+		signingChain("s3.example.cloud", a, b),
+	}, false)
+	require.NoError(t, err)
+
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.cloud")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, a.FilterName()), "conn-aaa")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, b.FilterName()), "conn-bbb")
+	assert.Contains(t, got, "local CONTESTED = {}", "no contested scope, so the address step refuses nothing")
+}
+
+func guardScriptOf(t *testing.T, filters []map[string]any, signer envoySigner) string {
+	t.Helper()
+	cfg := innerFilterConfig(t, signingFilter(t, filters, signer.GuardFilterName()))
+	return cfg["default_source_code"].(map[string]any)["inline_string"].(string)
+}
+
+// TEST_SCENARIO: Connection A on an endpoint is limited to the bucket scratch; Connection B on the same endpoint has no bucket, so the Agent's egress rules admit /prod there. A request naming A on /prod/... passes the egress rule B earned, and only A's own guard can keep A's keys off it. Each signer's guard carries its own Connection's scopes; a Connection without a bucket keeps signing the whole host.
+func TestRenderEnvoyBootstrap_EachSignerIsBoundedByItsOwnConnectionsScopes(t *testing.T) {
+	scratch := signingConnection("conn-scratch", "platform-conn-scratch")
+	scratch.PathPatterns = []string{"/scratch", "/scratch?*", "/scratch/*"}
+	wide := signingConnection("conn-wide", "platform-conn-wide")
+	chain := signingChain("s3.example.cloud", scratch, wide)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{chain}, false)
+	require.NoError(t, err)
+	filters := httpFiltersForHost(t, mustParseBootstrap(t, got), "s3.example.cloud")
+
+	scratchScript := guardScriptOf(t, filters, scratch)
+	assert.Contains(t, scratchScript, `local PATTERNS = {"^/scratch$", "^/scratch%?.*$", "^/scratch/.*$"}`)
+	assert.Contains(t, scratchScript, "The storage connection conn-scratch is limited to /scratch, /scratch?*, /scratch/* on s3.example.cloud")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, scratch.GuardFilterName()), "conn-scratch")
+
+	wideScript := guardScriptOf(t, filters, wide)
+	assert.Contains(t, wideScript, "local PATTERNS = {}\n", "no bucket, so the guard bounds nothing on the host")
+	assert.Contains(t, wideScript, `local SCOPE_BODY = ""`)
+	assert.Contains(t, wideScript, `[":status"] = "400"`, "the streaming guard still holds for a host-wide signer")
+	assertInjectsOnlyWhenAddressed(t, signingFilter(t, filters, wide.GuardFilterName()), "conn-wide")
+
+	assert.Equal(t, []string{"/"}, chain.ScopesOf("conn-scratch"), "the bound lives in the guard, not in the routes")
+}
+
+func TestBuildChainForwardRoutes_SignerBesideAHeaderInjectorLeavesTheInjectorPlain(t *testing.T) {
+	injector := connectionCredential("conn-key", "platform-conn-key", "Authorization", "s3.example.cloud")
+	c := connectionChain("s3.example.cloud", injector)
+	c.Signers = []envoySigner{signingConnection("conn-cos", "platform-conn-cos")}
+
+	assert.Empty(t, c.RivalsOf(injector), "a signer never claims the header, so the injector has no rival")
+	assert.False(t, c.ContestedAt("/"))
+	routes := buildChainForwardRoutes(c)
+	catchAll := routes[len(routes)-1].(ev)
+	assert.NotContains(t, catchAll, "direct_response")
+	assert.Equal(t, []string{"conn-key", "conn-cos"}, c.ConnectionIDs())
+}

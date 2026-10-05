@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-30
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -61,9 +61,7 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 
 ## The runtime channel
 
-Three tRPC routes, prefixed by protocol-major version (`runtime.v1.*`) —
-`applyState` into the agent, and `hello` plus the artifact-touch report from
-it. Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
+The routes are prefixed by protocol-major version (`runtime.v1.*`). Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
 
 ```mermaid
 sequenceDiagram
@@ -183,12 +181,6 @@ If the agent runs the handler but crashes before sending the apply response, the
 
 If the handler ran but the apply response is lost, same path — redelivery settles from the state store and the cursor advances. Re-fire is possible only if the crash lands between the side effect and the state-store write.
 
-If the handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
-
-### Server-side `dispatched_at` stamping
-
-Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind handler does not touch the outbox — its job is the side effect; dedupe bookkeeping lives in the agent's local state store.
-
 ### Expiry
 
 Each event row carries `expires_at`, chosen by the producer so a stale backlog never replays — schedules, for instance, choose it per kind of fire ([schedules](schedules.md#fire), [on-demand run](schedules.md#on-demand-run)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
@@ -272,8 +264,6 @@ Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a
 
 The default shipped manifest lives in the shared base, [`packages/agents/base/`](../../packages/agents/base/), a harness's own in its directory beside it.
 
-The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
-
 A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name supplied under `extensions.impls`, naming the module to load it from; the built-in stays registered but unbound. Custom impl names may not collide with a built-in name — registration rejects collision and boot fails loud.
 
 ### Built-in contribution impls
@@ -291,7 +281,7 @@ A harness that needs custom code for a kind — contribution or event — rebind
 2. Adds new contributions, updates changed ones, removes anything no longer in the snapshot.
 3. Returns per-driver outcome.
 
-Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite` and `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode.
+Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite`, `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode. A key-targeted write parses the file in its own format — ini included, whose sections are its top-level keys, so one file can hold a profile per Connection — and owns only the keys it wrote: a key that leaves a still-contributed path is removed exactly as a path that leaves the snapshot is, and the user's own entries beside them survive, though in the driver's serialisation (comments do not).
 
 Applying a snapshot ends with a post-apply hook: after contributions dispatch and events settle, the runtime hands the snapshot's contribution list to a composition-time subscriber — on every non-stale apply, driver failures included, so a consumer that must err toward acting sees failed installs too. Image-skill reconciliation rides it ([agent-skills](agent-skills.md#image-skill-lifecycle)).
 

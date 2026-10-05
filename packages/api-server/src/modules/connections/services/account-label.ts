@@ -81,6 +81,7 @@ async function storedAccessToken(
       return secretStore.getField(conn.auth.valueRef);
     case "client-credentials":
     case "github-app":
+    case "sigv4":
     case "none":
       return null;
   }

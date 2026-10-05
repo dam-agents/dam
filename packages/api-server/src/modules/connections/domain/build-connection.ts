@@ -19,6 +19,7 @@ import {
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
 import {
+  AWS_CREDENTIALS_SECRET_FIELD,
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
   UPSTREAM_CA_SECRET_FIELD,
@@ -30,6 +31,17 @@ import {
   KUBERNETES_TEMPLATE_ID,
   parseClusterEndpoint,
 } from "./kubernetes-contributions.js";
+import {
+  ACCESS_KEY_ID_SECRET_FIELD,
+  awsCredentialsFile,
+  buildS3Contributions,
+  DEFAULT_S3_SIGNING_REGION,
+  parseS3Endpoint,
+  S3_SERVICE,
+  SECRET_ACCESS_KEY_SECRET_FIELD,
+  sigv4KeyPair,
+  validBucketName,
+} from "./s3-contributions.js";
 
 export interface BuildResult {
   auth: ConnectionAuthConfig;
@@ -85,6 +97,12 @@ export async function buildConnection(
     case "header":
       return buildHeader(
         template as Extract<ConnectionTemplate, { authKind: "header" }>,
+        input,
+        mintSecretRef,
+      );
+    case "sigv4":
+      return buildSigv4(
+        template as Extract<ConnectionTemplate, { authKind: "sigv4" }>,
         input,
         mintSecretRef,
       );
@@ -201,6 +219,7 @@ function substituteHostInContribution(
   switch (c.kind) {
     case "egress-allow":
     case "egress-inject":
+    case "egress-sign":
       return {
         ...c,
         host: c.host.replace(/\{host\}/g, host),
@@ -386,7 +405,9 @@ async function buildClientCredentials(
 
   const hasHostContrib = contributions.some(
     (c) =>
-      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      (c.kind === "egress-allow" ||
+        c.kind === "egress-inject" ||
+        c.kind === "egress-sign") &&
       c.host === host,
   );
   if (!hasHostContrib) {
@@ -608,7 +629,9 @@ function buildHeader(
 
   const hasHostContrib = contributions.some(
     (c) =>
-      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      (c.kind === "egress-allow" ||
+        c.kind === "egress-inject" ||
+        c.kind === "egress-sign") &&
       c.host === host,
   );
   if (!hasHostContrib) {
@@ -657,6 +680,57 @@ function buildHeader(
           value: input.value,
           ...(caPem ? { [UPSTREAM_CA_SECRET_FIELD]: caPem } : {}),
           ...sdsFields,
+        },
+      ],
+    ]),
+  };
+}
+
+function buildSigv4(
+  template: Extract<ConnectionTemplate, { authKind: "sigv4" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const endpoint = parseS3Endpoint(input.endpoint);
+  const region =
+    input.region?.trim() || template.region || DEFAULT_S3_SIGNING_REGION;
+  const bucket = input.bucket ? validBucketName(input.bucket) : undefined;
+  const keys = sigv4KeyPair(input);
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const contributions: Contribution[] = [
+    ...template.contributions,
+    ...buildS3Contributions({
+      ...endpoint,
+      ...(bucket ? { bucket } : {}),
+      region,
+      service: S3_SERVICE,
+    }),
+  ];
+
+  return {
+    auth: {
+      kind: "sigv4",
+      accessKeyIdRef: { ...secretPath, field: ACCESS_KEY_ID_SECRET_FIELD },
+      secretAccessKeyRef: {
+        ...secretPath,
+        field: SECRET_ACCESS_KEY_SECRET_FIELD,
+      },
+      credentialsFileRef: {
+        ...secretPath,
+        field: AWS_CREDENTIALS_SECRET_FIELD,
+      },
+      region,
+      service: S3_SERVICE,
+    },
+    contributions,
+    secrets: new Map([
+      [
+        secretPath.path,
+        {
+          [ACCESS_KEY_ID_SECRET_FIELD]: keys.accessKeyId,
+          [SECRET_ACCESS_KEY_SECRET_FIELD]: keys.secretAccessKey,
+          [AWS_CREDENTIALS_SECRET_FIELD]: awsCredentialsFile(keys),
         },
       ],
     ]),

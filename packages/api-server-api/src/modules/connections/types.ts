@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
-import type { ConnectionCreateInput } from "./schemas.js";
+import type {
+  ConnectionCreateInput,
+  ConnectionCredentialUpdate,
+} from "./schemas.js";
 
 export const connectionCategory = z.enum(["app", "mcp", "other"]);
 export type ConnectionCategory = z.infer<typeof connectionCategory>;
@@ -80,6 +83,15 @@ export const headerAuth = z.object({
   valueFormat: z.string().min(1),
 });
 
+export const sigv4Auth = z.object({
+  kind: z.literal("sigv4"),
+  accessKeyIdRef: secretRef,
+  secretAccessKeyRef: secretRef,
+  credentialsFileRef: secretRef,
+  region: z.string().min(1),
+  service: z.literal("s3"),
+});
+
 export const noneAuth = z.object({
   kind: z.literal("none"),
 });
@@ -89,6 +101,7 @@ export const authConfig = z.discriminatedUnion("kind", [
   clientCredentialsAuth,
   githubAppAuth,
   headerAuth,
+  sigv4Auth,
   noneAuth,
 ]);
 export type AuthConfig = z.infer<typeof authConfig>;
@@ -118,6 +131,7 @@ export const authKind = z.enum([
   "client-credentials",
   "github-app",
   "header",
+  "sigv4",
   "none",
 ]);
 export type AuthKind = z.infer<typeof authKind>;
@@ -284,7 +298,7 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
-  update(id: string, value: string): Promise<void>;
+  update(id: string, credential: ConnectionCredentialUpdate): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 
