@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-30
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -141,7 +141,7 @@ sequenceDiagram
   RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
-`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows.
+`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows. The cursor the runtime reports stands only while the env file that applied state wrote is still in its home: a home restored without it — a [runtime migration](vm-runner.md#runtime-migration) leaves the env file behind — reports no cursor, so the whole state is pushed again and the harness gets its provider env; the record of events already run is kept.
 
 ### Per-kind event handlers (agent-side)
 
