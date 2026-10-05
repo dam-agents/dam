@@ -39,6 +39,10 @@ import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
+import {
+  agentBrowserCommand,
+  createBrowserPreview,
+} from "./modules/browser-preview.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
@@ -678,6 +682,13 @@ const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
 const trpcWss = new WebSocketServer({ noServer: true });
+const browserWss = new WebSocketServer({ noServer: true });
+const browserPreviewProfile = join(homeDir, ".local/share/platform/browser-preview");
+const browserPreview = createBrowserPreview({
+  run: agentBrowserCommand(envStore, browserPreviewProfile),
+  profileDir: browserPreviewProfile,
+  log: (msg) => process.stderr.write(`[browser-preview] ${msg}\n`),
+});
 
 applyWSSHandler({
   wss: trpcWss,
@@ -703,6 +714,10 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
+    );
+  } else if (url.pathname === "/api/browser") {
+    browserWss.handleUpgrade(req, socket, head, (ws) =>
+      browserPreview.attach(ws, url.searchParams),
     );
   } else if (url.pathname === "/api/trpc-ws") {
     trpcWss.handleUpgrade(req, socket, head, (ws) =>
@@ -800,6 +815,7 @@ function gracefulShutdown(signal: string): void {
   process.stderr.write(`[shutdown] ${signal} received, closing\n`);
   server.close();
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
+  browserPreview.close();
   acpRuntime.shutdown();
   setTimeout(() => process.exit(0), 3_000).unref();
 }
