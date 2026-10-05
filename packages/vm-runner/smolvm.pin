@@ -7,8 +7,8 @@
 # tree that is not commit=, and the image build installs the release tarball of
 # the same tag, refusing one whose digest is not the sha256- line for its
 # architecture (the release's own checksums.sha256).
-tag=v1.19.3
-commit=e3aabf22ce2fa5aadc2f88def794d5908f2ae516
-sha256-linux-x86_64=caa0d018105dd07b841aed6e4d6c505b9f522f3534f25fb47cb7a6855343470a
-sha256-linux-arm64=613fdd07fa39c18a5fc440c7031b55d3945ccabda3151e8e5941e6b1dbd5a0ec
-sha256-darwin-arm64=1a8dec267e9750ea3fa17dbb429e0c9555e6f32f9a1128633a962f48a713c0c4
+tag=v1.23.4
+commit=8001327b314c132cba806429bbcdad837e5e71f6
+sha256-linux-x86_64=b8e0e89f6e7427424f4dfad09ef13c7d6802748c58ed5356163344f485e9ff9c
+sha256-linux-arm64=d07e83ce574840219fd08e7ff1e778990c9c23f0e5ccbb27872ad86f815f7227
+sha256-darwin-arm64=cadd607214c5f6ee9c18d216ffc94163176c05fabe08a3b2574f8689a6f3c888
