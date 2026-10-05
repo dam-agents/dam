@@ -10,7 +10,7 @@ const { reasoningBeforeContent } = await import(
 );
 
 const sse = (...deltas) => deltas.map((delta) => `data: ${JSON.stringify({ choices: [{ index: 0, delta }] })}\n\n`).join("") + "data: [DONE]\n\n";
-const body = sse({ reasoning_content: "from my own" }, { reasoning_content: " reasoning.", content: "I" }, { content: "'ll answer." });
+const body = sse({ reasoning_content: "from my own" }, { reasoning_content: " reasoning.", content: "I", tool_calls: [{ index: 0, function: { arguments: "{}" } }] }, { content: "'ll answer." });
 const split = (text, at) => [text.slice(0, at), text.slice(at)];
 const fakeFetch = async () =>
   new Response(
@@ -28,7 +28,7 @@ const deltas = text.split("\n").filter((l) => l.startsWith("data: {")).map((l) =
 assert.deepEqual(deltas, [
   { reasoning_content: "from my own" },
   { reasoning_content: " reasoning." },
-  { content: "I" },
+  { content: "I", tool_calls: [{ index: 0, function: { arguments: "{}" } }] },
   { content: "'ll answer." },
 ]);
 assert.ok(text.endsWith("data: [DONE]\n\n"), text);

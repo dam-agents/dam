@@ -144,7 +144,7 @@ function splitMixedDelta(line: string): string {
 	const keeping = (keep: (field: string) => boolean) =>
 		chunk.choices?.map((c) => ({ ...c, delta: Object.fromEntries(Object.entries(c.delta ?? {}).filter(([f]) => keep(f))) }));
 	const { usage: _, ...head } = chunk;
-	const reasoning = { ...head, choices: keeping((f) => f !== "content") };
+	const reasoning = { ...head, choices: keeping((f) => f === "role" || REASONING_FIELDS.includes(f)) };
 	const content = { ...chunk, choices: keeping((f) => !REASONING_FIELDS.includes(f)) };
 	return `data: ${JSON.stringify(reasoning)}\n\ndata: ${JSON.stringify(content)}`;
 }

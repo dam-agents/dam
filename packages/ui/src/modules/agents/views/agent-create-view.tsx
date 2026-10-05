@@ -314,6 +314,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       !blockingSchedule &&
       !pending
     : isCodingAgentSetupComplete(plainDraft) &&
+      !noCompatibleProvider &&
       !pending &&
       vmRuntime.answered &&
       (channelsAnswered || !wantsChannel);
@@ -542,8 +543,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <SectionLabel spaced>Provider</SectionLabel>
           <Callout tone="warning" inset>
-            This kit asks for a provider that the chosen harness cannot run on.
-            Pick another harness, or a kit whose provider fits.
+            {kit
+              ? "This kit asks for a provider that the chosen harness cannot run on. Pick another harness, or a kit whose provider fits."
+              : "The chosen harness declares no provider it can run on. Pick another harness."}
           </Callout>
         </section>
       ) : (
