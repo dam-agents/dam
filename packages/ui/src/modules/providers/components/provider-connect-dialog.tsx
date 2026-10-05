@@ -140,16 +140,17 @@ export function ProviderConnectDialog({
             }
           />
         )}
-        {provider === "ibm-litellm" && (
+        {(provider === "ibm-litellm" || provider === "curve-bender") && (
           <IbmLitellmForm
+            provider={provider}
             variant={variant}
             onCancel={onClose}
             onSave={({ value }) =>
               persist({
                 value,
                 createInput: {
-                  templateId: "ibm-litellm",
-                  name: "ibm-litellm",
+                  templateId: provider,
+                  name: provider,
                   authKind: "header",
                   value,
                 },

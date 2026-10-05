@@ -1,5 +1,5 @@
 export type ProviderPresetType =
-  "anthropic" | "ibm-litellm" | "openai" | "bob" | "bedrock";
+  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -9,28 +9,46 @@ export interface EnvMapping {
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
-const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
+export const CURVE_BENDER_HOST = "litellm.cb.ete.res.ibm.com";
 
 export const BOB_INFERENCE_PREFIX_REWRITE = {
   prefix: "/inference/v1/",
   replacement: "/v1/",
 } as const;
 
-export function ibmLitellmEnvMappings(): EnvMapping[] {
+function liteLlmEnvMappings(
+  host: string,
+  models: { proxy: string; openai: string },
+): EnvMapping[] {
+  const baseUrl = `https://${host}`;
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy-placeholder" },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "ANTHROPIC_BASE_URL", placeholder: baseUrl },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    { envName: "OPENAI_PROXY_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_PROXY_MODEL", placeholder: "aws/claude-opus-4-8" },
+    { envName: "OPENAI_PROXY_URL", placeholder: baseUrl },
+    { envName: "OPENAI_PROXY_MODEL", placeholder: models.proxy },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-    { envName: "BOB_GATEWAY_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "OPENAI_BASE_URL", placeholder: baseUrl },
+    { envName: "OPENAI_MODEL", placeholder: models.openai },
+    { envName: "BOB_GATEWAY_URL", placeholder: baseUrl },
     { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
   ];
+}
+
+export function ibmLitellmEnvMappings(): EnvMapping[] {
+  return liteLlmEnvMappings(IBM_LITELLM_HOST, {
+    proxy: "aws/claude-opus-4-8",
+    openai: "gpt-5.5",
+  });
+}
+
+export function curveBenderEnvMappings(): EnvMapping[] {
+  return liteLlmEnvMappings(CURVE_BENDER_HOST, {
+    proxy: "rits/zai-org/glm-5-3",
+    openai: "rits/zai-org/glm-5-3",
+  });
 }
 
 export function openaiEnvMappings(): EnvMapping[] {
@@ -137,6 +155,11 @@ export const PROVIDERS = {
     id: "ibm-litellm",
     displayName: "IBM LiteLLM ETE Proxy",
     modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
+  },
+  "curve-bender": {
+    id: "curve-bender",
+    displayName: "Curve Bender",
+    modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
   },
   openai: {
     id: "openai",

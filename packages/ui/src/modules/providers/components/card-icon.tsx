@@ -33,6 +33,11 @@ const STYLES: Record<
     bg: "bg-muted",
     iconClass: "text-2xl leading-none",
   },
+  "curve-bender": {
+    Icon: LiteLLMIcon,
+    bg: "bg-muted",
+    iconClass: "text-2xl leading-none",
+  },
   bob: {
     Icon: BobIcon,
     bg: "",
@@ -55,6 +60,7 @@ const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
   anthropic: "!w-8 !h-8",
   openai: "!w-8 !h-8",
   "ibm-litellm": "!text-[40px]",
+  "curve-bender": "!text-[40px]",
   bob: "",
   bedrock: "!w-8 !h-8",
 };
@@ -82,7 +88,7 @@ export function CardIcon({
           size === "lg" && LARGE_ICON_CLASS[provider],
           size === "sm" &&
             provider !== "bob" &&
-            (provider === "ibm-litellm" ? "!text-base" : "!w-3.5 !h-3.5"),
+            (style.Icon === LiteLLMIcon ? "!text-base" : "!w-3.5 !h-3.5"),
         )}
       />
     </div>

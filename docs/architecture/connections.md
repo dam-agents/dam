@@ -227,6 +227,17 @@ lists once they are ordered ([harness configuration](harness-config.md#model-dis
 The seed yields to a pin rather than overriding it — it fills an empty
 slot only, so a chosen model is never swapped for one nobody picked.
 
+### App preset: Curve Bender
+
+A second LiteLLM proxy, fronting open models hosted on RITS rather than
+Claude and GPT. It is a provider of its own, offered next to the IBM
+LiteLLM proxy so an agent can hold either or both, and contributes the
+same env, the same Bob prefix rewrite and the same inert key placeholder,
+aimed at its own host. Only the default models Codex and Pi start on differ,
+since the ones the IBM LiteLLM proxy pins do not exist here; Claude Code
+needs no pin, as it takes its models from the endpoint's list
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+
 ### App preset: AWS Bedrock
 
 Models an organization hosts in AWS Bedrock, authenticated with a

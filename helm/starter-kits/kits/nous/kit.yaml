@@ -13,7 +13,7 @@ onboarding: false
 image:
   ref: quay.io/dam-agents/nous # @ci-pin nous-image-tag
   harness: claude-code
-  providers: [ibm-litellm, anthropic]
+  providers: [ibm-litellm, curve-bender, anthropic]
 resources:
   cpu: "2"
   memory: 4Gi
