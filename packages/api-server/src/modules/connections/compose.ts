@@ -14,6 +14,7 @@ import {
   type GitHubAppEngine,
 } from "./infrastructure/github-app-engine.js";
 import { createS3CredentialProbe } from "./infrastructure/s3-credential-probe.js";
+import { createAcceptingS3CredentialProbe } from "./infrastructure/accepting-s3-credential-probe.js";
 import type { S3CredentialProbe } from "./domain/s3-credential-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
@@ -51,6 +52,7 @@ export interface ComposeConnectionsAtBootOpts {
   pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
+  e2eEnabled?: boolean;
 }
 
 export function composeConnectionsAtBoot(
@@ -66,7 +68,9 @@ export function composeConnectionsAtBoot(
     pendingStore: opts.pendingFlowStore,
   });
   const githubAppEngine = createGitHubAppEngine();
-  const s3CredentialProbe = createS3CredentialProbe();
+  const s3CredentialProbe = opts.e2eEnabled
+    ? createAcceptingS3CredentialProbe()
+    : createS3CredentialProbe();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
     engine: oauthEngine,
