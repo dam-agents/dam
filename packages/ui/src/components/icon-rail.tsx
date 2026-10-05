@@ -1,10 +1,10 @@
 import {
   Book,
+  Box,
   type CarbonIconType,
   ChevronLeft,
   ChevronRight,
   Folders,
-  Gift,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -25,7 +25,6 @@ interface Destination {
   active: boolean;
   badge: number;
   navigate: () => void;
-  tone?: "kit";
 }
 
 export function IconRail({
@@ -49,8 +48,7 @@ export function IconRail({
   const starterKits: Destination = {
     label: "Starter Kits",
     shortLabel: "Kits",
-    icon: Gift,
-    tone: "kit",
+    icon: Box,
     active:
       view === "starter-kits" ||
       view === "starter-kit" ||
@@ -179,7 +177,6 @@ function RailItem({
   badge,
   navigate,
   expanded,
-  tone,
 }: Destination & { expanded: boolean }) {
   const button = (
     <button
@@ -191,13 +188,9 @@ function RailItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
-        tone === "kit"
-          ? active
-            ? "bg-kit-tint text-kit"
-            : "text-kit hover:bg-kit-tint"
-          : active
-            ? "text-primary bg-muted"
-            : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        active
+          ? "text-primary bg-muted"
+          : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} size={16} />

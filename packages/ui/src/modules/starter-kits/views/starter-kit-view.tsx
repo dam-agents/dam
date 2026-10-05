@@ -37,8 +37,8 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
+import { KitCategoryTag } from "../components/kit-category-tag.js";
 import {
-  CATEGORY_LABEL,
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
@@ -309,9 +309,7 @@ function KitDetail({
       <div className="flex min-h-0 flex-1 flex-col">
         <DialogHeader
           title={kit.name}
-          titleAccessory={
-            <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
-          }
+          titleAccessory={<KitCategoryTag category={kit.category} />}
           subtitle={kit.description}
           onClose={onClose}
         >

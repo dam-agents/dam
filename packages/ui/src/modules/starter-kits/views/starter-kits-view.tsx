@@ -14,9 +14,9 @@ import {
   KitBadges,
   KitCard,
   KitFilterBar,
-  KitIllustration,
   useKitFilter,
 } from "../components/kit-browser.js";
+import { KitCategoryTag } from "../components/kit-category-tag.js";
 
 function FeaturedCard({
   kit,
@@ -34,24 +34,16 @@ function FeaturedCard({
       type="button"
       onClick={onOpen}
       data-testid={`starter-kit-card-${kit.id}`}
-      className="grid w-full overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      className="flex w-full flex-col justify-center gap-3 overflow-hidden rounded-xl border border-border bg-card p-8 text-left transition-colors hover:border-foreground/20 md:min-h-[280px]"
     >
-      <KitIllustration
-        kit={kit}
-        size={48}
-        className="min-h-[280px] border-kit-line md:border-r"
-      />
-      <div className="flex flex-col justify-center gap-3 p-8">
+      <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
-        <p className="text-sm text-muted-foreground">
-          {kit.tagline ?? kit.description}
-        </p>
-        <KitBadges
-          kit={kit}
-          templates={templates}
-          templateById={templateById}
-        />
+        <KitCategoryTag category={kit.category} />
       </div>
+      <p className="text-sm text-muted-foreground">
+        {kit.tagline ?? kit.description}
+      </p>
+      <KitBadges kit={kit} templates={templates} templateById={templateById} />
     </button>
   );
 }
