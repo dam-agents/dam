@@ -81,7 +81,7 @@ export async function composeRuntimeChannel(
   };
 
   const { manifest, harnessClient } = opts;
-  const stateStore = createStateStore(opts.stateBackend);
+  const stateStore = createStateStore(opts.stateBackend, opts.envReader.ready);
   const triggerStateStore = createTriggerStateStore(
     join(opts.agentHome, ".platform", "trigger"),
   );
