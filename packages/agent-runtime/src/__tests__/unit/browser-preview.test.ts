@@ -115,10 +115,14 @@ describe("parseControl", () => {
     expect(parseControl('{"type":"clear_data"}')).toEqual({
       type: "clear_data",
     });
+    expect(parseControl('{"type":"resize","width":900,"height":640}')).toEqual({
+      type: "resize",
+      width: 900,
+      height: 640,
+    });
     expect(
-      parseControl('{"type":"resize","width":900,"height":640}'),
-    ).toEqual({ type: "resize", width: 900, height: 640 });
-    expect(parseControl('{"type":"resize","width":10,"height":640}')).toBeNull();
+      parseControl('{"type":"resize","width":10,"height":640}'),
+    ).toBeNull();
     expect(
       parseControl('{"type":"resize","width":900.5,"height":640}'),
     ).toBeNull();
