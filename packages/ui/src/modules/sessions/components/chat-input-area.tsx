@@ -4,6 +4,7 @@ import { useStore } from "../../../store.js";
 import type { Message, VerdictPart } from "../../../types.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import { ChatInput, type ChatInputProps } from "./chat-input.js";
+import { EgressApprovalPrompt } from "./egress-approval-prompt.js";
 import {
   PermissionPrompt,
   type PermissionVerdict,
@@ -41,5 +42,10 @@ export function ChatInputArea(props: ChatInputProps) {
   );
 
   if (hasPending) return <PermissionPrompt onResolved={appendVerdict} />;
-  return <ChatInput {...props} />;
+  return (
+    <>
+      <EgressApprovalPrompt />
+      <ChatInput {...props} />
+    </>
+  );
 }

@@ -438,6 +438,16 @@ own hold in the security log: the session that saw the first prompt may be long 
 and a request waiting on a prompt nobody can see would stall the agent
 silently for the whole hold window.
 
+That re-published prompt is for attached ACP clients such as the CLI.
+The web chat does not read it: a held request belongs to the agent, not
+to a session, so every open conversation of the agent shows the agent's
+waiting network approvals from the approvals list, with their verdict
+controls. The list is the api-server's own state, refreshed by the
+approvals live hint, so a conversation opened after the hold — or a
+retry that joined it — still shows the prompt, and a verdict given in
+one place clears it from every conversation, from Home and from its
+toast.
+
 At most three rules speak for a host — itself, its `*.parent` wildcard,
 and the bare `*` — most specific first; a wildcard covers the one label
 its SNI chain and SAN do.
