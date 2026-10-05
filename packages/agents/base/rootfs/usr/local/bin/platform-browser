@@ -61,16 +61,35 @@ if (url.protocol !== "http:" && url.protocol !== "https:") {
   process.exit(2);
 }
 
-const opened = spawnSync(
-  "agent-browser",
-  [...BROWSER, "open", url.href],
-  { stdio: ["ignore", "ignore", "inherit"] },
-);
+const opened = spawnSync("agent-browser", [...BROWSER, "open", url.href], {
+  stdio: ["ignore", "ignore", "pipe"],
+  encoding: "utf8",
+});
+const currentHost = () => {
+  const got = spawnSync("agent-browser", [...BROWSER, "get", "url"], {
+    encoding: "utf8",
+  });
+  try {
+    return new URL(got.stdout.trim()).host;
+  } catch {
+    return null;
+  }
+};
 if (opened.error || opened.status !== 0) {
+  const stillLoading =
+    !opened.error &&
+    /timed out/i.test(opened.stderr ?? "") &&
+    currentHost() === url.host;
+  if (!stillLoading) {
+    process.stderr.write(opened.stderr ?? "");
+    process.stderr.write(
+      `platform-browser: the browser did not open ${url.href}${opened.error ? `: ${opened.error.message}` : ""}\n`,
+    );
+    process.exit(1);
+  }
   process.stderr.write(
-    `platform-browser: the browser did not open ${url.href}${opened.error ? `: ${opened.error.message}` : ""}\n`,
+    "platform-browser: the page is open but still loading; wait before you snapshot it (platform-browser wait --load domcontentloaded)\n",
   );
-  process.exit(1);
 }
 
 const label = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;

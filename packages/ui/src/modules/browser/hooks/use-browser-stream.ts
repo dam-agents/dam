@@ -9,7 +9,7 @@ import {
   viewportFor,
 } from "../lib/stream.js";
 
-const LIVE_FPS = 30;
+const LIVE_FPS = 15;
 const HIDDEN_FPS = 1;
 const STATS_INTERVAL_MS = 500;
 const RESIZE_DEBOUNCE_MS = 250;

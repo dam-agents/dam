@@ -32,6 +32,7 @@ platform-browser screenshot /tmp/page.png
 ```
 
 - Take a fresh `snapshot -i` before you act: refs change whenever the page does.
+- Heavy sites load slowly here: the sandbox renders without a GPU on a small CPU share. After `open` or a click that navigates, run `platform-browser wait --load domcontentloaded` before you snapshot. A command that fails with "timed out" (for example `CDP command timed out: DOM.enable`) means the page was busy, not that the browser is gone: wait a few seconds and run it once more. If it keeps timing out, tell the user the page is too heavy for this agent's compute and suggest a higher Compute Resources tier.
 - Use it to show the user something or to try a flow with them watching — say in the chat what you are about to do, then do it.
 - Ask before anything that changes state the user cares about outside your sandbox: submitting a form on an external site, buying, sending, deleting, or acting with the user's sign-ins.
 - Never type a password or secret into it. If a page needs the user to sign in, open it and ask them to sign in in the panel.
