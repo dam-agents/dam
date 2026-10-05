@@ -277,11 +277,15 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     kit && bringsImage
       ? kit.image
       : (templates.data?.find((t) => t.id === form.templateId) ?? null);
-  const providerPolicy = narrowPolicyToTemplate(
-    kit
-      ? providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))
-      : setupProviderPolicy("coding-agent"),
-    providerSource,
+  const providerPolicy = useMemo(
+    () =>
+      narrowPolicyToTemplate(
+        kit
+          ? providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))
+          : setupProviderPolicy("coding-agent"),
+        providerSource,
+      ),
+    [kit, providerSource],
   );
   const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
 
