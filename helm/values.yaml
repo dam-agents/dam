@@ -675,8 +675,8 @@ seaweedfs:
       cpu: 500m
       memory: 1Gi
 
-# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
-# chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
+# operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 clickstack:
   enabled: false
