@@ -256,8 +256,8 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
   }
 
   async function warnUnservedPin(pinnedKit: string): Promise<void> {
-    const [catalog = "", kitId = ""] = pinnedKit.split("/");
-    if (await deps.repo.get(catalog, kitId)) return;
+    const [catalog = "", kitId = "", ...extra] = pinnedKit.split("/");
+    if (extra.length === 0 && (await deps.repo.get(catalog, kitId))) return;
     getLogger().warn(
       { pinnedKit },
       "starter kits: the pinned kit is not in any catalog; every card shows at the same size",
