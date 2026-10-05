@@ -25,7 +25,7 @@ import {
 } from "../../modules/schedules/index.js";
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import {
-  composeInvocationAwaitMarks,
+  composeSubAgentAwaitMarks,
   composeInvocationsForOwner,
   createTargetAdmission,
   type DelegationFramesPort,
@@ -212,6 +212,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
 
   const driverOpsDeps: DriverOpsDeps = {
+    agents: { get: (id) => agentsRepo.get(id) },
     invocationsServiceFor,
     connectionsServiceFor,
     templates: templatesRepo,
@@ -243,7 +244,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     artifactLibraryFor: mcpArtifactLibraryFor,
     invocationsServiceFor,
     driverOpsFor: createDriverOps(driverOpsDeps),
-    invocationAwaitsFor: composeInvocationAwaitMarks(db),
+    subAgentAwaitsFor: composeSubAgentAwaitMarks(db),
     kbShareOpsFor,
     agentHome: config.agentHome,
     caseStudySubmissions,

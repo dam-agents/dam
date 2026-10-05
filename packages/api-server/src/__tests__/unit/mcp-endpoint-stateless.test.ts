@@ -34,7 +34,7 @@ function replica() {
     artifactLibraryFor: () => ({}),
     invocationsServiceFor: () => ({}),
     driverOpsFor: () => ({}),
-    invocationAwaitsFor: () => ({}),
+    subAgentAwaitsFor: () => ({}),
     carriesInspectorRole: async () => false,
     caseStudySubmissions: {},
     caseStudyInspection: {},

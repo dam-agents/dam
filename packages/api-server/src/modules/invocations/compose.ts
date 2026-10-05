@@ -7,7 +7,7 @@ import type {
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createDelegationControl } from "./services/delegation-control.js";
-import { createInvocationOutcomesRepository } from "./infrastructure/invocation-outcomes-repository.js";
+import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
@@ -39,9 +39,9 @@ import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { ReadHarnessConfigSupport } from "./domain/harness-config-refusal.js";
 import {
-  createInvocationOutcomeDelivery,
-  createInvocationOutcomeWakeRetry,
-  type InvocationOutcomeDeliveryDeps,
+  createSubAgentOutcomeDelivery,
+  createSubAgentOutcomeWakeRetry,
+  type SubAgentOutcomeDeliveryDeps,
 } from "./services/outcome-delivery.js";
 
 function composeReaper(
@@ -130,25 +130,25 @@ export function composeInvocationLivenessSweep(opts: {
   });
 }
 
-export function composeInvocationOutcomeDelivery(
-  opts: Omit<InvocationOutcomeDeliveryDeps, "repo"> & { db: Db },
+export function composeSubAgentOutcomeDelivery(
+  opts: Omit<SubAgentOutcomeDeliveryDeps, "repo"> & { db: Db },
 ): { deliver: () => Promise<number>; retry: () => Promise<number> } {
-  const deps = { ...opts, repo: createInvocationOutcomesRepository(opts.db) };
+  const deps = { ...opts, repo: createSubAgentOutcomesRepository(opts.db) };
   return {
-    deliver: createInvocationOutcomeDelivery(deps),
-    retry: createInvocationOutcomeWakeRetry(deps),
+    deliver: createSubAgentOutcomeDelivery(deps),
+    retry: createSubAgentOutcomeWakeRetry(deps),
   };
 }
 
-export interface InvocationAwaitMarks {
+export interface SubAgentAwaitMarks {
   markAwaited(ids: string[], until: Date): Promise<void>;
   markCollected(ids: string[]): Promise<void>;
 }
 
-export function composeInvocationAwaitMarks(
+export function composeSubAgentAwaitMarks(
   db: Db,
-): (driverAgentId: string) => InvocationAwaitMarks {
-  const repo = createInvocationOutcomesRepository(db);
+): (driverAgentId: string) => SubAgentAwaitMarks {
+  const repo = createSubAgentOutcomesRepository(db);
   return (driverAgentId) => ({
     markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
     markCollected: (ids) => repo.markCollected(driverAgentId, ids),

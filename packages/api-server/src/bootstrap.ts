@@ -205,7 +205,7 @@ import {
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
-  composeInvocationOutcomeDelivery,
+  composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
@@ -1382,7 +1382,7 @@ export async function bootstrap() {
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );
-  const invocationOutcomes = composeInvocationOutcomeDelivery({
+  const subAgentOutcomes = composeSubAgentOutcomeDelivery({
     db,
     bump: (agentId, events) =>
       runtimeDelivery.runtimeMutator.bump(agentId, events),
@@ -1393,11 +1393,11 @@ export async function bootstrap() {
       process.stderr.write(`${msg}\n`);
     },
   });
-  await periodicJobs.register("invocation-outcome-delivery", 10_000, () =>
-    invocationOutcomes.deliver(),
+  await periodicJobs.register("sub-agent-outcome-delivery", 10_000, () =>
+    subAgentOutcomes.deliver(),
   );
-  await periodicJobs.register("invocation-outcome-wake-retry", 3_600_000, () =>
-    invocationOutcomes.retry(),
+  await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
+    subAgentOutcomes.retry(),
   );
 
   const agentSweep = createAgentSweep({

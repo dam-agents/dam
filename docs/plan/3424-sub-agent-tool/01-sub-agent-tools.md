@@ -1,4 +1,4 @@
-# 01 — Invocation tools on the platform MCP server
+# 01 — Sub-agent tools on the platform MCP server
 
 **Part of:** Spawn a sub-agent through a tool call — see [README](./README.md)
 
@@ -6,7 +6,7 @@
 
 The driver SDK reaches Invocations over HTTP routes on the harness port. This slice gives
 the model the same capability as five MCP tools on the platform MCP server:
-`invoke_agent`, `await_invocations`, `list_harnesses`, `list_connections`, `get_budget`.
+`spawn_subagent`, `await_subagents`, `list_harnesses`, `list_connections`, `get_budget`.
 The request handling that now lives inline in the HTTP routes moves to one place both
 surfaces call, so the tool and the SDK can never disagree on what a spawn means.
 
@@ -29,29 +29,29 @@ Apply `/typescript-engineering`.
    belongs — beside the routes in `apps/harness-api-server/` unless the skill points to the
    invocations module's services. Keep the security log on attenuation denial. Routes keep
    their exact HTTP responses.
-2. **Register the tools.** Add `packages/api-server/src/apps/harness-api-server/invocation-tools.ts`
-   with `registerInvocationTools(server, deps)`, following
+2. **Register the tools.** Add `packages/api-server/src/apps/harness-api-server/sub-agent-tools.ts`
+   with `registerSubAgentTools(server, deps)`, following
    `packages/api-server/src/modules/satellites/mcp-tools.ts` and `core/mcp-tool-result.ts`
    (`json`, `errorResult`, `run`). Call it from `mcp-endpoint.ts` next to `report_result`.
    Extend `MountMcpDeps` and its wiring in `packages/api-server/src/bootstrap.ts` with what
    the functions from step 1 need (connections, templates, budgets, default limits);
    `invocationsServiceFor` is already there.
-   - `invoke_agent`: input is the zod shape of `spawnInvocationRequestSchema`
+   - `spawn_subagent`: input is the zod shape of `spawnInvocationRequestSchema`
      (`packages/api-server-api`), with a `.describe()` per field taken from the options
-     table in the `dam-invoke` skill. `schema` is required. A refusal returns `errorResult`
+     table in the `spawn-subagent` skill. `schema` is required. A refusal returns `errorResult`
      with the platform's reason. Success returns text that includes the line
      `[invoke] spawned <label> -> <id>` (label falls back to harness, image, then id,
      as in `packages/driver-sdk/src/spawn.ts`) and a JSON `{ id }`.
-   - `await_invocations`: `ids: string[]` (min 1). Reads each through
+   - `await_subagents`: `ids: string[]` (min 1). Reads each through
      `InvocationsService.get(id, driverAgentId)` every ~2 s until at least one is terminal
      or 240 s pass (reuse `DEFAULT_SATELLITE_WAIT_MS` or a sibling constant with the same
      reason). Returns `{ done: [{id, label, result}], failed: [{id, label, reason}],
      running: [id], unknown: [id] }`. Never throws for an unknown id.
    - `list_harnesses`, `list_connections`, `get_budget`: return the step-1 functions'
      JSON.
-   - Descriptions: `invoke_agent` carries the need-based rule from the README and says
+   - Descriptions: `spawn_subagent` carries the need-based rule from the README and says
      the sub-agent is unattended and reports through `report_result`, that the call returns
-     an id at once, and to call `await_invocations` next. `await_invocations` says it waits up
+     an id at once, and to call `await_subagents` next. `await_subagents` says it waits up
      to four minutes, returns on the first finish, and to call it again with the still
      running ids. Mention that a spawn must not be retried blindly: a duplicate is a second
      sub-agent.
@@ -65,10 +65,10 @@ Apply `/typescript-engineering`.
 
 - [ ] The HTTP routes return exactly what they returned before (status codes and bodies).
 - [ ] The five tools appear on the platform MCP server for every agent.
-- [ ] `invoke_agent` refuses a missing schema, an unknown harness (naming the available
+- [ ] `spawn_subagent` refuses a missing schema, an unknown harness (naming the available
       ones), and an ungranted connection (with the security log line), each as a tool error.
-- [ ] `invoke_agent`'s result text contains `[invoke] spawned <label> -> <id>`.
-- [ ] `await_invocations` returns within ~2 s of a child ending, and after ~240 s with only
+- [ ] `spawn_subagent`'s result text contains `[invoke] spawned <label> -> <id>`.
+- [ ] `await_subagents` returns within ~2 s of a child ending, and after ~240 s with only
       running ids when none ended; foreign ids come back as `unknown`.
 - [ ] `docs/architecture/invocations.md` describes the tools.
 - [ ] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
@@ -78,7 +78,7 @@ Apply `/typescript-engineering`.
 `mise run check` and `mise run test` against the current suite (the existing
 invocation-endpoint and SDK tests cover the extracted resolution). Then on the local
 cluster: in a Claude Code agent's chat, ask it to call `list_harnesses`, then
-`invoke_agent` with prompt "Compute 6 * 7", schema `{"type":"integer"}`,
-harness `claude-code`, then `await_invocations` with the returned id. Expect `done` with
+`spawn_subagent` with prompt "Compute 6 * 7", schema `{"type":"integer"}`,
+harness `claude-code`, then `await_subagents` with the returned id. Expect `done` with
 result `42`. Ask for a spawn with harness `nope` and expect the error naming the available
 harnesses.

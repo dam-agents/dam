@@ -7,8 +7,8 @@ import {
   run,
   textResult,
 } from "../../core/mcp-tool-result.js";
-import type { InvocationAwaitMarks } from "../../modules/invocations/index.js";
-import type { DriverOps } from "./driver-ops.js";
+import type { SubAgentAwaitMarks } from "../../modules/invocations/index.js";
+import type { DriverOps, SpawnRequest } from "./driver-ops.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The wait sits under Node's own 300s request
@@ -16,7 +16,7 @@ import type { DriverOps } from "./driver-ops.js";
  * the satellite wait: a call running the full 300s would have its socket torn
  * down instead of answering "still running".
  */
-export const INVOCATION_WAIT_MS = 240_000;
+export const SUB_AGENT_WAIT_MS = 240_000;
 
 const POLL_MS = 2_000;
 
@@ -24,25 +24,42 @@ const AWAIT_MARGIN_MS = 30_000;
 
 const MAX_AWAIT_IDS = 50;
 
-const INVOKE_DESCRIPTION = `Invoke an agent: start a separate platform agent in its own sandbox that runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. This is not your harness's own subagent. Returns the invocation id at once; call await_invocations with it to get the result.
+const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent, which runs here, starts in seconds and costs no extra compute: prefer that whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
+- different-harness: it must run on another harness (see list_harnesses);
+- own-setup: it needs its own repository (seed), install command, env or skills;
+- more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
+- isolation: the work must not be able to touch this workspace;
+- parallel: heavy parallel work beyond what this sandbox can run;
+- checked-result: a result the platform validates against a schema.
+A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources or a vm backend.
 
-Prefer your harness's own subagent tool when it can do the job: it runs in this sandbox, starts in seconds and costs no extra compute. An invoked agent starts a new sandbox — tens of seconds to minutes before it runs, with compute counted against the budget — so invoke one only when the task needs one of:
-- a different harness (see list_harnesses);
-- its own setup: a repository to clone (seed), an install command, env;
-- more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
-- isolation, so the work cannot touch this workspace;
-- heavy parallel work beyond what this sandbox can run;
-- a result the platform checks against a schema.
+The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
-The invoked agent cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the invocation at once with the reason. Do not retry this call blindly after an error: a duplicate call is a second agent.`;
-
-const AWAIT_DESCRIPTION = `Wait for invocations you started with invoke_agent. Pass the invocation ids you are waiting on. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: an invocation that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your invocations comes back under unknown.`;
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Pass the sub-agent ids you are waiting on. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown.`;
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
+export const SPAWN_NEEDS = [
+  "different-harness",
+  "own-setup",
+  "more-resources",
+  "isolation",
+  "parallel",
+  "checked-result",
+] as const;
+export type SpawnNeed = (typeof SPAWN_NEEDS)[number];
+
+const needsInput = z
+  .array(z.enum(SPAWN_NEEDS))
+  .min(1)
+  .describe(
+    "Why your harness's own subagent cannot do this; one or more of the needs listed in the description.",
+  );
+
 const spawnInput = {
+  needs: needsInput,
   prompt: spawnShape.prompt.describe(
-    "The invoked agent's whole task. It sees only this, so include everything it needs.",
+    "The sub-agent's whole task. It sees only this, so include everything it needs.",
   ),
   schema: spawnShape.schema.describe(
     'JSON Schema the result must match, e.g. {"type":"integer"} or {"type":"object","properties":{"pass":{"type":"boolean"}},"required":["pass"]}. The platform checks shape only, never truth.',
@@ -54,7 +71,7 @@ const spawnInput = {
     "A custom image to run instead of the harness's template; harness then says what runs inside it.",
   ),
   label: spawnShape.label.describe(
-    "Short name for the invoked agent, shown wherever agents are listed.",
+    "Short name for the sub-agent, shown wherever agents are listed.",
   ),
   ttlMs: spawnShape.ttlMs.describe(
     "Kill deadline in ms, about 1 minute to 6 hours, default about 60 minutes. Time queued for compute counts. Short for a quick task, long for clone + build.",
@@ -79,6 +96,41 @@ const spawnInput = {
     "External skills to install: [{source, name}].",
   ),
 };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The part of a stated need the request itself can
+ * bear out. It cannot judge isolation, parallel or checked-result, so those
+ * pass; a need whose evidence would be in the request and is missing is
+ * refused, so the model cannot name a need it did not act on.
+ */
+export function unmetNeed(
+  needs: readonly SpawnNeed[],
+  body: SpawnRequest,
+  ownHarness: string | null,
+): string | null {
+  if (needs.includes("different-harness")) {
+    if (!body.harness) return "different-harness names no harness";
+    if (ownHarness && body.harness === ownHarness)
+      return `different-harness, but ${ownHarness} is your own harness`;
+  }
+  if (
+    needs.includes("own-setup") &&
+    !body.seed &&
+    !body.install &&
+    !body.env?.length &&
+    !body.skills?.length
+  )
+    return "own-setup without seed, install, env or skills";
+  if (
+    needs.includes("more-resources") &&
+    !body.resources &&
+    body.cpu === undefined &&
+    body.memory === undefined &&
+    body.backend !== "vm"
+  )
+    return "more-resources without resources or a vm backend";
+  return null;
+}
 
 type Settled =
   | { id: string; status: "done"; result: unknown }
@@ -127,39 +179,47 @@ function summarize(settled: Settled[]) {
   };
 }
 
-export function registerInvocationTools(
+export function registerSubAgentTools(
   server: McpServer,
-  deps: { ops: DriverOps; awaits: InvocationAwaitMarks; waitMs?: number },
+  deps: { ops: DriverOps; awaits: SubAgentAwaitMarks; waitMs?: number },
 ): void {
   const { ops, awaits } = deps;
-  const waitMs = deps.waitMs ?? INVOCATION_WAIT_MS;
+  const waitMs = deps.waitMs ?? SUB_AGENT_WAIT_MS;
 
-  server.tool("invoke_agent", INVOKE_DESCRIPTION, spawnInput, (args) =>
+  server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
-      const parsed = spawnInvocationRequestSchema.safeParse(args);
+      const { needs, ...rest } = args;
+      const parsed = spawnInvocationRequestSchema.safeParse(rest);
       if (!parsed.success) {
         return errorResult(
-          `invoke_agent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+          `spawn_subagent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
         );
       }
       const body = parsed.data;
+      const unmet = unmetNeed(needs, body, await ops.harness());
+      if (unmet) {
+        return errorResult(
+          `spawn_subagent refused: ${unmet}. Use your harness's own subagent, or state a need the request bears out.`,
+        );
+      }
       const outcome = await ops.spawn(body, "tool");
       if (!outcome.ok) {
-        return errorResult(`invoke_agent refused: ${outcome.message}`);
+        return errorResult(`spawn_subagent refused: ${outcome.message}`);
       }
       const tag = body.label ?? body.harness ?? body.image ?? outcome.id;
       return textResult(
         [
           `[invoke] spawned ${tag} -> ${outcome.id}`,
+          `needs: ${needs.join(", ")}`,
           JSON.stringify({ id: outcome.id }),
-          `Call await_invocations with ["${outcome.id}"] to get its result.`,
+          `Call await_subagents with ["${outcome.id}"] to get its result.`,
         ].join("\n"),
       );
     }),
   );
 
   server.tool(
-    "await_invocations",
+    "await_subagents",
     AWAIT_DESCRIPTION,
     {
       ids: z
@@ -167,7 +227,7 @@ export function registerInvocationTools(
         .min(1)
         .max(MAX_AWAIT_IDS)
         .describe(
-          "Invocation ids returned by invoke_agent that you are waiting on.",
+          "Sub-agent ids returned by spawn_subagent that you are waiting on.",
         ),
     },
     ({ ids }, extra) =>
@@ -199,21 +259,21 @@ export function registerInvocationTools(
 
   server.tool(
     "list_harnesses",
-    "List the harnesses and images an invoked agent can run on, each with its harness name and effective size. Use the harness name in invoke_agent. If it is not obvious which fits, ask the user.",
+    "List the harnesses and images a sub-agent can run on, each with its harness name and effective size. Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
     {},
     () => run(async () => json({ images: await ops.images() })),
   );
 
   server.tool(
     "list_connections",
-    "List your own granted connections (id, name, hosts). An invoked agent can be given any of these by id in invoke_agent's connections.",
+    "List your own granted connections (id, name, hosts). A sub-agent can be given any of these by id in spawn_subagent's connections.",
     {},
     () => run(async () => json({ connections: await ops.connections() })),
   );
 
   server.tool(
     "get_budget",
-    "Read your owner's compute: what is reserved now (cpu, memory) and the default worker size. Invocations past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
+    "Read your owner's compute: what is reserved now (cpu, memory) and the default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
     {},
     () => run(async () => json(await ops.budget())),
   );

@@ -10,7 +10,7 @@ export interface PlatformSkillFeature {
 export const PLATFORM_SKILLS: ReadonlyMap<string, PlatformSkillFeature> =
   new Map([
     ["platform-schedules", { id: "schedules", label: "Schedules" }],
-    ["dam-invoke", { id: "invocations", label: "Invocations" }],
+    ["spawn-subagent", { id: "invocations", label: "Sub-agents" }],
     ["platform-models", { id: "connections", label: "Model providers" }],
     ["platform-github", { id: "connections", label: "GitHub accounts" }],
   ] satisfies [string, PlatformSkillFeature][]);

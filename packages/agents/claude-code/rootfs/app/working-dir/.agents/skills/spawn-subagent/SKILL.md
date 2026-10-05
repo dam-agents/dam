@@ -1,47 +1,55 @@
 ---
-name: dam-invoke
-description: Invoke agents on DAM — fresh platform agents in their own sandboxes that run one task and return a schema-validated result. Use when asked to invoke, spawn or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result. For one hand-off use the invoke_agent and await_invocations tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
-allowed-tools: mcp__platform-outbound__invoke_agent, mcp__platform-outbound__await_invocations, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
+name: spawn-subagent
+description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result. Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result. Its first step decides whether your harness's own subagent is enough. For one hand-off use the spawn_subagent and await_subagents tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
-# DAM invoke
+# Spawn a sub-agent
 
-The platform can **invoke an agent**: start a fresh agent in its own sandbox
+The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox
 that runs one prompt to completion, reports one result, and is then removed.
 You (the driver) hand it a prompt plus the result shape you expect, and get the
 validated result back. It runs unattended and cannot ask you anything.
 
-## Your harness's subagent or an invoked agent
+## Step 1 — Decide: your harness's own subagent, or a platform sub-agent
 
-Prefer your harness's own subagent tool when it can do the job: it runs in this
-sandbox, starts in seconds and costs no extra compute. An invoked agent starts a
-new sandbox — tens of seconds to minutes before it runs, with compute counted
-against the budget — so invoke one only when the task needs one of:
+Do this first, every time. Your harness's own subagent tool runs in this
+sandbox, starts in seconds and costs no extra compute. A platform sub-agent
+starts a new sandbox — tens of seconds to minutes before it runs, with compute
+counted against the budget. Go through the needs below. **If none applies,
+stop here and use your harness's own subagent tool.** If one applies, carry on
+and name it in `needs` when you spawn:
 
-- a different harness;
-- its own setup: a repository to clone, an install command, env;
-- more CPU, memory or disk than this sandbox, or a microVM for a container
-  runtime or a cluster;
-- isolation, so the work cannot touch this workspace;
-- heavy parallel work beyond what this sandbox can run;
-- a result the platform checks against a schema.
+- `different-harness` — it must run on another harness;
+- `own-setup` — its own repository to clone, an install command, env or skills;
+- `more-resources` — more CPU, memory or disk than this sandbox, or a microVM
+  for a container runtime or a cluster;
+- `isolation` — the work must not be able to touch this workspace;
+- `parallel` — heavy parallel work beyond what this sandbox can run;
+- `checked-result` — a result the platform checks against a schema.
+
+The platform refuses a need the request does not bear out: `different-harness`
+on your own harness, `own-setup` without seed, install, env or skills,
+`more-resources` without resources or a vm backend. "The user said sub-agent"
+is not a need: unless they named the platform, a harness or a sandbox, they
+mean your harness's own.
 
 ## Hand off one task: the tools
 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and
    `list_connections` and show the human what is available. If it is not
-   obvious which to use, **ask them**. The model needs nothing: the invoked
-   agent runs on *your* model provider.
-2. **Invoke.** Call `invoke_agent` with `prompt`, `schema` (JSON Schema, e.g.
-   `{"type": "integer"}`) and `harness`, plus any setup option from the table
-   below. It returns the invocation id at once.
-3. **Wait.** Call `await_invocations` with the ids. It returns as soon as one
+   obvious which to use, **ask them**. The model needs nothing: the sub-agent
+   runs on *your* model provider.
+2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`,
+   `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any
+   setup option from the table below. It returns the sub-agent id at once.
+3. **Wait.** Call `await_subagents` with the ids. It returns as soon as one
    finishes, or after about four minutes, with what is done, failed and still
    running; call it again with the running ids. You may also end your turn
-   instead: an invocation that finishes while nothing waits on it is delivered
+   instead: a sub-agent that finishes while nothing waits on it is delivered
    back into this session as a new turn.
 
-Several independent tasks: call `invoke_agent` once per task, then wait on all
+Several independent tasks: call `spawn_subagent` once per task, then wait on all
 the ids together.
 
 ## Orchestration: a script

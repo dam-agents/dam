@@ -17,9 +17,9 @@ import {
   type ArtifactTouch,
 } from "../../infrastructure/artifact-touch.js";
 import {
-  invocationSpawnIn,
-  type InvocationSpawn,
-} from "../../infrastructure/invocation-spawn.js";
+  subAgentSpawnIn,
+  type SubAgentSpawn,
+} from "../../infrastructure/sub-agent-spawn.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
@@ -117,7 +117,7 @@ export interface AcpRuntimeDeps {
   runResults?: RunResultStore;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
-  onInvocationSpawn?: (spawn: InvocationSpawn) => void;
+  onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
 }
 
 interface OutboundMapping {
@@ -780,8 +780,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!bootstrap.has(sessionId)) {
         const touch = artifactTouchIn(frame);
         if (touch) deps.onArtifactTouch(touch);
-        const spawn = invocationSpawnIn(frame);
-        if (spawn) deps.onInvocationSpawn?.(spawn);
+        const spawn = subAgentSpawnIn(frame);
+        if (spawn) deps.onSubAgentSpawn?.(spawn);
       }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);

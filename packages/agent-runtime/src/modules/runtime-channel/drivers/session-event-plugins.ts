@@ -5,12 +5,12 @@ import type {
 } from "agent-runtime-api";
 import {
   initializationEventPayload,
-  invocationOutcomeEventPayload,
+  subAgentOutcomeEventPayload,
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 
 import type { TriggerSessionDriver } from "../../acp/index.js";
-import type { InvocationSessionStore } from "../../acp/infrastructure/invocation-session-store.js";
+import type { SubAgentSessionStore } from "../../acp/infrastructure/sub-agent-session-store.js";
 
 type SessionStart = Parameters<TriggerSessionDriver["start"]>[0];
 
@@ -62,27 +62,27 @@ export const createSatelliteOutcomePlugin = sessionEventPlugin(
 );
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Handles the invocation-outcome Event: an agent this
- * one invoked through the invoke_agent tool finished while nothing was waiting
- * on it. The Event carries what await_invocations would have returned, and the
- * turn continues the Session whose tool call started the Invocation, so the
+ * UNIT_BOUNDARY_DESCRIPTION: Handles the sub-agent-outcome Event: a sub-agent
+ * this agent spawned through the spawn_subagent tool finished while nothing was
+ * waiting on it. The Event carries what await_subagents would have returned, and
+ * the turn continues the Session whose tool call spawned it, so the
  * result lands where it was asked for. A Session the store no longer knows
  * falls back to a new regular chat Session.
  */
-export function createInvocationOutcomePlugin(deps: {
+export function createSubAgentOutcomePlugin(deps: {
   driver: TriggerSessionDriver;
-  sessions: InvocationSessionStore;
+  sessions: SubAgentSessionStore;
 }): Plugin {
   return {
-    name: "invocation-outcome",
+    name: "sub-agent-outcome",
     bindEvent(kind: string): EventHandler {
-      if (kind !== "invocation-outcome") {
+      if (kind !== "sub-agent-outcome") {
         throw new Error(
-          `plugin "invocation-outcome" does not handle event kind "${kind}"`,
+          `plugin "sub-agent-outcome" does not handle event kind "${kind}"`,
         );
       }
       return async (payload) => {
-        const { task, ids } = invocationOutcomeEventPayload.parse(payload);
+        const { task, ids } = subAgentOutcomeEventPayload.parse(payload);
         const resumeSessionId = deps.sessions.sessionOf(ids);
         await deps.driver.start(
           resumeSessionId

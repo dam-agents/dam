@@ -1,11 +1,11 @@
-# 04 — `dam-invoke` skill leads with the tools
+# 04 — `spawn-subagent` skill leads with the tools
 
 **Depends on:** 01-sub-agent-tools, 02-wake-on-outcome
 **Part of:** Spawn a sub-agent through a tool call — see [README](./README.md)
 
 ## Context
 
-The `dam-invoke` skill ships in the Claude Code image and teaches only the script path.
+The `spawn-subagent` skill ships in the Claude Code image and teaches only the script path.
 With the tools in place it should lead with them for a single hand-off and keep scripts
 for orchestration: loops, wide fan-outs, scoring. The tool descriptions stay complete on
 their own, since other harnesses do not get the skill.
@@ -13,13 +13,13 @@ their own, since other harnesses do not get the skill.
 ## Implementation plan
 
 1. Rewrite the top of
-   `packages/agents/claude-code/rootfs/app/working-dir/.agents/skills/dam-invoke/SKILL.md`:
+   `packages/agents/claude-code/rootfs/app/working-dir/.agents/skills/spawn-subagent/SKILL.md`:
    - Update the frontmatter `description` so it triggers on hand-off requests too, and add
      the platform MCP tools to `allowed-tools`.
    - New first section, "Your harness's subagent or an invoked agent": the need-based rule
-     from the README, worded the same as `invoke_agent`'s description.
+     from the README, worded the same as `spawn_subagent`'s description.
    - New section, "Hand off with a tool": `list_harnesses` / `list_connections` first
-     (ask the human when unclear, as today), `invoke_agent`, `await_invocations` in a
+     (ask the human when unclear, as today), `spawn_subagent`, `await_subagents` in a
      loop with the still-running ids, and that ending the turn is fine because the
      outcome arrives as a new turn.
    - Keep "The SDK", the setup options table, `ttl_ms`, failures, schema shorthand, and
@@ -39,6 +39,6 @@ their own, since other harnesses do not get the skill.
 ## Smoke test
 
 `mise run check`. Then on the local cluster with the rebuilt Claude Code image: ask an
-agent "delegate computing 6 * 7 to a sub-agent" and check it uses `invoke_agent`, not a
+agent "delegate computing 6 * 7 to a sub-agent" and check it uses `spawn_subagent`, not a
 script. Ask "run this 20-item eval loop on sub-agents and score each" and check it writes
 a script.

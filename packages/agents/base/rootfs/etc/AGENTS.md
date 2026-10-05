@@ -17,3 +17,5 @@ Additionally available if running in a root VM:
 - `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`, through `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO`, which name a copy of the image's own bundle with it appended; a tool that reads none of them, such as a Java keystore or GnuTLS-based wget and apt, still needs it added
 - `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
 - `apt-get` to install extra software
+
+Delegation: your harness's own subagent does work in this sandbox. The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.

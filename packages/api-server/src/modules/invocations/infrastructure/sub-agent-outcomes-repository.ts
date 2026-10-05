@@ -10,7 +10,7 @@ import {
 } from "db";
 import { toRow, type InvocationRow } from "./invocations-repository.js";
 
-export interface InvocationOutcomesRepository {
+export interface SubAgentOutcomesRepository {
   markAwaited(driverAgentId: string, ids: string[], until: Date): Promise<void>;
   markCollected(driverAgentId: string, ids: string[]): Promise<void>;
   claimUndelivered(limit: number): Promise<InvocationRow[]>;
@@ -26,9 +26,9 @@ const undeliveredToolOutcome = () =>
     isNull(invocationsTable.deliveredAt),
   );
 
-export function createInvocationOutcomesRepository(
+export function createSubAgentOutcomesRepository(
   db: Db,
-): InvocationOutcomesRepository {
+): SubAgentOutcomesRepository {
   return {
     async markAwaited(driverAgentId, ids, until) {
       if (ids.length === 0) return;

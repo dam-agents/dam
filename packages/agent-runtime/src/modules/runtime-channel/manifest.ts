@@ -135,8 +135,8 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "satellite-outcome" },
     defaultOn: true,
   },
-  "invocation-outcome": {
-    binding: { impl: "invocation-outcome" },
+  "sub-agent-outcome": {
+    binding: { impl: "sub-agent-outcome" },
     defaultOn: true,
   },
 };

@@ -25,12 +25,12 @@ import type {
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type {
-  InvocationAwaitMarks,
+  SubAgentAwaitMarks,
   InvocationsService,
 } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
-import { registerInvocationTools } from "./invocation-tools.js";
+import { registerSubAgentTools } from "./sub-agent-tools.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -145,7 +145,7 @@ export interface McpSessionDeps {
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   driverOps: DriverOps;
-  invocationAwaits: InvocationAwaitMarks;
+  subAgentAwaits: SubAgentAwaitMarks;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1051,9 +1051,9 @@ export function createMcpSession(
     },
   );
 
-  registerInvocationTools(server, {
+  registerSubAgentTools(server, {
     ops: deps.driverOps,
-    awaits: deps.invocationAwaits,
+    awaits: deps.subAgentAwaits,
   });
 
   if (deps.satellites)
@@ -1082,7 +1082,7 @@ export interface MountMcpDeps {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   driverOpsFor: DriverOpsFor;
-  invocationAwaitsFor: (driverAgentId: string) => InvocationAwaitMarks;
+  subAgentAwaitsFor: (driverAgentId: string) => SubAgentAwaitMarks;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1154,7 +1154,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       artifactLibrary,
       invocations,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
-      invocationAwaits: deps.invocationAwaitsFor(agentId),
+      subAgentAwaits: deps.subAgentAwaitsFor(agentId),
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

@@ -31,6 +31,11 @@ export type SpawnOutcome =
   | { ok: false; kind: "invalid" | "forbidden" | "conflict"; message: string };
 
 export interface DriverOpsDeps {
+  agents: {
+    get(
+      id: string,
+    ): Promise<{ templateId?: string; spec: { image: string } } | null>;
+  };
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
@@ -40,7 +45,7 @@ export interface DriverOpsDeps {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a Driver can do with Invocations, whichever
- * surface it came through: the driver SDK's HTTP routes and the invocation MCP
+ * surface it came through: the driver SDK's HTTP routes and the sub-agent MCP
  * tools both call these, so a spawn means the same on either.
  */
 export type DriverOps = ReturnType<typeof driverOps>;
@@ -167,6 +172,18 @@ function driverOps(
 
     get: (invocationId: string): Promise<InvocationView | null> =>
       invocations.get(invocationId, driverId),
+
+    async harness(): Promise<string | null> {
+      const [agent, templates] = await Promise.all([
+        deps.agents.get(driverId),
+        deps.templates.list(),
+      ]);
+      if (!agent) return null;
+      const template =
+        templates.find((t) => t.id === agent.templateId) ??
+        templates.find((t) => t.spec.image === agent.spec.image);
+      return template?.spec.harness ?? null;
+    },
 
     async connections() {
       const [all, granted] = await Promise.all([

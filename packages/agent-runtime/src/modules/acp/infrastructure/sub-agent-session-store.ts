@@ -8,30 +8,30 @@ const stateSchema = z.object({
   sessions: z.record(z.string(), z.string()).default({}),
 });
 
-export interface InvocationSessionStore {
-  record(sessionId: string, invocationIds: string[]): void;
-  sessionOf(invocationIds: readonly string[]): string | null;
+export interface SubAgentSessionStore {
+  record(sessionId: string, subAgentIds: string[]): void;
+  sessionOf(subAgentIds: readonly string[]): string | null;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Which Session started each Invocation, kept on the
+ * UNIT_BOUNDARY_DESCRIPTION: Which Session spawned each sub-agent, kept on the
  * pod's own disk so it survives the hibernation an outcome may wake the Agent
- * from. Only the newest entries are kept; an Invocation outliving them opens
+ * from. Only the newest entries are kept; a sub-agent outliving them opens
  * its outcome in a new Session instead.
  */
-export function createInvocationSessionStore(
+export function createSubAgentSessionStore(
   backend: DocumentStoreBackend,
-): InvocationSessionStore {
-  const store = backend.open("invocation-sessions", {
+): SubAgentSessionStore {
+  const store = backend.open("sub-agent-sessions", {
     schema: stateSchema,
     initial: () => ({ sessions: {} }),
   });
 
   return {
-    record(sessionId, invocationIds) {
+    record(sessionId, subAgentIds) {
       const { sessions } = store.read();
       const next = { ...sessions };
-      for (const id of invocationIds) {
+      for (const id of subAgentIds) {
         delete next[id];
         next[id] = sessionId;
       }
@@ -41,9 +41,9 @@ export function createInvocationSessionStore(
       });
     },
 
-    sessionOf(invocationIds) {
+    sessionOf(subAgentIds) {
       const { sessions } = store.read();
-      for (const id of invocationIds) {
+      for (const id of subAgentIds) {
         const sessionId = sessions[id];
         if (sessionId) return sessionId;
       }

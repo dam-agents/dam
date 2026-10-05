@@ -1,6 +1,6 @@
-export interface InvocationSpawn {
+export interface SubAgentSpawn {
   sessionId: string;
-  invocationIds: string[];
+  subAgentIds: string[];
 }
 
 const SPAWN_LINE =
@@ -17,12 +17,12 @@ function textBlocks(rawOutput: unknown): string[] {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Invocations a finished tool call in a Session
- * started, read from the `[invoke] spawned <label> -> <id>` lines that both
- * invoke_agent and the driver SDK print, so an outcome delivered later can be
+ * UNIT_BOUNDARY_DESCRIPTION: The sub-agents a finished tool call in a Session
+ * spawned, read from the `[invoke] spawned <label> -> <id>` lines that both
+ * spawn_subagent and the driver SDK print, so an outcome delivered later can be
  * put back into the Session that asked for it.
  */
-export function invocationSpawnIn(frame: unknown): InvocationSpawn | null {
+export function subAgentSpawnIn(frame: unknown): SubAgentSpawn | null {
   const params = (frame as { params?: unknown } | null)?.params;
   const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
   if (typeof sessionId !== "string" || sessionId === "") return null;
@@ -45,5 +45,5 @@ export function invocationSpawnIn(frame: unknown): InvocationSpawn | null {
       const id = SPAWN_LINE.exec(line.trim())?.groups?.id;
       if (id) ids.add(id);
     }
-  return ids.size > 0 ? { sessionId, invocationIds: [...ids] } : null;
+  return ids.size > 0 ? { sessionId, subAgentIds: [...ids] } : null;
 }

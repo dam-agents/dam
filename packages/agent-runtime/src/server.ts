@@ -173,7 +173,7 @@ const {
   sessions: sessionsService,
   sessionChanges,
   activeTurns,
-  invocationSessions,
+  subAgentSessions,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -221,7 +221,7 @@ const reconcileOnState = imageSkillReconciler
   : undefined;
 
 const runtimeChannel = await composeRuntimeChannel({
-  invocationSessions,
+  subAgentSessions,
   onHarnessConfigApplied: () => acpRuntime.recycleForConfig(),
   manifest: runtimeManifest,
   agentHome: homeDir,

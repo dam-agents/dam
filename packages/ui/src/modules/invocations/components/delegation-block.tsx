@@ -8,7 +8,7 @@ import { ActivityBlock } from "../../sessions/components/activity-block.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { useDelegationTree } from "../api/queries.js";
 import type { FanOutSpawn } from "../lib/fan-out.js";
-import { isInvokeAgentChip } from "../lib/invocation-chips.js";
+import { isSpawnSubAgentChip } from "../lib/sub-agent-chips.js";
 import { DelegationShell } from "./delegation-shell.js";
 
 interface Props {
@@ -46,7 +46,7 @@ export function DelegationBlock({ chip, spawns }: Props) {
 
 function SourceFold({ chip }: { chip: ToolChip }) {
   const [open, setOpen] = useState(false);
-  const viaTool = isInvokeAgentChip(chip);
+  const viaTool = isSpawnSubAgentChip(chip);
   return (
     <ActivityBlock
       open={open}
@@ -56,7 +56,7 @@ function SourceFold({ chip }: { chip: ToolChip }) {
         <span className="truncate">
           {viaTool ? "Tool" : "Script"}{" "}
           <span className="font-mono">
-            · {viaTool ? "invoke_agent" : chip.title}
+            · {viaTool ? "spawn_subagent" : chip.title}
           </span>
         </span>
       }
