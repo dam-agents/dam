@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::command;
@@ -86,13 +85,13 @@ fn keep(packed: &Path, kept: &Path, cancel: &CancellationToken) -> anyhow::Resul
 
 // UNIT_BOUNDARY_DESCRIPTION: the directory is named for the content of the compressed template and, for the storage template, for the journal the expansion adds to it too. A copy an older runner kept without the journal therefore sits in another directory and is never taken for a journaled one; nor is it given a journal in place, because a qcow2 overlay an older runner made over it names that exact file as its backing.
 fn kept_path(packed: &Path, kept: &Path) -> anyhow::Result<PathBuf> {
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut fs::File::open(packed)?, &mut hasher)?;
+    let mut tally = crate::seed::Tally::new(std::io::sink());
+    std::io::copy(&mut fs::File::open(packed)?, &mut tally)?;
     let name = expanded(packed);
     let name = name
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("{} names no file", packed.display()))?;
-    let mut key = format!("{:x}", hasher.finalize());
+    let mut key = tally.finish()?.1.sha256;
     if journaled(packed) {
         key.push_str(JOURNALED_SUFFIX);
     }

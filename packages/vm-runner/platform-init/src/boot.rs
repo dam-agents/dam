@@ -1017,7 +1017,7 @@ fn extract(archive: &Path, home: &Path, to: &Path) -> io::Result<SeedDigest> {
     let mut read = reader.into_inner();
     io::copy(&mut read, &mut io::sink())?;
     Ok(SeedDigest {
-        sha256: format!("{:x}", read.hasher.finalize()),
+        sha256: hex::encode(read.hasher.finalize()),
         bytes: read.bytes,
     })
 }
@@ -1937,7 +1937,7 @@ mod tests {
     fn digest_of(path: &Path) -> SeedDigest {
         let body = fs::read(path).unwrap();
         SeedDigest {
-            sha256: format!("{:x}", Sha256::digest(&body)),
+            sha256: hex::encode(Sha256::digest(&body)),
             bytes: body.len() as u64,
         }
     }

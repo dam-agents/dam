@@ -453,7 +453,7 @@ impl<W: Write> Tally<W> {
         self.inner.flush()?;
         let result = SeedResult {
             bytes: self.bytes,
-            sha256: format!("{:x}", self.hasher.finalize()),
+            sha256: hex::encode(self.hasher.finalize()),
         };
         Ok((self.inner, result))
     }
@@ -582,7 +582,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.bytes, tar.len() as u64);
-        assert_eq!(result.sha256, format!("{:x}", Sha256::digest(&tar)));
+        assert_eq!(result.sha256, hex::encode(Sha256::digest(&tar)));
     }
 
     // TEST_SCENARIO: a source that is not a directory is refused: the Job names the mount of the old volume, and archiving a file or a link in its place would seed the store with the wrong thing.

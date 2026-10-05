@@ -130,16 +130,12 @@ fn client(ca_file: &Path) -> anyhow::Result<reqwest::Client> {
         "{} holds no certificate",
         ca_file.display()
     );
-    let mut builder = reqwest::Client::builder()
-        .use_rustls_tls()
-        .tls_built_in_root_certs(false)
+    Ok(reqwest::Client::builder()
+        .tls_certs_only(certs)
         .https_only(true)
         .no_proxy()
-        .connect_timeout(Duration::from_secs(30));
-    for cert in certs {
-        builder = builder.add_root_certificate(cert);
-    }
-    Ok(builder.build()?)
+        .connect_timeout(Duration::from_secs(30))
+        .build()?)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a Job's fresh pod waits for the runner to accept a connection before it gives up. The runner admits the Job by a NetworkPolicy that names its labels, and a policy engine adds a new pod to that rule only after the pod exists, so the first connections a pod makes can be refused though the rule allows it. Waiting here costs one attempt a few seconds; failing costs the whole Job a retry delay.

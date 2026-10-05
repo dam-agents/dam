@@ -290,7 +290,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)
+        let serving = axum_server::from_tcp(listener)?
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -312,7 +312,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)
+            axum_server::from_tcp_rustls(listener, tls)?
                 .handle(handle)
                 .serve(app)
                 .await
