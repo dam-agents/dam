@@ -5,7 +5,7 @@ import {
   hasVisibleOccurrence,
   rruleToText,
 } from "api-server-api";
-import type { ScheduleSpec } from "api-server-api";
+import type { FrequencyPreset, ScheduleSpec } from "api-server-api";
 import {
   nextFire,
   nextFireAt,
@@ -423,14 +423,18 @@ describe("rrule presets", () => {
   });
 
   it("reads a built rule back as the preset it came from", () => {
-    const daily = {
+    const daily: FrequencyPreset = {
       kind: "daily",
       hour: 9,
       minute: 30,
       days: weekdays,
-    } as const;
+    };
     expect(detectPreset(buildRRule(daily))).toEqual(daily);
-    const hourly = { kind: "hourly", interval: 2, days: [1, 3] } as const;
+    const hourly: FrequencyPreset = {
+      kind: "hourly",
+      interval: 2,
+      days: [1, 3],
+    };
     expect(detectPreset(buildRRule(hourly))).toEqual(hourly);
   });
 
