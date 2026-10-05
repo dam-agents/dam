@@ -135,3 +135,14 @@ export function sortKits(kits: readonly StarterKitView[]): StarterKitView[] {
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 }
+
+export function splitPinned(
+  shown: readonly StarterKitView[],
+  view: { filter: StarterKitView["category"] | "all"; query: string },
+): { pinned: StarterKitView | undefined; rest: StarterKitView[] } {
+  const pinned =
+    view.filter === "all" && view.query.trim().length === 0
+      ? shown.find((kit) => kit.pinned)
+      : undefined;
+  return { pinned, rest: shown.filter((kit) => kit !== pinned) };
+}

@@ -372,6 +372,10 @@ spec:
             - name: STARTER_KITS_CATALOGS
               value: {{ $catalogs | toJson | quote }}
             {{- end }}
+            {{- with .Values.starterKits.pinned }}
+            - name: STARTER_KITS_PINNED
+              value: {{ . | quote }}
+            {{- end }}
             {{- $ghe := dig "enterprise" dict (.Values.github | default dict) }}
             {{- $gheHost := $ghe.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}
             {{- if and $gheHost $ghe.token }}

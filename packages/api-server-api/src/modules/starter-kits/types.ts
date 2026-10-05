@@ -40,6 +40,7 @@ export interface StarterKitView extends ResolvedStarterKit {
   version: string;
   source: string;
   skillsInKit: ResolvedSkill[];
+  pinned: boolean;
 }
 
 export interface StarterKitApplyResult {

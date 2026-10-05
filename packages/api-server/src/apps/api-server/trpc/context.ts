@@ -237,6 +237,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       virtualizationEnabled: config.virtualizationEnabled,
+      pinnedKit: config.starterKitsPinned,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;

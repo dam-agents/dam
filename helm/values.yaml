@@ -2036,6 +2036,10 @@ starterKits:
       url: https://github.com/dam-agents/dam-starter-kits
       # ref: v1.4.0          # pin a branch, tag or commit
       # dir: catalogs/public # read catalog.yaml from a subdirectory
+  # The kit that leads the All view of the Starter kits page as a large card,
+  # as `<catalog>/<kit>`. A pin naming a kit no catalog serves, or "", shows
+  # every card at the same size. Rendered as STARTER_KITS_PINNED.
+  pinned: curated/code-guardian
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

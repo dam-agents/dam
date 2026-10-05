@@ -382,6 +382,7 @@ export async function bootstrap() {
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
+    pinnedKit: config.starterKitsPinned,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
         name: skill.name,

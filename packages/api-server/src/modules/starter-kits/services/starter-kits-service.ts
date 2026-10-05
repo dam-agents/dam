@@ -72,15 +72,17 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
+  pinnedKit?: string;
 }
 
-function toView(loaded: LoadedKit): StarterKitView {
+function toView(loaded: LoadedKit, pinnedKit: string): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
+    pinned: `${loaded.catalog}/${loaded.kit.id}` === pinnedKit,
   };
 }
 
@@ -226,12 +228,16 @@ export function createStarterKitsService(
 
   return {
     async list() {
-      return (await deps.repo.list()).filter(runnableHere).map(toView);
+      return (await deps.repo.list())
+        .filter(runnableHere)
+        .map((loaded) => toView(loaded, deps.pinnedKit ?? ""));
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded && runnableHere(loaded) ? toView(loaded) : null;
+      return loaded && runnableHere(loaded)
+        ? toView(loaded, deps.pinnedKit ?? "")
+        : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
