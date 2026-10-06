@@ -159,6 +159,7 @@ export function createSchedulesService(deps: {
         createdBy,
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
+        ...(input.model ? { model: input.model } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -184,6 +185,7 @@ export function createSchedulesService(deps: {
           createdBy,
           type: "cron",
           precheck: Boolean(input.precheck),
+          ...(input.model ? { model: input.model } : {}),
           cron: input.cron,
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
@@ -210,6 +212,7 @@ export function createSchedulesService(deps: {
           : {}),
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
+        ...(input.model ? { model: input.model } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -235,6 +238,7 @@ export function createSchedulesService(deps: {
           createdBy,
           type: "rrule",
           precheck: Boolean(input.precheck),
+          ...(input.model ? { model: input.model } : {}),
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
       });
@@ -348,6 +352,8 @@ export function createSchedulesService(deps: {
       else delete spec.sessionMode;
       if (input.precheck) spec.precheck = input.precheck;
       else if (input.precheck !== undefined) delete spec.precheck;
+      if (input.model) spec.model = input.model;
+      else if (input.model !== undefined) delete spec.model;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (updated && spec.precheck !== current.spec.precheck)

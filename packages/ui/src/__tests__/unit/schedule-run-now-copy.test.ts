@@ -18,6 +18,7 @@ const base: Schedule = {
   quietHours: [],
   task: "Triage the new issues",
   precheck: null,
+  model: null,
   enabled: true,
   createdBy: "user",
   status: null,

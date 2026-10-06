@@ -224,6 +224,7 @@ export interface Schedule {
   quietHours: QuietWindowView[];
   task: string | null;
   precheck: string | null;
+  model: string | null;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: "user" | "agent";

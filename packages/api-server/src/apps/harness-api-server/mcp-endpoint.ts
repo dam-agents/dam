@@ -17,6 +17,7 @@ import {
   ChannelType,
   onceState,
   precheckSchema,
+  scheduleModelSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -924,6 +925,11 @@ export function createMcpSession(
         .describe(
           "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
+      model: scheduleModelSchema
+        .optional()
+        .describe(
+          "Optional model this schedule's sessions run on, instead of this agent's default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to use the agent's default. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
+        ),
     },
     async ({
       name,
@@ -934,6 +940,7 @@ export function createMcpSession(
       task,
       sessionMode,
       precheck,
+      model,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
@@ -961,11 +968,20 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  model,
                 },
                 "agent",
               )
             : await schedules.createCron(
-                { name, agentId, cron: cron!, task, sessionMode, precheck },
+                {
+                  name,
+                  agentId,
+                  cron: cron!,
+                  task,
+                  sessionMode,
+                  precheck,
+                  model,
+                },
                 "agent",
               );
         return json({

@@ -73,8 +73,9 @@ export function createTriggerSessionDriver(deps: {
             },
           );
           sessionId = res.sessionId;
-          if (model) await setSessionModel(caller, sessionId, model);
         }
+
+        if (model) await setSessionModel(caller, sessionId, model);
 
         caller.notify("session/prompt", {
           sessionId,

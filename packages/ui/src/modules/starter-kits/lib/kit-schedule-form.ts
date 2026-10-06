@@ -72,6 +72,7 @@ export function kitScheduleFormValues(
         : "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30",
     quietHours: override?.quietHours ?? [],
     precheck: declaredPrecheck(schedule, override),
+    model: "",
   };
 }
 

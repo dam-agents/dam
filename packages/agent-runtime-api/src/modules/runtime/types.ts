@@ -159,6 +159,7 @@ export const triggerEventPayload = z.object({
   model: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
   lastRunAt: z.string().datetime({ offset: true }).optional(),
 });
@@ -175,10 +176,14 @@ export const triggerEvent = z.object({
 export const eventOutcome = z.enum(["ok", "declined", "failed"]);
 export type EventOutcome = z.infer<typeof eventOutcome>;
 
+export const eventStage = z.enum(["decide", "run"]);
+export type EventStage = z.infer<typeof eventStage>;
+
 export const eventReportInput = z.object({
   eventId: z.string().min(1),
   outcome: eventOutcome,
   detail: z.string().max(2_000).optional(),
+  stage: eventStage.optional(),
 });
 export type EventReportInput = z.infer<typeof eventReportInput>;
 

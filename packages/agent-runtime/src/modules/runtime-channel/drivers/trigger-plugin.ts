@@ -23,6 +23,8 @@ export interface EventReporter {
   report(input: EventReportInput): Promise<void>;
 }
 
+const DETAIL_MAX = 2_000;
+
 const WIRE_OUTCOME: Record<PrecheckOutcome["verdict"], EventOutcome> = {
   allowed: "ok",
   declined: "declined",
@@ -90,6 +92,7 @@ export function createTriggerPlugin(deps: {
           task,
           mcpServers: payload.mcpServers,
           resumeSessionId: prior,
+          model: payload.model,
         });
         return;
       }
@@ -97,6 +100,7 @@ export function createTriggerPlugin(deps: {
         task,
         mcpServers: payload.mcpServers,
         platformMeta,
+        model: payload.model,
       });
       deps.stateStore.setSessionForSchedule(payload.scheduleId, res.sessionId);
       return;
@@ -107,6 +111,33 @@ export function createTriggerPlugin(deps: {
       platformMeta,
       ...(payload.model ? { model: payload.model } : {}),
     });
+  };
+
+  const report = async (input: EventReportInput): Promise<void> => {
+    try {
+      await deps.reporter.report(input);
+    } catch (err) {
+      deps.log(`[trigger] event report failed: ${(err as Error).message}`);
+    }
+  };
+
+  const refusedReport = (
+    eventId: string,
+    detail: string,
+  ): EventReportInput => ({ eventId, outcome: "failed", stage: "run", detail });
+
+  const runOrRefuse = async (
+    payload: TriggerEventPayload,
+    task: string,
+  ): Promise<string | null> => {
+    try {
+      await startSession(payload, task);
+      return null;
+    } catch (err) {
+      if (!(err instanceof SessionModelError)) throw err;
+      deps.log(`[trigger] ${payload.scheduleId} not run: ${err.message}`);
+      return err.message.slice(0, DETAIL_MAX);
+    }
   };
 
   const decideAndRun = async (
@@ -123,17 +154,22 @@ export function createTriggerPlugin(deps: {
     deps.log(
       `[precheck] ${payload.scheduleId} ${outcome.verdict}${outcome.detail ? `: ${outcome.detail}` : ""}`,
     );
-    try {
-      await deps.reporter.report({
-        eventId,
-        outcome: WIRE_OUTCOME[outcome.verdict],
-        ...(outcome.detail ? { detail: outcome.detail } : {}),
-      });
-    } catch (err) {
-      deps.log(`[trigger] event report failed: ${(err as Error).message}`);
-    }
-    if (outcome.verdict === "declined") return;
-    await startSession(payload, withContext(payload.task, outcome.context));
+    const refused =
+      outcome.verdict === "declined"
+        ? null
+        : await runOrRefuse(
+            payload,
+            withContext(payload.task, outcome.context),
+          );
+    await report(
+      refused
+        ? refusedReport(eventId, refused)
+        : {
+            eventId,
+            outcome: WIRE_OUTCOME[outcome.verdict],
+            ...(outcome.detail ? { detail: outcome.detail } : {}),
+          },
+    );
   };
 
   const fire = async (
@@ -141,21 +177,8 @@ export function createTriggerPlugin(deps: {
     ctx: EventContext,
   ): Promise<void> => {
     if (!payload.precheck) {
-      try {
-        await startSession(payload, payload.task);
-      } catch (err) {
-        if (!(err instanceof SessionModelError)) throw err;
-        deps.log(`[trigger] ${payload.scheduleId}: ${err.message}`);
-        await deps.reporter
-          ?.report({
-            eventId: ctx.eventId,
-            outcome: "failed",
-            detail: err.message,
-          })
-          .catch((reportErr: Error) =>
-            deps.log(`[trigger] event report failed: ${reportErr.message}`),
-          );
-      }
+      const refused = await runOrRefuse(payload, payload.task);
+      if (refused) void report(refusedReport(ctx.eventId, refused));
       return;
     }
     void decideAndRun(payload, payload.precheck, ctx.eventId).catch((err) =>

@@ -13,6 +13,11 @@ import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
+import { useModelChoices } from "../../agents/api/harness-config.js";
+import {
+  type Choice,
+  OptionPicker,
+} from "../../sessions/components/model-settings-panel.js";
 import {
   DAYS_ISO,
   formatTime12,
@@ -385,5 +390,53 @@ export function SchedulePrecheckField({
       {input}
       <FormError message={errors.precheck?.message} />
     </div>
+  );
+}
+
+const MODEL_HINT =
+  "The model this schedule's runs use, without changing the agent's own model. A cheap model suits a frequent routine check. If the agent can't switch to it, the run fails with the reason instead of using the default.";
+
+export function ScheduleModelField({
+  agentId,
+  control,
+}: {
+  agentId: string;
+  control: Control<ScheduleFormValues>;
+}) {
+  const { choices, agentDefault } = useModelChoices(agentId);
+  const options: Choice[] = choices.map((c) => ({
+    id: c.value,
+    name: c.name,
+    description: c.description,
+  }));
+  const defaultName = agentDefault
+    ? (options.find((c) => c.id === agentDefault)?.name ?? agentDefault)
+    : null;
+
+  return (
+    <FormField label="Model" hint={MODEL_HINT} disableInset>
+      <Controller
+        control={control}
+        name="model"
+        render={({ field }) => (
+          <OptionPicker
+            title="Model"
+            choices={
+              field.value && !options.some((c) => c.id === field.value)
+                ? [...options, { id: field.value, name: field.value }]
+                : options
+            }
+            value={field.value || null}
+            clearedLabel="Agent default"
+            clearedDescription={
+              defaultName
+                ? `The agent's own model, currently ${defaultName}`
+                : "The agent's own model"
+            }
+            onSelect={(id) => field.onChange(id ?? "")}
+          />
+        )}
+      />
+    </FormField>
   );
 }

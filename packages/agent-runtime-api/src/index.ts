@@ -137,6 +137,7 @@ export type {
   OnceOrigin,
   OnceOriginMode,
   EventOutcome,
+  EventStage,
   EventReportInput,
   SatelliteOutcomeEventPayload,
   SubAgentOutcomeEventPayload,

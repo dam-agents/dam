@@ -1,5 +1,8 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import type { HarnessConfigCurrent } from "agent-runtime-api";
+import type {
+  HarnessConfigChoice,
+  HarnessConfigCurrent,
+} from "agent-runtime-api";
 import type { HarnessConfigChange } from "api-server-api";
 import { useRef } from "react";
 
@@ -106,6 +109,19 @@ export function useResolvedHarnessConfig(
     modelsPaired: false,
     pending,
   };
+}
+
+export function useModelChoices(agentId: string | null): {
+  choices: HarnessConfigChoice[];
+  agentDefault: string | null;
+} {
+  const { data: status } = useHarnessConfigStatus(agentId);
+  const { values } = useResolvedHarnessConfig(agentId);
+  const discovered = values?.availableModels;
+  const choices = discovered?.length
+    ? discovered
+    : (status?.catalog?.options.find((o) => o.id === "model")?.choices ?? []);
+  return { choices, agentDefault: values?.model ?? null };
 }
 
 export function useStaleModel(agentId: string | null): {

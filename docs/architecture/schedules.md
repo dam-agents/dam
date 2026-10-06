@@ -66,6 +66,12 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC. Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh. Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session. Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
 
+## Session model
+
+A schedule can name the model its sessions run on, so a frequent routine check runs on a cheap model and a demanding one on a strong model, without touching the Agent's own model. The Agent's model is agent-wide: changing it rewrites the harness's config file and restarts the one harness process every session shares ([harness configuration](harness-config.md)). A schedule's model instead lives on the session alone. Each fire switches its session to the named model through ACP's per-session model config option, after the session opens or resumes and before the task is prompted, so a continuous schedule picks up an edited model at its next fire. A schedule with no model runs on the Agent's default, as before. An agent creating a schedule for itself can name one too.
+
+**A schedule never silently runs on a different model.** A harness that refuses the switch (an unknown name, or a harness with no per-session model at all) gets no prompt. The fire still settles, so the refusal is not redelivered, and the runtime reports it over the event report as a failed *run*, a different stage from a broken Precheck. The schedule's last result then reads as a failure with the harness's reason. A fire that was never prompted leaves an empty session behind. Follow-up turns in a schedule's session keep its model as far as the harness restores it on reload.
+
 ## On-demand run
 
 A schedule can also be fired from outside its recurrence: the owner asks for one run, now. Authoring a schedule is iterative — the task gets reworded, the Precheck tweaked — and with cadences hours apart, waiting for the next occurrence is as slow a feedback loop as the cadence itself.

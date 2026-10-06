@@ -19,6 +19,7 @@ export interface ScheduleSpecCron {
   cron: string;
   task?: string;
   precheck?: string;
+  model?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
@@ -32,6 +33,7 @@ export interface ScheduleSpecRRule {
   quietHours?: QuietWindow[];
   task?: string;
   precheck?: string;
+  model?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
