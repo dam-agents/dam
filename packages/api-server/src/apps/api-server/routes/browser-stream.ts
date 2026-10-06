@@ -13,8 +13,8 @@ export function mountBrowserStreamPage(
 ): void {
   app.use("/api/public/browser-stream/:id/*", async (c, next) => {
     await next();
-    c.header("X-Frame-Options", "SAMEORIGIN");
-    c.header("Content-Security-Policy", "frame-ancestors 'self'");
+    c.res.headers.set("X-Frame-Options", "SAMEORIGIN");
+    c.res.headers.set("Content-Security-Policy", "frame-ancestors 'self'");
   });
   app.get(
     "/api/public/browser-stream/:id/*",

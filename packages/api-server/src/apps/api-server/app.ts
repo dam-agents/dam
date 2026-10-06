@@ -38,7 +38,8 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
   if (c.res.status !== 304 && !c.res.headers.has("Cache-Control"))
     c.header("Cache-Control", "no-cache, no-store, must-revalidate");
   c.header("X-Content-Type-Options", "nosniff");
-  c.header("X-Frame-Options", "DENY");
+  if (!c.res.headers.has("X-Frame-Options"))
+    c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "no-referrer");
   c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 };
