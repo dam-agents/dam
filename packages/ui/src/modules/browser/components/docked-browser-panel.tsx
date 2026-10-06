@@ -59,6 +59,14 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     },
     [],
   );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const keepWheel = (e: WheelEvent) => e.preventDefault();
+    canvas.addEventListener("wheel", keepWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", keepWheel);
+  }, []);
   const stream = useBrowserStream(agentId, canvasRef);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -265,12 +273,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <p className="px-4 pt-2 text-xs text-danger">{stream.error}</p>
       )}
 
-      <div className="relative min-h-0 flex-1 bg-muted/30">
+      <div className="relative min-h-0 flex-1 overscroll-none bg-muted/30">
         <canvas
           ref={canvasRef}
           tabIndex={0}
           aria-label={`Browser in ${agentName}'s sandbox`}
-          className="h-full w-full object-contain outline-none"
+          className="h-full w-full touch-none object-contain outline-none"
           onPointerDown={(e) => {
             e.currentTarget.focus();
             e.currentTarget.setPointerCapture(e.pointerId);
