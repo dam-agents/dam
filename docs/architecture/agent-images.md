@@ -38,7 +38,7 @@ The seed is copied into a home once, when the home is new, because from then on 
 ## What the agent gets
 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
-- The [browser panel](browser-panel.md)'s shared browser is Playwright's full Chromium, run headed on a virtual display (Xvfb with a minimal window manager) that ffmpeg captures as video; all three ship in the base image.
+- The [browser panel](browser-panel.md)'s shared browser is Playwright's full Chromium, run headed on a virtual display (TigerVNC's Xvnc with a minimal window manager) that ffmpeg captures as video and Xvnc also serves over VNC; all of them ship in the base image.
 - agent-browser and Playwright share one baked Chromium. agent-browser runs its headless shell, which calls none of Google's background services and keeps its shared memory out of the container's small `/dev/shm`, which a heavy page would overflow and crash on, and both trust the gateway's MITM CA through the NSS store the entrypoint fills in the home, since Chromium does not read the system bundle.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
 - aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image and last until the agent restarts. mise reads no config from the home, so a tool pin an older image persisted there is inert.

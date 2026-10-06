@@ -68,7 +68,7 @@ async function until(check: () => boolean, ms = 2_000) {
 }
 
 describe("browserUpstreamPath", () => {
-  // TEST_SCENARIO: The panel's address reaches the agent, but the user's access token, which rides in the same query, never does, nor does anything else the query carries.
+  // TEST_SCENARIO: The panel's address, and whether the socket carries the VNC display, reach the agent, but the user's access token, which rides in the same query, never does, nor does anything else the query carries.
   it("forwards the address, and drops the token and anything else", () => {
     const path = browserUpstreamPath(
       new URL(
@@ -78,6 +78,9 @@ describe("browserUpstreamPath", () => {
     expect(path).toBe("/api/browser?url=http%3A%2F%2F127.0.0.1%3A4444%2F");
     expect(browserUpstreamPath(new URL("http://x/?token=t"))).toBe(
       "/api/browser",
+    );
+    expect(browserUpstreamPath(new URL("http://x/?token=t&vnc=1"))).toBe(
+      "/api/browser?vnc=1",
     );
   });
 });

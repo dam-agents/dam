@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { connect, type Socket } from "node:net";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -7,7 +8,6 @@ import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 import {
   VIDEO_FPS,
-  calibrateTop,
   startVideo,
   videoAvailable,
   type VideoStream,
@@ -23,6 +23,9 @@ const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000];
 const KEYFRAME_MIN_INTERVAL_MS = 1_000;
 const ENCODER_RESTART_DELAY_MS = 1_000;
 const FPS_REPORT_MS = 5_000;
+const VNC_PORT = 5999;
+const DISPLAY_RETRY_MS = 500;
+const DISPLAY_WAIT_MS = 60_000;
 const LOW_FPS = 20;
 
 export interface Viewport {
@@ -67,6 +70,7 @@ export type PreviewControl =
   | { type: "forward" }
   | { type: "clear_data" }
   | { type: "restart_browser" }
+  | { type: "no_video" }
   | { type: "resize"; width: number; height: number; scale: number };
 
 const PAGE_NAVIGATION = {
@@ -81,12 +85,10 @@ export type BrowserCommand = (args: string[]) => Promise<string>;
 
 export interface BrowserVideo {
   available(): boolean;
-  calibrate(width: number, height: number): Promise<number>;
   start(opts: {
     width: number;
     height: number;
     scale: number;
-    top: number;
     onFrame: (frame: Buffer, key: boolean) => void;
     onExit: () => void;
     log: (msg: string) => void;
@@ -125,7 +127,8 @@ export function parseControl(data: string): PreviewControl | null {
     type === "back" ||
     type === "forward" ||
     type === "clear_data" ||
-    type === "restart_browser"
+    type === "restart_browser" ||
+    type === "no_video"
   )
     return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
@@ -252,18 +255,10 @@ export async function killPreviewProcesses(profileDir: string): Promise<void> {
   }
 }
 
-export function screenVideo(run: BrowserCommand): BrowserVideo {
-  return {
-    available: videoAvailable,
-    calibrate: (width, height) =>
-      calibrateTop(
-        (path) => run(["screenshot", "--device-pixels", path]),
-        width,
-        height,
-      ),
-    start: startVideo,
-  };
-}
+export const screenVideo: BrowserVideo = {
+  available: videoAvailable,
+  start: startVideo,
+};
 
 export function createCommandQueue(run: BrowserCommand): {
   run: BrowserCommand;
@@ -301,6 +296,7 @@ export function createBrowserPreview(deps: {
   unresponsiveRestartMs?: number;
   retryDelaysMs?: number[];
   stopBrowser?: () => Promise<void>;
+  connectDisplay?: () => Socket;
   log: (msg: string) => void;
 }): BrowserPreview {
   const commands = createCommandQueue(deps.run);
@@ -317,7 +313,9 @@ export function createBrowserPreview(deps: {
   const unresponsiveRestartMs =
     deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
-  const video = deps.video ?? screenVideo(exec);
+  const video = deps.video ?? screenVideo;
+  const connectDisplay =
+    deps.connectDisplay ?? (() => connect(VNC_PORT, "127.0.0.1"));
   const streamUrl =
     deps.streamUrl ?? ((port: number) => `ws://127.0.0.1:${port}/`);
 
@@ -334,7 +332,6 @@ export function createBrowserPreview(deps: {
   let encoderFor: Viewport | null = null;
   let encoderBroken = false;
   let lastKeyframeRequest = 0;
-  const contentTops = new Map<number, number>();
   let pendingNavigation: string | null = null;
   let lastAnswerAt = Date.now();
   let generation = 0;
@@ -410,7 +407,6 @@ export function createBrowserPreview(deps: {
     deps.log(`browser lost: ${reason}`);
     browserUp = false;
     applied = null;
-    contentTops.clear();
     stopEncoder();
     closeUpstream();
     generation++;
@@ -510,29 +506,10 @@ export function createBrowserPreview(deps: {
 
   async function applyViewport(v: Viewport): Promise<void> {
     await timed("resize", () =>
-      exec([
-        "set",
-        "viewport",
-        String(v.width),
-        String(v.height),
-        String(v.scale),
-      ]),
+      exec(["screen", String(v.width), String(v.height)]),
     );
     applied = v;
     lastAnswerAt = Date.now();
-  }
-
-  async function contentTop(v: Viewport): Promise<number> {
-    const cached = contentTops.get(v.scale);
-    if (cached !== undefined) return cached;
-    const top = await timed("calibrate", () =>
-      video.calibrate(
-        Math.round(v.width * v.scale),
-        Math.round(v.height * v.scale),
-      ),
-    );
-    contentTops.set(v.scale, top);
-    return top;
   }
 
   function sendFrame(frame: Buffer, key: boolean) {
@@ -563,11 +540,9 @@ export function createBrowserPreview(deps: {
   }
 
   async function startEncoder(v: Viewport): Promise<void> {
-    const top = await contentTop(v);
     if (!sameViewport(wanted, v) || !browserUp) return;
     const started = video.start({
       ...v,
-      top,
       onFrame: sendFrame,
       onExit: () => {
         if (encoder !== started) return;
@@ -584,9 +559,7 @@ export function createBrowserPreview(deps: {
     encoder = started;
     encoderFor = v;
     const info = streamInfo(v);
-    deps.log(
-      `video: started ${info.width}x${info.height} at ${info.fps} fps, top ${top}`,
-    );
+    deps.log(`video: started ${info.width}x${info.height} at ${info.fps} fps`);
     broadcast(info);
   }
 
@@ -684,7 +657,7 @@ export function createBrowserPreview(deps: {
 
   async function control(
     client: WebSocket,
-    msg: Exclude<PreviewControl, { type: "resize" }>,
+    msg: Exclude<PreviewControl, { type: "resize" } | { type: "no_video" }>,
   ) {
     if (msg.type === "navigate") {
       const url = previewUrl(msg.url);
@@ -746,12 +719,56 @@ export function createBrowserPreview(deps: {
     idleTimer.unref?.();
   }
 
+  function attachDisplay(client: WebSocket) {
+    let socket: Socket | null = null;
+    const pending: Buffer[] = [];
+    const startedAt = Date.now();
+    client.on("message", (data: Buffer) => {
+      if (socket && !socket.connecting) socket.write(data);
+      else pending.push(data);
+    });
+    client.on("close", () => {
+      socket?.destroy();
+      socket = null;
+    });
+    const dial = () => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      const s = connectDisplay();
+      let connected = false;
+      socket = s;
+      s.on("connect", () => {
+        connected = true;
+        for (const d of pending.splice(0)) s.write(d);
+      });
+      s.on("data", (d: Buffer) => {
+        if (client.readyState === WebSocket.OPEN)
+          client.send(d, { binary: true });
+      });
+      s.on("error", (err) => {
+        if (!connected && Date.now() - startedAt < DISPLAY_WAIT_MS) return;
+        deps.log(`display: ${err.message}`);
+      });
+      s.on("close", () => {
+        if (socket !== s) return;
+        socket = null;
+        if (!connected && Date.now() - startedAt < DISPLAY_WAIT_MS) {
+          setTimeout(dial, DISPLAY_RETRY_MS).unref?.();
+          return;
+        }
+        if (client.readyState === WebSocket.OPEN)
+          client.close(1011, "display closed");
+      });
+    };
+    dial();
+  }
+
   function attach(client: WebSocket, query: URLSearchParams) {
     if (!video.available()) {
       sendJson(client, { type: "preview_error", message: VIDEO_UNAVAILABLE });
       client.close(1011, "video unavailable");
       return;
     }
+    if (query.get("vnc") === "1") return attachDisplay(client);
     const rawUrl = query.get("url");
     const url = rawUrl === null ? null : previewUrl(rawUrl);
     if (rawUrl !== null && !url) {
@@ -774,6 +791,11 @@ export function createBrowserPreview(deps: {
 
     client.on("message", (data: Buffer, isBinary: boolean) => {
       const msg = isBinary ? null : parseControl(data.toString());
+      if (msg?.type === "no_video") {
+        wanted = null;
+        stopEncoder();
+        return;
+      }
       if (msg?.type === "resize") {
         wanted = { width: msg.width, height: msg.height, scale: msg.scale };
         schedule();

@@ -626,6 +626,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.88.0(react@19.3.0))(zod@4.6.5)
+      '@novnc/novnc':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.23
         version: 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -2526,6 +2529,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
+
   '@opentelemetry/api-logs@0.222.0':
     resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
     engines: {node: '>=8.0.0'}
@@ -3920,11 +3926,6 @@ packages:
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
-    peerDependencies:
-      ajv: ^8.0.0
-    peerDependenciesMeta:
-      ajv:
-        optional: true
 
   ajv@6.14.0:
     resolution: {integrity: sha512-IWrosm/yrn43eiKqkfkHis7QioDleaXQHdDVPKg0FSwwd/DuvyX79TZnFOnYpB7dcsFAMmtFztZuXPDvSePkFw==}
@@ -5013,10 +5014,6 @@ packages:
 
   hono@4.13.10:
     resolution: {integrity: sha512-dQuLsa5oO+47QVMVMaaD9cIv8ctmVtK1iRvwWngkfloFJMeFeuoUFDswIqZGxmGX3hrRzREgEArjkK9OgsQEhA==}
-    engines: {node: '>=16.9.0'}
-
-  hono@4.13.8:
-    resolution: {integrity: sha512-/Gng7NfoykZl2pjukW5Z6+8Yxm3BPRf86GTbQnt0SbySkvax4fyL4H3HhY1cCpBGmiW9XDRFzRV+CXK2W8QudQ==}
     engines: {node: '>=16.9.0'}
 
   hookified@1.15.1:
@@ -8764,11 +8761,6 @@ snapshots:
     dependencies:
       hono: 4.13.10
 
-  '@hono/node-server@2.0.12(hono@4.13.8)':
-    dependencies:
-      hono: 4.13.8
-    optional: true
-
   '@hono/node-server@2.1.1(hono@4.13.10)':
     dependencies:
       hono: 4.13.10
@@ -9076,9 +9068,9 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.6.5)':
     dependencies:
-      '@hono/node-server': 2.0.12(hono@4.13.8)
+      '@hono/node-server': 2.0.12(hono@4.13.10)
       ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
+      ajv-formats: 3.0.1
       content-type: 1.0.5
       cors: 2.8.6
       cross-spawn: 7.0.6
@@ -9086,7 +9078,7 @@ snapshots:
       eventsource-parser: 3.0.6
       express: 5.2.1
       express-rate-limit: 8.5.1(express@5.2.1)
-      hono: 4.13.8
+      hono: 4.13.10
       jose: 6.2.12
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -9101,7 +9093,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.10)
       ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
+      ajv-formats: 3.0.1
       content-type: 1.0.5
       cors: 2.8.6
       cross-spawn: 7.0.6
@@ -9136,6 +9128,8 @@ snapshots:
 
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4':
     optional: true
+
+  '@novnc/novnc@1.7.0': {}
 
   '@opentelemetry/api-logs@0.222.0':
     dependencies:
@@ -10588,9 +10582,7 @@ snapshots:
 
   agent-base@9.0.0: {}
 
-  ajv-formats@3.0.1(ajv@8.20.0):
-    optionalDependencies:
-      ajv: 8.20.0
+  ajv-formats@3.0.1: {}
 
   ajv@6.14.0:
     dependencies:
@@ -11748,9 +11740,6 @@ snapshots:
   highlight.js@11.12.0: {}
 
   hono@4.13.10: {}
-
-  hono@4.13.8:
-    optional: true
 
   hookified@1.15.1: {}
 

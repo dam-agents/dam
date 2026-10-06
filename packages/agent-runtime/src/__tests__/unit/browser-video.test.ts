@@ -1,17 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  bestContentTop,
   captureRegion,
   createAccessUnitSplitter,
   encoderArgs,
   isKeyframe,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
   videoAvailable,
   videoFrame,
 } from "../../modules/browser-video.js";
 
-// TEST_OVERVIEW: The browser panel's video stream captures the shared browser's screen on the virtual display with ffmpeg and sends it as H.264. ffmpeg's output is one byte stream; the runtime must cut it into whole frames, mark the keyframes a decoder can start from, and capture exactly the page's region of the screen — below whatever Chrome draws above it, and within the screen.
+// TEST_OVERVIEW: The browser panel's video stream captures the virtual display the shared browser fills with ffmpeg and sends it as H.264. ffmpeg's output is one byte stream; the runtime must cut it into whole frames and mark the keyframes a decoder can start from.
 
 const nal = (type: number, body: number[] = [0xaa, 0xbb]) => [
   0,
@@ -67,60 +64,22 @@ describe("videoFrame", () => {
 });
 
 describe("captureRegion", () => {
-  // TEST_SCENARIO: H.264 at 4:2:0 needs even sides, and the region must stay on the virtual screen even for a panel larger than it.
-  it("keeps the region even and on the screen", () => {
-    expect(captureRegion(901, 701, 56)).toEqual({
-      width: 900,
-      height: 700,
-      top: 56,
-    });
-    expect(captureRegion(4096, 4096, 56)).toEqual({
-      width: SCREEN_WIDTH,
-      height: SCREEN_HEIGHT - 56,
-      top: 56,
-    });
-  });
-
-  it("captures the region below the top offset on the display", () => {
-    const args = encoderArgs({ width: 900, height: 700, top: 56 });
+  // TEST_SCENARIO: the screen is sized to the panel and the browser fills it, so the encoder captures the whole screen from its corner — no offset to measure. H.264 at 4:2:0 needs even sides.
+  it("keeps the region even and captures from the screen's corner", () => {
+    expect(captureRegion(901, 701)).toEqual({ width: 900, height: 700 });
+    const args = encoderArgs({ width: 900, height: 700 });
     expect(args).toContain("900x700");
-    expect(args).toContain(":99.0+0,56");
+    expect(args).toContain(":99.0+0,0");
     expect(args).toContain("libx264");
   });
 });
 
-describe("bestContentTop", () => {
-  const width = 40;
-  const pattern = (y: number, x: number) => (y * 7 + x * 3) % 251;
-
-  // TEST_SCENARIO: the page's screenshot matches the screen capture at exactly one vertical offset — the height of whatever Chrome draws above the page. A page too uniform to match anywhere gives no answer, so the caller falls back to the known offset.
-  it("finds the offset where the page's screenshot matches the screen", () => {
-    const shotHeight = 60;
-    const shot = new Uint8Array(width * shotHeight);
-    for (let y = 0; y < shotHeight; y++)
-      for (let x = 0; x < width; x++) shot[y * width + x] = pattern(y, x);
-    const top = 37;
-    const screenHeight = shotHeight + 160;
-    const screen = new Uint8Array(width * screenHeight).fill(255);
-    for (let y = 0; y < shotHeight; y++)
-      for (let x = 0; x < width; x++)
-        screen[(top + y) * width + x] = pattern(y, x);
-    expect(bestContentTop(screen, width, shot, width, shotHeight)).toBe(top);
-
-    const blank = new Uint8Array(width * shotHeight).fill(255);
-    const blankScreen = new Uint8Array(width * screenHeight).fill(255);
-    expect(
-      bestContentTop(blankScreen, width, blank, width, shotHeight),
-    ).toBeNull();
-  });
-});
-
 describe("videoAvailable", () => {
-  // TEST_SCENARIO: on a fresh boot the virtual display is not running yet — platform-browser starts it when it first launches the browser. Whether an agent can stream is what its image has — Xvfb, ffmpeg and the full Chromium — not whether the display already runs, or the panel would be refused before anything could launch it.
+  // TEST_SCENARIO: on a fresh boot the virtual display is not running yet — platform-browser starts it when it first launches the browser. Whether an agent can stream is what its image has — Xvnc, ffmpeg and the full Chromium — not whether the display already runs, or the panel would be refused before anything could launch it.
   it("depends on the image's tools, not on a running display", () => {
     expect(videoAvailable(() => true)).toBe(true);
     expect(videoAvailable((p) => p !== "/tmp/.X11-unix/X99")).toBe(true);
     expect(videoAvailable((p) => p !== "/usr/bin/ffmpeg")).toBe(false);
-    expect(videoAvailable((p) => p !== "/usr/bin/Xvfb")).toBe(false);
+    expect(videoAvailable((p) => p !== "/usr/bin/Xvnc")).toBe(false);
   });
 });

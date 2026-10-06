@@ -1,23 +1,15 @@
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 export const VIDEO_DISPLAY = ":99";
-export const SCREEN_WIDTH = 3840;
-export const SCREEN_HEIGHT = 2400;
-export const DEFAULT_CONTENT_TOP = 56;
 export const VIDEO_FPS = 60;
 
 const AUD = Buffer.from([0, 0, 0, 1, 9]);
 const IDR_NAL = 5;
 const FLUSH_AFTER_MS = 4;
-const CALIBRATION_SEARCH = 160;
-const CALIBRATION_ROWS = 48;
 
 export const VIDEO_TOOLS = [
-  "/usr/bin/Xvfb",
+  "/usr/bin/Xvnc",
   "/usr/bin/ffmpeg",
   "/opt/ms-playwright/chromium",
 ] as const;
@@ -83,20 +75,14 @@ export function videoFrame(
 export function captureRegion(
   width: number,
   height: number,
-  top: number,
-): { width: number; height: number; top: number } {
+): { width: number; height: number } {
   const even = (v: number) => Math.max(2, v - (v % 2));
-  return {
-    width: even(Math.min(width, SCREEN_WIDTH)),
-    height: even(Math.min(height, SCREEN_HEIGHT - top)),
-    top,
-  };
+  return { width: even(width), height: even(height) };
 }
 
 export function encoderArgs(region: {
   width: number;
   height: number;
-  top: number;
 }): string[] {
   return [
     "-hide_banner",
@@ -111,7 +97,7 @@ export function encoderArgs(region: {
     "-draw_mouse",
     "0",
     "-i",
-    `${VIDEO_DISPLAY}.0+0,${region.top}`,
+    `${VIDEO_DISPLAY}.0+0,0`,
     "-c:v",
     "libx264",
     "-preset",
@@ -138,87 +124,6 @@ export function encoderArgs(region: {
   ];
 }
 
-export function bestContentTop(
-  screen: Uint8Array,
-  screenWidth: number,
-  shot: Uint8Array,
-  shotWidth: number,
-  shotHeight: number,
-): number | null {
-  const rows = Math.min(CALIBRATION_ROWS, shotHeight);
-  const cols = Math.floor(shotWidth * 0.8);
-  const screenRows = Math.floor(screen.length / screenWidth);
-  const scores: number[] = [];
-  for (let top = 0; top <= CALIBRATION_SEARCH; top++) {
-    if (top + rows > screenRows) break;
-    let sad = 0;
-    for (let y = 0; y < rows; y++)
-      for (let x = 0; x < cols; x += 4)
-        sad += Math.abs(
-          screen[(top + y) * screenWidth + x]! - shot[y * shotWidth + x]!,
-        );
-    scores.push(sad);
-  }
-  if (scores.length === 0) return null;
-  const best = scores.indexOf(Math.min(...scores));
-  const rival = Math.min(
-    ...scores.filter((_, top) => Math.abs(top - best) > 2),
-  );
-  return scores[best]! * 1.5 < rival ? best : null;
-}
-
-const grayFrame = (args: string[]) =>
-  new Promise<Buffer>((resolve, reject) =>
-    execFile(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        ...args,
-        "-frames:v",
-        "1",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "gray",
-        "-",
-      ],
-      { encoding: "buffer", maxBuffer: 64 * 1024 * 1024, timeout: 15_000 },
-      (err, stdout) => (err ? reject(err) : resolve(stdout)),
-    ),
-  );
-
-export async function calibrateTop(
-  screenshot: (path: string) => Promise<unknown>,
-  width: number,
-  height: number,
-): Promise<number> {
-  const dir = await mkdtemp(join(tmpdir(), "browser-video-"));
-  try {
-    const path = join(dir, "viewport.png");
-    await screenshot(path);
-    const shot = await grayFrame(["-i", path]);
-    const screenWidth = Math.min(width, SCREEN_WIDTH);
-    const screen = await grayFrame([
-      "-f",
-      "x11grab",
-      "-video_size",
-      `${screenWidth}x${Math.min(height + CALIBRATION_SEARCH, SCREEN_HEIGHT)}`,
-      "-i",
-      `${VIDEO_DISPLAY}.0+0,0`,
-    ]);
-    return (
-      bestContentTop(screen, screenWidth, shot, width, height) ??
-      DEFAULT_CONTENT_TOP
-    );
-  } catch {
-    return DEFAULT_CONTENT_TOP;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
 export interface VideoStream {
   stop(): void;
 }
@@ -227,7 +132,6 @@ export function startVideo(opts: {
   width: number;
   height: number;
   scale: number;
-  top: number;
   onFrame: (frame: Buffer, key: boolean) => void;
   onExit: () => void;
   log: (msg: string) => void;
@@ -235,7 +139,6 @@ export function startVideo(opts: {
   const region = captureRegion(
     Math.round(opts.width * opts.scale),
     Math.round(opts.height * opts.scale),
-    opts.top,
   );
   const ffmpeg = spawn("ffmpeg", encoderArgs(region), {
     env: { ...process.env, DISPLAY: VIDEO_DISPLAY },

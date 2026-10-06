@@ -37,7 +37,7 @@ platform-browser screenshot /tmp/page.png
 - Use it to show the user something or to try a flow with them watching — say in the chat what you are about to do, then do it.
 - Ask before anything that changes state the user cares about outside your sandbox: submitting a form on an external site, buying, sending, deleting, or acting with the user's sign-ins.
 - Never type a password or secret into it. If a page needs the user to sign in, open it and ask them to sign in in the panel.
-- `platform-browser close` is refused: the panel is attached to this browser.
+- `platform-browser close` is refused: the panel is attached to this browser. So are `set viewport` and `set device`: the browser fills the screen, and the screen follows the size of the user's panel.
 - For your own testing that the user need not watch, use plain `agent-browser` with your own `--session`; it is quicker and does not move the user's page.
 
 ## What the user's sign-ins mean

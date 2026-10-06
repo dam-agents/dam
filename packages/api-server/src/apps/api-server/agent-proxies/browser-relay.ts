@@ -11,7 +11,7 @@ import { sanitizeCloseCode } from "./acp-relay.js";
 
 const PENDING_BUFFER_MAX_BYTES = 256 * 1024;
 const PING_INTERVAL_MS = 30_000;
-const FORWARDED_QUERY_KEYS = ["url"] as const;
+const FORWARDED_QUERY_KEYS = ["url", "vnc"] as const;
 
 export interface BrowserRelay {
   handleUpgrade(

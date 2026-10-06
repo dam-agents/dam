@@ -37,9 +37,11 @@ import {
   modifiers,
   mouseButton,
 } from "../lib/stream.js";
+import { VncView } from "./vnc-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
 const SHOW_STATS_KEY = "platform.browserPanel.showStats";
+const VNC_KEY = "platform.browserPanel.vnc";
 
 interface Props {
   agentId: string;
@@ -72,7 +74,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     canvas.addEventListener("wheel", keepWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", keepWheel);
   }, []);
-  const stream = useBrowserStream(agentId, canvasRef);
+  const [vnc, setVnc] = useState(() => readPersistedFlag(VNC_KEY, false));
+  const toggleVnc = () => {
+    writePersistedFlag(VNC_KEY, !vnc);
+    setVnc(!vnc);
+  };
+  const stream = useBrowserStream(agentId, canvasRef, !vnc);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
   const [noticeSeen, setNoticeSeen] = useState(() =>
@@ -235,6 +242,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={toggleVnc}>
+              {vnc ? "Stream as video" : "Stream with VNC (experimental)"}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={toggleStats}>
               {showStats ? "Hide stream stats" : "Show stream stats"}
             </DropdownMenuItem>
@@ -269,7 +279,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <span className="min-w-0 flex-1 truncate">
           Runs in {agentName}'s sandbox — not a page from this site
         </span>
-        {showStats && (
+        {showStats && !vnc && (
           <span
             className="flex shrink-0 tabular-nums"
             title="Stream codec and size, time from your click or key to the next frame, frames per second, and stream bandwidth"
@@ -321,8 +331,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
       )}
 
       <div className="relative min-h-0 flex-1 overflow-hidden overscroll-none bg-muted/30">
+        {vnc && <VncView agentId={agentId} agentName={agentName} />}
         <canvas
           ref={canvasRef}
+          hidden={vnc}
           tabIndex={0}
           aria-label={`Browser in ${agentName}'s sandbox`}
           className="block touch-none outline-none"

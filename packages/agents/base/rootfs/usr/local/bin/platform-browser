@@ -20,11 +20,12 @@ const LINK_PREFIX = "platform://browser?url=";
 
 const DISPLAY = ":99";
 const X_SOCKET = "/tmp/.X11-unix/X99";
-const SCREEN = "3840x2400x24";
-const XVFB = "/usr/bin/Xvfb";
+const SCREEN = "1280x800";
+const VNC_PORT = "5999";
+const XVNC = "/usr/bin/Xvnc";
 const CHROMIUM = "/opt/ms-playwright/chromium";
 const HEADLESS_SHELL = "/opt/ms-playwright/headless-shell";
-const HEADED = existsSync(XVFB) && existsSync(CHROMIUM);
+const HEADED = existsSync(XVNC) && existsSync(CHROMIUM);
 
 const BASE_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"];
 const HEADED_ARGS = [
@@ -32,6 +33,7 @@ const HEADED_ARGS = [
   "--hide-scrollbars",
   "--no-first-run",
   "--test-type",
+  "--disable-infobars",
 ];
 
 const fail = (message, code = 1) => {
@@ -135,7 +137,7 @@ const clearStaleProfileLocks = () => {
 
 const displayRunning = () =>
   existsSync(X_SOCKET) &&
-  processes().some((p) => p.cmdline.split("\0")[0]?.endsWith("Xvfb"));
+  processes().some((p) => p.cmdline.split("\0")[0]?.endsWith("Xvnc"));
 
 const windowManagerRunning = () =>
   processes().some((p) =>
@@ -149,7 +151,22 @@ const startDisplay = () => {
   if (!displayRunning()) {
     rmSync(X_SOCKET, { force: true });
     rmSync("/tmp/.X99-lock", { force: true });
-    detached(XVFB, [DISPLAY, "-screen", "0", SCREEN, "-nolisten", "tcp"]);
+    detached(XVNC, [
+      DISPLAY,
+      "-geometry",
+      SCREEN,
+      "-depth",
+      "24",
+      "-localhost",
+      "-rfbport",
+      VNC_PORT,
+      "-SecurityTypes",
+      "None",
+      "-AlwaysShared",
+      "-AcceptSetDesktopSize",
+      "-nolisten",
+      "tcp",
+    ]);
     if (!waitFor(displayRunning, 10_000))
       fail("the virtual display did not start");
   }
@@ -227,6 +244,26 @@ if (command === "close")
     "not closing — the user's browser panel is attached to this browser",
     2,
   );
+
+if (command === "set" && (address === "viewport" || address === "device"))
+  fail(
+    "not resizing — the browser fills the screen, and the screen follows the user's panel",
+    2,
+  );
+
+if (command === "screen") {
+  const [width, height] = [address, rest[0]].map(Number);
+  if (!HEADED || !(width >= 200 && height >= 200 && width <= 8192 && height <= 8192))
+    usage();
+  if (!displayRunning()) fail("the virtual display is not running");
+  const resized = spawnSync(
+    "xrandr",
+    ["--fb", `${width - (width % 2)}x${height - (height % 2)}`],
+    { env: { ...process.env, DISPLAY }, encoding: "utf8" },
+  );
+  if (resized.status !== 0) fail(`xrandr: ${(resized.stderr ?? "").trim()}`);
+  process.exit(0);
+}
 
 if (command === "launch" || command === "shutdown") {
   if (!locked) underLock([command]);

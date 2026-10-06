@@ -1,5 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
+import {
+  createServer as createTcpServer,
+  connect,
+  type Socket,
+} from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   VIDEO_UNAVAILABLE,
@@ -66,8 +71,7 @@ function fakeBrowser(port: number) {
     if (!browser.alive) throw new Error("no browser running");
     if (args[0] === "stream")
       return JSON.stringify({ success: true, data: { port } });
-    if (args[0] === "set" && args[1] === "viewport")
-      browser.viewport = `${args[2]}x${args[3]}@${args[4]}`;
+    if (args[0] === "screen") browser.viewport = `${args[1]}x${args[2]}@1`;
     if (args[0] === "eval") {
       if (browser.hangEval) return new Promise<string>(() => {});
       if (browser.failEval) throw new Error("eval timed out");
@@ -80,19 +84,14 @@ function fakeBrowser(port: number) {
 }
 
 function fakeVideo() {
-  const starts: { width: number; height: number; top: number }[] = [];
+  const starts: { width: number; height: number }[] = [];
   const stops: number[] = [];
   let emit: ((frame: Buffer, key: boolean) => void) | null = null;
   let exit: (() => void) | null = null;
   const video: BrowserVideo = {
     available: () => true,
-    calibrate: async () => 56,
     start: (opts) => {
-      const n = starts.push({
-        width: opts.width,
-        height: opts.height,
-        top: opts.top,
-      });
+      const n = starts.push({ width: opts.width, height: opts.height });
       emit = opts.onFrame;
       exit = opts.onExit;
       return { stop: () => stops.push(n) };
@@ -388,7 +387,7 @@ describe("one browser for every panel", () => {
     const { calls, run } = fakeBrowser(stream.port);
     let release: () => void = () => {};
     const slowRun = async (args: string[]) => {
-      if (args[0] === "set" && calls.every((c) => c[0] !== "set"))
+      if (args[0] === "screen" && calls.every((c) => c[0] !== "screen"))
         await new Promise<void>((r) => (release = r));
       return run(args);
     };
@@ -405,11 +404,11 @@ describe("one browser for every panel", () => {
 
     await until(() => fake.starts.length === 1);
     await pause(50);
-    expect(calls.filter((c) => c[0] === "set")).toEqual([
-      ["set", "viewport", "900", "700", "1"],
-      ["set", "viewport", "600", "500", "1"],
+    expect(calls.filter((c) => c[0] === "screen")).toEqual([
+      ["screen", "900", "700"],
+      ["screen", "600", "500"],
     ]);
-    expect(fake.starts).toEqual([{ width: 600, height: 500, top: 56 }]);
+    expect(fake.starts).toEqual([{ width: 600, height: 500 }]);
   });
 });
 
@@ -519,7 +518,7 @@ describe("recovery", () => {
     const { calls, run, browser } = fakeBrowser(stream.port);
     let failing = true;
     const flaky = async (args: string[]) => {
-      if (failing && args[0] === "set") {
+      if (failing && args[0] === "screen") {
         calls.push(args);
         throw new Error("set timed out");
       }
@@ -531,7 +530,7 @@ describe("recovery", () => {
     );
     const { ws, json } = await connect("");
     resize(ws, 900, 700);
-    await until(() => calls.some((c) => c[0] === "set"));
+    await until(() => calls.some((c) => c[0] === "screen"));
     failing = false;
     await until(() => fake.starts.length === 1);
     expect(browser.viewport).toBe("900x700@1");
@@ -576,6 +575,60 @@ describe("recovery", () => {
     expect(calls.filter((c) => c[0] === "launch")).toHaveLength(2);
     expect(states().slice(-2)).toEqual(["starting", "ready"]);
     expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
+});
+
+describe("VNC", () => {
+  // TEST_SCENARIO: a panel in VNC mode opens a second socket with vnc=1 and speaks the VNC protocol to the virtual display's own VNC server: the runtime only pipes bytes both ways. The display comes up with the browser, so a socket that arrives first is held, with what the viewer sent, until the server answers.
+  it("pipes a vnc socket to the display, waiting for it to come up", async () => {
+    const received: Buffer[] = [];
+    const server = createTcpServer((sock) => {
+      sock.on("data", (d: Buffer) => received.push(d));
+      sock.write("RFB 003.008\n");
+    });
+    let up = false;
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    closers.push(() => new Promise<void>((r) => server.close(() => r())));
+    const port = (server.address() as { port: number }).port;
+    const stream = await fakeStream();
+    const { run } = fakeBrowser(stream.port);
+    const connectTo = await host(
+      preview(run, {
+        connectDisplay: (): Socket => connect(up ? port : 1, "127.0.0.1"),
+      }),
+    );
+    const { ws, messages } = await connectTo("vnc=1");
+    ws.send(Buffer.from("RFB 003.008\n"));
+    await pause(700);
+    up = true;
+    await until(() =>
+      messages.some(
+        (m) => Buffer.isBuffer(m) && m.toString().startsWith("RFB"),
+      ),
+    );
+    await until(() => Buffer.concat(received).toString() === "RFB 003.008\n");
+  });
+});
+
+describe("VNC and video together", () => {
+  // TEST_SCENARIO: a panel switched to VNC sizes the screen itself, through the VNC protocol. Its control socket says no_video, so the runtime stops the encoder and stops putting a video panel's size back — otherwise the health check would undo every VNC resize.
+  it("stops the encoder and the size check when a panel asks for no video", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connectTo = await host(
+      preview(run, { video: fake.video, healthCheckMs: 20 }),
+    );
+    const { ws } = await connectTo("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    ws.send(JSON.stringify({ type: "no_video" }));
+    await until(() => fake.stops.includes(1));
+    browser.viewport = "1400x900@1";
+    const screens = calls.filter((c) => c[0] === "screen").length;
+    await pause(200);
+    expect(calls.filter((c) => c[0] === "screen")).toHaveLength(screens);
+    expect(fake.starts).toHaveLength(1);
   });
 });
 
@@ -624,7 +677,7 @@ describe("stopping a stuck browser", () => {
     expect(commandTimeoutMs(["open", "http://a/"])).toBe(45_000);
     expect(commandTimeoutMs(["launch"])).toBe(60_000);
     expect(commandTimeoutMs(["shutdown"])).toBe(30_000);
-    expect(commandTimeoutMs(["set", "viewport", "1", "1", "1"])).toBe(15_000);
+    expect(commandTimeoutMs(["screen", "1", "1"])).toBe(15_000);
   });
 
   // TEST_SCENARIO: stopping the panel's browser kills only what belongs to it — the Chromium on the panel's profile and agent-browser processes for the preview session — never the agent's own browser sessions or anything else.

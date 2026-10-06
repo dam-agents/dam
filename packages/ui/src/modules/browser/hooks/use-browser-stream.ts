@@ -36,6 +36,7 @@ export interface BrowserStats {
 export function useBrowserStream(
   agentId: string,
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  video = true,
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const meterRef = useRef(createLatencyMeter());
@@ -99,13 +100,14 @@ export function useBrowserStream(
       );
     };
     const sendViewport = () => {
+      if (!video) return;
       const wanted = wantedViewport();
       if (!wanted) return;
       viewportSentAt = performance.now();
       send({ type: "resize", ...wanted });
     };
     const snapViewport = (device: FrameMetadata) => {
-      if (document.hidden || !document.hasFocus()) return;
+      if (!video || document.hidden || !document.hasFocus()) return;
       const wanted = wantedViewport();
       if (!wanted || !viewportDiffers(device, wanted)) return;
       if (performance.now() - viewportSentAt < VIEWPORT_RESEND_MS) return;
@@ -120,7 +122,7 @@ export function useBrowserStream(
 
     void (async () => {
       setState("connecting");
-      if (!(await videoSupported())) {
+      if (video && !(await videoSupported())) {
         if (!cancelled) setState("unsupported");
         return;
       }
@@ -136,7 +138,8 @@ export function useBrowserStream(
         if (cancelled) return;
         failedAttemptsRef.current = 0;
         setState("live");
-        sendViewport();
+        if (video) sendViewport();
+        else send({ type: "no_video" });
         if (pendingUrlRef.current) {
           send({ type: "navigate", url: pendingUrlRef.current }, true);
           pendingUrlRef.current = null;
@@ -144,6 +147,7 @@ export function useBrowserStream(
       };
       ws.onmessage = (e: MessageEvent<string | ArrayBuffer>) => {
         if (e.data instanceof ArrayBuffer) {
+          if (!video) return;
           const frame = parseBinaryFrame(e.data);
           if (!frame) return;
           deviceRef.current = frame.metadata;
@@ -207,7 +211,7 @@ export function useBrowserStream(
       player?.close();
       wsRef.current = null;
     };
-  }, [agentId, canvasRef, connectKey, send]);
+  }, [agentId, canvasRef, connectKey, send, video]);
 
   return {
     state,
