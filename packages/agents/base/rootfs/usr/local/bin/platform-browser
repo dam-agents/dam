@@ -20,29 +20,19 @@ const SOCKET_DIR = join(homedir(), ".agent-browser");
 const LOCK = join(SOCKET_DIR, `${SESSION}.launch.lock`);
 const LINK_PREFIX = "platform://browser?url=";
 
-const SWAY = "/usr/bin/sway";
-const WAYVNC = "/opt/platform-vnc/bin/wayvnc";
-const VNC_PORT = "5999";
-const OUTPUT = "HEADLESS-1";
-const SCREEN = "1280x800";
+const DISPLAY = ":99";
+const X_SOCKET = "/tmp/.X11-unix/X99";
+const SCREEN = "3840x2400x24";
+const XVFB = "/usr/bin/Xvfb";
+const I3 = "/usr/bin/i3";
+const SELKIES = "/opt/selkies/bin/selkies";
+const STREAM_PORT = "5999";
 const RUNTIME_DIR = `/tmp/platform-display-${userInfo().uid}`;
-const SWAY_CONFIG = join(RUNTIME_DIR, "sway.conf");
-const X_DISPLAY_FILE = join(RUNTIME_DIR, "x-display");
-const DISPLAY_MODE_FILE = join(
-  homedir(),
-  ".local/share/platform/browser-display",
-);
+const I3_CONFIG = join(RUNTIME_DIR, "i3.conf");
 const CHROMIUM = "/opt/ms-playwright/chromium";
 const HEADLESS_SHELL = "/opt/ms-playwright/headless-shell";
 const HEADED =
-  existsSync(SWAY) && existsSync(WAYVNC) && existsSync(CHROMIUM);
-const X11 = (() => {
-  try {
-    return readFileSync(DISPLAY_MODE_FILE, "utf8").trim() === "x11";
-  } catch {
-    return false;
-  }
-})();
+  existsSync(XVFB) && existsSync(I3) && existsSync(SELKIES) && existsSync(CHROMIUM);
 
 const BASE_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"];
 const HEADED_ARGS = [
@@ -51,32 +41,13 @@ const HEADED_ARGS = [
   "--no-first-run",
   "--test-type",
   "--disable-infobars",
-  `--ozone-platform=${X11 ? "x11" : "wayland"}`,
+  "--ozone-platform=x11",
 ];
 
 const fail = (message, code = 1) => {
   process.stderr.write(`platform-browser: ${message}\n`);
   process.exit(code);
 };
-
-function waylandDisplay() {
-  try {
-    return (
-      readdirSync(RUNTIME_DIR).find((n) => /^wayland-\d+$/.test(n)) ??
-      "wayland-0"
-    );
-  } catch {
-    return "wayland-0";
-  }
-}
-
-function xDisplay() {
-  try {
-    return readFileSync(X_DISPLAY_FILE, "utf8").trim() || ":0";
-  } catch {
-    return ":0";
-  }
-}
 
 const browserEnv = () => {
   const env = Object.fromEntries(
@@ -93,15 +64,7 @@ const browserEnv = () => {
     AGENT_BROWSER_ARGS: [...BASE_ARGS, ...(HEADED ? HEADED_ARGS : [])].join(
       ",",
     ),
-    ...(HEADED
-      ? {
-          XDG_RUNTIME_DIR: RUNTIME_DIR,
-          AGENT_BROWSER_NO_XVFB: "1",
-          ...(X11
-            ? { DISPLAY: xDisplay() }
-            : { WAYLAND_DISPLAY: waylandDisplay() }),
-        }
-      : {}),
+    ...(HEADED ? { DISPLAY, AGENT_BROWSER_NO_XVFB: "1" } : {}),
   };
 };
 const BROWSER = [
@@ -184,55 +147,53 @@ const clearStaleProfileLocks = () => {
 const running = (binary) =>
   processes().some((p) => p.cmdline.split("\0")[0] === binary);
 
-const compositorEnv = () => ({
-  ...process.env,
-  XDG_RUNTIME_DIR: RUNTIME_DIR,
-  WLR_BACKENDS: "headless",
-  WLR_RENDERER: "pixman",
-  WLR_LIBINPUT_NO_DEVICES: "1",
-});
+const cmdlineHas = (...parts) =>
+  processes().some((p) => parts.every((part) => p.cmdline.includes(part)));
 
-const displayRunning = () =>
-  running(SWAY) && existsSync(join(RUNTIME_DIR, waylandDisplay()));
+const displayRunning = () => existsSync(X_SOCKET) && running(XVFB);
 
 const detached = (command, args, env = process.env) =>
   spawn(command, args, { env, detached: true, stdio: "ignore" }).unref();
 
-const swayConfig = () =>
-  [
-    "default_border none",
-    "default_floating_border none",
-    "focus_follows_mouse no",
-    "seat * hide_cursor 1",
-    `output ${OUTPUT} resolution ${SCREEN} bg #ffffff solid_color`,
-    X11 ? "xwayland force" : "xwayland disable",
-    ...(X11
-      ? [
-          'for_window [class=".*"] fullscreen enable',
-          `exec echo $DISPLAY > ${X_DISPLAY_FILE}`,
-        ]
-      : []),
-    "",
-  ].join("\n");
+const displayEnv = () => ({
+  ...process.env,
+  DISPLAY,
+  XDG_RUNTIME_DIR: RUNTIME_DIR,
+});
+
+const I3_KIOSK = [
+  "font pango:monospace 8",
+  "default_border none",
+  "default_floating_border none",
+  "focus_follows_mouse no",
+  'for_window [class=".*"] fullscreen enable',
+  "",
+].join("\n");
 
 const startDisplay = () => {
+  mkdirSync(RUNTIME_DIR, { recursive: true });
+  chmodSync(RUNTIME_DIR, 0o700);
   if (!displayRunning()) {
-    mkdirSync(RUNTIME_DIR, { recursive: true });
-    chmodSync(RUNTIME_DIR, 0o700);
-    for (const name of readdirSync(RUNTIME_DIR))
-      rmSync(join(RUNTIME_DIR, name), { force: true, recursive: true });
-    writeFileSync(SWAY_CONFIG, swayConfig());
-    detached(SWAY, ["-c", SWAY_CONFIG], compositorEnv());
+    rmSync(X_SOCKET, { force: true });
+    rmSync("/tmp/.X99-lock", { force: true });
+    detached(XVFB, [DISPLAY, "-screen", "0", SCREEN, "-nolisten", "tcp"]);
     if (!waitFor(displayRunning, 10_000))
       fail("the virtual display did not start");
-    if (X11 && !waitFor(() => existsSync(X_DISPLAY_FILE), 10_000))
-      fail("the X11 display did not start");
   }
-  if (!running(WAYVNC))
+  if (!running(I3)) {
+    writeFileSync(I3_CONFIG, I3_KIOSK);
+    detached(I3, ["-c", I3_CONFIG], displayEnv());
+  }
+  if (!cmdlineHas("selkies.__main__", `--port=${STREAM_PORT}`))
     detached(
-      WAYVNC,
-      ["--max-fps=60", "127.0.0.1", VNC_PORT],
-      { ...compositorEnv(), WAYLAND_DISPLAY: waylandDisplay() },
+      SELKIES,
+      [
+        `--port=${STREAM_PORT}`,
+        "--enable-basic-auth=false",
+        "--audio-enabled=false",
+        "--gamepad-enabled=false",
+      ],
+      displayEnv(),
     );
 };
 
@@ -314,23 +275,12 @@ if (command === "screen") {
   if (!HEADED || !(width >= 200 && height >= 200 && width <= 8192 && height <= 8192))
     usage();
   if (!displayRunning()) fail("the virtual display is not running");
-  const swaySocket = readdirSync(RUNTIME_DIR).find((n) =>
-    n.startsWith("sway-ipc."),
-  );
   const resized = spawnSync(
-    "swaymsg",
-    [
-      "-s",
-      join(RUNTIME_DIR, swaySocket ?? ""),
-      "output",
-      OUTPUT,
-      "resolution",
-      `${width - (width % 2)}x${height - (height % 2)}`,
-    ],
-    { encoding: "utf8" },
+    "xrandr",
+    ["--fb", `${width - (width % 2)}x${height - (height % 2)}`],
+    { env: displayEnv(), encoding: "utf8" },
   );
-  if (resized.status !== 0)
-    fail(`swaymsg: ${(resized.stderr || resized.stdout || "").trim()}`);
+  if (resized.status !== 0) fail(`xrandr: ${(resized.stderr ?? "").trim()}`);
   process.exit(0);
 }
 

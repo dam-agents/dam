@@ -31,7 +31,11 @@ export async function requiresConnectionAddress(
   return agent?.spec.requireConnectionAddress === true;
 }
 
+const STREAM_SOCKET_PATH =
+  /^\/api\/public\/browser-stream\/[^/]+\/api\/websockets$/;
+
 export function browserUpstreamPath(requestUrl: URL): string {
+  if (STREAM_SOCKET_PATH.test(requestUrl.pathname)) return "/api/browser?vnc=1";
   const query = new URLSearchParams();
   for (const key of FORWARDED_QUERY_KEYS) {
     const value = requestUrl.searchParams.get(key);

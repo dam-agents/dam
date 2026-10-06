@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { connect, type Socket } from "node:net";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -23,7 +22,7 @@ const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000];
 const KEYFRAME_MIN_INTERVAL_MS = 1_000;
 const ENCODER_RESTART_DELAY_MS = 1_000;
 const FPS_REPORT_MS = 5_000;
-const VNC_PORT = 5999;
+export const DISPLAY_STREAM_URL = "ws://127.0.0.1:5999/api/websockets";
 const DISPLAY_RETRY_MS = 500;
 const DISPLAY_WAIT_MS = 60_000;
 const LOW_FPS = 20;
@@ -296,7 +295,7 @@ export function createBrowserPreview(deps: {
   unresponsiveRestartMs?: number;
   retryDelaysMs?: number[];
   stopBrowser?: () => Promise<void>;
-  connectDisplay?: () => Socket;
+  displayStreamUrl?: string;
   log: (msg: string) => void;
 }): BrowserPreview {
   const commands = createCommandQueue(deps.run);
@@ -314,8 +313,7 @@ export function createBrowserPreview(deps: {
     deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
   const video = deps.video ?? screenVideo;
-  const connectDisplay =
-    deps.connectDisplay ?? (() => connect(VNC_PORT, "127.0.0.1"));
+  const displayStreamUrl = deps.displayStreamUrl ?? DISPLAY_STREAM_URL;
   const streamUrl =
     deps.streamUrl ?? ((port: number) => `ws://127.0.0.1:${port}/`);
 
@@ -720,43 +718,47 @@ export function createBrowserPreview(deps: {
   }
 
   function attachDisplay(client: WebSocket) {
-    let socket: Socket | null = null;
-    const pending: Buffer[] = [];
+    let stream: WebSocket | null = null;
+    const pending: [Buffer, boolean][] = [];
     const startedAt = Date.now();
-    client.on("message", (data: Buffer) => {
-      if (socket && !socket.connecting) socket.write(data);
-      else pending.push(data);
+    client.on("message", (data: Buffer, isBinary: boolean) => {
+      if (stream?.readyState === WebSocket.OPEN)
+        stream.send(data, { binary: isBinary });
+      else pending.push([data, isBinary]);
     });
     client.on("close", () => {
-      socket?.destroy();
-      socket = null;
+      stream?.close();
+      stream = null;
     });
     const dial = () => {
       if (client.readyState !== WebSocket.OPEN) return;
-      const s = connectDisplay();
-      let connected = false;
-      socket = s;
-      s.on("connect", () => {
-        connected = true;
-        for (const d of pending.splice(0)) s.write(d);
+      const s = new WebSocket(displayStreamUrl, { perMessageDeflate: false });
+      let opened = false;
+      stream = s;
+      s.on("open", () => {
+        opened = true;
+        for (const [d, b] of pending.splice(0)) s.send(d, { binary: b });
       });
-      s.on("data", (d: Buffer) => {
+      s.on("message", (d: Buffer, isBinary: boolean) => {
         if (client.readyState === WebSocket.OPEN)
-          client.send(d, { binary: true });
+          client.send(d, { binary: isBinary });
       });
       s.on("error", (err) => {
-        if (!connected && Date.now() - startedAt < DISPLAY_WAIT_MS) return;
+        if (!opened && Date.now() - startedAt < DISPLAY_WAIT_MS) return;
         deps.log(`display: ${err.message}`);
       });
-      s.on("close", () => {
-        if (socket !== s) return;
-        socket = null;
-        if (!connected && Date.now() - startedAt < DISPLAY_WAIT_MS) {
+      s.on("close", (code, reason) => {
+        if (stream !== s) return;
+        stream = null;
+        if (!opened && Date.now() - startedAt < DISPLAY_WAIT_MS) {
           setTimeout(dial, DISPLAY_RETRY_MS).unref?.();
           return;
         }
         if (client.readyState === WebSocket.OPEN)
-          client.close(1011, "display closed");
+          client.close(
+            code >= 3000 && code < 5000 ? code : 1011,
+            reason.toString() || "display closed",
+          );
       });
     };
     dial();

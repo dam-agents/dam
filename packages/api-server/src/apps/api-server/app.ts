@@ -171,6 +171,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+      "/api/public/browser-stream/:id/api/websockets": relayRoute(
+        relayAdmission,
+        browserRelay,
+        "browser",
+        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+      ),
       "/api/agents/:id/browser": relayRoute(
         relayAdmission,
         browserRelay,

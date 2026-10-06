@@ -578,35 +578,48 @@ describe("recovery", () => {
   });
 });
 
-describe("VNC", () => {
-  // TEST_SCENARIO: a panel in VNC mode opens a second socket with vnc=1 and speaks the VNC protocol to the virtual display's own VNC server: the runtime only pipes bytes both ways. The display comes up with the browser, so a socket that arrives first is held, with what the viewer sent, until the server answers.
-  it("pipes a vnc socket to the display, waiting for it to come up", async () => {
-    const received: Buffer[] = [];
-    const server = createTcpServer((sock) => {
-      sock.on("data", (d: Buffer) => received.push(d));
-      sock.write("RFB 003.008\n");
+describe("display stream", () => {
+  // TEST_SCENARIO: the panel's stream client opens a second socket with vnc=1 and speaks the stream server's own protocol to Selkies in the sandbox; the runtime only relays its messages, text and binary as sent. The stream server comes up with the browser, so a socket that arrives first is held, with what the client sent, until the server answers.
+  it("relays the stream socket to the display server, waiting for it to come up", async () => {
+    const received: { data: string; binary: boolean }[] = [];
+    let up: WebSocketServer | null = null;
+    const port = await new Promise<number>((resolve) => {
+      const probe = createTcpServer();
+      probe.listen(0, "127.0.0.1", () => {
+        const p = (probe.address() as { port: number }).port;
+        probe.close(() => resolve(p));
+      });
     });
-    let up = false;
-    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-    closers.push(() => new Promise<void>((r) => server.close(() => r())));
-    const port = (server.address() as { port: number }).port;
+    closers.push(
+      () => new Promise<void>((r) => (up ? up.close(() => r()) : r())),
+    );
     const stream = await fakeStream();
     const { run } = fakeBrowser(stream.port);
     const connectTo = await host(
       preview(run, {
-        connectDisplay: (): Socket => connect(up ? port : 1, "127.0.0.1"),
+        displayStreamUrl: `ws://127.0.0.1:${port}/api/websockets`,
       }),
     );
     const { ws, messages } = await connectTo("vnc=1");
-    ws.send(Buffer.from("RFB 003.008\n"));
+    ws.send("hello");
+    ws.send(Buffer.from([1, 2, 3]));
     await pause(700);
-    up = true;
-    await until(() =>
-      messages.some(
-        (m) => Buffer.isBuffer(m) && m.toString().startsWith("RFB"),
-      ),
-    );
-    await until(() => Buffer.concat(received).toString() === "RFB 003.008\n");
+    up = new WebSocketServer({ port, host: "127.0.0.1" });
+    up.on("connection", (sock) => {
+      sock.on("message", (d: Buffer, binary: boolean) =>
+        received.push({ data: d.toString("hex"), binary }),
+      );
+      sock.send("MODE websockets");
+      sock.send(Buffer.from([9, 9]));
+    });
+    await until(() => messages.length >= 2);
+    expect(messages[0]).toBe("MODE websockets");
+    expect(Buffer.isBuffer(messages[1])).toBe(true);
+    await until(() => received.length === 2);
+    expect(received).toEqual([
+      { data: Buffer.from("hello").toString("hex"), binary: false },
+      { data: "010203", binary: true },
+    ]);
   });
 });
 

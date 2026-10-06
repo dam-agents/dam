@@ -83,6 +83,17 @@ describe("browserUpstreamPath", () => {
       "/api/browser?vnc=1",
     );
   });
+
+  // TEST_SCENARIO: the stream client the panel frames opens its socket next to the page it was served from, /api/public/browser-stream/<agent>/api/websockets. That socket carries the stream server's own protocol, so it goes to the runtime's display relay, never to the browser's control socket; the user's token, which the client puts in the query, does not travel on.
+  it("sends the stream client's socket to the display relay", () => {
+    expect(
+      browserUpstreamPath(
+        new URL(
+          "http://x/api/public/browser-stream/agent-1/api/websockets?token=secret&role=viewer",
+        ),
+      ),
+    ).toBe("/api/browser?vnc=1");
+  });
 });
 
 describe("requiresConnectionAddress", () => {

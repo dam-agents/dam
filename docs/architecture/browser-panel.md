@@ -18,9 +18,11 @@ The cost is fidelity: screen updates are compressed images, and each input takes
 
 ## The stream
 
-The shared browser runs headed, in kiosk mode and with no bar of its own, on a headless Wayland display in the sandbox — sway, run headless — the image's full Chromium as a native Wayland client, launched by `platform-browser` for the panel and the agent alike. The browser fills the screen and the screen is sized to the panel, so the page lays out at the panel's size with no emulated viewport; `platform-browser` refuses the agent's `set viewport` for that reason.
+The shared browser runs headed, in kiosk mode and with no bar of its own, on a virtual X display in the sandbox — Xvfb, with i3 keeping the one window full-screen — the image's full Chromium, launched by `platform-browser` for the panel and the agent alike. The browser fills the screen and the screen is sized to the panel, so the page lays out at the panel's size with no emulated viewport; `platform-browser` refuses the agent's `set viewport` for that reason.
 
-The panel shows that display over **VNC**: wayvnc serves it on the sandbox's loopback, noVNC in the panel speaks the VNC protocol to it through a second relay socket (`vnc=1`), and agent-runtime only pipes the bytes. The viewer asks for each update, so a slow link gets fewer updates rather than a growing queue; text arrives lossless; input reaches Chromium as ordinary pointer and keyboard events from the compositor, and noVNC sizes the screen to the panel itself. Every piece is permissively licensed. Debian's wayvnc and neatvnc link Debian's ffmpeg, whose codecs are GPL, so the image builds both from pinned releases with H.264 off (`packages/agents/base/vnc`), with one fix: wayvnc applied a client's resize at a refresh rate of 0, which stopped the headless output's frames.
+The panel shows that display through **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays: it captures the X screen, encodes it as H.264 and sends it over a WebSocket to its web client, which decodes it with WebCodecs and sends the user's pointer and keys back as X input. The web client is built into the api-server image from a pinned commit and served at `/api/public/browser-stream/<agent>/`; the panel frames it from the same origin. Only its socket, `.../api/websockets`, reaches the agent: through the browser relay, with the usual admission, to agent-runtime, which relays it to Selkies on the sandbox's loopback. No code from the sandbox runs on the platform's origin. The client asks Selkies for the panel's size, and Selkies resizes the display to it.
+
+Every piece is permissively or weakly licensed — Selkies and its pixelflux encoder MPL-2.0, Xvfb MIT, i3 BSD — and none is GPL. pixelflux's published wheels link x264 and x265 (GPL), so the image builds it from source without them (`packages/agents/base/selkies`): Cisco's OpenH264 encodes H.264, kvazaar H.265, and the build fails if anything links x264, x265 or FFmpeg.
 
 - **Coordinates.** The screen follows the size of the panel in the focused tab, at a pixel ratio of 1. The agent's screenshots are in CSS pixels, so a screenshot pixel is the CSS pixel its mouse commands take, whatever the user's screen.
 - **What the runtime records.** Step timings, launches and restarts go to a log file in the agent's home, so a misbehaving panel can be read after the fact.
@@ -46,7 +48,7 @@ sequenceDiagram
   RT->>AB: launch the session (persistent profile), read its stream port
   RT->>AB: WebSocket to the stream server
   AB-->>UI: address updates
-  UI->>RT: WebSocket vnc=1 (through the relay), piped to wayvnc
+  UI->>RT: stream client's WebSocket (through the relay), relayed to Selkies
   UI->>AB: mouse, keyboard, wheel input
   UI->>RT: navigate / reload / clear browser data
 ```

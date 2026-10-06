@@ -3,9 +3,10 @@
 # every build otherwise. They go onto the root config's base_image_debian.
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, sway and xwayland (the browser
-# panel's headless display, all permissively licensed) and the libraries of
-# the panel's VNC server, built in base/vnc, and from
+# libnss3-tools for Chromium's trust store, xvfb, i3-wm and x11-xserver-utils
+# (the browser panel's display, its kiosk window manager and the xrandr
+# Selkies resizes it with) and the codec libraries of the GPL-free pixelflux
+# built in base/selkies, and from
 # libasound2t64 on, what Playwright lists for its Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
@@ -24,11 +25,16 @@
 "apt:procps" = "latest"
 "apt:unzip" = "latest"
 "apt:xz-utils" = "latest"
-"apt:sway" = "latest"
-"apt:xwayland" = "latest"
-"apt:libaml0t64" = "latest"
-"apt:libjansson4" = "latest"
-"apt:libturbojpeg0" = "latest"
+"apt:xvfb" = "latest"
+"apt:i3-wm" = "latest"
+"apt:x11-xserver-utils" = "latest"
+"apt:libvpx9" = "latest"
+"apt:libsvtav1enc2" = "latest"
+"apt:libdav1d7" = "latest"
+"apt:libde265-0" = "latest"
+"apt:libgbm1" = "latest"
+"apt:libpixman-1-0" = "latest"
+"apt:libxkbcommon0" = "latest"
 "apt:zip" = "latest"
 "apt:libasound2t64" = "latest"
 "apt:libatk-bridge2.0-0t64" = "latest"

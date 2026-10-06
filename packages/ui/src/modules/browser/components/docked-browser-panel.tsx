@@ -37,7 +37,7 @@ import {
   modifiers,
   mouseButton,
 } from "../lib/stream.js";
-import { VncView } from "./vnc-view.js";
+import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
 const SHOW_STATS_KEY = "platform.browserPanel.showStats";
@@ -323,7 +323,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
       )}
 
       <div className="relative min-h-0 flex-1 overflow-hidden overscroll-none bg-muted/30">
-        {vnc && <VncView agentId={agentId} agentName={agentName} />}
+        {vnc && <StreamView agentId={agentId} agentName={agentName} />}
         <canvas
           ref={canvasRef}
           hidden={vnc}
