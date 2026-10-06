@@ -245,12 +245,13 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). `requests.memory` is the floor: the
-    # controller raises the running pod's memory request, in place, to the
-    # memory of the owner's machines that should be running plus
-    # `reserveMiB`, up to the limit, and lowers it again as they stop — so
-    # the scheduler sees what the runner has committed and an idle owner's
-    # headroom stays the node's to lend. Set it below the limit for that to
+    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # guest measurably uses plus `headroomMiB`, never above its size, so an
+    # owner can run more machines than their sizes add up to; near the limit
+    # the controller hibernates the owner's idle agents. `requests.memory` is
+    # the floor: the controller keeps the running pod's memory request, in
+    # place, at that count plus `reserveMiB`, up to the limit, so the
+    # scheduler reserves what guests use. Set it below the limit for that to
     # happen; with no request Kubernetes uses the limit and nothing moves.
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
@@ -260,6 +261,9 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # Memory each running machine is counted at beyond what it was last
+    # measured using, for its guest to grow into before the controller acts.
+    headroomMiB: 256
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own

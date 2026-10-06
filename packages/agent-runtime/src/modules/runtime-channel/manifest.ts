@@ -28,6 +28,9 @@ export const modelDiscoverySpec = z.object({
   shape: z
     .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
     .optional(),
+  namePrefix: z.string().min(1).optional(),
+  lowercaseNames: z.boolean().optional(),
+  extendsCatalog: z.boolean().optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
 

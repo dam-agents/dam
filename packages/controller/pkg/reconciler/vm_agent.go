@@ -58,6 +58,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	lock := r.ownerLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
+	r.vmRunning.Store(name, running)
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)

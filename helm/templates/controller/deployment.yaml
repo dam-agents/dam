@@ -82,7 +82,7 @@ spec:
                   "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
-                  "reserveMiB" $r.reserveMiB "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
+                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)

@@ -225,7 +225,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
-		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
@@ -314,7 +314,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	agent.Labels[envoyOwnerLabel] = testOwner
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
-		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"

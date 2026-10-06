@@ -276,6 +276,26 @@ impl Runtime for Smolvm {
     fn nests(&self) -> bool {
         self.nested
     }
+
+    fn resident_mib(&self, id: &str) -> Option<i32> {
+        let record = self.record(id).ok()??;
+        if !record.is_process_alive() {
+            return None;
+        }
+        resident_mib(&self.proc_root, record.pid?)
+    }
+}
+
+fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
+    let status = std::fs::read_to_string(proc_root.join(pid.to_string()).join("status")).ok()?;
+    let kib: i64 = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    i32::try_from(kib >> 10).ok()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.

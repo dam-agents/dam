@@ -672,6 +672,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
+							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
 						}, nestedRunnerArgs(spec)...),
