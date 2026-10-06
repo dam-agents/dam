@@ -170,7 +170,7 @@ export function addressUrl(raw: string): string | null {
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
-const SCALE_MAX = 2;
+const SCALE_MAX = 1;
 
 export function viewportFor(
   width: number,
