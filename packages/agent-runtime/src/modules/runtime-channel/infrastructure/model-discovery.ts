@@ -43,9 +43,9 @@ const DISCOVERY_ATTEMPTS = 2;
 
 const CONVERSATIONAL_MODES = new Set(["chat", "completion", "responses"]);
 
-function discoveryUrl(spec: ModelDiscoverySpec, base: string): string {
+function discoveryUrl(listing: { path?: string }, base: string): string {
   const trimmed = base.replace(/\/+$/, "");
-  if (spec.path) return `${trimmed}${spec.path}`;
+  if (listing.path) return `${trimmed}${listing.path}`;
   const root = /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
   return `${root}/models`;
 }
@@ -100,16 +100,13 @@ export function createModelDiscovery(deps: {
   fetchImpl?: typeof globalThis.fetch;
 }): ModelDiscovery {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
-  return async (sources, env) => {
-    if (discoverySources(sources).length === 0) {
-      return { status: "not-configured" };
-    }
-    const selected = selectDiscoverySource(sources, env);
-    if (!selected) return { status: "not-configured" };
-    const { spec, via, base } = selected;
 
-    const shape = spec.shape ?? "openai-models";
-    const url = discoveryUrl(spec, base);
+  const list = async (
+    url: string,
+    shape: ModelListShape,
+    spec: ModelDiscoverySpec,
+    via: string,
+  ): Promise<ModelDiscoveryOutcome | "refused"> => {
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++) {
       const last = attempt === DISCOVERY_ATTEMPTS;
       try {
@@ -119,11 +116,11 @@ export function createModelDiscovery(deps: {
         });
         if (!res.ok) {
           deps.log(`[harness-config] model discovery ${url} → ${res.status}`);
-          return { status: "unavailable" };
+          return "refused";
         }
         const body = (await res.json()) as Record<string, unknown>;
-        const list = body[listReaders[shape].listKey];
-        const data = Array.isArray(list) ? list : null;
+        const raw = body[listReaders[shape].listKey];
+        const data = Array.isArray(raw) ? raw : null;
         if (!data) return { status: "unavailable" };
         const ids = [
           ...new Set(
@@ -150,6 +147,26 @@ export function createModelDiscovery(deps: {
         );
         if (last) return { status: "unavailable" };
       }
+    }
+    return { status: "unavailable" };
+  };
+
+  return async (sources, env) => {
+    if (discoverySources(sources).length === 0) {
+      return { status: "not-configured" };
+    }
+    const selected = selectDiscoverySource(sources, env);
+    if (!selected) return { status: "not-configured" };
+    const { spec, via, base } = selected;
+
+    for (const listing of spec.fallback ? [spec, spec.fallback] : [spec]) {
+      const outcome = await list(
+        discoveryUrl(listing, base),
+        listing.shape ?? "openai-models",
+        spec,
+        via,
+      );
+      if (outcome !== "refused") return outcome;
     }
     return { status: "unavailable" };
   };
