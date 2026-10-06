@@ -122,7 +122,7 @@ Called on boot, on wake from hibernation, and on any agent-side reconnect. It ne
 
 The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface). A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; before its first hello an agent is unknown, not outdated, and is polled. Each claim gates both the UI surfaces that read it and the platform's pod-facing streams. Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
-The returned `events` array is always empty; catch-up rides the worker's `applyState`.
+An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, or its image binds its contribution drivers differently from when it applied. The platform then re-delivers the whole snapshot to every driver.
 
 ```mermaid
 sequenceDiagram
@@ -131,7 +131,7 @@ sequenceDiagram
   participant HS as harness-API-server
   participant PG as Postgres
 
-  RT->>HS: runtime.v1.hello (lastAppliedVersion, lastAppliedHash, capabilities)
+  RT->>HS: runtime.v1.hello (applied cursor, capabilities)
   HS->>PG: compare reported cursor with outbox version
   HS->>HS: enqueue worker dispatch if behind
   HS-->>RT: events: []
@@ -139,7 +139,7 @@ sequenceDiagram
   RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
-`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows.
+`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response.
 
 ### Per-kind event handlers (agent-side)
 
@@ -171,7 +171,7 @@ sequenceDiagram
   RT->>RT: reconcile contributions
   RT->>RT: per-kind handler for E1.kind — does the work, records E1's run in the local state store
   RT-->>WK: appliedVersion=V, appliedHash
-  WK->>PG: UPDATE runtime_events SET dispatched_at = now() where version up to V AND dispatched_at IS NULL
+  WK->>PG: stamp the undispatched events up to V dispatched
   Note over WK: Next dispatch state-builder excludes E1
 ```
 
@@ -336,7 +336,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 | Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
 | Postgres `runtime_state_outbox` | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads. |
 | Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives. |
-| Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
+| Runtime-state file on the agent PVC | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
@@ -348,7 +348,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 - **One agent's delivery never waits on another's.** Every shared stage is either per-agent (the deduplication key, the outbox row lock, the agent-runtime's serialized apply, the connection to the pod) or held only for milliseconds (Postgres reads, the job fetch). The only long hold is the HTTP call itself, bounded by its deadline and by one active job per key, and the worker runs far more of those concurrently than agents can occupy. A wedged agent slows only its own deliveries.
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path for a running agent and `hello` for one that wakes.
-- **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them. Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
+- **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them. Drivers tolerate repeated apply — a reconnect's replay, or the full re-apply an image that rebinds them asks for — and the agent rejects strictly older pushes, so neither regresses state. The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, and the event report. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).

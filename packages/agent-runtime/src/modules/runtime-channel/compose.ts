@@ -18,6 +18,7 @@ import {
   type RuntimeManifest,
 } from "./manifest.js";
 import { createStateStore } from "./state-store.js";
+import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
@@ -86,12 +87,17 @@ export async function composeRuntimeChannel(
   };
 
   const { manifest, harnessClient } = opts;
-  const stateStore = createStateStore(opts.stateBackend, opts.envReader.ready);
+  const resolved = resolveDrivers(manifest);
+  const contributionBindings = contributionDrivers(resolved);
+  const stateStore = createStateStore(opts.stateBackend, {
+    envReady: opts.envReader.ready,
+    bindingsFingerprint: bindingsFingerprint(contributionBindings),
+    log,
+  });
   const triggerStateStore = createTriggerStateStore(
     join(opts.agentHome, ".platform", "trigger"),
   );
 
-  const resolved = resolveDrivers(manifest);
   const env: ContextEnv = {
     agentHome: opts.agentHome,
     pluginStateRoot: pluginStateRoot(opts.agentHome),
@@ -146,7 +152,6 @@ export async function composeRuntimeChannel(
 
   await loadExtensions(manifest.extensions?.impls ?? [], registry);
 
-  const contributionBindings = contributionDrivers(resolved);
   const dispatcher = createDispatcher({
     drivers: contributionBindings,
     registry,
