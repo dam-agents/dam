@@ -200,7 +200,7 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
     "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=3",
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=0;BYMONTH=2;BYMONTHDAY=30",
   ])("answers null quickly for %s, which never fires", (rrule) => {
-    const started = Date.now();
+    const started = process.cpuUsage();
     const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
     expect(
       nextFireAt(
@@ -209,7 +209,8 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
       ),
     ).toBeNull();
     expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
-    expect(Date.now() - started).toBeLessThan(2000);
+    const { user, system } = process.cpuUsage(started);
+    expect((user + system) / 1000).toBeLessThan(2000);
   });
 });
 
@@ -225,12 +226,13 @@ describe("nextFire (bounded work)", () => {
       [],
     ],
   ])("answers %s in %s quickly", (rrule, timezone, quiet) => {
-    const started = Date.now();
+    const started = process.cpuUsage();
     nextFire(
       rruleSpec(rrule, timezone, quiet),
       new Date("2026-10-01T08:47:13Z"),
     );
-    expect(Date.now() - started).toBeLessThan(5000);
+    const { user, system } = process.cpuUsage(started);
+    expect((user + system) / 1000).toBeLessThan(5000);
   });
 
   // TEST_SCENARIO: a quiet window can end at a wall time the clocks skip or repeat, so the search resumes at the first moment after the window rather than an hour past it or back inside it.
