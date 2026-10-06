@@ -613,7 +613,8 @@ const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
  * older than the window; together they give a reply its position counted from
  * the thread's first reply, which does not change as the thread grows, unlike a
  * total. The count is the reply count Slack puts on the opener, less what sits
- * at or after the window. Where it disagrees with Slack's own paging signal it
+ * at or after the window, both taken from one Slack response so a reply posted
+ * between two reads cannot shift it. Where it disagrees with Slack's own paging signal it
  * is dropped, because a reply number shown wrong misleads more than none. The
  * cursor reads the window just before this one.
  */
@@ -635,7 +636,7 @@ async function countRepliesFrom(
     teamId: SlackWorkspace;
     from: string;
   },
-): Promise<number | null> {
+): Promise<{ newer: number; total: number | undefined } | null> {
   const read = await gateway.getThreadReplies({
     channel: args.channel,
     threadTs: args.threadTs,
@@ -645,7 +646,11 @@ async function countRepliesFrom(
     inclusive: true,
   });
   if (read.hasMore) return null;
-  return read.messages.filter((message) => message.ts !== args.threadTs).length;
+  const opener = read.messages.find((message) => message.ts === args.threadTs);
+  return {
+    newer: read.messages.filter((message) => message !== opener).length,
+    total: opener?.replyCount,
+  };
 }
 
 async function readThreadWindow(
@@ -671,14 +676,13 @@ async function readThreadWindow(
     replies.map((message, i) => [message, i + 1]),
   );
   if (opener !== null) offsets.set(opener, 0);
-  const newer =
+  const after =
     args.before === undefined
-      ? 0
+      ? { newer: 0, total: opener?.replyCount }
       : await countRepliesFrom(gateway, { ...args, from: args.before });
-  const total = opener?.replyCount;
   const counted =
-    total !== undefined && newer !== null
-      ? total - newer - replies.length
+    after !== null && after.total !== undefined
+      ? after.total - after.newer - replies.length
       : null;
   const earliest = replies[0]?.ts;
   return {
