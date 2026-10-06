@@ -60,7 +60,7 @@ pack_tar() {
 eval "owns=(${usage_own:-})" "own_dirs=(${usage_own_dir:-})"
 mode=(${usage_mode:+--mode="$usage_mode"})
 layer() {
-  local t="$work/layer.tar" h spec p at=$3 excl=()
+  local t="$work/layer.tar" h spec p at=${3:-} excl=()
   [ "${4:-}" != own ] || for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do excl+=("--exclude=${spec#*=}"); done
   pack_tar "$2" --anchored ${excl[@]+"${excl[@]}"} -C "$1" -cf "$t" $(ls -A "$1")
   if [ "${4:-}" = own ]; then
