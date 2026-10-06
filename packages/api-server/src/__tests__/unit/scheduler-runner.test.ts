@@ -132,6 +132,7 @@ function makeDeps(opts?: {
     async stampFire(_id: string, result: string) {
       stampedFires.push(result);
     },
+    async stampResult() {},
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);
     },

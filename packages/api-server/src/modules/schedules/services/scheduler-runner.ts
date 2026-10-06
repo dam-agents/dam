@@ -399,7 +399,7 @@ export function createSchedulerRunner(
       if (!sched) return;
       const verdict = VERDICT[input.outcome];
       if (input.stage === "run" && input.outcome === "failed")
-        await deps.repo.stampFire(
+        await deps.repo.stampResult(
           input.scheduleId,
           input.detail ?? "the run could not start",
         );

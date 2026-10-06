@@ -13,7 +13,18 @@ export interface TriggerSessionDriver {
     platformMeta?: PlatformSessionMeta;
     unattended?: boolean;
     model?: string;
-  }): Promise<{ sessionId: string }>;
+  }): Promise<{ sessionId: string; openedOn: string | null }>;
+}
+
+interface OpenedSession {
+  configOptions?: { id?: string; currentValue?: unknown }[];
+  models?: { currentModelId?: string };
+}
+
+function openedModel(res: OpenedSession | null | undefined): string | null {
+  const option = res?.configOptions?.find((o) => o.id === "model");
+  if (typeof option?.currentValue === "string") return option.currentValue;
+  return res?.models?.currentModelId ?? null;
 }
 
 export class SessionModelError extends Error {
@@ -55,24 +66,26 @@ export function createTriggerSessionDriver(deps: {
 
         const mcp = (mcpServers ?? []) as unknown[];
         let sessionId: string;
+        let openedOn: string | null;
 
         if (resumeSessionId) {
-          await caller.request("session/resume", {
+          const res = await caller.request<OpenedSession>("session/resume", {
             sessionId: resumeSessionId,
             cwd: ".",
             mcpServers: mcp,
           });
           sessionId = resumeSessionId;
+          openedOn = openedModel(res);
         } else {
-          const res = await caller.request<{ sessionId: string }>(
-            "session/new",
-            {
-              cwd: ".",
-              mcpServers: mcp,
-              ...(platformMeta && { _meta: { platform: platformMeta } }),
-            },
-          );
+          const res = await caller.request<
+            OpenedSession & { sessionId: string }
+          >("session/new", {
+            cwd: ".",
+            mcpServers: mcp,
+            ...(platformMeta && { _meta: { platform: platformMeta } }),
+          });
           sessionId = res.sessionId;
+          openedOn = openedModel(res);
         }
 
         if (model) await setSessionModel(caller, sessionId, model);
@@ -85,7 +98,7 @@ export function createTriggerSessionDriver(deps: {
           }),
         });
 
-        return { sessionId };
+        return { sessionId, openedOn };
       } finally {
         caller.close();
       }

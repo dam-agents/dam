@@ -42,6 +42,7 @@ function withContext(task: string, context: string | undefined): string {
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
+  configuredModel: () => Promise<string | null>;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter: EventReporter;
@@ -86,23 +87,27 @@ export function createTriggerPlugin(deps: {
       return;
     }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
-      const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
-      if (prior) {
-        await deps.driver.start({
-          task,
-          mcpServers: payload.mcpServers,
-          resumeSessionId: prior,
-          model: payload.model,
-        });
-        return;
-      }
+      const { scheduleId } = payload;
+      const prior = deps.stateStore.getSessionForSchedule(scheduleId);
+      const beforeSwitch = prior
+        ? deps.stateStore.getModelBeforeSwitch(scheduleId)
+        : undefined;
+      const model =
+        payload.model ??
+        (beforeSwitch
+          ? ((await deps.configuredModel()) ?? beforeSwitch)
+          : undefined);
       const res = await deps.driver.start({
         task,
         mcpServers: payload.mcpServers,
-        platformMeta,
-        model: payload.model,
+        ...(prior ? { resumeSessionId: prior } : { platformMeta }),
+        model,
       });
-      deps.stateStore.setSessionForSchedule(payload.scheduleId, res.sessionId);
+      if (!prior)
+        deps.stateStore.setSessionForSchedule(scheduleId, res.sessionId);
+      if (!payload.model) deps.stateStore.clearModelBeforeSwitch(scheduleId);
+      else if (!beforeSwitch && res.openedOn)
+        deps.stateStore.setModelBeforeSwitch(scheduleId, res.openedOn);
       return;
     }
     await deps.driver.start({

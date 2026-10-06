@@ -33,7 +33,10 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
         resumed.push(resumeSessionId);
         onResume(resumeSessionId);
       }
-      return Promise.resolve({ sessionId: resumeSessionId ?? "fresh" });
+      return Promise.resolve({
+        sessionId: resumeSessionId ?? "fresh",
+        openedOn: null,
+      });
     },
   };
   return {

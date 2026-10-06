@@ -21,7 +21,7 @@ function fakeDriver() {
   const driver: TriggerSessionDriver = {
     async start(opts) {
       calls.push(opts);
-      return { sessionId: "new-session" };
+      return { sessionId: "new-session", openedOn: null };
     },
   };
   return { driver, calls };
@@ -46,6 +46,7 @@ const handlerFor = (
 ) =>
   createTriggerPlugin({
     runPrecheck: allows,
+    configuredModel: async () => null,
     log: () => {},
     reporter: { report: async () => {} },
     ...deps,
@@ -58,6 +59,9 @@ describe("trigger plugin", () => {
       getSessionForSchedule: () => undefined,
       setSessionForSchedule: vi.fn(),
       clearSessionForSchedule: vi.fn(),
+      getModelBeforeSwitch: () => undefined,
+      setModelBeforeSwitch: vi.fn(),
+      clearModelBeforeSwitch: vi.fn(),
     };
     await handlerFor({ driver, stateStore }, "trigger")(
       { scheduleId: "sch-1", task: "do it", sessionMode: "fresh" },
@@ -74,6 +78,9 @@ describe("trigger plugin", () => {
       getSessionForSchedule: () => undefined,
       setSessionForSchedule,
       clearSessionForSchedule: vi.fn(),
+      getModelBeforeSwitch: () => undefined,
+      setModelBeforeSwitch: vi.fn(),
+      clearModelBeforeSwitch: vi.fn(),
     };
     await handlerFor({ driver, stateStore }, "trigger")(
       { scheduleId: "sch-2", task: "do it", sessionMode: "continuous" },
@@ -89,6 +96,9 @@ describe("trigger plugin", () => {
       getSessionForSchedule: () => "prior-session",
       setSessionForSchedule: vi.fn(),
       clearSessionForSchedule: vi.fn(),
+      getModelBeforeSwitch: () => undefined,
+      setModelBeforeSwitch: vi.fn(),
+      clearModelBeforeSwitch: vi.fn(),
     };
     await handlerFor({ driver, stateStore }, "trigger")(
       { scheduleId: "sch-3", task: "do it", sessionMode: "continuous" },
@@ -105,6 +115,9 @@ describe("trigger plugin", () => {
       getSessionForSchedule: () => undefined,
       setSessionForSchedule: vi.fn(),
       clearSessionForSchedule,
+      getModelBeforeSwitch: () => undefined,
+      setModelBeforeSwitch: vi.fn(),
+      clearModelBeforeSwitch: vi.fn(),
     };
     await handlerFor({ driver, stateStore }, "schedule-reset")(
       { scheduleId: "sch-9" },
@@ -119,6 +132,9 @@ describe("trigger plugin precheck", () => {
     getSessionForSchedule: () => undefined,
     setSessionForSchedule: vi.fn(),
     clearSessionForSchedule: vi.fn(),
+    getModelBeforeSwitch: () => undefined,
+    setModelBeforeSwitch: vi.fn(),
+    clearModelBeforeSwitch: vi.fn(),
   });
 
   const recorder = () => {
