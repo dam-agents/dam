@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-05
+Last verified: 2026-10-06
 
 ## Overview
 
@@ -18,8 +18,10 @@ The cost is fidelity: frames are compressed images, and each input takes one rou
 
 ## The stream
 
+The shared browser runs headed, in kiosk mode, on a virtual display in the sandbox with a minimal window manager — the image's full Chromium, launched by `platform-browser` for the panel and the agent alike. A panel whose browser decodes H.264 gets **video**: agent-runtime captures the page's region of that display with ffmpeg at a steady 15 frames a second and encodes it for low latency, so a still page costs almost nothing, motion a fraction of the JPEG stream, and a page never sits stale behind the encoder. The page's offset on the display, below the bar Chrome for Testing draws, is measured by matching a screenshot against the capture. A resize restarts the encoder with a fresh keyframe, and a viewer that falls behind skips frames until one. Otherwise — no decoder, a decoder error, an image without the display — the panel gets the **JPEG** stream agent-browser's screencast produces:
+
 - **Sharpness and coordinates.** The viewport follows the size of the panel in the focused tab, at a pixel ratio of one, whatever the user's zoom or screen, so a pixel in the agent's screenshot is the CSS pixel its mouse commands take. Frames are JPEG at a quality chosen for legible text. A still page sends nothing; motion is where the bandwidth goes.
-- **Flow control.** The panel acknowledges each frame once it is drawn, and the stream sends the next only then, always the newest. A slow link or a busy browser drops frames rather than queueing them, so latency stays flat instead of growing behind a backlog.
+- **Flow control (JPEG).** The panel acknowledges each frame once it is drawn, and the stream sends the next only then, always the newest. A slow link or a busy browser drops frames rather than queueing them, so latency stays flat instead of growing behind a backlog.
 - **Wire shape.** agent-browser sends frames as JSON with the image in base64; agent-runtime re-sends each as one binary message, a small header and the raw JPEG, so the user's browser neither downloads the base64 nor decodes it. Pointer moves are coalesced to one per display frame on the way in.
 
 ## The path
