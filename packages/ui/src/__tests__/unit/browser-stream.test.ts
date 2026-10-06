@@ -10,6 +10,7 @@ import {
   mouseButton,
   parseBinaryFrame,
   parseStreamMessage,
+  viewportDiffers,
   viewportFor,
 } from "../../modules/browser/lib/stream.js";
 
@@ -190,5 +191,23 @@ describe("viewportFor", () => {
     expect(viewportFor(812.4, 633.6)).toEqual({ width: 812, height: 634 });
     expect(viewportFor(0, 50)).toEqual({ width: 200, height: 200 });
     expect(viewportFor(9000, 700)).toEqual({ width: 4096, height: 700 });
+  });
+});
+
+describe("viewportDiffers", () => {
+  // TEST_SCENARIO: a browser launched before the panel connected, or by the agent afterwards, starts at agent-browser's default 1280x720. Every frame says its viewport size, so the panel notices the mismatch and sends its own size again; a one-pixel rounding difference is not a mismatch.
+  test("spots a viewport that does not match the panel", () => {
+    expect(
+      viewportDiffers(
+        { deviceWidth: 1280, deviceHeight: 720 },
+        { width: 560, height: 1063 },
+      ),
+    ).toBe(true);
+    expect(
+      viewportDiffers(
+        { deviceWidth: 560, deviceHeight: 1063 },
+        { width: 561, height: 1063 },
+      ),
+    ).toBe(false);
   });
 });

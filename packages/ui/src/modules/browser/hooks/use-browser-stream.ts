@@ -6,6 +6,7 @@ import {
   type FrameMetadata,
   parseBinaryFrame,
   parseStreamMessage,
+  viewportDiffers,
   viewportFor,
 } from "../lib/stream.js";
 
@@ -13,6 +14,7 @@ const LIVE_FPS = 15;
 const HIDDEN_FPS = 1;
 const STATS_INTERVAL_MS = 500;
 const RESIZE_DEBOUNCE_MS = 250;
+const VIEWPORT_RESEND_MS = 1_000;
 const CLEARED_CLOSE_CODE = 1012;
 const RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_ATTEMPTS = 3;
@@ -79,13 +81,24 @@ export function useBrowserStream(
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    const sendViewport = () => {
+    let viewportSentAt = 0;
+    const wantedViewport = () => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      send({
-        type: "resize",
-        ...viewportFor(canvas.clientWidth, canvas.clientHeight),
-      });
+      if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0)
+        return null;
+      return viewportFor(canvas.clientWidth, canvas.clientHeight);
+    };
+    const sendViewport = () => {
+      const wanted = wantedViewport();
+      if (!wanted) return;
+      viewportSentAt = performance.now();
+      send({ type: "resize", ...wanted });
+    };
+    const snapViewport = (device: FrameMetadata) => {
+      const wanted = wantedViewport();
+      if (!wanted || !viewportDiffers(device, wanted)) return;
+      if (performance.now() - viewportSentAt < VIEWPORT_RESEND_MS) return;
+      sendViewport();
     };
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -126,6 +139,7 @@ export function useBrowserStream(
           failedAttemptsRef.current = 0;
           meterRef.current.frame(performance.now(), frame.jpeg.size);
           deviceRef.current = frame.metadata;
+          snapViewport(frame.metadata);
           void draw(frame.jpeg).finally(() =>
             send({ type: "ack", seq: frame.seq }),
           );

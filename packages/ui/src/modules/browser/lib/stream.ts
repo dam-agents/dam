@@ -179,6 +179,16 @@ export function viewportFor(
   return { width: side(width), height: side(height) };
 }
 
+export function viewportDiffers(
+  device: FrameMetadata,
+  wanted: { width: number; height: number },
+): boolean {
+  return (
+    Math.abs(device.deviceWidth - wanted.width) > 1 ||
+    Math.abs(device.deviceHeight - wanted.height) > 1
+  );
+}
+
 export interface BinaryFrame {
   seq: number;
   metadata: FrameMetadata;
