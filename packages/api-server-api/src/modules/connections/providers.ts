@@ -48,12 +48,15 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
 }
 
 export function curveBenderEnvMappings(): EnvMapping[] {
-  return liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
-    MODEL: "rits/zai-org/glm-5-3",
-    CONTEXT_WINDOW: "262144",
-    MAX_TOKENS: "32768",
-    REASONING: "1",
-  });
+  return [
+    ...liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
+      MODEL: "rits/zai-org/glm-5-3",
+      CONTEXT_WINDOW: "262144",
+      MAX_TOKENS: "32768",
+      REASONING: "1",
+    }),
+    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
+  ];
 }
 
 export function openaiEnvMappings(): EnvMapping[] {

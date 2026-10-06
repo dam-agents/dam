@@ -22,7 +22,6 @@ Audit the current repo's `.claude/settings.json` and `CLAUDE.md` against team st
 
 ## Checklist
 
-- [ ] **0. Self-update** — Run: `npx skills add https://github.com/apocohq/skills --skill align-repo -a claude-code -y`. If updated, tell the user: _"align-repo was updated. Please start a new session and re-run `/align-repo` to use the latest version."_ **Stop — do not continue with outdated instructions.**
 - [ ] **1. Gather state** — Read `.claude/settings.json`, `CLAUDE.md`, and check for `.claude/settings.local.json` (note existence, don't modify). If `.claude/settings.json` doesn't exist, ask if you should create it. If `CLAUDE.md` doesn't exist, ask if you should create it.
 - [ ] **2. Attribution config** — Check `.claude/settings.json` for the expected `attribution` block (see Reference A).
 - [ ] **3. Allowed tools** — Check `allowedTools` as a set (see Reference B). Report missing entries and flag extra entries (don't remove extras — they may be project-specific).

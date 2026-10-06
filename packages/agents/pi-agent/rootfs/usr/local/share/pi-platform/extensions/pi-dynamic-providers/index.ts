@@ -28,6 +28,10 @@ type ConfigState = {
 const BEDROCK_PROVIDER = "amazon-bedrock";
 const BEDROCK_API = "bedrock-converse-stream";
 const BUILTIN_PROVIDERS_MODULE: string = "@earendil-works/pi-ai/providers/all";
+const OPENAI_COMPLETIONS_MODULE: string = "@earendil-works/pi-ai/api/openai-completions";
+const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"];
+
+type StreamSimple = NonNullable<ProviderConfig["streamSimple"]>;
 
 const SPECS: ProviderSpec[] = [
 	{ name: "rits", envPrefix: "RITS" },
@@ -83,7 +87,8 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 		models: models.map((m) => buildModelConfig(spec.envPrefix, m)),
 	};
 
-	pi.registerProvider(spec.name, provider);
+	const streamSimple = await loadReasoningFirstStream();
+	pi.registerProvider(spec.name, streamSimple ? { ...provider, streamSimple } : provider);
 	state.models.providers[spec.name] = provider;
 	state.auth[spec.name] = { type: "api_key", key: apiKey };
 
@@ -92,6 +97,56 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	const requestedLower = requestedModel?.toLowerCase();
 	const defaultModel = models.find((m) => m.id.toLowerCase() === requestedLower)?.id ?? models[0].id;
 	return { name: spec.name, model: defaultModel };
+}
+
+async function loadReasoningFirstStream(): Promise<StreamSimple | undefined> {
+	try {
+		const { streamSimple } = (await import(OPENAI_COMPLETIONS_MODULE)) as { streamSimple: StreamSimple };
+		return (model, context, options) =>
+			streamSimple(model, context, { ...options, fetch: reasoningBeforeContent(options?.fetch ?? fetch) });
+	} catch (err) {
+		console.warn(`[pi-dynamic-providers] ${OPENAI_COMPLETIONS_MODULE} unavailable: ${err instanceof Error ? err.message : String(err)}`);
+		return undefined;
+	}
+}
+
+export function reasoningBeforeContent(inner: typeof fetch): typeof fetch {
+	return async (input, init) => {
+		const res = await inner(input, init);
+		if (!res.body || !res.headers.get("content-type")?.includes("text/event-stream")) return res;
+		let pending = "";
+		const split = new TransformStream<string, string>({
+			transform(text, controller) {
+				const lines = (pending + text).split("\n");
+				pending = lines.pop() ?? "";
+				for (const line of lines) controller.enqueue(`${splitMixedDelta(line)}\n`);
+			},
+			flush(controller) {
+				if (pending) controller.enqueue(splitMixedDelta(pending));
+			},
+		});
+		const body = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(split).pipeThrough(new TextEncoderStream());
+		return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+	};
+}
+
+function splitMixedDelta(line: string): string {
+	if (!line.startsWith("data: {")) return line;
+	let chunk: { choices?: { delta?: Record<string, unknown> }[]; usage?: unknown };
+	try {
+		chunk = JSON.parse(line.slice("data: ".length));
+	} catch {
+		return line;
+	}
+	const isMixed = (delta: Record<string, unknown> = {}) =>
+		typeof delta.content === "string" && delta.content !== "" && REASONING_FIELDS.some((f) => delta[f]);
+	if (!chunk.choices?.some((c) => isMixed(c.delta))) return line;
+	const keeping = (keep: (field: string) => boolean) =>
+		chunk.choices?.map((c) => ({ ...c, delta: Object.fromEntries(Object.entries(c.delta ?? {}).filter(([f]) => keep(f))) }));
+	const { usage: _, ...head } = chunk;
+	const reasoning = { ...head, choices: keeping((f) => f === "role" || REASONING_FIELDS.includes(f)) };
+	const content = { ...chunk, choices: keeping((f) => !REASONING_FIELDS.includes(f)) };
+	return `data: ${JSON.stringify(reasoning)}\n\ndata: ${JSON.stringify(content)}`;
 }
 
 function reportProviderErrors(pi: ExtensionAPI): void {

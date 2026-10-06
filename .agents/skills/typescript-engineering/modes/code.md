@@ -1,11 +1,5 @@
 # Code Mode
 
-The user is writing or modifying TypeScript code in a project that follows the opinionated TSEng architecture. Architecture docs live at `../architecture/` relative to this file.
+The user is writing or modifying TypeScript in a project following this architecture.
 
-## Load Order (Lazy)
-
-Start with [../architecture/index.md](../architecture/index.md). Decide from there which deeper files the current request actually needs. Pull more only when the work reaches a topic that demands it.
-
-## Follow the Architecture
-
-Apply the loaded rules to the code being written or modified. Only rules relevant to the file's location are in play. Stay scoped to the change the user requested.
+Read [../architecture/index.md](../architecture/index.md), then only the deeper files the change reaches. Apply the rules that govern the touched files' location, scoped to the requested change.

@@ -841,7 +841,9 @@ done
 # (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
 # The two operator charts install directly, not through the clickstack-operators umbrella
 # chart: its latest (1.1.0) pins them at 0.0.7 and 1.7.0, whose RBAC newer operator
-# images outgrow. The MongoDB image runs a patch past its chart (no 1.12.1 chart).
+# images outgrow. The MongoDB agent stays on the 108 line, which still runs the
+# MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
+# dropped 5.0. Move it with that MongoDB version.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   # A cluster installed with the umbrella: its CRDs outlive the uninstall (resource-policy
@@ -858,10 +860,10 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.12.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.13.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
-    --set operator.version=1.12.1 \
+    --set community.agent.version=108.0.26.9062-1 \
     --set operator.watchNamespace=default \
     --set 'operator.watchedResources={mongodbcommunity}'
   kubectl wait --for=condition=Established --timeout=120s \

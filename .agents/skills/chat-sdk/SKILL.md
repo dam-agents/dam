@@ -105,7 +105,7 @@ Pass any `AsyncIterable<string>` to `thread.post()`. For AI SDK, prefer `result.
 ```typescript
 import { ToolLoopAgent } from "ai";
 
-const agent = new ToolLoopAgent({ model: "anthropic/claude-4.5-sonnet" });
+const agent = new ToolLoopAgent({ model: "anthropic/claude-sonnet-5.5" });
 
 bot.onNewMention(async (thread, message) => {
   const result = await agent.stream({ prompt: message.text });

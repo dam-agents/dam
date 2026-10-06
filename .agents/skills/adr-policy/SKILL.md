@@ -13,89 +13,73 @@ description: >
 
 # ADR Policy
 
-Reviews changes to the **ADR log** under [`docs/adrs/`](../../../docs/adrs/) at review
-time. The ADR model is an immutable event log with two projections (architecture docs,
-generated index).
+Reviews changes to the **ADR log** under [`docs/adrs/`](../../../docs/adrs/), an
+immutable event log with two projections (architecture docs, generated index). This
+skill owns **log integrity and decision judgment** and is read-only: it outputs findings
+and never edits ADRs. Fixes go through the [`/adr`](../adr/SKILL.md) flow as separate
+work.
 
-Enforcement is split by what needs judgment. This skill owns **log integrity and
-decision judgment**. It does **not** rewrite ADRs — its output is a set of findings;
-acting on them is separate work outside this skill.
+## Scope
 
-## Scope: the ADR log only
-
-- **In scope**: files under `docs/adrs/`, their frontmatter, and the git history of the
-  diff (base-to-head).
-- **Out of scope**: whether the architecture docs match the code — that is
+- **In**: files under `docs/adrs/`, their frontmatter, and the diff's git history
+  (base-to-head).
+- **Out**: whether architecture docs match the code; that is
   [`doc-drift`](../doc-drift/SKILL.md). Never flag docs-vs-code drift here.
-- **Out of scope**: whether some code "should have an ADR." ADRs are filed by humans
-  before work begins; coverage is never this skill's call.
+- **Out**: whether code "should have an ADR". Humans file ADRs before work begins.
 
 ## Read discipline
 
-ADRs are human-first; agent reads are gated to authoring and recompiling. A review pass
-is an authoring-adjacent read: read [`docs/adrs/index.md`](../../../docs/adrs/index.md)
-first, then open only the ADR files changed in the diff and any record a changed ADR
-points at (its `supersedes` target). Never read the log wholesale to understand the
-current system.
+Agent reads of ADRs are gated to authoring and recompiling; a review pass counts as an
+authoring-adjacent read. Read [`docs/adrs/index.md`](../../../docs/adrs/index.md) first,
+then only the ADRs changed in the diff and any `supersedes` target they name. Never read
+the log wholesale to understand the current system.
 
-## What this skill checks
+## Checks
 
-### 1. Immutability (deterministic — surfaced, never re-judged)
+### 1. Immutability (deterministic: surfaced, never re-judged)
 
-The one invariant the read model rests on — an accepted ADR body is never rewritten — is
-owned by a standalone deterministic script, never by an LLM. Run it and surface its
-result verbatim:
+An accepted ADR body is never rewritten; a standalone script owns that invariant, not an
+LLM. Run it and relay the result verbatim as the first line of the ADR section:
 
 ```bash
 mise run //docs:check:adr-immutable -- --merge-base
 ```
 
-Report its pass/fail as the first line of the ADR section so everything lands in one
-place. Do **not** second-guess it, soften a failure, or re-derive the verdict by reading
-diffs yourself. One check, multiple surfaces: this skill is a surface, not the owner.
+Never second-guess it, soften a failure, or re-derive the verdict from diffs. This skill
+is one surface of the check, not its owner.
 
 ### 2. Re-litigation (judgment)
 
-Does a new or changed ADR re-decide something already settled — or already superseded —
-without acknowledging it? Scan the index one-liners for records covering the same
-decision space. If the new ADR reverses or narrows a live decision, it must point at it
-with `supersedes`; if it merely restates a settled one, that is churn. Flag either.
+Does a new or changed ADR re-decide something settled or already superseded without
+saying so? Scan the index one-liners for records in the same decision space. Reversing or
+narrowing a live decision requires `supersedes` pointing at it; merely restating a
+settled one is churn. Flag either.
 
 ### 3. `supersedes` correctness (judgment)
 
-When a changed ADR carries `supersedes: NNN`:
-- Does id `NNN` exist, and is it the record actually being replaced (not a sibling or a
-  record already superseded by a third ADR)?
-- Is the superseded decision genuinely the *live* one this ADR overrides? A forward link
-  aimed at the wrong record silently corrupts the derived status the index shows.
+For `supersedes: NNN`: does `NNN` exist, and is it the record actually being replaced
+(not a sibling, not one a third ADR already superseded), i.e. the *live* decision this ADR
+overrides? A misaimed link silently corrupts the derived status in the index.
 
 ### 4. Summary honesty (judgment)
 
-Does the one-line `summary` frontmatter state what the `Decision` body actually decided?
-The summary is projected into the index and read *instead of* the record most of the
-time, so a summary that oversells, hedges, or describes a different decision than the
-body is a defect — it steers readers wrong at the cheapest, most-read layer.
+Does `summary` state what the `Decision` body decided? The index projects it and readers
+usually read it *instead of* the record, so a summary that oversells, hedges or describes
+a different decision is a defect at the most-read layer.
 
 ## Report
 
-Produce one ADR section:
+One ADR section:
 
-- **Immutability** — the script's verdict, verbatim. `✅` or the `❌` lines it printed.
-  A `❌` here is **blocking**; the deterministic gate fails the build regardless of this
-  skill.
-- **Judgment findings** — every re-litigation / `supersedes` / summary issue, with the
-  ADR file and the specific frontmatter field or body claim it concerns, and the
-  question the human must answer. These are **surfaced, not blocking**.
+- **Immutability**: the script's verdict verbatim, `✅` or its `❌` lines. `❌` is
+  **blocking**; the gate fails the build regardless of this skill.
+- **Judgment findings**: each re-litigation / `supersedes` / summary issue with the ADR
+  file, the frontmatter field or body claim, and the question the human must answer.
+  **Surfaced, not blocking.**
 
-If nothing is wrong, the section is just the immutability `✅` line.
+Nothing wrong → the section is just the `✅` line.
 
-## Guidelines
-
-- **Read-only.** This skill never edits ADRs — it only surfaces findings. Fixing a
-  re-litigation or summary problem is separate work outside this skill's run: authoring
-  or amending an ADR through the [`/adr`](../adr/SKILL.md) flow, not editing here.
-- **Never own immutability.** The script is authoritative. This skill only relays it.
-- **One pass with doc-drift.** On a PR touching `docs/adrs/` or `docs/architecture/`, the
-  code-review agent runs this skill and [`doc-drift`](../doc-drift/SKILL.md) together and
-  folds both into one report. This skill covers the log; doc-drift covers the docs. They
-  stay separate to keep single responsibility.
+**One pass with doc-drift.** On a PR touching `docs/adrs/` or `docs/architecture/`, the
+code-review agent runs this skill and [`doc-drift`](../doc-drift/SKILL.md) together and
+folds both into one report. This skill covers the log, doc-drift the docs; they stay
+separate for single responsibility.
