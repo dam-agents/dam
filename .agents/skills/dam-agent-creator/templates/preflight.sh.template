@@ -52,7 +52,9 @@ fail_out() {  # nothing-to-do JSON with an error; the agent just logs it
 
 emit() {  # $1 = jq object body of mode-specific arrays, e.g. '{items_due:$items}'
   # TODO(creator): build one emit per mode from jq -n with --argjson arrays; set
-  # nothing_to_do by testing every array's length. Never hand-concatenate JSON.
+  # nothing_to_do by testing every array's length, and read_set from the arrays that
+  # are non-empty (references/preflight.md → Designing the worklist). Never
+  # hand-concatenate JSON.
   :
 }
 

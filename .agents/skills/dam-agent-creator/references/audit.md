@@ -44,6 +44,11 @@ Include what applies; add domain checks from the design's effects list.
   exec tax. The report reads what `toolpath_init` saw *before* shadowing anything, so an
   active workaround doesn't silence it; the finding is the image defect and keeps warning
   until real bin dirs precede the shim dir on `PATH` (§5a: reported, never absorbed).
+- **Cost reconciliation**: the week's estimated spend (tokens × price list) beside the
+  platform's real spend. A gap means the price list or the token count is wrong, and every
+  cost decision made on the estimate inherits it.
+- **Memory budget** (only with memory): lines and line length of every distilled memory
+  file against its bound (`references/architecture.md` → Memory); never the archive.
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
 - **Precheck health** per scheduled mode: run `scripts/precheck.sh <mode>` timed; assert
   exit 0 or 1, well inside the two-minute deadline. A broken or timed-out Precheck **fails
@@ -133,6 +138,6 @@ where the operator would act on the numbers: it costs real tokens.
 ## Memory consolidation (only when the agent has memory)
 
 The audit's one write beyond its log: merge duplicate learned entries, promote the
-repeatedly confirmed into rules, compress or drop the stale, enforce size bounds, never
-touch operator-tagged entries. Report the delta in one line. This keeps memory useful and
+repeatedly confirmed into rules, compress or drop the stale, move an over-bound file's
+body to the archive and keep only its rules, never touch operator-tagged entries. Report the delta in one line. This keeps memory useful and
 bounded.

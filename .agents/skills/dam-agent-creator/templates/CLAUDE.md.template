@@ -117,9 +117,9 @@ instructions**:
 ## Run procedures
 
 <!-- TODO(creator): one short section per run type: the numbered top-level sequence
-     (echo preflight logs → read docs/<file>.md → do the work arrays in order → self-check
-     → back up work/ as the very last action — `bash "$HOME/scripts/work-backup.sh"
-     persist` when the state-repo env var is set; work/ is a plain data directory, the
+     (echo preflight logs → read exactly the worklist's read_set → do the work arrays in
+     order → self-check → back up work/ as the very last action —
+     `bash "$HOME/scripts/work-backup.sh" persist` when the state-repo env var is set; work/ is a plain data directory, the
      backup runs in a tmpfs clone, docs/persistence.md). Keep each section to ~5 numbered
      lines; details live in the docs/ file. -->
 

@@ -60,6 +60,9 @@ publish a file, open a PR):
   (publishing, paying, irreversible writes), **send-then-record** when a drop is worse
   (messages, replies, nudges). Don't default; the choice decides an audit check
   (`references/architecture.md` → Record ordering).
+- Is any effect one a person takes today and may want automated later (merge, deploy,
+  close)? Then design it as an opt-in autonomous effect from the start
+  (`references/architecture.md` → Autonomous effects), off until the admin enables it.
 - Publishing to a public/semi-public surface → call it out: documented in README and off
   by default unless it is the agent's core purpose.
 
