@@ -95,6 +95,7 @@ export function useBrowserStream(
       send({ type: "resize", ...wanted });
     };
     const snapViewport = (device: FrameMetadata) => {
+      if (document.hidden || !document.hasFocus()) return;
       const wanted = wantedViewport();
       if (!wanted || !viewportDiffers(device, wanted)) return;
       if (performance.now() - viewportSentAt < VIEWPORT_RESEND_MS) return;
@@ -166,6 +167,7 @@ export function useBrowserStream(
         );
       };
       document.addEventListener("visibilitychange", onVisibility);
+      window.addEventListener("focus", sendViewport);
     })().catch(() => {
       if (!cancelled) setState("disconnected");
     });
@@ -182,6 +184,7 @@ export function useBrowserStream(
       if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", sendViewport);
       ws?.close();
       wsRef.current = null;
     };

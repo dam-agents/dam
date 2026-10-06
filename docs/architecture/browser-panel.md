@@ -18,7 +18,7 @@ The cost is fidelity: frames are compressed images, and each input takes one rou
 
 ## The stream
 
-- **Sharpness and coordinates.** The viewport follows the panel's size at a pixel ratio of one, whatever the user's zoom or screen, so a pixel in the agent's screenshot is the CSS pixel its mouse commands take. Frames are JPEG at a quality chosen for legible text. A still page sends nothing; motion is where the bandwidth goes.
+- **Sharpness and coordinates.** The viewport follows the size of the panel in the focused tab, at a pixel ratio of one, whatever the user's zoom or screen, so a pixel in the agent's screenshot is the CSS pixel its mouse commands take. Frames are JPEG at a quality chosen for legible text. A still page sends nothing; motion is where the bandwidth goes.
 - **Flow control.** The panel acknowledges each frame once it is drawn, and the stream sends the next only then, always the newest. A slow link or a busy browser drops frames rather than queueing them, so latency stays flat instead of growing behind a backlog.
 - **Wire shape.** agent-browser sends frames as JSON with the image in base64; agent-runtime re-sends each as one binary message, a small header and the raw JPEG, so the user's browser neither downloads the base64 nor decodes it. Pointer moves are coalesced to one per display frame on the way in.
 
