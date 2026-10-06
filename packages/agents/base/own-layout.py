@@ -29,6 +29,10 @@ def owner(name):
     name = name.removeprefix("./").rstrip("/")
     if name in AGENT_PATHS or any(name == t or name.startswith(t + "/") for t in AGENT_TREES):
         return AGENT
+    # A workload's Python, which the agent's own `pip install` extends.
+    parts = name.split("/")
+    if len(parts) >= 2 and parts[0] == "opt" and parts[1].endswith("-venv"):
+        return AGENT
     return ROOT
 
 

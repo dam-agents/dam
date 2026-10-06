@@ -430,8 +430,8 @@ jobs:
 
   build-workloads:
     # One job per arch, one workload after another, like build-agents, and
-    # beside it: a workload builds claude-code's environment in, not on a
-    # published claude-code image. Every workload builds even after one fails,
+    # beside it: each workload is packed onto the default image the job builds
+    # itself, not onto a published one. Every workload builds even after one fails,
     # but merge-workloads then merges none. A PR builds none: image:resolve
     # lists no workload for it, and this job pushes, which a PR must not.
     needs: [changes]
@@ -458,11 +458,6 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
-          # k-search's venv layers, kept in the registry; see //packages/agents:oci.
-          # A main push reuses them; a tag, the nightly run and a dispatch
-          # install afresh and replace them.
-          AGENT_LAYER_CACHE: ${{ env.IMAGE_PREFIX }}
-          AGENT_LAYER_CACHE_REFRESH: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') && '1' || '' }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"

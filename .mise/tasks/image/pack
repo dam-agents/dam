@@ -2,7 +2,7 @@
 #MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
 #MISE hide=true
 #MISE dir="{{cwd}}"
-#USAGE arg "<base>" help="Base image reference, pinned by digest"
+#USAGE arg "<base>" help="Base image reference, pinned by digest, or a local OCI layout directory"
 #USAGE arg "<root>" help="Directory whose tree becomes the layer, at / or --at"
 #USAGE arg "<tar>" help="Image tar to write"
 #USAGE arg "<tag>" help="Tag the tar carries"
@@ -10,6 +10,7 @@
 #USAGE flag "--cmd <cmd>" help="The image's CMD, its words separated by commas"
 #USAGE flag "--workdir <workdir>"
 #USAGE flag "--user <user>"
+#USAGE flag "--env <env>" var=#true help="KEY=VALUE in the image's env, replacing the base's KEY; a later one replaces an earlier"
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
@@ -24,7 +25,9 @@ arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack"
 mkdir -p "$cache"
 base="$cache/$(printf '%s %s' "$usage_base" "$arch" | sha256sum | cut -c1-32)"
-if [ ! -f "$base/index.json" ]; then
+if [ -f "$usage_base/index.json" ]; then
+  base="$usage_base"
+elif [ ! -f "$base/index.json" ]; then
   rm -rf "$base.$$"
   crane pull --format=oci --platform "linux/$arch" "$usage_base" "$base.$$"
   mv -T "$base.$$" "$base" 2>/dev/null || rm -rf "$base.$$"
@@ -70,14 +73,18 @@ manifest="$(cat "$(blob "$(jq -r '.manifests[0].digest' "$base/index.json")")")"
 # OCI layers under a Docker manifest are what quay refuses.
 [ "$(jq -r .mediaType <<< "$manifest")" = application/vnd.oci.image.manifest.v1+json ] ||
   { echo "image:pack: $usage_base is not an OCI image manifest" >&2; exit 1; }
+eval "envs=(${usage_env:-})"
+env_json="$(printf '%s\n' ${envs[@]+"${envs[@]}"} | jq -R 'select(. != "")' | jq -cs .)"
 config="$(jq -c --argjson l "$layers" --arg ep "${usage_entrypoint:-}" --arg cmd "${usage_cmd:-}" \
-  --arg wd "${usage_workdir:-}" --arg user "${usage_user:-}" '
+  --arg wd "${usage_workdir:-}" --arg user "${usage_user:-}" --argjson env "$env_json" '
   .rootfs.diff_ids += [$l[].digest]
   | .history = (.history // []) + [$l[] | {created_by: "image:pack"}]
   | if $ep != "" then .config.Entrypoint = ($ep | split(",")) | del(.config.Cmd) else . end
   | if $cmd != "" then .config.Cmd = ($cmd | split(",")) else . end
   | if $wd != "" then .config.WorkingDir = $wd else . end
-  | if $user != "" then .config.User = $user else . end' \
+  | if $user != "" then .config.User = $user else . end
+  | reduce $env[] as $e (.; ($e | split("=")[0]) as $k
+      | .config.Env = ((.config.Env // []) | map(select(split("=")[0] != $k))) + [$e])' \
   "$(blob "$(jq -r .config.digest <<< "$manifest")")")"
 manifest="$(jq -c --argjson c "$(put "$config")" --argjson l "$layers" \
   '.config += $c | .layers += $l | del(.annotations)' <<< "$manifest")"
