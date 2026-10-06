@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-05
+Last verified: 2026-10-06
 
 The images an agent runs in: the **default image**, which every harness Template boots, the workloads layered over Claude Code's, and the e2e mock. Each carries the agent-runtime and its harnesses. A workload and the mock bake every tool the agent is given; the default image bakes none and boots on the node's **harness tools** instead. Either way nothing installs lazily, and no tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob).
 
@@ -48,4 +48,4 @@ The seed is copied into a home once, when the home is new, because from then on 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
 - agent-browser and Playwright share one baked Chromium. agent-browser runs its headless shell, which calls none of Google's background services, and both trust the gateway's MITM CA through the NSS store the entrypoint fills in the home, since Chromium does not read the system bundle.
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
-- aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image and last until the agent restarts. mise reads no config from the home, so a tool pin an older image persisted there is inert.
+- aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image changes ([persistence](persistence.md)). mise reads no config from the home, so a tool pin an older image persisted there is inert.

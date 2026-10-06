@@ -98,7 +98,7 @@ spec:
             {{- toYaml $tools.resources | nindent 12 }}
           volumeMounts:
             - name: harness-tools
-              mountPath: /opt/platform/harness-tools
+              mountPath: /usr/share/mise
       containers:
         - name: idle
           image: {{ $image | quote }}

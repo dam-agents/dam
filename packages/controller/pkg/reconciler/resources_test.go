@@ -516,7 +516,7 @@ func TestBuildAgentStatefulSet_MountsTheNodesHarnessToolsReadOnly(t *testing.T) 
 	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
 		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
 	}})
-	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: "/opt/platform/harness-tools", ReadOnly: true})
+	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: "/usr/share/mise", ReadOnly: true})
 	require.NotEmpty(t, pod.InitContainers)
 	for _, c := range pod.InitContainers {
 		for _, m := range c.VolumeMounts {

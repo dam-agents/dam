@@ -33,6 +33,9 @@ pub const SEEDED_FILE: &str = "seeded";
 // UNIT_BOUNDARY_DESCRIPTION: the share's record of the seed the controller expects this machine's home to come from, which platform-init reads at guest::SEED_EXPECTED_PATH. write_share writes it from the spec and removes it when the spec expects none, so it is always the expectation of the boot about to run.
 pub const SEED_EXPECTED_FILE: &str = "seed-expected";
 
+// UNIT_BOUNDARY_DESCRIPTION: the share's record of the image the boot about to run boots, which platform-init reads at guest::IMAGE_PATH to decide whether the machine keeps its root. A start writes it, not write_share, because every boot passes a start and the image a start boots is the one in smolvm's record at that moment.
+pub const IMAGE_FILE: &str = "image";
+
 // UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
 pub const SEED_DIGEST_FILE: &str = "seed-digest";
 
@@ -274,6 +277,11 @@ mod tests {
             guest::SEED_EXPECTED_PATH,
             format!("{}/{SEED_EXPECTED_FILE}", guest::SHARE_PATH),
             "the guest looks for the expected seed where this module does not write it"
+        );
+        assert_eq!(
+            guest::IMAGE_PATH,
+            format!("{}/{IMAGE_FILE}", guest::SHARE_PATH),
+            "the guest looks for the image record where a start does not write it"
         );
     }
 

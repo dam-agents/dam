@@ -353,7 +353,7 @@ jobs:
           set -euo pipefail
           tools="$(mktemp -d)"
           docker run --rm --user 0 --entrypoint install-harness-tools \
-            -v "$tools:/opt/platform/harness-tools" "$IMAGE" > install.log 2>&1 || {
+            -v "$tools:/usr/share/mise" "$IMAGE" > install.log 2>&1 || {
             tail -n 40 install.log
             if [[ "$IMAGE" != *":${SHA}" ]]; then
               echo "::error::the harness tools of ${IMAGE} could not be installed; see log"

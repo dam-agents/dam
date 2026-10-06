@@ -141,7 +141,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A record can still say running while its VMM lives on after a stop that did not finish, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would, and waited out before the record is read again, since the record reads stopped only once the process is gone. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init boots every image on a fresh root: the root smolvm keeps on the disk for this machine, with the old image's changes in it, is never the one the new image runs on.
+    // UNIT_BOUNDARY_DESCRIPTION: applies a new shape to a machine that is not running. A record can still say running while its VMM lives on after a stop that did not finish, and smolvm refuses to update a running record — so that VMM is taken down first, as a start would, and waited out before the record is read again, since the record reads stopped only once the process is gone. Everything smolvm boots from is read out of the record at each start: the image and the command, workdir and env it launches, and the allowlist the VMM enforces. So a new image or allowlist is only a record write here, and the storage disk and published port are untouched. A new image is safe to take this way because platform-init never boots a new image on the root an old one wrote: the next start names the new image in the share, and platform-init starts it on an empty root. The root smolvm keeps on the disk for this machine is never the one any image runs on.
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()> {
         let Update {
             desired,
@@ -218,7 +218,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and a start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -227,9 +227,13 @@ impl Runtime for Smolvm {
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
-        let image_env = self
-            .record(id)?
+        let record = self.record(id)?;
+        let image_env = record
+            .as_ref()
             .and_then(|r| recorded_image_env(r.image.as_deref()));
+        if let Some(record) = &record {
+            write_boot_image(record)?;
+        }
         self.db.update_vm(id, |r| {
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
@@ -392,6 +396,48 @@ fn embedded_spec(
         ..SmolvmSpec::default()
     };
     Ok((smolvm_spec, workload))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the share's image record for the boot about to run, or removes it for a record that names no image. A record that cannot be written fails the start, after an attempt to remove it: a stale record naming the last image would have platform-init keep that image's root under a new one.
+fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
+    let Some((share, _, _)) = record
+        .mounts
+        .iter()
+        .find(|(_, target, _)| target == SHARE_PATH)
+    else {
+        return Ok(());
+    };
+    let path = Path::new(share).join(crate::share::IMAGE_FILE);
+    let written = match record.image.as_deref() {
+        Some(image) => crate::files::write(
+            &path,
+            format!("{}\n", image_identity(image)).as_bytes(),
+            crate::share::CA_MODE,
+        ),
+        None => std::fs::remove_file(&path).or_else(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(e),
+        }),
+    };
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&path);
+        return Err(e).with_context(|| format!("naming the boot's image in {}", path.display()));
+    }
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's image to platform-init: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway.
+fn image_identity(image: &str) -> String {
+    use std::os::unix::fs::MetadataExt;
+    match packed_layers_dir_for_ref(image).and_then(|dir| std::fs::metadata(dir).ok()) {
+        Some(dir) => format!(
+            "{image} {} {}.{:09}",
+            dir.ino(),
+            dir.mtime(),
+            dir.mtime_nsec()
+        ),
+        None => image.to_string(),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the env the image a machine's record boots names; see image_env_beside.
@@ -652,6 +698,33 @@ mod tests {
             ),
             "a start must mount the node's tools where the image the record boots asks"
         );
+        assert_eq!(
+            fs::read_to_string(share.join(crate::share::IMAGE_FILE)).unwrap(),
+            format!("{}\n", image_identity(record.image.as_deref().unwrap())),
+            "a start must name the image it boots to platform-init"
+        );
+    }
+
+    // TEST_SCENARIO: platform-init keeps a machine's root while the image line stays the same, so the line must change whenever the image does. A registry reference is its own name. A cached tree keeps its path when a tag such as platform-default:latest is staged again, but the new tree is a new directory renamed over the old one, and its inode tells them apart.
+    #[test]
+    fn an_image_staged_again_under_its_name_is_a_new_image() {
+        assert_eq!(image_identity("quay.io/x/vm:1"), "quay.io/x/vm:1");
+        let dir = crate::testdir::TempDir::new("identity");
+        let tree = dir.path().join("rootfs");
+        fs::create_dir(&tree).unwrap();
+        let image = format!("local-dir:{}", tree.display());
+        let first = image_identity(&image);
+        assert!(first.starts_with(&format!("{image} ")), "{first}");
+        assert_eq!(
+            image_identity(&image),
+            first,
+            "an unchanged tree is the same image"
+        );
+
+        let staged = dir.path().join("rootfs.new");
+        fs::create_dir(&staged).unwrap();
+        fs::rename(&staged, &tree).unwrap();
+        assert_ne!(image_identity(&image), first);
     }
 
     // TEST_SCENARIO: a machine boots with the node's tools only when its runner has a tools dir and its image names a guest path for them, and then read-only at that path beside the share. A mount an earlier start recorded is dropped once either side stops offering it, and a path that is relative, climbs with `..`, is the root, or holds or sits inside the share is refused, since it would hide the share from platform-init.

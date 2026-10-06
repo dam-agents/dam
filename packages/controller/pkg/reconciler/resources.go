@@ -25,7 +25,7 @@ const AgentContainerName = "agent"
 const agentHomeDir = "/home/agent"
 
 // UNIT_BOUNDARY_DESCRIPTION: where a container agent sees the node's harness tools, which a DaemonSet installs into a host directory. The default image bakes no tools and names this path as its mise system data dir. No baked image uses the path, so the controller mounts it read-only into every agent pod once the install sets the host directory.
-const agentHarnessToolsDir = "/opt/platform/harness-tools"
+const agentHarnessToolsDir = "/usr/share/mise"
 
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
