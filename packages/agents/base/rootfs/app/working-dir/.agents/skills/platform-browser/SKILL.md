@@ -4,7 +4,7 @@ description: >
   Use whenever you start or change a web app, dev server or page the user should see or try — a local server on a port, a nested platform, a page you built — and whenever the user asks to see, open or check something in the browser. Covers the user's browser panel beside the chat, which shows a browser running in this sandbox: `platform-browser open <address>` points it at a page and prints a button for your reply, and every other `platform-browser` command (`snapshot -i`, `click @e3`, `fill`) acts in that same browser while the user watches.
 ---
 
-The user's chat has a browser panel. It shows a browser that runs here, in your sandbox, so it reaches `localhost` and every port you listen on — the user needs no port forwarding. You and the user share that browser: what one of you opens, the other sees.
+The user's chat has a browser panel. It shows a browser that runs here, in your sandbox, so it reaches `localhost` and every port you listen on — the user needs no port forwarding. You and the user share that browser: what one of you opens, the other sees. It is the only browser here: `agent-browser` runs every command on it too, whatever `--session` you pass.
 
 ## Show the user a page
 

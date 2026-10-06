@@ -75,8 +75,18 @@ const BROWSER = [
   ...(HEADED ? ["--headed"] : []),
 ];
 
+const SHARED_WRAPPER_DIR = "/usr/local/lib/platform-browser/bin";
+const AGENT_BROWSER = (() => {
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    if (!dir || dir === SHARED_WRAPPER_DIR) continue;
+    const candidate = join(dir, "agent-browser");
+    if (existsSync(candidate)) return candidate;
+  }
+  return "agent-browser";
+})();
+
 const agentBrowser = (args, options = {}) =>
-  spawnSync("agent-browser", [...BROWSER, ...args], {
+  spawnSync(AGENT_BROWSER, [...BROWSER, ...args], {
     env: browserEnv(),
     encoding: "utf8",
     ...options,

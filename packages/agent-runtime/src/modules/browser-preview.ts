@@ -33,6 +33,13 @@ export interface Viewport {
   scale: number;
 }
 
+const BROWSER_GONE_AFTER_CHECKS = 2;
+
+export function pageHref(out: string): string | null {
+  const match = /^"?\d+x\d+@[\d.]+ (\S+?)"?$/.exec(out.trim());
+  return match?.[1] ?? null;
+}
+
 export function parseViewport(out: string): Viewport | null {
   const match = /(\d+)x(\d+)@([\d.]+)/.exec(out);
   return match
@@ -155,10 +162,6 @@ export function fileLog(
 
 export const VIDEO_UNAVAILABLE =
   "This agent's image cannot show its browser: it has no virtual display or no VNC server.";
-
-export function isScreencastFrame(raw: Buffer): boolean {
-  return raw.subarray(0, 32).toString().includes('"type":"frame"');
-}
 
 export function commandTimeoutMs(args: string[]): number {
   if (args[0] === "launch") return 60_000;
@@ -288,7 +291,6 @@ interface Viewer {
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
-  streamUrl?: (port: number) => string;
   idleCloseMs?: number;
   video?: BrowserVideo;
   healthCheckMs?: number;
@@ -314,15 +316,13 @@ export function createBrowserPreview(deps: {
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
   const video = deps.video ?? screenVideo;
   const displayStreamUrl = deps.displayStreamUrl ?? DISPLAY_STREAM_URL;
-  const streamUrl =
-    deps.streamUrl ?? ((port: number) => `ws://127.0.0.1:${port}/`);
 
   const viewers = new Map<WebSocket, Viewer>();
   let state: BrowserState = "starting";
   let failure: string | null = null;
   let browserUp = false;
   let failedLaunches = 0;
-  let upstream: WebSocket | null = null;
+  let failedChecks = 0;
   let pageUrl: string | null = null;
   let wanted: Viewport | null = null;
   let applied: Viewport | null = null;
@@ -392,21 +392,12 @@ export function createBrowserPreview(deps: {
     encoderFor = null;
   }
 
-  function closeUpstream() {
-    const us = upstream;
-    upstream = null;
-    us?.removeAllListeners();
-    us?.on("error", () => {});
-    us?.close();
-  }
-
   function browserGone(reason: string) {
     if (!browserUp) return;
     deps.log(`browser lost: ${reason}`);
     browserUp = false;
     applied = null;
     stopEncoder();
-    closeUpstream();
     generation++;
   }
 
@@ -427,29 +418,18 @@ export function createBrowserPreview(deps: {
     retryTimer.unref?.();
   }
 
-  async function streamPort(): Promise<number> {
-    const out = await exec(["stream", "status", "--json"]);
-    const port = (JSON.parse(out) as { data?: { port?: unknown } }).data?.port;
-    if (typeof port !== "number") throw new Error("browser stream has no port");
-    return port;
-  }
-
   async function ensureBrowser(): Promise<boolean> {
-    if (browserUp && upstream) return true;
+    if (browserUp) return true;
     setState("starting");
     const gen = generation;
     try {
       await timed("launch", () => exec(["launch"]));
-      const port = await streamPort();
-      await connectUpstream(port);
       if (gen !== generation) {
-        closeUpstream();
         dirty = true;
         return false;
       }
       browserUp = true;
       failedLaunches = 0;
-      lastAnswerAt = Date.now();
       return true;
     } catch (err) {
       if (gen !== generation) {
@@ -459,7 +439,6 @@ export function createBrowserPreview(deps: {
       failedLaunches++;
       const message = (err as Error).message.split("\n")[0] ?? "";
       deps.log(`launch failed (${failedLaunches}): ${message}`);
-      closeUpstream();
       if (failedLaunches % 2 === 0) await stopBrowser();
       if (failedLaunches >= 3)
         setState("failed", `The browser did not start: ${message}`);
@@ -468,46 +447,11 @@ export function createBrowserPreview(deps: {
     }
   }
 
-  function connectUpstream(port: number): Promise<void> {
-    closeUpstream();
-    return new Promise((resolve, reject) => {
-      const us = new WebSocket(streamUrl(port));
-      upstream = us;
-      const gen = generation;
-      us.once("open", () => {
-        us.send(JSON.stringify({ type: "screencast_stop" }));
-        resolve();
-      });
-      us.on("message", (d: Buffer, isBinary) => {
-        if (isBinary || isScreencastFrame(d)) return;
-        const text = d.toString();
-        try {
-          const msg = JSON.parse(text) as { type?: unknown; url?: unknown };
-          if (msg.type === "url" && typeof msg.url === "string")
-            pageUrl = msg.url;
-        } catch {}
-        for (const client of viewers.keys())
-          if (client.readyState === WebSocket.OPEN) client.send(text);
-      });
-      us.on("error", (err) => {
-        deps.log(`stream: ${err.message}`);
-        reject(err);
-      });
-      us.on("close", () => {
-        reject(new Error("browser stream closed"));
-        if (upstream !== us || gen !== generation) return;
-        browserGone("stream closed");
-        if (viewers.size > 0) schedule();
-      });
-    });
-  }
-
   async function applyViewport(v: Viewport): Promise<void> {
     await timed("resize", () =>
       exec(["screen", String(v.width), String(v.height)]),
     );
     applied = v;
-    lastAnswerAt = Date.now();
   }
 
   function sendFrame(frame: Buffer, key: boolean) {
@@ -568,7 +512,6 @@ export function createBrowserPreview(deps: {
         dirty = false;
         if (viewers.size === 0) {
           stopEncoder();
-          closeUpstream();
           browserUp = false;
           continue;
         }
@@ -616,20 +559,32 @@ export function createBrowserPreview(deps: {
   async function healthCheck() {
     if (!browserUp || reconciling || !commands.idle() || viewers.size === 0)
       return;
-    const actual = parseViewport(
-      await exec([
-        "eval",
-        "innerWidth + 'x' + innerHeight + '@' + devicePixelRatio",
-      ]).catch(() => ""),
-    );
+    const out = await exec([
+      "eval",
+      "innerWidth + 'x' + innerHeight + '@' + devicePixelRatio + ' ' + location.href",
+    ]).catch(() => "");
+    const actual = parseViewport(out);
     if (!actual) {
+      failedChecks++;
       const silentFor = Date.now() - lastAnswerAt;
-      if (silentFor < unresponsiveRestartMs) return;
-      deps.log(`browser unresponsive for ${silentFor}ms, restarting it`);
-      await restart();
+      if (silentFor >= unresponsiveRestartMs) {
+        deps.log(`browser unresponsive for ${silentFor}ms, restarting it`);
+        failedChecks = 0;
+        await restart();
+      } else if (failedChecks >= BROWSER_GONE_AFTER_CHECKS) {
+        failedChecks = 0;
+        browserGone("not answering");
+        schedule();
+      }
       return;
     }
+    failedChecks = 0;
     lastAnswerAt = Date.now();
+    const href = pageHref(out);
+    if (href && href !== pageUrl) {
+      pageUrl = href;
+      broadcast({ type: "url", url: href });
+    }
     if (wanted && !sameViewport(actual, wanted)) {
       deps.log(
         `viewport is ${actual.width}x${actual.height}@${actual.scale}, putting the panel's back`,
@@ -650,6 +605,7 @@ export function createBrowserPreview(deps: {
         (err: Error) => deps.log(`clear data: ${err.message}`),
       );
     failedLaunches = 0;
+    lastAnswerAt = Date.now();
     schedule();
   }
 
@@ -783,6 +739,7 @@ export function createBrowserPreview(deps: {
       clearTimeout(idleTimer);
       idleTimer = null;
     }
+    if (viewers.size === 1) lastAnswerAt = Date.now();
     startTimers();
     sendJson(client, stateMessage());
     if (pageUrl) sendJson(client, { type: "url", url: pageUrl });
@@ -803,21 +760,18 @@ export function createBrowserPreview(deps: {
         schedule();
         return;
       }
-      if (msg) {
-        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
-          sendJson(client, { type: "preview_error", message: err.message }),
-        );
-        return;
-      }
-      if (upstream?.readyState === WebSocket.OPEN)
-        upstream.send(data, { binary: isBinary });
+      if (msg)
+        timed(msg.type, () => control(client, msg))
+          .then(() => healthCheck())
+          .catch((err: Error) =>
+            sendJson(client, { type: "preview_error", message: err.message }),
+          );
     });
     client.on("close", () => {
       viewers.delete(client);
       if (viewers.size > 0) return;
       stopTimers();
       stopEncoder();
-      closeUpstream();
       browserUp = false;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = null;
@@ -834,7 +788,6 @@ export function createBrowserPreview(deps: {
       if (retryTimer) clearTimeout(retryTimer);
       stopTimers();
       stopEncoder();
-      closeUpstream();
       for (const c of viewers.keys()) c.close(1001, "runtime shutting down");
     },
   };

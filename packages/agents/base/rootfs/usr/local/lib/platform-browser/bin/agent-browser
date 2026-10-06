@@ -1,0 +1,16 @@
+#!/bin/sh
+# Every agent-browser command in this sandbox runs on the one browser the
+# user sees in the browser panel, through platform-browser, which picks its
+# session, profile and display itself.
+ignored=""
+for arg in "$@"; do
+  shift
+  case "$skip" in 1) skip=""; continue ;; esac
+  case "$arg" in
+    --session|--profile) ignored="$ignored $arg"; skip=1; continue ;;
+    --session=*|--profile=*|--headed|--headless) ignored="$ignored ${arg%%=*}"; continue ;;
+  esac
+  set -- "$@" "$arg"
+done
+[ -z "$ignored" ] || echo "agent-browser: using the browser the user sees in the panel;$ignored ignored" >&2
+exec platform-browser "$@"

@@ -7,3 +7,5 @@ for d in "${MISE_DATA_DIR:-/usr/local/share/mise}"/installs/npm-*/*/node_modules
 done
 PATH="$PATH:$HOME/.local/share/aube/bin"
 if [ -d /opt/venv/bin ]; then PATH="/opt/venv/bin:$PATH"; fi
+# agent-browser always means the browser the user sees in the panel.
+PATH="/usr/local/lib/platform-browser/bin:$PATH"
