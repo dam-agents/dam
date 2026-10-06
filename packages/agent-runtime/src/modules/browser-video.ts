@@ -8,7 +8,7 @@ export const VIDEO_DISPLAY = ":99";
 export const SCREEN_WIDTH = 3840;
 export const SCREEN_HEIGHT = 2400;
 export const DEFAULT_CONTENT_TOP = 56;
-export const VIDEO_FPS = 30;
+export const VIDEO_FPS = 60;
 
 const AUD = Buffer.from([0, 0, 0, 1, 9]);
 const IDR_NAL = 5;
