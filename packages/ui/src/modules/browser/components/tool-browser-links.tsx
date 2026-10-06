@@ -1,15 +1,14 @@
+import { useMemo } from "react";
+
 import type { ToolChip } from "../../../types.js";
-import { useBrowserToolLinks } from "../hooks/use-browser-tool-links.js";
-import { BrowserLinkChip } from "./browser-link-chip.js";
+import { useAutoOpenBrowser } from "../hooks/use-auto-open-browser.js";
+import { browserLinksIn } from "../lib/browser-link.js";
 
 export function ToolBrowserLinks({ chip }: { chip: ToolChip }) {
-  const links = useBrowserToolLinks(chip);
-  if (links.length === 0) return null;
-  return (
-    <div className="my-1 flex flex-wrap gap-1.5 pl-4">
-      {links.map((url) => (
-        <BrowserLinkChip key={url} url={url} />
-      ))}
-    </div>
+  const links = useMemo(
+    () => browserLinksIn((chip.content ?? []).map((c) => c.text).join("\n")),
+    [chip.content],
   );
+  useAutoOpenBrowser(links[links.length - 1] ?? null);
+  return null;
 }

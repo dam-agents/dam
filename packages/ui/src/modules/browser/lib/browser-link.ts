@@ -1,25 +1,36 @@
 import { addressUrl } from "./stream.js";
 
 export const BROWSER_LINK_PREFIX = "platform://browser?url=";
+export const FRESH_LINK_MS = 2 * 60_000;
 
-export function parseBrowserLink(href: string | undefined): string | null {
+export interface BrowserLink {
+  url: string;
+  at: number | null;
+}
+
+export function parseBrowserLink(href: string | undefined): BrowserLink | null {
   if (!href?.startsWith(BROWSER_LINK_PREFIX)) return null;
-  let raw: string;
+  let query: URLSearchParams;
   try {
-    raw = decodeURIComponent(href.slice(BROWSER_LINK_PREFIX.length));
+    query = new URLSearchParams(href.slice("platform://browser?".length));
   } catch {
     return null;
   }
-  const candidate = addressUrl(raw);
+  const candidate = addressUrl(query.get("url") ?? "");
   if (!candidate) return null;
+  let url: URL;
   try {
-    const url = new URL(candidate);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.href
-      : null;
+    url = new URL(candidate);
   } catch {
     return null;
   }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const at = Number(query.get("at"));
+  return { url: url.href, at: Number.isFinite(at) && at > 0 ? at : null };
+}
+
+export function isFreshLink(link: BrowserLink, now: number): boolean {
+  return link.at !== null && Math.abs(now - link.at) < FRESH_LINK_MS;
 }
 
 export function browserLinkLabel(url: string): string {
@@ -29,11 +40,12 @@ export function browserLinkLabel(url: string): string {
 
 const BROWSER_LINK_IN_TEXT = /\((platform:\/\/browser\?url=[^)\s]+)\)/g;
 
-export function browserLinksIn(text: string): string[] {
-  const urls: string[] = [];
+export function browserLinksIn(text: string): BrowserLink[] {
+  const links: BrowserLink[] = [];
   for (const match of text.matchAll(BROWSER_LINK_IN_TEXT)) {
-    const url = parseBrowserLink(match[1]);
-    if (url && !urls.includes(url)) urls.push(url);
+    const link = parseBrowserLink(match[1]);
+    if (link && !links.some((l) => l.url === link.url && l.at === link.at))
+      links.push(link);
   }
-  return urls;
+  return links;
 }

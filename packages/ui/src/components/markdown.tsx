@@ -89,8 +89,8 @@ export function Markdown({
     () => ({
       pre: MarkdownCodeBlock,
       a({ href, children }) {
-        const browserUrl = parseBrowserLink(href);
-        if (browserUrl) return <BrowserLinkChip url={browserUrl} />;
+        const browserLink = parseBrowserLink(href);
+        if (browserLink) return <BrowserLinkChip link={browserLink} />;
         if (href?.startsWith(BROWSER_LINK_PREFIX)) {
           return <span>{children}</span>;
         }

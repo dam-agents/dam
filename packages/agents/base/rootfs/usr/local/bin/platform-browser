@@ -94,5 +94,5 @@ if (opened.error || opened.status !== 0) {
 
 const label = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
 process.stdout.write(
-  `[Open ${label}](${LINK_PREFIX}${encodeURIComponent(url.href)})\n`,
+  `[Open ${label}](${LINK_PREFIX}${encodeURIComponent(url.href)}&at=${Date.now()})\n`,
 );
