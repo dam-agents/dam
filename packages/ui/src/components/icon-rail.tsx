@@ -61,6 +61,7 @@ import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
 import { useStore } from "../store.js";
+import type { AgentView } from "../types.js";
 import { stateDotClass, stateLabel } from "./status-indicator.js";
 
 const SIDEBAR_ACTIVITY_PAGE = 5;
@@ -98,8 +99,12 @@ function SidebarAvatar({
 
 export function IconRail({
   hideMobileBar = false,
+  agentsOverride,
+  showActivity: showActivityProp,
 }: {
   hideMobileBar?: boolean;
+  agentsOverride?: AgentView[];
+  showActivity?: boolean;
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -139,7 +144,8 @@ export function IconRail({
     navigate: () => navigateToSettings(),
   };
 
-  const agents = useAgentsList();
+  const storeAgents = useAgentsList();
+  const agents = agentsOverride ?? storeAgents;
   const restartingAgents = useStore((s) => s.restartingAgents);
   const pausingAgents = useStore((s) => s.pausingAgents);
   const restartingIds = useMemo(
@@ -184,7 +190,8 @@ export function IconRail({
   const agentSentinelRef = useRef<HTMLDivElement>(null);
   const activitySentinelRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const hasActivity = feedItems.length > 0;
+  const hasActivity =
+    showActivityProp === false ? false : feedItems.length > 0;
   const hasUnreadActivity = feedItems.some((item) => item.type === "unread");
   const [agentsStuck, setAgentsStuck] = useState(false);
   const [activityStuck, setActivityStuck] = useState(false);
