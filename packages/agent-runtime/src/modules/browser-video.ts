@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const VIDEO_DISPLAY = ":99";
-export const VIDEO_X_SOCKET = "/tmp/.X11-unix/X99";
 export const SCREEN_WIDTH = 3840;
 export const SCREEN_HEIGHT = 2400;
 export const DEFAULT_CONTENT_TOP = 56;
@@ -17,8 +16,16 @@ const FLUSH_AFTER_MS = 4;
 const CALIBRATION_SEARCH = 160;
 const CALIBRATION_ROWS = 48;
 
-export function videoAvailable(): boolean {
-  return existsSync(VIDEO_X_SOCKET) && existsSync("/usr/bin/ffmpeg");
+export const VIDEO_TOOLS = [
+  "/usr/bin/Xvfb",
+  "/usr/bin/ffmpeg",
+  "/opt/ms-playwright/chromium",
+] as const;
+
+export function videoAvailable(
+  exists: (path: string) => boolean = existsSync,
+): boolean {
+  return VIDEO_TOOLS.every((path) => exists(path));
 }
 
 export function createAccessUnitSplitter(onAccessUnit: (au: Buffer) => void): {

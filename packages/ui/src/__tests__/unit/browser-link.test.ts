@@ -94,3 +94,17 @@ describe("browser open request", () => {
     expect(store.getState().takeBrowserOpenRequest()).toBeNull();
   });
 });
+
+describe("maximized browser", () => {
+  // TEST_SCENARIO: the panel can fill the whole agent view; closing it must bring the chat back, so the next panel opens docked rather than maximized.
+  test("is reset when the panel closes", () => {
+    const store = create<PlatformStore>()(
+      (...a) => createBrowserSlice(...a) as unknown as PlatformStore,
+    );
+    store.getState().setOpenBrowser("agent-1");
+    store.getState().setBrowserMaximized(true);
+    expect(store.getState().browserMaximized).toBe(true);
+    store.getState().setOpenBrowser(null);
+    expect(store.getState().browserMaximized).toBe(false);
+  });
+});

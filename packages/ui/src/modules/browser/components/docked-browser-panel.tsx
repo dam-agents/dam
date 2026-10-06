@@ -4,6 +4,8 @@ import {
   Close,
   ErrorFilled,
   Globe,
+  Maximize,
+  Minimize,
   OverflowMenuVertical,
   Renew,
 } from "@carbon/icons-react";
@@ -45,6 +47,8 @@ interface Props {
 
 export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const close = useStore((s) => s.setOpenBrowser);
+  const maximized = useStore((s) => s.browserMaximized);
+  const setMaximized = useStore((s) => s.setBrowserMaximized);
   const showConfirm = useStore((s) => s.showConfirm);
   const openRequestId = useStore((s) => s.browserOpenRequest?.id);
   const takeOpenRequest = useStore((s) => s.takeBrowserOpenRequest);
@@ -231,6 +235,15 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={maximized ? "Restore panel size" : "Maximize browser"}
+          tooltip={maximized ? "Restore" : "Maximize"}
+          onClick={() => setMaximized(!maximized)}
+        >
+          {maximized ? <Minimize size={16} /> : <Maximize size={16} />}
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

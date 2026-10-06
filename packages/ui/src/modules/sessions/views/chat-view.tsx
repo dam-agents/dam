@@ -198,6 +198,7 @@ export function ChatView() {
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
   const setOpenBrowser = useStore((s) => s.setOpenBrowser);
+  const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
@@ -506,6 +507,8 @@ export function ChatView() {
   const canOpenBrowser =
     features?.["strict-connection-addressing"] === true &&
     agentView?.requireConnectionAddress === true;
+  const browserFills =
+    browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -671,7 +674,9 @@ export function ChatView() {
           style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""} ${
+            browserFills ? "md:!hidden" : ""
+          }`}
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
@@ -698,19 +703,21 @@ export function ChatView() {
             {...panelStack.panelProps("artifacts")}
           />
         </div>
-        <ResizeHandle
-          side="left"
-          onResize={(d) => {
-            const v = clampLeftWidth(leftWRef.current + d);
-            leftWRef.current = v;
-            writePersistedNumber(LEFT_WIDTH_KEY, v);
-            setLeftW(v);
-          }}
-        />
+        {!browserFills && (
+          <ResizeHandle
+            side="left"
+            onResize={(d) => {
+              const v = clampLeftWidth(leftWRef.current + d);
+              leftWRef.current = v;
+              writePersistedNumber(LEFT_WIDTH_KEY, v);
+              setLeftW(v);
+            }}
+          />
+        )}
 
         {}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${browserFills ? "md:!hidden" : ""}`}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -914,7 +921,7 @@ export function ChatView() {
           openArtifactId ||
           (openBrowserAgentId && canOpenBrowser)) && (
           <>
-            <div className="hidden md:flex">
+            <div className={browserFills ? "hidden" : "hidden md:flex"}>
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
@@ -937,9 +944,11 @@ export function ChatView() {
               }
               className={cn(
                 "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                rightW !== null
-                  ? "md:shrink-0 md:w-[var(--file-w)]"
-                  : "md:flex-1 md:basis-0 md:min-w-0",
+                browserFills
+                  ? "md:flex-1 md:min-w-0"
+                  : rightW !== null
+                    ? "md:shrink-0 md:w-[var(--file-w)]"
+                    : "md:flex-1 md:basis-0 md:min-w-0",
                 "md:border-l md:border-border",
               )}
             >
