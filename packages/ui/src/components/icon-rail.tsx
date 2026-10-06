@@ -369,30 +369,35 @@ export function IconRail({
             ref={scrollRef}
             className="mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto"
           >
-            {agents.length > 0 && (
-              <div>
-                <div ref={agentSentinelRef} className="h-0" />
-                <div
-                  className={cn(
-                    "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
-                    agentsStuck
-                      ? "border-b border-[#dde1e6] dark:border-white/10"
-                      : "border-b border-transparent",
-                  )}
-                >
-                  <SectionLabel>Agents</SectionLabel>
-                  <Tooltip content="Create agent" side="right">
-                    <button
-                      type="button"
-                      onClick={() => setView("agent-new")}
-                      aria-label="Create agent"
-                      className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <Add size={16} />
-                    </button>
-                  </Tooltip>
-                </div>
-                <div className="flex flex-col gap-px px-2">
+            <div>
+              <div ref={agentSentinelRef} className="h-0" />
+              <div
+                className={cn(
+                  "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
+                  agentsStuck
+                    ? "border-b border-[#dde1e6] dark:border-white/10"
+                    : "border-b border-transparent",
+                )}
+              >
+                <SectionLabel>Agents</SectionLabel>
+                <Tooltip content="Create agent" side="right">
+                  <button
+                    type="button"
+                    onClick={() => setView("agent-new")}
+                    aria-label="Create agent"
+                    className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Add size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+              {agents.length === 0 ? (
+                <p className="px-5 py-2 text-sm text-muted-foreground">
+                  No agents yet
+                </p>
+              ) : (
+              <>
+              <div className="flex flex-col gap-px px-2">
                   {visibleAgents.map((agent, agentIndex) => {
                     const display = resolveAgentDisplay(
                       agent,
@@ -622,21 +627,22 @@ export function IconRail({
                       : `See all (${agents.length - activeAgents.length} hibernating)`}
                   </button>
                 )}
-              </div>
-            )}
+              </>
+              )}
+            </div>
 
-            {hasActivity && (
-              <div className="mt-6 pb-4">
-                <div ref={activitySentinelRef} className="h-0" />
-                <div
-                  className={cn(
-                    "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
-                    activityStuck
-                      ? "border-b border-[#dde1e6] dark:border-white/10"
-                      : "border-b border-transparent",
-                  )}
-                >
-                  <SectionLabel>Activity</SectionLabel>
+            <div className="mt-6 pb-4">
+              <div ref={activitySentinelRef} className="h-0" />
+              <div
+                className={cn(
+                  "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
+                  activityStuck
+                    ? "border-b border-[#dde1e6] dark:border-white/10"
+                    : "border-b border-transparent",
+                )}
+              >
+                <SectionLabel>Activity</SectionLabel>
+                {hasActivity && (
                   <ActivityFilterMenu
                     value={activityFilter}
                     onChange={(f) => {
@@ -644,7 +650,14 @@ export function IconRail({
                       setActivityCount(SIDEBAR_ACTIVITY_PAGE);
                     }}
                   />
-                </div>
+                )}
+              </div>
+              {!hasActivity ? (
+                <p className="px-5 py-2 text-sm text-muted-foreground">
+                  No activity
+                </p>
+              ) : (
+              <>
                 {visibleActivity.length === 0 && (
                   <p className="px-5 py-2 text-sm text-muted-foreground">
                     No matching activity
@@ -768,8 +781,9 @@ export function IconRail({
                 {hasMoreActivity && (
                   <div ref={activityEndRef} className="h-px" />
                 )}
-              </div>
-            )}
+              </>
+              )}
+            </div>
           </div>
         )}
 
