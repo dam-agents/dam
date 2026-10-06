@@ -1,4 +1,9 @@
-import { Idea, OverflowMenuVertical, Power } from "@carbon/icons-react";
+import {
+  Idea,
+  OverflowMenuVertical,
+  Power,
+  Send,
+} from "@carbon/icons-react";
 import React, { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +22,7 @@ import {
   type CharName,
 } from "../agents/components/char-avatar.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
+import { SidebarSection } from "../sessions/components/sidebar-section.js";
 import { EyeBeeMRebus } from "./eye-bee-m.js";
 import { AppFrame, SetupColumn } from "./first-agent-screens.js";
 
@@ -355,105 +361,178 @@ const CHAT_MESSAGES: ChatEntry[] = [
   },
 ];
 
-function ChatSpecimen() {
-  const charName: CharName = "stack";
-  const agentName = "spring-campaign";
-
+function ChatMessages({
+  charName,
+  agentName,
+}: {
+  charName: CharName;
+  agentName: string;
+}) {
   return (
-    <div className="overflow-hidden rounded-xl border-2 border-border">
-      <div className="flex h-[70px] items-center gap-3 border-b border-border bg-background px-6">
-        <span className="flex">
-          <CharAvatar
-            name={charName}
-            state="running"
-            colors={CHAR_COLORS[charName]}
-            className="size-8"
-          />
-        </span>
-        <h2 className="truncate text-sm font-bold text-foreground">
-          {agentName}
-        </h2>
-        <span
-          aria-hidden
-          className="h-2 w-2 shrink-0 rounded-full bg-success"
-        />
-        <span className="ml-auto">
-          <OverflowMenuVertical size={16} className="text-muted-foreground" />
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-4 bg-background p-6">
-        {CHAT_MESSAGES.map((msg, i) => {
-          if (msg.role === "thinking") {
-            return (
-              <div key={i} className="flex flex-col gap-1 items-start">
-                <div className="pl-8 flex items-center gap-1.5 text-sm text-muted-foreground/70 italic">
-                  <span className="inline-block size-3.5 rounded-full border border-muted-foreground/30 animate-pulse" />
-                  Thinking…
-                </div>
-                <div className="pl-8 rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-sm italic text-muted-foreground">
-                  {msg.text}
-                </div>
-              </div>
-            );
-          }
-          if (msg.role === "tool") {
-            return (
-              <div key={i} className="flex flex-col gap-1 items-start">
-                <div className="pl-8 flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <span className="font-mono text-[13px] rounded bg-muted px-1.5 py-0.5">
-                    {msg.label}
-                  </span>
-                </div>
-                <div className="pl-8 text-sm text-muted-foreground">
-                  {msg.text}
-                </div>
-              </div>
-            );
-          }
+    <>
+      {CHAT_MESSAGES.map((msg, i) => {
+        if (msg.role === "thinking") {
           return (
-            <div
-              key={i}
-              className={cn(
-                "flex flex-col gap-1",
-                msg.role === "assistant" ? "items-start" : "items-end",
-              )}
-            >
-              {msg.role === "assistant" && (
-                <span className="mb-0.5 flex items-center gap-2">
-                  <CharAvatar
-                    name={charName}
-                    state="running"
-                    colors={CHAR_COLORS[charName]}
-                    className="size-6"
-                  />
-                  <span className="text-sm font-semibold text-foreground">
-                    {agentName}
-                  </span>
-                </span>
-              )}
-              {msg.role === "user" && (
-                <span className="mb-0.5 text-[11px] font-medium text-muted-foreground">
-                  You
-                </span>
-              )}
-              <div
-                className={
-                  msg.role === "assistant"
-                    ? "max-w-full whitespace-pre-line pl-8 text-sm text-foreground"
-                    : "rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-                }
-              >
+            <div key={i} className="flex flex-col items-start gap-1">
+              <div className="flex items-center gap-1.5 pl-8 text-sm italic text-muted-foreground/70">
+                <span className="inline-block size-3.5 animate-pulse rounded-full border border-muted-foreground/30" />
+                Thinking…
+              </div>
+              <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-2 pl-8 text-sm italic text-muted-foreground">
                 {msg.text}
               </div>
             </div>
           );
-        })}
-      </div>
-    </div>
+        }
+        if (msg.role === "tool") {
+          return (
+            <div key={i} className="flex flex-col items-start gap-1">
+              <div className="flex items-center gap-1.5 pl-8 text-sm text-muted-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[13px]">
+                  {msg.label}
+                </span>
+              </div>
+              <div className="pl-8 text-sm text-muted-foreground">
+                {msg.text}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div
+            key={i}
+            className={cn(
+              "flex flex-col gap-1",
+              msg.role === "assistant" ? "items-start" : "items-end",
+            )}
+          >
+            {msg.role === "assistant" && (
+              <span className="mb-0.5 flex items-center gap-2">
+                <CharAvatar
+                  name={charName}
+                  state="running"
+                  colors={CHAR_COLORS[charName]}
+                  className="size-6"
+                />
+                <span className="text-sm font-semibold text-foreground">
+                  {agentName}
+                </span>
+              </span>
+            )}
+            {msg.role === "user" && (
+              <span className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+                You
+              </span>
+            )}
+            <div
+              className={
+                msg.role === "assistant"
+                  ? "max-w-full whitespace-pre-line pl-8 text-sm text-foreground"
+                  : "rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
+              }
+            >
+              {msg.text}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
+function ChatSpecimen() {
+  const charName: CharName = "stack";
+  const agentName = "spring-campaign";
+  const [filesOpen, setFilesOpen] = useState(false);
+
+  return (
+    <AppFrame height={760}>
+      <div className="flex h-full">
+        <div className="flex w-[220px] shrink-0 flex-col border-r border-border">
+          <div className="flex h-11 items-center gap-2.5 border-b border-border px-3">
+            <CharAvatar
+              name={charName}
+              state="running"
+              colors={CHAR_COLORS[charName]}
+              className="size-7"
+            />
+            <span className="truncate text-sm font-semibold text-foreground">
+              {agentName}
+            </span>
+            <span className="size-2 shrink-0 rounded-full bg-success" />
+          </div>
+          <SidebarSection
+            title="Files"
+            open={filesOpen}
+            onToggle={() => setFilesOpen((o) => !o)}
+          >
+            {filesOpen && (
+              <p className="px-3 py-4 text-sm text-muted-foreground">
+                No files
+              </p>
+            )}
+          </SidebarSection>
+          <SidebarSection title="Artifacts" open onToggle={() => {}}>
+            <div className="flex flex-col gap-2 px-3 py-3">
+              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
+                <span className="size-2 rounded-full bg-primary" />
+                <span className="truncate text-sm text-foreground">
+                  bold.png
+                </span>
+              </div>
+              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
+                <span className="size-2 rounded-full bg-primary" />
+                <span className="truncate text-sm text-foreground">
+                  soft.png
+                </span>
+              </div>
+              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
+                <span className="size-2 rounded-full bg-primary" />
+                <span className="truncate text-sm text-foreground">
+                  editorial.png
+                </span>
+              </div>
+            </div>
+          </SidebarSection>
+        </div>
+
+        <div className="flex flex-1 flex-col">
+          <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+            <span className="flex">
+              <CharAvatar
+                name={charName}
+                state="running"
+                colors={CHAR_COLORS[charName]}
+                className="size-7"
+              />
+            </span>
+            <h2 className="truncate text-sm font-bold text-foreground">
+              {agentName}
+            </h2>
+            <span className="size-2 shrink-0 rounded-full bg-success" />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Agent actions"
+              className="ml-auto"
+            >
+              <OverflowMenuVertical size={16} />
+            </Button>
+          </header>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+            <ChatMessages charName={charName} agentName={agentName} />
+          </div>
+          <div className="px-8 pb-6">
+            <div className="mx-auto flex h-12 max-w-3xl items-center justify-between rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground">
+              Ask {agentName} to do something
+              <Send size={16} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
 
 function SheetToggle({
   active,
@@ -599,12 +678,12 @@ export function AvatarSheetView() {
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Chat UI — Message Avatars</SectionLabel>
+        <SectionLabel>Chat UI — Full Shell</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          The agent&apos;s character appears in the chat header (size-8) and
-          next to each assistant message (size-6). The avatar reflects the
-          agent&apos;s current state — running while it&apos;s working, idle
-          between prompts.
+          Full chat layout with the sidebar, a Files + Artifacts left panel,
+          and the conversation center. The agent&apos;s character avatar
+          appears in the left-panel header, the chat header, and next to each
+          assistant message.
         </p>
         <ChatSpecimen />
       </section>
