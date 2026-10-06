@@ -65,6 +65,31 @@ const stubVideo: BrowserVideo = {
   start: () => ({ stop: () => {} }),
 };
 
+function fakeVideo() {
+  const starts: { width: number; height: number; top: number }[] = [];
+  const stops: number[] = [];
+  let emit: ((frame: Buffer, key: boolean) => void) | null = null;
+  const video: BrowserVideo = {
+    available: () => true,
+    calibrate: async () => 56,
+    start: (opts) => {
+      const n = starts.push({
+        width: opts.width,
+        height: opts.height,
+        top: opts.top,
+      });
+      emit = opts.onFrame;
+      return { stop: () => stops.push(n) };
+    },
+  };
+  return {
+    video,
+    starts,
+    stops,
+    emit: (f: Buffer, k: boolean) => emit?.(f, k),
+  };
+}
+
 async function host(preview: BrowserPreview) {
   const wss = new WebSocketServer({ noServer: true });
   const server: Server = createServer();
@@ -236,7 +261,7 @@ describe("browser preview", () => {
     expect(calls).toEqual([["stream", "status", "--json"]]);
   });
 
-  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is set at the panel's pixel ratio, so the video is sharp on a high-density screen; platform-browser scales the agent's screenshots back to CSS pixels. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
+  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is set at the panel's pixel ratio, so the video is sharp on a high-density screen; platform-browser scales the agent's screenshots back to CSS pixels. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened. Navigation runs in the page rather than through `open`, which holds agent-browser's one-at-a-time command queue until the page has loaded — a slow page held every resize behind it for up to 20 seconds.
   it("handles control messages itself", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
@@ -267,10 +292,14 @@ describe("browser preview", () => {
         ),
     );
 
-    expect(calls).toContainEqual(["open", "https://example.com/"]);
-    expect(calls).toContainEqual(["reload"]);
-    expect(calls).toContainEqual(["back"]);
-    expect(calls).toContainEqual(["forward"]);
+    expect(calls).toContainEqual([
+      "eval",
+      'location.href = "https://example.com/"',
+    ]);
+    expect(calls).toContainEqual(["eval", "location.reload()"]);
+    expect(calls).toContainEqual(["eval", "history.back()"]);
+    expect(calls).toContainEqual(["eval", "history.forward()"]);
+    expect(calls.some((c) => c[0] === "open")).toBe(false);
     expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
     expect(
@@ -342,31 +371,6 @@ describe("browserCommandLine", () => {
 });
 
 describe("browser preview video", () => {
-  function fakeVideo() {
-    const starts: { width: number; height: number; top: number }[] = [];
-    const stops: number[] = [];
-    let emit: ((frame: Buffer, key: boolean) => void) | null = null;
-    const video: BrowserVideo = {
-      available: () => true,
-      calibrate: async () => 56,
-      start: (opts) => {
-        const n = starts.push({
-          width: opts.width,
-          height: opts.height,
-          top: opts.top,
-        });
-        emit = opts.onFrame;
-        return { stop: () => stops.push(n) };
-      },
-    };
-    return {
-      video,
-      starts,
-      stops,
-      emit: (f: Buffer, k: boolean) => emit?.(f, k),
-    };
-  }
-
   // TEST_SCENARIO: a panel that asks for h264 gets video instead of the JPEG screencast. The runtime stops agent-browser's screencast (whose socket still carries input and address updates), drops any JPEG frame that still arrives, starts the encoder at the panel's size below the measured top offset, and restarts it — with a fresh keyframe — whenever the panel resizes.
   it("streams video sized to the panel and restarts it on resize", async () => {
     const stream = await fakeStream();
@@ -406,6 +410,46 @@ describe("browser preview video", () => {
 
     ws.close();
     await until(() => fake.stops.includes(2));
+  });
+});
+
+describe("resizing", () => {
+  // TEST_SCENARIO: dragging the panel's edge sends a size each time it settles, and agent-browser runs one command at a time. Run side by side, the sizes queued behind each other, each restarting the encoder, and the panel took seconds to catch up. While a size is being set, newer ones replace each other, and only the newest is set next, with one encoder restart.
+  it("sets only the newest size while one is in flight", async () => {
+    const stream = await fakeStream();
+    const { calls, run } = fakeRun(stream.port);
+    let release: () => void = () => {};
+    const slowRun = async (args: string[]) => {
+      if (args[0] === "set" && calls.every((c) => c[0] !== "set"))
+        await new Promise<void>((r) => (release = r));
+      return run(args);
+    };
+    const fake = fakeVideo();
+    const connect = await host(
+      createBrowserPreview({
+        run: slowRun,
+        profileDir: "/tmp/x",
+        video: fake.video,
+        log: () => {},
+      }),
+    );
+    const { ws } = await connect("");
+    await until(() => stream.received.length > 0);
+
+    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
+    await new Promise((r) => setTimeout(r, 50));
+    for (const width of [800, 700, 600])
+      ws.send(JSON.stringify({ type: "resize", width, height: 500 }));
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+
+    await until(() => fake.starts.length === 1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c[0] === "set")).toEqual([
+      ["set", "viewport", "900", "700", "1"],
+      ["set", "viewport", "600", "500", "1"],
+    ]);
+    expect(fake.starts).toEqual([{ width: 600, height: 500, top: 56 }]);
   });
 });
 

@@ -39,6 +39,7 @@ import {
 } from "../lib/stream.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
+const SHOW_STATS_KEY = "platform.browserPanel.showStats";
 
 interface Props {
   agentId: string;
@@ -77,6 +78,13 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const [noticeSeen, setNoticeSeen] = useState(() =>
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
+  const [showStats, setShowStats] = useState(() =>
+    readPersistedFlag(SHOW_STATS_KEY, false),
+  );
+  const toggleStats = () => {
+    writePersistedFlag(SHOW_STATS_KEY, !showStats);
+    setShowStats(!showStats);
+  };
 
   useEffect(() => {
     if (!editing)
@@ -227,6 +235,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={toggleStats}>
+              {showStats ? "Hide stream stats" : "Show stream stats"}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={stream.restartBrowser}>
               Restart browser
             </DropdownMenuItem>
@@ -258,20 +269,28 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <span className="min-w-0 flex-1 truncate">
           Runs in {agentName}'s sandbox — not a page from this site
         </span>
-        <span
-          className="shrink-0 tabular-nums"
-          title="Stream codec and size, time from your click or key to the next frame, frames per second, and stream bandwidth"
-        >
-          {stream.streamInfo &&
-            `${stream.streamInfo.codec} ${stream.streamInfo.width}×${stream.streamInfo.height} · `}
-          {stream.stats.roundTripMs === null
-            ? "–"
-            : `${stream.stats.roundTripMs} ms`}
-          {" · "}
-          {stream.stats.fps} fps
-          {" · "}
-          {stream.stats.kbPerSec} KB/s
-        </span>
+        {showStats && (
+          <span
+            className="flex shrink-0 tabular-nums"
+            title="Stream codec and size, time from your click or key to the next frame, frames per second, and stream bandwidth"
+          >
+            {stream.streamInfo && (
+              <span className="pr-2">
+                {stream.streamInfo.codec} {stream.streamInfo.width}×
+                {stream.streamInfo.height}
+              </span>
+            )}
+            <span className="w-[7ch] text-right">
+              {stream.stats.roundTripMs === null
+                ? "–"
+                : `${stream.stats.roundTripMs} ms`}
+            </span>
+            <span className="w-[7ch] text-right">{stream.stats.fps} fps</span>
+            <span className="w-[10ch] text-right">
+              {stream.stats.kbPerSec} KB/s
+            </span>
+          </span>
+        )}
       </div>
 
       {!noticeSeen && (

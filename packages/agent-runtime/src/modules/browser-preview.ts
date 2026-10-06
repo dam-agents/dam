@@ -57,6 +57,12 @@ export type PreviewControl =
   | { type: "restart_browser" }
   | { type: "resize"; width: number; height: number; scale: number };
 
+const PAGE_NAVIGATION = {
+  reload: "location.reload()",
+  back: "history.back()",
+  forward: "history.forward()",
+} as const;
+
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
 export interface BrowserVideo {
@@ -322,25 +328,20 @@ export function createBrowserPreview(deps: {
       client.send(JSON.stringify({ type: "preview_error", message }));
   }
 
-  async function control(client: WebSocket, msg: PreviewControl) {
+  async function control(
+    client: WebSocket,
+    msg: Exclude<PreviewControl, { type: "resize" }>,
+  ) {
     if (msg.type === "navigate") {
       const url = previewUrl(msg.url);
       if (!url) return sendError(client, "Only http and https addresses open");
-      await deps.run(["open", url]);
+      await deps.run(["eval", `location.href = ${JSON.stringify(url)}`]);
     } else if (
       msg.type === "reload" ||
       msg.type === "back" ||
       msg.type === "forward"
     ) {
-      await deps.run([msg.type]);
-    } else if (msg.type === "resize") {
-      await deps.run([
-        "set",
-        "viewport",
-        String(msg.width),
-        String(msg.height),
-        String(msg.scale),
-      ]);
+      await deps.run(["eval", PAGE_NAVIGATION[msg.type]]);
     } else if (msg.type === "restart_browser") {
       contentTops.clear();
       await stopBrowser();
@@ -477,10 +478,37 @@ export function createBrowserPreview(deps: {
         client.send(JSON.stringify(info));
     }
 
+    let resizeTo: Viewport | null = null;
+    let resizing = false;
+    async function applyResizes() {
+      if (resizing) return;
+      resizing = true;
+      try {
+        while (resizeTo && client.readyState === WebSocket.OPEN) {
+          const wanted = resizeTo;
+          resizeTo = null;
+          await timed("resize", () =>
+            deps.run([
+              "set",
+              "viewport",
+              String(wanted.width),
+              String(wanted.height),
+              String(wanted.scale),
+            ]),
+          ).catch((err: Error) => sendError(client, err.message));
+          if (resizeTo) continue;
+          viewport = wanted;
+          await restartVideo(true);
+        }
+      } finally {
+        resizing = false;
+      }
+    }
+
     let checking = false;
     const viewportCheck = setInterval(() => {
       const wanted = viewport;
-      if (!wanted || restarting || checking) return;
+      if (!wanted || restarting || checking || resizing) return;
       checking = true;
       applyViewport(wanted)
         .then((changed) => {
@@ -495,19 +523,15 @@ export function createBrowserPreview(deps: {
 
     client.on("message", (data: Buffer, isBinary: boolean) => {
       const msg = isBinary ? null : parseControl(data.toString());
+      if (msg?.type === "resize") {
+        resizeTo = { width: msg.width, height: msg.height, scale: msg.scale };
+        void applyResizes();
+        return;
+      }
       if (msg) {
-        timed(msg.type, () => control(client, msg))
-          .then(() => {
-            if (msg.type === "resize") {
-              viewport = {
-                width: msg.width,
-                height: msg.height,
-                scale: msg.scale,
-              };
-              return restartVideo(true);
-            }
-          })
-          .catch((err: Error) => sendError(client, err.message));
+        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
+          sendError(client, err.message),
+        );
         return;
       }
       if (upstream?.readyState === WebSocket.OPEN)
