@@ -112,7 +112,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
               className="flex items-center gap-2 text-base font-semibold text-foreground transition-colors hover:text-foreground/80"
             >
               <ArrowLeft size={16} />
-              Needs you
+              Approvals
             </button>
           ) : (
             <h2 className="text-base font-semibold text-foreground">
@@ -177,7 +177,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 filtered={filtered}
                 onReset={() => setNeedsYou(false)}
                 offerWayBack
-                emptyMessage="Nothing is waiting on you."
+                emptyMessage="No approvals waiting."
                 resetLabel="Back to Activity"
               />
             ) : (
@@ -293,7 +293,9 @@ export function ActivityButton({ onOpen }: { onOpen: () => void }) {
       onClick={onOpen}
       data-testid="open-activity"
       aria-label={
-        waiting > 0 ? `Activity, ${String(waiting)} waiting on you` : "Activity"
+        waiting > 0
+          ? `Activity, ${String(waiting)} ${waiting === 1 ? "approval" : "approvals"} waiting`
+          : "Activity"
       }
       className="relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >

@@ -149,7 +149,7 @@ describe("the activity filters", () => {
     ]);
   });
 
-  // TEST_SCENARIO: every state names the kinds it keeps, and each names different ones. An approval is what is waiting on the user, so it answers "needs attention" rather than arriving in the unread pile alongside messages nobody has to act on — and no two states may resolve to the same list, which is how a filter stops meaning anything.
+  // TEST_SCENARIO: every state names the kinds it keeps, and each names different ones. An approval is what is waiting on the user, so it answers "Approvals" rather than arriving in the unread pile alongside messages nobody has to act on — and no two states may resolve to the same list, which is how a filter stops meaning anything.
   it("gives each state its own items", () => {
     const base = defaultActivityFilters();
     const byState = (state: "any" | "attention" | "in-progress" | "unread") =>

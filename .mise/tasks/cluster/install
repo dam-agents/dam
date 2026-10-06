@@ -547,12 +547,14 @@ CERT_MANAGER_PID=$!
 # k3s bundle, the `gateway-api-crd` job fails, and the CRDs stay unmanaged.
 # Move this pin with k3s. The waypoint below needs only Gateway v1. Server-side
 # apply: the HTTPRoute CRD comes within a few KiB of the limit on client-side
-# apply's last-applied annotation.
+# apply's last-applied annotation. --force-conflicts: on a fresh k3s the
+# `gateway-api-crd` job can apply the same bundle between our check and our
+# apply, and Helm then owns the policy's matchConstraints/matchResources.
 GATEWAY_API_VERSION="v1.6.1"
 
 if ! kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
-  kubectl apply --server-side -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+  kubectl apply --server-side --force-conflicts -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
 else
   echo "Gateway API CRDs already installed"
 fi

@@ -32,7 +32,7 @@ export const STATE_FILTERS: readonly StateFilter[] = [
 
 export const STATE_FILTER_LABELS: Record<StateFilter, string> = {
   any: "All",
-  attention: "Needs attention",
+  attention: "Approvals",
   "in-progress": "In progress",
   unread: "Unread",
 };
