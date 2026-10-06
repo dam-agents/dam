@@ -1,8 +1,8 @@
 # Bob Agent
 
-Platform agent running [Bob Shell](https://bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the shared Debian agent base, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
+Platform agent running [Bob Shell](https://bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Shipped in the default agent image, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)), as its `bob` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), come from the node's harness tools, and its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 

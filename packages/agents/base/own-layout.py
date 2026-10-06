@@ -1,4 +1,4 @@
-"""Hands the agent its paths in a root-owned OCI layout: `mise oci build` stamps one owner on every layer.
+"""Hands the agent its paths in a root-owned OCI layout: image:pack stamps one owner on every layer it adds.
 
 Usage: own-layout.py <layout-dir> <cache-dir>
 
