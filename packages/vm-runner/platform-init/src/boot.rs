@@ -342,6 +342,9 @@ fn enter_workdir(saved: &Path) {
 // UNIT_BOUNDARY_DESCRIPTION: where pivot_root puts the root the image came up on, inside the platform's. It is detached and removed before the image runs; a kept root may still hold it from a boot cut short, and it is used again.
 const OLD_ROOT: &str = ".platform-old-root";
 
+// UNIT_BOUNDARY_DESCRIPTION: the overlay features off, so a kept upper layer may sit over a lower that changed while it was not mounted, which is every new image of the root's generation. With them on, overlayfs records each copied-up directory's origin in the lower and verifies it at the next mount: the smolvm guest's kernel then refuses a fresh mount with a stale file handle, or, over platform-init's root, hides a new image's files under every directory the agent ever wrote into — a later image's baked tools vanished under a `mise use` this way. The kernel documents changing the lower between mounts as safe only with these off.
+const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
+
 // UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
 struct FreshRoot {
     upper: PathBuf,
@@ -381,6 +384,7 @@ impl FreshRoot {
         options.push(&self.upper);
         options.push(",workdir=");
         options.push(&self.work);
+        options.push(LOWER_MAY_CHANGE);
         cstring(&options)
     }
 
@@ -2527,7 +2531,7 @@ mod tests {
         assert_ne!(layers.upper, layers.legacy_upper);
         assert_eq!(
             layers.options().unwrap().to_str().unwrap(),
-            "lowerdir=/,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work"
+            "lowerdir=/,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work,index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off"
         );
     }
 

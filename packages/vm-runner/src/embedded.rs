@@ -411,7 +411,11 @@ fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
     let written = match record.image.as_deref() {
         Some(image) => crate::files::write(
             &path,
-            format!("{}\n", image_identity(image)).as_bytes(),
+            format!(
+                "{}\n",
+                image_identity(image, recorded_image_env(Some(image)).as_deref())
+            )
+            .as_bytes(),
             crate::share::CA_MODE,
         ),
         None => std::fs::remove_file(&path).or_else(|e| match e.kind() {
@@ -426,9 +430,18 @@ fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's image to platform-init: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway.
-fn image_identity(image: &str) -> String {
+// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root's compatibility generation in its own env (ROOT_COMPAT_ENV) is named by that generation alone, so a new image of the same generation keeps what the agent wrote outside HOME, and only a bump starts an empty root. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
+fn image_identity(image: &str, image_env: Option<&[String]>) -> String {
     use std::os::unix::fs::MetadataExt;
+    let generation = image_env
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .find_map(|var| var.strip_prefix(ROOT_COMPAT_ENV)?.strip_prefix('='))
+        .and_then(|value| value.parse::<u32>().ok());
+    if let Some(generation) = generation {
+        return format!("root-compat {generation}");
+    }
     match packed_layers_dir_for_ref(image).and_then(|dir| std::fs::metadata(dir).ok()) {
         Some(dir) => format!(
             "{image} {} {}.{:09}",
@@ -446,6 +459,9 @@ fn recorded_image_env(image: Option<&str>) -> Option<Vec<String>> {
         .and_then(packed_layers_dir_for_ref)
         .and_then(|rootfs| image_env_beside(&rootfs))
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the image env var that declares which generation of root an image boots, as a decimal integer its build bumps on a change that breaks what an older image's root kept: a new base distribution release, or a file the boot rewrites that the new image changes too. Images of one generation keep each other's root.
+pub const ROOT_COMPAT_ENV: &str = "PLATFORM_ROOT_COMPAT";
 
 // UNIT_BOUNDARY_DESCRIPTION: the image env var that asks for the node's harness tools, naming the absolute guest path they are mounted at. Only the image's own env is read for it, never the spec's, which carries the owner's values: an owner cannot mount the node's tools over a path of their choosing.
 pub const TOOLS_VOLUME_ENV: &str = "PLATFORM_TOOLS_VOLUME";
@@ -700,7 +716,13 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(share.join(crate::share::IMAGE_FILE)).unwrap(),
-            format!("{}\n", image_identity(record.image.as_deref().unwrap())),
+            format!(
+                "{}\n",
+                image_identity(
+                    record.image.as_deref().unwrap(),
+                    recorded_image_env(record.image.as_deref()).as_deref()
+                )
+            ),
             "a start must name the image it boots to platform-init"
         );
     }
@@ -708,15 +730,15 @@ mod tests {
     // TEST_SCENARIO: platform-init keeps a machine's root while the image line stays the same, so the line must change whenever the image does. A registry reference is its own name. A cached tree keeps its path when a tag such as platform-default:latest is staged again, but the new tree is a new directory renamed over the old one, and its inode tells them apart.
     #[test]
     fn an_image_staged_again_under_its_name_is_a_new_image() {
-        assert_eq!(image_identity("quay.io/x/vm:1"), "quay.io/x/vm:1");
+        assert_eq!(image_identity("quay.io/x/vm:1", None), "quay.io/x/vm:1");
         let dir = crate::testdir::TempDir::new("identity");
         let tree = dir.path().join("rootfs");
         fs::create_dir(&tree).unwrap();
         let image = format!("local-dir:{}", tree.display());
-        let first = image_identity(&image);
+        let first = image_identity(&image, None);
         assert!(first.starts_with(&format!("{image} ")), "{first}");
         assert_eq!(
-            image_identity(&image),
+            image_identity(&image, None),
             first,
             "an unchanged tree is the same image"
         );
@@ -724,7 +746,29 @@ mod tests {
         let staged = dir.path().join("rootfs.new");
         fs::create_dir(&staged).unwrap();
         fs::rename(&staged, &tree).unwrap();
-        assert_ne!(image_identity(&image), first);
+        assert_ne!(image_identity(&image, None), first);
+    }
+
+    // TEST_SCENARIO: an image that declares its root's generation is named by that generation alone, so the next image of the same generation keeps the machine's root and a bumped one does not. A value that is not a plain integer declares nothing, and the image is named exactly, as one with no declaration is.
+    #[test]
+    fn images_of_one_root_generation_share_a_root() {
+        let gen = |n: &str| {
+            vec![
+                format!("{ROOT_COMPAT_ENV}={n}"),
+                "PATH=/usr/bin".to_string(),
+            ]
+        };
+        let one = image_identity("quay.io/x/default:1", Some(&gen("1")));
+        assert_eq!(one, image_identity("quay.io/x/default:2", Some(&gen("1"))));
+        assert_ne!(one, image_identity("quay.io/x/default:3", Some(&gen("2"))));
+        assert_eq!(
+            image_identity("quay.io/x/custom:1", Some(&gen("one"))),
+            "quay.io/x/custom:1"
+        );
+        assert_eq!(
+            image_identity("quay.io/x/custom:1", Some(&["PATH=/usr/bin".to_string()])),
+            "quay.io/x/custom:1"
+        );
     }
 
     // TEST_SCENARIO: a machine boots with the node's tools only when its runner has a tools dir and its image names a guest path for them, and then read-only at that path beside the share. A mount an earlier start recorded is dropped once either side stops offering it, and a path that is relative, climbs with `..`, is the root, or holds or sits inside the share is refused, since it would hide the share from platform-init.

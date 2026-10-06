@@ -58,3 +58,9 @@ DEBIAN_FRONTEND = "noninteractive"
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 AGENT_BROWSER_ARGS = "--no-sandbox"
 AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"
+# A vm machine keeps its whole root while it boots images of one generation,
+# so a deploy keeps what the agent installed outside HOME. Bump it only for a
+# change that breaks a root an older image left: a new Debian release, or a
+# file the entrypoint rewrites on every boot (/etc/passwd) changing in the
+# image. A bump starts every machine on an empty root.
+PLATFORM_ROOT_COMPAT = "1"
