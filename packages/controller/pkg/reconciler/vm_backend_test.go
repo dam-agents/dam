@@ -317,6 +317,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
+	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
 	r.WithRequeue(t.Context(), requeued.add)
@@ -420,6 +421,29 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
 	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
 	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+}
+
+// TEST_SCENARIO: a vm machine boots one image for every harness, so the Agent's spec.harness reaches the guest as PLATFORM_HARNESS to pick which one runs. The owner's secretRef is applied after it and may override it, as it may any env in the owner's own sandbox. An Agent with no harness sets nothing, leaving the image's default.
+func TestAVMAgentsHarnessReachesTheGuest(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Harness = "codex"
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "codex", node.spec("my-agent").Env["PLATFORM_HARNESS"])
+
+	agent.Spec.SecretRef = "mine"
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "mine", Namespace: "test-agents", Labels: map[string]string{envoyOwnerLabel: testOwner}},
+		Data:       map[string][]byte{"PLATFORM_HARNESS": []byte("pi")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "pi", node.spec("my-agent").Env["PLATFORM_HARNESS"])
+
+	bare := vmAgentCR()
+	r, node, _ = setupVMReconciler(t, bare)
+	require.NoError(t, r.Reconcile(context.Background(), bare))
+	assert.NotContains(t, node.spec("my-agent").Env, "PLATFORM_HARNESS")
 }
 
 // TEST_SCENARIO: on a laptop the runner runs on the host, outside the cluster, and serves every owner. The guest reaches its gateway through a NodePort the cluster's VM forwards to the host's loopback, at the address smolvm gives the host, and at nothing else — so the machine carries that port instead of an allowlist, since allowing the host address would open every loopback port. The agent's Service has no runner pod to select and names the host and the machine's published port in its own EndpointSlice, and a delete reaches the host runner with no runner Deployment to look for.
@@ -911,6 +935,33 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
 		"--image-cache-socket="+vmImageCacheSocket)
 	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
+}
+
+// TEST_SCENARIO: a vm machine boots one image for every harness, and that harness's tools come from a node directory the chart's DaemonSet fills. The runner mounts it read-only, since the DaemonSet is its only writer, and is told where with --tools-dir. With no such directory the runner is told an empty --tools-dir and gets no host mount.
+func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
+	render := func(configure func(*config.AgentBase)) corev1.PodSpec {
+		r, _, _ := setupVMReconciler(t, vmAgentCR())
+		configure(&r.config.AgentBase)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return dep.Spec.Template.Spec
+	}
+
+	pod := render(func(*config.AgentBase) {})
+	assert.Contains(t, pod.Containers[0].Args, "--tools-dir="+vmRunnerToolsPath)
+	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
+	dir := corev1.HostPathDirectoryOrCreate
+	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
+	}})
+
+	pod = render(func(base *config.AgentBase) { base.ToolsHostPath = "" })
+	assert.Contains(t, pod.Containers[0].Args, "--tools-dir=")
+	for _, v := range pod.Volumes {
+		assert.NotEqual(t, "harness-tools", v.Name)
+	}
 }
 
 // TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.

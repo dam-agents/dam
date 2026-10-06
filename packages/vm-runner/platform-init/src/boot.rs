@@ -1,4 +1,4 @@
-// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a fresh root, mounts the agent's home from the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary and cache folders in memory, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
@@ -94,6 +94,7 @@ pub fn run(command: Vec<OsString>) -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
+    mount_scratch();
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
@@ -217,7 +218,7 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Without this, anything the image writes outside HOME persists, and an old image's changes lie over a new one. This mounts a new overlay over that root, with empty upper and work layers on the disk, and pivots into it. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on the old root would look healthy while it keeps what the platform promises to discard.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Left on it, an old image's changes lie over a new one. This mounts the platform's own overlay over that root, with its upper and work layers on the disk, and pivots into it. The upper layer is kept while the machine boots the image that wrote it, as the runner names it in the share, and emptied when the image changed or either side names none, so what the image writes outside HOME lasts exactly as long as that image. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on smolvm's root would look healthy while it keeps another image's changes.
 fn fresh_root(disk: &Path) {
     let layers = FreshRoot::on(disk);
     let table = match fs::read_to_string("/proc/self/mountinfo") {
@@ -228,9 +229,16 @@ fn fresh_root(disk: &Path) {
         Ok(plan) => plan,
         Err(e) => fatal!("{e}"),
     };
-    for dir in [&layers.upper, &layers.work] {
+    let booting = image_record(Path::new(guest::IMAGE_PATH));
+    let recorded = image_record(&layers.image);
+    let fresh = fresh_reason(booting.as_deref(), recorded.as_deref());
+    let mut cleared = vec![&layers.legacy_upper, &layers.work];
+    if fresh.is_some() {
+        cleared.extend([&layers.image, &layers.upper]);
+    }
+    for dir in cleared {
         if let Err(e) = remove_all(dir) {
-            fatal!("clearing the last boot's root at {}: {e}", dir.display());
+            fatal!("clearing {}: {e}", dir.display());
         }
     }
     for dir in [&layers.upper, &layers.work, &layers.merged] {
@@ -238,35 +246,53 @@ fn fresh_root(disk: &Path) {
             fatal!("creating {}: {e}", dir.display());
         }
     }
+    match (fresh, booting.as_deref()) {
+        (None, _) => logf!(
+            "keeping the root of the last boot, which ran this image too ({})",
+            booting.as_deref().unwrap_or_default()
+        ),
+        (Some(reason), Some(booting)) => {
+            if let Err(e) = write_record(&layers.image, format!("{booting}\n").as_bytes()) {
+                fatal!(
+                    "recording the image of the root at {}: {e}",
+                    layers.image.display()
+                );
+            }
+            logf!("booting on a fresh root: {reason}");
+        }
+        (Some(reason), None) => logf!("booting on a fresh root: {reason}"),
+    }
     if let Err(e) = layers.mount() {
         if e.raw_os_error() == Some(libc::EINVAL) {
             fatal!(
-                "the kernel refused a fresh root over this image ({e}). It does that when the image's root is already two overlays deep, which smolvm builds when it cannot stack the image's layers in one mount. Refusing to boot on a root whose writes would persist"
+                "the kernel refused the platform's root over this image ({e}). It does that when the image's root is already two overlays deep, which smolvm builds when it cannot stack the image's layers in one mount. Refusing to boot on smolvm's root, which keeps every image's changes"
             );
         }
         fatal!(
-            "mounting a fresh root at {}: {e}; refusing to boot on a root whose writes would persist",
+            "mounting the platform's root at {}: {e}; refusing to boot on smolvm's root, which keeps every image's changes",
             layers.merged.display()
         );
     }
     let put_old = layers.merged.join(OLD_ROOT);
     if let Err(e) = DirBuilder::new().mode(0o700).create(&put_old) {
-        fatal!("creating {}: {e}", put_old.display());
+        if e.kind() != io::ErrorKind::AlreadyExists {
+            fatal!("creating {}: {e}", put_old.display());
+        }
     }
     if let Err(e) = pivot_root(&layers.merged, &put_old) {
-        fatal!("pivoting into the fresh root: {e}");
+        fatal!("pivoting into the platform's root: {e}");
     }
     if let Err(e) = std::env::set_current_dir("/") {
-        fatal!("entering the fresh root: {e}");
+        fatal!("entering the platform's root: {e}");
     }
     let old = Path::new("/").join(OLD_ROOT);
     for point in &plan.carried {
         if let Err(e) = carry(&old, point) {
             if point == disk {
-                fatal!("moving the storage disk into the fresh root: {e}");
+                fatal!("moving the storage disk into the platform's root: {e}");
             }
             logf!(
-                "WARNING: {} is missing from the fresh root ({e})",
+                "WARNING: {} is missing from the platform's root ({e})",
                 point.display()
             );
         }
@@ -278,36 +304,52 @@ fn fresh_root(disk: &Path) {
     for point in &plan.left_behind {
         let _ = fs::remove_dir(point);
     }
-    for point in &plan.discarded {
-        if let Err(e) = scratch_dir(point) {
-            logf!(
-                "WARNING: preparing {} on the fresh root ({e})",
-                point.display()
-            );
-        }
-    }
     logf!(
-        "booting on a fresh root; what the image writes outside {} ends with this boot",
+        "what the image writes outside {} stays until the machine boots another image",
         guest::AGENT_HOME
     );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm starts this process in the image's WORKDIR, and the image's command counts on that: `node dist/server.js` under WORKDIR /app names a file that exists only relative to /app. pivot_root leaves the process in a directory of the old root, so fresh_root has to enter the new root's "/", and nothing else would ever leave it — so the directory saved before the pivot is entered again here. The path is absolute, and the fresh root's merged view carries the whole image tree, so it resolves to the same directory of the same image. It is entered only once every mount is in place: a WORKDIR under HOME entered before the home is mounted is the image's copy, which the mount then hides, and the entrypoint would work in a directory nothing keeps. One the fresh root somehow lacks is a warning and a start at "/", not a failed boot: the entrypoint may not need it at all.
+// UNIT_BOUNDARY_DESCRIPTION: one image record, the runner's in the share or the disk's beside the root, as its one line. A record that is missing, unreadable or empty names no image.
+fn image_record(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let line = text.trim();
+    (!line.is_empty()).then(|| line.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why this boot starts from an empty upper layer, or nothing when it keeps the last one. A root is kept only when the runner names the image of this boot and the disk records that same image for the root. A share that names none is from a runner that does not write the record; a disk that records none is new, from the layout that emptied the root on every boot, or was cut short while its root was cleared. Either way nothing says the root came from this image, so it is not kept.
+fn fresh_reason(booting: Option<&str>, recorded: Option<&str>) -> Option<&'static str> {
+    match (booting, recorded) {
+        (None, _) => Some("the runner names no image for this boot"),
+        (Some(_), None) => Some("the disk records no image for its last root"),
+        (Some(booting), Some(recorded)) if booting != recorded => Some(
+            "the image changed since the last boot, which is normal after the agent's image was updated",
+        ),
+        _ => None,
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: smolvm starts this process in the image's WORKDIR, and the image's command counts on that: `node dist/server.js` under WORKDIR /app names a file that exists only relative to /app. pivot_root leaves the process in a directory of the old root, so fresh_root has to enter the new root's "/", and nothing else would ever leave it — so the directory saved before the pivot is entered again here. The path is absolute, and the platform root's merged view carries the whole image tree, so it resolves to the same directory of the same image. It is entered only once every mount is in place: a WORKDIR under HOME entered before the home is mounted is the image's copy, which the mount then hides, and the entrypoint would work in a directory nothing keeps. One the platform's root somehow lacks is a warning and a start at "/", not a failed boot: the entrypoint may not need it at all.
 fn enter_workdir(saved: &Path) {
     if let Err(e) = std::env::set_current_dir(saved) {
         logf!(
-            "WARNING: the image's working directory {} is not in the fresh root ({e}); its entrypoint starts at /",
+            "WARNING: the image's working directory {} is not in the platform's root ({e}); its entrypoint starts at /",
             saved.display()
         );
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where pivot_root puts the root the image came up on, inside the fresh one. It is detached and removed before the image runs.
+// UNIT_BOUNDARY_DESCRIPTION: where pivot_root puts the root the image came up on, inside the platform's. It is detached and removed before the image runs; a kept root may still hold it from a boot cut short, and it is used again.
 const OLD_ROOT: &str = ".platform-old-root";
 
-// UNIT_BOUNDARY_DESCRIPTION: the fresh root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM.
+// UNIT_BOUNDARY_DESCRIPTION: the overlay features off, so a kept upper layer may sit over a lower that changed while it was not mounted, which is every new image of the root's generation. With them on, overlayfs records each copied-up directory's origin in the lower and verifies it at the next mount: the smolvm guest's kernel then refuses a fresh mount with a stale file handle, or, over platform-init's root, hides a new image's files under every directory the agent ever wrote into — a later image's baked tools vanished under a `mise use` this way. The kernel documents changing the lower between mounts as safe only with these off.
+const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
+
+// UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
 struct FreshRoot {
     upper: PathBuf,
+    image: PathBuf,
+    legacy_upper: PathBuf,
     work: PathBuf,
     merged: PathBuf,
 }
@@ -316,7 +358,9 @@ impl FreshRoot {
     fn on(disk: &Path) -> Self {
         let store = guest::system_store(disk, guest::ROOTFS_DIR);
         FreshRoot {
-            upper: store.join("upper"),
+            upper: store.join("kept").join("upper"),
+            image: store.join("kept").join("image"),
+            legacy_upper: store.join("upper"),
             work: store.join("work"),
             merged: store.join("merged"),
         }
@@ -340,6 +384,7 @@ impl FreshRoot {
         options.push(&self.upper);
         options.push(",workdir=");
         options.push(&self.work);
+        options.push(LOWER_MAY_CHANGE);
         cstring(&options)
     }
 
@@ -368,7 +413,7 @@ struct MountEntry {
     point: PathBuf,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads /proc/self/mountinfo. A line this cannot read is skipped and does not fail the boot: only the root and the mounts directly on it matter, and a mount missing from the plan is logged when the fresh root lacks it.
+// UNIT_BOUNDARY_DESCRIPTION: reads /proc/self/mountinfo. A line this cannot read is skipped and does not fail the boot: only the root and the mounts directly on it matter, and a mount missing from the plan is logged when the platform's root lacks it.
 fn parse_mountinfo(table: &str) -> Vec<MountEntry> {
     table
         .lines()
@@ -415,15 +460,14 @@ fn unescape_mount_path(field: &str) -> PathBuf {
     PathBuf::from(OsString::from_vec(out))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which mounts follow the image onto its fresh root: every mount made directly on the old root, in the order the kernel lists them, except the other binds of the storage disk. Those are smolvm's. /storage holds the whole disk, including the upper layer smolvm keeps, and carrying it would give the image a second, persistent name for everything the fresh root discards. A mount on top of another moves with it, so only the ones on the root are named. The empty directory a left-behind mount stood on is removed too, so no script mistakes it for the disk. `discarded` are the mounts the fresh root replaces rather than carries, whose directories stay.
+// UNIT_BOUNDARY_DESCRIPTION: which mounts follow the image onto the platform's root: every mount made directly on the old root, in the order the kernel lists them, except the other binds of the storage disk and the mounts platform-init makes again itself. The binds are smolvm's. /storage holds the whole disk, including the upper layer smolvm keeps, and carrying it would give the image a second, persistent name for the root of every image this machine ran. A mount on top of another moves with it, so only the ones on the root are named. The empty directory a left-behind mount stood on is removed too, so no script mistakes it for the disk. The directory of a mount platform-init makes again stays, since it mounts there.
 #[derive(Debug, PartialEq)]
 struct MountPlan {
     carried: Vec<PathBuf>,
     left_behind: Vec<PathBuf>,
-    discarded: Vec<PathBuf>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm mounts /tmp as a tmpfs with no size, which the kernel caps at half the guest's memory, so an agent that fills /tmp is killed for memory rather than refused a write. Left behind, /tmp is the fresh root's own directory instead: on the disk like every other write outside HOME, bounded by the disk, and empty on every boot because the fresh root's upper layer is.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm's /tmp is a tmpfs. mount_scratch mounts the platform's own there, beside the other temporary folders, so smolvm's is left with the old root.
 const DISCARDED_MOUNTS: [&str; 1] = ["/tmp"];
 
 fn plan_mounts(table: &[MountEntry], disk: &Path) -> Result<MountPlan, String> {
@@ -450,24 +494,17 @@ fn plan_mounts(table: &[MountEntry], disk: &Path) -> Result<MountPlan, String> {
     let (carried, left_behind): (Vec<&&MountEntry>, Vec<_>) = on_root
         .iter()
         .partition(|entry| entry.point == disk || &entry.device != disk_device);
-    let (discarded, carried): (Vec<_>, Vec<_>) = carried.into_iter().partition(|entry| {
-        entry.point != disk
-            && DISCARDED_MOUNTS
+    let carried = carried.into_iter().filter(|entry| {
+        entry.point == disk
+            || !DISCARDED_MOUNTS
                 .iter()
                 .any(|path| entry.point == Path::new(path))
     });
     let points = |entries: Vec<&&MountEntry>| entries.iter().map(|e| e.point.clone()).collect();
     Ok(MountPlan {
-        carried: points(carried),
+        carried: points(carried.collect()),
         left_behind: points(left_behind),
-        discarded: points(discarded),
     })
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a directory every user may write to and no user may delete another's files in, which is what software expects of /tmp. The image's own directory usually is one already; one it ships as anything else, or not at all, is made one.
-fn scratch_dir(path: &Path) -> io::Result<()> {
-    mkdir_all(path)?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o1777))
 }
 
 fn carry(old_root: &Path, point: &Path) -> io::Result<()> {
@@ -684,6 +721,100 @@ fn bind_ca() {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches, each a tmpfs of its own, so they are empty on every boot and never fill the disk or a root that is kept. The system ones get the mode the image expects of them and root as owner. In the agent's home, npm's whole cache directory and the XDG cache directory get the home's owner. A tmpfs mounted without a size is capped by the kernel at half the guest's memory, and what it holds counts as the machine's memory.
+const SCRATCH_DIRS: [(&str, u32); 3] = [
+    ("/tmp", 0o1777),
+    ("/var/tmp", 0o1777),
+    ("/var/cache", 0o755),
+];
+const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
+const HOME_CACHE_MODE: u32 = 0o755;
+
+// UNIT_BOUNDARY_DESCRIPTION: puts every scratch folder on a tmpfs. It runs once the root is in place and the home is mounted, so a home cache sits on top of the persisted home, and before the trust cache, which is bound under /var/cache. A home cache that is a symlink — a home moved here from a container has ~/.cache pointing at /tmp/agent-cache — or that already holds files on the disk is moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A tmpfs that cannot be mounted is a warning: the folder then stays on the disk, as it was before, and the agent still runs.
+fn mount_scratch() {
+    for (dir, mode) in SCRATCH_DIRS {
+        scratch(Path::new(dir), mode, (0, 0));
+    }
+    let home = Path::new(guest::AGENT_HOME);
+    let owner = match fs::metadata(home) {
+        Ok(info) => (info.uid(), info.gid()),
+        Err(e) => {
+            logf!(
+                "WARNING: reading the owner of {} ({e}); its caches stay on the disk",
+                home.display()
+            );
+            return;
+        }
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    for name in HOME_CACHES {
+        let path = home.join(name);
+        match discard_cache(&path, stamp) {
+            Ok(Some(aside)) => logf!("discarding the old {} from the disk", aside.display()),
+            Ok(None) => {}
+            Err(e) => {
+                logf!(
+                    "WARNING: moving the old {} aside ({e}); it stays on the disk",
+                    path.display()
+                );
+                continue;
+            }
+        }
+        scratch(&path, HOME_CACHE_MODE, owner);
+    }
+    let home = home.to_path_buf();
+    std::thread::spawn(move || purge_discarded(&home));
+}
+
+fn scratch(path: &Path, mode: u32, (uid, gid): (u32, u32)) {
+    let mounted = mkdir_all(path)
+        .and_then(|()| std::os::unix::fs::chown(path, Some(uid), Some(gid)))
+        .and_then(|()| fs::set_permissions(path, fs::Permissions::from_mode(mode)))
+        .and_then(|()| mount_tmpfs(path, &format!("mode={mode:o},uid={uid},gid={gid}")));
+    if let Err(e) = mounted {
+        logf!(
+            "WARNING: no tmpfs at {} ({e}); it stays on the disk",
+            path.display()
+        );
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the name a discarded home cache is moved to, beside itself, so the move is a rename on the same disk however many files the cache holds. The background delete finds discarded caches by this name, so one a stop cut short is deleted on the next boot. It is the agent image entrypoint's own pattern for its discarded caches.
+const DISCARDED_INFIX: &str = ".discarded.";
+
+// UNIT_BOUNDARY_DESCRIPTION: makes a home cache path ready to mount over: nothing there, or an empty directory, is left as it is. Anything else — a symlink, a file, a directory with files — is renamed aside and its new name returned. The rename never follows a symlink, so a link to /tmp moves and its target is not touched.
+fn discard_cache(path: &Path, stamp: u64) -> io::Result<Option<PathBuf>> {
+    match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+        Ok(info) if info.is_dir() && fs::read_dir(path)?.next().is_none() => Ok(None),
+        Ok(_) => {
+            let aside = with_suffix(path, &format!("{DISCARDED_INFIX}{stamp}"));
+            fs::rename(path, &aside)?;
+            Ok(Some(aside))
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes the home caches moved aside by this boot or an earlier one. Only the names discard_cache gives are touched, so nothing else in the home is. A delete that fails is left for the next boot.
+fn purge_discarded(home: &Path) {
+    let Ok(entries) = fs::read_dir(home) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if HOME_CACHES
+            .iter()
+            .any(|cache| name.starts_with(&format!("{cache}{DISCARDED_INFIX}")))
+        {
+            let _ = remove_all(&entry.path());
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
 fn offer_trust_cache(root: &Path) -> Option<PathBuf> {
     let trust = guest::system_store(root, "trust");
@@ -698,7 +829,7 @@ fn offer_trust_cache(root: &Path) -> Option<PathBuf> {
     Some(guest_dir.to_path_buf())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home, the trust cache, the fresh root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past the root it is meant to lose, straight into the fresh root's upper layer or the platform's own state.
+// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home, the trust cache, the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
 fn leave_disk(root: &Path) {
     if let Err(e) = unmount_detached(root) {
         logf!(
@@ -1510,6 +1641,22 @@ fn mount(source: &Path, target: &Path, flags: libc::c_ulong) -> io::Result<()> {
     succeeded(rc == 0)
 }
 
+fn mount_tmpfs(target: &Path, options: &str) -> io::Result<()> {
+    let target = cstring(target.as_os_str())?;
+    let options = CString::new(options).map_err(io::Error::from)?;
+    // SAFETY: the source, target, type and options are NUL-terminated strings that outlive the call, and tmpfs reads its options as a string.
+    let rc = unsafe {
+        libc::mount(
+            c"tmpfs".as_ptr(),
+            target.as_ptr(),
+            c"tmpfs".as_ptr(),
+            libc::MS_NOSUID | libc::MS_NODEV,
+            options.as_ptr().cast(),
+        )
+    };
+    succeeded(rc == 0)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a close that fails is a write that did not land, so a copy reports it rather than letting the drop discard it.
 fn close(file: File) -> io::Result<()> {
     // SAFETY: into_raw_fd hands over the only owner of the descriptor, so nothing closes it twice.
@@ -1550,7 +1697,7 @@ fn cstring(value: &OsStr) -> io::Result<CString> {
 
 #[cfg(test)]
 mod tests {
-    // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its fresh root, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
+    // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2183,7 +2330,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: smolvm starts platform-init in the image's WORKDIR, and pivoting into the fresh root leaves the process at "/", where `node dist/server.js` under WORKDIR /app finds nothing. The directory saved before the pivot is entered again once the fresh root is in place; one the fresh root lacks leaves the process where the pivot left it rather than failing the boot.
+    // TEST_SCENARIO: smolvm starts platform-init in the image's WORKDIR, and pivoting into the platform's root leaves the process at "/", where `node dist/server.js` under WORKDIR /app finds nothing. The directory saved before the pivot is entered again once the platform's root is in place; one the platform's root lacks leaves the process where the pivot left it rather than failing the boot.
     #[test]
     fn the_image_working_directory_survives_the_pivot() {
         let before = std::env::current_dir().unwrap();
@@ -2201,7 +2348,7 @@ mod tests {
         assert_eq!(
             std::env::current_dir().unwrap(),
             app.canonicalize().unwrap(),
-            "a directory the fresh root lacks is a warning, not a move"
+            "a directory the platform's root lacks is a warning, not a move"
         );
         std::env::set_current_dir(before).unwrap();
     }
@@ -2231,7 +2378,7 @@ mod tests {
         })
     }
 
-    // TEST_SCENARIO: the image keeps every mount smolvm made for it — /proc, /dev, /sys, /run, the share, a bind over a file — and the disk. It loses /storage, which is the whole disk and holds the upper layer smolvm keeps. Carried, it would be a persistent name for everything the fresh root discards. A mount on top of another is not named, because it moves with the one under it.
+    // TEST_SCENARIO: the image keeps every mount smolvm made for it — /proc, /dev, /sys, /run, the share, a bind over a file — and the disk. It loses /storage, which is the whole disk and holds the upper layer smolvm keeps. Carried, it would be a persistent name for the root of every image this machine ran. A mount on top of another is not named, because it moves with the one under it.
     #[test]
     fn the_fresh_root_keeps_every_mount_but_the_other_names_of_the_disk() {
         assert_eq!(
@@ -2250,25 +2397,89 @@ mod tests {
         assert_eq!(plan.left_behind, [Path::new("/storage")]);
     }
 
-    // TEST_SCENARIO: smolvm's /tmp is a tmpfs sized at half the guest's memory, so an agent that fills it is killed for memory. It is not carried onto the fresh root, whose own /tmp is on the disk and empty every boot. Its directory is not removed either, unlike the directories of the disk's other names: the fresh root's /tmp is the one the image uses.
+    // TEST_SCENARIO: smolvm's /tmp is a tmpfs, and platform-init mounts its own there with the other scratch folders. smolvm's is neither carried onto the platform's root nor left behind, since a left-behind mount's directory is removed and /tmp is where the platform's tmpfs goes.
     #[test]
-    fn the_unbounded_tmp_is_replaced_by_the_fresh_roots_own() {
+    fn smolvms_tmp_gives_way_to_the_platforms_own() {
         let plan = plan_mounts(&parse_mountinfo(SMOLVM_TABLE), Path::new("/mnt/platform")).unwrap();
-        assert_eq!(plan.discarded, [Path::new("/tmp")]);
         assert!(!plan.carried.contains(&PathBuf::from("/tmp")));
         assert!(!plan.left_behind.contains(&PathBuf::from("/tmp")));
-
-        let dir = TempDir::new("tmp");
-        let tmp = dir.path().join("tmp");
-        fs::create_dir(&tmp).unwrap();
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755)).unwrap();
-        scratch_dir(&tmp).unwrap();
-        assert_eq!(mode(&tmp) & 0o7777, 0o1777, "every user writes to /tmp");
-        scratch_dir(&dir.path().join("absent")).unwrap();
-        assert_eq!(mode(&dir.path().join("absent")) & 0o7777, 0o1777);
     }
 
-    // TEST_SCENARIO: when the kernel refused to move the disk, it stays at the path the VMM gave it. That path is then the one name the fresh root keeps, and /storage still goes.
+    // TEST_SCENARIO: a root is kept only when the runner names this boot's image and the disk records the same one for the root. A runner from before the record, a disk from the layout that emptied its root every boot, and an image that changed each start from an empty upper layer, so an old image's writes never lie over a new one.
+    #[test]
+    fn a_root_is_kept_only_for_the_image_that_wrote_it() {
+        let image = "local-dir:/images/sha256-a/rootfs 1234 1700000000.5";
+        assert_eq!(fresh_reason(Some(image), Some(image)), None);
+        assert!(fresh_reason(Some(image), Some("quay.io/x/vm:1"))
+            .unwrap()
+            .contains("image changed"));
+        assert!(fresh_reason(Some(image), None)
+            .unwrap()
+            .contains("records no image"));
+        assert!(fresh_reason(None, Some(image))
+            .unwrap()
+            .contains("names no image"));
+        assert!(fresh_reason(None, None).is_some());
+    }
+
+    // TEST_SCENARIO: the records are read as one trimmed line. A missing or empty record names no image, so a share from an older runner reads as unknown rather than as an image called "".
+    #[test]
+    fn an_image_record_is_one_line_or_none() {
+        let dir = TempDir::new("record");
+        let path = dir.path().join("image");
+        assert_eq!(image_record(&path), None);
+        fs::write(&path, "\n").unwrap();
+        assert_eq!(image_record(&path), None);
+        fs::write(&path, "quay.io/x/vm:1\n").unwrap();
+        assert_eq!(image_record(&path).as_deref(), Some("quay.io/x/vm:1"));
+    }
+
+    // TEST_SCENARIO: a home moved here from a container has ~/.cache as a link to /tmp/agent-cache, and a home from an earlier machine boot may hold a full ~/.npm on the disk. Both are moved aside so an empty tmpfs can go over the path, and the background delete reclaims them by name, without following the link and without touching anything else in the home. An empty cache directory, or none, is mounted over as it is.
+    #[test]
+    fn an_old_home_cache_is_moved_aside_and_deleted() {
+        let home = TempDir::new("home");
+        let target = TempDir::new("agent-cache");
+        fs::write(target.path().join("kept"), b"x").unwrap();
+        std::os::unix::fs::symlink(target.path(), home.path().join(".cache")).unwrap();
+        fs::create_dir_all(home.path().join(".npm/_cacache")).unwrap();
+        fs::write(home.path().join(".npm/_cacache/blob"), b"x").unwrap();
+        fs::create_dir(home.path().join("work")).unwrap();
+        fs::write(home.path().join(".cache.notes"), b"x").unwrap();
+
+        let link = discard_cache(&home.path().join(".cache"), 7)
+            .unwrap()
+            .unwrap();
+        assert_eq!(link, home.path().join(".cache.discarded.7"));
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let npm = discard_cache(&home.path().join(".npm"), 7)
+            .unwrap()
+            .unwrap();
+        assert!(npm.join("_cacache/blob").is_file());
+        assert!(fs::symlink_metadata(home.path().join(".cache")).is_err());
+
+        fs::create_dir(home.path().join(".cache")).unwrap();
+        assert_eq!(discard_cache(&home.path().join(".cache"), 8).unwrap(), None);
+        assert_eq!(
+            discard_cache(&home.path().join(".absent"), 8).unwrap(),
+            None
+        );
+
+        purge_discarded(home.path());
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(!npm.exists());
+        assert!(
+            target.path().join("kept").is_file(),
+            "the link was not followed"
+        );
+        assert!(home.path().join("work").is_dir());
+        assert!(home.path().join(".cache.notes").is_file());
+        assert!(home.path().join(".cache").is_dir());
+    }
+
+    // TEST_SCENARIO: when the kernel refused to move the disk, it stays at the path the VMM gave it. That path is then the one name the platform's root keeps, and /storage still goes.
     #[test]
     fn a_disk_left_where_the_vmm_put_it_is_still_the_one_carried() {
         let table = SMOLVM_TABLE.replace(" /mnt/platform ", " /workspace ");
@@ -2308,17 +2519,19 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the fresh root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is "/" — the image as smolvm mounted it — and nothing else.
+    // TEST_SCENARIO: the platform root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is "/" — the image as smolvm mounted it — and nothing else. The kept upper layer is not at `rootfs/upper`, which a platform-init from before kept roots empties on every boot, so a rollback never leaves an upper that the image record beside it does not describe.
     #[test]
-    fn the_fresh_root_stacks_a_disk_upper_over_the_image() {
+    fn the_platforms_root_stacks_a_disk_upper_over_the_image() {
         let layers = FreshRoot::on(Path::new(guest::DISK_PATH));
         assert_eq!(
             layers.merged,
             Path::new("/mnt/platform/system/rootfs/merged")
         );
+        assert_eq!(layers.image, layers.upper.with_file_name("image"));
+        assert_ne!(layers.upper, layers.legacy_upper);
         assert_eq!(
             layers.options().unwrap().to_str().unwrap(),
-            "lowerdir=/,upperdir=/mnt/platform/system/rootfs/upper,workdir=/mnt/platform/system/rootfs/work"
+            "lowerdir=/,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work,index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off"
         );
     }
 

@@ -68,6 +68,12 @@ export interface AgentSpecCR {
    */
   grantedSecretIds?: string[];
   /**
+   * Harness names the harness the agent image runs (claude-code, codex,
+   * pi, bob, mock). One image serves every harness, and the agent reads
+   * this as PLATFORM_HARNESS; empty leaves the image's own default.
+   */
+  harness?: string;
+  /**
    * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
    */
   hibernationTimeout?: string;

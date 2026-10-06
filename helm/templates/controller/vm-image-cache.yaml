@@ -101,7 +101,7 @@ spec:
             - --socket=/var/lib/platform/images/.cache.sock
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
-            - --images={{ join "," $images }}
+            - --images={{ join "," (uniq $images) }}
             {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
             {{- /*
             The directory the kubelet creates for the hostPath carries the

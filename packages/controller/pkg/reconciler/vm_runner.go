@@ -35,6 +35,7 @@ const (
 	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
+	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
@@ -628,6 +629,15 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	default:
 		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
+	toolsDir := ""
+	if r.config.AgentBase.ToolsHostPath != "" {
+		dir := corev1.HostPathDirectoryOrCreate
+		toolsDir = vmRunnerToolsPath
+		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
+		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
+		}})
+	}
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: refs},
 		Spec: appsv1.DeploymentSpec{
@@ -659,6 +669,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--image-dir=" + vmRunnerImagesPath,
 							"--image-cache-socket=" + imageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
+							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),

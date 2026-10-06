@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.harnessToolsScc" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.vmRunnerReachesOnlyItsResolver" . -}}
@@ -71,6 +72,17 @@ The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
 grants SCC access via the `system:serviceaccounts:<agentNamespace>`
 group. Both are meaningless if `agentNamespace` is empty.
 */}}
+{{- /*
+On OpenShift the harness tools installer runs as uid 0 and spc_t to label the
+node directory for the confined pods that read it, which no SCC the chart
+renders admits.
+*/ -}}
+{{- define "platform.validate.harnessToolsScc" -}}
+{{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.harnessTools.hostPath (not (.Values.harnessTools.scc | default .Values.virtualization.runner.scc)) -}}
+{{- fail "on OpenShift, harnessTools.hostPath needs harnessTools.scc (or virtualization.runner.scc): an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), for the installer that runs as uid 0 and spc_t. Without the tools, the harness Templates' default image cannot run." -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
 {{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}

@@ -430,8 +430,8 @@ jobs:
 
   build-workloads:
     # One job per arch, one workload after another, like build-agents, and
-    # beside it: a workload builds claude-code's environment in, not on a
-    # published claude-code image. Every workload builds even after one fails,
+    # beside it: each workload is packed onto the default image the job builds
+    # itself, not onto a published one. Every workload builds even after one fails,
     # but merge-workloads then merges none. A PR builds none: image:resolve
     # lists no workload for it, and this job pushes, which a PR must not.
     needs: [changes]
@@ -458,11 +458,6 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
-          # k-search's venv layers, kept in the registry; see //packages/agents:oci.
-          # A main push reuses them; a tag, the nightly run and a dispatch
-          # install afresh and replace them.
-          AGENT_LAYER_CACHE: ${{ env.IMAGE_PREFIX }}
-          AGENT_LAYER_CACHE_REFRESH: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') && '1' || '' }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
@@ -627,6 +622,7 @@ jobs:
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
           CI_IMAGES_IMAGES_JOB: build-images (amd64)
           CI_IMAGES_MOCK_JOB: build mock (e2e fixture)
+          CI_IMAGES_AGENTS_JOB: build-agents (amd64)
           # As the `changes` job sets it, so both resolve the same images stale.
           RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
@@ -757,6 +753,11 @@ jobs:
       - *e2e-provision
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
+      # The default image, which smoke/22-harness-tools boots, packages none of
+      # its tools but is built against them: a PR builds it here, beside the
+      # other images e2e:ci-images builds.
+      - if: github.event_name == 'pull_request'
+        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache

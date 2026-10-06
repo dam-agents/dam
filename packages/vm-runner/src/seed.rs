@@ -86,7 +86,7 @@ fn directory(path: &Path) -> io::Result<fs::Metadata> {
     Ok(info)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what only the container used, which the seed leaves out. The runtime's env file holds what the platform last pushed into the container, credentials included, and the platform pushes it again when the machine's runtime first says hello, so carrying it would only keep stale credentials on the disk. The container's entrypoint swaps `~/.cache` for a link to the pod's local /tmp, which a machine empties on every boot; left out, the link gives way to a real directory in the home, so a machine keeps its caches.
+// UNIT_BOUNDARY_DESCRIPTION: what only the container used, which the seed leaves out. The runtime's env file holds what the platform last pushed into the container, credentials included, and the platform pushes it again when the machine's runtime first says hello, so carrying it would only keep stale credentials on the disk. The container's entrypoint swaps `~/.cache` for a link to the pod's local /tmp; left out, the link gives way to the tmpfs platform-init mounts at `~/.cache` on every boot.
 const RUNTIME_ENV: &str = ".platform/runtime-env.json";
 const CONTAINER_CACHE: &str = ".cache";
 const CONTAINER_CACHE_TARGET: &str = "/tmp/agent-cache";

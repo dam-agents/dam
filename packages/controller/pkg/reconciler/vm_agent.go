@@ -94,6 +94,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	for _, e := range defaults.Env {
 		env[e.Name] = e.Value
 	}
+	if spec.Harness != "" {
+		env["PLATFORM_HARNESS"] = spec.Harness
+	}
 	sec, err := r.ownedSecretRef(ctx, agent)
 	var refused secretRefRefused
 	if errors.As(err, &refused) {

@@ -42,6 +42,12 @@ harnessTemplates:
   nous:
     enabled: false
 
+# The harness tools serve only the harness Templates' default image, which
+# the e2e cluster neither builds nor pulls, so no installer is rendered and no
+# agent mounts them.
+harnessTools:
+  hostPath: ""
+
 # Only read with virtualization.enabled, which E2E_VIRTUALIZATION turns on (the
 # vm lane); values-local.yaml sets the rest of the runner. Its CPU request drops
 # to a tenth for the reason the agents' does above: in that lane the runner

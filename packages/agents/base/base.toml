@@ -1,5 +1,6 @@
-# Shared by every `mise oci` agent image; each agent's image.toml is a config
-# environment over it. Staged by //packages/agents:oci as mise/conf.d/base.toml.
+# Shared by every agent image; each harness's and workload's image.toml is a
+# config environment over it. Staged by //packages/agents:oci as
+# mise/conf.d/base.toml; its [oci] and [oci.env] are the images' config.
 
 [tools]
 node = "26"
@@ -37,7 +38,6 @@ linux-arm64 = { asset_pattern = "buildx-v{{ version }}.linux-arm64" }
 version = "latest"
 
 [oci]
-mount_point = "/usr/local/share/mise"
 user = "65532"
 workdir = "/app"
 entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
@@ -58,3 +58,9 @@ DEBIAN_FRONTEND = "noninteractive"
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 AGENT_BROWSER_ARGS = "--no-sandbox"
 AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"
+# A vm machine keeps its whole root while it boots images of one generation,
+# so a deploy keeps what the agent installed outside HOME. Bump it only for a
+# change that breaks a root an older image left: a new Debian release, or a
+# file the entrypoint rewrites on every boot (/etc/passwd) changing in the
+# image. A bump starts every machine on an empty root.
+PLATFORM_ROOT_COMPAT = "1"

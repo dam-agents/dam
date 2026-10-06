@@ -55,6 +55,8 @@ type AgentBase struct {
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
 
 	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
+
+	ToolsHostPath string `json:"toolsHostPath,omitempty"`
 }
 
 type AgentIptablesInit struct {

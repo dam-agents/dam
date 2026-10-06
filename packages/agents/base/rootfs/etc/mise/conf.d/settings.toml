@@ -1,5 +1,4 @@
-# The agent's mise, and the image build's: `mise oci` writes
-# /etc/mise/config.toml with [tools] only.
+# The agent's mise, and the image build's.
 [settings]
 experimental = true
 minimum_release_age = "7d"

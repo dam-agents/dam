@@ -17,6 +17,9 @@ pub const SEEDED_PATH: &str = "/platform/seeded";
 // UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share while a runtime migration boots the machine: the SHA-256 and byte count of the seed the home must come from, as the controller sent them. The guest reads it and cannot write it, because the share is read-only. With it, platform-init seeds a missing home from that seed alone and never from the image, and boots an existing home only if the disk records that it came from that seed. The runner removes it once the controller stops expecting a seed.
 pub const SEED_EXPECTED_PATH: &str = "/platform/seed-expected";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share before every boot: one line that names the image the boot runs. For an image tree on the runner's host it also holds the tree's inode and mtime, because a tree staged again under the same name is a new image. platform-init keeps the machine's root only while this line is the one it recorded for that root. A share without it, from a runner older than this file, names no image, and the root is then fresh.
+pub const IMAGE_PATH: &str = "/platform/image";
+
 // UNIT_BOUNDARY_DESCRIPTION: the system store file where platform-init records the SHA-256 of the seed it restored the home from. It is written before the restored home is renamed into place, so a home that exists and came from a seed always has it. A later boot that still expects a seed reads it to tell a home from that seed from any other.
 pub const SEEDED_FROM_FILE: &str = "seeded-from";
 
@@ -51,7 +54,7 @@ pub fn is_sha256(text: &str) -> bool {
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 pub const GUEST_CA_FILE: &str = "/etc/platform/ca/ca.crt";
 
-// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the fresh root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
+// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
 pub const DISK_DEVICE_PATH: &str = "/workspace";
 pub const DISK_PATH: &str = "/mnt/platform";
 
@@ -62,7 +65,7 @@ pub const AGENT_HOME: &str = "/home/agent";
 pub const AGENT_DIR: &str = "agent";
 pub const SYSTEM_DIR: &str = "system";
 
-// UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the fresh root the image boots on. platform-init empties it on every boot, so nothing the image writes outside HOME outlives the boot that wrote it.
+// UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the root the image boots on. platform-init keeps the upper layer while the machine boots the same image, and empties it when the image changes or is unknown, so what the image writes outside HOME lasts as long as that image, and an old image's changes never lie over a new one. The work layer is overlayfs scratch and is emptied on every boot.
 pub const ROOTFS_DIR: &str = "rootfs";
 
 // UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
@@ -107,7 +110,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory, the seed and platform-runc directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, the image's home where the agent's own was meant to be, or containers that never get the CA.
+    // TEST_SCENARIO: the share is mounted at SHARE_PATH, and the runner writes the init, the CA directory, the seed, the image record and platform-runc directly below it. A path that left the share would be one the runner never writes, and the guest would boot with no init, no CA, the image's home where the agent's own was meant to be, a root it cannot tell it may keep, or containers that never get the CA.
     #[test]
     fn the_share_paths_are_inside_the_share() {
         for path in [
@@ -116,6 +119,7 @@ mod tests {
             SHARE_SEED_FILE,
             SEEDED_PATH,
             SEED_EXPECTED_PATH,
+            IMAGE_PATH,
             RUNC_PATH,
         ] {
             let parent = Path::new(path).parent().expect("a share path has a parent");

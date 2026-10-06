@@ -19,6 +19,7 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set virtualization.runner.scc=hostmount-anyuid \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The node image cache adds one more object nothing else renders: the DaemonSet

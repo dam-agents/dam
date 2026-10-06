@@ -56,7 +56,7 @@ spec:
             #   - AGENT_TEMPLATE_DEFAULTS: chart-wide fallbacks for fields a
             #     template can override (template wins when set).
             - name: AGENT_BASE
-              value: {{ .Values.controller.agent.base | toJson | quote }}
+              value: {{ merge (dict "toolsHostPath" (.Values.harnessTools.hostPath | default "")) .Values.controller.agent.base | toJson | quote }}
             # `$HOME` literals in mount paths are substituted at
             # chart render time with the fixed agent home, so the
             # controller and api-server only ever see absolute paths.
