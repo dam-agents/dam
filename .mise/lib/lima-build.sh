@@ -21,7 +21,7 @@ lima_build() {
     cd "$LIMA_BUILD_REPO"
     git ls-files -z --cached --others --exclude-standard |
       while IFS= read -r -d '' f; do { [ -e "$f" ] || [ -L "$f" ]; } && printf '%s\0' "$f"; done |
-      bsdtar --null -T - -cf - --format=gnutar
+      tar --null -T - -cf -
   ) | limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'rm -rf ~/platform-src && mkdir ~/platform-src && tar -C ~/platform-src -xf -'
   printf '%s\n' "${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}" |
   limactl shell --workdir / "$LIMA_BUILD_VM" sh -c '

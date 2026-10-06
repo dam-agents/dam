@@ -77,7 +77,7 @@ build_tar() {
   local c=$1 pkg=$2 kind=$3 layout="$AGENT_OCI_OUT/$1"
   mise run "//packages/$pkg:oci" || return 1
   case "$kind" in cacheonly | load) return ;; esac
-  rm -rf "$layout" && mkdir -p "$layout" && bsdtar -C "$layout" -xf "$(tar_of "$c")" || return 1
+  rm -rf "$layout" && mkdir -p "$layout" && tar -C "$layout" -xf "$(tar_of "$c")" || return 1
   push_layout "$c" "$kind" "$layout" || return 1
   rm -rf "$layout"
 }

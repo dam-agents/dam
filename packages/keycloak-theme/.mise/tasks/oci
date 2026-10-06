@@ -21,7 +21,7 @@ cp dist/jar/keycloak-theme-for-kc-all-other-versions.jar "$root/providers/keyclo
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack/keycloak-$(printf '%s %s' "$base" "$(uname -m)" | sha256sum | cut -c1-32)"
 if [ ! -d "$cache/opt/keycloak" ]; then
   rm -rf "$cache.$$" && mkdir -p "$cache.$$"
-  crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$base" - | bsdtar -C "$cache.$$" -xf - opt/keycloak
+  crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$base" - | tar -C "$cache.$$" -x opt/keycloak
   mv -T "$cache.$$" "$cache" 2>/dev/null || rm -rf "$cache.$$"
 fi
 kc="$root/keycloak"

@@ -29,7 +29,7 @@ arch="$(jq -r '.architecture' "$l/blobs/${config/://}")"
 [ "linux/$arch" = "$platform" ] || { echo "$usage_ref is built for linux/$arch, not this host's $platform" >&2; exit 3; }
 "$(dirname "$0")/name-layout" "$l" "$usage_name"
 mkdir -p "$(dirname "$usage_tar")"
-bsdtar -cf "$usage_tar" --format=gnutar -C "$l" $(ls -A "$l")
+tar -C "$l" -cf "$usage_tar" $(ls -A "$l")
 # Older than any source, so a package's :oci task still builds the checkout
 # over a pulled image rather than taking it for its own output.
 touch -t 198001010000 "$usage_tar"
