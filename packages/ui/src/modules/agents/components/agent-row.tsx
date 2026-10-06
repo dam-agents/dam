@@ -1,7 +1,7 @@
 import {
   Book,
+  Box,
   Chemistry,
-  Gift,
   OverflowMenuVertical,
 } from "@carbon/icons-react";
 
@@ -139,7 +139,7 @@ export function AgentRow({
               aria-label={`From the ${kitBadge.label} starter kit`}
             >
               <span className="flex items-center gap-1.5">
-                <Gift size={12} aria-hidden />
+                <Box size={12} aria-hidden />
                 {kitBadge.label}
               </span>
             </Badge>

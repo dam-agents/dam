@@ -1,4 +1,4 @@
-import { Close, Gift } from "@carbon/icons-react";
+import { Box, Close } from "@carbon/icons-react";
 import { formatEgressRuleInline, type StarterKitView } from "api-server-api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -393,7 +393,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
-                  <Gift size={16} />
+                  <Box size={16} />
                 </span>
                 <span className="text-sm text-foreground">
                   Want a head start? Pick a starter kit to pre-fill your agent
@@ -430,7 +430,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         <section className="mb-8">
           <Inset className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
-              <Gift size={16} />
+              <Box size={16} />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-semibold leading-6 text-kit">
