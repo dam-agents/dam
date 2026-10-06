@@ -75,11 +75,16 @@ export interface SlackViewSubmission {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A thread read together with whether the messenger
- * had more to give. Callers that record how far they have read must not infer
- * that from the row count: Slack returns the thread parent in every page, so a
- * count reads one high, and a full page is not proof of a full window either.
- * The adapter reports it from the messenger's own paging signal instead.
+ * UNIT_BOUNDARY_DESCRIPTION: One page of a thread read, together with whether
+ * the messenger had more to give. Slack serves the page from whichever end the
+ * read names: given `oldest`, the oldest replies after it; given `latest` or no
+ * bound at all, the newest replies before it, so the next page of a read with
+ * no bound is older, not newer. Slack's reference suggests every read starts
+ * at the oldest end, and it does not. Replies in a page are in the order they
+ * were sent. The thread parent comes back in every page, carries the thread's
+ * reply count, and does not count towards the limit. Callers that record how
+ * far they have read must not infer that from the row count; the adapter
+ * reports it from the messenger's own paging signal instead.
  */
 export interface SlackThreadRead {
   messages: SlackMessage[];
@@ -98,25 +103,6 @@ export interface SlackChannelRead {
   messages: SlackMessage[];
   hasMore: boolean;
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: A window cut out of a thread, for a caller reading
- * the thread rather than recording how far it has read. `opener` is the message
- * that started the thread, carried whatever the window holds, because a window
- * taken from the middle of a long thread is unreadable without it. The two gaps
- * are reported apart on purpose: `hasEarlier` says replies sit before the
- * window and another read reaches them, `hasMore` that the walk gave up before
- * the thread's end and no further read recovers what it missed. Collapsing them
- * would send a reader back through a thread towards messages nothing fetched.
- */
-export interface SlackThreadWindow {
-  messages: SlackMessage[];
-  opener: SlackMessage | null;
-  hasEarlier: boolean;
-  hasMore: boolean;
-}
-
-export const THREAD_TAIL_MAX_PAGES = 20;
 
 export interface SlackMessageMetadata {
   eventType: string;
@@ -289,16 +275,10 @@ export interface SlackGateway {
     threadTs: string;
     limit: number;
     oldest?: string;
+    latest?: string;
+    inclusive?: boolean;
     teamId: SlackWorkspace;
   }): Promise<SlackThreadRead>;
-  getThreadTail(args: {
-    channel: string;
-    threadTs: string;
-    limit: number;
-    before?: string;
-    maxPages?: number;
-    teamId: SlackWorkspace;
-  }): Promise<SlackThreadWindow>;
   getChannelHistory(args: {
     channel: string;
     limit: number;

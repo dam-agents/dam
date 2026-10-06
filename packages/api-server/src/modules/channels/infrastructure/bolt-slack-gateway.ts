@@ -1,7 +1,6 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
-import { foldThreadPages } from "../domain/thread-catch-up.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelInfo,
   SlackConversationLookup,
@@ -558,6 +557,8 @@ export function createBoltSlackGateway(
         ts: args.threadTs,
         limit: args.limit,
         ...(args.oldest ? { oldest: args.oldest } : {}),
+        ...(args.latest ? { latest: args.latest } : {}),
+        ...(args.inclusive ? { inclusive: true } : {}),
       });
       return {
         messages: (replies.messages ?? []).map(toSlackMessage),
@@ -565,40 +566,6 @@ export function createBoltSlackGateway(
           replies.has_more || replies.response_metadata?.next_cursor,
         ),
       };
-    },
-
-    async getThreadTail(args) {
-      const nothing = {
-        messages: [],
-        opener: null,
-        hasEarlier: false,
-        hasMore: false,
-      };
-      if (!app) return nothing;
-      const client = app.client;
-      const token = await tokenFor(args.teamId);
-      if (!token) return nothing;
-      return foldThreadPages<SlackMessage, string>(
-        {
-          limit: args.limit,
-          maxPages: args.maxPages ?? THREAD_TAIL_MAX_PAGES,
-          opener: args.threadTs,
-          ...(args.before !== undefined ? { before: args.before } : {}),
-        },
-        async (from) => {
-          const replies = await client.conversations.replies({
-            token,
-            channel: args.channel,
-            ts: args.threadTs,
-            limit: args.limit,
-            ...(from ? { cursor: from } : {}),
-          });
-          return {
-            messages: (replies.messages ?? []).map(toSlackMessage),
-            next: replies.response_metadata?.next_cursor || undefined,
-          };
-        },
-      );
     },
 
     async getMessage(args) {

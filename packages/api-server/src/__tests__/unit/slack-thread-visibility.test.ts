@@ -15,6 +15,7 @@ const AGENT_REPLY_TS = "1758100500.000000";
 const HUMAN_REPLY_TS = "1758104000.000000";
 const LUNCH_TS = "1758108900.000000";
 const MENTION_TS = "1758108960.000000";
+const LATER_TS = "1758109020.000000";
 
 const LONG_PARENT_TS = "1758200000.000000";
 
@@ -251,7 +252,11 @@ describe("slack thread visibility from a channel turn", () => {
     const opener = `U999 [${formatSlackTs(LONG_PARENT_TS)}]: ${ASK}`;
     expect(windows.map((w) => w.messages[0])).toEqual([opener, opener]);
     expect(windows.map((w) => w.hasMore)).toEqual([true, false]);
-    expect([...windows].reverse().flatMap((w) => w.messages.slice(1))).toEqual(
+    expect(windows[0]!.messages[1]).toContain("Not shown: replies 1-10;");
+    expect(windows[0]!.messages[1]).toContain(`cursor "${windows[0]!.cursor}"`);
+    expect(windows[0]!.messages[1]).toContain("Below: replies 11-60.");
+    expect(windows[1]!.messages[1]).toBe("[Below: replies 1-10.]");
+    expect([...windows].reverse().flatMap((w) => w.messages.slice(2))).toEqual(
       replies.map((r) => `U777 [${formatSlackTs(r.ts)}]: ${r.text}`),
     );
 
@@ -262,5 +267,126 @@ describe("slack thread visibility from a channel turn", () => {
     expect(foreign).toMatchObject({
       error: expect.stringContaining("not one this thread handed you"),
     });
+  });
+});
+
+describe("the history a first turn in a long thread is handed", () => {
+  /**
+   * TEST_SCENARIO: An agent first mentioned at the bottom of a thread longer
+   * than one window. The mention is usually about the newest replies, so the
+   * history must hold the thread's end, not its start, after the message that
+   * opened it. A line marks the gap and numbers the replies on each side of it,
+   * and the cursor it prints must be one read_thread accepts for this thread,
+   * since a first turn in a thread is never offered the thread any other way.
+   */
+  it("hands the opener and the newest replies, and the gap marker reads the rest", async () => {
+    const h = harness();
+    const replies = Array.from({ length: 60 }, (_, i) => ({
+      ts: `${1758200001 + i}.000000`,
+      user: "U777",
+      text: `reply ${i}`,
+      threadTs: LONG_PARENT_TS,
+    }));
+    const mentionTs = `${1758200001 + replies.length}.000000`;
+    const mentionText = "<@U-BOT> what were the last three replies";
+    h.gw.setThreadedHistory([
+      {
+        ts: LONG_PARENT_TS,
+        user: "U999",
+        text: ASK,
+        threadTs: LONG_PARENT_TS,
+        replyCount: replies.length + 1,
+        latestReplyTs: mentionTs,
+      },
+      ...replies,
+      {
+        ts: mentionTs,
+        user: "U888",
+        text: mentionText,
+        threadTs: LONG_PARENT_TS,
+      },
+    ]);
+
+    await h.worker.connect();
+    await h.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: mentionTs,
+      threadTs: LONG_PARENT_TS,
+      text: mentionText,
+    });
+    expect(await h.settled(() => h.prompts.length === 1)).toBe(true);
+
+    const prompt = String(h.prompts[0]);
+    const line = (r: { ts: string; text: string }) =>
+      `U777 [${formatSlackTs(r.ts)}]: ${r.text}`;
+    expect(prompt).toContain(`U999 [${formatSlackTs(LONG_PARENT_TS)}]: ${ASK}`);
+    expect(prompt).toContain(line(replies[11]!));
+    expect(prompt).toContain(line(replies[59]!));
+    expect(prompt).not.toContain(line(replies[10]!));
+    expect(prompt).toContain("Not shown: replies 1-11;");
+    expect(prompt).toContain("Below: replies 12-60.");
+    expect(prompt).toContain("The thread is longer than shown");
+
+    const cursor = /cursor "([^"]+)"/.exec(prompt)?.[1];
+    expect(cursor).toBeDefined();
+    const earlier = await h.worker.readThread("agent-1", {
+      threadTs: LONG_PARENT_TS,
+      cursor: cursor!,
+    });
+    if ("error" in earlier) throw new Error(earlier.error);
+    expect(earlier.messages[1]).toBe("[Below: replies 1-11.]");
+    expect(earlier.messages.slice(2)).toEqual(replies.slice(0, 11).map(line));
+    expect(earlier.cursor).toBeUndefined();
+  });
+
+  /**
+   * TEST_SCENARIO: A thread that fits in one window, where the mention is the
+   * first reply and another reply came after it. The mention is left out of
+   * the history because the turn carries it, which must not read as a gap:
+   * nothing is missing, so the history carries no bracketed lines and no note
+   * about a longer thread.
+   */
+  it("adds no markers to a thread that fits in one window", async () => {
+    const h = harness();
+    h.gw.setThreadedHistory([
+      {
+        ts: LONG_PARENT_TS,
+        user: "U999",
+        text: ASK,
+        threadTs: LONG_PARENT_TS,
+        replyCount: 2,
+        latestReplyTs: LATER_TS,
+      },
+      {
+        ts: MENTION_TS,
+        user: "U888",
+        text: "<@U-BOT> any news",
+        threadTs: LONG_PARENT_TS,
+      },
+      {
+        ts: LATER_TS,
+        user: "U777",
+        text: HUMAN_REPLY,
+        threadTs: LONG_PARENT_TS,
+      },
+    ]);
+
+    await h.worker.connect();
+    await h.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: MENTION_TS,
+      threadTs: LONG_PARENT_TS,
+      text: "<@U-BOT> any news",
+    });
+    expect(await h.settled(() => h.prompts.length === 1)).toBe(true);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(ASK);
+    expect(prompt).toContain(HUMAN_REPLY);
+    expect(prompt).not.toContain("Not shown:");
+    expect(prompt).not.toContain("Below:");
+    expect(prompt).not.toContain("The thread is longer than shown");
   });
 });
