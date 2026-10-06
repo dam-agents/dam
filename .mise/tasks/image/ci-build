@@ -121,12 +121,27 @@ if [ "$serial" = true ]; then
     echo "::endgroup::"
   done
 else
-  pids=()
+  # The mise images share the oci task's stage and apt-base layout, one build
+  # per host at a time, so they take one lane, one after another, beside the
+  # rest. A failure is named in a file, since the lane is one process.
+  pids=() lane=() : > /tmp/ci-build/mise-failed
   for i in "${!names[@]}"; do
+    if [ "$(package_of "${names[$i]}" 2>/dev/null)" = mise ]; then
+      lane+=("$i")
+      continue
+    fi
     timed_build "${names[$i]}" "${kinds[$i]}" > "/tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
-    pids+=($!)
+    pids+=("$!:${names[$i]}")
   done
-  for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
+  if [ ${#lane[@]} -gt 0 ]; then
+    (for i in "${lane[@]}"; do
+      timed_build "${names[$i]}" "${kinds[$i]}" > "/tmp/ci-build/logs/${names[$i]}.log" 2>&1 ||
+        echo "${names[$i]}" >> /tmp/ci-build/mise-failed
+    done) &
+    pids+=("$!:")
+  fi
+  for p in ${pids[@]+"${pids[@]}"}; do wait "${p%%:*}" || { [ -z "${p#*:}" ] || failed+=("${p#*:}"); }; done
+  while read -r n; do failed+=("$n"); done < /tmp/ci-build/mise-failed
   for n in "${names[@]}"; do
     echo "::group::$n"; cat "/tmp/ci-build/logs/$n.log"; echo "::endgroup::"
   done
