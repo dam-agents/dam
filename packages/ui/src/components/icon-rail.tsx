@@ -52,6 +52,7 @@ import {
   useAgentClickVariant,
 } from "../mock/agent-click-variants.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
+import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
@@ -81,7 +82,7 @@ export function IconRail({
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
+  const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   const sandboxes: Destination = {
@@ -441,7 +442,7 @@ export function IconRail({
                               agentSessions.filter((x) => x.type === "unread")
                                 .length
                             }
-                            onNewChat={() => navigateToAgentLanding(agent.id)}
+                            onNewChat={() => selectAgent(agent.id)}
                             onClose={() => setScope(null)}
                           />
                         ) : (
@@ -485,14 +486,11 @@ export function IconRail({
                             isSelected && "bg-muted",
                           )}
                         >
-                          <span className="flex size-4 shrink-0 items-center justify-center">
-                            <span
-                              className={cn(
-                                "size-2 rounded-full",
-                                stateDotClass[display.state],
-                              )}
-                            />
-                          </span>
+                          <AgentAvatar
+                            agentId={agent.id}
+                            state={display.state}
+                            className="!size-6"
+                          />
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                             {agent.name}
                           </span>
@@ -513,7 +511,7 @@ export function IconRail({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  navigateToAgentLanding(agent.id);
+                                  selectAgent(agent.id);
                                 }}
                                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
                                 aria-label={`New chat with ${agent.name}`}
@@ -564,7 +562,7 @@ export function IconRail({
                                     }
                                   }}
                                   className={cn(
-                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-10 pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
+                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2.5 pl-12 pr-8 text-left transition-colors hover:bg-muted cursor-pointer",
                                     hasSession &&
                                       activeSessionId === item.session.sessionId
                                       ? "bg-muted"
@@ -641,7 +639,7 @@ export function IconRail({
                                       AGENT_SESSION_PAGE,
                                   }))
                                 }
-                                className="w-full py-1 pl-10 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                                className="w-full py-1 pl-12 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                               >
                                 View more
                               </button>
@@ -830,7 +828,7 @@ export function IconRail({
                           }
                         }}
                         className={cn(
-                          "group/activity relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted cursor-pointer",
+                          "group/activity relative flex w-full flex-col gap-0.5 rounded-lg py-2.5 pl-3 pr-8 text-left transition-colors hover:bg-muted cursor-pointer",
                           hasSession &&
                             activeSessionId === item.session.sessionId
                             ? "bg-muted"
@@ -901,7 +899,7 @@ export function IconRail({
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                              className="absolute right-3 top-1.5 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                               onClick={(e) => e.stopPropagation()}
                               aria-label="More actions"
                             >
@@ -973,7 +971,7 @@ export function IconRail({
                           <button
                             key={agent.id}
                             type="button"
-                            onClick={() => navigateToAgentLanding(agent.id)}
+                            onClick={() => selectAgent(agent.id)}
                             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
                           >
                             <span
@@ -1110,7 +1108,6 @@ export function IconRail({
           ))}
         </nav>
       )}
-      <AgentClickVariantPicker />
     </>
   );
 }
@@ -1363,6 +1360,20 @@ function ActivityFilterMenu({
         align="end"
         className="max-h-[80vh] w-[400px] overflow-y-auto p-0"
       >
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <span className="text-sm font-medium text-muted-foreground">Filters</span>
+          <button
+            type="button"
+            disabled={!active}
+            onClick={() => {
+              onChange(defaultActivityFilter());
+              onAgentChange?.(null);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-accent transition-colors hover:bg-muted disabled:pointer-events-none disabled:text-muted-foreground/50"
+          >
+            <Reset size={16} /> Reset
+          </button>
+        </div>
         {agentOptions && onAgentChange && (
           <div className="border-b border-border p-1">
             <p className={FILTER_GROUP_LABEL}>Agent</p>
@@ -1413,22 +1424,6 @@ function ActivityFilterMenu({
               </DropdownMenuItem>
             ))}
           </div>
-        </div>
-        <div className="flex items-center justify-between border-t border-border px-3 py-2">
-          <span className="text-sm text-muted-foreground">
-            {active ? "Filters on" : "Showing everything"}
-          </span>
-          <button
-            type="button"
-            disabled={!active}
-            onClick={() => {
-              onChange(defaultActivityFilter());
-              onAgentChange?.(null);
-            }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-accent transition-colors hover:bg-muted disabled:pointer-events-none disabled:text-muted-foreground/50"
-          >
-            <Reset size={16} /> Reset to default
-          </button>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

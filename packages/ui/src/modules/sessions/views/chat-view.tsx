@@ -54,6 +54,7 @@ import {
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/char-avatar.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
@@ -501,33 +502,7 @@ export function ChatView() {
     </Button>
   );
 
-  const agentDropdown = !isDemo ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon-xs"
-          aria-label={surfaceCopy.actionsAria}
-        >
-          <OverflowMenuVertical size={16} />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={handleConfigureSandbox}>
-          {surfaceCopy.configure}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={handleRestartSandbox}>
-          Restart
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onSelect={handleDeleteSandbox}
-        >
-          {surfaceCopy.delete}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : null;
+  const agentDropdown = null;
 
   const headerStatus =
     isDemo && demoActions ? (
@@ -542,11 +517,22 @@ export function ChatView() {
       />
     );
 
-  const statusDot = !isDemo && (
-    <span
-      aria-hidden
-      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-    />
+  const agentAvatarEl =
+    !isDemo && selectedAgent && agentDisplay ? (
+      <AgentAvatar
+        agentId={selectedAgent}
+        state={agentDisplay.state}
+        className="!size-6"
+      />
+    ) : null;
+
+  const statusDot = agentAvatarEl ?? (
+    !isDemo ? (
+      <span
+        aria-hidden
+        className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+      />
+    ) : null
   );
 
   const v = layoutVariant;
@@ -563,13 +549,13 @@ export function ChatView() {
   const sidebarAgentHeader = (
     <div
       className={cn(
-        "shrink-0 border-b border-border p-3",
+        "shrink-0 p-3",
         isDemo && DEMO_HEADER_CLASS,
       )}
     >
       <div className="flex items-center gap-2 min-w-0">
         {backButton}
-        {statusDot}
+        {agentAvatarEl}
         <h1
           className={cn(
             "text-sm font-semibold truncate flex-1 min-w-0",
@@ -611,10 +597,10 @@ export function ChatView() {
               />
               <ChatArtifactsPanel
                 agentId={selectedAgent}
-                open={artifactsSectionOpen}
+                open={true}
                 onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
                 className={sectionTransition}
-                style={sectionFlex(artifactsSectionOpen)}
+                style={sectionFlex(true)}
               />
             </div>
             <ResizeHandle
@@ -864,12 +850,6 @@ export function ChatView() {
         )}
       </div>
 
-      {import.meta.env.VITE_MOCK && (
-        <LayoutVariantPicker
-          current={layoutVariant}
-          onChange={setLayoutVariant}
-        />
-      )}
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />

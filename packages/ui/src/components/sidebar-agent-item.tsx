@@ -54,7 +54,7 @@ export function SidebarAgentItem({
 }: SidebarAgentItemProps) {
   const expanded = useStore((s) => s.expandedSidebarAgents.has(agent.id));
   const toggle = useStore((s) => s.toggleSidebarAgent);
-  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
+  const selectAgent = useStore((s) => s.selectAgent);
   const limit = useStore((s) => s.sidebarSessionLimits.get(agent.id) ?? 3);
   const selectedAgent = useStore((s) => s.selectedAgent);
   const active = selectedAgent === agent.id;
@@ -97,7 +97,7 @@ export function SidebarAgentItem({
         />
         <button
           type="button"
-          onClick={() => navigateToAgentLanding(agent.id)}
+          onClick={() => selectAgent(agent.id)}
           className="min-w-0 flex-1 text-left"
         >
           <p className="truncate text-[15px] font-semibold text-foreground leading-snug hover:text-primary transition-colors">
@@ -154,7 +154,7 @@ export function SidebarAgentItem({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                navigateToAgentLanding(agent.id);
+                selectAgent(agent.id);
               }}
               className="px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
             >

@@ -42,7 +42,7 @@ const iconBg: Record<ChannelKind, string> = {
     "bg-white border border-[#dde1e6] dark:bg-white/5 dark:border-white/10",
   schedule:
     "bg-[#edf5ff] text-[#0f62fe] dark:bg-[#0f62fe]/15 dark:text-[#78a9ff]",
-  approval: "bg-warning/10 text-warning",
+  approval: "bg-info/10 text-info",
 };
 
 function channelKindFor(s: SessionView, needsApproval: boolean): ChannelKind {

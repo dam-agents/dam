@@ -66,8 +66,7 @@ const TOAST_AGENTS = [
 const IN_FRAME = window.self !== window.top;
 
 export function MockStateBar() {
-  if (IN_FRAME) return null;
-  return <MockStateBarPanel />;
+  return null;
 }
 
 function MockStateBarPanel() {

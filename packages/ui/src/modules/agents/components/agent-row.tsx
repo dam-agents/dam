@@ -24,6 +24,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
+import { AgentAvatar } from "./char-avatar.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 
 export interface AgentRowProps {
@@ -130,6 +131,7 @@ export function AgentRow({
       )}
     >
       <div className="flex items-start gap-4 p-5">
+        <AgentAvatar agentId={agent.id} state={display.state} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="min-w-0 truncate text-base font-semibold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
