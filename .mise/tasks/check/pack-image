@@ -29,12 +29,12 @@ touch "$t/whiteouts/etc/.wh.motd" "$t/root/app/dist/server.js" "$t/root/home/age
 
 m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/out/index.json")"
 layer="$(jq -r '.layers[-1].digest | sub(":"; "/")' "$t/out/blobs/$m")"
-tar -tvf "$t/out/blobs/$layer" --numeric-owner | awk '{print $6, $2, $1}' | sed 's|/ | |' > "$t/entries"
+bsdtar -tvf "$t/out/blobs/$layer" | awk '{sub(/\/$/, "", $9); print $9, $3 "/" $4, $1}' > "$t/entries"
 fail=0
 dups="$(awk '{print $1}' "$t/entries" | sort | uniq -d)"
 [ -z "$dups" ] || { echo "FAIL: CRI-O refuses a layer that repeats a path: $dups" >&2; fail=1; }
 want() {
-  local got; got="$(awk -v p="$1" '$1 == p {print $2, $3}' "$t/entries")"
+  local got; got="$(awk -v p="$1" '$1 == p {$1 = ""; print substr($0, 2)}' "$t/entries")"
   [ "$got" = "$2" ] || { echo "FAIL: $1 is [$got], want [$2]" >&2; fail=1; }
 }
 want app "65532/0 drwxr-xr-x"

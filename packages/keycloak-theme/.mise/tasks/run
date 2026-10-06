@@ -8,7 +8,7 @@
 set -euo pipefail
 kc="$(mktemp -d)"
 trap 'rm -rf "$kc"' EXIT
-crane export - - < dist/oci/keycloak.tar | tar -x -C "$kc" --strip-components=2 opt/keycloak
+crane export - - < dist/oci/keycloak.tar | bsdtar -xf - -C "$kc" --strip-components=2 opt/keycloak
 major="$(sed -n 's/^Keycloak - Version \([0-9]*\)\..*/\1/p' "$kc/version.txt")"
 mkdir -p "$kc/data/import"
 jq '.loginTheme = "platform" | .eventsListeners -= ["keycloakify-logging"] | .users |= map(.credentials |= map(.value //= "password123"))' \

@@ -26,7 +26,10 @@ auto = true
 
 [tools]
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
+# GNU tar, which vm-runner's image unpack needs on a Mac host runner; the
+# image tasks use bsdtar.
 "conda:tar" = "latest"
+"conda:libarchive" = "latest"
 "conda:coreutils" = "latest"
 "conda:bash" = "latest"
 "conda:pigz" = "latest"
@@ -51,6 +54,7 @@ maven = "latest"
 nodejs = "26"
 pinact = "latest"
 pnpm = "latest"
+regctl = "latest"
 rust = { version = "latest", components = "rustfmt,clippy" }
 trivy = "latest"
 usage = "latest"

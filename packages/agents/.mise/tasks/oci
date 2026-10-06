@@ -101,7 +101,7 @@ stage_project() {
     [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
     mkdir -p "$stage/$a"
     # pi's extension ships as source; node_modules holds its dev dependencies.
-    tar -C "$d" --exclude=node_modules --exclude=.mise --exclude=./dist -cf - . | tar -C "$stage/$a" -xf -
+    bsdtar -C "$d" --exclude=node_modules --exclude=.mise --exclude='^./dist' -cf - . | bsdtar -C "$stage/$a" -xf -
   done
 }
 
@@ -338,7 +338,7 @@ build_apt_base() {
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
   mkdir -p "$r" "$apt_base/blobs/sha256"
   crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$from" - |
-    ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
+    ${sudo[@]+"${sudo[@]}"} bsdtar -xpf - -C "$r"
   packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$agents/base/apt.toml" | paste -sd' ' -)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
   # trust store is the agent's, which the entrypoint fills; the host keys
@@ -357,7 +357,7 @@ build_apt_base() {
     : > "$r/etc/resolv.conf"
   ' _ "$r" "$packages"
   layer="$work/apt-layer.tar"
-  ${sudo[@]+"${sudo[@]}"} tar --sort=name --numeric-owner --format=gnu -C "$r" -cf "$layer" $(ls -A "$r")
+  ${sudo[@]+"${sudo[@]}"} bsdtar --numeric-owner --format=gnutar -C "$r" -cf "$layer" $(ls -A "$r")
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r"
   [ ${#sudo[@]} -eq 0 ] || sudo chown "$(id -u):$(id -g)" "$layer"
   put() {
@@ -385,11 +385,11 @@ build_apt_base() {
 . .mise/lib/lima-build.sh
 build_in_vm() {
   # mise runs the arm64 node it installs, which links libatomic.
-  lima_build libatomic1 "node pnpm usage crane" \
+  lima_build libatomic1 "node pnpm usage crane regctl conda:libarchive" \
     sh -c 'AGENT_OCI_OUT="$HOME/platform-agent-oci" exec packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$@"
 }
 layout() {
-  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c $(ls -A "$oci_out/$1")
+  if [ "$(uname -s)" = Linux ]; then bsdtar -cf - --format=gnutar -C "$oci_out/$1" $(ls -A "$oci_out/$1")
   else limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'cd ~/platform-agent-oci/"$1" && tar -c $(ls -A)' _ "$1"; fi
 }
 

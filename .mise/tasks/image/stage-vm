@@ -7,7 +7,7 @@
 # window; on a slow host that flatten outran the window, the start failed and
 # the flatten began again from nothing.
 set -euo pipefail
-IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
+IMAGE="$(bsdtar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 IMAGE_DIR=/var/lib/platform-vm-images
 name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
@@ -23,15 +23,15 @@ trap 'rm -rf "$work"' EXIT
 # pulled from a registry is gzip throughout and passes through unchanged.
 layout="$work/layout"
 mkdir -p "$layout"
-tar -xf "$usage_tar" -C "$layout"
+bsdtar -xf "$usage_tar" -C "$layout"
 "$MISE_CONFIG_ROOT/.mise/tasks/image/gzip-layout" "$layout"
 "$MISE_CONFIG_ROOT/.mise/tasks/image/name-layout" "$layout" "$IMAGE"
 entries=()
 while IFS= read -r e; do entries+=("$e"); done < <(ls -A "$layout")
-tar -C "$layout" -cf - "${entries[@]}" | crane export - "$work/rootfs.tar"
+bsdtar -cf - --format=gnutar -C "$layout" "${entries[@]}" | crane export - "$work/rootfs.tar"
 rm -rf "$layout"
 # The record the runner reads beside the tree: what the image says to run.
-tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
+bsdtar -xOf "$usage_tar" "$(bsdtar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
   '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   > "$work/launch.json"
 

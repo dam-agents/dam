@@ -14,16 +14,16 @@
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
 #USAGE flag "--own <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s <path> and everything under it, in place of --owner; a <path> <root> lacks is skipped"
 #USAGE flag "--own-dir <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s directory <path> itself, its entries keeping --owner"
-#USAGE flag "--mode <mode>" help="A chmod mode every entry of every layer this adds gets, e.g. go-w so the build host's umask never makes a root path writable to group 0"
+#USAGE flag "--mode <mode>" help="A chmod mode every entry of every layer this adds gets, e.g. go-w so the build host's umask never makes a root path writable to group 0. It is applied to the trees themselves"
 #USAGE flag "--layout" help="Write the image as an OCI layout directory at <tar>, not a tar of one"
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
 #USAGE flag "--layer <spec>" var=#true help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents"
 # The tar holds an OCI layout, like every other image tar: the base's layers as
 # the registry serves them, then the new layers as plain tars, which a local
-# cluster imports as they are and image:ci-build gzips as it publishes them. The base is kept as a layout per reference and arch,
-# so a rebuild downloads nothing; the reference carries its digest, so an entry
-# never goes stale.
+# cluster imports as they are and image:ci-build gzips as it publishes them.
+# The base is kept as a layout per reference and arch, so a rebuild downloads
+# nothing; the reference carries its digest, so an entry never goes stale.
 set -euo pipefail
 arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack"
@@ -33,7 +33,7 @@ if [ -f "$usage_base/index.json" ]; then
   base="$usage_base"
 elif [ ! -f "$base/index.json" ]; then
   rm -rf "$base.$$"
-  crane pull --format=oci --platform "linux/$arch" "$usage_base" "$base.$$"
+  regctl image copy --platform "linux/$arch" "$usage_base" "ocidir://$base.$$:base" >/dev/null
   mv -T "$base.$$" "$base" 2>/dev/null || rm -rf "$base.$$"
 fi
 # In the cache, so the base's blobs are hard links rather than copies.
@@ -42,93 +42,84 @@ trap 'rm -rf "$work"' EXIT
 out="$work/oci"
 mkdir -p "$out/blobs/sha256"
 cp -l "$base"/blobs/sha256/* "$out/blobs/sha256/" 2>/dev/null || cp "$base"/blobs/sha256/* "$out/blobs/sha256/"
+cp "$base/oci-layout" "$out/"
+jq '{schemaVersion: 2, manifests: [.manifests[0]]}' "$base/index.json" > "$out/index.json"
+from="$(jq -r '.manifests[0].digest' "$out/index.json")"
 
-blob() { echo "$out/blobs/${1/://}"; }
-# One owner, mtime 0, sorted: the layer's digest follows its content alone.
-# Its top-level entries, not ".", so the layer never resets / itself. A path
-# <root> gives another owner (--own, --own-dir) is left out of the rest and
-# appended after it under that owner, a directory alone followed by its entries
-# under the layer's: every path has one entry, since CRI-O refuses a layer that
-# repeats one.
-layers='[]'
-# Reads layer's $at.
-pack_tar() {
-  local o=$1; shift
-  tar --sort=name --owner="${o%:*}" --group="${o#*:}" --numeric-owner --mtime=@0 --format=gnu \
-    ${mode[@]+"${mode[@]}"} ${at:+--transform "s|^|$at/|S"} "$@"
-}
 eval "owns=(${usage_own:-})" "own_dirs=(${usage_own_dir:-})"
-mode=(${usage_mode:+--mode="$usage_mode"})
-layer() {
-  local t="$work/layer.tar" h spec p at=${3:-} excl=()
-  [ "${4:-}" != own ] || for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do excl+=("--exclude=${spec#*=}"); done
-  pack_tar "$2" --anchored ${excl[@]+"${excl[@]}"} -C "$1" -cf "$t" $(ls -A "$1")
-  if [ "${4:-}" = own ]; then
-    for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do
-      p="${spec#*=}"
-      [ -e "$1/$p" ] || continue
-      case " ${own_dirs[*]:-} " in
-        *" $spec "*)
-          pack_tar "${spec%%=*}" --no-recursion -C "$1" -rf "$t" "$p"
-          [ -z "$(ls -A "$1/$p")" ] || pack_tar "$2" -C "$1" -rf "$t" $(ls -A "$1/$p" | sed "s|^|$p/|") ;;
-        *) pack_tar "${spec%%=*}" -C "$1" -rf "$t" "$p" ;;
-      esac
-    done
-  fi
-  h="$(sha256sum "$t" | cut -c1-64)"
-  mv "$t" "$out/blobs/sha256/$h"
-  layers="$(jq -c --arg d "sha256:$h" --argjson s "$(wc -c < "$out/blobs/sha256/$h")" \
-    '. + [{mediaType: "application/vnd.oci.image.layer.v1.tar", digest: $d, size: $s}]' <<< "$layers")"
+# tree_tar <dir> <tar> <uid:gid> [<at>] [own]: <dir>'s tree, not <dir> itself,
+# so a layer never resets / or <at>'s parents. Every path is owned by <uid:gid>
+# or, with [own], by the --own or --own-dir path it is or is under, and goes in
+# once, which CRI-O needs. bsdtar sets one owner a run, so each owner's paths
+# are a run of their own, sorted, with mtime 0: the tar follows the tree's
+# content alone. Read from disk, where bsdtar keeps hard links as links.
+tree_tar() {
+  local o
+  (cd "$1" && find . -mindepth 1) | LC_ALL=C sort |
+    awk -v owner="$3" -v owns="${5:+${owns[*]:-}}" -v dirs="${5:+${own_dirs[*]:-}}" '
+      BEGIN { n = split(owns, o, " "); m = split(dirs, d, " ") }
+      {
+        p = substr($0, 3); own = owner
+        for (i = 1; i <= n; i++) { q = substr(o[i], index(o[i], "=") + 1); if (p == q || index(p, q "/") == 1) own = substr(o[i], 1, index(o[i], "=") - 1) }
+        for (i = 1; i <= m; i++) { q = substr(d[i], index(d[i], "=") + 1); if (p == q) own = substr(d[i], 1, index(d[i], "=") - 1) }
+        print own "\t" $0
+      }' > "$work/paths"
+  rm -f "$2"
+  for o in $(cut -f1 "$work/paths" | sort -u); do
+    awk -F'\t' -v o="$o" '$1 == o { print $2 }' "$work/paths" |
+      bsdtar "$([ -f "$2" ] && echo -r || echo -c)" -f "$2" -n -T - --format=gnutar --numeric-owner \
+        --uid "${o%:*}" --gid "${o#*:}" --mtime @0 -s "|^\./|${4:+$4/}|S" -C "$1"
+  done
+  [ -f "$2" ] || bsdtar -cf "$2" --format=gnutar -T /dev/null
+}
+
+adds=() n=0
+add_layer() {
+  n=$((n + 1))
+  [ -z "${usage_mode:-}" ] || chmod -R "$usage_mode" "$1"
+  tree_tar "$1" "$work/layer$n.tar" "$2" "${@:3}"
+  adds+=(--layer-add "tar=$work/layer$n.tar,mediaType=application/vnd.oci.image.layer.v1.tar")
 }
 eval "root_layers=(${usage_root_layer:-})"
-for d in ${root_layers[@]+"${root_layers[@]}"}; do layer "$d" 0:0; done
+for d in ${root_layers[@]+"${root_layers[@]}"}; do add_layer "$d" 0:0; done
 at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
-layer "$usage_root" "$usage_owner" "$at" own
+add_layer "$usage_root" "$usage_owner" "$at" own
 eval "extra_layers=(${usage_layer:-})"
 for spec in ${extra_layers[@]+"${extra_layers[@]}"}; do
   owner="${spec%%=*}" rest="${spec#*=}"
   dir="${rest#*=}" at="${rest%%=*}"; at="${at#/}"; at="${at%/}"
-  layer "$dir" "$owner" "$at"
+  add_layer "$dir" "$owner" "$at"
 done
 
-put() {
-  local h
-  h="$(printf '%s' "$1" | sha256sum | cut -c1-64)"
-  printf '%s' "$1" > "$out/blobs/sha256/$h"
-  jq -cn --arg d "sha256:$h" --argjson s "${#1}" '{digest: $d, size: $s}'
-}
-manifest="$(cat "$(blob "$(jq -r '.manifests[0].digest' "$base/index.json")")")"
-# OCI layers under a Docker manifest are what quay refuses.
-[ "$(jq -r .mediaType <<< "$manifest")" = application/vnd.oci.image.manifest.v1+json ] ||
-  { echo "image:pack: $usage_base is not an OCI image manifest" >&2; exit 1; }
+words() { jq -cn --arg s "$1" '$s | split(",")'; }
+mods=(--to-oci)
+# The base's annotations (its revision, its created) describe the base.
+for k in $(jq -r '.annotations // {} | keys[]' "$out/blobs/${from/://}"); do mods+=(--annotation "$k="); done
+[ -z "${usage_entrypoint:-}" ] || mods+=(--config-entrypoint "$(words "$usage_entrypoint")" --config-cmd "")
+[ -z "${usage_cmd:-}" ] || mods+=(--config-cmd "$(words "$usage_cmd")")
+[ -z "${usage_workdir:-}" ] || mods+=(--workdir "$usage_workdir")
+[ -z "${usage_user:-}" ] || mods+=(--user "$usage_user")
 eval "envs=(${usage_env:-})"
-env_json="$(printf '%s\n' ${envs[@]+"${envs[@]}"} | jq -R 'select(. != "")' | jq -cs .)"
-config="$(jq -c --argjson l "$layers" --arg ep "${usage_entrypoint:-}" --arg cmd "${usage_cmd:-}" \
-  --arg wd "${usage_workdir:-}" --arg user "${usage_user:-}" --argjson env "$env_json" '
-  .rootfs.diff_ids += [$l[].digest]
-  | .history = (.history // []) + [$l[] | {created_by: "image:pack"}]
-  | if $ep != "" then .config.Entrypoint = ($ep | split(",")) | del(.config.Cmd) else . end
-  | if $cmd != "" then .config.Cmd = ($cmd | split(",")) else . end
-  | if $wd != "" then .config.WorkingDir = $wd else . end
-  | if $user != "" then .config.User = $user else . end
-  | reduce $env[] as $e (.; ($e | split("=")[0]) as $k
-      | .config.Env = ((.config.Env // []) | map(select(split("=")[0] != $k))) + [$e])' \
-  "$(blob "$(jq -r .config.digest <<< "$manifest")")")"
-manifest="$(jq -c --argjson c "$(put "$config")" --argjson l "$layers" \
-  '.config += $c | .layers += $l | del(.annotations)' <<< "$manifest")"
-jq -n --argjson m "$(put "$manifest")" --arg a "$arch" \
-  '{schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json",
-    manifests: [$m + {mediaType: "application/vnd.oci.image.manifest.v1+json", platform: {architecture: $a, os: "linux"}}]}' \
-  > "$out/index.json"
-echo '{"imageLayoutVersion":"1.0.0"}' > "$out/oci-layout"
+for e in ${envs[@]+"${envs[@]}"}; do mods+=(--env "$e"); done
+regctl image mod "ocidir://$out@$from" --create "ocidir://$out:latest" "${adds[@]}" "${mods[@]}" >/dev/null
+# regctl stamps the history entries it adds with the time it ran; they take
+# the base's own, so the image's digest follows its content alone. A second
+# pass, as the first stamps them after applying its time options.
+config="$(jq -r '.config.digest | sub(":"; "/")' "$out/blobs/${from/://}")"
+created="$(jq -r '.created // "1970-01-01T00:00:00Z"' "$out/blobs/$config")"
+regctl image mod "ocidir://$out:latest" --replace --config-time "set=$created,after=$created" >/dev/null
+jq '.manifests |= map(select(.annotations["org.opencontainers.image.ref.name"] == "latest") | del(.annotations))' \
+  "$out/index.json" > "$out/index.json.new"
+mv "$out/index.json.new" "$out/index.json"
 # Only the blobs the image names: a base layout may hold more.
-jq -r '.config.digest, .layers[].digest' <<< "$manifest" | sed 's/^sha256://' | sort > "$work/keep"
-jq -r '.manifests[0].digest' "$out/index.json" | sed 's/^sha256://' >> "$work/keep"
-(cd "$out/blobs/sha256" && ls | sort | comm -23 - <(sort "$work/keep") | xargs -r rm -f)
+manifest="$(cat "$out/blobs/$(jq -r '.manifests[0].digest | sub(":"; "/")' "$out/index.json")")"
+{ jq -r '.config.digest, .layers[].digest' <<< "$manifest"; jq -r '.manifests[0].digest' "$out/index.json"; } |
+  sed 's/^sha256://' | sort > "$work/keep"
+(cd "$out/blobs/sha256" && ls | sort | comm -23 - "$work/keep" | xargs -r rm -f)
 "$(dirname "$0")/name-layout" "$out" "$usage_tag"
 mkdir -p "$(dirname "$usage_tar")"
 if [ "${usage_layout:-}" = true ]; then
   rm -rf "$usage_tar" && mv "$out" "$usage_tar"
 else
-  tar --sort=name --mtime=@0 -C "$out" -cf "$usage_tar" $(ls -A "$out")
+  tree_tar "$out" "$usage_tar" 0:0
 fi

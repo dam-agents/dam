@@ -13,7 +13,7 @@ if [ "$(uname -s)" != Linux ]; then
   # platform-init; git clones smolvm, and usage runs image:name-layout. The
   # VM's copy of the tree is made afresh every build, so cargo's target lives
   # beside it.
-  lima_build "build-essential git" "rust crane jq usage" \
+  lima_build "build-essential git" "rust crane jq usage conda:libarchive" \
     sh -c 'CARGO_TARGET_DIR="$HOME/.cache/platform-vm-runner/target" exec packages/vm-runner/.mise/tasks/oci'
   mkdir -p "$(dirname "$out")"
   lima_cat "packages/vm-runner/$out" > "$out"
@@ -91,7 +91,7 @@ version="$(sed -n 's/^tag=v//p' smolvm.pin)"
 sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
 [ -n "$version" ] && [ -n "$sha" ] || { echo "smolvm.pin names no release for linux-${arch}" >&2; exit 1; }
 release="smolvm-${version}-linux-${arch}"
-tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" "$sha")" \
+bsdtar -xf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" "$sha")" \
   -C "$b/opt/smolvm" --strip-components=1 --no-same-owner \
   "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
   "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
@@ -105,7 +105,7 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # guest cannot fetch its own image: the runner fetches it into its own cache, or
 # the image cache service into a node cache.
 crane_version=v0.22.1
-tar -xzf "$(fetch "https://github.com/google/go-containerregistry/releases/download/${crane_version}/go-containerregistry_Linux_${arch}.tar.gz" "$crane_sha")" \
+bsdtar -xf "$(fetch "https://github.com/google/go-containerregistry/releases/download/${crane_version}/go-containerregistry_Linux_${arch}.tar.gz" "$crane_sha")" \
   -C "$b/opt/smolvm/agent-rootfs/usr/local/bin" --no-same-owner crane
 install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bin/crane"
 
@@ -135,13 +135,13 @@ for d in usr opt; do printf '\n[[oci.copy]]\nhost = "../build/%s"\nimage = "/%s"
 )
 [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work"
 "$repo/.mise/tasks/image/name-layout" "$work/layout" platform-vm-runner:latest
-tar -C "$work/layout" -cf "$work/image.tar" $(ls -A "$work/layout")
+bsdtar -cf "$work/image.tar" --format=gnutar -C "$work/layout" $(ls -A "$work/layout")
 
 # The runner, the image cache service and the seed uploader link glibc
 # dynamically, and one that needs a newer glibc than the image ships would fail
 # its pod at start, so each runs once here, inside the image's own tree.
 mkdir "$work/rootfs"
-crane export - - < "$work/image.tar" | tar -C "$work/rootfs" -xf -
+crane export - - < "$work/image.tar" | bsdtar -C "$work/rootfs" -xf -
 for bin in vm-runner vm-image-cache vm-seed; do
   ${sudo[@]+"${sudo[@]}"} chroot "$work/rootfs" "/usr/local/bin/$bin" --help >/dev/null
 done
