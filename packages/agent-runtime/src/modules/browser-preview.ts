@@ -19,14 +19,27 @@ const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
 const VIDEO_BACKLOG_BYTES = 1024 * 1024;
 const VIEWPORT_CHECK_MS = 3_000;
 
-export function parseViewport(
-  out: string,
-): { width: number; height: number } | null {
-  const match = /(\d+)x(\d+)/.exec(out);
-  return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
+export interface Viewport {
+  width: number;
+  height: number;
+  scale: number;
+}
+
+export function parseViewport(out: string): Viewport | null {
+  const match = /(\d+)x(\d+)@([\d.]+)/.exec(out);
+  return match
+    ? {
+        width: Number(match[1]),
+        height: Number(match[2]),
+        scale: Number(match[3]),
+      }
+    : null;
 }
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
+
+const viewportScale = (v: unknown): v is number =>
+  typeof v === "number" && v >= 1 && v <= 2;
 
 const viewportSide = (v: unknown): v is number =>
   Number.isInteger(v) &&
@@ -40,7 +53,7 @@ export type PreviewControl =
   | { type: "forward" }
   | { type: "clear_data" }
   | { type: "restart_browser" }
-  | { type: "resize"; width: number; height: number };
+  | { type: "resize"; width: number; height: number; scale: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
@@ -50,6 +63,7 @@ export interface BrowserVideo {
   start(opts: {
     width: number;
     height: number;
+    scale: number;
     top: number;
     onFrame: (frame: Buffer, key: boolean) => void;
     log: (msg: string) => void;
@@ -82,7 +96,7 @@ export function parseControl(data: string): PreviewControl | null {
     return null;
   }
   if (typeof msg !== "object" || msg === null) return null;
-  const { type, url, width, height } = msg as Record<string, unknown>;
+  const { type, url, width, height, scale } = msg as Record<string, unknown>;
   if (
     type === "reload" ||
     type === "back" ||
@@ -92,8 +106,10 @@ export function parseControl(data: string): PreviewControl | null {
   )
     return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
-  if (type === "resize" && viewportSide(width) && viewportSide(height))
-    return { type, width, height };
+  if (type === "resize" && viewportSide(width) && viewportSide(height)) {
+    if (scale === undefined) return { type, width, height, scale: 1 };
+    return viewportScale(scale) ? { type, width, height, scale } : null;
+  }
   return null;
 }
 
@@ -205,7 +221,11 @@ export function screenVideo(run: BrowserCommand): BrowserVideo {
   return {
     available: videoAvailable,
     calibrate: (width, height) =>
-      calibrateTop((path) => run(["screenshot", path]), width, height),
+      calibrateTop(
+        (path) => run(["screenshot", "--device-pixels", path]),
+        width,
+        height,
+      ),
     start: startVideo,
   };
 }
@@ -267,7 +287,7 @@ export function createBrowserPreview(deps: {
         "viewport",
         String(msg.width),
         String(msg.height),
-        "1",
+        String(msg.scale),
       ]);
     } else if (msg.type === "restart_browser") {
       await stopBrowser();
@@ -300,7 +320,7 @@ export function createBrowserPreview(deps: {
     const pending: [Buffer, boolean][] = [];
     const wantsVideo = query.get("codec") === "h264" && video.available();
     let videoStream: VideoStream | null = null;
-    let viewport: { width: number; height: number } | null = null;
+    let viewport: Viewport | null = null;
     let dropping = false;
     let restarting = false;
 
@@ -318,20 +338,27 @@ export function createBrowserPreview(deps: {
       client.send(frame, { binary: true });
     };
 
-    async function applyViewport(wanted: { width: number; height: number }) {
+    async function applyViewport(wanted: Viewport) {
       const actual = parseViewport(
         await deps
-          .run(["eval", "innerWidth + 'x' + innerHeight"])
+          .run([
+            "eval",
+            "innerWidth + 'x' + innerHeight + '@' + devicePixelRatio",
+          ])
           .catch(() => ""),
       );
-      if (actual?.width === wanted.width && actual.height === wanted.height)
+      if (
+        actual?.width === wanted.width &&
+        actual.height === wanted.height &&
+        actual.scale === wanted.scale
+      )
         return false;
       await deps.run([
         "set",
         "viewport",
         String(wanted.width),
         String(wanted.height),
-        "1",
+        String(wanted.scale),
       ]);
       return true;
     }
@@ -346,7 +373,10 @@ export function createBrowserPreview(deps: {
         return;
       }
       await applyViewport(wanted).catch(() => false);
-      const top = await video.calibrate(wanted.width, wanted.height);
+      const top = await video.calibrate(
+        Math.round(wanted.width * wanted.scale),
+        Math.round(wanted.height * wanted.scale),
+      );
       restarting = false;
       if (viewport !== wanted || client.readyState !== WebSocket.OPEN) return;
       videoStream = video.start({
@@ -379,7 +409,11 @@ export function createBrowserPreview(deps: {
         control(client, msg)
           .then(() => {
             if (wantsVideo && msg.type === "resize") {
-              viewport = { width: msg.width, height: msg.height };
+              viewport = {
+                width: msg.width,
+                height: msg.height,
+                scale: msg.scale,
+              };
               return restartVideo();
             }
           })

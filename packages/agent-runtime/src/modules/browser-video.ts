@@ -112,7 +112,7 @@ export function encoderArgs(region: {
     "-tune",
     "zerolatency",
     "-crf",
-    "30",
+    "24",
     "-profile:v",
     "baseline",
     "-pix_fmt",
@@ -219,11 +219,16 @@ export interface VideoStream {
 export function startVideo(opts: {
   width: number;
   height: number;
+  scale: number;
   top: number;
   onFrame: (frame: Buffer, key: boolean) => void;
   log: (msg: string) => void;
 }): VideoStream {
-  const region = captureRegion(opts.width, opts.height, opts.top);
+  const region = captureRegion(
+    Math.round(opts.width * opts.scale),
+    Math.round(opts.height * opts.scale),
+    opts.top,
+  );
   const ffmpeg = spawn("ffmpeg", encoderArgs(region), {
     env: { ...process.env, DISPLAY: VIDEO_DISPLAY },
     stdio: ["ignore", "pipe", "pipe"],

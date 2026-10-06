@@ -94,7 +94,11 @@ export function useBrowserStream(
       const canvas = canvasRef.current;
       if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0)
         return null;
-      return viewportFor(canvas.clientWidth, canvas.clientHeight);
+      return viewportFor(
+        canvas.clientWidth,
+        canvas.clientHeight,
+        window.devicePixelRatio,
+      );
     };
     const sendViewport = () => {
       const wanted = wantedViewport();

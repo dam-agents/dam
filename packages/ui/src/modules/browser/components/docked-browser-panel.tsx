@@ -194,6 +194,16 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             onFocus={() => setEditing(true)}
             onBlur={() => setEditing(false)}
             placeholder="localhost:3000"
+            type="text"
+            name="browser-address"
+            inputMode="url"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             aria-label="Address in the agent's browser"
             className="h-8 font-mono text-xs"
           />

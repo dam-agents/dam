@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -88,6 +88,42 @@ if (command === "close") {
     "platform-browser: not closing — the user's browser panel is attached to this browser\n",
   );
   process.exit(2);
+}
+
+if (command === "screenshot") {
+  const devicePixels = args.includes("--device-pixels");
+  const shotArgs = args.filter((a) => a !== "--device-pixels");
+  const shot = spawnSync("agent-browser", [...BROWSER, ...shotArgs], {
+    encoding: "utf8",
+    env: ENV,
+  });
+  process.stdout.write(shot.stdout ?? "");
+  process.stderr.write(shot.stderr ?? "");
+  if (shot.error || shot.status !== 0 || devicePixels)
+    process.exit(shot.error ? 127 : (shot.status ?? 1));
+  const path =
+    shotArgs.slice(1).find((a) => /\.(png|jpe?g)$/i.test(a)) ??
+    /([^\s'"]+\.(?:png|jpe?g))/i.exec(shot.stdout ?? "")?.[1];
+  const ratio = Number(
+    (
+      spawnSync("agent-browser", [...BROWSER, "eval", "devicePixelRatio"], {
+        encoding: "utf8",
+        env: ENV,
+      }).stdout ?? ""
+    )
+      .trim()
+      .replace(/"/g, ""),
+  );
+  if (path && existsSync(path) && ratio > 1 && existsSync("/usr/bin/ffmpeg")) {
+    const scaled = `${path}.css${/\.png$/i.test(path) ? ".png" : ".jpg"}`;
+    const ok = spawnSync(
+      "ffmpeg",
+      ["-y", "-loglevel", "error", "-i", path, "-vf", `scale=trunc(iw/${ratio}):trunc(ih/${ratio})`, scaled],
+      { stdio: "ignore" },
+    );
+    if (ok.status === 0) renameSync(scaled, path);
+  }
+  process.exit(0);
 }
 
 if (command !== "open") {

@@ -45,13 +45,13 @@ async function fakeStream() {
 
 function fakeRun(port: number) {
   const calls: string[][] = [];
-  const browser = { viewport: "1280x720" };
+  const browser = { viewport: "1280x720@1" };
   const run = async (args: string[]) => {
     calls.push(args);
     if (args[0] === "stream")
       return JSON.stringify({ success: true, data: { port } });
     if (args[0] === "set" && args[1] === "viewport")
-      browser.viewport = `${args[2]}x${args[3]}`;
+      browser.viewport = `${args[2]}x${args[3]}@${args[4]}`;
     if (args[0] === "eval") return JSON.stringify(browser.viewport);
     return "";
   };
@@ -133,10 +133,14 @@ describe("parseControl", () => {
       type: "resize",
       width: 900,
       height: 640,
+      scale: 1,
     });
     expect(
       parseControl('{"type":"resize","width":900,"height":640,"scale":2}'),
-    ).toEqual({ type: "resize", width: 900, height: 640 });
+    ).toEqual({ type: "resize", width: 900, height: 640, scale: 2 });
+    expect(
+      parseControl('{"type":"resize","width":900,"height":640,"scale":3}'),
+    ).toBeNull();
     expect(
       parseControl('{"type":"resize","width":10,"height":640}'),
     ).toBeNull();
@@ -209,7 +213,7 @@ describe("browser preview", () => {
     expect(calls).toEqual([["stream", "status", "--json"]]);
   });
 
-  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is always set at scale 1, whatever the panel sends, so a screenshot pixel is a CSS pixel for the agent's mouse commands, independent of the user's zoom. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
+  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is set at the panel's pixel ratio, so the video is sharp on a high-density screen; platform-browser scales the agent's screenshots back to CSS pixels. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened.
   it("handles control messages itself", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
@@ -233,7 +237,7 @@ describe("browser preview", () => {
     expect(calls).toContainEqual(["reload"]);
     expect(calls).toContainEqual(["back"]);
     expect(calls).toContainEqual(["forward"]);
-    expect(calls).toContainEqual(["set", "viewport", "900", "640", "1"]);
+    expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
     expect(JSON.parse(messages.at(-1) as string)).toMatchObject({
       type: "preview_error",
@@ -362,7 +366,11 @@ describe("browser preview video", () => {
 
 describe("viewport check", () => {
   it("reads agent-browser's eval output", () => {
-    expect(parseViewport('"570x774"')).toEqual({ width: 570, height: 774 });
+    expect(parseViewport('"570x774@2"')).toEqual({
+      width: 570,
+      height: 774,
+      scale: 2,
+    });
     expect(parseViewport("")).toBeNull();
   });
 
@@ -392,10 +400,10 @@ describe("viewport check", () => {
     ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
     await until(() => starts.length === 1);
 
-    browser.viewport = "1280x720";
+    browser.viewport = "1280x720@1";
     const before = calls.filter((c) => c[0] === "set").length;
     await until(() => starts.length === 2);
-    expect(browser.viewport).toBe("900x700");
+    expect(browser.viewport).toBe("900x700@1");
     expect(calls.filter((c) => c[0] === "set").length).toBeGreaterThan(before);
   });
 });

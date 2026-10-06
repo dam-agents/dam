@@ -212,11 +212,23 @@ describe("parseBinaryFrame", () => {
 });
 
 describe("viewportFor", () => {
-  // TEST_SCENARIO: the sandbox browser's viewport follows the panel's CSS size, so the page lays out at the size the user sees it. It carries no pixel ratio: the user's zoom or screen must not change what the agent's screenshot pixels mean. Fractional sizes round to whole pixels, and a collapsed or huge panel stays within what the runtime accepts.
-  test("rounds the panel size and keeps it within bounds", () => {
-    expect(viewportFor(812.4, 633.6)).toEqual({ width: 812, height: 634 });
-    expect(viewportFor(0, 50)).toEqual({ width: 200, height: 200 });
-    expect(viewportFor(9000, 700)).toEqual({ width: 4096, height: 700 });
+  // TEST_SCENARIO: the sandbox browser's viewport follows the panel's CSS size, so the page lays out at the size the user sees it, and renders at the screen's pixel ratio — rounded to a quarter, at most 2 — so the video is sharp on a high-density screen. Fractional sizes round to whole pixels, and a collapsed or huge panel stays within what the runtime accepts.
+  test("rounds the panel size, carries the pixel ratio, and keeps both within bounds", () => {
+    expect(viewportFor(812.4, 633.6, 1)).toEqual({
+      width: 812,
+      height: 634,
+      scale: 1,
+    });
+    expect(viewportFor(0, 50, 1.1)).toEqual({
+      width: 200,
+      height: 200,
+      scale: 1,
+    });
+    expect(viewportFor(9000, 700, 3)).toEqual({
+      width: 4096,
+      height: 700,
+      scale: 2,
+    });
   });
 });
 
