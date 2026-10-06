@@ -14,7 +14,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
 1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it.
 
-   **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
+   **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines). If it was raised in a DM, also note which team member was in it.
 
    Then let the user decide the type: epic, feature, task, bug, or research task (see the guidelines). Say which you read the ask as and why; the user confirms or overrides, and the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
 

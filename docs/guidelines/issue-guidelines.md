@@ -26,7 +26,7 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
 - **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
-- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. Two deliberate exceptions: the **Filed by** footer — see [Attribution](#attribution) — and the Slack thread link in **Follow up** — see [Follow up](#follow-up).
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. Two deliberate exceptions: the **Filed by** footer — see [Attribution](#attribution) — and the Slack link in **Follow up**, with the team member's handle when it's a DM — see [Follow up](#follow-up).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 - **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow. A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
 - **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. A **task** is the exception — the work itself is the point, so its title may name the work ("Upgrade the node runtime"); it still must not name a chosen implementation. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
@@ -70,6 +70,12 @@ This is the one place a real person is named — see **No personal data** above.
 ```
 
 Link the thread where the user raised it, not the channel. One bullet per thread when several users asked for the same thing. The link is allowed even though the thread names the person: the IBM Slack workspace needs an IBM login, so it reveals nothing to a public reader. Everything in **No personal data** still applies to the rest of the body. Omit the section when the issue didn't come from Slack.
+
+When the user raised it in a direct message, link the message and add the GitHub handle of the team member in that DM, in parentheses and without `@`. Only the people in a DM can open its link, so this tells the team who can:
+
+```markdown
+- User request: <Slack DM permalink> (DM with <github-handle>)
+```
 
 ## Templates
 
