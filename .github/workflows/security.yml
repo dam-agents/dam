@@ -341,6 +341,41 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::Trivy (${IMAGE}): $(jq length findings.json) finding(s)"
+      # The default image packages none of the harness tools it runs: each node
+      # installs them with the image's own installer. They are scanned from that
+      # same install, under the image's name.
+      - name: Detect vulnerabilities in the harness tools
+        if: startsWith(matrix.image, 'quay.io/dam-agents/default:')
+        env:
+          IMAGE: ${{ matrix.image }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tools="$(mktemp -d)"
+          docker run --rm --user 0 --entrypoint install-harness-tools \
+            -v "$tools:/opt/platform/harness-tools" "$IMAGE" > install.log 2>&1 || {
+            tail -n 40 install.log
+            if [[ "$IMAGE" != *":${SHA}" ]]; then
+              echo "::error::the harness tools of ${IMAGE} could not be installed; see log"
+              exit 1
+            fi
+            echo "::notice::harness tools scan skipped for ${IMAGE} (reused unchanged, or its build failed); see log"
+            exit 0
+          }
+          report=$(trivy rootfs --quiet --format json "$tools")
+          out=$(echo "$report" | jq '
+            [ (.Results // [])[] | (.Vulnerabilities // [])[]
+                | { id: .VulnerabilityID,
+                    url: (.PrimaryURL // ""),
+                    severity: (.Severity // "unknown"),
+                    scope: "default (harness tools)",
+                    pkg: (.PkgName + " " + .InstalledVersion),
+                    fixed: (.FixedVersion // "") } ]
+            | unique_by(.id + "|" + .pkg)
+          ')
+          jq -s 'add' findings.json <(printf '%s\n' "${out:-[]}") > merged.json
+          mv merged.json findings.json
+          echo "::notice::Trivy (${IMAGE} harness tools): $(echo "${out:-[]}" | jq length) finding(s)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

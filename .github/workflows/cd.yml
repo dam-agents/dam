@@ -627,6 +627,7 @@ jobs:
           CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
           CI_IMAGES_IMAGES_JOB: build-images (amd64)
           CI_IMAGES_MOCK_JOB: build mock (e2e fixture)
+          CI_IMAGES_AGENTS_JOB: build-agents (amd64)
           # As the `changes` job sets it, so both resolve the same images stale.
           RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
@@ -757,6 +758,11 @@ jobs:
       - *e2e-provision
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
+      # The default image, which smoke/22-harness-tools boots, packages none of
+      # its tools but is built against them: a PR builds it here, beside the
+      # other images e2e:ci-images builds.
+      - if: github.event_name == 'pull_request'
+        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache
