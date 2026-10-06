@@ -1,4 +1,4 @@
-import { Idea, Power } from "@carbon/icons-react";
+import { Idea, OverflowMenuVertical, Power } from "@carbon/icons-react";
 import React, { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 import { IconRail } from "../../components/icon-rail.js";
+import { useStore } from "../../store.js";
 import {
   type BeeColors,
   CHAR_COLORS,
@@ -15,15 +16,8 @@ import {
   CharAvatar,
   type CharName,
 } from "../agents/components/char-avatar.js";
-import { AgentSetupView } from "../agents/views/agent-setup-view.js";
+import { MysteryAvatar } from "../agents/components/mystery-avatar.js";
 import { EyeBeeMRebus } from "./eye-bee-m.js";
-import {
-  AppFrame,
-  FirstAgentScreens,
-  SetupColumn,
-} from "./first-agent-screens.js";
-import { GettingStartedControls } from "./getting-started-checklist.js";
-import { OnboardingSpecimens } from "./onboarding-specimens.js";
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
 
@@ -87,14 +81,6 @@ const SAMPLE_TIPS = [
   "Your workspace survives between runs. Pick up exactly where the agent left off.",
   "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",
   "Set the hibernation timeout to 0 to stop an agent sleeping, for background work with no open session.",
-];
-
-const CHOOSE_AVATAR_POOL: CharName[] = [
-  "shield",
-  "compass",
-  "spark",
-  "wave",
-  "lens",
 ];
 
 const WAKE_SCREENS: { charName: CharName; agentName: string }[] = [
@@ -321,9 +307,294 @@ function SampleCharCard({
   );
 }
 
-function PaulRandSheet() {
+type ChatEntry =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string }
+  | { role: "thinking"; text: string }
+  | { role: "tool"; label: string; text: string };
+
+const CHAT_MESSAGES: ChatEntry[] = [
+  {
+    role: "user",
+    text: "Make three hero banner variants for the spring campaign using the new palette.",
+  },
+  {
+    role: "thinking",
+    text: "The user wants three hero banner variants. I should pull the spring palette tokens from the design system — sage (#B2C9AD), coral (#FF6B6B), butter (#FFF3B0) — and cross-reference the logo lockup rules in brand-guidelines.pdf before generating.",
+  },
+  {
+    role: "tool",
+    label: "read_file",
+    text: "brand-guidelines.pdf — extracted logo lockup rules and minimum clear-space requirements.",
+  },
+  {
+    role: "assistant",
+    text: "I pulled the spring palette (sage, coral, butter) and the logo lockup rules. Here’s the plan:\n\n1. Bold — full-bleed coral, product centered\n2. Soft — sage gradient, product offset right\n3. Editorial — butter background, large serif headline\n\nGenerating all three at 1920×640.",
+  },
+  {
+    role: "thinking",
+    text: "I’ll generate each variant as a separate file. For the editorial variant I should use the serif headline at 72pt with butter background. Need to check if the coral is accessible against white text — contrast ratio should be at least 4.5:1.",
+  },
+  {
+    role: "tool",
+    label: "generate_image",
+    text: "Created 3 variants → artifacts/hero-spring/bold.png, soft.png, editorial.png",
+  },
+  {
+    role: "assistant",
+    text: "All three are in artifacts/hero-spring/. The editorial one is closest to last season’s top performer.",
+  },
+];
+
+function ChatSpecimen() {
+  const charName: CharName = "stack";
+  const agentName = "spring-campaign";
+
   return (
-    <>
+    <div className="overflow-hidden rounded-xl border-2 border-border">
+      <div className="flex h-[70px] items-center gap-3 border-b border-border bg-background px-6">
+        <span className="flex">
+          <CharAvatar
+            name={charName}
+            state="running"
+            colors={CHAR_COLORS[charName]}
+            className="size-8"
+          />
+        </span>
+        <h2 className="truncate text-sm font-bold text-foreground">
+          {agentName}
+        </h2>
+        <span
+          aria-hidden
+          className="h-2 w-2 shrink-0 rounded-full bg-success"
+        />
+        <span className="ml-auto">
+          <OverflowMenuVertical size={16} className="text-muted-foreground" />
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-4 bg-background p-6">
+        {CHAT_MESSAGES.map((msg, i) => {
+          if (msg.role === "thinking") {
+            return (
+              <div key={i} className="flex flex-col gap-1 items-start">
+                <div className="pl-8 flex items-center gap-1.5 text-sm text-muted-foreground/70 italic">
+                  <span className="inline-block size-3.5 rounded-full border border-muted-foreground/30 animate-pulse" />
+                  Thinking…
+                </div>
+                <div className="pl-8 rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-sm italic text-muted-foreground">
+                  {msg.text}
+                </div>
+              </div>
+            );
+          }
+          if (msg.role === "tool") {
+            return (
+              <div key={i} className="flex flex-col gap-1 items-start">
+                <div className="pl-8 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <span className="font-mono text-[13px] rounded bg-muted px-1.5 py-0.5">
+                    {msg.label}
+                  </span>
+                </div>
+                <div className="pl-8 text-sm text-muted-foreground">
+                  {msg.text}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div
+              key={i}
+              className={cn(
+                "flex flex-col gap-1",
+                msg.role === "assistant" ? "items-start" : "items-end",
+              )}
+            >
+              {msg.role === "assistant" && (
+                <span className="mb-0.5 flex items-center gap-2">
+                  <CharAvatar
+                    name={charName}
+                    state="running"
+                    colors={CHAR_COLORS[charName]}
+                    className="size-6"
+                  />
+                  <span className="text-sm font-semibold text-foreground">
+                    {agentName}
+                  </span>
+                </span>
+              )}
+              {msg.role === "user" && (
+                <span className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+                  You
+                </span>
+              )}
+              <div
+                className={
+                  msg.role === "assistant"
+                    ? "max-w-full whitespace-pre-line pl-8 text-sm text-foreground"
+                    : "rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
+                }
+              >
+                {msg.text}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AvatarPickerSpecimen({ mode }: { mode: "returning" | "first-time" }) {
+  const [selected, setSelected] = useState<CharName>("stack");
+  const returning = mode === "returning";
+
+  return (
+    <div className="overflow-hidden rounded-xl border-2 border-border">
+      <div className="bg-background p-6">
+        <span className="mb-3 block text-sm font-medium text-muted-foreground">
+          {returning
+            ? "Returning user — all avatars unlocked"
+            : "First-time user — no avatars yet"}
+        </span>
+        <div className="flex items-start gap-4">
+          <button
+            type="button"
+            className={cn(
+              "relative flex size-16 shrink-0 items-center justify-center rounded-xl border bg-card transition-colors hover:bg-muted/40",
+              returning ? "border-border" : "border-dashed border-border",
+            )}
+          >
+            {returning ? (
+              <div className="group flex">
+                <CharAvatar
+                  name={selected}
+                  state="running"
+                  colors={CHAR_COLORS[selected]}
+                  className="size-12"
+                />
+              </div>
+            ) : (
+              <MysteryAvatar className="size-10" />
+            )}
+          </button>
+          <div className="flex-1">
+            <label className="mb-1 block text-sm font-medium text-foreground">
+              Name
+            </label>
+            <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground">
+              {returning ? "spring-campaign" : ""}
+              <span className="text-muted-foreground">
+                {returning ? "" : "my-first-agent"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {returning && (
+          <div className="mt-4 rounded-lg border border-border bg-card p-4">
+            <span className="mb-3 block text-sm font-medium text-foreground">
+              Choose an avatar
+            </span>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+              {CHAR_NAMES.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setSelected(n)}
+                  className={cn(
+                    "group flex size-16 items-center justify-center rounded-lg border transition-colors",
+                    n === selected
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/40",
+                  )}
+                >
+                  <CharAvatar
+                    name={n}
+                    state="running"
+                    colors={CHAR_COLORS[n]}
+                    className="size-11"
+                  />
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              8 of 8 unlocked
+            </p>
+          </div>
+        )}
+
+        {!returning && (
+          <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-4">
+            <span className="mb-3 block text-sm font-medium text-foreground">
+              Your avatars
+            </span>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+              {CHAR_NAMES.map((_, i) => (
+                <div
+                  key={i}
+                  className="flex size-16 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30"
+                >
+                  <MysteryAvatar className="size-9" />
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Create this agent to unlock your first avatar. It&apos;s a
+              surprise!
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SheetToggle({
+  active,
+}: {
+  active: "avatar-sheet" | "getting-started-sheet";
+}) {
+  const setView = useStore((s) => s.setView);
+  return (
+    <div className="mb-6 inline-flex gap-0.5 rounded-full border border-border bg-card p-1">
+      <button
+        type="button"
+        onClick={() => setView("getting-started-sheet")}
+        className={cn(
+          "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+          active === "getting-started-sheet"
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        Getting Started
+      </button>
+      <button
+        type="button"
+        onClick={() => setView("avatar-sheet")}
+        className={cn(
+          "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+          active === "avatar-sheet"
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        Avatar Illustrations
+      </button>
+    </div>
+  );
+}
+
+export function AvatarSheetView() {
+  return (
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+      <SheetToggle active="avatar-sheet" />
+      <PageHeader
+        title="Avatar Design Sheet"
+        description="Paul Rand robot avatars — illustrations, placement, and animations."
+      />
+
       <section className="mb-12">
         <SectionLabel>Source — Eye Bee M</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
@@ -423,17 +694,27 @@ function PaulRandSheet() {
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Create Agent — Choose an Avatar</SectionLabel>
+        <SectionLabel>Chat UI — Message Avatars</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          Once a user has unlocked avatars, the creation screen shows an avatar
-          button next to the name. Click it to pick from the unlocked ones; this
-          example has five unlocked and three still in eggs.
+          The agent&apos;s character appears in the chat header (size-8) and
+          next to each assistant message (size-6). The avatar reflects the
+          agent&apos;s current state — running while it&apos;s working, idle
+          between prompts.
         </p>
-        <AppFrame height={900}>
-          <SetupColumn>
-            <AgentSetupView embedded avatarPool={CHOOSE_AVATAR_POOL} />
-          </SetupColumn>
-        </AppFrame>
+        <ChatSpecimen />
+      </section>
+
+      <section className="mb-12">
+        <SectionLabel>Agent Creation — Avatar Picker</SectionLabel>
+        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
+          When creating an agent, the avatar picker sits next to the name field.
+          Returning users see their unlocked characters; first-time users see a
+          mystery placeholder that unlocks on first agent creation.
+        </p>
+        <div className="flex flex-col gap-6">
+          <AvatarPickerSpecimen mode="returning" />
+          <AvatarPickerSpecimen mode="first-time" />
+        </div>
       </section>
 
       <section className="mb-12">
@@ -447,55 +728,6 @@ function PaulRandSheet() {
           <IconRail expanded hideMobileBar />
         </div>
       </section>
-
-      <section id="create-agent-preview" className="mb-12 scroll-mt-6">
-        <SectionLabel>Create Agent — Choose a Character</SectionLabel>
-        <p className="mb-6 max-w-[760px] text-sm text-muted-foreground">
-          A first-time user creating their first agent, step by step. Avatars
-          stay hidden until the first one is unlocked, then the checklist shows
-          there are more to unlock.
-        </p>
-        <FirstAgentScreens />
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Getting Started — Unlock New Avatars</SectionLabel>
-        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          The checklist is docked in the lower right of this page and stays
-          there until all eight tasks are done, one per avatar. Collapse it to a
-          pill that shows progress. Tasks are finished elsewhere in the app;
-          hover the i on a task to see how. New users start with no avatars.
-          Clicking Create agent on the first screen above unlocks their first
-          one at random and puts it on that agent. Every other task unlocks
-          another random avatar, and the ones not unlocked yet stay eggs, so
-          each one is a surprise. When a task is finished, even with the
-          checklist collapsed, the egg cracks open above the dock and the new
-          avatar joins the crew.
-        </p>
-        <GettingStartedControls />
-      </section>
-
-      <section className="mb-12">
-        <SectionLabel>Onboarding Components</SectionLabel>
-        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          Every piece of the getting-started flow on its own, in each of its
-          states. These are separate from the live dock, so nothing here changes
-          your progress.
-        </p>
-        <OnboardingSpecimens />
-      </section>
-    </>
-  );
-}
-
-export function AvatarSheetView() {
-  return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
-      <PageHeader
-        title="Avatar Design Sheet"
-        description="Paul Rand robot avatars — design specs and component reference."
-      />
-      <PaulRandSheet />
     </div>
   );
 }

@@ -22,7 +22,8 @@ type ParameterlessView =
   | "knowledge-base-new"
   | "setup-workbench"
   | "flow-board"
-  | "avatar-sheet";
+  | "avatar-sheet"
+  | "getting-started-sheet";
 
 export interface NavigationSlice {
   view: View;

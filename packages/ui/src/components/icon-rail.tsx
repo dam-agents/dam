@@ -240,7 +240,25 @@ export function IconRail({
       }),
     [agents, restartingIds, pausingIds],
   );
-  const visibleAgents = showAllAgents ? agents : activeAgents;
+  const visibleAgents = useMemo(() => {
+    if (!showAllAgents) return activeAgents;
+    const isActive = (a: (typeof agents)[number]) => {
+      const d = resolveAgentDisplay(a, restartingIds, pausingIds);
+      return (
+        d.state === "running" ||
+        d.state === "running_always_on" ||
+        d.state === "starting" ||
+        d.state === "preparing_workspace" ||
+        d.state === "idle_always_on"
+      );
+    };
+    return [...agents].sort((a, b) => {
+      const aActive = isActive(a);
+      const bActive = isActive(b);
+      if (aActive === bActive) return 0;
+      return aActive ? -1 : 1;
+    });
+  }, [showAllAgents, agents, activeAgents, restartingIds, pausingIds]);
   const hasHiddenAgents = activeAgents.length < agents.length;
 
   const sessionsByAgent = useMemo(() => {
@@ -422,7 +440,7 @@ export function IconRail({
                             }
                           }}
                           className={cn(
-                            "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
+                            "group group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
                             isSelected && "bg-muted",
                           )}
                         >
@@ -796,7 +814,7 @@ export function IconRail({
                             key={agent.id}
                             type="button"
                             onClick={() => navigateToAgentLanding(agent.id)}
-                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                            className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
                           >
                             <SidebarAvatar
                               agentId={agent.id}

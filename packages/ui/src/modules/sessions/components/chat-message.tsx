@@ -136,7 +136,7 @@ export const ChatMessage = memo(function ChatMessage({
         <div
           className={
             isAssistant
-              ? "flex flex-col gap-4 w-full max-w-full"
+              ? "flex flex-col gap-4 w-full max-w-full pl-8"
               : "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
           }
         >

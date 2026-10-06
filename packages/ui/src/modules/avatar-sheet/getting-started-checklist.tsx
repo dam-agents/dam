@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   CheckmarkFilled,
   ChevronDown,
   ChevronUp,
@@ -7,10 +8,15 @@ import {
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../store.js";
 import { CatchStyles } from "../agents/components/catch-styles.js";
 import {
   CHAR_NAMES,
@@ -31,6 +37,7 @@ import {
   completeQuest,
   endCelebration,
   FIRST_AGENT_QUEST_ID,
+  type QuestAction,
   resetCharacterUnlocks,
   useCharacterUnlocks,
 } from "../agents/lib/character-unlocks.js";
@@ -56,6 +63,7 @@ export interface QuestRowData {
   id: string;
   title: string;
   help: string;
+  action: QuestAction;
   reward: CharName | null;
   state: QuestRowState;
 }
@@ -118,14 +126,39 @@ export function CrewSlot({ name, justCaught }: CrewSlotData) {
   );
 }
 
+function useQuestAction(action: QuestAction) {
+  const setView = useStore((s) => s.setView);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+
+  return () => {
+    if (action.settingsTab) {
+      navigateToSettings(action.settingsTab);
+    } else if (action.sandbox) {
+      selectAgent("a1b2c3d4-0001-4000-8000-000000000001");
+      navigateToSandboxHome(
+        "a1b2c3d4-0001-4000-8000-000000000001",
+        action.sandbox,
+      );
+    } else if (action.prefill) {
+      selectAgent("a1b2c3d4-0001-4000-8000-000000000001");
+    } else if (action.view) {
+      setView(action.view);
+    }
+  };
+}
+
 export function QuestRow({
   title,
   help,
+  action,
   reward,
   state,
   showReward = true,
 }: Omit<QuestRowData, "id"> & { showReward?: boolean }) {
   const done = state === "done";
+  const handleAction = useQuestAction(action);
   return (
     <li className="flex list-none items-center gap-3 px-4 py-1.5">
       <span className="flex size-4 shrink-0 items-center justify-center">
@@ -146,15 +179,28 @@ export function QuestRow({
         >
           {title}
         </span>
-        <Tooltip content={help} side="left" className="text-sm">
-          <button
-            type="button"
-            aria-label={`How to ${title.toLowerCase()}`}
-            className="flex shrink-0 rounded-full text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Information size={16} />
-          </button>
-        </Tooltip>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`How to ${title.toLowerCase()}`}
+              className="flex shrink-0 rounded-full text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Information size={16} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="left" className="w-[220px] p-3">
+            <p className="text-sm text-muted-foreground">{help}</p>
+            <button
+              type="button"
+              onClick={handleAction}
+              className="mt-2 flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              {action.label}
+              <ArrowRight size={16} />
+            </button>
+          </PopoverContent>
+        </Popover>
       </span>
       {showReward && (
         <span className="flex size-6 shrink-0 items-center justify-center">
@@ -189,7 +235,7 @@ export function ChecklistPanel({
   onCollapse?: () => void;
 }) {
   return (
-    <div className="w-[340px] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+    <div className="w-[340px] overflow-hidden rounded-lg border border-border bg-card shadow-xl">
       <div
         className={cn(
           "flex items-center gap-3 px-4 pt-3.5",
@@ -254,7 +300,7 @@ export function ChecklistPill({
       onClick={onExpand}
       aria-label={`Get started, ${done} of ${total} done. Expand checklist`}
       className={cn(
-        "flex h-11 items-center gap-2.5 rounded-full border border-border bg-card pl-2 pr-4 shadow-lg transition-colors hover:bg-muted/40",
+        "flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card pl-2 pr-4 shadow-lg transition-colors hover:bg-muted/40",
         pulse && "animate-[dock-pulse_0.7s_ease-out]",
       )}
     >

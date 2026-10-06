@@ -109,7 +109,6 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { SkillsIndicator } from "../components/skills-indicator.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -219,12 +218,7 @@ export function ChatView() {
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsOpen, setSessionsOpen] = useState(true);
-  const [sessionsH, setSessionsH] = useState(
-    () => Number(localStorage.getItem("platform-sessions-h")) || 260,
-  );
-  const [resizingSections, setResizingSections] = useState(false);
-  const sectionTransition = resizingSections
+  const sectionTransition = false
     ? undefined
     : "transition-[flex] duration-200";
   const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
@@ -403,55 +397,6 @@ export function ChatView() {
     },
     [view, selectedAgent],
   );
-
-  const mobileResumeSession = useCallback(
-    (sid: string, mode?: SessionMode) => {
-      unfocusPendingLaunch();
-      pushSessionUrl(sid, mode ?? SessionMode.Chat);
-      setMobileScreen("chat");
-      setSessionMode(mode ?? SessionMode.Chat);
-      if (mode === SessionMode.Terminal) {
-        setSessionId(sid);
-        return;
-      }
-      if (sid === sessionId && !sessionError) {
-        scrollToBottom();
-        return;
-      }
-      resumeSession(sid);
-    },
-    [
-      sessionId,
-      sessionError,
-      setMobileScreen,
-      setSessionMode,
-      setSessionId,
-      resumeSession,
-      scrollToBottom,
-      unfocusPendingLaunch,
-      pushSessionUrl,
-    ],
-  );
-
-  const handleNewSession = useCallback(() => {
-    unfocusPendingLaunch();
-    if (!sessionId && messages.length === 0) {
-      setMobileScreen("chat");
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-  }, [
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    unfocusPendingLaunch,
-    pushSessionUrl,
-  ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -653,31 +598,6 @@ export function ChatView() {
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-          <SessionsSidebar
-            open={sessionsOpen}
-            onToggle={() => setSessionsOpen((o) => !o)}
-            className={sectionTransition}
-            style={sectionFlex(
-              sessionsOpen,
-              sessionsOpen && filesSectionOpen ? sessionsH : undefined,
-            )}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          {sessionsOpen && filesSectionOpen && (
-            <ResizeHandle
-              orientation="vertical"
-              onResize={(d) => {
-                setResizingSections(true);
-                setSessionsH((h) => {
-                  const v = Math.max(120, Math.min(600, h + d));
-                  localStorage.setItem("platform-sessions-h", String(v));
-                  return v;
-                });
-              }}
-              onDragEnd={() => setResizingSections(false)}
-            />
-          )}
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}

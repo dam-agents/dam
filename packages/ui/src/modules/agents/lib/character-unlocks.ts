@@ -2,10 +2,26 @@ import { useSyncExternalStore } from "react";
 
 import { CHAR_NAMES, type CharName } from "../components/char-avatar.js";
 
+export interface QuestAction {
+  label: string;
+  view?: "home" | "agent-new" | "packs" | "artifacts";
+  settingsTab?:
+    | "connections"
+    | "providers"
+    | "account"
+    | "appearance"
+    | "api-keys"
+    | "usage"
+    | "features";
+  sandbox?: "connections" | "skills" | "schedules" | "channels";
+  prefill?: string;
+}
+
 export interface CharacterQuest {
   id: string;
   title: string;
   help: string;
+  action: QuestAction;
 }
 
 export const FIRST_AGENT_QUEST_ID = "first-agent";
@@ -15,41 +31,55 @@ export const CHARACTER_QUESTS: readonly CharacterQuest[] = [
     id: FIRST_AGENT_QUEST_ID,
     title: "Create your first agent",
     help: "Click + next to Agents in the sidebar. Give it a name, pick a harness and a provider, then click Create agent.",
+    action: { label: "Create an agent", view: "agent-new" },
   },
   {
     id: "first-message",
     title: "Send your agent a message",
     help: "Open your agent from the sidebar and type what you want it to do in the chat box at the bottom.",
+    action: {
+      label: "Open chat",
+      prefill: "Hello! What can you help me with?",
+    },
   },
   {
     id: "connect-github",
     title: "Create a connection",
     help: "Go to Settings, then Connections. Add a connection so your agents can access external services.",
+    action: { label: "Open connections", settingsTab: "connections" },
   },
   {
     id: "add-skill",
     title: "Add a skill",
     help: "Open an agent's settings and go to Skills. Add a skill source from a Git repo to teach it something new.",
+    action: { label: "Go to skills", sandbox: "skills" },
   },
   {
     id: "starter-kit",
     title: "Try a starter kit",
     help: "Go to Starter Kits in the sidebar and pick one. It sets up a new agent with skills and connections already in place.",
+    action: { label: "Browse packs", view: "packs" },
   },
   {
     id: "add-schedule",
     title: "Schedule a recurring task",
     help: "Ask your agent in chat to do something on a schedule, like every weekday morning, or add one in the agent's Schedules.",
+    action: {
+      label: "Ask for a schedule",
+      prefill: "Run this task every weekday at 9am:",
+    },
   },
   {
     id: "save-artifact",
     title: "Create an artifact",
     help: "When an agent makes a file you want to keep, save it from the chat. Saved files live in Artifacts in the sidebar.",
+    action: { label: "View artifacts", view: "artifacts" },
   },
   {
     id: "slack",
     title: "Use your agent in Slack",
     help: "Connect Slack in Settings, then Channels. Add your agent to a channel and @mention it.",
+    action: { label: "Set up Slack", sandbox: "channels" },
   },
 ];
 

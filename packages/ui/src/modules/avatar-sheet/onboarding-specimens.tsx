@@ -293,6 +293,7 @@ export function OnboardingSpecimens() {
               key={q.id}
               title={q.title}
               help={q.help}
+              action={q.action}
               reward={null}
               state="todo"
               showReward={false}
@@ -313,6 +314,7 @@ export function OnboardingSpecimens() {
                 key={id}
                 title={q.title}
                 help={q.help}
+                action={q.action}
                 reward={reward}
                 state={state}
               />
