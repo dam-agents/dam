@@ -9,7 +9,7 @@ The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.htm
 | Component | Package | Purpose |
 |---|---|---|
 | ACP bridge | `@agentclientprotocol/codex-acp` | Translates ACP <> Codex app-server for chat sessions |
-| Terminal CLI | `@openai/codex` | Interactive TUI for terminal sessions |
+| Terminal CLI | `@openai/codex` | Interactive TUI for terminal sessions; the copy codex-acp depends on, linked onto `PATH` as `codex` |
 
 ## Authentication
 
@@ -55,7 +55,7 @@ A file that does not parse is never replaced. The write fails and reports a deli
 
 | Script | Runs | Purpose |
 |---|---|---|
-| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI); runs the image's `codex app-server` |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI); runs its bundled `codex app-server` |
 | [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
 
 Both modes run without approvals or Codex's own sandbox, since the pod itself is the sandbox (network isolation + Envoy credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.

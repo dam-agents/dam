@@ -1,6 +1,7 @@
 [tools]
-"npm:@openai/codex" = "0.158.0"
-"npm:@agentclientprotocol/codex-acp" = "2.0.0"
+# The terminal's codex is the one codex-acp bundles: linked onto PATH, it
+# keeps one Codex in the image, shared by chat and terminal threads.
+"npm:@agentclientprotocol/codex-acp" = { version = "2.0.0", postinstall = "ln -s ../.mise/node_modules/@openai/codex/bin/codex.js \"$MISE_TOOL_INSTALL_PATH/node_modules/.bin/codex\"" }
 
 [oci.env]
 PLATFORM_HARNESS = "codex"

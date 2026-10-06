@@ -232,12 +232,6 @@ aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.0.2", digest =
 backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["1.0.2"]
 
-[[tools."npm:@openai/codex"]]
-version = "0.158.0"
-aube = { path = ".mise/locks/npm-openai-codex/0.158.0", digest = "sha256:9c545b811721913dfc1b5a1fffbf351ca040e6f3dece78e89609b71cfba04d71" }
-backend = "npm:@openai/codex"
-specifiers = ["0.158.0"]
-
 [[tools."npm:agent-browser"]]
 version = "0.38.1"
 aube = { path = ".mise/locks/npm-agent-browser/0.38.1", digest = "sha256:71da2d3eacd2d671de6b4f1621c8eb49c1288cf86a6b33f55654a8ad3d0f8321" }
