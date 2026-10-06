@@ -4,6 +4,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   binaryFrame,
   browserCommandLine,
+  commandTimeoutMs,
+  isPreviewProcess,
   parseViewport,
   type BrowserVideo,
   createBrowserPreview,
@@ -395,5 +397,102 @@ describe("viewport check", () => {
     await until(() => starts.length === 2);
     expect(browser.viewport).toBe("900x700");
     expect(calls.filter((c) => c[0] === "set").length).toBeGreaterThan(before);
+  });
+});
+
+describe("stopping a stuck browser", () => {
+  // TEST_SCENARIO: a page that stops answering leaves every browser command hanging. Commands get a short deadline — longer for open, which loads a page — so none can hang the panel for a minute.
+  it("gives commands a short deadline, open a longer one", () => {
+    expect(commandTimeoutMs(["open", "http://a/"])).toBe(45_000);
+    expect(commandTimeoutMs(["set", "viewport", "1", "1", "1"])).toBe(15_000);
+  });
+
+  // TEST_SCENARIO: restarting the panel's browser kills only what belongs to it — the Chromium on the panel's profile and agent-browser processes for the preview session — never the agent's own browser sessions or anything else.
+  it("recognises only the preview browser's processes", () => {
+    const profile = "/home/agent/.local/share/platform/browser-preview";
+    expect(
+      isPreviewProcess(
+        ["/opt/ms-playwright/chromium", `--user-data-dir=${profile}`].join(
+          "\0",
+        ),
+        profile,
+      ),
+    ).toBe(true);
+    expect(
+      isPreviewProcess(
+        ["node", "/x/agent-browser", "--session", "preview", "set"].join("\0"),
+        profile,
+      ),
+    ).toBe(true);
+    expect(
+      isPreviewProcess(
+        ["node", "/x/agent-browser", "--session", "mine", "open"].join("\0"),
+        profile,
+      ),
+    ).toBe(false);
+    expect(
+      isPreviewProcess(
+        [
+          "/opt/ms-playwright/headless-shell",
+          "--user-data-dir=/tmp/other",
+        ].join("\0"),
+        profile,
+      ),
+    ).toBe(false);
+  });
+
+  // TEST_SCENARIO: the panel's Restart browser stops the shared browser and drops every viewer with the reconnect code, so each reconnects and launches a fresh browser on the same profile — sign-ins kept.
+  it("restarts the browser and reconnects viewers", async () => {
+    const stream = await fakeStream();
+    const { run } = fakeRun(stream.port);
+    let stops = 0;
+    const connect = await host(
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        stopBrowser: async () => {
+          stops++;
+        },
+        log: () => {},
+      }),
+    );
+    const { ws, messages } = await connect("");
+    await until(() => messages.length > 0);
+    const done = closed(ws);
+    ws.send(JSON.stringify({ type: "restart_browser" }));
+    expect((await done).code).toBe(1012);
+    expect(stops).toBe(1);
+  });
+
+  // TEST_SCENARIO: with the browser stuck, a viewport check never returns; the next checks must wait for it rather than pile up — piled-up commands are what starved the sandbox.
+  it("runs one viewport check at a time", async () => {
+    const stream = await fakeStream();
+    const { run: baseRun } = fakeRun(stream.port);
+    let evals = 0;
+    const run = async (args: string[]) => {
+      if (args[0] === "eval") {
+        evals++;
+        return new Promise<string>(() => {});
+      }
+      return baseRun(args);
+    };
+    const video: BrowserVideo = {
+      available: () => true,
+      calibrate: async () => 56,
+      start: () => ({ stop: () => {} }),
+    };
+    const connect = await host(
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video,
+        viewportCheckMs: 20,
+        log: () => {},
+      }),
+    );
+    const { ws } = await connect("codec=h264");
+    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(evals).toBe(1);
   });
 });

@@ -213,6 +213,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={stream.restartBrowser}>
+              Restart browser
+            </DropdownMenuItem>
             <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
               Clear browser data
             </DropdownMenuItem>

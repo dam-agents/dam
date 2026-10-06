@@ -226,6 +226,7 @@ export function useBrowserStream(
     back: () => send({ type: "back" }, true),
     forward: () => send({ type: "forward" }, true),
     clearData: () => send({ type: "clear_data" }),
+    restartBrowser: () => send({ type: "restart_browser" }),
     reconnect: () => {
       failedAttemptsRef.current = 0;
       setConnectKey((k) => k + 1);

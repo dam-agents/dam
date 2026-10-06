@@ -52,7 +52,7 @@ An agent shows the user a page with one command its image ships, `platform-brows
 
 ## Sign-ins and lifetime
 
-The `preview` session keeps a browser profile in the agent's home, so sign-ins survive hibernation and a closed panel. The agent can use them — the panel says so once — and "Clear browser data" closes the browser and deletes the profile.
+The `preview` session keeps a browser profile in the agent's home, so sign-ins survive hibernation and a closed panel. The agent can use them — the panel says so once — and "Clear browser data" closes the browser and deletes the profile. "Restart browser" force-stops a browser that stopped answering — its daemon and the Chromium on the panel's profile, nothing else — and the panel's reconnect launches a fresh one on the same profile. Every browser command has a short deadline and runs in its own process group, killed whole when the deadline passes, so a stuck page cannot pile commands up.
 
 An open panel keeps the agent awake the way an open chat does: it counts towards the agent's open connections, not towards runtime work. Only the user's input stamps last activity; frames never do, so a forgotten panel does not refresh the idle clock by itself. A hidden tab drops the stream to one frame a second.
 

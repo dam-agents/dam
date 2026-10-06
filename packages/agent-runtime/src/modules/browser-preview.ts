@@ -1,5 +1,7 @@
-import { execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 import {
@@ -37,6 +39,7 @@ export type PreviewControl =
   | { type: "back" }
   | { type: "forward" }
   | { type: "clear_data" }
+  | { type: "restart_browser" }
   | { type: "resize"; width: number; height: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
@@ -84,7 +87,8 @@ export function parseControl(data: string): PreviewControl | null {
     type === "reload" ||
     type === "back" ||
     type === "forward" ||
-    type === "clear_data"
+    type === "clear_data" ||
+    type === "restart_browser"
   )
     return { type };
   if (type === "navigate" && typeof url === "string") return { type, url };
@@ -121,6 +125,10 @@ export function browserCommandLine(
     : ["platform-browser", args];
 }
 
+export function commandTimeoutMs(args: string[]): number {
+  return args[0] === "open" ? 45_000 : 15_000;
+}
+
 export function agentBrowserCommand(
   envReader: RuntimeEnvReader,
   profileDir: string,
@@ -128,22 +136,69 @@ export function agentBrowserCommand(
   return (args) =>
     new Promise((resolve, reject) => {
       const [command, argv] = browserCommandLine(args, profileDir);
-      execFile(
-        command,
-        argv,
-        {
-          env: {
-            ...mergedSpawnEnv(envReader),
-            AGENT_BROWSER_STREAM_QUALITY: PREVIEW_STREAM_QUALITY,
-          },
-          timeout: 60_000,
+      const child = spawn(command, argv, {
+        env: {
+          ...mergedSpawnEnv(envReader),
+          AGENT_BROWSER_STREAM_QUALITY: PREVIEW_STREAM_QUALITY,
         },
-        (err, stdout, stderr) =>
-          err
-            ? reject(new Error(stderr.trim() || err.message))
-            : resolve(stdout),
-      );
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+      child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+      const timer = setTimeout(() => {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {}
+        reject(new Error(`${args[0]} timed out`));
+      }, commandTimeoutMs(args));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve(stdout);
+        else reject(new Error(stderr.trim() || `${args[0]} exited ${code}`));
+      });
     });
+}
+
+export function isPreviewProcess(cmdline: string, profileDir: string): boolean {
+  const args = cmdline.split("\0");
+  if (args.includes(`--user-data-dir=${profileDir}`)) return true;
+  const session = args.indexOf("--session");
+  return (
+    session >= 0 &&
+    args[session + 1] === PREVIEW_SESSION &&
+    args.some((a) => a.includes("agent-browser"))
+  );
+}
+
+export async function killPreviewProcesses(profileDir: string): Promise<void> {
+  const pids = new Set<number>();
+  const daemon = Number(
+    await readFile(
+      join(homedir(), ".agent-browser", `${PREVIEW_SESSION}.pid`),
+      "utf8",
+    ).catch(() => ""),
+  );
+  if (daemon > 0) pids.add(daemon);
+  for (const entry of await readdir("/proc").catch(() => [])) {
+    const pid = Number(entry);
+    if (!pid || pid === process.pid) continue;
+    const cmdline = await readFile(`/proc/${pid}/cmdline`, "utf8").catch(
+      () => "",
+    );
+    if (isPreviewProcess(cmdline, profileDir)) pids.add(pid);
+  }
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
 }
 
 export function screenVideo(run: BrowserCommand): BrowserVideo {
@@ -162,8 +217,15 @@ export function createBrowserPreview(deps: {
   idleCloseMs?: number;
   video?: BrowserVideo;
   viewportCheckMs?: number;
+  stopBrowser?: () => Promise<void>;
   log: (msg: string) => void;
 }): BrowserPreview {
+  const stopBrowser =
+    deps.stopBrowser ??
+    (async () => {
+      await deps.run(["close"]).catch(() => "");
+      await killPreviewProcesses(deps.profileDir);
+    });
   const idleCloseMs = deps.idleCloseMs ?? PREVIEW_IDLE_CLOSE_MS;
   const video = deps.video ?? screenVideo(deps.run);
   const streamUrl =
@@ -207,8 +269,11 @@ export function createBrowserPreview(deps: {
         String(msg.height),
         "1",
       ]);
+    } else if (msg.type === "restart_browser") {
+      await stopBrowser();
+      for (const c of clients) c.close(1012, "browser restarted");
     } else {
-      await deps.run(["close"]).catch(() => "");
+      await stopBrowser();
       await rm(deps.profileDir, { recursive: true, force: true });
       for (const c of clients) c.close(1012, "browser data cleared");
     }
@@ -219,7 +284,7 @@ export function createBrowserPreview(deps: {
     idleTimer = setTimeout(() => {
       idleTimer = null;
       if (clients.size > 0) return;
-      deps.run(["close"]).catch((err: Error) => deps.log(err.message));
+      stopBrowser().catch((err: Error) => deps.log(err.message));
     }, idleCloseMs);
     idleTimer.unref?.();
   }
@@ -292,14 +357,19 @@ export function createBrowserPreview(deps: {
       });
     }
 
+    let checking = false;
     const viewportCheck = setInterval(() => {
       const wanted = viewport;
-      if (!wantsVideo || !wanted || restarting) return;
+      if (!wantsVideo || !wanted || restarting || checking) return;
+      checking = true;
       applyViewport(wanted)
         .then((changed) => {
           if (changed && viewport === wanted) return restartVideo();
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          checking = false;
+        });
     }, deps.viewportCheckMs ?? VIEWPORT_CHECK_MS);
     viewportCheck.unref?.();
 
