@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import {
   browserLinkLabel,
+  browserLinksIn,
   parseBrowserLink,
 } from "../../modules/browser/lib/browser-link.js";
 import { createBrowserSlice } from "../../modules/browser/store.js";
@@ -40,6 +41,24 @@ describe("parseBrowserLink", () => {
     expect(browserLinkLabel("http://localhost:4444/admin")).toBe(
       "localhost:4444/admin",
     );
+  });
+});
+
+describe("browserLinksIn", () => {
+  // TEST_SCENARIO: agents often leave the line `platform-browser open` prints in the tool output instead of pasting it into their reply. The chat finds the link there, among the command's other output, so the panel can open and the button can show anyway; repeats collapse to one, and a broken link is skipped.
+  test("finds the browser links in a command's output", () => {
+    const out = [
+      `[Open localhost:3000](platform://browser?url=${encodeURIComponent("http://localhost:3000/")})`,
+      "✓ Done",
+      `[Open localhost:3000](platform://browser?url=${encodeURIComponent("http://localhost:3000/")})`,
+      `[Open x](platform://browser?url=${encodeURIComponent("file:///etc/passwd")})`,
+      `[Open kiwi](platform://browser?url=${encodeURIComponent("https://www.kiwi.com/en/")})`,
+    ].join("\n");
+    expect(browserLinksIn(out)).toEqual([
+      "http://localhost:3000/",
+      "https://www.kiwi.com/en/",
+    ]);
+    expect(browserLinksIn("no links here")).toEqual([]);
   });
 });
 

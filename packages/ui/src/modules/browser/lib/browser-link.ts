@@ -26,3 +26,14 @@ export function browserLinkLabel(url: string): string {
   const { host, pathname } = new URL(url);
   return `${host}${pathname === "/" ? "" : pathname}`;
 }
+
+const BROWSER_LINK_IN_TEXT = /\((platform:\/\/browser\?url=[^)\s]+)\)/g;
+
+export function browserLinksIn(text: string): string[] {
+  const urls: string[] = [];
+  for (const match of text.matchAll(BROWSER_LINK_IN_TEXT)) {
+    const url = parseBrowserLink(match[1]);
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  return urls;
+}

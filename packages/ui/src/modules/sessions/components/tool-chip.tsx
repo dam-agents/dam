@@ -8,6 +8,8 @@ import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import type { ToolChip as T } from "../../../types.js";
+import { BrowserLinkChip } from "../../browser/components/browser-link-chip.js";
+import { useBrowserToolLinks } from "../../browser/hooks/use-browser-tool-links.js";
 import { ActivityBlock } from "./activity-block.js";
 
 export function stripFences(text: string): string {
@@ -56,60 +58,70 @@ export function ToolChip({ chip }: { chip: T }) {
   const [open, setOpen] = useState(false);
   const { copy, copied, state: copyState } = useCopy();
   const running = chip.status === "in_progress" || chip.status === "running";
+  const browserLinks = useBrowserToolLinks(chip);
 
   return (
-    <ActivityBlock
-      className={chip.status === "failed" ? "text-destructive" : undefined}
-      label={
-        <span className="flex items-start gap-1.5 min-w-0 flex-1">
-          {running && (
-            <Spinner size={12} className="text-inherit shrink-0 mt-1" />
-          )}
-          <span
-            className={cn(
-              "min-w-0 select-text",
-              open ? "whitespace-pre-wrap break-words" : "truncate",
+    <>
+      <ActivityBlock
+        className={chip.status === "failed" ? "text-destructive" : undefined}
+        label={
+          <span className="flex items-start gap-1.5 min-w-0 flex-1">
+            {running && (
+              <Spinner size={12} className="text-inherit shrink-0 mt-1" />
             )}
-            title={chip.title}
-          >
-            {chip.title}
+            <span
+              className={cn(
+                "min-w-0 select-text",
+                open ? "whitespace-pre-wrap break-words" : "truncate",
+              )}
+              title={chip.title}
+            >
+              {chip.title}
+            </span>
           </span>
-        </span>
-      }
-      onToggle={() => setOpen((o) => !o)}
-      open={open}
-      actions={
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={copied ? "Copied" : "Copy step"}
-          tooltip={copied ? "Copied" : "Copy step"}
-          onClick={(e) => {
-            e.stopPropagation();
-            void copy(chip.title);
-          }}
-          className={cn(
-            "text-muted-foreground hover:text-foreground",
-            HOVER_ACTION,
-            copied && "text-success hover:text-success opacity-100",
-            copyState === "failed" &&
-              "text-danger hover:text-danger opacity-100",
-          )}
-        >
-          {copied ? (
-            <Checkmark size={12} />
-          ) : copyState === "failed" ? (
-            <Warning size={12} />
-          ) : (
-            <Copy size={12} />
-          )}
-        </Button>
-      }
-    >
-      {chip.content?.map((c, i) =>
-        c.text ? <ToolContentBlock key={i} text={c.text} /> : null,
+        }
+        onToggle={() => setOpen((o) => !o)}
+        open={open}
+        actions={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={copied ? "Copied" : "Copy step"}
+            tooltip={copied ? "Copied" : "Copy step"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void copy(chip.title);
+            }}
+            className={cn(
+              "text-muted-foreground hover:text-foreground",
+              HOVER_ACTION,
+              copied && "text-success hover:text-success opacity-100",
+              copyState === "failed" &&
+                "text-danger hover:text-danger opacity-100",
+            )}
+          >
+            {copied ? (
+              <Checkmark size={12} />
+            ) : copyState === "failed" ? (
+              <Warning size={12} />
+            ) : (
+              <Copy size={12} />
+            )}
+          </Button>
+        }
+      >
+        {chip.content?.map((c, i) =>
+          c.text ? <ToolContentBlock key={i} text={c.text} /> : null,
+        )}
+      </ActivityBlock>
+      {browserLinks.length > 0 && (
+        <div className="my-1 flex flex-wrap gap-1.5 pl-4">
+          {browserLinks.map((url) => (
+            <BrowserLinkChip key={url} url={url} />
+          ))}
+        </div>
       )}
-    </ActivityBlock>
+    </>
   );
 }
